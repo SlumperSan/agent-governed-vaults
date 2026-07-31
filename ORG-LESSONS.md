@@ -88,6 +88,19 @@ backlog in the shape the parser already expects."
 **Do instead:** when a tool and the data disagree, fix the data first. Editing a parser that passes
 26/26 to accommodate a malformed table trades a working tool for a bespoke one.
 
+### A healthy background job reported "failed"
+The full 15,524-route sweep was launched with `nohup python probe.py --all > log 2>&1 &` followed by
+diagnostic `echo`/`tail` commands. The harness reported **exit code 1**. The sweep was completely
+fine — it ran to completion. The wrapper's LAST command was `tail` on a log file that was still empty
+(Python buffers stdout when redirected), and `tail` on a missing file exits 1. A chained shell command
+returns only its LAST command's exit code, so a diagnostic became the job's verdict.
+**Why it matters:** a false failure looks exactly like a real one. Acting on it would have meant
+killing and restarting an hour-long job that was working. Same shape as the Council firing an agent
+that had actually been safety-blocked — the failure signal and the real state disagreed.
+**Do instead:** end launcher chains with `echo ok` or an explicit `exit 0`, never a diagnostic. Use
+`python -u` so logs flush immediately. Judge a background job by whether its PROCESS is alive
+(`Get-CimInstance Win32_Process`), never by the wrapper's exit code.
+
 ---
 
 ## Firings
