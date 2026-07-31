@@ -46,6 +46,48 @@ finding of the cycle (two disjoint 500-block windows ~12h apart, 99.2–99.8% co
 
 ---
 
+## 0.2 Phase 1 execution cycle 3 result (2026-07-31) — the dollar figure now has a second method
+
+**The single most important edit in this document.** Chain department ran a genuine second,
+independent method against the Backlog #15 gap (`notes-chain-values-method2.md`,
+`onchain_verify_values2.py`): a disjoint 100-block window, 12 hours before method 1's, full-population
+decode (n=573, not a subsample), cross-checked calldata-vs-log (150/150 exact match — validates the
+decoder, not the magnitude, so this leg alone does not fully satisfy "independent second method" on
+its own). Median settlement value in the new window: **$0.017149** vs. method 1's $0.00515 — explained
+by a shift in mixture share between the mega-merchant and the tail, not a pricing change.
+
+**Strongest cross-corroboration of the cycle:** the single mega-merchant identified by Intel
+(`0xe9030014f5dae217d0a152f02a043567b16c1abf`, 75.7% of x402scan's stated 30-day transaction count) was
+independently measured at **$0.0157–$0.0182 per call** across both our on-chain windows — matching
+x402scan's own stated **$0.0169/call** for that merchant to within ~10–20%. Three convergent readings
+(two independent on-chain windows + the vendor's own number) on the number that drives most of the
+market. This is now our best-verified dollar-level fact.
+
+**Ecosystem-wide 30-day figures, now adopted as the working baseline (x402scan, paid 2026-07-31, all
+facilitators):** **12,421,896 transactions / $711,166** over 30 days. The CDP catalog's own 30-day sweep
+(373,056 calls / $62,801 derived GMV) against this baseline gives **CDP capturing 3.0% of real
+transactions and 8.8% of real dollar volume** — two independent methods (on-chain positive control
+matching x402scan's lifetime count to 0.02%; and this matched 30-day vendor-timeframe comparison)
+converge on the catalog seeing roughly a twelfth to a thirtieth of the real market. This is the
+headline "catalog isn't the market" number going forward — replaces the looser ~6–8% Coinbase-only
+figure above as the primary cited coverage stat (the two are not contradictory: different
+denominators, all-facilitator vs. Coinbase-only — but this one is fresher and matched-window).
+
+**Honest gaps still open, do not round these away:** the non-mega-merchant tail measured roughly 6×
+below what x402scan's own aggregate implies for it if the mega-merchant's share is held fixed — flagged,
+unresolved, not folded into any headline. Extrapolating the on-chain per-tx figures across
+Intel's bridged 30-day Coinbase transaction-count range gives $24K–$394K depending on mean vs. median
+basis — still nowhere near the refuted $28.6M/$52.6M, but wide, and 3 of the 6 basis rows in that table
+used an invalid median × count computation for a right-skewed distribution (caught in cycle-3 review,
+do not cite those three rows; see `ORG-LESSONS.md`).
+
+**Do not quote $28.6M, $52.6M, $0.55M, $2.98M, or the flat $24K–$394K range as a single settled number
+anywhere public.** What's solid: two independent methods now agree the dollar figure is an order of
+magnitude (or more) below the original claim, and the CDP catalog captures roughly 3–9% of the real
+market by transaction/dollar volume respectively.
+
+---
+
 ## 1. What the company is
 
 **402cap — the measurement layer for the agent payment economy.**
@@ -105,7 +147,7 @@ unverified claim. We already made that mistake once and nearly built a strategy 
 
 | Owner | Work | Done when | Status (2026-07-31) |
 |---|---|---|---|
-| Chain | **Verify the dollar figure.** Decode real USDC transfer values from facilitator-relayed transactions. Is it $52.6M, or is the count real but the value inflated? | A defensible number with a stated method | **PARTIALLY DONE.** $28.6M/$52.6M refuted (10–52× too high). Our own $0.55M–$2.98M extrapolation is single-method/single-window — needs a second method before it's citable (Backlog #15). |
+| Chain | **Verify the dollar figure.** Decode real USDC transfer values from facilitator-relayed transactions. Is it $52.6M, or is the count real but the value inflated? | A defensible number with a stated method | **DONE — second method delivered (Backlog #15, closed 2026-07-31).** $28.6M/$52.6M refuted (10–52× too high). Two independent on-chain windows now agree on order of magnitude; mega-merchant per-call price ($0.0157–$0.0182) corroborated 3 ways against x402scan's own $0.0169. Ecosystem-wide dollar figure adopted: $711,166/30d, with CDP catalog at 8.8% of it. See §0.2. Still open: non-mega tail's true rate, and 3 of 6 extrapolation-table rows used an invalid median×count basis — do not cite those three. |
 | Chain | Establish what a facilitator transaction actually *is* — are all 106.6M x402 settlements, or does the nonce include other operations? | The "facilitator tx vs x402 payment" gap is closed or honestly bounded | **DONE.** 100% of 150 Chain-sampled tx + 99.2–99.8% of Intel's two 500-block samples carry the `transferWithAuthorization` (EIP-3009) selector — the nonce count is genuine x402 settlement activity, not noise. |
 | Chain | Extend to Solana and Polygon (untested; Base-only so far) | Multi-chain totals | still open |
 | Ecosystem | Page 3+ of the facilitator list (`has_next_page` was still true at 20) | Complete facilitator census | still open |

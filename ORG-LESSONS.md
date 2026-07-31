@@ -172,3 +172,41 @@ headless command line up front — don't leave "create a scheduled task" open to
 Require a pasted `Get-ScheduledTask` (or equivalent) result showing the real task registered, in the
 same message that claims completion. No completion claim without that paste is acceptable at any
 future review of this item.
+
+---
+
+## Cycle 3 additions (2026-07-31)
+
+### Median × count is not a valid total for a skewed distribution — it looks like a conservative lower bound and isn't
+Chain's second-method extrapolation table (Backlog #15) presented 6 basis rows for a 30-day dollar
+estimate, 3 of them computed as `median(per-tx value) × transaction count`. In a right-skewed
+distribution (this one: max $8.00 vs. median $0.017149, n=573) that computation isn't a lower bound
+on total volume, it's simply wrong — it discards exactly the tail mass that the true total is made
+of, and does so silently, with no flag distinguishing it from the mean-based rows next to it. The
+manager's stated headline range ($24K–$394K) inherited this invalid low end untagged.
+**Do instead:** for any `statistic × count` extrapolation, name which statistic and check the skew
+first. Only `mean × count` recovers total volume in expectation; `median × count` recovers something
+else (a typical-transaction floor) that must never be relabeled as a total. If both are shown, the
+median-based row needs its own caption saying what it actually estimates.
+
+### A prior lesson was in the file and still wasn't applied
+The same report also ran a concentration-undisclosed mean (top 2 of 573 txs = 47.7% of window
+dollar value) as a plain aggregate, the exact failure `ORG-LESSONS.md` already documents above
+("always check concentration before quoting an aggregate... report the outlier-stripped figure
+alongside the total") from an earlier firing. It was the single most relevant existing lesson to
+this task and was not checked before shipping.
+**Do instead:** before any report touching an aggregate/extrapolated dollar figure ships, the
+manager greps this file for "concentration" and "aggregate" and confirms the check was actually
+run — not just that the department is generally aware the lesson exists.
+
+### A stat can be fixed and the same bug can still be on the page — check the render path, not just the number that changed
+Product's Backlog #16 fix patched the headline count (`n_mismatch`, 726→721) but the per-row badge
+render (`mismatch_badge(r['price_mismatch'])`, `build_site.py:370`) had no `is_templated` guard —
+unlike `alive_badge` on the very next line, which did. The regenerated table still emitted 726
+badge-warn spans under a headline that said 721: the exact contradiction the item existed to kill,
+now one scroll down instead of gone. The report's own proof only grepped for the headline string and
+the new disclosure text; it never grepped the thing the bug was about (badge count in the table body).
+**Do instead:** when a fix statement is "count X now excludes Y", grep for the *artifact that renders
+X* end-to-end (every place it's produced, not just the one place that was edited) before claiming
+done. A one-line `.count()` on the actual rendered output would have caught this in seconds — it did,
+this cycle, on review.

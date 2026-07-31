@@ -161,6 +161,15 @@ roughly half of the stated $52.6M. **The all-time figure cannot be "current rate
 Base's genesis" — that scenario is mathematically ruled out by chain age alone, independent of any
 x402-specific reasoning.**
 
+(Caveat: the $52.6M/$711,166 figures are *all-facilitator, all-chain* — they are not Coinbase/Base-only.
+Solana mainnet (beta launched March 2020) is old enough to predate 74 months, and some facilitators in
+our address list settle there. So Base's 37.5-month age bounds only the Coinbase/Base portion of the
+total, not the whole figure in principle. In practice this does not rescue the 74-month reading: the
+x402 *protocol itself* is known to be far younger than even Base — our own biggest measured merchant
+in this very note, responsible for 75.7% of transactions, is only ~7.1 months old (§1) — so a
+Solana-predates-Base argument would require the protocol to have meaningful volume on a chain before
+the protocol existed, which is not a serious alternative, just a technical gap worth naming.)
+
 Hypotheses, explicitly unproven:
 1. **Ramp-up bias.** If x402 volume has grown over time (very plausible — it's a young protocol),
    dividing the all-time total by the *current* (highest-ever) rate systematically overstates
@@ -182,20 +191,31 @@ but did not run the full search this cycle. Flagged for Chain dept or a follow-u
 
 ## 6. What we did not do
 
-- Did not determine this merchant's actual start date on-chain (§2, §5 — feasible, not run).
+- Did not check this merchant's full 217-day withdrawal history — only confirmed no outgoing
+  transfers in the last ~27.8h. A full check would need ~1,880 chunked `eth_getLogs` calls at the
+  free-tier 10,000-block cap; not run this cycle. This is why §2 does not treat the current balance
+  as proof of cumulative revenue.
 - Did not resolve (a) vs (b) in §3 — would need probing the actual traffic source, which likely
   requires either paid x402scan resource-level lookups (blocked without Michael's sign-off) or
   guessing at undocumented routes (not attempted, would be speculation).
-- Did not sample more than 5 disjoint on-chain windows for §2 — enough to show burstiness and
-  order-of-magnitude corroboration, not enough for a tight confidence interval.
+- Did not independently verify x402scan's $0.0169 average price for this merchant, or its $711,166
+  ecosystem 30-day dollar total — both are vendor-stated figures we bracket but do not confirm (§4).
+- Sampled 10 disjoint on-chain windows for §2 (widened from 5 after review) — enough to show
+  burstiness is real and recurring and to corroborate the transaction-count order of magnitude, not
+  enough for a tight confidence interval on the exact rate.
 - Did not touch any paid endpoint. No money moved.
 
 ## 7. Bottom line for the headline writer
 
-- One merchant, BlockRun.AI, is 75.7% of all x402 transactions but only ~22% of the dollars — cheap,
-  high-frequency, bursty automated calls, not broad-based adoption.
-- It is in our catalog, but the catalog sees 0.03% of its real volume — a sharper version of the
-  "catalog isn't the market" finding, on the single biggest account in the whole dataset.
-- The 74-month all-time/30-day-rate implied duration is mathematically impossible (Base itself is
-  only 37.5 months old) — the all-time $52.6M figure is corrupted by *something* beyond "value units
-  are wrong" (already refuted); ramp-up bias is the most likely honest explanation, not proven.
+- One merchant, BlockRun.AI, is 75.7% of all x402 transactions — cheap, high-frequency, genuinely
+  bursty automated calls (confirmed on 10 independent windows), not broad-based adoption. Its dollar
+  share (~22%, implying an ~11x lower average ticket than the rest of the ecosystem) rests on
+  x402scan's own stated average price, which we bracket but did not independently verify.
+- It is in our catalog, but the catalog's own counters capture roughly 1 in 3,400 of its real
+  transactions — a sharper version of the "catalog isn't the market" finding, on the single biggest
+  account in the whole dataset. We cannot yet say whether that's a coverage gap or a counting bug.
+- It is a young merchant — first funded 2025-12-26, ~7.1 months old — not a long-running one.
+- The 74-month all-time/30-day-rate implied duration is mathematically impossible for the
+  Coinbase/Base portion (Base itself is only 37.5 months old, verified via genesis block timestamp)
+  — the all-time $52.6M figure is corrupted by *something* beyond "value units are wrong" (already
+  refuted elsewhere); ramp-up bias is the most likely honest explanation, not proven.
