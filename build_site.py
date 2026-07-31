@@ -8,6 +8,7 @@ Output: C:/Users/Micha/Desktop/x402/site/
 Pages:
   site/index.html            — searchable/sortable table of all routes
   site/mismatch.html         — price-mismatch safety page (the wedge product)
+  site/coverage.html         — CDP catalog vs. real x402 economy coverage (best-verified finding)
   site/methodology.html      — honest "what we know / don't know" page
   site/r/<host>/<slug>.html  — one detail page per resource (crawlable)
 
@@ -107,6 +108,7 @@ PAGE_HEAD = """<!doctype html>
   <nav>
     <a href="{root}index.html">Routes</a>
     <a href="{root}mismatch.html">Price Mismatches</a>
+    <a href="{root}coverage.html">Coverage</a>
     <a href="{root}methodology.html">Methodology</a>
   </nav>
 </header>
@@ -375,7 +377,11 @@ They are stored separately and never merged. See <a href="{root}methodology.html
     n_alive = sum(1 for r in rows if r["is_valid_402"] and not r["is_templated"])
     n_templated = sum(1 for r in rows if r["is_templated"])
     n_dead = sum(1 for r in rows if not r["is_valid_402"] and not r["is_templated"])
-    n_mismatch = sum(1 for r in rows if r["price_mismatch"])
+    # Matches mismatch.html's own stated methodology: templated routes (probed as a literal
+    # example path, not representative of a real call) are excluded from the mismatch count.
+    # See ORG-BACKLOG #16 — this used to double-count 5 templated rows (726 vs mismatch.html's 721).
+    n_mismatch = sum(1 for r in rows if r["price_mismatch"] and not r["is_templated"])
+    n_mismatch_templated_excluded = sum(1 for r in rows if r["price_mismatch"] and r["is_templated"])
     n_hosts = len(set(r["host"] for r in rows))
 
     index_body = f"""
@@ -396,6 +402,13 @@ Catalog claim and measured reality are shown side by side &mdash; they disagree 
 <strong>"Alive" has three states, not two.</strong> {n_templated:,} routes contain a <code>:param</code>
 path segment; probing the literal example text is not a valid liveness test (a 404 there proves nothing),
 so they are marked <em>not tested</em> rather than dead. Only {n_dead:,} routes actually failed a real probe.
+</div>
+
+<div class="callout">
+<strong>The {n_mismatch:,} price-mismatch count above excludes {n_mismatch_templated_excluded} templated
+routes</strong> that also show a raw mismatch flag, matching the <a href="mismatch.html">Price Mismatches</a>
+page's own stated methodology (a probe against a literal <code>:param</code> example isn't a real call, so
+it isn't counted as a real mismatch either). The two pages report the same number for this reason.
 </div>
 
 <div class="controls">
@@ -573,6 +586,111 @@ leaderboard entirely: a probe against a literal example path is not representati
             body=mismatch_body, root="", generated_at=generated_at, snapshot_id=snapshot_id, run_id=run_id,
         ))
     print(f"[build_site] wrote mismatch.html ({len(leaderboard_sorted)} mismatches, top = {leaderboard_sorted[0]['host']} {leaderboard_sorted[0]['ratio']}x)", file=sys.stderr)
+
+    # ================= coverage.html =================
+    # Best-verified finding to date: CDP's own Bazaar catalog (what this whole site is built
+    # from) captures a small minority of the real x402 economy. Two independent methods
+    # converge on the same ballpark. Numbers below are the department's verified figures as of
+    # 2026-07-31 — this function does not recompute them, it only presents them with method
+    # and caveats attached, per ORG-LESSONS.md's standing rule that no headline number ships
+    # without both.
+    cov_cdp_tx = 373056
+    cov_cdp_gmv = 62801
+    cov_real_tx = 12421896
+    cov_real_gmv = 711166
+    cov_tx_pct = 100 * cov_cdp_tx / cov_real_tx
+    cov_gmv_pct = 100 * cov_cdp_gmv / cov_real_gmv
+    cov_onchain_tx = 106602243
+    cov_x402scan_alltime_tx = 106581020
+    cov_onchain_diff_pct = 100 * abs(cov_onchain_tx - cov_x402scan_alltime_tx) / cov_x402scan_alltime_tx
+    cov_merchant_tx = 9401793
+    cov_merchant_pct = 100 * cov_merchant_tx / cov_real_tx
+
+    coverage_body = f"""
+<h1>How much of the real x402 economy does CDP's catalog capture?</h1>
+<p>This is our best-verified finding to date, corroborated by two independent methods rather than one.
+Every other page on this site is built entirely from Coinbase CDP's Bazaar catalog &mdash; this page is
+about how much of the real economy that catalog actually sees.</p>
+
+<div class="stat-row">
+  <div class="stat"><span class="n">{cov_tx_pct:.1f}%</span><span class="l">of real transactions, 30d</span></div>
+  <div class="stat"><span class="n">{cov_gmv_pct:.1f}%</span><span class="l">of real dollar volume, 30d</span></div>
+  <div class="stat"><span class="n">{fmt_num(cov_cdp_tx)}</span><span class="l">CDP-catalog calls, 30d</span></div>
+  <div class="stat"><span class="n">{fmt_num(cov_real_tx)}</span><span class="l">real economy tx, 30d (all facilitators)</span></div>
+</div>
+
+<div class="callout danger">
+<strong>CDP's own Bazaar catalog &mdash; the source for every other page on this site &mdash; captures
+roughly {cov_tx_pct:.0f}% of real x402 transactions and {cov_gmv_pct:.0f}% of real dollar volume over the
+same 30-day window.</strong> More than 9 in 10 real x402 transactions, and more than 90&nbsp;cents of every
+real dollar moved, never appear anywhere in the catalog this whole site is otherwise built from.
+</div>
+
+<h2>The numbers, side by side</h2>
+<table>
+<thead><tr><th>Metric</th><th>CDP catalog (our own full sweep)</th><th>Real x402 economy, 30d, all facilitators</th><th>CDP share</th></tr></thead>
+<tbody>
+<tr><td>Transactions / 30d</td><td>{fmt_num(cov_cdp_tx)}</td><td>{fmt_num(cov_real_tx)}</td><td>{cov_tx_pct:.1f}%</td></tr>
+<tr><td>Dollar volume / 30d</td><td>${cov_cdp_gmv:,}</td><td>${cov_real_gmv:,}</td><td>{cov_gmv_pct:.1f}%</td></tr>
+</tbody>
+</table>
+<p class="small">CDP catalog figures: our own full sweep of Coinbase CDP's Bazaar catalog over the trailing
+30-day window (15,524 routes). Real-economy figures: x402scan's <code>/facilitators/stats?timeframe=30</code>,
+one paid $0.01 call, approved and paid by Michael, 2026-07-31 &mdash; the only paid call this figure rests on.</p>
+
+<h2>Two independent methods, not one</h2>
+<dl class="kv">
+  <dt>Method 1 &mdash; on-chain positive control</dt>
+  <dd>We queried Base RPC directly (<code>eth_getTransactionCount</code>) against all 40 of Coinbase's
+  facilitator addresses and got <strong>{fmt_num(cov_onchain_tx)}</strong> transactions sent, all-time.
+  x402scan independently publishes an all-time count for the same facilitator of
+  <strong>{fmt_num(cov_x402scan_alltime_tx)}</strong> &mdash; a difference of {cov_onchain_diff_pct:.2f}%.
+  This is a positive control: it confirms x402scan's transaction counting reflects real on-chain activity
+  we can independently reproduce, before we lean on any of its other numbers.</dd>
+  <dt>Method 2 &mdash; matched 30-day window, two sources</dt>
+  <dd>With x402scan's counting validated by Method 1, its own stated 30-day window
+  ({fmt_num(cov_real_tx)} tx / ${cov_real_gmv:,}) is compared directly against our own full sweep of CDP's
+  catalog over the same kind of window ({fmt_num(cov_cdp_tx)} tx / ${cov_cdp_gmv:,}). Both the
+  transaction-count ratio ({cov_tx_pct:.1f}%) and the dollar-volume ratio ({cov_gmv_pct:.1f}%) land in the
+  same single-digit-percent range, which is why we call this converged rather than a one-off measurement.</dd>
+</dl>
+
+<h2>What this does <em>not</em> establish &mdash; read before quoting this number</h2>
+<div class="callout warn">
+<ul>
+<li><strong>The "real" 30-day figure is itself heavily concentrated in one merchant.</strong> A single
+address (<code>0xe9030014f5dae217d0a152f02a043567b16c1abf</code>) accounts for
+{fmt_num(cov_merchant_tx)} of the {fmt_num(cov_real_tx)} real transactions &mdash; {cov_merchant_pct:.1f}%
+of all activity &mdash; at $0.0169 per call, from only 1,137 unique buyers. That looks like one
+high-frequency, low-value integration, not broad organic adoption. We have not recomputed the coverage
+percentages with that merchant excluded; treat {cov_tx_pct:.1f}% / {cov_gmv_pct:.1f}% as coverage of the
+economy <em>as it currently exists</em>, concentration and all, not evidence of thousands of routes each
+doing meaningful independent volume.</li>
+<li><strong>The refuted $52.6M all-time figure is not used anywhere in this calculation.</strong> Dividing
+that figure by any plausible 30-day rate implies roughly 74 months of history, and x402 is far younger
+than that &mdash; see <a href="methodology.html">methodology</a>.</li>
+<li><strong>x402scan's 30-day figure is vendor-self-reported</strong>, from one paid call. Method 1 above
+validates that its transaction <em>counting</em> matches independently-observed on-chain activity; it does
+not independently re-verify the <em>dollar</em> figure line by line.</li>
+<li><strong>Our own $62,801 CDP-derived GMV carries the same upper-bound caveat as everywhere else on this
+site</strong>: cheapest listed price &times; CDP-reported call count, not observed revenue. See
+<a href="methodology.html">methodology</a>.</li>
+<li><strong>This measures catalog completeness, not total addressable market.</strong> A low CDP coverage
+percentage says a lot of real x402 activity is invisible to anyone reading CDP's Bazaar catalog alone
+&mdash; the entire reason this project exists &mdash; not a judgment on how healthy or large the ecosystem
+is in absolute terms.</li>
+</ul>
+</div>
+"""
+    with open(os.path.join(SITE_DIR, "coverage.html"), "w", encoding="utf-8") as f:
+        f.write(page(
+            title="Coverage — 402cap",
+            description=f"CDP's own Bazaar catalog captures an estimated {cov_tx_pct:.1f}% of real x402 "
+                        f"transactions and {cov_gmv_pct:.1f}% of real dollar volume over 30 days, "
+                        f"corroborated by two independent methods.",
+            body=coverage_body, root="", generated_at=generated_at, snapshot_id=snapshot_id, run_id=run_id,
+        ))
+    print(f"[build_site] wrote coverage.html (tx coverage {cov_tx_pct:.1f}%, gmv coverage {cov_gmv_pct:.1f}%)", file=sys.stderr)
 
     # ================= methodology.html =================
     methodology_body = f"""

@@ -197,3 +197,107 @@ a higher snapshot id than the last complete one while a future API serves straig
 views, results would silently mix in incomplete data. Worth a one-line `WHERE` fix
 (`JOIN catalog_snapshot ON is_complete=1`) before `v_builder_codes` is exposed through any read API
 (backlog item #6).
+
+---
+
+## 7. Backfill APPLIED to production (2026-07-31, this task)
+
+**Schema had drifted since the backfill script was written, and it would have silently done
+nothing.** Re-verification caught it before running: `prune.py` had deduped `raw_json` into a new
+`raw_blob` table keyed by `raw_sha`, and `catalog_resource.raw_json` is now **`''` (empty string,
+not NULL) for all 47,570 rows** in production. The script's original query
+(`WHERE raw_json IS NOT NULL`) would have matched every row, then failed to parse `''` as JSON and
+silently produced **zero backfilled rows with no error** — the exact "silent failure that fakes
+success" pattern the charter warns about. Fixed by reading `raw_json_full` from the
+`catalog_resource_full` view (which re-joins `raw_blob` via `raw_sha`) instead, in both the
+`referral_json` backfill query and the `referral_event` seed query. `backfill_referral_json.py` in
+the repo now reflects this fix.
+
+**Verification sequence, in order:**
+1. Dry run against a byte-copy (`test_backfill_copy.db`, in scratch): reported **8,107** rows would
+   gain `referral_json`, **2,670** `referral_event` rows would be inserted — exact match to the
+   brief and to the pre-drift test run.
+2. Applied `--apply --seed-referral-events` to the same copy: committed, `PRAGMA integrity_check` =
+   `ok`, `COUNT(DISTINCT resource_url||'|'||referral_code)` = 2,670 = row count (no duplicates).
+3. Backed up production: `x402_index.db.bak-2026-07-31-preref` (293,560,320 bytes, same size as
+   source), integrity-checked independently before proceeding.
+4. Applied to production with `--sweep-is-finished`. Script's own post-commit counters: **`referral_json` set after commit: 8107**, **`referral_event` builder-code rows after commit: 2670**.
+5. **Independent re-verification, separate process, against the live file** (not trusting the
+   script's own printout): `PRAGMA integrity_check` = `('ok',)`, distinct pairs = 2670, total
+   referral_event rows = 2670. Matches exactly.
+
+**Real row counts, production `x402_index.db`, post-backfill:**
+- `catalog_resource.referral_json` populated: **8,107** (was 0)
+- `referral_event` (program='builder-code'): **2,670**, zero duplicate (resource_url, referral_code)
+  pairs
+- `PRAGMA integrity_check`: `ok`
+
+## 8. Concentration, growth, and correlation — re-analysed with real queries
+
+**Holders beyond the top 2 (snapshot 6, all 44 codes):** long tail drops fast — `bc_awpbwsy3`
+4.5%, then six codes between 1–3.2%, then a tail of 12 codes each under 1%. Full ranked list run
+and available; top 15 by route count:
+
+| code | routes | share | hosts | l30d calls | est GMV/30d |
+|---|---|---|---|---|---|
+| bc_gxy6qn5p | 1,587 | 59.4% | 144 | 3,764 | $710.72 |
+| bc_b4aw4uzd | 524 | 19.6% | 1 | 5,488 | $112.64 |
+| bc_awpbwsy3 | 119 | 4.5% | 2 | 917 | $9.57 |
+| bc_pa0gqlv1 | 85 | 3.2% | 1 | 235 | $69.43 |
+| bc_ej6r6uyr | 84 | 3.1% | 1 | 360 | $440.60 |
+| bc_hc2dhq09 | 62 | 2.3% | 3 | 9,624 | $29.72 |
+| bc_vyd5u8m3 | 34 | 1.3% | 2 | 191 | $1.08 |
+| bc_vz5zyuko | 31 | 1.2% | 1 | 53 | $2.32 |
+| bc_wdmnog7m | 29 | 1.1% | 1 | 9,590 | $30.32 |
+| bc_kxz79e8i | 19 | 0.7% | 2 | 131 | $5.57 |
+| bc_qobj93ib | 16 | 0.6% | 2 | 120,890 | $730.95 |
+| bc_suil8bdj | 6 | 0.2% | 1 | 162 | $28,000.22 |
+
+`bc_suil8bdj`'s $28,000 GMV on 6 routes/162 calls is an outlier worth a separate look before ever
+quoting a builder-code GMV aggregate (average price ≈$173/call) — not investigated further here,
+flagged for whoever next touches referral $-figures.
+
+**Is concentration growing? NOT YET MEASURABLE — re-confirmed, not just repeated from the prior
+note.** Re-ran the top-code share independently per complete snapshot (2, 5, 6), reading straight
+from each snapshot's own `raw_json` rather than the `builder_code` column (the column is NULL on
+snapshot 2, so column-based grouping would have wrongly zeroed it out). Result: **identical across
+all three** — `bc_gxy6qn5p` = 1,587 routes / 59.4% and top-2 share = 79.1% in snapshot 2, 5, and 6
+alike. All three complete snapshots were fetched within ~20 minutes of each other on the same day
+(2026-07-31), so this is not evidence concentration is *stable* — it's the same static catalog
+photographed three times. A real growth/decline answer needs snapshots separated by days, which the
+daily-snapshot item (Backlog #1, still not running) is the prerequisite for.
+
+**Does builder-code presence correlate with traffic? Tested, not asserted — and the answer is a
+qualified no.** `l30d_total_calls`, snapshot 6:
+- With code (n=2,667 non-null): median **2**, mean **57.99**
+- Without code (n=12,840 non-null): median **1.0**, mean **17.01**
+- With code, `bc_qobj93ib` (16 routes, 120,890 calls — one host, `x402.twit.sh`) stripped out:
+  n=2,651, median **2**, mean **12.74** — mean *drops below* the no-code population once the single
+  biggest outlier is removed.
+- **Conclusion, stated precisely: the median difference (2 vs 1) is real and small — builder-coded
+  routes see marginally more traffic. The mean difference is not a general property of carrying a
+  builder code; it is dominated by one host's call volume.** Do not report "builder-coded routes
+  get 3x traffic" or similar — re-confirms and tightens the prior note's finding rather than
+  repeating it uncritically.
+
+**Does it correlate with curated status? Re-confirmed, still zero overlap.** 122 curated routes
+total, **0** carry a builder code, at snapshot 6. Disjoint sets, as before.
+
+**Host collapse re-verified for the top code.** `bc_gxy6qn5p`'s 144 raw hosts collapse to **2**
+registrable domains by a simple last-two-labels heuristic: `theaslangroupllc.com` (77 of the 144
+raw subdomains under it) and `vercel.app` (67 raw hosts, i.e. deploy-preview subdomains, which
+`vercel.app` being a public suffix means each preview looks like a distinct "host" but is not a
+distinct operator). Matches the prior note's manual finding via an independent, scripted method
+this time rather than eyeballing the list.
+
+**Net answer to "who are the other holders":** past the top 2 (one multi-site operator on
+`bc_gxy6qn5p`, one single-host operator on `bc_b4aw4uzd`), the other 42 codes are each a single
+operator with 1–3 hosts and under 5% route share apiece — no second concentrated cluster exists.
+Builder-code adoption today reads as "two operators who happened to registered/apply codes at
+scale, plus ~40 small independent single-site adopters," not as a broadly-adopted developer
+convention yet.
+
+**Scripts used for this section:** ad hoc, run read-only against production
+(`file:x402_index.db?mode=ro`), not committed to the repo — logic is fully reproduced in the tables
+and numbers above; re-run is cheap if anyone wants to reverify (`catalog_resource` +
+`catalog_resource_full` + `referral_event`, no paid calls, no writes).

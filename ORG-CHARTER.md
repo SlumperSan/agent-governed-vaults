@@ -230,6 +230,33 @@ genuine strategy fork. Batch these — never one at a time.
 
 ---
 
+## 5a. SPRINT CADENCE — sprints chain, they do not stop
+
+Michael, 2026-07-31: *"after you finish a sprint (ideation, research and planning, and execution) then
+do another sprint to continue to build on the next phase."*
+
+**A sprint is three stages, run as one cycle:**
+
+| Stage | What happens |
+|---|---|
+| **Ideation** | What is worth doing next, and what do we not yet know? Read the backlog, the lessons, and what the last sprint surfaced. |
+| **Research & Planning** | Establish what is true before building on it. Verify, price-check, design. Every headline number gets a second independent method here — not after. |
+| **Execution** | Build it, run it, verify by running. Council scores. Harvest into the backlog and lessons. |
+
+**THE SPRINT DOES NOT END — IT HANDS OFF.** The moment a sprint's harvest is committed, the next
+sprint begins on the next phase. No pause, no waiting for instruction, no "what would you like next?".
+The harvest step itself must name the next sprint's focus, so the following cycle starts with a target
+already chosen.
+
+**Each sprint advances the phase.** Sprints are the engine; `STRATEGY.md`'s three phases are the track.
+A sprint that does not move a phase forward — or close a gap blocking one — was the wrong sprint.
+
+**A sprint may end early only if:** every remaining item is genuinely blocked on Michael (money,
+accounts, his name, publishing). Even then, do not idle — §5b applies: hunt for defects, strengthen a
+single-method number, or deepen a dataset. Blocked is not the same as finished.
+
+**Sprint history lives in `ORG-BACKLOG.md`'s Done section**, with the real outcome, not the intent.
+
 ## 5b. NEVER IDLE — the standing order
 
 Michael, 2026-07-31: *"If nothing is being worked on, start something."*

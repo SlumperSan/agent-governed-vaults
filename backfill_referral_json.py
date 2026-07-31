@@ -85,7 +85,19 @@ def main() -> int:
     cur.execute("SELECT COUNT(*) FROM catalog_resource WHERE referral_json IS NOT NULL")
     print(f"[referral_json] already set: {cur.fetchone()[0]}")
 
-    cur.execute("SELECT id, raw_json FROM catalog_resource WHERE referral_json IS NULL AND raw_json IS NOT NULL")
+    # SCHEMA DRIFT (caught 2026-07-31, post-prune re-verification): raw_json was
+    # deduped into raw_blob by prune.py. catalog_resource.raw_json is now ''
+    # (empty string, NOT NULL) for every row in production — confirmed via
+    # `SELECT COUNT(*) WHERE raw_json = ''` = all 47,570 rows. Reading raw_json
+    # directly here would silently find ZERO backfillable rows (json.loads('')
+    # raises, extract_bc catches it and returns None) with no error at all —
+    # exactly the "silent failure that fakes success" pattern in ORG-LESSONS.
+    # catalog_resource_full re-joins raw_blob via raw_sha; read raw_json_full
+    # from there instead.
+    cur.execute("""
+        SELECT id, raw_json_full FROM catalog_resource_full
+        WHERE referral_json IS NULL AND raw_json_full IS NOT NULL AND raw_json_full != ''
+    """)
     rows = cur.fetchall()
     updates = []
     for rid, raw in rows:
@@ -117,9 +129,9 @@ def main() -> int:
         # "first observed" source would anchor observed_at to an unreliable
         # fetch instead of the earliest trustworthy one.
         cur.execute("""
-            SELECT cr.resource_url, cr.host, cr.raw_json, cs.fetched_at
-            FROM catalog_resource cr JOIN catalog_snapshot cs ON cr.snapshot_id = cs.id
-            WHERE cr.raw_json IS NOT NULL AND cs.is_complete = 1
+            SELECT crf.resource_url, crf.host, crf.raw_json_full, cs.fetched_at
+            FROM catalog_resource_full crf JOIN catalog_snapshot cs ON crf.snapshot_id = cs.id
+            WHERE crf.raw_json_full IS NOT NULL AND crf.raw_json_full != '' AND cs.is_complete = 1
             ORDER BY cs.id ASC
         """)
         seen_this_run = set()
