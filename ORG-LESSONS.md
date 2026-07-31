@@ -293,12 +293,18 @@ every consumer accesses rows (name-keyed vs. positional) and a grep proving it, 
 of the query. A byte-identical query is necessary evidence, not sufficient evidence, for "no caller
 needs to change."
 
-### The daily-snapshot task fired for real, unattended, while a stale backlog cell still called it blocked
-`STRATEGY.md` Phase 1 still read "still open — blocked pending Michael's go-ahead" for the daily
-snapshot, and `ORG-BACKLOG.md` #1 already said `SHIPPED`, and the live scheduler (`list_scheduled_tasks`)
-showed `lastRunAt` for `x402-daily-snapshot` at 2026-07-31T08:08 UTC — a real automatic fire, matching
-the local-time cluster of this sprint's file mtimes almost to the minute. Two documents disagreed with
-each other and with the live system at the same time; the live system was the only one that was right.
-**Do instead:** the "verify against the live system, never a backlog cell" rule applies to STRATEGY.md's
-prose exactly as much as to ORG-BACKLOG.md's status column — a stale sentence in a strategy doc is the
-same failure as a stale table cell, just harder to grep for because it isn't in a status column.
+### `lastRunAt` is a dispatch record, not a completion record — I made this exact mistake while writing it up
+While recording this sprint I found `STRATEGY.md` still called the daily snapshot "blocked" and
+corrected it using `list_scheduled_tasks`' `lastRunAt` (2026-07-31T08:08 UTC) as proof it had "fired
+unattended for real." That was itself the error, caught by the advisor before it shipped: `lastRunAt`
+only proves the scheduler *dispatched* the task, not that its steps executed. Checked against the
+actual artifact the task is supposed to produce — `SELECT MAX(id) FROM catalog_snapshot` — the answer
+was still 6 (fetched 03:07 UTC, *before* the claimed 03:08 fire), no snapshot 7 exists, and nothing in
+`logs/` postdates 03:01 local. No orphaned process either (checked, clean). The task fired-or-was-due
+and produced nothing.
+**Do instead:** for any scheduled/cron task, "proof it ran" means the artifact it exists to produce
+(a new row, a new file, a new commit) — never the scheduler's own bookkeeping field about itself.
+This is the same rule as "verify against the live system, never a backlog cell," one level deeper:
+the live system includes tools that report on their own state (`list_scheduled_tasks`,
+`Get-ScheduledTask`), and those reports need their own downstream check, because a dispatch log and a
+completion log are different claims that happen to live in the same-looking timestamp field.
