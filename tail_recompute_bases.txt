@@ -1,0 +1,15 @@
+=== Basis A: vendor $0.0169/tx x implied mega tx count (matches original 6x-claim method) ===
+implied mega $-share = 0.22346
+tail_dollars_implied = 552248.96
+implied_rate = 0.182954
+ratio_implied_over_measured = 1.235957
+
+=== Basis B: task-specified 74.37% Coinbase-window on-chain proxy ===
+mega $-share used = 0.7437
+tail_dollars_implied = 182271.85
+implied_rate = 0.060384
+ratio_implied_over_measured = 0.407932
+
+=== THIS WINDOW mega-merchant check (third data point) ===
+n= 1086 mean= 0.08773 dollar_share= 0.5708 tx_share= 0.6917
+tail: n= 484 mean= 0.148026

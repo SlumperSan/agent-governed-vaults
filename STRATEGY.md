@@ -73,9 +73,31 @@ headline "catalog isn't the market" number going forward — replaces the looser
 figure above as the primary cited coverage stat (the two are not contradictory: different
 denominators, all-facilitator vs. Coinbase-only — but this one is fresher and matched-window).
 
+**Non-mega tail, sprint 7 update (2026-07-31):** the ~6× gap below was re-tested mean-to-mean with a
+fresh disjoint on-chain sample (`notes-tail-reconciliation.md`, `onchain_tail_reconcile.py` — window
+blocks 49339501-49340000, confirmed non-overlapping with all four prior windows, positive control
+4/4 PASS, full-population decode excluding the mega-merchant, n=484 tail tx, mean **$0.148026/tx**).
+**Verdict depends entirely on which mega-merchant dollar-share estimate is used as the implied-tail
+denominator — the two available estimates disagree by >3×, and this task did not (and could not,
+from one window) settle which is right:**
+- Using the **same method the original 6× claim used** (vendor $0.0169/tx × mega tx count, implying
+  a 22.3% mega dollar share): implied tail rate $0.18295/tx, ratio implied/measured = **1.24×** —
+  the gap is **not reproduced** this window, effectively closed within noise.
+- Using the **74.37% Coinbase-window on-chain proxy** (sprint 6's figure) instead: implied tail rate
+  $0.06038/tx, ratio = **0.41×** — direction **reverses**, measured now ~2.4× above implied.
+- A third reading, from this window itself: mega dollar share here is **57.1%** — yet another
+  distinct value, confirming mega share is genuinely window-dependent, not a stable constant.
+
+**Conclusion: the tail gap was never really about the tail — it inherits all of the unresolved
+uncertainty in the mega-merchant's true ecosystem-wide dollar share (22.3% vs 74.37% vs 57.1%,
+three readings, no convergence).** Additionally the $0.148026/tx tail mean is itself fragile: top 5
+of 484 tail tx are 65% of the tail's dollar mass (one $15 tx alone). Do not quote either ratio, or
+the tail mean, as settled. Still open, more precisely bounded: which mega-share estimate (if any)
+holds up, and whether the tail figure follows once that does.
+
 **Honest gaps still open, do not round these away:** the non-mega-merchant tail measured roughly 6×
 below what x402scan's own aggregate implies for it if the mega-merchant's share is held fixed — flagged,
-unresolved, not folded into any headline. Extrapolating the on-chain per-tx figures across
+unresolved as of sprint 6, revisited sprint 7 above (gap reversed direction, still not closed). Extrapolating the on-chain per-tx figures across
 Intel's bridged 30-day Coinbase transaction-count range gives **$132,393–$394,355 on the mean basis
 (valid, quotable)**. The median basis of the same table (**$24,360–$32,239**, sometimes rounded to
 "$24K") is **INVALID — median × count discards the tail mass of a right-skewed distribution and does

@@ -436,3 +436,28 @@ ignore rule did its job.
 **Do instead:** a fix written for one specific observed filename (`bak-*`) should be widened to match
 the general shape of the thing it's guarding against (`bak*` or `bak[.-]*`), not just the one string
 that happened to break last time. Filed as Backlog #20.
+
+### A causal claim that "matches" a known failure mode, asserted without checking the one field that would falsify it
+Intel's Sprint 7 churn validation (Backlog #9) correctly proved a 783-route drop was NOT real churn
+(29/30 sampled "dead" routes still answered live 402s). It then attributed the cause to the
+already-documented `offset`/`pagination.total` drift bug, calling the observed swing "exactly what
+that failure mode predicts." Nobody checked the one field that tests it: `catalog_snapshot.total_reported`
+vs. `rows_stored` for the affected snapshot. Checked live on recording review, they are exactly equal
+(14795/14795) — no drift, no overshoot. Worse, the known bug's actual fingerprint is MORE stored rows
+than real (re-serving the last page), and the observed event was a DECREASE — the wrong direction
+entirely. The plausible-sounding theory was never live-tested against the one number that could have
+confirmed or killed it in a single query.
+**Do instead:** when a finding "matches a known failure mode," identify the one field/query that would
+discriminate between that mechanism and the alternatives, and run it before writing the causal sentence
+in the Conclusion — a directionally-plausible story is not evidence, and a single query often settles it
+either way.
+
+### A correctly-blocked task can still make zero-risk forward progress instead of producing nothing
+Ecosystem's Sprint 7 gate-check (Backlog #12, blocked on Data's #19) verified the block condition
+correctly and stopped exactly as instructed — the right call, not a defect in judgment. But it produced
+literally zero artifacts: no ingestion-code skeleton drafted, no re-read of its own ingestion plan doc,
+nothing that would save time once the gate cleared. Both of those are zero-DB-risk, zero-side-effect
+activities that don't require the blocking commit to exist.
+**Do instead:** "blocked, stopping here" and "blocked, so I made what forward progress I safely could"
+are different outcomes for the same gate result — prefer the second whenever the forward-progress
+activity touches nothing the blocker actually guards.
