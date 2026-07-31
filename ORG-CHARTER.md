@@ -230,6 +230,23 @@ genuine strategy fork. Batch these — never one at a time.
 
 ---
 
+## 5b. NEVER IDLE — the standing order
+
+Michael, 2026-07-31: *"If nothing is being worked on, start something."*
+Earlier, 2026-07-21: *"I don't like idle moments where nothing is being created of value."*
+
+**Idle time is a defect, not a rest state.** Any gap — waiting on an approval, between cycles, after a
+report — is production time. If nothing is queued:
+
+1. Take the top unblocked item from `ORG-BACKLOG.md`.
+2. If the backlog is genuinely empty, hunt: audit what exists for defects, improve a weak area,
+   strengthen a number that rests on a single method, or deepen a dataset.
+3. Never wait on a Michael decision when unblocked work exists — his queue and ours run in parallel.
+4. Never wait on a paid call. Almost everything here is free: on-chain RPC, the CDP catalog, unpaid
+   probes, and every line of analysis over data we already hold.
+
+**Do not report "waiting" as a status.** Report what got started instead.
+
 ## 6. Files
 
 | File | Role |
