@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+logs/
+*.log
+# Snapshot DB: regenerable and grows fast. Back this up separately, not in git.
+x402_index.db
+.env
