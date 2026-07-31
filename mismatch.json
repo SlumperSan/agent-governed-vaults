@@ -11,9 +11,17 @@
     "overcharge_count": 496,
     "undercharge_count": 225,
     "critical_count": 13,
+    "high_count": 483,
+    "low_count": 225,
     "danger_abs_usd_threshold": 100.0,
     "danger_ratio_threshold": 100.0,
-    "generated_at": "2026-07-31T06:12:26.053535+00:00"
+    "severity_definition": {
+      "CRITICAL": "overcharge AND (live_price_usd > 100 OR ratio >= 100x OR catalog claimed the route free)",
+      "HIGH": "overcharge, below the CRITICAL threshold",
+      "LOW": "undercharge (never dangerous to a paying agent; never ranked above any overcharge regardless of ratio)"
+    },
+    "ranked_by": "severity tier first, then absolute dollar exposure per call (NOT ratio -- see build_leaderboard()) descending",
+    "generated_at": "2026-07-31T07:57:38.633585+00:00"
   },
   "leaderboard": [
     {

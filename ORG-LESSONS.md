@@ -229,6 +229,20 @@ X* end-to-end (every place it's produced, not just the one place that was edited
 done. A one-line `.count()` on the actual rendered output would have caught this in seconds — it did,
 this cycle, on review.
 
+### A backlog cell said "shipped"; the live schema said otherwise — same failure pattern, caught before it bit
+Backlog #11 ("fix `v_builder_codes`/`v_latest_catalog` to filter `is_complete`") read `shipped`. The
+live `sqlite_master.sql` for `v_latest_catalog` had **no `is_complete` filter at all** — what had
+actually shipped was a Python-side workaround inside `api/db.py` (`LATEST_CATALOG_CTE`, its own
+reimplementation of the view's join with the filter added), built for the API/MCP server
+specifically. `build_site.py`, `report.py`, and `x402_common.py`'s own `v_builder_codes` were still
+reading the unfixed view the whole time — a fix that lived in one caller, not at the source, looked
+identical to "done" from a backlog cell.
+**Do instead (this is the SAME lesson already at the top of this file, reapplied):** the brief's own
+instruction to "verify against the live schema before assuming it is or isn't fixed" is what caught
+this — `PRAGMA`/`sqlite_master.sql` on the real file, not the backlog table. Generalizing further:
+when a fix is described as "worked around in module X", check whether every OTHER consumer of the
+same underlying object was fixed too, not just the one that prompted the workaround.
+
 ### PRODUCT — Backlog #16, price-mismatch contradiction — 4/10 (2026-07-31, sprint 3)
 **Firing APPROVED by the orchestrator.** Failure channel checked first: the agent was not blocked and
 did not error — it ran, and shipped a fix that does not fix the thing.
@@ -245,3 +259,46 @@ detail-page description text; and no completion claim is acceptable without past
 `count('badge badge-warn')` equal to 721.
 **Generalised into a rule:** when fixing a COUNT, grep the render path and count the rendered artefacts.
 Never trust that changing the number that gets printed changed everything that gets printed.
+
+## Sprint 4 additions (2026-07-31)
+
+### Backlog #16, take three — the fix held, but the department's own proof was still thinner than the auditor's
+Product-rework shipped the real fix this cycle (`mismatch_badge(price_mismatch, is_templated)`,
+mirroring `alive_badge`, both call sites updated) and it was independently reverified: `site/index.html`'s
+`badge badge-warn` count is exactly 721, matching the headline. 9.2/10 ACCEPT — the fix is real. But
+two gaps in the department's *own* evidence had to be closed by the Council, not by the department:
+(1) it never cross-checked 721 against the DB's raw `price_mismatch` count itself — the Council did,
+and it matched exactly, but that check should have shipped as part of the report, not been left for
+review to discover; (2) it never proactively identified or tested the 5 templated+`price_mismatch=1`
+rows as the adversarial edge case its own fix was supposed to handle — the Council picked one
+(`api.influship.com` `:var1`) and confirmed both the badge suppression and the meta-description guard
+held, but that was the Council's proof, not the department's.
+**Do instead:** "fix a count discrepancy between two artefacts" means the report ships with (a) a
+direct comparison against the underlying DB truth, not just the two derived artefacts agreeing with
+each other, and (b) the department naming and testing its own worst-case row, not waiting for review
+to find one. Two artefacts agreeing is not evidence they're both right unless something outside both
+of them was checked.
+
+### A department proved queries were byte-identical and never checked how callers actually read the rows
+Data's source-migration report (Backlog #17) proved 8 real codebase queries hashed identical
+before/after, including the one that changed (`v_latest_catalog`, now carrying a new `source` column).
+What it did not check itself: whether any consumer of those rows accesses them by **positional index**
+(`row[3]`) rather than by name — a new column inserted anywhere but the end silently shifts every
+downstream positional read, and a byte-identical query hash says nothing about that, because the hash
+is over the query text/columns, not over how the caller unpacks the result. The Council had to
+independently verify `row_factory = sqlite3.Row` is set in `api/db.py:58`, `build_site.py:226`, and
+`x402_common.py:559` before the "no consumer needs an edit" claim could be trusted.
+**Do instead:** any schema change that adds/reorders columns ships with an explicit statement of how
+every consumer accesses rows (name-keyed vs. positional) and a grep proving it, not just a hash-diff
+of the query. A byte-identical query is necessary evidence, not sufficient evidence, for "no caller
+needs to change."
+
+### The daily-snapshot task fired for real, unattended, while a stale backlog cell still called it blocked
+`STRATEGY.md` Phase 1 still read "still open — blocked pending Michael's go-ahead" for the daily
+snapshot, and `ORG-BACKLOG.md` #1 already said `SHIPPED`, and the live scheduler (`list_scheduled_tasks`)
+showed `lastRunAt` for `x402-daily-snapshot` at 2026-07-31T08:08 UTC — a real automatic fire, matching
+the local-time cluster of this sprint's file mtimes almost to the minute. Two documents disagreed with
+each other and with the live system at the same time; the live system was the only one that was right.
+**Do instead:** the "verify against the live system, never a backlog cell" rule applies to STRATEGY.md's
+prose exactly as much as to ORG-BACKLOG.md's status column — a stale sentence in a strategy doc is the
+same failure as a stale table cell, just harder to grep for because it isn't in a status column.

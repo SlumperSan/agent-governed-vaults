@@ -359,6 +359,15 @@ CREATE TABLE IF NOT EXISTS referral_event (
 
 -- Latest catalog state per resource. `v_latest_catalog` is the "current market"
 -- table an API's /resources endpoint would page over.
+--
+-- NOTE: the canonical, up-to-date definition of this view lives in
+-- _apply_view_fixes() below, not here. It is DROPPED and re-CREATEd there on
+-- every connect() (metadata-only, cheap) so an existing DB's stored view text
+-- can actually change -- `CREATE VIEW IF NOT EXISTS` cannot fix a view that
+-- already exists with an old definition. The line below only bootstraps a
+-- BRAND NEW empty DB before _apply_view_fixes runs; SQLite resolves view
+-- references lazily (a CREATE VIEW does not require its referenced objects to
+-- exist yet), so this placeholder never actually serves a query in practice.
 CREATE VIEW IF NOT EXISTS v_latest_catalog AS
 SELECT c.*
 FROM catalog_resource c
@@ -467,6 +476,25 @@ MIGRATIONS = [
     ("catalog_resource", "extension_names_json", "TEXT"),
     ("catalog_resource", "is_deprecated", "INTEGER"),
     ("catalog_resource", "has_discount_ext", "INTEGER"),
+    # --- Multi-source dimension (ORG-BACKLOG.md #Phase-2 "schema migration",
+    # design in notes-cross-facilitator.md). Every row in this DB today came
+    # from exactly one catalog (CDP/Coinbase), so DEFAULT 'cdp' is not a guess
+    # backfilled after the fact -- it is the true value for every existing row,
+    # and SQLite applies a constant DEFAULT to old rows without rewriting them
+    # (metadata-only ALTER), so this is behavior-neutral on data that already
+    # exists. Two tables get it, not one, because notes-cross-facilitator.md
+    # itself contradicts its own placement -- section 1 puts `source` on
+    # catalog_snapshot only, but section 4.3 specifies an index
+    # ON catalog_resource(source, host), which is impossible without the
+    # column existing there too. Resolved by denormalizing onto both:
+    # catalog_snapshot.source describes "which catalog this fetch run hit",
+    # catalog_resource.source is a fast copy of its own snapshot's source so
+    # per-resource queries (the index, v_latest_catalog's partition key) never
+    # need a join back to catalog_snapshot just to know provenance. A future
+    # non-CDP ingester (Ecosystem dept) sets both explicitly per fetch run;
+    # nothing in this codebase does that yet.
+    ("catalog_snapshot", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
+    ("catalog_resource", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
 ]
 
 
@@ -475,6 +503,54 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # Indexes that reference migration-added columns must run AFTER the loop
+    # above, not inside SCHEMA -- on a pre-existing DB, `source` does not exist
+    # until the ALTER TABLE runs. Per notes-cross-facilitator.md #4.3: "which
+    # sources know about host X" becomes a range scan instead of a full table
+    # scan once non-CDP ingestion adds real row volume.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_catalog_resource_source_host "
+        "ON catalog_resource(source, host)"
+    )
+    conn.commit()
+
+
+# View text that must be able to CHANGE on a database that already exists,
+# unlike every other view/table above which is created once with
+# `IF NOT EXISTS` and assumed stable forever. `CREATE VIEW IF NOT EXISTS`
+# cannot alter a view that is already present with an older definition, so a
+# fix here would silently never apply to any DB file older than the fix
+# itself -- exactly the trap that produced ORG-BACKLOG #11 in the first
+# place (the bug was "fixed" once in api/db.py's Python CTE, but the actual
+# stored view was untouched, so build_site.py/report.py/x402_common.py's own
+# LATE_VIEWS consumers of v_latest_catalog stayed broken).
+#
+# DROP VIEW + CREATE VIEW is metadata-only (a view has no storage of its own),
+# so running this unconditionally on every connect() is cheap and safe, and
+# it is what makes the fix idempotent and re-runnable: run it once, twice, a
+# hundred times, the schema converges to the same text every time.
+def _apply_view_fixes(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP VIEW IF EXISTS v_latest_catalog")
+    conn.execute("""
+        CREATE VIEW v_latest_catalog AS
+        SELECT c.*
+        FROM catalog_resource c
+        JOIN (
+            SELECT cr.source, cr.resource_url, MAX(cr.snapshot_id) AS max_snapshot_id
+            FROM catalog_resource cr
+            JOIN catalog_snapshot cs ON cs.id = cr.snapshot_id
+            WHERE cs.is_complete = 1
+            GROUP BY cr.source, cr.resource_url
+        ) m ON c.source = m.source AND c.resource_url = m.resource_url
+           AND c.snapshot_id = m.max_snapshot_id
+    """)
+    # v_builder_codes is deliberately NOT redefined here. It is a live,
+    # non-materialized view whose SELECT reads FROM v_latest_catalog by name
+    # (see LATE_VIEWS below) -- SQLite re-resolves that reference on every
+    # query, so correcting v_latest_catalog above corrects what
+    # v_builder_codes returns with zero risk of the two definitions drifting
+    # apart. Verified: see notes-source-migration.md for the before/after
+    # query diff proving this.
     conn.commit()
 
 
@@ -488,6 +564,9 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     # time, so a stale view definition fails only at SELECT — the confusing
     # kind of failure that shows up days later in a report.
     conn.executescript(LATE_VIEWS)
+    # Runs last and unconditionally: fixes view TEXT on a pre-existing DB,
+    # which the IF-NOT-EXISTS statements above cannot do.
+    _apply_view_fixes(conn)
     return conn
 
 

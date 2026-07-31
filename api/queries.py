@@ -4,9 +4,11 @@ routes (main.py) and the MCP server (mcp_server.py). Neither wrapper duplicates 
 both call into this module so the is_complete bug fix (see db.py) is fixed in one place.
 """
 from __future__ import annotations
+import json
+from pathlib import Path
 from typing import Optional
 
-from db import conn_scope, rows_to_dicts, LATEST_CATALOG_CTE, LATEST_CATALOG_WITH_PROBE_CTE
+from db import conn_scope, rows_to_dicts, LATEST_CATALOG_CTE, LATEST_CATALOG_WITH_PROBE_CTE, DB_PATH
 
 
 def _paginate(limit: int, offset: int, max_limit: int) -> tuple[int, int]:
@@ -179,58 +181,86 @@ def changes(
     return {"total": total, "limit": limit, "offset": offset, "results": rows_to_dicts(rows)}
 
 
+# The productized severity-tiered feed (mismatch_report.py's output) is the SINGLE
+# source of truth for mismatch severity. This endpoint used to run its own independent
+# ratio-only SQL severity calc (critical/high/medium/low purely by max(ratio,1/ratio)),
+# which is exactly the "two divergent numbers for the same concept" bug class that
+# ORG-BACKLOG #16 already burned this org on (index.html vs mismatch.html disagreeing
+# on a mismatch COUNT). We are not doing that again for severity: one calculation
+# (classify()/build_leaderboard() in mismatch_report.py, at the repo root), every
+# consumer -- this API, the MCP server, the static site -- reads the same file.
+# Consequence worth stating plainly: severity values changed shape (was lowercase
+# critical/high/medium/low ranked by ratio; now CRITICAL/HIGH/LOW ranked by danger --
+# dollar exposure, direction-aware, matching mismatch_report.py's classify()). This is
+# an intentional breaking change to a pre-1.0 (version 0.1.0) API, not an oversight.
+MISMATCH_JSON_PATH = DB_PATH.parent / "mismatch.json"
+_mismatch_feed_cache: dict = {"mtime": None, "data": None}
+
+
+def _load_mismatch_feed() -> dict:
+    """Load mismatch.json, re-reading only when its mtime changes (a new snapshot's
+    mismatch_report.py run regenerates the file in place). Cheap on a cache hit;
+    avoids re-parsing a several-hundred-KB JSON file on every request. Missing file
+    degrades to an empty feed rather than a 500 -- e.g. right after a fresh checkout
+    before the first report has ever run."""
+    try:
+        mtime = MISMATCH_JSON_PATH.stat().st_mtime
+    except FileNotFoundError:
+        return {"meta": {}, "leaderboard": [], "concentration": {}}
+    if _mismatch_feed_cache["mtime"] != mtime:
+        with open(MISMATCH_JSON_PATH, encoding="utf-8") as f:
+            _mismatch_feed_cache["data"] = json.load(f)
+        _mismatch_feed_cache["mtime"] = mtime
+    return _mismatch_feed_cache["data"]
+
+
 def mismatches(
     min_ratio: Optional[float] = None,
     host: Optional[str] = None,
+    severity: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
+    """The safety signal, served directly from the severity-tiered feed on disk
+    (mismatch.json) -- not recomputed here. `severity` filters to CRITICAL|HIGH|LOW
+    (case-insensitive). Rows arrive from build_leaderboard() already ordered by
+    (severity tier, then absolute dollar exposure descending); filtering with a list
+    comprehension preserves that order, so no re-sort is needed here."""
     limit, offset = _paginate(limit, offset, 2000)
-    where = ["lc.catalog_price_usd IS NOT NULL", "lp.probed_price_usd IS NOT NULL",
-             "ABS(lp.probed_price_usd - lc.catalog_price_usd) >= 1e-9"]
-    params: dict = {}
+    feed = _load_mismatch_feed()
+    rows = feed.get("leaderboard", [])
+
     if host:
-        where.append("lc.host = :host")
-        params["host"] = host
-    where_sql = "WHERE " + " AND ".join(where)
-
-    sql = (
-        LATEST_CATALOG_WITH_PROBE_CTE
-        + f"""
-        SELECT lc.resource_url, lc.host, lc.service_name,
-               lc.catalog_price_usd, lp.probed_price_usd,
-               (lp.probed_price_usd / lc.catalog_price_usd) AS price_ratio,
-               CASE
-                 WHEN lp.probed_price_usd / lc.catalog_price_usd >= 100
-                   OR lc.catalog_price_usd / NULLIF(lp.probed_price_usd, 0) >= 100 THEN 'critical'
-                 WHEN lp.probed_price_usd / lc.catalog_price_usd >= 10
-                   OR lc.catalog_price_usd / NULLIF(lp.probed_price_usd, 0) >= 10 THEN 'high'
-                 WHEN lp.probed_price_usd / lc.catalog_price_usd >= 2
-                   OR lc.catalog_price_usd / NULLIF(lp.probed_price_usd, 0) >= 2 THEN 'medium'
-                 ELSE 'low'
-               END AS severity,
-               lp.probed_at, lc.l30d_total_calls, lc.est_gmv_30d_usd
-        FROM latest_catalog lc
-        JOIN latest_probe lp ON lp.resource_url = lc.resource_url
-        {where_sql}
-        """
-    )
-    count_sql = LATEST_CATALOG_WITH_PROBE_CTE + (
-        "SELECT COUNT(*) AS n FROM latest_catalog lc JOIN latest_probe lp "
-        f"ON lp.resource_url = lc.resource_url {where_sql}"
-    )
-    with conn_scope() as conn:
-        total = conn.execute(count_sql, params).fetchone()["n"]
-        rows = conn.execute(
-            sql + " ORDER BY ABS(LOG(price_ratio)) DESC LIMIT :limit OFFSET :offset",
-            dict(params, limit=limit, offset=offset),
-        ).fetchall()
-
-    filtered = rows_to_dicts(rows)
+        rows = [r for r in rows if r["host"] == host]
+    if severity:
+        sev = severity.upper()
+        rows = [r for r in rows if r["severity"] == sev]
     if min_ratio is not None:
-        filtered = [r for r in filtered if r["price_ratio"] is not None and
-                    max(r["price_ratio"], 1 / r["price_ratio"]) >= min_ratio]
-    return {"total": total, "limit": limit, "offset": offset, "results": filtered}
+        # ratio can be None (catalog claimed the route free -- undefined ratio) or exactly
+        # 0.0 (live price probed as free while catalog charged something -- an undercharge
+        # to $0, distinct from "catalog free"). Both must be excluded before 1/ratio, or a
+        # 0.0 ratio raises ZeroDivisionError -- caught in verification, not hypothetical.
+        rows = [r for r in rows if r["ratio"] is not None and r["ratio"] > 0 and
+                max(r["ratio"], 1 / r["ratio"]) >= min_ratio]
+
+    total = len(rows)
+    page = rows[offset:offset + limit]
+    meta = feed.get("meta") or {}
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "feed_generated_at": meta.get("generated_at"),
+        "snapshot_id": meta.get("snapshot_id"),
+        "run_id": meta.get("run_id"),
+        "severity_counts": {
+            "critical": meta.get("critical_count"),
+            "high": meta.get("high_count"),
+            "low": meta.get("low_count"),
+        },
+        "severity_definition": meta.get("severity_definition"),
+        "results": page,
+    }
 
 
 def builder_codes(limit: int = 100, offset: int = 0) -> dict:

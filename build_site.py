@@ -212,7 +212,9 @@ def alive_badge(is_valid_402, is_templated, http_status, transport_error_class):
     return f'<span class="badge badge-danger" title="{esc(detail)}">no valid 402 ({esc(detail)})</span>'
 
 
-def mismatch_badge(price_mismatch):
+def mismatch_badge(price_mismatch, is_templated):
+    if is_templated:
+        return ""
     if price_mismatch:
         return '<span class="badge badge-warn">price mismatch</span>'
     return ""
@@ -285,7 +287,7 @@ def main():
         catalog_price = money(r["catalog_price_usd"], r["decimals_unknown"])
         probed_price = money(r["probed_price_usd"])
         alive = alive_badge(r["is_valid_402"], r["is_templated"], r["http_status"], r["transport_error_class"])
-        mismatch = mismatch_badge(r["price_mismatch"])
+        mismatch = mismatch_badge(r["price_mismatch"], r["is_templated"])
 
         violations = []
         if r["spec_violations"]:
@@ -348,7 +350,8 @@ They are stored separately and never merged. See <a href="{root}methodology.html
             f.write(page(
                 title=f"{r['service_name'] or r['host']} \u2014 {r['url_path']} | 402cap",
                 description=f"x402 route {r['host']}{r['url_path']}: catalog price {catalog_price}, "
-                            f"probed price {probed_price}, {'price mismatch detected' if r['price_mismatch'] else 'no mismatch detected'}.",
+                            f"probed price {probed_price}, "
+                            f"{'not tested (templated route)' if r['is_templated'] else ('price mismatch detected' if r['price_mismatch'] else 'no mismatch detected')}.",
                 body=body, root=root, generated_at=generated_at, snapshot_id=snapshot_id, run_id=run_id,
             ))
 
@@ -367,7 +370,7 @@ They are stored separately and never merged. See <a href="{root}methodology.html
             f'<td><a href="{esc(r["_rel_path"])}">{esc(r["url_path"])}</a></td>'
             f'<td data-sort="{catalog_price if catalog_price is not None else -1}">{esc(money(catalog_price, r["decimals_unknown"])) if catalog_price is not None or r["decimals_unknown"] else "&mdash;"}</td>'
             f'<td data-sort="{probed_price if probed_price is not None else -1}">{esc(money(probed_price)) if probed_price is not None else "&mdash;"}</td>'
-            f'<td>{mismatch_badge(r["price_mismatch"])}</td>'
+            f'<td>{mismatch_badge(r["price_mismatch"], r["is_templated"])}</td>'
             f'<td data-alive="{alive_state}">{alive_badge(r["is_valid_402"], r["is_templated"], r["http_status"], r["transport_error_class"])}</td>'
             f'<td data-sort="{r["latency_ms"] if r["latency_ms"] is not None else -1}">{fmt_num(r["latency_ms"])}</td>'
             f'<td data-sort="{r["l30d_total_calls"] if r["l30d_total_calls"] is not None else -1}">{fmt_num(r["l30d_total_calls"])}</td>'
@@ -625,6 +628,12 @@ roughly {cov_tx_pct:.0f}% of real x402 transactions and {cov_gmv_pct:.0f}% of re
 same 30-day window.</strong> More than 9 in 10 real x402 transactions, and more than 90&nbsp;cents of every
 real dollar moved, never appear anywhere in the catalog this whole site is otherwise built from.
 </div>
+
+<p class="small"><strong>Why this differs from the ~6&ndash;8% figure elsewhere in our notes:</strong>
+that earlier number compared CDP's catalog against <em>Coinbase's own facilitator settlement volume only</em>;
+the {cov_tx_pct:.1f}% / {cov_gmv_pct:.1f}% here compares it against the <em>entire real x402 economy across
+all facilitators</em>, a larger denominator. Different denominators, not contradictory &mdash; both say the
+same thing: CDP's catalog sees a small slice of real activity, whichever base you measure it against.</p>
 
 <h2>The numbers, side by side</h2>
 <table>

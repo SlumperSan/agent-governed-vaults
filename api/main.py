@@ -96,10 +96,13 @@ def changes(
 def mismatches(
     min_ratio: Optional[float] = Query(None, description="Only mismatches with max(ratio,1/ratio) >= this"),
     host: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None, description="CRITICAL|HIGH|LOW (case-insensitive) -- danger tier, not ratio tier"),
     limit: int = Query(100, ge=1, le=2000),
     offset: int = Query(0, ge=0),
 ):
-    return q.mismatches(min_ratio=min_ratio, host=host, limit=limit, offset=offset)
+    """The wedge safety signal. Served directly from mismatch_report.py's severity-tiered
+    feed (regenerated on every snapshot), not recomputed here -- see queries.py."""
+    return q.mismatches(min_ratio=min_ratio, host=host, severity=severity, limit=limit, offset=offset)
 
 
 @app.get("/builder-codes")

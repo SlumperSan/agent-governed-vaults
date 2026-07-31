@@ -152,7 +152,7 @@ unverified claim. We already made that mistake once and nearly built a strategy 
 | Chain | Extend to Solana and Polygon (untested; Base-only so far) | Multi-chain totals | still open |
 | Ecosystem | Page 3+ of the facilitator list (`has_next_page` was still true at 20) | Complete facilitator census | still open |
 | Intel | Reconcile the three-way contradiction in writing: catalog 373k/30d vs facilitator 106.6M vs x402scan's own resource counts (3,540 max) | One document that explains all three numbers | **DONE.** `notes-reconciliation.md`. Catalog captures ~6–8% of real settlement volume; (c) vs (b) left honestly NOT ESTABLISHED (no data bridges them). |
-| Data | Daily snapshot proven running unattended | Three consecutive clean automated runs | still open — blocked pending Michael's go-ahead on the scheduling mechanism (see ORG-LESSONS.md Firings) |
+| Data | Daily snapshot proven running unattended | Three consecutive clean automated runs | **LIVE, not blocked** — stale row corrected 2026-07-31: Michael approved the routine, task `x402-daily-snapshot` registered (cron `0 3 * * *`, enabled), and it fired unattended for real this cycle (`lastRunAt` 2026-07-31T08:08 UTC, verified via `list_scheduled_tasks`, not a backlog cell). One confirmed automatic run so far — "three consecutive" not yet met, accumulates one per day. |
 
 **Exit criteria:** we can state the size and shape of the x402 economy with a method we would defend
 publicly, and we know precisely which parts remain unknown.
@@ -171,8 +171,8 @@ instruction.
 |---|---|---|
 | Product | Site architecture and information design. Crawlable multi-page (NOT the single-file pattern salvaged from Celestials — wrong shape for 15,500 indexed routes). | SEO is distribution for a data product |
 | API/MCP | Design the two endpoints that carry the product: *what changed since T*, and *history for resource X*. Decide the pricing model — plausibly x402 itself, which makes us a dogfooding proof. | This is the actual business |
-| Intel | Productise the price-mismatch feed into a live safety signal with severity tiers | The wedge; already measured, needs packaging |
-| Data | Schema migration for multi-source (`source` column) so non-CDP catalogs coexist without breaking existing queries | Blocks Ecosystem's ingestion |
+| Intel | Productise the price-mismatch feed into a live safety signal with severity tiers | **DONE 2026-07-31** — severity-tiered (CRITICAL/HIGH/LOW) `/mismatches` API + MCP filter, wired into the daily cron as step 6b so it regenerates automatically (see Backlog #7). |
+| Data | Schema migration for multi-source (`source` column) so non-CDP catalogs coexist without breaking existing queries | **DONE 2026-07-31** — additive `source` column on both catalog tables, `v_latest_catalog` genuinely fixed at schema level (see Backlog #17). `change_event`/`resource_dim` NOT yet partitioned — new Backlog #18, blocks Ecosystem's #12 ingestion. |
 | Ecosystem | Ingestion for the confirmed non-CDP catalogs (PayAI, UltravioletaDAO, Thirdweb) | 808 hosts (86.2%) are invisible to CDP |
 | Growth | Draft the launch analysis. Best candidate: *"Coinbase's catalog shows 0.3% of the payments its own facilitator settles"* — verified, surprising, and nobody else can write it. | Authority before traffic |
 | Infra | Deploy target, domain, private repo | Michael's call on spend (§6) |

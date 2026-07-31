@@ -87,11 +87,15 @@ def changes(
 
 @mcp.tool()
 def mismatches(min_ratio: Optional[float] = None, host: Optional[str] = None,
-               limit: int = 100, offset: int = 0) -> dict:
+               severity: Optional[str] = None, limit: int = 100, offset: int = 0) -> dict:
     """The safety signal: resources where the live probed price differs from the catalog's
-    declared price. Each row has severity (critical/high/medium/low) based on the price
-    ratio. An agent that auto-pays off the catalog price alone can be drained by these."""
-    return q.mismatches(min_ratio=min_ratio, host=host, limit=limit, offset=offset)
+    declared price. Each row has severity CRITICAL/HIGH/LOW -- a DANGER ranking (absolute
+    dollar exposure + direction), not a ratio ranking: a 20,000,000x overcharge on a $0.05
+    route and a 100x overcharge on a $50 route can both be CRITICAL, while any undercharge
+    is LOW regardless of ratio (never dangerous to a paying agent). `severity` filters to
+    CRITICAL|HIGH|LOW. An agent that auto-pays off the catalog price alone can be drained
+    by these -- this feed regenerates on every daily snapshot."""
+    return q.mismatches(min_ratio=min_ratio, host=host, severity=severity, limit=limit, offset=offset)
 
 
 @mcp.tool()

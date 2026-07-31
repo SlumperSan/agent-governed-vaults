@@ -10,7 +10,8 @@
 #   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 catalog
 #   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 probe 40
 #   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 report
-#   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 daily      # catalog + sample + report
+#   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 mismatch   # regenerate the price-mismatch feed only
+#   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 daily      # catalog + sample + report + mismatch feed
 #   powershell -File C:\Users\Micha\Desktop\x402\run.ps1 full-sweep # ALL ~15.5k routes, hours
 #
 # Read a log later:
@@ -50,11 +51,22 @@ switch ($Task) {
         # otherwise decodes as ANSI, turning every dash into mojibake.
         Get-Content $l -Encoding UTF8
     }
+    "mismatch" {
+        # Standing safety feed (severity-tiered CRITICAL/HIGH/LOW, ranked by dollar
+        # exposure). Read-only against the DB; safe to run any time after a report,
+        # or on its own to refresh the feed against the last probe run without
+        # re-fetching/re-probing. The API's /mismatches endpoint reads mismatch.json
+        # directly (see api/queries.py) -- run this whenever the feed looks stale.
+        $l = Invoke-Step "mismatch" @("mismatch_report.py")
+        Get-Content $l -Encoding UTF8
+    }
     "daily" {
         Invoke-Step "catalog" @("fetch_catalog.py") | Out-Null
         Invoke-Step "probe"   @("probe.py", "--sample", "$Sample") | Out-Null
-        $l = Invoke-Step "report" @("report.py")
-        Get-Content $l -Encoding UTF8
+        $rl = Invoke-Step "report" @("report.py")
+        Get-Content $rl -Encoding UTF8
+        $ml = Invoke-Step "mismatch" @("mismatch_report.py")
+        Get-Content $ml -Encoding UTF8
     }
     "full-sweep" {
         # THE WIDE RUN. ~15.5k routes across ~1,577 hosts, one request each,
@@ -63,8 +75,10 @@ switch ($Task) {
         # nobody triggers an ecosystem-wide sweep by fat-fingering an argument.
         Invoke-Step "catalog"    @("fetch_catalog.py") | Out-Null
         Invoke-Step "full-sweep" @("probe.py", "--all", "--host-concurrency", "8", "--delay", "2.0") | Out-Null
-        $l = Invoke-Step "report" @("report.py")
-        Get-Content $l -Encoding UTF8
+        $rl = Invoke-Step "report" @("report.py")
+        Get-Content $rl -Encoding UTF8
+        $ml = Invoke-Step "mismatch" @("mismatch_report.py")
+        Get-Content $ml -Encoding UTF8
     }
-    default { Write-Host "unknown task '$Task'. use: catalog | probe | report | daily | full-sweep" }
+    default { Write-Host "unknown task '$Task'. use: catalog | probe | report | mismatch | daily | full-sweep" }
 }

@@ -410,6 +410,16 @@ def main() -> int:
     overcharge_count = sum(1 for m in mismatches if m["direction"] == "OVERCHARGE")
     undercharge_count = sum(1 for m in mismatches if m["direction"] == "UNDERCHARGE")
     critical_count = sum(1 for m in mismatches if m["severity"] == "CRITICAL")
+    high_count = sum(1 for m in mismatches if m["severity"] == "HIGH")
+    low_count = sum(1 for m in mismatches if m["severity"] == "LOW")
+    assert critical_count + high_count == overcharge_count, (
+        "CRITICAL+HIGH must equal overcharge_count by construction (every overcharge "
+        "is exactly one of the two) -- if this trips, classify()'s tiering broke."
+    )
+    assert low_count == undercharge_count, (
+        "LOW must equal undercharge_count by construction -- every undercharge is LOW "
+        "and nothing else maps to LOW."
+    )
 
     # Staleness attribution for the top offenders named in the brief, computed
     # (not asserted) so the report can say plainly which ones we CAN and
@@ -454,8 +464,22 @@ def main() -> int:
         "overcharge_count": overcharge_count,
         "undercharge_count": undercharge_count,
         "critical_count": critical_count,
+        "high_count": high_count,
+        "low_count": low_count,
         "danger_abs_usd_threshold": DANGER_ABS_USD,
         "danger_ratio_threshold": DANGER_RATIO,
+        # Self-documenting for any API/consumer that wants to render tier meaning
+        # without hardcoding a second copy of classify()'s rules (see queries.py,
+        # which now reads this file as its single source of truth for severity).
+        "severity_definition": {
+            "CRITICAL": f"overcharge AND (live_price_usd > {DANGER_ABS_USD:.0f} OR "
+                        f"ratio >= {DANGER_RATIO:.0f}x OR catalog claimed the route free)",
+            "HIGH": "overcharge, below the CRITICAL threshold",
+            "LOW": "undercharge (never dangerous to a paying agent; never ranked above "
+                   "any overcharge regardless of ratio)",
+        },
+        "ranked_by": "severity tier first, then absolute dollar exposure per call "
+                     "(NOT ratio -- see build_leaderboard()) descending",
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
