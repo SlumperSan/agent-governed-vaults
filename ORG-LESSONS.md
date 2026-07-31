@@ -120,6 +120,26 @@ tx_count counts" and then led with a flat contradiction anyway.
 
 ---
 
+### A headline verdict that only cleared one bar of two
+Chain's dollar-value extrapolation ($0.55M–$2.98M) was built the right way — positive control first,
+100% selector-confirmed as genuine settlements — but sampled only one ~200-second window with n=150.
+The charter's "every headline number needs an independent second method" rule was satisfied for the
+*tx-count* claim (nonce vs x402scan, 0.02% match) and for Intel's *coverage* claim (two disjoint
+windows) but not for this one. Nobody caught it before scoring because the report itself explicitly
+withheld the number from being called final — so the gap cost 1.7 points, not a false claim.
+**Do instead:** treat "single window, single method" as a checklist item on every dollar-figure
+report, the same way "ran a positive control" already is. A department that discloses its own gap
+should still be told the gap up front in the brief, not discovered at review.
+
+### An orphaned process flagged by one department, gone by the next check
+Intel's report flagged Chain's `onchain_verify_values.py` still running at audit time as a live/
+possibly-orphaned process, worth escalating but not counted against Intel's own score. By the next
+cycle's process check, it was gone — Chain's own cleanup step caught it before the Secretary needed
+to intervene. **Do instead:** a flagged live process from a peer department is real signal but has a
+short shelf life; re-check before acting on it rather than assuming it's still true.
+
+---
+
 ## Firings
 
 ### P0#1 — Daily automated snapshot — 0/10 (2026-07-30)

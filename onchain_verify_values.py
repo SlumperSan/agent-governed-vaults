@@ -8,7 +8,7 @@ USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 TRANSFER_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 CHUNK = 10000
 
-def rpc(method, params, retries=3, rounds=3, rpc_url=RPC):
+def rpc(method, params, retries=2, rounds=2, rpc_url=RPC, timeout=15):
     payload = json.dumps({"jsonrpc":"2.0","id":1,"method":method,"params":params}).encode()
     last_err = None
     urls = [rpc_url] + [u for u in RPC_FALLBACKS if u != rpc_url]
@@ -19,7 +19,7 @@ def rpc(method, params, retries=3, rounds=3, rpc_url=RPC):
                     "Content-Type":"application/json",
                     "User-Agent":"Mozilla/5.0 402cap-chain-values/1.0 (research probe; read-only RPC)"})
                 try:
-                    with urllib.request.urlopen(req, timeout=40) as r:
+                    with urllib.request.urlopen(req, timeout=timeout) as r:
                         data = json.loads(r.read())
                         if "error" in data:
                             raise RuntimeError("RPC_ERROR:"+str(data["error"]))
@@ -29,9 +29,37 @@ def rpc(method, params, retries=3, rounds=3, rpc_url=RPC):
                     last_err = f"HTTP {e.code} @ {url}: {body}"
                 except Exception as e:
                     last_err = f"{url}: {e}"
-                time.sleep(0.6*(attempt+1))
-        time.sleep(1.5*(rnd+1))
+                time.sleep(0.4*(attempt+1))
+        time.sleep(0.8*(rnd+1))
     raise RuntimeError(f"Failed after {rounds} rounds x {retries} retries across all RPCs: {method} :: {last_err}")
+
+def batch_rpc(calls, rpc_url=RPC, timeout=25):
+    """calls: list of (method, params). Returns list of results in same order,
+    or None per-slot on individual error. One HTTP round-trip per batch."""
+    payload = json.dumps([{"jsonrpc":"2.0","id":i,"method":m,"params":p} for i,(m,p) in enumerate(calls)]).encode()
+    urls = [rpc_url] + [u for u in RPC_FALLBACKS if u != rpc_url]
+    last_err = None
+    for url in urls:
+        for attempt in range(2):
+            req = urllib.request.Request(url, data=payload, headers={
+                "Content-Type":"application/json",
+                "User-Agent":"Mozilla/5.0 402cap-chain-values/1.0 (research probe; read-only RPC)"})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    data = json.loads(r.read())
+                    by_id = {d["id"]: d for d in data}
+                    out = []
+                    for i in range(len(calls)):
+                        d = by_id.get(i)
+                        if d is None or "error" in d:
+                            out.append(None)
+                        else:
+                            out.append(d["result"])
+                    return out
+            except Exception as e:
+                last_err = f"{url}: {e}"
+            time.sleep(0.5*(attempt+1))
+    raise RuntimeError(f"batch_rpc failed across all RPCs :: {last_err}")
 
 def hexint(x):
     return int(x, 16)
@@ -111,13 +139,15 @@ def sample_facilitator_tx(addr_set, n_blocks, start_block=None):
     return matches, blocks_scanned, total_tx_seen, latest
 
 def classify_and_decode(matches, addr_set):
-    addr_set_l = set(a.lower() for a in addr_set)
+    # Batch JSON-RPC was tested and rejected (403 on publicnode, 521 on llamarpc) -
+    # single calls work reliably (~2-3s each), so use those.
     results = []
     for i, m in enumerate(matches):
         try:
             rcpt = get_receipt(m["hash"])
         except Exception as e:
             results.append({**m, "error": str(e)})
+            print(f"  [{i+1}/{len(matches)}] ERROR {m['hash'][:12]}: {e}", flush=True)
             continue
         logs = rcpt.get("logs", [])
         usdc_transfers = []
@@ -131,9 +161,8 @@ def classify_and_decode(matches, addr_set):
         results.append({**m, "status": rcpt.get("status"), "usdc_transfers": usdc_transfers,
                         "n_usdc_transfers": len(usdc_transfers), "n_other_logs": other_logs,
                         "n_total_logs": len(logs)})
-        if (i+1) % 20 == 0:
+        if (i+1) % 10 == 0:
             print(f"  decoded {i+1}/{len(matches)} receipts", flush=True)
-        time.sleep(0.05)
     return results
 
 if __name__ == "__main__":
@@ -147,16 +176,28 @@ if __name__ == "__main__":
         with open("onchain_values_control.json","w") as f:
             json.dump(pc, f, indent=2)
 
-    if mode in ("all", "sample"):
+    if mode in ("all", "sample", "decodeonly"):
         data = json.load(open("facilitator_addresses.json"))
         fac = {f["id"]: f for f in data["facilitators"]}["coinbase"]
         addrs = fac["base"]
-        n_blocks = int(sys.argv[2]) if len(sys.argv) > 2 else 300
-        matches, blocks_scanned, total_tx_seen, latest = sample_facilitator_tx(addrs, n_blocks)
-        with open("onchain_values_matches_raw.json","w") as f:
-            json.dump({"matches": matches, "blocks_scanned": blocks_scanned,
-                       "total_tx_seen": total_tx_seen, "latest_block": latest}, f, indent=2)
-        print(f"Matched {len(matches)} facilitator-sent tx out of {total_tx_seen} total tx across {blocks_scanned} blocks")
+
+        if mode == "decodeonly":
+            prev = json.load(open("onchain_values_matches_raw.json"))
+            all_matches, blocks_scanned, total_tx_seen = prev["matches"], prev["blocks_scanned"], prev["total_tx_seen"]
+            target_n = int(sys.argv[2]) if len(sys.argv) > 2 else len(all_matches)
+            if target_n < len(all_matches):
+                stride = len(all_matches) / target_n
+                matches = [all_matches[int(i*stride)] for i in range(target_n)]
+            else:
+                matches = all_matches
+            print(f"Reusing {len(all_matches)} previously-scanned matches; decoding stratified subsample of {len(matches)}", flush=True)
+        else:
+            n_blocks = int(sys.argv[2]) if len(sys.argv) > 2 else 300
+            matches, blocks_scanned, total_tx_seen, latest = sample_facilitator_tx(addrs, n_blocks)
+            with open("onchain_values_matches_raw.json","w") as f:
+                json.dump({"matches": matches, "blocks_scanned": blocks_scanned,
+                           "total_tx_seen": total_tx_seen, "latest_block": latest}, f, indent=2)
+            print(f"Matched {len(matches)} facilitator-sent tx out of {total_tx_seen} total tx across {blocks_scanned} blocks", flush=True)
 
         decoded = classify_and_decode(matches, addrs)
         with open("onchain_values_decoded.json","w") as f:

@@ -24,6 +24,28 @@ transaction *count*, not value. Verifying it is Phase 1's first job.
 
 ---
 
+## 0.1 Phase 1 execution cycle result (2026-07-31) — the dollar figure
+
+**REFUTED, not confirmed — and our own replacement number is not yet fully verified either.**
+
+Decoded real USDC settlement values from 150 sampled Coinbase-facilitator transactions (single
+~200-second window, positive-control passed first). Extrapolated across the confirmed 106,602,243
+lifetime transactions: **~$0.55M–$2.98M**, against the claimed **$28.6M / $52.6M — 10 to 52× too low.**
+
+This is a genuine result, not a guess, but it rests on **one method over one time window** (n=150,
+~200 seconds). A cheap second method (decode the value from `transferWithAuthorization` calldata
+directly, or re-run on a temporally disjoint window) was not done this cycle — see Backlog #15.
+**Do not quote $28.6M, $52.6M, $0.55M, or $2.98M as final anywhere public.** What IS solid: the
+$28.6M/$52.6M figures are wrong by an order of magnitude at minimum; the true figure is much smaller.
+
+Separately, Intel confirmed (independent angle): the CDP catalog's self-reported 373,056 calls/30d
+captures only **~6–8% of Coinbase's own real settlement volume** — over 92% of what its own
+facilitator settles happens outside anything it catalogues. This is the strongest, best-verified
+finding of the cycle (two disjoint 500-block windows ~12h apart, 99.2–99.8% confirmed as genuine
+`transferWithAuthorization` calls, not assumed).
+
+---
+
 ## 1. What the company is
 
 **402cap — the measurement layer for the agent payment economy.**
@@ -81,14 +103,14 @@ The org raises Paybox requests; he approves. That never changes.
 **Goal: know what is true.** Everything downstream is worthless if the foundation is a vendor's
 unverified claim. We already made that mistake once and nearly built a strategy on it.
 
-| Owner | Work | Done when |
-|---|---|---|
-| Chain | **Verify the dollar figure.** Decode real USDC transfer values from facilitator-relayed transactions. Is it $52.6M, or is the count real but the value inflated? | A defensible number with a stated method |
-| Chain | Establish what a facilitator transaction actually *is* — are all 106.6M x402 settlements, or does the nonce include other operations? | The "facilitator tx vs x402 payment" gap is closed or honestly bounded |
-| Chain | Extend to Solana and Polygon (untested; Base-only so far) | Multi-chain totals |
-| Ecosystem | Page 3+ of the facilitator list (`has_next_page` was still true at 20) | Complete facilitator census |
-| Intel | Reconcile the three-way contradiction in writing: catalog 373k/30d vs facilitator 106.6M vs x402scan's own resource counts (3,540 max) | One document that explains all three numbers |
-| Data | Daily snapshot proven running unattended | Three consecutive clean automated runs |
+| Owner | Work | Done when | Status (2026-07-31) |
+|---|---|---|---|
+| Chain | **Verify the dollar figure.** Decode real USDC transfer values from facilitator-relayed transactions. Is it $52.6M, or is the count real but the value inflated? | A defensible number with a stated method | **PARTIALLY DONE.** $28.6M/$52.6M refuted (10–52× too high). Our own $0.55M–$2.98M extrapolation is single-method/single-window — needs a second method before it's citable (Backlog #15). |
+| Chain | Establish what a facilitator transaction actually *is* — are all 106.6M x402 settlements, or does the nonce include other operations? | The "facilitator tx vs x402 payment" gap is closed or honestly bounded | **DONE.** 100% of 150 Chain-sampled tx + 99.2–99.8% of Intel's two 500-block samples carry the `transferWithAuthorization` (EIP-3009) selector — the nonce count is genuine x402 settlement activity, not noise. |
+| Chain | Extend to Solana and Polygon (untested; Base-only so far) | Multi-chain totals | still open |
+| Ecosystem | Page 3+ of the facilitator list (`has_next_page` was still true at 20) | Complete facilitator census | still open |
+| Intel | Reconcile the three-way contradiction in writing: catalog 373k/30d vs facilitator 106.6M vs x402scan's own resource counts (3,540 max) | One document that explains all three numbers | **DONE.** `notes-reconciliation.md`. Catalog captures ~6–8% of real settlement volume; (c) vs (b) left honestly NOT ESTABLISHED (no data bridges them). |
+| Data | Daily snapshot proven running unattended | Three consecutive clean automated runs | still open — blocked pending Michael's go-ahead on the scheduling mechanism (see ORG-LESSONS.md Firings) |
 
 **Exit criteria:** we can state the size and shape of the x402 economy with a method we would defend
 publicly, and we know precisely which parts remain unknown.

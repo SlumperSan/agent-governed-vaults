@@ -1,0 +1,60 @@
+{
+  "tag": "12h_back",
+  "n_blocks": 500,
+  "start_block": 49323114,
+  "end_block": 49323614,
+  "blocks_back_offset": 21600,
+  "real_window_seconds": 1000,
+  "total_tx": 73591,
+  "coinbase_tx_sent": 2417,
+  "per_addr": {
+    "0x772003a2e9c2ccc8af956870a37a66f64f8cec38": 115,
+    "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a": 122,
+    "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af": 119,
+    "0x59b7ebc67a3d627fabaf06768c818638452ae704": 122,
+    "0x8f5cb67b49555e614892b7233cfddebfb746e531": 125,
+    "0xe74817f4cdc15844314812b2271276e64e890fae": 121,
+    "0x2a89407a98a0732b7fd578c4e156b7166540eb5a": 125,
+    "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863": 123,
+    "0xe72f0af4cf41356d433723547f1412ca27fbb1b8": 123,
+    "0xa32ccda98ba7529705a059bd2d213da8de10d101": 122,
+    "0x625d8a65134079f8faaac39a7947c73d93c6ac39": 119,
+    "0x14fda13953fc30428938e6bf950d036e77214e52": 121,
+    "0x97acce27d5069544480bde0f04d9f47d7422a016": 120,
+    "0x42dd53906b49c202e8e934b059dc019e04634b00": 122,
+    "0x68efafe862d89ce66dd3d7b07d5a3747a0871164": 120,
+    "0xb87e1a2cc2b4643f2892768e80e41167f17c5860": 121,
+    "0xca5e87f82b3fa093800e6ad67d621a427d79c70d": 119,
+    "0x8cda367232d78c067116e3260da881d2da8ffa39": 121,
+    "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44": 116,
+    "0x4c934c63c786157fefd990945b25ea60a0fb0205": 121
+  },
+  "settlement_shape": {
+    "to_is_usdc_and_transferWithAuth": 2413,
+    "other": 4
+  },
+  "other_examples": [
+    {
+      "tx": "0xfefbc062364e4f5f4bf089070a969e0f8ad0e6a538c38f2311b718da231088c3",
+      "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "selector": "0xcf092995"
+    },
+    {
+      "tx": "0xc090d7716f7d1d88baa9cfee3410f52f555bf56e9323a5337508d53053d2835f",
+      "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "selector": "0xcf092995"
+    },
+    {
+      "tx": "0xd3d1230a49d88e4f31583504ee9e14a9e4715000d02f9750921d5e2a4376bbde",
+      "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "selector": "0xcf092995"
+    },
+    {
+      "tx": "0xc7524756014f779193ea8e3b598f50709398f2c44789f46c0606f3a1128c46a2",
+      "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "selector": "0xcf092995"
+    }
+  ],
+  "extrapolated_rate_per_day": 208828.8,
+  "extrapolated_30d": 6264864.0
+}
