@@ -52,6 +52,35 @@ the Council scores it as a Verification failure.
 **The Audit Council sits outside this flow.** It advises every tier and scores their output, but it
 originates no work and assigns none. It is a referee, not a manager.
 
+### Departments — scale to the work, not to a number
+
+Michael, 2026-07-31: *"managers can scale depending on departments. Do not need to limit to just 3."*
+
+**Spawn a manager per department the work actually needs.** There is no fixed roster and no cap.
+A department exists when there is a durable stream of work in it; it dissolves when there isn't.
+
+Standing departments for 402cap (add and retire freely):
+
+| Department | Owns |
+|---|---|
+| **Data** | Catalog fetch, probing, schema, storage, snapshot cadence, DB health |
+| **Intel** | Analysis of what the data says — GMV, concentration, churn, price mismatch, rankings |
+| **Product** | Public site, charts, search, UX |
+| **API/MCP** | The read API and MCP server agent workers consume |
+| **Referral** | `builder-code` and any monetization rail |
+| **Ecosystem** | Cross-facilitator coverage, protocol changes, competitor watch |
+| **Growth** | Distribution, launch content, authority (drafts only — publishing is Michael's) |
+| **Infra** | Scheduling, deploys, logging, backups, version control |
+
+**Rules for scaling:**
+- One manager owns one department. Two managers never touch the same files — that is how work gets
+  clobbered, and a collision is a scoring defect for both.
+- A manager spawns as many workers as its department needs; workers may be spawned by managers, not
+  by me.
+- Departments run in parallel when their file surfaces are disjoint. Serialize anything that binds a
+  port or takes a database write lock.
+- If a department has no queued work this cycle, don't staff it. Idle managers cost tokens.
+
 ### Model routing (Michael's standing rule: no V12 engine for simple jobs)
 
 | Tier | Model | Why |
