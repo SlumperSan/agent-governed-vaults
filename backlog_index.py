@@ -45,6 +45,11 @@ BLOCKED_MARKERS = (
     "awaiting michael",
     "pending michael",
     "blocked on michael",
+    # 402cap's own vocabulary (ORG-CHARTER.md): a bare "blocked" cell means
+    # blocked on Michael, and "parked" means deliberately stopped pending a
+    # decision. Without these the org's own backlog reads as unclassified.
+    "blocked",
+    "parked",
     "michael, 2026",  # a rejection recorded in his own words
     # Code is written and tested but the deploy itself is Michael's call, so
     # this belongs with the blocked items, not the closed ones - a tick that

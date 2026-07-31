@@ -4,7 +4,7 @@ Generated from `notes/idea-backlog.md` by `scripts/backlog-index.py`. Source is 
 
 **`notes/idea-backlog.md` remains the source of truth.** Regenerate this file after every harvest; never edit it directly, and never treat a one-line summary here as sufficient context to start building - open the cited line in the real backlog first.
 
-Counts: **10 unblocked** · 0 blocked on Michael · 5 closed · 4 unclassified
+Counts: **10 unblocked** · 4 blocked on Michael · 5 closed · 0 unclassified
 
 Row accounting: 19 data rows + 0 statused headings seen, 19 classified, 0 unreadable.
 
@@ -47,14 +47,6 @@ Row accounting: 19 data rows + 0 statused headings seen, 19 classified, 0 unread
 
 ## Blocked on Michael - DO NOT start these autonomously
 
-_(none)_
-
----
-
-## Unclassified - the status cell did not lead with a recognised verdict
-
-These need a human read. An unrecognised verdict is more often a badly worded status cell than a new category, so fixing the cell in the real backlog is usually the right response.
-
 - **L39** — B1
   - status: blocked
   - section: Blocked on Michael — do not attempt
@@ -67,4 +59,12 @@ These need a human read. An unrecognised verdict is more often a badly worded st
 - **L42** — B4
   - status: blocked
   - section: Blocked on Michael — do not attempt
+
+---
+
+## Unclassified - the status cell did not lead with a recognised verdict
+
+These need a human read. An unrecognised verdict is more often a badly worded status cell than a new category, so fixing the cell in the real backlog is usually the right response.
+
+_(none)_
 

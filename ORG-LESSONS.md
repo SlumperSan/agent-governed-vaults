@@ -74,11 +74,6 @@ check for duplicate keys after any paginated fetch.
 
 ---
 
-## Firings
-
-*(none yet — append one row per fired agent: tier, task, score, the specific defect, and what the
-replacement was told differently)*
-
 ### Dispatched a scanner against files I was concurrently authoring
 The Celestials salvage scan reported `ORG-BACKLOG.md` missing. It wasn't wrong — I created the file
 *while* the agent was mid-scan, so it read a directory state that no longer existed by the time it
@@ -92,3 +87,10 @@ Done tables had no `Status` column. The salvage scan predicted exactly this and 
 backlog in the shape the parser already expects."
 **Do instead:** when a tool and the data disagree, fix the data first. Editing a parser that passes
 26/26 to accommodate a malformed table trades a working tool for a bespoke one.
+
+---
+
+## Firings
+
+*(none yet — append one row per fired agent: tier, task, score, the specific defect, and what the
+replacement was told differently)*
