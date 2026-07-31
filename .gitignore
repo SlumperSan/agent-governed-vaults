@@ -6,4 +6,7 @@ logs/
 *.log
 # Snapshot DB: regenerable and grows fast. Back this up separately, not in git.
 x402_index.db
+x402_index.db-shm
+x402_index.db-wal
+x402_index.db.bak-*
 .env
