@@ -138,6 +138,24 @@ cycle's process check, it was gone — Chain's own cleanup step caught it before
 to intervene. **Do instead:** a flagged live process from a peer department is real signal but has a
 short shelf life; re-check before acting on it rather than assuming it's still true.
 
+### COUNCIL AUDIT #1 (sprint 3) — Council PASSED; the harvest did not
+Per the new charter rule, I audited the Council rather than taking its verdicts on trust.
+**Council: passed all five checks.** It did not grade the Product report's confidence — it re-ran
+`h.count('badge badge-warn')` itself and found 726 spans against a 721 headline. I independently
+reproduced that exact count before approving the firing. Scores were defensible from the defects
+listed, and `blocked_or_errored` was set correctly. This is what the gate is supposed to do.
+**The harvest step failed instead:** it reported Backlog #1 (daily snapshot) as "still not started,
+needs Michael's go-ahead" when Michael had already approved it (*"Yes make it a routine/scheduled"*)
+and the task was registered and enabled — confirmed live via `list_scheduled_tasks`
+(`x402-daily-snapshot`, cron `0 3 * * *`, nextRunAt 2026-07-31T08:07:57Z). It read a stale backlog cell
+instead of checking the live system.
+**Why it matters:** this is the SAME failure already logged at the top of this file — "stale status beat
+real state" — and it would have wasted a whole sprint re-doing shipped work, plus put a fake decision
+in front of Michael.
+**Do instead:** the harvest must verify status against the LIVE SYSTEM, not the backlog cell. For a
+scheduled task, call `list_scheduled_tasks`. For a file, stat it. For a DB change, query it. A backlog
+cell is a claim about the world, never the world.
+
 ---
 
 ## Firings
@@ -210,3 +228,20 @@ the new disclosure text; it never grepped the thing the bug was about (badge cou
 X* end-to-end (every place it's produced, not just the one place that was edited) before claiming
 done. A one-line `.count()` on the actual rendered output would have caught this in seconds — it did,
 this cycle, on review.
+
+### PRODUCT — Backlog #16, price-mismatch contradiction — 4/10 (2026-07-31, sprint 3)
+**Firing APPROVED by the orchestrator.** Failure channel checked first: the agent was not blocked and
+did not error — it ran, and shipped a fix that does not fix the thing.
+**Defect:** it patched the headline stat to 721 but left the per-row render unguarded, so the table
+beneath still emits 726 `badge badge-warn` spans. The contradiction Backlog #16 existed to eliminate
+was **relocated, not removed** — now living on the same page, one scroll apart. Independently
+reproduced by both the Council and me.
+**Root cause:** it verified the number it changed instead of the artefact it was changing. Its proof
+grepped for `<span class="n">721</span>` and stopped. One `count('badge badge-warn')` would have caught
+it — the Council ran exactly that.
+**What the replacement is told differently:** `mismatch_badge()` must take `is_templated` and return ""
+for templated rows, mirroring `alive_badge`'s existing signature at the very next line; same fix for the
+detail-page description text; and no completion claim is acceptable without pasting a
+`count('badge badge-warn')` equal to 721.
+**Generalised into a rule:** when fixing a COUNT, grep the render path and count the rendered artefacts.
+Never trust that changing the number that gets printed changed everything that gets printed.
