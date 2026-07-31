@@ -272,7 +272,12 @@ def row_from_record(rec: dict, snapshot_id: int) -> tuple:
         (inp.get("method") or None),
         (bazaar or {}).get("routeTemplate"),
         jdump(rec.get("tags")) if rec.get("tags") is not None else None,
-        None,                       # referral_json: reserved, nothing to record yet
+        # referral_json: full builder-code extension object (a/s/w), not just
+        # the 'a' field the builder_code column captures. 's' (service) and
+        # 'w' (wallet) codes are unpopulated in every route observed so far
+        # (2026-07-31 snapshot) but this future-proofs their capture without a
+        # schema change once they start appearing.
+        jdump(bc) if isinstance(bc, dict) else None,
         jdump(rec),                 # verbatim record — the thing that makes this compound
         skill_url,
         builder_code,

@@ -83,15 +83,23 @@ Standing departments for 402cap (add and retire freely):
 
 ### Model routing (Michael's standing rule: no V12 engine for simple jobs)
 
+**Downgraded one tier on 2026-07-31** — session limit hit 92% in 5 hours. Michael: *"Have each
+manager and worker move down an upgrade so later on we dont hit the wall again."* Burning the session
+limit stops all work, so a cheaper agent that finishes beats a smarter one that never runs.
+
 | Tier | Model | Why |
 |---|---|---|
 | Workers — scans, fetches, mechanical edits | **haiku** | Deterministic, cheap, high volume |
-| Workers — development, research, analysis | **sonnet** | Real reasoning, still cheap |
-| Managers | **sonnet** | Decomposition + review |
-| Audit Council | **sonnet, effort: high** | Adversarial scrutiny is where quality is won |
+| Workers — development, research, analysis | **haiku** | Downgraded from sonnet. Briefs must be more explicit to compensate — name the files, the method, and the expected output shape rather than assuming inference. |
+| Managers | **haiku** | Downgraded from sonnet. Give them a decomposition, not just a goal. |
+| Audit Council | **sonnet, effort: high** | **NOT downgraded.** Adversarial scrutiny is the one place cheapness costs more than it saves — a weak auditor accepts wrong work, and wrong work is what actually burns budget. |
 | Orchestrator (me) | session model | Judgment and Michael-facing calls only |
 
-Escalate a tier only with a stated reason. Cheap-by-default; never bottleneck real work.
+**The tradeoff, stated honestly:** haiku managers need tighter briefs. A vague goal that sonnet would
+have inferred its way through will fail on haiku. Compensate in the dispatch, not by upgrading.
+
+Escalate above this table only with a stated reason, and prefer splitting a hard task into smaller
+explicit steps over reaching for a bigger model. Cheap-by-default; never bottleneck real work.
 
 ---
 
