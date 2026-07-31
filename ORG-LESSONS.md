@@ -101,6 +101,23 @@ that had actually been safety-blocked — the failure signal and the real state 
 `python -u` so logs flush immediately. Judge a background job by whether its PROCESS is alive
 (`Get-CimInstance Win32_Process`), never by the wrapper's exit code.
 
+### A query that could only ever return zero — and the confident verdict built on it
+An agent verified x402 volume by filtering USDC `Transfer` events for facilitator addresses. It found
+zero across six independent windows and concluded the chain "flatly contradicts" the $52.6M claim.
+**The query was structurally incapable of returning non-zero.** x402 settles via EIP-3009
+`transferWithAuthorization`: the facilitator SUBMITS the transaction and pays gas, while the Transfer
+event is buyer to seller. The facilitator never appears in the event topics.
+The correct measure is `eth_getTransactionCount` (nonce) = transactions SENT. Measured live: Coinbase's
+40 addresses have sent **106,602,243** transactions against a claimed 106,581,020 — a **0.02% match**.
+The claim was right; the verification was wrong.
+**Why it nearly cost everything:** the wrong verdict would have confirmed my own earlier wrong advice
+that this market is tiny. Two errors agreeing feels like corroboration. It isn't.
+**Do instead:** when a measurement returns zero, absence, or "nothing found", ask *"is my method
+capable of producing a non-zero result?"* BEFORE concluding the thing does not exist. Run a positive
+control — measure something you know is there and confirm the method sees it. And never let a headline
+verdict outrun your own stated uncertainty: that agent honestly wrote "could NOT establish what
+tx_count counts" and then led with a flat contradiction anyway.
+
 ---
 
 ## Firings
