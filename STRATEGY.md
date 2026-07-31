@@ -76,15 +76,19 @@ denominators, all-facilitator vs. Coinbase-only — but this one is fresher and 
 **Honest gaps still open, do not round these away:** the non-mega-merchant tail measured roughly 6×
 below what x402scan's own aggregate implies for it if the mega-merchant's share is held fixed — flagged,
 unresolved, not folded into any headline. Extrapolating the on-chain per-tx figures across
-Intel's bridged 30-day Coinbase transaction-count range gives $24K–$394K depending on mean vs. median
-basis — still nowhere near the refuted $28.6M/$52.6M, but wide, and 3 of the 6 basis rows in that table
-used an invalid median × count computation for a right-skewed distribution (caught in cycle-3 review,
-do not cite those three rows; see `ORG-LESSONS.md`).
+Intel's bridged 30-day Coinbase transaction-count range gives **$132,393–$394,355 on the mean basis
+(valid, quotable)**. The median basis of the same table (**$24,360–$32,239**, sometimes rounded to
+"$24K") is **INVALID — median × count discards the tail mass of a right-skewed distribution and does
+not recover total volume; it must never be cited, rounded or not.** Both are still nowhere near the
+refuted $28.6M/$52.6M. (Corrected 2026-07-31, sprint 6 recording: this section previously still
+carried the flat "$24K–$394K" range with the invalid low end unflagged, contradicting the correction
+already made in `notes-chain-values-method2.md` the same cycle — see `ORG-LESSONS.md`.)
 
-**Do not quote $28.6M, $52.6M, $0.55M, $2.98M, or the flat $24K–$394K range as a single settled number
+**Do not quote $28.6M, $52.6M, $0.55M, $2.98M, $24K, or "$24K–$394K" as a single settled number
 anywhere public.** What's solid: two independent methods now agree the dollar figure is an order of
-magnitude (or more) below the original claim, and the CDP catalog captures roughly 3–9% of the real
-market by transaction/dollar volume respectively.
+magnitude (or more) below the original claim, the CDP catalog captures roughly 3–9% of the real
+market by transaction/dollar volume respectively, and the only quotable 30-day Coinbase-specific
+mean-basis range is $132,393–$394,355.
 
 ---
 

@@ -315,8 +315,24 @@ def rebuild_resource_dim(conn) -> None:
     # JOINed in. SQLite rejects an aggregate inside a correlated subquery in the
     # select list ("misuse of aggregate function MIN()"), so the obvious
     # single-pass form does not compile.
+    #
+    # Explicit column list below (Backlog #18) is load-bearing, not cosmetic:
+    # `INSERT INTO resource_dim SELECT ...` with no column list is POSITIONAL
+    # and requires the SELECT to produce exactly as many columns as the table
+    # has. resource_dim just grew an 8th column (`source`, additive migration,
+    # DEFAULT 'cdp'); without this explicit list the 7-column SELECT below
+    # would fail on every run with "table resource_dim has 8 columns but 7
+    # values were supplied" -- confirmed by reproducing the error against a
+    # scratch copy before making this fix. `source` is intentionally left off
+    # the SELECT/INSERT so it takes its DEFAULT 'cdp', matching every row this
+    # function has ever written. This does NOT key resource_dim on
+    # (source, resource_url) -- it still dedupes on resource_url alone (see
+    # the table's PRIMARY KEY and notes-source-migration-2.md); that
+    # repartition is deliberately left for whoever ingests a second source.
     conn.execute("""
         INSERT INTO resource_dim
+            (resource_url, host, first_seen_snapshot, first_seen_at,
+             last_seen_snapshot, last_seen_at, times_seen)
         SELECT g.resource_url, g.host,
                g.first_s, s1.fetched_at,
                g.last_s,  s2.fetched_at,

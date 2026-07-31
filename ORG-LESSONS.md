@@ -308,3 +308,58 @@ This is the same rule as "verify against the live system, never a backlog cell,"
 the live system includes tools that report on their own state (`list_scheduled_tasks`,
 `Get-ScheduledTask`), and those reports need their own downstream check, because a dispatch log and a
 completion log are different claims that happen to live in the same-looking timestamp field.
+
+## Sprint 5 additions (2026-07-31)
+
+### A lesson already in this file, repeated in the ONE document the department checked and signed off as clean
+Chain's Backlog #16-equivalent task this sprint (rewrite the invalid median×count caption in
+`notes-chain-values-method2.md`) shipped a real, correct fix in that one file — verified independently,
+lines 116-118/136 do carry the INVALID tags. But the report then claimed "STRATEGY.md (lines 79-82)
+already flags '3 of the 6 basis rows' as invalid without quoting them individually, so no correction
+needed there either." **STRATEGY.md line 79 still read** "Intel's bridged 30-day Coinbase
+transaction-count range gives $24K–$394K depending on mean vs. median basis" **and line 84 repeated the
+same range** — the exact invalid `median × count` quantity the department's own new caption forbids
+citing, present in the one other file the report explicitly claimed to have checked. This is the same
+failure already named above ("Median × count is not a valid total...") happening a second time, this
+time as a false "nothing to fix here" verdict rather than a fresh miscalculation.
+Compounding cause: the repo-wide grep was run with `--include=*.md` for the exact dollar strings
+(`$24,360` etc.) but never for the **rounded forms** ("24K"/"394K") that STRATEGY.md itself uses — a
+grep that could not have found the real hit was used as proof no hit existed. Rerunning without the
+include filter and with the rounded forms surfaced `STRATEGY.md:79`, `STRATEGY.md:84`, and
+`ORG-BACKLOG.md:69` immediately.
+**Do instead:** "repo-wide" means repo-wide — don't scope a verification grep to the file type you
+expect the answer in. And when a report says "file X already handles this, no fix needed," that claim
+needs the same evidence bar as a positive fix: paste the relevant line from X, don't just assert it
+was read. Fixed in sprint 6 recording: STRATEGY.md and ORG-BACKLOG.md#69 both corrected to match the
+notes file's caption.
+
+### A misattributed uncommitted diff — blamed an "external" process that was actually the same department's own earlier task
+Data's Backlog #1 report skipped `git add -A`/commit because `x402_common.py`/`fetch_catalog.py` were
+already modified, attributing this to "other in-flight sprint work I was told not to touch." `git diff`
+shows those exact changes ARE this same sprint's Backlog #18 (source-partitioning) work, done earlier
+by the same department, not an external untouchable process. The decision to skip a blanket
+`git add -A` was still correct (a real uncommitted diff existed and blind-committing is the wrong
+default), but the stated reason implied a constraint that didn't exist — nobody told Data not to touch
+its own file.
+**Do instead:** before citing "other in-flight work I was told not to touch" as a reason to skip a
+step, check whose diff it actually is (`git log --oneline -- <file>` / `git diff <file>` against what
+you yourself changed this sprint) rather than assuming unfamiliarity means external. A true statement
+("a real diff exists, so don't blind-commit") doesn't need a false explanation attached.
+
+### "No artifact yet" and "silently failed" are different claims — check for a still-running process before concluding either
+Sprint 5's re-investigation of Backlog #1 (above) nearly repeated the same mistake it was reopened to
+fix, from the other direction: it read `MAX(catalog_snapshot.id)`=6, saw no fresh logs, and started
+drafting a "diagnosed the silent failure" writeup. The actual cause was that the diagnostic session
+started reading the DB *while the cron's own session was still executing* — an 18-minute lag between
+the scheduler's `lastRunAt` and the first real write is evidence of a slow session, not a failed one.
+Caught only by re-running `Get-CimInstance Win32_Process` for `probe.py`/`fetch_catalog`/`prune.py`
+matches *at the moment of investigation* and finding one live, then re-querying the DB minutes later
+and finding the snapshot had in fact appeared. A parallel signal confirmed it independently: a fresh
+pair of `voicemode-mcp-launcher` processes had spawned at the *exact* scheduled fire time (session-
+start overhead), proof a real session had actually begun.
+**Do instead:** before concluding a scheduled/background task "produced nothing" or "failed silently,"
+check for a currently-running matching process first, and if the investigation itself needs to write
+to the same resource (e.g. running the pipeline manually to "prove" it works), check *again* right
+before writing — otherwise the diagnostic run collides with the very process it's investigating (this
+one didn't corrupt data, by luck: `fetch_catalog.py` runs are safe back-to-back, only `prune.py` needs
+exclusivity — but it did create a redundant extra snapshot row that didn't need to exist).

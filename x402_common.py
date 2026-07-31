@@ -495,6 +495,16 @@ MIGRATIONS = [
     # nothing in this codebase does that yet.
     ("catalog_snapshot", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
     ("catalog_resource", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
+    # --- Backlog #18: extend the same source dimension to change_event and
+    # resource_dim. Same justification as above (every existing row is 'cdp',
+    # so DEFAULT 'cdp' is the true value, not a backfill guess) and same
+    # additive/metadata-only ALTER TABLE idiom. This closes the schema half of
+    # #18 only -- it does NOT repartition resource_dim's PRIMARY KEY or
+    # fetch_catalog.py's diff_snapshots()/rebuild_resource_dim() logic to key
+    # on (source, resource_url); see notes-source-migration-2.md for exactly
+    # what was and wasn't done and why that remains Ecosystem's job at #12.
+    ("change_event", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
+    ("resource_dim", "source", "TEXT NOT NULL DEFAULT 'cdp'"),
 ]
 
 
