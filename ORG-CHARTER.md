@@ -35,8 +35,22 @@ Michael            — owns everything. Money, accounts, public commitments.
       └─ Audit Council — independent. Scores every deliverable 0-10. Advises all tiers.
 ```
 
-**Verification flows upward.** A worker's output is reviewed by its manager before the manager
-submits upward. Nothing reaches me unreviewed. Nothing reaches Michael unverified.
+### Direction of flow (Michael, 2026-07-31 — *"work requests flow from top down while down to top submits work"*)
+
+**DOWNWARD — requests only.** Briefs, task assignments, rework instructions, rebriefs after a firing.
+A tier may only assign work to the tier below it. Nobody assigns work sideways or upward.
+
+**UPWARD — submissions only.** Completed work, findings, blockers, escalations. A worker submits to
+its manager; a manager submits to me; I submit to Michael. **Nothing skips a tier on the way up** —
+if a worker's finding matters, its manager carries it, having checked it first.
+
+**Verification happens at every handoff going up.** A manager reviews its workers' output before
+submitting; I review managers' output before it reaches Michael. Nothing reaches me unreviewed.
+Nothing reaches Michael unverified. A tier that passes through an unchecked claim is laundering, and
+the Council scores it as a Verification failure.
+
+**The Audit Council sits outside this flow.** It advises every tier and scores their output, but it
+originates no work and assigns none. It is a referee, not a manager.
 
 ### Model routing (Michael's standing rule: no V12 engine for simple jobs)
 
