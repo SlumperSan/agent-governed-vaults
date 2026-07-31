@@ -281,44 +281,40 @@ publicly gets the full set. **Any deliverable containing a headline number gets 
 **The Council is deliberately NOT downgraded** with the rest of the org. A weak auditor accepts wrong
 work, and wrong work is what actually burns the budget.
 
-## 4b. WHO AUDITS THE AUDITORS — the Council is checked too
+## 4b. WHO AUDITS THE AUDITORS — on trigger, not on schedule
 
-Michael, 2026-07-31: *"the audit counsel also is regularly checked on by you to make sure they're doing
-their job correctly as well."*
+Michael, 2026-07-31: *"dont audit it every sprint, only audit it when problems arise."*
 
-The Council scores everyone and nobody scores the Council. That is exactly how a quality gate rots —
-and it has already failed twice here, both times in ways that would have cost real work:
+The Council is checked when there is **cause**, not as routine. A clean sprint needs no meta-review, and
+auditing a working gate every cycle is pure overhead.
 
-1. It scored a manager **0/10 for dishonesty** when that manager had been **safety-blocked and never
-   ran**. An infrastructure block and a lying agent look identical from downstream.
-2. It **accepted a department's flat verdict** that the chain "contradicts" a claim, when the query used
-   was structurally incapable of returning a non-zero result. It graded the confidence, not the method.
+### Triggers — any one of these fires a Council audit
 
-**The orchestrator audits the Council every sprint.** Not occasionally — every sprint, as a step.
+1. **I find a real defect the Council accepted.** Its miss, logged as a Council failure.
+2. **The Council recommends a firing I judge unfounded** — e.g. the agent was blocked, or the brief was
+   impossible.
+3. **A whole sprint returns zero defects across every department.** Either genuinely excellent work or
+   an auditor not looking; assume the second until spot-checked.
+4. **A number the Council passed is later contradicted** by a second method.
+5. **Two firings of the same department in consecutive sprints** — the rebriefs may be the problem, not
+   the agents.
 
-### The five checks
+No trigger, no audit. Do not fabricate a reason to run one.
 
-| Check | The failure it catches |
-|---|---|
-| **Did it verify, or just read?** Spot-check one accepted deliverable per sprint by running it myself. | A Council that grades reports instead of behaviour. It is charged with "a report is not evidence" — it must be held to it too. |
-| **Could the method have produced the opposite result?** For any accepted absence/zero/refutation, was a positive control run? | The exact failure that produced a wrong verdict on 106.6M transactions. |
-| **Is the score defensible from the defects listed?** A 9/10 next to three real defects, or a 4/10 with none named, is a scoring failure. | Grade inflation, and firing requests with no substance behind them. |
-| **Did it check the failure channel before recommending a firing?** | Firing agents for being blocked — wastes a rebrief on a problem no replacement can solve. |
-| **Did it miss something I later found?** Anything I catch that the Council accepted is logged as a Council defect. | Silent decay: an auditor that stops finding things looks identical to clean work. |
+### When triggered, the five checks
+
+Did it verify or just read · could the method have produced the opposite result · is the score
+defensible from the defects listed · was the failure channel checked before recommending a firing ·
+what did it miss.
 
 ### Consequences
 
-- **A Council that misses a real defect I later catch gets logged in `ORG-LESSONS.md` as a Council
-  failure**, named as such, with the defect it missed.
-- **Two misses in a sprint and the Council agent is replaced** for the next cycle, briefed with both
-  misses explicitly.
-- **A Council that finds nothing across a whole sprint is itself suspect.** Four departments producing
-  zero defects means either genuinely excellent work or an auditor not looking. Assume the second until
-  I have spot-checked and proven the first.
+- A miss is logged in `ORG-LESSONS.md` as a Council failure, naming the defect it let through.
+- **Two misses in a sprint and the Council agent is replaced**, briefed with both.
 
 **The asymmetry is deliberate.** A department shipping something wrong costs one rework. A Council
-waving wrong work through corrupts every number downstream of it — and this company's only product is
-numbers people can trust.
+waving wrong work through corrupts every number downstream — and numbers people can trust are the only
+product we have.
 
 ## 5a. SPRINT CADENCE — sprints chain, they do not stop
 
@@ -346,6 +342,35 @@ accounts, his name, publishing). Even then, do not idle — §5b applies: hunt f
 single-method number, or deepen a dataset. Blocked is not the same as finished.
 
 **Sprint history lives in `ORG-BACKLOG.md`'s Done section**, with the real outcome, not the intent.
+
+## 5c. NO REDUNDANT WORK — across every tier
+
+Michael, 2026-07-31: *"reduce redundancy across all agents."*
+
+Redundant work is not thoroughness. It is spend with no information gained, and it is now a scoring
+defect under Efficiency.
+
+**Before any agent starts, it must not re-derive what is already established.** The verified baseline
+lives in `STRATEGY.md` §0.x and is restated in every dispatch. An agent that re-measures a settled
+number instead of building on it has wasted the cycle.
+
+**Rules:**
+- **Facts flow down in the brief, never get re-discovered.** If a number is verified, the dispatch
+  states it. Re-deriving it is a defect, not diligence.
+- **One department owns a file surface.** Two agents touching the same files is a collision and scores
+  against both.
+- **Read the free thing first.** Specs, `openapi.json`, existing notes files, prior harvests. Reading
+  x402scan's free spec revealed a 10x pricing improvement that four paid calls had already missed.
+- **Do not re-audit accepted work** unless §4b triggers. Shipped is shipped.
+- **A second method is required only for headline numbers.** Everything else gets verified once.
+  Duplicated verification on a low-stakes fix is redundancy wearing a rigour costume.
+- **Scale the Council panel to the stakes.** A mechanical fix does not need four lenses; a public
+  number does. Running the full panel on everything is exactly the redundancy this rule forbids.
+- **Never staff an idle department.** No queued work, no manager.
+
+**The distinction that matters:** an independent second method on a headline number is *not*
+redundancy — it is the thing that caught two wrong conclusions in 24 hours. Redundancy is repeating the
+*same* method, or re-establishing what a notes file already holds.
 
 ## 5b. NEVER IDLE — the standing order
 

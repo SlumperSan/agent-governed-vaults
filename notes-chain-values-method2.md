@@ -108,21 +108,34 @@ Using Intel department's already-bridged Coinbase 30-day sent-tx-count range (**
 `notes-reconciliation.md`) — NOT the 106.6M all-time nonce count, which is a different, larger
 denominator and would conflate all-time with 30-day:
 
-| Basis | Per-tx value used | Extrapolated 30d Coinbase $ |
-|---|---|---|
-| Method 1 mean | $0.02799 | $132,393 – $175,217 |
-| Method 2 disjoint mean | $0.038438 | $181,812 – $240,622 |
-| Spot-check mean | $0.062996 | $297,971 – $394,355 |
-| Method 1 median | $0.00515 | $24,360 – $32,239 |
-| Method 2 disjoint median | $0.017149 | $81,115 – $107,353 |
-| Spot-check median | $0.013498 | $63,846 – $84,497 |
+| Basis | Per-tx value used | Extrapolated 30d Coinbase $ | Status |
+|---|---|---|---|
+| Method 1 mean | $0.02799 | $132,393 – $175,217 | valid — usable estimate |
+| Method 2 disjoint mean | $0.038438 | $181,812 – $240,622 | valid — usable estimate |
+| Spot-check mean | $0.062996 | $297,971 – $394,355 | valid — usable estimate |
+| Method 1 median | $0.00515 | $24,360 – $32,239 | **INVALID — median × count, do not cite** |
+| Method 2 disjoint median | $0.017149 | $81,115 – $107,353 | **INVALID — median × count, do not cite** |
+| Spot-check median | $0.013498 | $63,846 – $84,497 | **INVALID — median × count, do not cite** |
 
 Real 30-day total, all facilitators: **$711,166** (x402scan, verified fact). Coinbase is one of
 several facilitators, so its own dollar volume being a fraction of $711,166 is expected and
 consistent — every basis above lands well under that all-facilitator total, unlike the original
-$28.6M/$52.6M claims which exceeded it by 40–70×. **Do not quote a single number from this table as
-final** — it spans a 16× range (mean vs. median, window to window) precisely because the
-mega-merchant mixture share swings so much between short windows.
+$28.6M/$52.6M claims which exceeded it by 40–70×.
+
+**The three MEDIAN rows above are not merely imprecise — they are mathematically invalid as
+volume estimates and must never be cited as such.** Total volume = Σ(all tx values), which the
+mean recovers by construction (mean × count = sum). The median is the *typical* transaction value
+in a right-skewed distribution (most tx are tiny, a few are $1 outliers pulling the tail) — it
+deliberately discards that tail mass. Median × count therefore estimates a "floor if every
+transaction were typical," not total dollar volume, and understates the real sum every time the
+tail carries a disproportionate share (which it does here — see the $1.00-outlier pattern in
+Method 1, Method 2, and the spot-check). $24,360–$32,239, $81,115–$107,353, and $63,846–$84,497 are
+this invalid quantity, not alternate volume estimates, and must not be quoted as such anywhere
+(see `STRATEGY.md` line 79-82, `ORG-LESSONS.md`).
+
+**Only the three MEAN rows may be quoted as a volume estimate, and even then not as a single
+final number** — they still span a real range ($132,393–$394,355, ~3×) window to window because
+the mega-merchant mixture share swings between short windows.
 
 ## What this changes about Method 1's verdict
 
