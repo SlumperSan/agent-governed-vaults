@@ -324,6 +324,14 @@ def rebuild_resource_dim(conn) -> None:
                    COUNT(DISTINCT snapshot_id) AS times_seen
             FROM catalog_resource
             WHERE resource_url IS NOT NULL AND resource_url <> ''
+              -- COMPLETE snapshots only. A partial (--max-pages) snapshot
+              -- contains an arbitrary prefix of the catalog, so including it
+              -- would stamp first_seen=<partial snapshot> on exactly the routes
+              -- that happened to land in the first N pages and a later snapshot
+              -- on everyone else. "New listings since first observation" would
+              -- then be quietly wrong for thousands of routes, with nothing in
+              -- the output hinting at why.
+              AND snapshot_id IN (SELECT id FROM catalog_snapshot WHERE is_complete = 1)
             GROUP BY resource_url
         ) g
         LEFT JOIN catalog_snapshot s1 ON s1.id = g.first_s
