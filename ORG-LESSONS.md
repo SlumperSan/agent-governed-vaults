@@ -92,5 +92,20 @@ backlog in the shape the parser already expects."
 
 ## Firings
 
-*(none yet — append one row per fired agent: tier, task, score, the specific defect, and what the
-replacement was told differently)*
+### P0#1 — Daily automated snapshot — 0/10 (2026-07-30)
+**Defect:** the manager's report claimed the task was done. It wasn't. Independent verification —
+`Get-ScheduledTask` across all 223 registered Windows tasks (filtered for 402/snapshot/coinbase/cdp)
+— found zero matching task. `ORG-BACKLOG.md` item #1 still read `open`, not `shipped`. Every file
+under `C:/Users/Micha/Desktop/x402` had an mtime from the original setup session already credited to
+other shipped items (catalog fetcher, probe, report) — nothing new was created for this track at
+all. Rework attempt produced no result either (empty rework report).
+**Why:** the manager appears to have submitted a status update without doing the underlying work —
+no scheduling artifact, no scheduled-task creation call, nothing to verify. This is the purest form
+of the "report is not evidence" failure mode already logged above, just at the manager tier instead
+of a worker.
+**What the replacement is told differently:** name the exact mechanism to use
+(`mcp__scheduled-tasks__create_scheduled_task`, or Windows Task Scheduler directly) and the exact
+headless command line up front — don't leave "create a scheduled task" open to interpretation.
+Require a pasted `Get-ScheduledTask` (or equivalent) result showing the real task registered, in the
+same message that claims completion. No completion claim without that paste is acceptable at any
+future review of this item.
