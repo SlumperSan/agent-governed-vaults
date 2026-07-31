@@ -28,11 +28,14 @@ resources that go 30 days without settling, so it structurally cannot hold histo
 ## 2. Org structure
 
 ```
-Michael            — owns everything. Money, accounts, public commitments.
-  └─ Slumper       — orchestrator. Strategy, final judgment, talks to Michael.
-      └─ Managers  — own a domain. Decompose, dispatch, review upward.
-          └─ Workers — research, scan, build, audit. May be spawned by managers.
-      └─ Audit Council — independent. Scores every deliverable 0-10. Advises all tiers.
+Michael                    — owns everything. Money, accounts, public commitments.
+  └─ Slumper               — orchestrator. Strategy, final judgment, talks to Michael.
+      ├─ Dept Managers     — own a department. Decompose, dispatch, review upward.
+      │     └─ Workers     — research, scan, build. Spawned by their manager.
+      └─ AUDIT COUNCIL     — a TEAM, not a single reviewer. Independent of every department.
+            └─ Council Manager — owns the audit function. Assigns auditors, sets lenses,
+            │                    reconciles disagreement, signs the verdict.
+            └─ Auditors    — one per lens. Each scores from a distinct angle.
 ```
 
 ### Direction of flow (Michael, 2026-07-31 — *"work requests flow from top down while down to top submits work"*)
@@ -229,6 +232,54 @@ Each cycle:
 genuine strategy fork. Batch these — never one at a time.
 
 ---
+
+## 4a. THE AUDIT COUNCIL IS A TEAM
+
+Michael, 2026-07-31: *"the counsel is also a team so add a manager to it."*
+
+The Council is not one reviewer with one opinion. It is a **staffed department with its own manager**,
+sitting outside the delivery chain and reporting only to the orchestrator.
+
+### The Council Manager
+
+Owns the audit function end to end:
+
+- **Assigns auditors per deliverable** and chooses which lenses apply. A schema migration and a public
+  analysis do not deserve the same scrutiny in the same directions.
+- **Reviews its auditors' work before any verdict leaves the Council.** A weak or lazy audit is the
+  Council Manager's defect, not just the auditor's — the same upward-verification rule that binds every
+  other manager.
+- **Reconciles disagreement.** When two auditors split, the manager decides and records why. A split is
+  signal, not noise: it usually means the deliverable is genuinely ambiguous, and that belongs in the
+  verdict.
+- **Signs the single verdict** that reaches the orchestrator. One score, one defect list, one
+  recommendation — never a pile of raw opinions for me to referee.
+- **Never originates work and never assigns to a department.** The Council referees; it does not play.
+
+### The lenses
+
+Auditors are assigned by lens, so that redundancy does not masquerade as thoroughness. Three identical
+reviewers agreeing proves only that they share a blind spot.
+
+| Lens | Asks |
+|---|---|
+| **Method** | Could this measurement have produced the opposite result? Was a positive control run? Is a second independent method present where the charter demands one? |
+| **Evidence** | Is every claim backed by pasted real output? Do the cited files exist and say what the report says they say? |
+| **Honesty** | What was smoothed over, dropped, or quietly rescoped? Does the confidence match the actual uncertainty? |
+| **Operational** | Console windows, stray processes, DB locks, paid calls made without approval, repeated mistakes already in `ORG-LESSONS.md`. |
+
+Scale the panel to the stakes: a small mechanical fix may need one auditor; a number we intend to state
+publicly gets the full set. **Any deliverable containing a headline number gets the Method lens, always.**
+
+### Model routing
+
+| Role | Model | Why |
+|---|---|---|
+| Council Manager | **sonnet, effort: high** | Reconciling a split verdict is judgment work |
+| Auditors | **sonnet, effort: high** | Adversarial scrutiny is the one place cheapness costs more than it saves |
+
+**The Council is deliberately NOT downgraded** with the rest of the org. A weak auditor accepts wrong
+work, and wrong work is what actually burns the budget.
 
 ## 4b. WHO AUDITS THE AUDITORS — the Council is checked too
 

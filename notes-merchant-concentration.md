@@ -3,7 +3,8 @@
 **Author:** Intel dept. **Date:** 2026-07-31. **Method:** free Base RPC (`eth_getLogs`/`eth_call`/
 `eth_getBlockByNumber` on `base.gateway.tenderly.co`, `base-rpc.publicnode.com`) + read-only query
 against `x402_index.db`. No paid endpoint touched. All figures below are pasted real output, not
-inference — commands are reproducible from this file.
+inference. Reproducible script: `C:/Users/Micha/Desktop/x402/onchain_merchant_concentration.py`
+(`python onchain_merchant_concentration.py [basics|windows|balance]`).
 
 ---
 
@@ -19,48 +20,71 @@ from specific URLs. Priced at $0.002/URL..."`.
 - EOA, not a contract (`eth_getCode` → `0x`).
 - Sent only **4 transactions ever** as a sender (`eth_getTransactionCount` nonce = 4) — consistent
   with a payout wallet that receives EIP-3009 transfers and rarely acts itself.
-- Current USDC balance: **$146,204.67** (`balanceOf` via `eth_call`, live).
-- **Zero outgoing USDC transfers in the last 50,000 blocks (~27.8h)** — it is not cashing out; funds
-  sit and accumulate. (27.8h window only; does not prove it never withdraws.)
+- Current USDC balance: **$146,242.98** (`balanceOf` via `eth_call`, live; re-checked, drifts up
+  minute to minute as expected).
+- **First went from zero to nonzero balance at block 39,961,213**, timestamp
+  **2025-12-26 01:16:13 UTC** — found by binary search of `balanceOf` at historical block heights
+  (archival state queries confirmed working on the free RPCs used here). Confirmed zero at five
+  earlier checkpoints spanning genesis to block 37,500,001. **This merchant is ~217 days old
+  (~7.1 months)** as of 2026-07-31 — it did not exist for anything close to the 74 months implied
+  by the ecosystem-wide all-time/30-day-rate math in §5.
+- **Zero outgoing USDC transfers in the last 50,000 blocks (~27.8h)** — no cash-out in the last day.
+  This does **not** establish the address never withdrew earlier in its 217-day life (checking the
+  full history would mean ~1,880 chunked `eth_getLogs` calls at the 10,000-block cap — not done this
+  cycle), so the current balance should be read as "funds on hand now," not as "cumulative lifetime
+  revenue." See §2 for why that distinction matters.
 - Its single dominant counterparty across every sampled window is one buyer EOA,
   `0x2b4ee3387008e5ff1a9996fc8b48d2fd61389037` — itself an EOA, nonce 0 (never submitted its own
   tx — a pure EIP-3009 signer, exactly the x402 shape: buyer signs, facilitator submits and pays gas).
 
-## 2. Volume pattern: bursty, not steady
+## 2. Volume pattern: bursty, not steady — confirmed on 10 windows, not 1
 
-Sampled 500-block (~1,000s) windows of incoming USDC `Transfer` logs to the address, at five points
-across ~48 hours (real pasted output):
+Sampled 500-block (~1,000s) windows of incoming USDC `Transfer` logs to the address, at ten points
+across ~72 hours (real pasted output; `python onchain_merchant_concentration.py windows`):
 
-| Window | Logs | Unique buyers seen | Implied rate/day | Implied 30d |
-|---|---:|---:|---:|---:|
-| Recent (now) | 1,197 | 2 | 103,405 | 3,102,161 |
-| 6h back | 1,123 | 4 | 97,027 | 2,910,816 |
-| 12h back | **18,972** | 2 | 1,639,613 | **49,188,384** |
-| 24h back | 1,168 | 2 | 100,915 | 3,027,456 |
-| 48h back | 1,193 | 2 | 103,075 | 3,092,256 |
+| Window | Logs | Implied rate/day | Implied 30d |
+|---|---:|---:|---:|
+| Recent (now) | 1,197 | 103,405 | 3,102,161 |
+| 6h back | 1,123 | 97,027 | 2,910,816 |
+| 9h back | **15,374** | 1,328,314 | 39,849,408 |
+| 12h back | **18,972** | 1,639,613 | 49,188,384 |
+| 18h back | 1,415 | 122,256 | 3,667,680 |
+| 24h back | 1,168 | 100,915 | 3,027,456 |
+| 36h back | 1,628 | 140,659 | 4,219,776 |
+| 48h back | 1,193 | 103,075 | 3,092,256 |
+| 60h back | 3,846 | 332,294 | 9,968,832 |
+| 72h back | 1,493 | 129,024 | 3,870,720 |
 
-Four of five windows cluster tightly around **~100k tx/day (~3M/30d)**. One window (12h back) spiked
-to **~15–19x** that rate. **The activity is genuinely bursty**, not a smooth 300k/day average — this
-one merchant alternates between a steady baseline and short intense bursts, most likely automated
-agent-loop calling patterns rather than organic human traffic.
+**The 12h-back outlier was re-run and replicates exactly**: 18,972 logs both times, all
+`(txHash, logIndex)` pairs unique (no duplicate fan-out from the RPC), every returned block number
+inside the requested range (provider did not silently widen the window). It is a real event, not a
+query artifact. **And it is not unique** — the 9h-back and 60h-back windows show the same pattern at
+smaller scale (15,374 and 3,846 respectively, both several multiples of the ~1,100–1,600/window
+baseline). **Bursts recur; this merchant genuinely alternates between a steady baseline (~100–140k
+tx/day) and short intense spikes**, consistent with automated agent-loop calling rather than steady
+organic traffic.
 
-**Cross-check against the headline 9,401,793/30d:** summing all five disjoint samples (5,000s total
-elapsed, 23,653 logs) and extrapolating: **23,653 / 5,000s × 86,400 × 30 ≈ 12,257,000/30d.** That is
-the same order of magnitude as x402scan's 9,401,793 and within ~30% on n=5 short windows dominated by
-one outlier — a genuine independent corroboration, not a contradiction, of the headline count. A
-proper reconciliation would need many more windows; this is a spot-check, not a full remeasurement.
+**Cross-check against the headline 9,401,793/30d:** summing all ten disjoint samples (10,000s total
+elapsed, 47,409 logs): **47,409 / 10,000s × 86,400 × 30 ≈ 12,288,000/30d.** Consistent with the
+5-window spot-check done earlier (12,257,000/30d) — the aggregate rate is stable under replication
+even though individual windows swing 16x. This is the same order of magnitude as x402scan's
+9,401,793 and a genuine independent corroboration of the headline transaction count, not a
+contradiction — though n=10 short windows is still a spot-check, not a full remeasurement.
 
-**Per-tx value, live-sampled:** $0.002–$1.48 range, window averages $0.035–$0.049 (steady windows) vs
-$0.0083 (burst window) — bracketing x402scan's stated $0.0169 average. Consistent.
+**Per-tx value, live-sampled:** $0.002–$1.48 range, baseline-window averages $0.035–$0.049 vs
+$0.0083–$0.0083 in the two large-burst windows — bracketing x402scan's stated $0.0169 ecosystem
+average for this merchant, but running noticeably higher in baseline periods. See §4 for why this
+matters to the dollar-share number.
 
-**Balance sanity check:** 9,401,793 × $0.0169 ≈ **$158,910** implied 30-day revenue. Current on-chain
-balance is **$146,205** with zero withdrawals in the last day — 92% of implied revenue sitting
-unspent on-chain. This is a strong, cheap, independent corroboration of the transaction-count ×
-average-price figure for this specific merchant (not a claim about the whole ecosystem total).
-
-**NOT ESTABLISHED:** exact start date of this merchant's activity (would need a binary search over
-historical blocks for first nonzero incoming-transfer block — feasible free but not done this cycle;
-see §4 for a related, cheaper binary search that WAS done).
+**On the balance vs. implied-revenue cross-check:** now that the merchant's start date is known
+(§1 — first funded 2025-12-26, ~217 days ago), a naive "current balance ≈ 30 days of revenue" check
+does not hold up: $146,243 held over 217 days averages **$674/day (~$20,230/30d)** — far below the
+**$158,910/30d** implied by 9,401,793 tx × $0.0169. Two explanations, neither confirmed: (a) this
+merchant's volume has ramped up sharply since December and the current rate is much higher than its
+own historical average (consistent with the burst pattern above and with §5's ramp-up hypothesis), or
+(b) the address has withdrawn funds at some point in its 217-day history that we did not check for
+(only the last 27.8h is confirmed withdrawal-free). We **do not** treat the balance as confirming the
+30-day revenue figure — that framing was wrong in an earlier draft of this note and is corrected here.
 
 ## 3. Is it in our CDP catalog? Yes — and that is itself the story
 
@@ -83,23 +107,37 @@ capture rate we measured for the CDP catalog overall. Either:
     this merchant specifically.
 
 We cannot distinguish (a) from (b) without more data — **honestly flagged as open**, not resolved.
-Either way, the headline holds: **the single largest x402 consumer measured is, at minimum, 99.97%
-invisible to Coinbase's own catalog of itself.**
+Either way, the ratio holds under both readings: **the catalog's own counters account for roughly
+1 in 3,400 of this merchant's real on-chain transactions** — whether because the real traffic runs
+through an uncatalogued route (a genuine coverage gap) or because the catalog's own call-counter is
+wrong by that factor for this merchant (a measurement-quality gap). Both are bad for "the catalog is
+the market"; we are not asserting which one it is.
 
 ## 4. Market shape: transactions vs. dollars tell different stories
 
 | Metric | This merchant | Full ecosystem (30d) | Share |
 |---|---:|---:|---:|
 | Transactions | 9,401,793 | 12,421,896 | **75.7%** |
-| Dollars (@ $0.0169 avg) | ~$158,910 | $711,166 | **22.3%** |
+| Dollars (@ x402scan's stated $0.0169 avg) | ~$158,910 | $711,166 | **22.3%** |
 | Unique buyers | 1,137 | (not directly comparable — no ecosystem-wide unique-buyer figure at this granularity) | — |
+
+**The dollar row is vendor-derived, not independently confirmed by us.** x402scan states the
+$0.0169 average; our own live-sampled windows (§2) ran higher in baseline periods — $0.035–$0.049 —
+and lower in the two large bursts (~$0.0083). At our baseline-sampled ~$0.04 average, this merchant's
+implied 30-day revenue would be ~$376,000 — more than half of the *entire* ecosystem's stated
+$711,166, which cannot be right if the ecosystem total is itself correct. This tells us the true
+average almost certainly sits closer to x402scan's $0.0169 than to our short-window samples (which
+are not volume-weighted across the full 30 days and are skewed by whichever burst/baseline mix each
+window happened to catch), but **we did not independently verify the $0.0169 figure** — treat the
+22.3% dollar-share number as bracketed, not confirmed, by our sampling.
 
 **"The x402 economy" means two different things depending on the unit.** By transaction count, this
 one merchant *is* the x402 economy — three in four x402 settlements anywhere, on any facilitator, are
 someone calling this one address, likely an automated agent hammering a cheap search/data endpoint in
-bursts. By dollar volume, it is one strong contributor among several — the other 24.3% of transactions
-carry 77.7% of the dollars, meaning every other merchant's average ticket is roughly **11x higher**
-than this one's ($0.0169 vs. an implied ~$0.19 average for the rest of the ecosystem).
+bursts. By dollar volume (on x402scan's own figures), it is one strong contributor among several —
+the other 24.3% of transactions would carry 77.7% of the dollars, implying every other merchant's
+average ticket is roughly **11x higher** than this one's. That multiple is only as solid as the
+underlying $0.0169 average, which we have not verified ourselves.
 
 This is exactly the same distinction that made the original $62.8k/month catalog headline misleading
 (a few outlier high-ticket routes dominating a dollar figure) — here it runs the other direction: one
