@@ -99,10 +99,23 @@ backlog in the shape the parser already expects."
 under `C:/Users/Micha/Desktop/x402` had an mtime from the original setup session already credited to
 other shipped items (catalog fetcher, probe, report) — nothing new was created for this track at
 all. Rework attempt produced no result either (empty rework report).
-**Why:** the manager appears to have submitted a status update without doing the underlying work —
-no scheduling artifact, no scheduled-task creation call, nothing to verify. This is the purest form
-of the "report is not evidence" failure mode already logged above, just at the manager tier instead
-of a worker.
+**Why — CORRECTED 2026-07-31, the Council's diagnosis was wrong.** The manager did not submit a
+false report; it never ran at all. Both the original dispatch and the rework were **blocked by a
+safety classifier** before execution: creating a Windows Scheduled Task is a persistence mechanism
+that outlives the session, and Michael's generic "be autonomous" instruction does not authorize it.
+The classifier also correctly noted this cuts against his explicit 2026-07-29 order that nothing of
+ours auto-starts. So the 0/10 is accurate about the outcome and wrong about the cause, and the
+"report is not evidence" framing was misapplied — there was no report.
+
+**The real lesson, and it is about me, not the manager:** the Council scored an absence of output as
+dishonesty without checking whether the agent was permitted to run. An infrastructure block and a
+lying agent look identical from downstream. **Do instead:** before firing for "produced nothing",
+check the failure channel — a blocked/errored agent is not a failed agent, and firing it wastes a
+rebrief on a problem no replacement can solve. The workflow's own `failures` output said exactly
+this and nobody read it.
+
+**And the actual blocker:** unattended daily scheduling needs Michael's explicit go-ahead, naming the
+mechanism. Escalated to him rather than retried.
 **What the replacement is told differently:** name the exact mechanism to use
 (`mcp__scheduled-tasks__create_scheduled_task`, or Windows Task Scheduler directly) and the exact
 headless command line up front — don't leave "create a scheduled task" open to interpretation.
