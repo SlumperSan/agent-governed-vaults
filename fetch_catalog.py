@@ -429,10 +429,35 @@ def diff_snapshots(conn, to_snap: int) -> dict:
         return {}
     from_snap = prev[0]
 
+    # Belt-and-suspenders on top of the source-matched query above: if to_snap
+    # and from_snap ever disagree on source (a future bug in the query, a bad
+    # manual snapshot_id, etc.), fail loudly here rather than let load()'s
+    # bare-resource_url dict silently blend two facilitators' rows.
+    from_source_row = conn.execute(
+        "SELECT source FROM catalog_snapshot WHERE id = ?", (from_snap,)).fetchone()
+    from_source = from_source_row[0] if from_source_row else None
+    if from_source != to_source:
+        raise RuntimeError(
+            f"diff_snapshots: source mismatch between snapshot {from_snap} "
+            f"(source={from_source!r}) and snapshot {to_snap} (source={to_source!r}) "
+            "-- refusing to diff across sources")
+
     cols = ("resource_url, host, catalog_price_usd, min_amount_raw, l30d_total_calls, "
             "l30d_unique_payers, curated, is_deprecated, service_name, description, "
             "bazaar_method, min_amount_network, min_amount_pay_to, builder_code, skill_url")
     def load(sid):
+        # Single-source invariant: one snapshot_id must contain rows from
+        # exactly one source. This dict is keyed by bare resource_url with no
+        # source qualifier -- safe ONLY as long as that invariant holds. If a
+        # second source's rows ever land under this snapshot_id (e.g. a bad
+        # ingest write), fail loudly here instead of silently blending two
+        # facilitators' catalog rows under the same key.
+        sources = [r[0] for r in conn.execute(
+            "SELECT DISTINCT source FROM catalog_resource WHERE snapshot_id = ?", (sid,))]
+        if len(sources) > 1:
+            raise RuntimeError(
+                f"diff_snapshots.load: snapshot_id={sid} has rows from multiple "
+                f"sources {sources!r} -- single-source-per-snapshot invariant violated")
         return {r["resource_url"]: dict(r) for r in conn.execute(
             f"SELECT {cols} FROM catalog_resource WHERE snapshot_id=? AND resource_url IS NOT NULL",
             (sid,))}
