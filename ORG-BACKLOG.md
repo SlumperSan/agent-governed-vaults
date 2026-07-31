@@ -34,20 +34,21 @@ Status: `open` · `building` · `shipped` · `parked` · `blocked`
 
 ## Blocked on Michael — do not attempt
 
-| # | Item | What it needs |
-|---|---|---|
-| B1 | Buy a domain (`402cap.com` recommended, verified available) | ~$11/yr on his card. Raise as a Paybox request. |
-| B2 | CDP account for mainnet facilitator + Bazaar listing | His signup, his API keys. |
-| B3 | Self-pay once to bootstrap our own Bazaar listing | Real USDC + gas. Paybox request; he approves. |
-| B4 | Publishing anything public under his name | Drafts only until he says go. |
+| # | Item | What it needs | Status |
+|---|---|---|---|
+| B1 | Buy a domain (`402cap.com` recommended, verified available) | ~$11/yr on his card. Raise as a Paybox request. | blocked |
+| B2 | CDP account for mainnet facilitator + Bazaar listing | His signup, his API keys. | blocked |
+| B3 | Self-pay once to bootstrap our own Bazaar listing | Real USDC + gas. Paybox request; he approves. | blocked |
+| B4 | Publishing anything public under his name | Drafts only until he says go. | blocked |
 
 ---
 
 ## Done
 
-| Item | Outcome |
-|---|---|
-| Rebuild `x402-endpoint` into a spec-compliant v2 seller | Shipped, verified. Was unpayable (invented `?x402_receipt=` flow); now emits a real 402. Two security bugs (free SSRF oracle, DNS-rebinding TOCTOU) closed by test. |
-| Catalog fetcher + unpaid prober + churn diffing | Shipped. 15,524 routes / 1,577 hosts. 96.7% alive, 320ms median. |
-| Protocol research + `IMPLEMENTATION-SPEC.md` | Shipped. 9 agents, adversarially verified. Read it before any x402 work. |
-| Version control | Both repos under local git. GitHub deferred until deploy; private repo when it happens. |
+| Item | Outcome | Status |
+|---|---|---|
+| Rebuild `x402-endpoint` into a spec-compliant v2 seller | Was unpayable (invented `?x402_receipt=` flow); now emits a real 402. Two security bugs (free SSRF oracle, DNS-rebinding TOCTOU) closed by test. | shipped |
+| Catalog fetcher + unpaid prober + churn diffing | 15,524 routes / 1,577 hosts. 96.7% alive, 320ms median. | shipped |
+| Protocol research + `IMPLEMENTATION-SPEC.md` | 9 agents, adversarially verified. Read it before any x402 work. | shipped |
+| Version control | Both repos under local git. GitHub deferred until deploy; private repo when it happens. | shipped |
+| Lift backlog tooling from Celestials | `backlog_index.py` + `backlog_merge.py` repointed at this repo. Selftest 26/26. Gives the org the file-based handoff the charter assumes. | shipped |
