@@ -230,6 +230,45 @@ genuine strategy fork. Batch these — never one at a time.
 
 ---
 
+## 4b. WHO AUDITS THE AUDITORS — the Council is checked too
+
+Michael, 2026-07-31: *"the audit counsel also is regularly checked on by you to make sure they're doing
+their job correctly as well."*
+
+The Council scores everyone and nobody scores the Council. That is exactly how a quality gate rots —
+and it has already failed twice here, both times in ways that would have cost real work:
+
+1. It scored a manager **0/10 for dishonesty** when that manager had been **safety-blocked and never
+   ran**. An infrastructure block and a lying agent look identical from downstream.
+2. It **accepted a department's flat verdict** that the chain "contradicts" a claim, when the query used
+   was structurally incapable of returning a non-zero result. It graded the confidence, not the method.
+
+**The orchestrator audits the Council every sprint.** Not occasionally — every sprint, as a step.
+
+### The five checks
+
+| Check | The failure it catches |
+|---|---|
+| **Did it verify, or just read?** Spot-check one accepted deliverable per sprint by running it myself. | A Council that grades reports instead of behaviour. It is charged with "a report is not evidence" — it must be held to it too. |
+| **Could the method have produced the opposite result?** For any accepted absence/zero/refutation, was a positive control run? | The exact failure that produced a wrong verdict on 106.6M transactions. |
+| **Is the score defensible from the defects listed?** A 9/10 next to three real defects, or a 4/10 with none named, is a scoring failure. | Grade inflation, and firing requests with no substance behind them. |
+| **Did it check the failure channel before recommending a firing?** | Firing agents for being blocked — wastes a rebrief on a problem no replacement can solve. |
+| **Did it miss something I later found?** Anything I catch that the Council accepted is logged as a Council defect. | Silent decay: an auditor that stops finding things looks identical to clean work. |
+
+### Consequences
+
+- **A Council that misses a real defect I later catch gets logged in `ORG-LESSONS.md` as a Council
+  failure**, named as such, with the defect it missed.
+- **Two misses in a sprint and the Council agent is replaced** for the next cycle, briefed with both
+  misses explicitly.
+- **A Council that finds nothing across a whole sprint is itself suspect.** Four departments producing
+  zero defects means either genuinely excellent work or an auditor not looking. Assume the second until
+  I have spot-checked and proven the first.
+
+**The asymmetry is deliberate.** A department shipping something wrong costs one rework. A Council
+waving wrong work through corrupts every number downstream of it — and this company's only product is
+numbers people can trust.
+
 ## 5a. SPRINT CADENCE — sprints chain, they do not stop
 
 Michael, 2026-07-31: *"after you finish a sprint (ideation, research and planning, and execution) then

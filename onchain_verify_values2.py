@@ -17,6 +17,7 @@ import json, urllib.request, urllib.error, time, sys, statistics
 RPC = "https://base-rpc.publicnode.com"
 RPC_FALLBACKS = ["https://base.llamarpc.com", "https://mainnet.base.org"]
 USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+MEGA_MERCHANT = "0xe9030014f5dae217d0a152f02a043567b16c1abf"  # 75.7% of x402scan's 30d tx, $0.0169/tx
 
 # Both known calldata layouts for EIP-3009 on Base USDC (FiatTokenV2.2 supports both overloads).
 # For OUR purpose (extracting `value`) they are identical for the first 3 static words:
@@ -154,9 +155,13 @@ def disjoint_window(n_blocks, end_block, addrs):
         total_tx_seen += len(txs)
         for tx in txs:
             if tx.get("from","").lower() in addr_set_l:
-                sel, val, frm, to = decode_calldata_value(tx.get("input","0x"))
-                matches.append({"hash": tx["hash"], "from": tx["from"], "to": tx.get("to"),
-                                "block": bn, "selector": sel, "value_usdc": val})
+                sel, val, frm, recipient = decode_calldata_value(tx.get("input","0x"))
+                contract = (tx.get("to") or "").lower()
+                is_usdc_call = (contract == USDC.lower())
+                matches.append({"hash": tx["hash"], "from": tx["from"], "contract": tx.get("to"),
+                                "recipient": recipient, "is_usdc_call": is_usdc_call,
+                                "block": bn, "selector": sel,
+                                "value_usdc": val if is_usdc_call else None})
         if blocks_scanned % 20 == 0:
             print(f"  scanned {blocks_scanned}/{n_blocks} blocks, total_tx_seen={total_tx_seen}, matches={len(matches)}", flush=True)
         time.sleep(0.1)
@@ -165,6 +170,7 @@ def disjoint_window(n_blocks, end_block, addrs):
         json.dump({"start_block": start_block, "end_block": end_block, "blocks_scanned": blocks_scanned,
                    "total_tx_seen": total_tx_seen, "matches": matches}, f, indent=2)
 
+    n_non_usdc = sum(1 for m in matches if not m["is_usdc_call"])
     values = [m["value_usdc"] for m in matches if m["value_usdc"] is not None]
     selector_counts = {}
     for m in matches:
@@ -173,6 +179,15 @@ def disjoint_window(n_blocks, end_block, addrs):
     print("=== SELECTOR DISTRIBUTION (disjoint window) ===")
     for s,c in sorted(selector_counts.items(), key=lambda x:-x[1]):
         print(f"  {s}: {c}")
+    print(f"excluded from value stats (contract called was NOT usdc): {n_non_usdc}/{len(matches)}")
+
+    mega = [m for m in matches if (m.get("recipient") or "").lower() == MEGA_MERCHANT.lower()]
+    mega_vals = [m["value_usdc"] for m in mega if m["value_usdc"] is not None]
+    print(f"=== MEGA-MERCHANT CHECK ({MEGA_MERCHANT}, 75.7% of x402scan's 30d tx @ $0.0169/tx) ===")
+    print(f"  found {len(mega)}/{len(matches)} matches to this recipient in this window; "
+          f"values: {mega_vals[:10]}{'...' if len(mega_vals)>10 else ''}")
+    if mega_vals:
+        print(f"  mega-merchant mean=${statistics.mean(mega_vals):.6f} median=${statistics.median(mega_vals):.6f}")
     stats = None
     if values:
         values.sort()
@@ -190,8 +205,56 @@ def disjoint_window(n_blocks, end_block, addrs):
     with open("onchain_values2_disjoint_summary.json","w") as f:
         json.dump({"start_block": start_block, "end_block": end_block, "blocks_scanned": blocks_scanned,
                    "total_tx_seen": total_tx_seen, "n_facilitator_matched": len(matches),
-                   "selector_counts": selector_counts, "value_stats": stats, "all_values": values}, f, indent=2)
+                   "n_non_usdc_call": n_non_usdc,
+                   "selector_counts": selector_counts, "value_stats": stats, "all_values": values,
+                   "mega_merchant_matches": len(mega), "mega_merchant_values": mega_vals}, f, indent=2)
     return stats, len(matches), total_tx_seen, blocks_scanned
+
+# ---------- Step D: small far-back spot check (~30 days back) ----------
+def spot_check_far_back(n_blocks, blocks_back, addrs, tag):
+    latest = get_block_number()
+    end_block = latest - blocks_back
+    print(f"=== SPOT CHECK '{tag}': latest={latest}, probing {n_blocks} blocks ending {end_block} "
+          f"({blocks_back} blocks / ~{blocks_back*2/86400:.1f} days back) ===", flush=True)
+    addr_set_l = set(a.lower() for a in addrs)
+    matches = []
+    blocks_scanned = 0
+    total_tx_seen = 0
+    errors = 0
+    start_block = end_block - n_blocks + 1
+    for bn in range(start_block, end_block+1):
+        try:
+            blk = get_block(bn, full=True)
+        except Exception as e:
+            errors += 1
+            print(f"  block {bn} ERROR: {e}", flush=True)
+            continue
+        if blk is None:
+            errors += 1
+            continue
+        blocks_scanned += 1
+        txs = blk.get("transactions", [])
+        total_tx_seen += len(txs)
+        for tx in txs:
+            if tx.get("from","").lower() in addr_set_l:
+                sel, val, frm, recipient = decode_calldata_value(tx.get("input","0x"))
+                contract = (tx.get("to") or "").lower()
+                is_usdc_call = (contract == USDC.lower())
+                matches.append({"hash": tx["hash"], "block": bn, "selector": sel,
+                                "recipient": recipient,
+                                "value_usdc": val if is_usdc_call else None})
+    values = [m["value_usdc"] for m in matches if m["value_usdc"] is not None]
+    result = {"tag": tag, "latest_at_run": latest, "start_block": start_block, "end_block": end_block,
+               "blocks_back": blocks_back, "blocks_scanned": blocks_scanned, "rpc_errors": errors,
+               "total_tx_seen": total_tx_seen, "n_matched": len(matches),
+               "median": statistics.median(values) if values else None,
+               "mean": statistics.mean(values) if values else None,
+               "all_values": values}
+    print(f"SPOT CHECK '{tag}' DONE: blocks_scanned={blocks_scanned}/{n_blocks} (errors={errors}) "
+          f"matched={len(matches)} median={result['median']} mean={result['mean']}", flush=True)
+    with open(f"onchain_values2_spotcheck_{tag}.json","w") as f:
+        json.dump(result, f, indent=2)
+    return result
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
@@ -213,5 +276,17 @@ if __name__ == "__main__":
         # 100 of those 500 for a same-size-as-method-1 window, full-population decode (free --
         # calldata comes from the same full-block fetch, no extra receipt calls needed).
         disjoint_window(n_blocks=100, end_block=49323614, addrs=addrs)
+
+    if mode in ("all", "spotcheck"):
+        data = json.load(open("facilitator_addresses.json"))
+        fac = {f["id"]: f for f in data["facilitators"]}["coinbase"]
+        addrs = fac["base"]
+        # ~30 days back (1,296,000 blocks @ 2s/block) -- tests historical composition, the
+        # single biggest limitation flagged in notes-chain-values.md. Small n by design (cheap
+        # RPC budget, ~20 blocks): explicitly a spot check, not a third full sample.
+        try:
+            spot_check_far_back(n_blocks=20, blocks_back=1_296_000, addrs=addrs, tag="30d_back")
+        except Exception as e:
+            print(f"SPOT CHECK FAILED (documented limitation, not hidden): {e}", flush=True)
 
     print("ALL DONE", flush=True)
