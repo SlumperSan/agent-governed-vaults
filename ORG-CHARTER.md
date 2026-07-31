@@ -122,12 +122,33 @@ admitted unknown, because it gets acted on.
 ### Consequences
 
 - **≥8** — accepted, flows upward.
-- **<8** — **the agent is fired.** Work goes back down to a NEW agent, briefed with the specific
-  defect. Never re-prompt a failed agent to "try again" — its context is already contaminated by the
-  wrong approach.
-- **Manager <8** — that manager is replaced. The new manager is briefed with the predecessor's
-  failure written out explicitly, so the mistake is not re-made.
-- Every firing appends a row to `ORG-LESSONS.md`. **A lesson not written down will be repaid.**
+- **<8** — the Council **recommends** firing. It does not fire.
+
+**The Council recommends; the orchestrator decides** (Michael, 2026-07-31: *"Counsel should give
+firing requests to you and you decide if yes or no from their reasons"*). A sub-8 score produces a
+firing *request* with its reasons attached. I approve or reject it.
+
+**Before approving any firing I must check the failure channel.** This rule exists because I got it
+wrong: on 2026-07-31 the Council scored a manager 0/10 for "producing nothing" and I fired it — but
+it had been **blocked by a safety classifier and never ran at all.** An infrastructure block and a
+dishonest agent look identical from downstream. Firing the blocked one wastes a rebrief on a problem
+no replacement can solve, because the replacement will be blocked too.
+
+So, on every firing request, distinguish:
+
+| Cause | Right response |
+|---|---|
+| Agent did the work badly | **Approve the firing.** Rebrief a fresh agent with the named defect. |
+| Agent was blocked, errored, or killed | **Reject the firing.** Fix the blocker or escalate it. Not the agent's fault. |
+| The brief was wrong or impossible | **Reject.** Rewrite the brief; a new agent would fail the same way. |
+| Scope was blocked on Michael all along | **Reject and escalate to him.** No agent can unblock it. |
+
+- **Manager fired** — replaced by a new manager briefed with the predecessor's failure written out
+  explicitly. Never re-prompt a failed agent to "try again"; its context is already contaminated by
+  the wrong approach.
+- Every firing **and every rejected firing request** appends to `ORG-LESSONS.md`, with the cause.
+  A rejected request is often the more valuable lesson — it means the org misdiagnosed something.
+  **A lesson not written down will be repaid.**
 
 ---
 
