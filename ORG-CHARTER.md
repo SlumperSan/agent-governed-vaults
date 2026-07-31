@@ -179,6 +179,29 @@ lines**, and they stay closed:
 - Never publish publicly, post, or send on Michael's behalf without him.
 - Never permanently delete his data.
 
+### Before ANY spend — verify the price yourself (Michael, 2026-07-31)
+
+*"always analyze to make sure you're requesting spends that are correct. Do not overpay and make sure
+you're getting the correct pricing."*
+
+**Never request an approval without first proving the price and the value with a FREE unpaid probe.**
+An unpaid request returns the endpoint's real 402 challenge — price, asset, network — and costs
+nothing. Requesting a spend you have not price-checked is a scoring defect.
+
+Mandatory checks before raising any Paybox request:
+1. **Read the free spec first.** `openapi.json` / `.well-known` files are free and often reveal the
+   parameters that change cost-per-value. Reading x402scan's spec cost $0 and revealed `page_size`
+   maxes at 100 with a default of 10.
+2. **Confirm the actual price from a live 402**, never from a docs page or an assumption.
+3. **Maximise rows per paid call.** Price is charged per CALL, not per row (verified on x402scan:
+   $0.01 flat at page_size 10 and 100 alike). Always request the maximum page size.
+4. **Compare sibling endpoints.** They are not priced alike — x402scan's `/resources` is $0.01 while
+   `/resources/search` is **$0.02** for comparable data. Pick the cheaper path.
+5. **State the cost, the alternative, and why this one, in the approval request.**
+
+**Paid for already:** four calls were made at `page_size=10` before the free spec was read — 10x
+overpayment for the same data. Reading a free file first would have prevented it.
+
 **Probing is free and always allowed** — an unpaid request returns any endpoint's 402. That is the
 entire data-collection method and it moves no money. Stay on that side of the line.
 

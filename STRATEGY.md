@@ -148,11 +148,11 @@ Batched deliberately. Nothing below is blocked on engineering.
 
 | # | Decision | Cost | When needed |
 |---|---|---|---|
-| 1 | **Domain** — `402cap.com` verified available | ~$11/yr | Phase 2. Cheap insurance; the obvious 402 names were squatted in Oct 2025. |
+| 1 | ~~Domain~~ — **DEFERRED by Michael 2026-07-31**: *"No hosting or domain as of now. Until the product is semi ready, we'll explore those options."* `402cap.com` was verified available; re-check before buying. | $0 for now | Deferred |
 | 2 | **CDP account** — mainnet facilitator + Bazaar listing | Signup + ~$0.001/tx after 1k free | Phase 3 |
 | 3 | **Bootstrap payment** — Bazaar only catalogues a service after its first settled payment | Cents | Phase 3 |
 | 4 | **Publishing** — every public word under his name | — | Phase 2 onward |
-| 5 | **Hosting** — where the site and API live | Small monthly | Phase 3 |
+| 5 | ~~Hosting~~ — **DEFERRED 2026-07-31**, same instruction. Build and run locally until the product is semi-ready. The site is deliberately static-generated so hosting stays trivial and cheap whenever we do move. | $0 for now | Deferred |
 | 6 | Further paid x402 research calls | $0.01 each, Paybox-approved | Ongoing |
 
 **Standing:** the org never moves money, creates accounts, signs, or publishes. It raises Paybox
