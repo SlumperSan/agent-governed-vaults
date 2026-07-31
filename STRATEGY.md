@@ -90,6 +90,18 @@ magnitude (or more) below the original claim, the CDP catalog captures roughly 3
 market by transaction/dollar volume respectively, and the only quotable 30-day Coinbase-specific
 mean-basis range is $132,393–$394,355.
 
+**Sprint 6 addendum — mega-merchant dollar SHARE now has a genuine second method:** raw on-chain
+share of Coinbase-Base dollars in a fresh disjoint window (49,348,974–49,349,273) is **74.37%**
+($175.80/$236.38, calldata-decode). Council review independently re-derived this via `eth_getLogs`
+on USDC Transfer events filtered by the mega-merchant as recipient (a genuinely different method —
+event-log decode, not calldata decode) over the identical window: 996 logs / $175.79931 — a near-exact
+match. **This specific 74.37% figure is now doubly confirmed**; the wider 13.8%–41.2% *ecosystem*-share
+bracket it feeds into is still single-method / inherited-range and remains "consistent with, not
+confirming" x402scan's 22.3%. Caution flagged: do not compare this merchant's per-tx **median** to
+x402scan's stated **average** and call it agreement — that repeats the median/skew trap in reverse.
+The valid mean-to-mean comparison ($0.1769 measured vs. $0.0169 vendor-stated, 10.5× apart) is the
+real open gap, not the median-vs-mean pairing.
+
 ---
 
 ## 1. What the company is
@@ -176,8 +188,8 @@ instruction.
 | Product | Site architecture and information design. Crawlable multi-page (NOT the single-file pattern salvaged from Celestials — wrong shape for 15,500 indexed routes). | SEO is distribution for a data product |
 | API/MCP | Design the two endpoints that carry the product: *what changed since T*, and *history for resource X*. Decide the pricing model — plausibly x402 itself, which makes us a dogfooding proof. | This is the actual business |
 | Intel | Productise the price-mismatch feed into a live safety signal with severity tiers | **DONE 2026-07-31** — severity-tiered (CRITICAL/HIGH/LOW) `/mismatches` API + MCP filter, wired into the daily cron as step 6b so it regenerates automatically (see Backlog #7). |
-| Data | Schema migration for multi-source (`source` column) so non-CDP catalogs coexist without breaking existing queries | **DONE 2026-07-31** — additive `source` column on both catalog tables, `v_latest_catalog` genuinely fixed at schema level (see Backlog #17). `change_event`/`resource_dim` NOT yet partitioned — new Backlog #18, blocks Ecosystem's #12 ingestion. |
-| Ecosystem | Ingestion for the confirmed non-CDP catalogs (PayAI, UltravioletaDAO, Thirdweb) | 808 hosts (86.2%) are invisible to CDP |
+| Data | Schema migration for multi-source (`source` column) so non-CDP catalogs coexist without breaking existing queries | **DONE 2026-07-31** — additive `source` column on both catalog tables, `v_latest_catalog` genuinely fixed at schema level (Backlog #17). **`change_event`/`resource_dim` now also partitioned (Backlog #18, closed Sprint 6)** — `resource_dim` PK is `(source, resource_url)`, `rebuild_resource_dim()`/`diff_snapshots()` both scope to source. Schema is now genuinely ready for a 2nd source; one residual risk remains (unenforced invariant in `diff_snapshots()`'s `load()`, Backlog #19). |
+| Ecosystem | Ingestion for the confirmed non-CDP catalogs (PayAI, UltravioletaDAO, Thirdweb) | 808 hosts (86.2%) are invisible to CDP. **Sprint 6: fresh PayAI catalog (25,096 items) + full column-mapping doc ready** (`notes-payai-catalog-raw.json`, `notes-payai-ingestion-plan.md`); 88.8-99.83% price coverage projected. Schema unblocked (see Data row above). Ingestion code itself is the only thing left — Backlog #12. |
 | Growth | Draft the launch analysis. Best candidate: *"Coinbase's catalog shows 0.3% of the payments its own facilitator settles"* — verified, surprising, and nobody else can write it. | Authority before traffic |
 | Infra | Deploy target, domain, private repo | Michael's call on spend (§6) |
 

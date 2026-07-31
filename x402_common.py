@@ -253,14 +253,19 @@ CREATE INDEX IF NOT EXISTS ix_cat_urlsnap ON catalog_resource(resource_url, snap
 -- maintained so that "what is new / what disappeared" does not require a
 -- self-join over the full history on every API call. Dropping and rebuilding it
 -- from catalog_resource loses nothing.
+-- PK is (source, resource_url) as of Sprint 6 (Backlog #18) -- kept in sync here
+-- with what _migrate_resource_dim_key() enforces on every connect(), so schema-
+-- as-written and schema-as-enforced agree for anyone reading source over PRAGMA.
 CREATE TABLE IF NOT EXISTS resource_dim (
-    resource_url        TEXT PRIMARY KEY,
+    source              TEXT NOT NULL DEFAULT 'cdp',
+    resource_url        TEXT NOT NULL,
     host                TEXT,
     first_seen_snapshot INTEGER,
     first_seen_at       TEXT,
     last_seen_snapshot  INTEGER,
     last_seen_at        TEXT,
-    times_seen          INTEGER
+    times_seen          INTEGER,
+    PRIMARY KEY (source, resource_url)
 );
 CREATE INDEX IF NOT EXISTS ix_dim_host ON resource_dim(host);
 
@@ -508,6 +513,69 @@ MIGRATIONS = [
 ]
 
 
+def _migrate_resource_dim_key(conn: sqlite3.Connection) -> None:
+    """Repartition resource_dim's PRIMARY KEY from (resource_url) to
+    (source, resource_url).
+
+    Backlog #18 added `resource_dim.source` (additive ALTER, DEFAULT 'cdp') but
+    could not touch the PRIMARY KEY -- SQLite has no ALTER TABLE for that. Left
+    alone, a second source's rebuild_resource_dim() row for a resource_url that
+    a CDP row already occupies would silently overwrite (or collide with) the
+    CDP row, and diff_snapshots() would then diff two unrelated facilitators'
+    observations of the same URL string against each other and manufacture
+    fake price_change/calls_change events. See notes-source-migration-2.md and
+    the #18 migration comment on the `source` columns above.
+
+    Standard SQLite 12-step table-rebuild pattern (ALTER TABLE cannot change a
+    PRIMARY KEY in place): create the correctly-keyed table, copy every row
+    across explicitly (never a bare `SELECT *`, which is positional and silently
+    misaligns if either table's column order ever drifts), drop the old table,
+    rename the new one into its place. resource_dim holds no observations of
+    its own (see its schema comment) -- it is fully rebuildable from
+    catalog_resource by rebuild_resource_dim() -- so this rebuild loses nothing
+    even in the worst case.
+
+    Idempotent: checks the ACTUAL stored PK columns via PRAGMA table_info
+    before doing anything, and is a no-op once resource_dim is already keyed on
+    (source, resource_url). Safe to call on every connect().
+    """
+    cols = list(conn.execute("PRAGMA table_info(resource_dim)"))
+    if not cols:
+        return  # brand-new DB; SCHEMA above already creates it un-keyed on
+        # resource_url alone, so nothing to migrate yet on this call -- the
+        # next connect() after SCHEMA/MIGRATIONS run will see the table and
+        # fix it if needed. (In practice SCHEMA + MIGRATIONS always run first
+        # in connect(), so this branch is unreachable in normal operation.)
+    pk_cols = [r[1] for r in sorted((c for c in cols if c[5] > 0), key=lambda c: c[5])]
+    if pk_cols == ["source", "resource_url"]:
+        return  # already correctly keyed -- nothing to do
+    conn.execute("""
+        CREATE TABLE resource_dim_new (
+            source              TEXT NOT NULL DEFAULT 'cdp',
+            resource_url        TEXT NOT NULL,
+            host                TEXT,
+            first_seen_snapshot INTEGER,
+            first_seen_at       TEXT,
+            last_seen_snapshot  INTEGER,
+            last_seen_at        TEXT,
+            times_seen          INTEGER,
+            PRIMARY KEY (source, resource_url)
+        )
+    """)
+    conn.execute("""
+        INSERT INTO resource_dim_new
+            (source, resource_url, host, first_seen_snapshot, first_seen_at,
+             last_seen_snapshot, last_seen_at, times_seen)
+        SELECT source, resource_url, host, first_seen_snapshot, first_seen_at,
+               last_seen_snapshot, last_seen_at, times_seen
+        FROM resource_dim
+    """)
+    conn.execute("DROP TABLE resource_dim")
+    conn.execute("ALTER TABLE resource_dim_new RENAME TO resource_dim")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_dim_host ON resource_dim(host)")
+    conn.commit()
+
+
 def _apply_migrations(conn: sqlite3.Connection) -> None:
     for table, col, decl in MIGRATIONS:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -569,6 +637,10 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _apply_migrations(conn)
+    # Table-rebuild migration (not in MIGRATIONS: that list is ADD-COLUMN only
+    # and cannot repartition a PRIMARY KEY). Must run after _apply_migrations
+    # so resource_dim already has its `source` column to copy from.
+    _migrate_resource_dim_key(conn)
     # Views are created after migrations because some of them select columns
     # that migrations add. CREATE VIEW does not validate columns at creation
     # time, so a stale view definition fails only at SELECT — the confusing

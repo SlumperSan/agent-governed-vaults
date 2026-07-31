@@ -9,4 +9,5 @@ x402_index.db
 x402_index.db-shm
 x402_index.db-wal
 x402_index.db.bak-*
+x402_index.db.bak.*
 .env

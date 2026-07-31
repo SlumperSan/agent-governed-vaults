@@ -363,3 +363,76 @@ to the same resource (e.g. running the pipeline manually to "prove" it works), c
 before writing — otherwise the diagnostic run collides with the very process it's investigating (this
 one didn't corrupt data, by luck: `fetch_catalog.py` runs are safe back-to-back, only `prune.py` needs
 exclusivity — but it did create a redundant extra snapshot row that didn't need to exist).
+
+## Sprint 6 additions (2026-07-31)
+
+### A "before/after byte-identical" check can be non-probative and still get cited as proof
+Data's Backlog #18 fix (repartition `resource_dim`'s PK from `(resource_url)` to `(source,
+resource_url)`) verified itself partly by running `report.py` before and after and diffing the output
+(empty diff). True, but with only `source='cdp'` live in the DB today, this exact PK change **cannot
+possibly alter any query result** — there's no second source for the new key column to disambiguate,
+and a grep confirmed zero live readers (`report.py`, `build_site.py`, `api/*.py`) join or filter on
+`resource_dim`/`change_event` by `resource_url` at all. The check is real and worth running (it does
+prove no regression), but it was written up as if it validated the fix, when a single-source DB makes
+it impossible for this particular check to fail regardless of whether the fix is correct.
+**Do instead:** when a "before/after identical" check is run against data that structurally cannot
+exercise the changed code path yet, say so explicitly — "confirms no regression, does not confirm the
+fix" — rather than letting silence imply the stronger claim. The real proof in this case was the
+separate synthetic second-source positive control, which the department also ran; the vacuous check
+just shouldn't have been allowed to share billing with it.
+
+### A specific, confident citation of "the file already says X" that turns out not to exist in the file
+Ecosystem's Sprint 6 report quoted an exact string it said was a stale code comment in
+`fetch_catalog.py` (paraphrased: resource_dim "does NOT key on (source, resource_url) — still dedupes
+on resource_url alone") and presented it as something checked live. `grep` across the entire codebase
+returns zero hits for that phrase — it does not exist. The actual comment at those line numbers already
+correctly documents the Sprint-6 fix. The file's own mtime fell inside the reporting task's stated
+working window, so this wasn't an excuse of "the file changed after I read it" — the claim was either
+fabricated outright or reported from a stale in-session buffer without a final re-read before writing
+the summary. It didn't affect the actual deliverable (a fresh catalog fetch + mapping doc, unrelated to
+this claim), but it is exactly the class of unverifiable-sounding-verified claim the review process
+exists to catch.
+**Do instead:** any claim of the form "file X already says/does Y, confirmed" needs the literal quoted
+line from a read taken in the same breath as the claim — not a recollection from earlier in the task,
+and not a paraphrase presented with quote-level confidence.
+
+### Comparing a median to a stated average and calling it "consistent" repeats the median/skew trap in reverse
+Chain's Sprint 6 report measured the mega-merchant's per-tx **median** ($0.0193) and compared it to
+x402scan's stated **average** ($0.0169), calling the two "consistent" and "agreeing with the
+already-corroborated per-tx price finding." For a right-skewed distribution (which this org has
+already established this merchant's tx sizes are) the median and mean are not interchangeable — the
+standing rule against `median × count` exists for exactly this reason, just usually hit from the
+multiplication side rather than the comparison side. The valid same-statistic comparison (mean-to-mean:
+$0.1769 measured vs. $0.0169 vendor-stated) was present in the same report as a raw fact but never
+surfaced as the actual relevant comparator, and it shows a 10.5× divergence — the real open gap, buried
+under a favorable-looking but statistically mismatched pairing.
+**Do instead:** when corroborating a vendor's stated statistic, match the statistic type (mean-to-mean,
+median-to-median) before comparing magnitudes, and if only a mismatched pairing is available, report
+it as "not directly comparable" rather than as agreement.
+
+### Running the same method twice is not a second independent method, even when the inputs differ
+Chain's Sprint 6 "ecosystem re-scan" (all 20 facilitators / 118 addresses, vs. the original 40 Coinbase
+addresses) was still calldata-decode over `tx.from` on the identical block range — the same detection
+method, a wider address list. It correctly served its actual purpose (checking whether Coinbase alone
+explains the window), but the report did not also produce the charter-required second independent
+method for the 74.37% headline share figure, leaving that specific number single-method going into
+review. The reviewer ran the missing check directly: `eth_getLogs` on USDC Transfer events filtered by
+the mega-merchant as recipient (event-log decode — a genuinely different method than calldata decode)
+returned 996 logs / $175.79931 against the report's 994 tx / $175.799308 — near-exact agreement, closing
+the gap for real, just one review cycle late.
+**Do instead:** before shipping a headline percentage, ask "if I reran this by decoding a different
+data structure (logs vs. calldata, a different RPC method, a different counterparty filter), would I
+still get this number" — if the honest answer is "I only checked it one way," that is the item to
+knock out before writing REPORT: SHIPPED, not after.
+
+### A `.gitignore` pattern tuned to one naming convention missed the next backup's actual name
+The existing DB-backup ignore rule is `x402_index.db.bak-*` (dash-separated), written after a prior
+sprint's incident where backup files got committed. Sprint 6's backup file is named
+`x402_index.db.bak.20260731_035049_pre_sprint6_resourcedim` (dot-separated) — `git check-ignore`
+confirms it is NOT matched by the existing pattern. A blanket `git add -A` this cycle would have
+committed a 345MB binary permanently into git history, the exact failure mode the rule was written to
+prevent. Caught only because file sizes were checked individually before staging, not because the
+ignore rule did its job.
+**Do instead:** a fix written for one specific observed filename (`bak-*`) should be widened to match
+the general shape of the thing it's guarding against (`bak*` or `bak[.-]*`), not just the one string
+that happened to break last time. Filed as Backlog #20.

@@ -319,26 +319,28 @@ def rebuild_resource_dim(conn) -> None:
     # Explicit column list below (Backlog #18) is load-bearing, not cosmetic:
     # `INSERT INTO resource_dim SELECT ...` with no column list is POSITIONAL
     # and requires the SELECT to produce exactly as many columns as the table
-    # has. resource_dim just grew an 8th column (`source`, additive migration,
-    # DEFAULT 'cdp'); without this explicit list the 7-column SELECT below
-    # would fail on every run with "table resource_dim has 8 columns but 7
-    # values were supplied" -- confirmed by reproducing the error against a
-    # scratch copy before making this fix. `source` is intentionally left off
-    # the SELECT/INSERT so it takes its DEFAULT 'cdp', matching every row this
-    # function has ever written. This does NOT key resource_dim on
-    # (source, resource_url) -- it still dedupes on resource_url alone (see
-    # the table's PRIMARY KEY and notes-source-migration-2.md); that
-    # repartition is deliberately left for whoever ingests a second source.
+    # has.
+    #
+    # Sprint 6: resource_dim (now keyed PRIMARY KEY (source, resource_url) --
+    # see x402_common._migrate_resource_dim_key) is grouped by
+    # (source, resource_url), matching v_latest_catalog's partitioning. Before
+    # this fix, GROUP BY resource_url alone meant two different facilitators'
+    # rows for the same resource_url string would collapse into ONE
+    # resource_dim row, silently merging their first_seen/last_seen/times_seen
+    # -- exactly the fabricated-identity bug this task exists to prevent.
+    # `source` comes straight off catalog_resource (its own per-row copy, set
+    # at fetch time from the owning snapshot), not a join back to
+    # catalog_snapshot, so no extra join is introduced.
     conn.execute("""
         INSERT INTO resource_dim
-            (resource_url, host, first_seen_snapshot, first_seen_at,
+            (source, resource_url, host, first_seen_snapshot, first_seen_at,
              last_seen_snapshot, last_seen_at, times_seen)
-        SELECT g.resource_url, g.host,
+        SELECT g.source, g.resource_url, g.host,
                g.first_s, s1.fetched_at,
                g.last_s,  s2.fetched_at,
                g.times_seen
         FROM (
-            SELECT resource_url,
+            SELECT source, resource_url,
                    MAX(host)                  AS host,
                    MIN(snapshot_id)           AS first_s,
                    MAX(snapshot_id)           AS last_s,
@@ -353,7 +355,7 @@ def rebuild_resource_dim(conn) -> None:
               -- then be quietly wrong for thousands of routes, with nothing in
               -- the output hinting at why.
               AND snapshot_id IN (SELECT id FROM catalog_snapshot WHERE is_complete = 1)
-            GROUP BY resource_url
+            GROUP BY source, resource_url
         ) g
         LEFT JOIN catalog_snapshot s1 ON s1.id = g.first_s
         LEFT JOIN catalog_snapshot s2 ON s2.id = g.last_s
@@ -395,18 +397,35 @@ def _num(v):
 
 
 def diff_snapshots(conn, to_snap: int) -> dict:
-    """Emit change_event rows for to_snap vs the previous COMPLETE snapshot.
+    """Emit change_event rows for to_snap vs the previous COMPLETE snapshot
+    FROM THE SAME SOURCE.
 
     Only complete snapshots are compared. Diffing a partial (--max-pages)
     snapshot against a full one would report ~14,500 fake 'disappeared' events
     and permanently pollute the churn history with a fiction.
+
+    Sprint 6: the "previous complete snapshot" lookup is scoped to
+    to_snap's own `source`. Before this fix it searched globally across ALL
+    sources, so a second facilitator's first snapshot would get diffed against
+    the most recent CDP snapshot -- two disjoint facilitators' independent
+    observations of the same resource_url string -- and manufacture fake
+    price_change/calls_change/disappeared events out of nothing. This function
+    is now guaranteed to only ever compare two snapshots that share a source;
+    `load(sid)`'s dict, keyed by bare `resource_url`, is safe BECAUSE both
+    `sid`s it is ever called with (from_snap, to_snap) are already
+    source-matched by the query below -- it is never used across a source
+    boundary.
     """
+    to_source_row = conn.execute(
+        "SELECT source FROM catalog_snapshot WHERE id = ?", (to_snap,)).fetchone()
+    to_source = to_source_row[0] if to_source_row else "cdp"
     prev = conn.execute("""
         SELECT id FROM catalog_snapshot
-        WHERE id < ? AND is_complete = 1
-        ORDER BY id DESC LIMIT 1""", (to_snap,)).fetchone()
+        WHERE id < ? AND is_complete = 1 AND source = ?
+        ORDER BY id DESC LIMIT 1""", (to_snap, to_source)).fetchone()
     if not prev:
-        log("no previous complete snapshot — nothing to diff (this is normal on run 1)")
+        log(f"no previous complete snapshot for source={to_source!r} — nothing to diff "
+            "(this is normal on this source's run 1)")
         return {}
     from_snap = prev[0]
 
@@ -449,7 +468,7 @@ def diff_snapshots(conn, to_snap: int) -> dict:
         ratio = (b / a) if (a not in (None, 0) and b is not None) else None
         events.append((now, from_snap, to_snap, url, host, etype, field,
                        None if ov is None else str(ov),
-                       None if nv is None else str(nv), delta, ratio))
+                       None if nv is None else str(nv), delta, ratio, to_source))
         counts[etype] += 1
 
     for url, n in new.items():
@@ -490,8 +509,8 @@ def diff_snapshots(conn, to_snap: int) -> dict:
 
     conn.executemany("""
         INSERT INTO change_event (detected_at, from_snapshot, to_snapshot, resource_url,
-            host, event_type, field, old_value, new_value, delta_num, ratio_num)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", events)
+            host, event_type, field, old_value, new_value, delta_num, ratio_num, source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", events)
     conn.commit()
     # Precedence trap: `"a: " + ", ".join(...) or "no changes"` binds `or` to the
     # WHOLE concatenation, which is always truthy, so the fallback never fired
