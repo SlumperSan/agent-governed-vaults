@@ -36,6 +36,17 @@
  * @property {bigint} lifetimeLossUsdc
  * @property {bigint} lifetimeFeesUsdc
  * @property {number} vaultCount
+ *
+ * @typedef {Object} ProposalState
+ * @property {number} pid
+ * @property {string} vault
+ * @property {number} ptype        // 0 Rebalance, 1 RuleChange, 2 ChildAllocation
+ * @property {string} proposer
+ * @property {string} status       // Active | Passed | Defeated | Executed | Expired
+ * @property {bigint} forWeight
+ * @property {bigint} againstWeight
+ * @property {bigint} revealedWeight
+ * @property {number} revealedVoters
  */
 
 export function emptyState() {
@@ -43,6 +54,8 @@ export function emptyState() {
     /** @type {Map<string, VaultState>} */ vaults: new Map(),
     /** @type {Map<number, OperatorState>} */ operators: new Map(),
     /** @type {Map<string, Map<string, bigint>>} */ shares: new Map(), // vault -> member -> shares
+    /** @type {Map<number, ProposalState>} */ proposals: new Map(), // pid -> proposal
+    /** @type {Map<string, number>} */ activeProposal: new Map(), // vault -> pid (0 = none)
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -111,7 +124,10 @@ export function apply(state, e) {
       break;
     }
     case 'VaultAttested': {
-      ensureVault(state, e.args.vault).operatorId = Number(a.opId);
+      const opId = Number(a.opId);
+      ensureVault(state, e.args.vault).operatorId = opId;
+      const op = state.operators.get(opId);
+      if (op) op.vaultCount += 1; // was never incremented — leaderboard showed 0 (UX-spec bug)
       break;
     }
     case 'ChildRegistered': {
@@ -166,6 +182,63 @@ export function apply(state, e) {
     case 'ExitSettled':
       creditShares(state, e.vault, a.member, -big(a.sharesBurned));
       break;
+    case 'Proposed': {
+      const pid = Number(a.pid);
+      state.proposals.set(pid, {
+        pid,
+        vault: a.vault,
+        ptype: Number(a.ptype),
+        proposer: a.proposer,
+        status: 'Active',
+        forWeight: 0n,
+        againstWeight: 0n,
+        revealedWeight: 0n,
+        revealedVoters: 0,
+      });
+      state.activeProposal.set(a.vault, pid);
+      break;
+    }
+    case 'Revealed': {
+      const p = state.proposals.get(Number(a.pid));
+      if (p) {
+        const w = big(a.weight ?? 0);
+        if (a.support) p.forWeight += w;
+        else p.againstWeight += w;
+        p.revealedWeight += w;
+        p.revealedVoters += 1;
+      }
+      break;
+    }
+    case 'DefaultApplied':
+    case 'DelegatedRevealed': {
+      const p = state.proposals.get(Number(a.pid));
+      if (p) {
+        const w = big(a.weight ?? 0);
+        if (a.support) p.forWeight += w;
+        else p.againstWeight += w;
+        if (e.name === 'DelegatedRevealed') p.revealedWeight += w; // defaults never count in quorum
+      }
+      break;
+    }
+    case 'Finalized': {
+      const p = state.proposals.get(Number(a.pid));
+      if (p) {
+        // Governance.Status enum: 2 Passed, 3 Defeated
+        p.status = Number(a.status) === 2 ? 'Passed' : 'Defeated';
+        if (p.status === 'Defeated') state.activeProposal.set(p.vault, 0);
+      }
+      break;
+    }
+    case 'Executed': {
+      const p = state.proposals.get(Number(a.pid));
+      if (p) { p.status = 'Executed'; state.activeProposal.set(p.vault, 0); }
+      break;
+    }
+    case 'ProposalExpired': {
+      const p = state.proposals.get(Number(a.pid));
+      if (p) { p.status = 'Expired'; state.activeProposal.set(p.vault, 0); }
+      break;
+    }
     default:
       break; // unrelated events ignored
   }
@@ -210,5 +283,24 @@ export function leaderboard(state) {
 export function vaultView(state, vault) {
   const v = state.vaults.get(vault);
   if (!v) return null;
-  return { ...v, holders: shareBook(state, vault).size };
+  const pid = state.activeProposal.get(vault) ?? 0;
+  const proposal = pid ? state.proposals.get(pid) ?? null : null;
+  // NAV, live basket balances, and proposal phase deadlines are chain-read enrichment (events
+  // don't carry post-swap balances or prices) — the daemon merges those in. Everything here is
+  // event-derived and deterministic.
+  return { ...v, holders: shareBook(state, vault).size, activeProposal: proposal };
+}
+
+/** A member's share position in a vault (0 if none). */
+export function memberPosition(state, vault, member) {
+  const shares = shareBook(state, vault).get(member) ?? 0n;
+  const v = state.vaults.get(vault);
+  const totalShares = v ? v.totalShares : 0n;
+  return {
+    vault,
+    member,
+    shares,
+    // fraction in basis points (integer) — NAV-denominated value is chain-read enrichment.
+    shareOfVaultBps: totalShares > 0n ? Number((shares * 10000n) / totalShares) : 0,
+  };
 }

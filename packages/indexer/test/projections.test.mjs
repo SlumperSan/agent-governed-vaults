@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -101,4 +101,56 @@ test('a closed vault keeps contributing to operator net (no cherry-picking, SF-5
   ]);
   assert.equal(vaultView(s, V).totalShares, 0n);
   assert.equal(leaderboard(s)[0].lifetimeLossUsdc, 400n); // loss persists
+});
+
+test('vaultCount increments on attestation (regression: leaderboard was always 0)', () => {
+  const V2 = '0x' + '5'.repeat(40);
+  const s = applyAll([
+    ev('OperatorRegistered', 1, 0, V, { opId: 1, operator: A }),
+    ev('VaultCreated', 1, 1, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('VaultAttested', 1, 2, V, { opId: 1 }),
+    ev('VaultCreated', 2, 0, V2, { vault: V2, creator: A, usdc: A, capacityCapUsdc: 0n }),
+    { name: 'VaultAttested', vault: V2, blockNumber: 2, logIndex: 1, args: { vault: V2, opId: 1 } },
+  ]);
+  assert.equal(leaderboard(s)[0].vaultCount, 2, 'both attested vaults counted');
+});
+
+test('proposal lifecycle projects Active -> Passed -> Executed', () => {
+  const s = applyAll([
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    { name: 'Proposed', vault: V, blockNumber: 2, logIndex: 0, args: { pid: 1, vault: V, ptype: 0, proposer: A } },
+    { name: 'Revealed', vault: V, blockNumber: 3, logIndex: 0, args: { pid: 1, voter: A, support: true, weight: 1000n } },
+    { name: 'Revealed', vault: V, blockNumber: 3, logIndex: 1, args: { pid: 1, voter: B, support: false, weight: 300n } },
+    { name: 'Finalized', vault: V, blockNumber: 4, logIndex: 0, args: { pid: 1, status: 2 } },
+  ]);
+  const p = vaultView(s, V).activeProposal;
+  assert.equal(p.status, 'Passed');
+  assert.equal(p.forWeight, 1000n);
+  assert.equal(p.againstWeight, 300n);
+  assert.equal(p.revealedVoters, 2);
+
+  apply(s, { name: 'Executed', vault: V, blockNumber: 5, logIndex: 0, args: { pid: 1 } });
+  assert.equal(vaultView(s, V).activeProposal, null, 'executed clears the active proposal');
+  assert.equal(s.proposals.get(1).status, 'Executed');
+});
+
+test('standing default counts in tally but not quorum (revealedWeight)', () => {
+  const s = applyAll([
+    { name: 'Proposed', vault: V, blockNumber: 1, logIndex: 0, args: { pid: 2, vault: V, ptype: 0, proposer: A } },
+    { name: 'Revealed', vault: V, blockNumber: 2, logIndex: 0, args: { pid: 2, voter: A, support: true, weight: 500n } },
+    { name: 'DefaultApplied', vault: V, blockNumber: 2, logIndex: 1, args: { pid: 2, member: B, support: true, weight: 400n } },
+  ]);
+  const p = s.proposals.get(2);
+  assert.equal(p.forWeight, 900n, 'default in tally');
+  assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
+});
+
+test('memberPosition reports shares and vault fraction', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 750n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 250n }),
+  ]);
+  assert.equal(memberPosition(s, V, A).shares, 750n);
+  assert.equal(memberPosition(s, V, A).shareOfVaultBps, 7500);
+  assert.equal(memberPosition(s, V, '0x' + '9'.repeat(40)).shares, 0n);
 });

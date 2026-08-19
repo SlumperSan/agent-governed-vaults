@@ -11,7 +11,7 @@
 
 import { createServer } from 'node:http';
 import { gate, HEADERS } from './x402.mjs';
-import { leaderboard, vaultView } from '../../../packages/indexer/src/projections.mjs';
+import { leaderboard, vaultView, memberPosition } from '../../../packages/indexer/src/projections.mjs';
 
 /** JSON with bigint support (as decimal strings). */
 function jsonStringify(obj) {
@@ -48,6 +48,11 @@ export function createApi({ state, facilitator, price, now = () => Date.now() })
     const paidHeaders = verdict.headers;
     if (path === '/operators/leaderboard')
       return { status: 200, headers: paidHeaders, body: jsonStringify({ leaderboard: leaderboard(state) }) };
+
+    const mp = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})\/members\/(0x[0-9a-fA-F]{40})$/);
+    if (mp) {
+      return { status: 200, headers: paidHeaders, body: jsonStringify(memberPosition(state, mp[1], mp[2])) };
+    }
 
     const m = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})$/);
     if (m) {
