@@ -4,6 +4,13 @@ Sprint 9. Everything an external auditor needs to scope the engagement. The prot
 immutable (no proxies, no admin upgrade path), so the audit surface is the deployed bytecode —
 there is no "we'll patch it later."
 
+> **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
+> order, system map, trust boundaries, wiring order, per-contract walkthroughs
+> ([audit/walkthroughs/](audit/walkthroughs/)), the threat-model→test cross-reference
+> ([audit/TEST-CROSS-REFERENCE.md](audit/TEST-CROSS-REFERENCE.md)), and the findings-response
+> process ([audit/FINDINGS-TEMPLATE.md](audit/FINDINGS-TEMPLATE.md)). This file is the
+> engagement-scoping summary.
+
 ## Scope
 
 | Contract | LoC-ish | Role | Risk |
@@ -49,7 +56,7 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding to its d
 
 ## Invariants proven (Foundry)
 
-100 tests, incl. these invariant suites (256 runs × 16k calls each):
+117 tests, incl. these invariant suites (256 runs × 16k calls each):
 - `Σ member shares == totalShares` across every path (VaultCore + system-level with children)
 - **NAVps non-decreasing for remaining members across any redemption** (§4.6) — proven with and
   without sub-vaults present
@@ -97,7 +104,7 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv    # 100 tests
+cd contracts && forge build && forge test -vvv    # 117 tests
 forge snapshot --check                              # gas regression gate
 slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
