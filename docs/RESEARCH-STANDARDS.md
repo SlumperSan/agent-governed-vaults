@@ -81,8 +81,8 @@ ERC-1271 contract wallets can use gasless approvals.
 
 **Why this is load-bearing here.** Our members are agents. Agents increasingly *are* smart
 accounts — ERC-4337 bundled accounts, or EOAs temporarily carrying code via **EIP-7702** (Final,
-Core; shipped with the Pectra upgrade — *the exact upgrade name is worth a one-line confirmation,
-the EIP page reports only its 2024 creation date*). A smart-account member cannot produce a raw
+Core; activated on Ethereum mainnet with the **Pectra** hard fork on 2025-05-07, introducing the
+`0x04` SetCode transaction type). A smart-account member cannot produce a raw
 secp256k1 signature. So **every signature-accepting path we add must validate through ERC-1271**,
 or it silently excludes exactly the users the protocol is built for.
 
@@ -313,19 +313,33 @@ and others), each with a contract address and a Space ID identifier such as
 addresses](https://oracle.binance.com/docs/price-feeds/contract-addresses/bnb-testnet/)). So the
 premise is correct — the data is there, and free.
 
-**But: those testnet feeds update every 24 hours.** That is stated directly on Binance Oracle's
-testnet feed page. Set against our own code:
+**But: Binance's testnet feed page carries the line that "feeds are updated every 24 hours in the
+testnet."** Treat that as the page's own summary rather than a published spec — the page lists
+addresses and Space IDs, and does **not** document heartbeat or deviation thresholds; those live
+in the Feed Registry / Feed Adapter API references, which should be checked before any deploy.
+
+Set against our own code, a 24-hour heartbeat is disqualifying. The freshness test is per-source
+(OracleAggregator.sol:77-85):
 
 ```solidity
-uint32 public constant MAX_STALENESS_CEILING = 1 days;   // OracleAggregator.sol:36
+uint32 public constant MAX_STALENESS_CEILING = 1 days;                  // :36, constructor bound
+uint256 minUpdated = block.timestamp > cfg.maxStaleness                 // :77
+    ? block.timestamp - cfg.maxStaleness : 0;
+if (p > 0 && updatedAt >= minUpdated) fresh[k++] = p;                   // :82, per source
+if (k < cfg.quorum) revert StaleOracle(asset);                          // :85
 ```
 
-A feed with a 24-hour heartbeat, checked against a staleness bound whose **maximum permitted
-value is also 24 hours**, is stale for a large fraction of every day and trips on any publisher
-jitter. And per K-4 a tripped breaker freezes deposits, exits, and proposal execution. **A vault
-deployed on BNB testnet against Binance Oracle testnet feeds would spend most of its life
-frozen** — not because anything is broken, but because the ceiling was sized for mainnet-grade
-feeds and testnet feeds are two orders of magnitude slower.
+So a source counts as fresh iff `block.timestamp - updatedAt <= maxStaleness`, and `maxStaleness`
+is constructor-capped at `1 days` (86,400s). A feed publishing every 86,400s is therefore fresh
+only in the shrinking margin before its next publish, and goes stale on **any** publisher jitter
+past the interval. Worse, the failure is correlated: all three-plus sources drawn from Binance
+Oracle share one publication schedule, so they cross the threshold together, `k` drops below
+quorum, and `priceWad` reverts. Per K-4 that freezes deposits, exits, and proposal execution
+simultaneously.
+
+**A vault deployed on BNB testnet against Binance Oracle testnet feeds would spend much of its
+life frozen** — not because anything is broken, but because the ceiling was sized for
+mainnet-grade feeds and these testnet feeds are two orders of magnitude slower.
 
 This is a genuine finding and it is better to hit it here than in a demo.
 
@@ -447,9 +461,11 @@ buys us EVM-chain portability, and it does not extend across VMs.
 - **§6 — what "Solana compatibility" means.** Recommend Option A (API/indexer + x402 SVM
   scheme). Options B–D are rewrites with their own audits.
 
-**Blocker to be aware of regardless of choice:** Binance Oracle's BNB **testnet** feeds update
-every 24 hours against our `MAX_STALENESS_CEILING = 1 days`. A vault wired to them would sit
-frozen. Do not raise the ceiling for testnet — deploy keeper-fed sources instead.
+**Blocker to be aware of regardless of choice:** Binance Oracle's BNB **testnet** feeds publish on
+a ~24h cadence, against a per-source freshness test bounded by `MAX_STALENESS_CEILING = 1 days` —
+and because those sources share one publication schedule they go stale together, dropping the
+fresh count below quorum. A vault wired to them would sit frozen. Do not raise the ceiling for
+testnet — deploy keeper-fed sources instead.
 
 ---
 
