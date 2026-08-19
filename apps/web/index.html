@@ -1,0 +1,340 @@
+<title>Vault Atlas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f4f4f9;
+    --surface: #ffffff;
+    --surface-2: #eeeef4;
+    --line: #dedee8;
+    --ink: #16161f;
+    --muted: #63637a;
+    --faint: #9a9ab0;
+    --accent: #5a4ce0;
+    --accent-soft: #ece9fd;
+    --good: #178a4c;
+    --warn: #b5730a;
+    --crit: #c23b3b;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --display: 'Archivo', var(--sans);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d0d15;
+      --surface: #16161f;
+      --surface-2: #1e1e2a;
+      --line: #2a2a39;
+      --ink: #e9e9f4;
+      --muted: #9494ad;
+      --faint: #64647e;
+      --accent: #8a7cf6;
+      --accent-soft: #211d3a;
+      --good: #4ade80;
+      --warn: #fbbf24;
+      --crit: #f87171;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d0d15;
+    --surface: #16161f;
+    --surface-2: #1e1e2a;
+    --line: #2a2a39;
+    --ink: #e9e9f4;
+    --muted: #9494ad;
+    --faint: #64647e;
+    --accent: #8a7cf6;
+    --accent-soft: #211d3a;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --crit: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 80px; }
+  a { color: var(--accent); }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand h1 {
+    font-family: var(--display); font-weight: 800; font-size: 26px;
+    letter-spacing: -0.02em; margin: 0; text-wrap: balance;
+  }
+  .brand .tag {
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
+  }
+  .metered {
+    display: flex; align-items: center; gap: 8px; font-family: var(--mono);
+    font-size: 12px; color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+  .lede { color: var(--muted); max-width: 62ch; margin: 4px 0 26px; }
+
+  .section-label {
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.16em; color: var(--faint); margin: 34px 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .vault-card {
+    text-align: left; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; cursor: pointer; color: inherit;
+    font: inherit; transition: border-color .15s, transform .15s;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .vault-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .vault-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .vault-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .vault-card .name { font-family: var(--display); font-weight: 700; font-size: 16px; }
+  .vault-card .addr { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .vault-card .nav { font-family: var(--mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .vault-card .row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono);
+    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid transparent; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .pill.child { color: var(--accent); background: var(--accent-soft); }
+  .pill.root { color: var(--muted); border-color: var(--line); }
+  .pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+  .pill.mf { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+
+  .capbar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .capbar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+  .detail { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-top: 4px; }
+  .detail.empty { color: var(--muted); font-family: var(--mono); font-size: 13px; text-align: center; padding: 40px; }
+  .detail h2 { font-family: var(--display); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 2px; font-size: 22px; }
+  .detail .sub { font-family: var(--mono); font-size: 12px; color: var(--faint); margin-bottom: 20px; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 24px; }
+  .stat .k { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); }
+  .stat .v { font-family: var(--mono); font-size: 20px; font-variant-numeric: tabular-nums; }
+
+  .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: 28px; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+
+  .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+  .phase { display: grid; grid-template-columns: 22px 1fr; gap: 12px; }
+  .phase .track { display: flex; flex-direction: column; align-items: center; }
+  .phase .node { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); margin-top: 3px; }
+  .phase.done .node { background: var(--accent); border-color: var(--accent); }
+  .phase.active .node { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .phase .stem { width: 2px; flex: 1; background: var(--line); margin: 2px 0; min-height: 14px; }
+  .phase.done .stem { background: var(--accent); }
+  .phase:last-child .stem { display: none; }
+  .phase .body { padding-bottom: 16px; }
+  .phase .body .t { font-weight: 600; font-size: 14px; }
+  .phase .body .d { font-size: 12.5px; color: var(--muted); }
+  .phase .body .m { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+  .feestack { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .feestack .lvl { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .feestack .lvl:last-child { border-bottom: none; }
+  .feestack .lvl.total { background: var(--surface-2); font-weight: 600; }
+  .feestack .lvl .lbl { font-size: 13px; }
+  .feestack .lvl .lbl small { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+  .feestack .lvl .val { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  table.lb { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.lb th, table.lb td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  table.lb th { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); font-weight: 500; }
+  table.lb th:first-child, table.lb td:first-child { text-align: left; }
+  table.lb td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  table.lb .op { font-weight: 600; }
+  table.lb .rank { font-family: var(--mono); color: var(--faint); }
+  .net.pos { color: var(--good); }
+  .net.neg { color: var(--crit); }
+  .tablescroll { overflow-x: auto; }
+
+  .foot { margin-top: 40px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+  .foot code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  button.theme { background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  button.theme:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Vault Atlas</h1>
+      <span class="tag">agent-governed index vaults</span>
+    </div>
+    <div style="display:flex; gap:14px; align-items:center;">
+      <div class="metered"><span class="dot"></span> x402 metered · <span id="rcpt">demo feed</span></div>
+      <button class="theme" id="themeBtn" type="button">◐ theme</button>
+    </div>
+  </header>
+  <p class="lede">A live view over the protocol indexer. Vaults pool USDC into spot index baskets;
+    AI agents govern rebalances by commit-reveal vote. Reads are paid per-call over x402 —
+    this page shows a demo projection.</p>
+
+  <div class="section-label">Vault explorer</div>
+  <div class="grid" id="vaultGrid"></div>
+
+  <div class="section-label">Selected vault</div>
+  <div id="detail" class="detail empty">Select a vault to inspect its governance state and fee stack.</div>
+
+  <div class="section-label">Operator leaderboard · all vaults, no cherry-picking</div>
+  <div class="tablescroll">
+    <table class="lb" id="lb">
+      <thead><tr><th>Operator</th><th>Net realized</th><th>Gain</th><th>Loss</th><th>Fees earned</th><th>Vaults</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <p class="foot">Projection shapes match <code>packages/indexer</code>; fee math mirrors
+    <code>SubVaultRegistry</code>. Served live, this page follows the 402 → authorize → retry
+    flow (<code>apps/web/src/api-client.mjs</code>) against the metered API.</p>
+</div>
+
+<script type="module">
+  // ── Fee math (mirrors SubVaultRegistry.stackedPerfFeeBps / stackedExitFeeCapBps) ──
+  const PERF = 1000;
+  const stackedPerf = (levels) => { let keep = 1e4; for (let i=0;i<levels;i++) keep = Math.floor(keep*(1e4-PERF)/1e4); return 1e4-keep; };
+  const pct = (bps) => (bps/100).toFixed(bps % 100 ? 2 : 0) + '%';
+  const usd = (n) => '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+  // ── Demo projection (the exact shape packages/indexer emits) ──
+  const vaults = [
+    { vault:'0x1111000000000000000000000000000000001111', name:'Base Blue-Chip 5', operatorId:1, operator:'Meridian', nav:4_820_400, members:23, capacity:6_000_000, depth:0, exitFeeByLevel:[50],
+      proposal:{ title:'Rebalance → +4% ETH, −4% USDC idle', phase:2, mode:'F', quorum:'38% / 25% floor' } },
+    { vault:'0x2222000000000000000000000000000000002222', name:'Momentum Majors', operatorId:2, operator:'Halcyon', nav:1_240_900, members:9, capacity:2_000_000, depth:0, exitFeeByLevel:[100],
+      proposal:{ title:'RuleChange → timelock 3d→2d', phase:1, mode:'I', quorum:'full consensus' } },
+    { vault:'0x3333000000000000000000000000000000003333', name:'BB5 · DeFi Sleeve', operatorId:1, operator:'Meridian', nav:610_000, members:4, capacity:1_000_000, depth:1, parent:'Base Blue-Chip 5', exitFeeByLevel:[50,50],
+      proposal:{ title:'Rebalance → open AERO 8%', phase:3, mode:'I', quorum:'3-of-4 signers' } },
+    { vault:'0x4444000000000000000000000000000000004444', name:'Halcyon Micro', operatorId:2, operator:'Halcyon', nav:88_500, members:3, capacity:250_000, depth:0, exitFeeByLevel:[0],
+      proposal:null },
+  ];
+  const operators = [
+    { operatorId:2, operator:'Halcyon', net:412_000, gain:512_000, loss:100_000, fees:41_200, vaultCount:2 },
+    { operatorId:1, operator:'Meridian', net:286_500, gain:410_000, loss:123_500, fees:28_650, vaultCount:2 },
+    { operatorId:3, operator:'Aster', net:-54_000, gain:31_000, loss:85_000, fees:0, vaultCount:1 },
+  ];
+
+  const phases = [
+    { t:'Commit', d:'Encrypted votes committed; tally hidden.' },
+    { t:'Reveal', d:'Votes revealed; Mode-F exits forward-price from here.' },
+    { t:'Timelock', d:'Passed — members may exit before execution.' },
+    { t:'Execute', d:'Adapter swaps settle; queued exits price post-rebalance.' },
+  ];
+
+  const grid = document.getElementById('vaultGrid');
+  const short = (a) => a.slice(0,6)+'…'+a.slice(-4);
+
+  vaults.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.className = 'vault-card'; b.type = 'button'; b.setAttribute('aria-pressed','false');
+    const capPct = Math.min(100, Math.round(v.nav/v.capacity*100));
+    b.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
+        <div><div class="name">${v.name}</div><div class="addr">${short(v.vault)}</div></div>
+        <span class="pill ${v.depth?'child':'root'}">${v.depth? 'sub · L'+(v.depth+1) : 'root'}</span>
+      </div>
+      <div class="nav">${usd(v.nav)}</div>
+      <div class="row"><span>${v.members} members</span><span>${v.operator}</span></div>
+      <div class="capbar"><span style="width:${capPct}%"></span></div>
+      <div class="row"><span>capacity</span><span>${capPct}%</span></div>`;
+    b.addEventListener('click', () => select(i));
+    grid.appendChild(b);
+  });
+
+  function select(i) {
+    [...grid.children].forEach((c,ci)=>c.setAttribute('aria-pressed', ci===i?'true':'false'));
+    const v = vaults[i];
+    const levels = v.depth + 1;
+    const stackPerf = stackedPerf(levels);
+    const stackExit = v.exitFeeByLevel.reduce((a,b)=>a+b,0);
+    const feeRows = v.exitFeeByLevel.map((f,li)=>`
+      <div class="lvl"><div class="lbl">Level ${li+1}${li===0?' · root':''}<small>perf 10% · exit ${pct(f)}</small></div>
+      <div class="val">${pct(f)}</div></div>`).join('');
+
+    const prop = v.proposal ? `
+      <ul class="timeline">${phases.map((p,pi)=>`
+        <li class="phase ${pi < v.proposal.phase ? 'done' : pi===v.proposal.phase ? 'active' : ''}">
+          <div class="track"><div class="node"></div><div class="stem"></div></div>
+          <div class="body"><div class="t">${p.t}</div><div class="d">${p.d}</div></div>
+        </li>`).join('')}</ul>` :
+      `<div class="detail empty" style="margin:0">No active proposal — exits settle instant (Mode I).</div>`;
+
+    const modePill = v.proposal ? (v.proposal.mode==='F'
+      ? '<span class="pill mf">Mode F · forward-priced exits</span>'
+      : '<span class="pill good">Mode I · instant exits</span>') : '';
+
+    document.getElementById('detail').className = 'detail';
+    document.getElementById('detail').innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:16px;flex-wrap:wrap">
+        <div><h2>${v.name}</h2><div class="sub">${v.vault}${v.parent?' · child of '+v.parent:''}</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${modePill}</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="k">NAV</div><div class="v">${usd(v.nav)}</div></div>
+        <div class="stat"><div class="k">Members</div><div class="v">${v.members}</div></div>
+        <div class="stat"><div class="k">Operator</div><div class="v" style="font-size:16px">${v.operator}</div></div>
+        <div class="stat"><div class="k">Depth</div><div class="v">${v.depth+1} / 3</div></div>
+      </div>
+      <div class="cols">
+        <div>
+          <div class="section-label" style="margin-top:0">Active proposal ${v.proposal?'· '+v.proposal.quorum:''}</div>
+          ${v.proposal?`<div style="font-weight:600;margin-bottom:14px">${v.proposal.title}</div>`:''}
+          ${prop}
+        </div>
+        <div>
+          <div class="section-label" style="margin-top:0">Cumulative effective fee</div>
+          <div class="feestack">
+            ${feeRows}
+            <div class="lvl total"><div class="lbl">Stacked total<small>perf compounds · exit cap ≤ 2.5%</small></div>
+              <div class="val">${pct(stackPerf)} · ${pct(stackExit)}</div></div>
+          </div>
+          <p style="font-size:12.5px;color:var(--muted);margin-top:12px">
+            A depositor here pays <b>${pct(stackPerf)}</b> effective performance fee across
+            ${levels} level${levels>1?'s':''} — fees compound on net-of-fee gains, never additively.</p>
+        </div>
+      </div>`;
+    document.getElementById('detail').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  // ── Leaderboard ──
+  const tb = document.querySelector('#lb tbody');
+  operators.forEach((o,i)=>{
+    const tr = document.createElement('tr');
+    const cls = o.net>=0?'pos':'neg';
+    tr.innerHTML = `
+      <td><span class="rank">${i+1}</span> <span class="op">${o.operator}</span></td>
+      <td class="num net ${cls}">${o.net>=0?'+':'−'}${usd(Math.abs(o.net))}</td>
+      <td class="num">${usd(o.gain)}</td>
+      <td class="num">${usd(o.loss)}</td>
+      <td class="num">${usd(o.fees)}</td>
+      <td class="num">${o.vaultCount}</td>`;
+    tb.appendChild(tr);
+  });
+
+  select(0);
+
+  // ── Theme toggle (cycles system → light → dark) ──
+  const btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : cur === 'light' ? null : 'dark';
+    if (next) document.documentElement.setAttribute('data-theme', next);
+    else document.documentElement.removeAttribute('data-theme');
+    btn.textContent = next ? `◐ ${next}` : '◐ theme';
+  });
+</script>

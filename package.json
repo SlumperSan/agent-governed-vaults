@@ -8,6 +8,6 @@
   "scripts": {
     "build:contracts": "cd contracts && forge build",
     "test:contracts": "cd contracts && forge test -vv",
-    "test:backend": "node --test packages/indexer/test/*.test.mjs apps/api/test/*.test.mjs"
+    "test:backend": "node --test packages/indexer/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs"
   }
 }
