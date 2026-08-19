@@ -439,12 +439,52 @@
     else if(parts[0]==='portfolio')html=renderPortfolio();
     else html=renderDiscover();
     $('#view').innerHTML=html;
+    if(liveNote)$('#view').insertAdjacentHTML('afterbegin',liveNote);
     const nav=[['Discover','#/discover'],['Portfolio','#/portfolio']];
     $('#nav').innerHTML=nav.map(([t,u])=>`<span class="navlink ${h.startsWith(u)?'on':''}" onclick="go('${u}')">${t}</span>`).join('');
     window.scrollTo(0,0);
   }
   window.addEventListener('hashchange',router);
-  router();
+
+  // ── optional live mode: ?api=<url> pulls real indexed data from a running API, with graceful
+  //    fallback to the embedded demo. No ?api → nothing is imported, so the standalone/artifact
+  //    build stays fully self-contained. Reads are metered over x402; against a dev (stub-
+  //    facilitator) API a dummy signature is accepted and the browser never holds a real key. ──
+  let liveNote='';
+  const apiUrl=new URLSearchParams(location.search).get('api');
+  async function bootLive(){
+    if(!apiUrl){router();return;}
+    try{
+      const [{createClient},{mapVaults,mapLeaderboard}]=await Promise.all([
+        import('./src/api-client.mjs'),
+        import('./src/live-adapter.mjs'),
+      ]);
+      const base=apiUrl.replace(/\/$/,'');
+      const devSigner=async(ch)=>({x402Version:2,scheme:'exact',network:ch.network,
+        signature:'0x'+'00'.repeat(65),
+        authorization:{from:'0x'+'0'.repeat(40),to:ch.payTo,value:ch.amount,
+          validAfter:'0',validBefore:String(Math.floor(Date.now()/1000)+300),nonce:ch.nonce,asset:ch.asset}});
+      const client=createClient({baseUrl:base,signer:devSigner});
+      const health=await(await fetch(base+'/health')).json();
+      const [vres,lres]=await Promise.all([client.get('/vaults'),client.get('/operators/leaderboard')]);
+      const board=lres.data.leaderboard||[];
+      vaults.length=0;vaults.push(...mapVaults(vres.data.vaults,board,health.lastBlock));
+      operators.length=0;operators.push(...mapLeaderboard(board));
+      positions.length=0;
+      $('.tag').textContent='LIVE · block '+health.lastBlock;
+      $('.chip').style.display='none';
+      liveNote=`<div class="banner info"><div><span class="bt">Live API — ${base}</span>
+        Vaults, operators and members are read straight from the on-chain indexer over x402
+        (block ${health.lastBlock}). NAV/share, basket weights and proposal phases need the
+        chain-read enrichment layer the API does not expose yet, so those show as placeholders.</div></div>`;
+    }catch(err){
+      console.warn('live API unavailable — using embedded demo data:',err);
+      liveNote=`<div class="banner" style="background:var(--crit-soft)"><div><span class="bt">Live API unreachable.</span>
+        Showing embedded demo data. (${String(err&&err.message||err)})</div></div>`;
+    }
+    router();
+  }
+  bootLive();
 
   // ── theme ──
   $('#themeBtn').addEventListener('click',()=>{
