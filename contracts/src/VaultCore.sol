@@ -6,6 +6,7 @@ import {IGovernance} from "./interfaces/IGovernance.sol";
 import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
+import {Checkpoints} from "./lib/Checkpoints.sol";
 
 interface IERC20Metadata {
     function decimals() external view returns (uint8);
@@ -29,6 +30,7 @@ interface IERC20Metadata {
 ///  - Creator 5% is a withdrawal gate, not a solvency condition (CM-2).
 contract VaultCore {
     using SafeTransferLib for address;
+    using Checkpoints for Checkpoints.History;
 
     // ─────────────────────────────── constants ────────────────────────────────
     uint256 internal constant WAD = 1e18;
@@ -79,6 +81,12 @@ contract VaultCore {
     // ─────────────────────────── Mode-F exit queue ────────────────────────────
     mapping(address => uint256) public queuedExitShares; // locked: no vote, no transfer
     uint256 public totalQueuedShares;
+
+    // ─────────────── stake snapshots (VO-9: proposal-time voting power) ───────
+    mapping(address => Checkpoints.History) internal _eligibleHist;
+    Checkpoints.History internal _totalEligibleHist;
+    Checkpoints.History internal _holderCountHist;
+    uint256 public holderCount; // addresses with shares > 0, creator included
 
     // ────────────────────── in-kind escrow (EE-6 isolation) ───────────────────
     mapping(address => mapping(address => uint256)) public claimable; // member ⇒ asset ⇒ amount
@@ -267,12 +275,23 @@ contract VaultCore {
         uint256 minted = ts == 0 ? amountWad : amountWad * ts / navWad();
         require(minted > 0, ZeroAmount());
 
-        if (member != creator && sharesOf[member] == 0) ++nonCreatorMemberCount;
+        if (sharesOf[member] == 0) {
+            if (member != creator) ++nonCreatorMemberCount;
+            ++holderCount;
+        }
         sharesOf[member] += minted;
         totalShares = ts + minted;
         idleUsdc += amountUsdc; // enters NAV only now
         costBasisUsdc[member] += amountUsdc;
         lastDepositTime[member] = block.timestamp; // tenure clock resets (conservative)
+        _snapshot(member);
+    }
+
+    /// @dev Record post-mutation voting-eligible stake and holder count (VO-9 snapshots).
+    function _snapshot(address member) internal {
+        _eligibleHist[member].push(sharesOf[member] - queuedExitShares[member]);
+        _totalEligibleHist.push(totalShares - totalQueuedShares);
+        _holderCountHist.push(holderCount);
     }
 
     // ───────────────────────────── redemptions ────────────────────────────────
@@ -289,6 +308,7 @@ contract VaultCore {
         if (governance.hasPendingExecution(address(this))) {
             queuedExitShares[msg.sender] = shares;
             totalQueuedShares += shares;
+            _snapshot(msg.sender); // locked shares leave eligible stake immediately
             emit ExitQueued(msg.sender, shares);
         } else {
             _settleExit(msg.sender, shares);
@@ -334,9 +354,11 @@ contract VaultCore {
         // Burn before external transfers (CEI).
         sharesOf[member] = memberShares - burnShares;
         totalShares = ts - burnShares;
-        if (member != creator && sharesOf[member] == 0 && memberShares > 0) {
-            --nonCreatorMemberCount;
+        if (sharesOf[member] == 0 && memberShares > 0) {
+            if (member != creator) --nonCreatorMemberCount;
+            --holderCount;
         }
+        _snapshot(member);
 
         // Realized P&L against pro-rata cost basis; hooks feed the (member, operator)
         // loss-carryforward HWM (§7). Fee engine is a zero-fee stub until Sprint 3.
@@ -411,6 +433,21 @@ contract VaultCore {
 
     function totalVotingEligibleShares() external view returns (uint256) {
         return totalShares - totalQueuedShares;
+    }
+
+    /// @notice Voting-eligible stake of `member` as of timestamp `ts` (proposal snapshots).
+    function pastVotingEligibleShares(address member, uint64 ts) external view returns (uint256) {
+        return _eligibleHist[member].getAt(ts);
+    }
+
+    function pastTotalVotingEligibleShares(uint64 ts) external view returns (uint256) {
+        return _totalEligibleHist.getAt(ts);
+    }
+
+    /// @notice Holder count as of `ts` — drives the <5-member absolute-signer-count regime
+    /// (CM-7: regime is fixed per proposal at creation, membership changes never flip it).
+    function pastHolderCount(uint64 ts) external view returns (uint256) {
+        return _holderCountHist.getAt(ts);
     }
 
     function exitFeeBpsOf(address member) external view returns (uint256) {
