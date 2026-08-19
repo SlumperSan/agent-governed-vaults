@@ -230,7 +230,7 @@ to that contract.
 cd contracts
 forge build
 forge test                                   # 119 tests, incl. 6 invariant/fuzz suites
-forge snapshot --check --fuzz-seed 1         # gas regression gate (seed pinned; fuzz gas is corpus-dependent)
+forge snapshot --check --nmt "testFuzz"      # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 slither . --filter-paths "lib|test|script"   # triaged: docs/reviews/SLITHER-TRIAGE.md
 ```
 

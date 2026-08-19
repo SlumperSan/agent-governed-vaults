@@ -22,15 +22,18 @@ jobs:
       # Unseeded on purpose: every run draws a fresh fuzz/invariant corpus, so CI
       # keeps hunting for new counterexamples rather than replaying one fixture.
       - run: forge test -vvv
-      # Seeded on purpose: fuzz gas is corpus-dependent, so an unseeded check
-      # reports phantom diffs on the four OracleFuzz entries (~0.01%, pure seed
-      # jitter) and the gate fails on every run regardless of the code. Pin the
-      # seed here only — `forge test` above keeps its entropy. Regenerate with:
-      #   cd contracts && forge snapshot --fuzz-seed 1
-      # Do not reach for `--tolerance`: it silences these but then falsely flags
-      # all 15 invariant entries, which carry no gas number to compare.
+      # Fuzz tests are excluded from the gas gate, not from the suite above.
+      # Their snapshot value is a mean over a random corpus, and the corpus is
+      # not reproducible: it shifts by ~0.01% between machines and between runs
+      # on one machine, and pinning --fuzz-seed does not fix it (a `forge clean`
+      # alone moves the numbers). Gating on that measures noise, so the gate
+      # covers the 115 deterministic tests. Regenerate with:
+      #   cd contracts && forge snapshot --nmt "testFuzz"
+      # Do not reach for `--tolerance`: it silences the fuzz entries but then
+      # falsely flags all 15 invariant entries, which record runs/calls/reverts
+      # rather than a gas number.
       - name: Gas snapshot (no regressions)
-        run: forge snapshot --check --fuzz-seed 1
+        run: forge snapshot --check --nmt "testFuzz"
       # Last on purpose: this currently fails on VaultFactory vs the EIP-170 cap
       # (issue #10). Earlier in the job it short-circuited every step below it, so
       # the suite and the gas gate never ran in CI. Keep it here and keep it
