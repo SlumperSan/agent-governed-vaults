@@ -47,7 +47,7 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 | VO-4 | Routine-rebalance-only scope for defaults | Proposer disguises a non-routine action (adapter change, fee change) as a routine rebalance to harvest defaults | H | Deferred(S2): proposal types are structurally distinct on-chain (target/selector allow-list per type); defaults apply only to the rebalance type |
 | VO-5 | Delegation, concentration-capped | Delegate accumulates weight just under cap across colluding delegators; cap checked at delegation but stake grows after | M | Deferred(S2): cap re-checked at vote tally time against snapshot, not only at delegation time |
 | VO-6 | Commit-reveal | Non-revealers grief outcomes by committing then withholding reveal to starve quorum | M | Deferred(S2): unrevealed commits are forfeit (abstain) and count as participation for quorum denominator purposes only if revealed — non-reveal costs the committer their voice, not the vault its quorum (§8) |
-| VO-7 | Commit-reveal | Vote buying is *harder* under commit-reveal, but reveal-phase last-mover advantage: late revealers see partial tallies | L | Deferred(S2): all-or-nothing tally publication — reveals accumulate in contract state but tally view gated until reveal deadline. Sprint 6 challenges whether mempool observation defeats this; accepted as residual if so |
+| VO-7 | Commit-reveal | Vote buying is *harder* under commit-reveal, but reveal-phase last-mover advantage: late revealers see partial tallies | L | **Documented residual (S6 re-review)**: the running tally IS readable mid-reveal (public getter + cleartext Revealed events) — the originally-envisioned tally-view gating was not built. BUT the commit binds `support`, so a late revealer cannot change direction on the partial tally; no new exploit beyond ordinary reveal-order visibility. Full closure needs encrypted reveals, a deliberate v1 non-goal |
 | VO-8 | Post-vote timelock ≤30 d | Timelocked malicious proposal passes while members inattentive; timelock exists so members can exit — but exits during this window are forward-priced (K-1 interplay) | H | Mitigated(S1/S2): Mode-F queueing starts at vote *passage* (§8), so exit-before-execution is always available; forward pricing means exiters bear the rebalance outcome — Sprint 6 must adversarially test this interplay, it is the subtlest economic seam in the design |
 | VO-9 | Proposal snapshot | Flash-deposit (or flash-loan) stake to swing a vote, exit after | H | Deferred(S2): voting power snapshotted at proposal creation; pending deposits (§5) and Mode-F-locked shares excluded from eligible stake |
 
@@ -141,6 +141,10 @@ Confirmed findings and their fixes (regression suite `contracts/test/Sprint6Fixe
 | G3 | M | **Documented residual (CM-5)** — single-vault carry farming is possible but gated by the 1% exit-fee cap forcing ~100:1 transient capital fronting + leaderboard reputation drag; economic deterrent, not a code fix |
 | G4 | L→M | Fixed — standing default must predate the proposal (`setAt < createdAt`), closing the tally-aware reveal-phase default |
 | G5 | L | **Documented** — fee-assess vs carry-record are separate bounded calls; `MODULE_CALL_GAS=300k` covers the carry write; not atomic but not exploitable at current params |
+
+**Accepted-rows re-review ([reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md](reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md)):** K-3/VO-2/VO-3 and snapshot soundness **hold as designed**. Two divergences handled:
+| GA-1 | M | **Fixed** — a parent vault that allocated to a child was a non-voting member of the child's eligible stake, making full-consensus RuleChange permanently unreachable (froze child config). VaultCore now excludes the registered parent from all voting-eligible stake + holder counts (`parentVault()`); regression `test_childRuleChangePassesAfterParentAllocates` |
+| GA-2 (VO-7) | L | See VO-7 above — mid-reveal tally readable; commit binds direction, no new exploit |
 
 ## Coverage check
 

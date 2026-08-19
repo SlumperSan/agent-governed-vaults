@@ -40,6 +40,11 @@ Out of scope for the contract audit (separate review): `packages/indexer`, `apps
 - [reviews/SPRINT6-GOVERNANCE-REVIEW.md](reviews/SPRINT6-GOVERNANCE-REVIEW.md) — governance/
   economics. 5 findings (1H concentration-cap DoA, 2M, 2 documented), **fixed/documented**.
 
+A third pass ([reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md](reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md))
+challenged the deliberately-Accepted governance rows: K-3/VO-2/VO-3 and snapshot soundness hold
+as designed; it found GA-1 (parent-vault-as-non-voting-member froze child RuleChange — **fixed**)
+and confirmed VO-7's mid-reveal tally visibility is benign under commit-binding.
+
 The threat model's "Sprint 6 adversarial pass" table maps every finding to its disposition.
 
 ## Invariants proven (Foundry)
