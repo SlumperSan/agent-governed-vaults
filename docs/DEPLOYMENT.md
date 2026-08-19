@@ -5,6 +5,10 @@ verification, and canary monitoring. Contracts are immutable — there is no upg
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
 
+> **Testnet fast path:** [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md) packages §§1–4 into one
+> deploy command (`script/DeployTestnet.s.sol`, config-driven, includes the oracle stack and
+> execution adapter) plus one lifecycle smoke-test command (`scripts/smoke-test.mjs`).
+
 ## 0. Preconditions
 
 - Foundry v1.7.1 (`foundryup -v v1.7.1`).
