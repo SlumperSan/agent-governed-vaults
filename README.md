@@ -11,6 +11,7 @@ chain-agnostic contracts, no CEX integrations.
 | `contracts/` | Foundry project — the protocol (immutable, no proxies). |
 | `packages/indexer/` | Chain-agnostic event projections + persistence + a runnable daemon. |
 | `packages/agent-sdk/` | Env-agnostic client: the x402 402→authorize→retry loop + typed methods. |
+| `packages/canary/` | Read-only post-launch watcher for the DEPLOYMENT §6 signals ([docs/CANARY.md](docs/CANARY.md)). |
 | `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
 | `apps/web/` | Vault Atlas — consumer app: discover, inspect governance/fees, deposit/exit. |
 | `scripts/` | Operational runners — `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
