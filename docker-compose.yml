@@ -1,0 +1,32 @@
+# Runtime stack: the indexer (writes the snapshot) and the API (reads it), sharing one volume.
+# Configure via a .env file (see .env.example). Neither service holds a key or moves funds.
+#
+#   cp .env.example .env   # fill in RPC_URL + deployed addresses + price
+#   docker compose up --build
+services:
+  indexer:
+    build: .
+    command: npm run start:indexer
+    env_file: .env
+    environment:
+      STATE_PATH: /data/indexer-state.json
+    volumes:
+      - vault-state:/data
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: npm run start:api
+    env_file: .env
+    environment:
+      STATE_PATH: /data/indexer-state.json
+    ports:
+      - "${PORT:-8402}:8402"
+    volumes:
+      - vault-state:/data
+    depends_on:
+      - indexer
+    restart: unless-stopped
+
+volumes:
+  vault-state:
