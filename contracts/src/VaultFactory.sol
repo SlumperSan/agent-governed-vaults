@@ -43,6 +43,7 @@ contract VaultFactory {
         uint256 minDepositUsdc;
         uint256 exitFeeMaxBps;
         uint256 exitFeeDecayPeriod;
+        address[] allowedAdapters;
     }
 
     function createVault(VaultParams calldata p) external returns (address vault) {
@@ -58,7 +59,8 @@ contract VaultFactory {
                 p.capacityCapUsdc,
                 p.minDepositUsdc,
                 p.exitFeeMaxBps,
-                p.exitFeeDecayPeriod
+                p.exitFeeDecayPeriod,
+                p.allowedAdapters
             )
         );
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);

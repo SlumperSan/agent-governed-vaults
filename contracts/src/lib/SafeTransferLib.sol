@@ -18,6 +18,13 @@ library SafeTransferLib {
         if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) revert TransferFromFailed(token);
     }
 
+    error ApproveFailed(address token);
+
+    function safeApprove(address token, address spender, uint256 amount) internal {
+        (bool ok, bytes memory ret) = token.call(abi.encodeWithSelector(0x095ea7b3, spender, amount)); // approve
+        if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) revert ApproveFailed(token);
+    }
+
     /// @notice Non-reverting transfer for the in-kind redemption escrow path (threat model
     /// EE-6): one blacklisted/reverting basket asset must not block the whole redemption.
     /// Gas-capped and returndata-bounded (security review H-2): a token that returns 1–31

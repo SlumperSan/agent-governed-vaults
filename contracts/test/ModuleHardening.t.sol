@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
@@ -23,6 +23,8 @@ import {
 /// misbehaving basket tokens must never block member exits; the perf fee must reach the
 /// engine even when the payout is almost entirely in-kind.
 contract ModuleHardeningTest is Test {
+    using stdStorage for StdStorage;
+
     uint256 constant USDC_1 = 1e6;
 
     MockERC20 usdc;
@@ -51,7 +53,8 @@ contract ModuleHardeningTest is Test {
             1_000_000_000 * USDC_1,
             10 * USDC_1,
             0, // no exit fee — isolate module behavior
-            0
+            0,
+            new address[](0)
         );
         address[2] memory who = [creator, alice];
         for (uint256 i; i < 2; ++i) {
@@ -123,12 +126,8 @@ contract ModuleHardeningTest is Test {
         );
         // Simulate held position of the malformed token.
         bad.mint(address(v), 100e18);
-        vm.store(
-            address(v),
-            keccak256(abi.encode(address(bad), uint256(2))), // assetBalance mapping slot
-            bytes32(uint256(100e18))
-        );
-        // Guard: if the slot moved, this test must fail loudly here, not silently pass.
+        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(bad))
+            .checked_write(uint256(100e18));
         assertEq(v.assetBalance(address(bad)), 100e18, "slot guard");
 
         uint256 bal = usdc.balanceOf(alice);
@@ -153,10 +152,11 @@ contract ModuleHardeningTest is Test {
             _newVault(address(new StubGovernance()), address(fees), address(new StubRegistry()), basket);
 
         // Fully invested: ALL idle converted to wBTC which then appreciated.
-        vm.store(address(v), bytes32(uint256(3)), bytes32(uint256(0))); // idleUsdc slot
+        stdstore.target(address(v)).sig("idleUsdc()").checked_write(uint256(0));
         assertEq(v.idleUsdc(), 0, "slot guard");
         wbtc.mint(address(v), 1e8);
-        vm.store(address(v), keccak256(abi.encode(address(wbtc), uint256(2))), bytes32(uint256(1e8)));
+        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(wbtc))
+            .checked_write(uint256(1e8));
         assertEq(v.assetBalance(address(wbtc)), 1e8, "slot guard");
 
         fees.setFeeToCharge(type(uint256).max); // engine asks max; clamp gives 10% of gain

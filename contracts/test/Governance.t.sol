@@ -23,7 +23,7 @@ contract GovernanceTest is Test {
     address dave = makeAddr("dave");
 
     bytes32 constant SALT = keccak256("salt");
-    bytes constant REBALANCE_PAYLOAD = abi.encode("orders-v1");
+    bytes constant REBALANCE_PAYLOAD = ""; // no-op rebalance; real orders in Execution.t.sol
 
     function setUp() public {
         usdc = new MockERC20("USDC", 6);
@@ -44,7 +44,8 @@ contract GovernanceTest is Test {
             1_000_000_000 * USDC_1,
             10 * USDC_1,
             100,
-            30 days
+            30 days,
+            new address[](0)
         );
 
         vm.prank(creator);
@@ -456,7 +457,18 @@ contract GovernanceTest is Test {
         MockERC20 usdc2 = new MockERC20("USDC", 6);
         address[] memory basket = new address[](0);
         VaultCore v2 = new VaultCore(
-            address(usdc2), basket, creator, registry, gov, fees, oracle, 1e15, 10 * USDC_1, 100, 30 days
+            address(usdc2),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            1e15,
+            10 * USDC_1,
+            100,
+            30 days,
+            new address[](0)
         );
         vm.prank(creator);
         vm.expectRevert(Governance.BadGovConfig.selector);

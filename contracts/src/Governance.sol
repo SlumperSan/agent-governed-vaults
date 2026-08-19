@@ -2,6 +2,11 @@
 pragma solidity 0.8.26;
 
 import {IGovernance} from "./interfaces/IGovernance.sol";
+import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
+
+interface IVaultExecution {
+    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders) external;
+}
 
 interface IVaultSnapshots {
     function creator() external view returns (address);
@@ -389,6 +394,12 @@ contract Governance is IGovernance {
             GovConfig memory newCfg = abi.decode(payload, (GovConfig));
             _validateConfig(newCfg);
             configOf[p.vault] = newCfg;
+        } else if (payload.length > 0) {
+            // Rebalance: decode the committed orders and drive the vault's execution path.
+            // The payload hash was fixed at proposal time — voters approved THESE orders.
+            (address adapter, IExecutionAdapter.SwapOrder[] memory orders) =
+                abi.decode(payload, (address, IExecutionAdapter.SwapOrder[]));
+            IVaultExecution(p.vault).executeRebalance(adapter, orders);
         }
         emit Executed(pid);
     }

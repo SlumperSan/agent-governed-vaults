@@ -51,7 +51,8 @@ contract VaultCoreTest is Test {
             10_000_000 * USDC_1, // capacity cap
             10 * USDC_1, // min deposit
             100, // exit fee max 1%
-            30 days // fee decay period
+            30 days, // fee decay period
+            new address[](0)
         );
 
         for (uint160 i; i < 3; ++i) {

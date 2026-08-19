@@ -5,6 +5,7 @@ import {IOperatorRegistry} from "./interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "./interfaces/IGovernance.sol";
 import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
+import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {Checkpoints} from "./lib/Checkpoints.sol";
 import {BoundedCall} from "./lib/BoundedCall.sol";
@@ -59,6 +60,11 @@ contract VaultCore {
     uint256 public immutable minDepositUsdc; // dust / rounding-inflation defense
     uint256 public immutable exitFeeMaxBps; // ≤ EXIT_FEE_CAP_BPS
     uint256 public immutable exitFeeDecayPeriod; // seconds until fee decays to zero
+
+    // ───────────────────────────── execution ──────────────────────────────────
+    /// @dev Adapter allowlist fixed at creation (EX-1): rebalances may only touch venues the
+    /// members signed up for. Immutable — changing venues means a new vault.
+    mapping(address => bool) public isAllowedAdapter;
 
     // ─────────────────────────────── basket ───────────────────────────────────
     address[] public basketAssets;
@@ -124,6 +130,7 @@ contract VaultCore {
     event SliceEscrowed(address indexed member, address indexed asset, uint256 amount);
     event ModuleCallFailed(bytes32 indexed module, address indexed member);
     event EscrowClaimed(address indexed member, address indexed asset, uint256 amount);
+    event RebalanceExecuted(address indexed adapter, uint256 orderCount);
 
     // ─────────────────────────────── errors ───────────────────────────────────
     error Reentrancy();
@@ -141,6 +148,11 @@ contract VaultCore {
     error CreatorStakeGate();
     error NothingToClaim();
     error BadConfig();
+    error OnlyGovernance();
+    error AdapterNotAllowed();
+    error BadSwapToken();
+    error InsufficientAssetBalance();
+    error SwapSlippage();
 
     // ─────────────────────────────── constructor ──────────────────────────────
     constructor(
@@ -154,8 +166,12 @@ contract VaultCore {
         uint256 capacityCapUsdc_,
         uint256 minDepositUsdc_,
         uint256 exitFeeMaxBps_,
-        uint256 exitFeeDecayPeriod_
+        uint256 exitFeeDecayPeriod_,
+        address[] memory allowedAdapters_
     ) {
+        for (uint256 i; i < allowedAdapters_.length; ++i) {
+            isAllowedAdapter[allowedAdapters_[i]] = true;
+        }
         require(usdc_ != address(0) && creator_ != address(0), BadConfig());
         require(exitFeeMaxBps_ <= EXIT_FEE_CAP_BPS, BadConfig());
         require(capacityCapUsdc_ > 0 && minDepositUsdc_ > 0, BadConfig());
@@ -470,6 +486,56 @@ contract VaultCore {
         if (usdcPay > 0) usdc.safeTransfer(member, usdcPay);
 
         emit ExitSettled(member, burnShares, usdcPay, feeBps, perfFee);
+    }
+
+    // ───────────────────────────── rebalancing ────────────────────────────────
+
+    /// @notice Execute a passed rebalance: governance-only, allowlisted adapter, every leg's
+    /// tokens constrained to USDC + basket, every output measured by the vault's OWN balance
+    /// delta (EX-3 — the adapter's word is never the accounting source). Internal accounting
+    /// is debited before and credited after each swap, so NAV stays truthful mid-rebalance.
+    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)
+        external
+        nonReentrant
+    {
+        require(msg.sender == address(governance), OnlyGovernance());
+        require(isAllowedAdapter[adapter], AdapterNotAllowed());
+
+        for (uint256 i; i < orders.length; ++i) {
+            IExecutionAdapter.SwapOrder calldata o = orders[i];
+            require(o.tokenOut == usdc || assetUnit[o.tokenOut] != 0, BadSwapToken());
+
+            // Debit internal accounting for the input leg.
+            if (o.tokenIn == usdc) {
+                require(idleUsdc >= o.amountIn, InsufficientAssetBalance());
+                idleUsdc -= o.amountIn;
+            } else {
+                require(assetUnit[o.tokenIn] != 0, BadSwapToken());
+                require(assetBalance[o.tokenIn] >= o.amountIn, InsufficientAssetBalance());
+                assetBalance[o.tokenIn] -= o.amountIn;
+            }
+
+            o.tokenIn.safeApprove(adapter, o.amountIn);
+            uint256 outBefore = IERC20Metadata(o.tokenOut).balanceOf(address(this));
+            IExecutionAdapter(adapter).executeSwap(o);
+            uint256 received = IERC20Metadata(o.tokenOut).balanceOf(address(this)) - outBefore;
+            require(received >= o.minAmountOut, SwapSlippage());
+            o.tokenIn.safeApprove(adapter, 0);
+
+            // Credit internal accounting with the measured output.
+            if (o.tokenOut == usdc) idleUsdc += received;
+            else assetBalance[o.tokenOut] += received;
+
+            // Sweep any unspent input the adapter returned.
+            uint256 inBal = IERC20Metadata(o.tokenIn).balanceOf(address(this));
+            uint256 accounted = o.tokenIn == usdc ? idleUsdc + totalPendingUsdc : assetBalance[o.tokenIn];
+            if (inBal > accounted) {
+                uint256 refund = inBal - accounted;
+                if (o.tokenIn == usdc) idleUsdc += refund;
+                else assetBalance[o.tokenIn] += refund;
+            }
+        }
+        emit RebalanceExecuted(adapter, orders.length);
     }
 
     /// @dev H-1: best-effort mark recording — a reverting registry loses the mark (event-logged),
