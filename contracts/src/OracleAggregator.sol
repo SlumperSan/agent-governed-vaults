@@ -31,6 +31,12 @@ contract OracleAggregator is IOracleAggregator {
     mapping(address => AssetConfig) internal _cfg;
     address[] public assets;
 
+    /// @dev Upper bound on per-asset staleness. Prevents the finding-2 underflow honeypot
+    /// (block.timestamp - maxStaleness) AND bounds the finding-7 latency-arb drift window. A
+    /// multi-year staleness bound is never legitimate for a spot index.
+    uint32 public constant MAX_STALENESS_CEILING = 1 days;
+    uint8 public constant MIN_SOURCES = 3; // §11 / SF-1: median of >= 3 independent sources
+
     error BadOracleConfig();
 
     constructor(
@@ -46,9 +52,12 @@ contract OracleAggregator is IOracleAggregator {
         );
         for (uint256 i; i < n; ++i) {
             uint256 m = sources_[i].length;
-            require(m > 0 && m <= 15, BadOracleConfig());
-            require(quorum_[i] > 0 && quorum_[i] <= m, BadOracleConfig());
-            require(maxStaleness_[i] > 0, BadOracleConfig());
+            // Finding 6: enforce the §11/SF-1 floor — >= 3 sources and a STRICT MAJORITY
+            // freshness quorum, so no single source can freeze or move an asset.
+            require(m >= MIN_SOURCES && m <= 15, BadOracleConfig());
+            require(quorum_[i] > m / 2 && quorum_[i] <= m, BadOracleConfig());
+            // Finding 2: bound staleness both sides — nonzero and below the ceiling.
+            require(maxStaleness_[i] > 0 && maxStaleness_[i] <= MAX_STALENESS_CEILING, BadOracleConfig());
             require(_cfg[assets_[i]].sources.length == 0, BadOracleConfig()); // no duplicates
             _cfg[assets_[i]] =
                 AssetConfig({sources: sources_[i], maxStaleness: maxStaleness_[i], quorum: quorum_[i]});
@@ -64,7 +73,8 @@ contract OracleAggregator is IOracleAggregator {
 
         uint256[] memory fresh = new uint256[](m);
         uint256 k;
-        uint256 minUpdated = block.timestamp - cfg.maxStaleness;
+        // Saturating: never underflow-panic even if maxStaleness somehow exceeded the clock.
+        uint256 minUpdated = block.timestamp > cfg.maxStaleness ? block.timestamp - cfg.maxStaleness : 0;
         for (uint256 i; i < m; ++i) {
             // A reverting source is simply not fresh — one broken feed must not trip the
             // breaker while quorum still holds elsewhere.
@@ -84,7 +94,9 @@ contract OracleAggregator is IOracleAggregator {
             }
             fresh[j] = key;
         }
-        return k % 2 == 1 ? fresh[k / 2] : (fresh[k / 2 - 1] + fresh[k / 2]) / 2;
+        // Lower median: no averaging (no even-k swing, no sum overflow-freeze). Majority-fresh
+        // quorum guarantees the middle element is bounded by the honest set.
+        return fresh[(k - 1) / 2];
     }
 
     function assetConfig(address asset)

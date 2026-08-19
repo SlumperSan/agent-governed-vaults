@@ -176,15 +176,19 @@ contract Governance is IGovernance {
         _validateConfig(cfg);
         // SV-6: child quorum floors inherit — a child may never be easier to pass than its
         // parent. Effective floor = max(childFloor, parentFloor).
-        if (subVaultRegistry != address(0)) {
-            address parent = ISubVaultParent(subVaultRegistry).parentOf(vault);
-            if (parent != address(0) && vaultRegistered[parent]) {
-                require(cfg.quorumBps >= configOf[parent].quorumBps, BadGovConfig());
-            }
-        }
+        _requireParentQuorumFloor(vault, cfg.quorumBps);
         vaultRegistered[vault] = true;
         configOf[vault] = cfg;
         emit VaultRegistered(vault, cfg);
+    }
+
+    /// @dev SV-6 quorum-floor inheritance, enforced at BOTH registration and RuleChange update.
+    function _requireParentQuorumFloor(address vault, uint16 quorumBps) internal view {
+        if (subVaultRegistry == address(0)) return;
+        address parent = ISubVaultParent(subVaultRegistry).parentOf(vault);
+        if (parent != address(0) && vaultRegistered[parent]) {
+            require(quorumBps >= configOf[parent].quorumBps, BadGovConfig());
+        }
     }
 
     function _validateConfig(GovConfig memory cfg) internal pure {
@@ -270,8 +274,10 @@ contract Governance is IGovernance {
 
         revealedOf[pid][msg.sender] = true;
         revealedSupportOf[pid][msg.sender] = support;
+        // F1 (S6): a member's OWN weight is never concentration-capped — only weight RECEIVED
+        // via delegation is (architecture §8). Self-accrual here made any holder above the cap
+        // unable to reveal, bricking sole/dominant-holder vaults and RuleChange consensus.
         uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(msg.sender, p.createdAt - 1);
-        _accrueDelegate(pid, msg.sender, weight, p);
 
         if (support) p.forWeight += weight;
         else p.againstWeight += weight;
@@ -349,7 +355,11 @@ contract Governance is IGovernance {
         require(!defaultApplied[pid][member], AlreadyRevealed());
 
         StandingDefault memory d = standingDefaultOf[p.vault][member];
-        require(d.set && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable());
+        // F4 (S6): the default must be genuinely STANDING — set before the proposal existed —
+        // and within its 72h TTL. The lower bound blocks tally-aware reveal-phase defaults.
+        require(
+            d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable()
+        );
 
         uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(member, p.createdAt - 1);
         require(weight > 0, NoWeight());
@@ -420,6 +430,7 @@ contract Governance is IGovernance {
         if (p.ptype == ProposalType.RuleChange) {
             GovConfig memory newCfg = abi.decode(payload, (GovConfig));
             _validateConfig(newCfg);
+            _requireParentQuorumFloor(p.vault, newCfg.quorumBps); // F2 (S6): SV-6 also on update
             configOf[p.vault] = newCfg;
         } else if (p.ptype == ProposalType.ChildAllocation) {
             (address child, uint256 allocateUsdc, uint256 redeemShares) =

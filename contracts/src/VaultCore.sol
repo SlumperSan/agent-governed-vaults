@@ -46,6 +46,7 @@ contract VaultCore {
 
     // ─────────────────────────────── constants ────────────────────────────────
     uint256 internal constant WAD = 1e18;
+    uint256 internal constant SHORTFALL_DUST_WAD = 1e12; // 1e-6 USD rounding tolerance
     uint256 internal constant BPS = 10_000;
     uint256 public constant OBSERVATION_WINDOW = 4 hours;
     uint256 public constant CREATOR_MIN_STAKE_BPS = 500; // 5%
@@ -110,6 +111,8 @@ contract VaultCore {
     address[] public childVaults; // governance-allocated children (≤ MAX_CHILDREN)
     mapping(address => bool) public isChildVault;
     uint256 public constant MAX_CHILDREN = 8;
+    uint256 public constant MAX_LOOKTHROUGH_DEPTH = 3; // matches SubVaultRegistry.MAX_DEPTH
+    uint256 public constant MAX_BASKET_ASSETS = 10; // Finding 8: bound navWad gas cost
 
     // ────────────────────── in-kind escrow (EE-6 isolation) ───────────────────
     mapping(address => mapping(address => uint256)) public claimable; // member ⇒ asset ⇒ amount
@@ -168,6 +171,7 @@ contract VaultCore {
     error NotRegisteredChild();
     error TooManyChildren();
     error ChildSettlementPending();
+    error ExitNeedsChildSettlement();
 
     // ─────────────────────────────── constructor ──────────────────────────────
     constructor(
@@ -210,6 +214,7 @@ contract VaultCore {
         exitFeeMaxBps = exitFeeMaxBps_;
         exitFeeDecayPeriod = exitFeeDecayPeriod_;
 
+        require(basketAssets_.length <= MAX_BASKET_ASSETS, BadConfig());
         basketAssets = basketAssets_;
         for (uint256 i; i < basketAssets_.length; ++i) {
             address a = basketAssets_[i];
@@ -246,15 +251,31 @@ contract VaultCore {
         VaultCore c = VaultCore(child);
         uint256 myShares = c.sharesOf(address(this));
         if (myShares == 0) return 0;
-        uint256 ts = c.totalShares();
-        uint256 childNav = c.idleUsdc() * usdcScalar;
-        uint256 n = c.basketLength();
+        // Finding 1 (S6): value the WHOLE child NAV including ITS children, then take our
+        // fraction. Non-recursive valuation silently dropped grandchild value from the root.
+        return _fullNavWad(c, 1) * myShares / c.totalShares();
+    }
+
+    /// @dev Full NAV of `v` priced through THIS vault's oracle, recursing into descendants.
+    /// Depth-bounded by MAX_LOOKTHROUGH_DEPTH (registry caps real nesting at 3; this is the
+    /// backstop). Every descendant asset is a subset of this vault's basket (factory-enforced),
+    /// so assetUnit/oracle always resolve.
+    function _fullNavWad(VaultCore v, uint256 depth) internal view returns (uint256 nav) {
+        nav = v.idleUsdc() * usdcScalar;
+        uint256 n = v.basketLength();
         for (uint256 i; i < n; ++i) {
-            address a = c.basketAssets(i);
-            uint256 bal = c.assetBalance(a);
-            if (bal != 0) childNav += bal * oracle.priceWad(a) / assetUnit[a];
+            address a = v.basketAssets(i);
+            uint256 bal = v.assetBalance(a);
+            if (bal != 0) nav += bal * oracle.priceWad(a) / assetUnit[a];
         }
-        return childNav * myShares / ts;
+        if (depth < MAX_LOOKTHROUGH_DEPTH) {
+            uint256 cc = v.childVaultCount();
+            for (uint256 i; i < cc; ++i) {
+                VaultCore g = VaultCore(v.childVaults(i));
+                uint256 vShares = g.sharesOf(address(v));
+                if (vShares != 0) nav += _fullNavWad(g, depth + 1) * vShares / g.totalShares();
+            }
+        }
     }
 
     function childVaultCount() external view returns (uint256) {
@@ -475,24 +496,35 @@ contract VaultCore {
         // SV-5 shortfall: unwind children by value until the cash target is covered. The
         // proceeds (already net of the child's own fees — stacking is real and displayed,
         // SV-4) belong entirely to the exiter and never enter parent accounting.
-        for (uint256 i; shortfallWad > 0 && i < childVaults.length; ++i) {
+        for (uint256 i; shortfallWad > SHORTFALL_DUST_WAD && i < childVaults.length; ++i) {
             address child = childVaults[i];
+            // Finding 4 (S6): skip a child mid-rebalance — calling requestExit would queue the
+            // parent's exit (Mode F) and revert deep in the stack. Skipping avoids the queue;
+            // if no other child covers the shortfall the exit reverts cleanly below.
+            if (_childPendingExecution(child)) continue;
             uint256 cv = _childValueWad(child);
             if (cv == 0) continue;
             uint256 takeWad = shortfallWad > cv ? cv : shortfallWad;
             uint256 cs = VaultCore(child).sharesOf(address(this)) * takeWad / cv;
             if (cs == 0) continue;
             (uint256 childUsdc, uint256[] memory childDeltas) = _redeemChildMeasured(child, cs, false);
+            uint256 receivedWad = childUsdc * usdcScalar;
             usdcPay += childUsdc;
-            payoutValueWad += childUsdc * usdcScalar;
             for (uint256 j; j < childDeltas.length; ++j) {
                 if (childDeltas[j] == 0) continue;
                 slices[j] += childDeltas[j];
-                payoutValueWad += childDeltas[j] * oracle.priceWad(basketAssets[j])
-                / assetUnit[basketAssets[j]];
+                receivedWad += childDeltas[j] * oracle.priceWad(basketAssets[j]) / assetUnit[basketAssets[j]];
             }
-            shortfallWad -= takeWad;
+            payoutValueWad += receivedWad;
+            // Finding 5 (S6): reduce the shortfall by what ACTUALLY arrived, never the intended
+            // takeWad — a child that EE-6-escrows a slice back returns less, and must not be
+            // recorded as satisfied (that silently underpaid the exiter).
+            shortfallWad = receivedWad >= shortfallWad ? 0 : shortfallWad - receivedWad;
         }
+        // Findings 4/5 (S6): if children could not cover the cash target now (all pending, or
+        // in-kind slices escrowed), revert clean rather than silently underpay. The member
+        // retries once children settle — bounded by the child timelock + execution window.
+        require(shortfallWad <= SHORTFALL_DUST_WAD, ExitNeedsChildSettlement());
 
         // ── Realized P&L + performance fee ──
         // H-1: bookkeeping modules are called BOUNDED and non-blocking — value is defended by
@@ -631,6 +663,17 @@ contract VaultCore {
         }
     }
 
+    /// @dev Bounded read of a child's own governance for its pending-execution state. On any
+    /// failure returns false — a child whose governance is broken settles Mode I anyway (its
+    /// own _pendingExecution falls back to false), so attempting the redeem is safe.
+    function _childPendingExecution(address child) internal view returns (bool) {
+        address childGov = address(VaultCore(child).governance());
+        (bool ok, uint256 word, uint256 retSize) = childGov.boundedStaticCall(
+            abi.encodeCall(IGovernance.hasPendingExecution, (child)), MODULE_CALL_GAS
+        );
+        return ok && retSize >= 32 && word != 0;
+    }
+
     /// @notice Crank: pull a slice the child escrowed for this vault (child EE-6 path) and
     /// credit it. Permissionless.
     function pullChildEscrow(address child, address asset) external nonReentrant {
@@ -672,6 +715,7 @@ contract VaultCore {
 
             o.tokenIn.safeApprove(adapter, o.amountIn);
             uint256 outBefore = IERC20Metadata(o.tokenOut).balanceOf(address(this));
+            uint256 inBefore = IERC20Metadata(o.tokenIn).balanceOf(address(this));
             IExecutionAdapter(adapter).executeSwap(o);
             uint256 received = IERC20Metadata(o.tokenOut).balanceOf(address(this)) - outBefore;
             require(received >= o.minAmountOut, SwapSlippage());
@@ -681,11 +725,13 @@ contract VaultCore {
             if (o.tokenOut == usdc) idleUsdc += received;
             else assetBalance[o.tokenOut] += received;
 
-            // Sweep any unspent input the adapter returned.
-            uint256 inBal = IERC20Metadata(o.tokenIn).balanceOf(address(this));
-            uint256 accounted = o.tokenIn == usdc ? idleUsdc + totalPendingUsdc : assetBalance[o.tokenIn];
-            if (inBal > accounted) {
-                uint256 refund = inBal - accounted;
+            // Finding 3 (S6): refund UNSPENT input measured from this swap's own balance delta,
+            // never from a whole-vault balance-vs-accounting comparison — the latter absorbed
+            // EE-6 escrow and donations. spent = inBefore - inAfter ≤ amountIn (approval-bounded).
+            uint256 inAfter = IERC20Metadata(o.tokenIn).balanceOf(address(this));
+            uint256 spent = inBefore - inAfter;
+            if (o.amountIn > spent) {
+                uint256 refund = o.amountIn - spent;
                 if (o.tokenIn == usdc) idleUsdc += refund;
                 else assetBalance[o.tokenIn] += refund;
             }

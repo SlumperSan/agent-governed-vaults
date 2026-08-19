@@ -116,6 +116,32 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 
 ---
 
+## Sprint 6 adversarial pass — findings and dispositions
+
+Two independent security agents reviewed all layers (reports in `contracts/docs/reviews/`).
+Confirmed findings and their fixes (regression suite `contracts/test/Sprint6Fixes.t.sol`):
+
+**Execution/oracle/sub-vault (Agent B):**
+| # | Sev | Disposition |
+| --- | --- | --- |
+| E1 | H | Fixed — `_childValueWad` now recurses depth-bounded so grandchild value is in root NAV (SV-7 at full depth) |
+| E2 | H | Fixed — oracle `maxStaleness` upper-capped (1 day) + saturating subtraction; closes the underflow-panic honeypot |
+| E3 | M | Fixed — rebalance leftover-sweep measures this-swap balance delta, no longer absorbs EE-6 escrow or donations |
+| E4 | M | Fixed — member exits skip children mid-rebalance instead of reverting deep in the stack |
+| E5 | M | Fixed — shortfall unwind reduces by MEASURED value; reverts clean (never silently underpays) if children can't cover now |
+| E6 | M | Fixed — oracle floor `≥3` sources + strict-majority quorum + lower-median (no even-k swing / sum overflow) |
+| E7 | M | **Documented residual** — EE-5 latency arb threshold is gas within the oracle's drift band; bounded by the new 1-day staleness ceiling + non-zero exit fee. Full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
+| E8 | L | Fixed — `MAX_BASKET_ASSETS = 10` bounds navWad gas; recursion depth-capped |
+
+**Governance/economic (Agent A):**
+| # | Sev | Disposition |
+| --- | --- | --- |
+| G1 | H | Fixed — concentration cap applies to RECEIVED (delegated) weight only; a dominant/sole holder can always reveal own weight (vaults no longer dead on arrival) |
+| G2 | M | Fixed — RuleChange execute re-applies the SV-6 parent-quorum-floor inheritance |
+| G3 | M | **Documented residual (CM-5)** — single-vault carry farming is possible but gated by the 1% exit-fee cap forcing ~100:1 transient capital fronting + leaderboard reputation drag; economic deterrent, not a code fix |
+| G4 | L→M | Fixed — standing default must predate the proposal (`setAt < createdAt`), closing the tally-aware reveal-phase default |
+| G5 | L | **Documented** — fee-assess vs carry-record are separate bounded calls; `MODULE_CALL_GAS=300k` covers the carry write; not atomic but not exploitable at current params |
+
 ## Coverage check
 
 Brief bullets → rows: execution (4/4), core mechanics (8/8), voting (9/9), entry/exit (11/11),

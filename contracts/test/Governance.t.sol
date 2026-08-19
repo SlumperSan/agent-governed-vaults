@@ -207,6 +207,7 @@ contract GovernanceTest is Test {
     function test_defaultCountsInTallyNeverQuorum() public {
         vm.prank(carol);
         gov.setStandingDefault(address(vault), true);
+        skip(1); // F4: default must predate the proposal
 
         uint256 pid = _propose();
         _commitAndReveal(pid, creator, true);
@@ -226,7 +227,7 @@ contract GovernanceTest is Test {
     function test_defaultExpiresAfter72h() public {
         vm.prank(carol);
         gov.setStandingDefault(address(vault), true);
-        skip(73 hours);
+        skip(73 hours); // also carries setAt < createdAt (F4)
 
         uint256 pid = _propose();
         _revealPhase(pid);
@@ -237,6 +238,7 @@ contract GovernanceTest is Test {
     function test_defaultOnlyForRebalanceType() public {
         vm.prank(carol);
         gov.setStandingDefault(address(vault), true);
+        skip(1); // F4: default predates the proposal
 
         vm.prank(creator);
         uint256 pid =
@@ -267,7 +269,10 @@ contract GovernanceTest is Test {
     }
 
     function test_concentrationCapBlocksExcessDelegation() public {
-        // alice + carol + dave = 3000 of 5000 = 60% > 40% cap once dave cranks.
+        // Cap applies to RECEIVED weight only (F1 fix): alice's own stake is uncapped.
+        // bob+carol delegate = 2000 = 40% (at cap); dave's crank pushes received to 60% > 40%.
+        vm.prank(bob);
+        gov.setDelegate(address(vault), alice);
         vm.prank(carol);
         gov.setDelegate(address(vault), alice);
         vm.prank(dave);
@@ -277,9 +282,31 @@ contract GovernanceTest is Test {
         _commitAndReveal(pid, alice, true);
         _revealPhase(pid);
         _reveal(pid, alice, true);
-        gov.revealDelegated(pid, carol); // alice at 40% — exactly at cap
+        gov.revealDelegated(pid, bob);
+        gov.revealDelegated(pid, carol); // received 40% — exactly at cap
         vm.expectRevert(Governance.ConcentrationCap.selector);
-        gov.revealDelegated(pid, dave); // would exceed
+        gov.revealDelegated(pid, dave); // received would be 60% > 40%
+    }
+
+    function test_ownWeightIsNeverConcentrationCapped() public {
+        // F1 regression: creator holds 20% here, but even a >cap holder must be able to reveal
+        // their OWN weight. Verify a large direct reveal is never blocked by the cap.
+        uint256 pid = _propose();
+        _commitAndReveal(pid, creator, true);
+        _commitAndReveal(pid, alice, true);
+        _commitAndReveal(pid, bob, true);
+        _commitAndReveal(pid, carol, true);
+        _commitAndReveal(pid, dave, true);
+        _revealPhase(pid);
+        // All five reveal their own weight (100% direct) — none capped despite the 40% cfg cap.
+        _reveal(pid, creator, true);
+        _reveal(pid, alice, true);
+        _reveal(pid, bob, true);
+        _reveal(pid, carol, true);
+        _reveal(pid, dave, true);
+        vm.warp(block.timestamp + 6 hours);
+        gov.finalize(pid);
+        assertEq(uint8(_status(pid)), uint8(Governance.Status.Passed), "own weight uncapped");
     }
 
     function test_selfVoteBeatsDelegation() public {

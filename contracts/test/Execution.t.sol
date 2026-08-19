@@ -210,7 +210,7 @@ contract ExecutionTest is Test {
     function test_oneDeadSourceStillQuorum() public {
         s1.setBroken(true); // reverting source ≠ breaker while quorum holds
         uint256 p = oracle.priceWad(address(weth));
-        assertEq(p, (4_001e18 + 3_999e18) / 2, "median of remaining two");
+        assertEq(p, 3_999e18, "lower median of the two fresh sources (Finding 6)");
     }
 
     function test_belowQuorumTripsBreaker() public {
