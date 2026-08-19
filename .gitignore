@@ -4,3 +4,4 @@ contracts/cache/
 contracts/broadcast/
 .env
 *.log
+scripts/.smoke-state.json
