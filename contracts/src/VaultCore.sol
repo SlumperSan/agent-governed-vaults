@@ -7,6 +7,7 @@ import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {Checkpoints} from "./lib/Checkpoints.sol";
+import {BoundedCall} from "./lib/BoundedCall.sol";
 
 interface IERC20Metadata {
     function decimals() external view returns (uint8);
@@ -31,6 +32,12 @@ interface IERC20Metadata {
 contract VaultCore {
     using SafeTransferLib for address;
     using Checkpoints for Checkpoints.History;
+    using BoundedCall for address;
+
+    /// @dev Gas allowance for creator-chosen bookkeeping modules (security review H-1): value
+    /// AND liveness are both defended — a reverting / gas-guzzling / returndata-bombing module
+    /// can lose its own bookkeeping (event-logged) but can never block a member's exit.
+    uint256 internal constant MODULE_CALL_GAS = 300_000;
 
     // ─────────────────────────────── constants ────────────────────────────────
     uint256 internal constant WAD = 1e18;
@@ -115,6 +122,7 @@ contract VaultCore {
         uint256 perfFeeUsdc
     );
     event SliceEscrowed(address indexed member, address indexed asset, uint256 amount);
+    event ModuleCallFailed(bytes32 indexed module, address indexed member);
     event EscrowClaimed(address indexed member, address indexed asset, uint256 amount);
 
     // ─────────────────────────────── errors ───────────────────────────────────
@@ -305,14 +313,29 @@ contract VaultCore {
         require(queuedExitShares[msg.sender] == 0, ExitAlreadyQueued());
         require(sharesOf[msg.sender] >= shares, InsufficientShares());
 
-        if (governance.hasPendingExecution(address(this))) {
+        if (_pendingExecution()) {
+            // L-1 fix: evaluate the creator gate at QUEUE time — a gate-violating Mode-F
+            // request must revert here, not strand an un-cancellable queued exit at settle.
+            _checkCreatorGate(msg.sender, shares);
             queuedExitShares[msg.sender] = shares;
             totalQueuedShares += shares;
             _snapshot(msg.sender); // locked shares leave eligible stake immediately
             emit ExitQueued(msg.sender, shares);
         } else {
-            _settleExit(msg.sender, shares);
+            _settleExit(msg.sender, shares, false);
         }
+    }
+
+    /// @dev H-1: bounded, non-reverting read of the governance module. On ANY failure the
+    /// fallback is Mode I (instant settlement) — a broken governance forfeits forward pricing
+    /// (VO-8 leak accepted in that already-broken state); permanent exit lockup is never on
+    /// the table. Deliberate, documented liveness decision.
+    function _pendingExecution() internal view returns (bool) {
+        (bool ok, uint256 word, uint256 retSize) = address(governance)
+            .boundedStaticCall(
+                abi.encodeCall(IGovernance.hasPendingExecution, (address(this))), MODULE_CALL_GAS
+            );
+        return ok && retSize >= 32 && word != 0;
     }
 
     /// @notice Settle a queued Mode-F exit once no execution is pending (the rebalance executed,
@@ -321,24 +344,30 @@ contract VaultCore {
     function settleQueuedExit(address member) external nonReentrant {
         uint256 shares = queuedExitShares[member];
         require(shares > 0, NoQueuedExit());
-        require(!governance.hasPendingExecution(address(this)), ExecutionStillPending());
+        require(!_pendingExecution(), ExecutionStillPending());
         queuedExitShares[member] = 0;
         totalQueuedShares -= shares;
-        _settleExit(member, shares);
+        _settleExit(member, shares, true);
     }
 
-    function _settleExit(address member, uint256 burnShares) internal {
+    /// @dev Creator 5% withdrawal gate (CM-1/CM-2): gate on creator ACTION while members remain.
+    function _checkCreatorGate(address member, uint256 burnShares) internal view {
+        if (member == creator && nonCreatorMemberCount > 0) {
+            require(
+                (sharesOf[member] - burnShares) * BPS >= CREATOR_MIN_STAKE_BPS * (totalShares - burnShares),
+                CreatorStakeGate()
+            );
+        }
+    }
+
+    function _settleExit(address member, uint256 burnShares, bool fromQueue) internal {
         uint256 memberShares = sharesOf[member];
         require(memberShares >= burnShares, InsufficientShares());
         uint256 ts = totalShares;
 
-        // Creator 5% withdrawal gate (CM-1/CM-2): gate on creator ACTION while members remain.
-        if (member == creator && nonCreatorMemberCount > 0) {
-            require(
-                (memberShares - burnShares) * BPS >= CREATOR_MIN_STAKE_BPS * (ts - burnShares),
-                CreatorStakeGate()
-            );
-        }
+        // Queued exits passed the gate at queue time (L-1); re-checking here could re-strand
+        // them if membership grew in between — new joiners had on-chain notice of the queue.
+        if (!fromQueue) _checkCreatorGate(member, burnShares);
 
         // Exit fee: decays with tenure, waived for a sole holder (fee would route to self;
         // last-member waiver per EE-8/EE-9 — it can never route to the operator).
@@ -346,12 +375,12 @@ contract VaultCore {
         if (memberShares == ts) feeBps = 0;
         uint256 keepBps = BPS - feeBps;
 
-        // Pro-rata in-kind payout; the fee fraction of every slice STAYS in the vault, so
-        // NAVps for remaining members is non-decreasing across any redemption (§4.6 invariant).
+        // ── Pass 1: internal accounting only (CEI — final before any external transfer) ──
+        // Pro-rata payout; the exit-fee fraction of every slice STAYS in the vault, so NAVps
+        // for remaining members is non-decreasing across any redemption (§4.6 invariant).
         uint256 usdcPay = idleUsdc * burnShares / ts * keepBps / BPS;
         uint256 payoutValueWad = usdcPay * usdcScalar;
 
-        // Burn before external transfers (CEI).
         sharesOf[member] = memberShares - burnShares;
         totalShares = ts - burnShares;
         if (sharesOf[member] == 0 && memberShares > 0) {
@@ -360,50 +389,98 @@ contract VaultCore {
         }
         _snapshot(member);
 
-        // Realized P&L against pro-rata cost basis; hooks feed the (member, operator)
-        // loss-carryforward HWM (§7). Fee engine is a zero-fee stub until Sprint 3.
         uint256 basisRemoved = costBasisUsdc[member] * burnShares / memberShares;
         costBasisUsdc[member] -= basisRemoved;
-
         idleUsdc -= usdcPay;
-        uint256 n = basketAssets.length;
-        for (uint256 i; i < n; ++i) {
+
+        uint256[] memory slices = new uint256[](basketAssets.length);
+        for (uint256 i; i < slices.length; ++i) {
             address a = basketAssets[i];
             uint256 slice = assetBalance[a] * burnShares / ts * keepBps / BPS;
             if (slice == 0) continue;
             assetBalance[a] -= slice;
+            slices[i] = slice;
             payoutValueWad += slice * oracle.priceWad(a) / assetUnit[a];
-            // EE-6: one reverting/blacklisted asset must not block the redemption — escrow it.
-            if (!a.tryTransfer(member, slice)) {
-                claimable[member][a] += slice;
-                emit SliceEscrowed(member, a, slice);
-            }
         }
 
+        // ── Realized P&L + performance fee ──
+        // H-1: bookkeeping modules are called BOUNDED and non-blocking — value is defended by
+        // the clamp, liveness by the bounded call. A failing module forfeits its own
+        // bookkeeping (event-logged for the indexer) and can never block the exit itself.
         uint256 payoutValueUsdc = payoutValueWad / usdcScalar;
         uint256 perfFee;
         if (payoutValueUsdc > basisRemoved) {
             uint256 gain = payoutValueUsdc - basisRemoved;
-            perfFee = feeEngine.onRealize(member, gain, 0);
-            // Defensive clamp: never trust the module beyond its contract (≤10% of gain, ≤ cash leg).
+            (bool feeOk, uint256 feeWord,) = address(feeEngine)
+                .boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, gain, 0)), MODULE_CALL_GAS);
+            if (feeOk) perfFee = feeWord;
+            else emit ModuleCallFailed("feeEngine.onRealize", member);
+            // Defensive clamp: never trust the module beyond its contract (≤ 10% of gain).
             uint256 cap = gain / 10;
             if (perfFee > cap) perfFee = cap;
-            if (perfFee > usdcPay) perfFee = usdcPay;
-            operatorRegistry.recordRealization(member, gain, 0);
+            _recordRealization(member, gain, 0);
         } else {
             uint256 loss = basisRemoved - payoutValueUsdc;
-            feeEngine.onRealize(member, 0, loss);
-            operatorRegistry.recordRealization(member, 0, loss);
+            (bool ok,,) = address(feeEngine)
+                .boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, 0, loss)), MODULE_CALL_GAS);
+            if (!ok) emit ModuleCallFailed("feeEngine.onRealize", member);
+            _recordRealization(member, 0, loss);
         }
 
-        if (perfFee > 0) {
-            usdcPay -= perfFee;
-            usdc.safeTransfer(address(feeEngine), perfFee);
-            feeEngine.onFeeCollected(member, perfFee);
+        // M-2: the fee is withheld UNIFORMLY across the whole payout — cash and in-kind alike —
+        // so a fully invested vault still pays the 10%-of-net-gain fee. gain ≤ payoutValue ⇒
+        // feeFrac ≤ 10%. Rounding down under-collects in the member's favor.
+        uint256 feeFracWad = payoutValueWad == 0 ? 0 : perfFee * usdcScalar * WAD / payoutValueWad;
+
+        // ── Pass 2: external transfers ──
+        uint256 usdcFee = usdcPay * feeFracWad / WAD;
+        usdcPay -= usdcFee;
+        if (usdcFee > 0) {
+            usdc.safeTransfer(address(feeEngine), usdcFee);
+            (bool collectOk,,) = address(feeEngine)
+                .boundedCall(abi.encodeCall(IFeeEngine.onFeeCollected, (member, usdcFee)), MODULE_CALL_GAS);
+            if (!collectOk) emit ModuleCallFailed("feeEngine.onFeeCollected", member);
+        }
+
+        for (uint256 i; i < slices.length; ++i) {
+            uint256 slice = slices[i];
+            if (slice == 0) continue;
+            address a = basketAssets[i];
+            uint256 feePart = slice * feeFracWad / WAD;
+            uint256 memberPart = slice - feePart;
+            // EE-6/H-2: bounded tryTransfer — a bad asset degrades to escrow, never a revert.
+            if (!a.tryTransfer(member, memberPart, MODULE_CALL_GAS)) {
+                claimable[member][a] += memberPart;
+                emit SliceEscrowed(member, a, memberPart);
+            }
+            if (feePart > 0) {
+                if (a.tryTransfer(address(feeEngine), feePart, MODULE_CALL_GAS)) {
+                    (bool assetOk,,) = address(feeEngine)
+                        .boundedCall(
+                            abi.encodeCall(IFeeEngine.onFeeCollectedAsset, (member, a, feePart)),
+                            MODULE_CALL_GAS
+                        );
+                    if (!assetOk) emit ModuleCallFailed("feeEngine.onFeeCollectedAsset", member);
+                } else {
+                    claimable[address(feeEngine)][a] += feePart;
+                    emit SliceEscrowed(address(feeEngine), a, feePart);
+                }
+            }
         }
         if (usdcPay > 0) usdc.safeTransfer(member, usdcPay);
 
         emit ExitSettled(member, burnShares, usdcPay, feeBps, perfFee);
+    }
+
+    /// @dev H-1: best-effort mark recording — a reverting registry loses the mark (event-logged),
+    /// never the member's exit.
+    function _recordRealization(address member, uint256 gainUsdc, uint256 lossUsdc) internal {
+        (bool ok,,) = address(operatorRegistry)
+            .boundedCall(
+                abi.encodeCall(IOperatorRegistry.recordRealization, (member, gainUsdc, lossUsdc)),
+                MODULE_CALL_GAS
+            );
+        if (!ok) emit ModuleCallFailed("registry.recordRealization", member);
     }
 
     /// @notice Claim an in-kind slice that was escrowed after a failed asset transfer (EE-6).

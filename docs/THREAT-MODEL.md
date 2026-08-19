@@ -89,6 +89,15 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 | SF-4 | Operator aggregate leaderboard, all vaults | Score inflation via self-dealing vaults (operator's own capital, wash performance) | M | Deferred(S3): leaderboard aggregates only canonical-factory vaults (CM-5); displays TVL-weighted and member-count-weighted views so dust vaults can't dominate; residual accepted — reputation systems are gameable at the margin |
 | SF-5 | No cherry-picking | Operator winds down losing vaults early to shorten their loss window in time-weighted metrics | M | Deferred(S3): closed-vault history is retained permanently in the registry and remains in aggregates; wind-down itself is recorded |
 
+## MO — Module liveness (added post-review, Sprint 3 hardening)
+
+| ID | Mechanic | Attack vector | Sev | Mitigation / status |
+| --- | --- | --- | --- | --- |
+| MO-1 | Creator-chosen bookkeeping modules (governance / feeEngine / registry) on the exit path | Reverting, gas-guzzling, or returndata-bombing module bricks all exits forever (no upgrade path) — honeypot vaults, or an honest governance bug protocol-wide (review H-1) | H | **Mitigated(S3)**: all module calls on the exit path are gas-capped (300k) and returndata-bounded (1 word); failures are event-logged and forfeit only the module's own bookkeeping. Governance failure falls back to Mode I — a broken governance loses forward pricing (VO-8 leak accepted in that already-broken state), never member liveness |
+| MO-2 | In-kind transfer of misbehaving basket token | Token returning 1–31 bytes or a returndata bomb reverts settlement, bricking exits (review H-2 — falsified original EE-6 claim) | H | **Mitigated(S3)**: `tryTransfer` is assembly, gas-capped, bounded to one returndata word; malformed results degrade to the EE-6 escrow, never revert |
+| MO-3 | Creator gate × Mode-F queue | Gate-compliant queued exit stranded forever by third-party deposits between queue and settle (review M-1) | M | **Mitigated(S3)**: gate is checked at queue time and NOT re-checked at settlement of queued exits — new joiners had on-chain notice of the queue |
+| MO-4 | Perf fee vs in-kind payout | Fee clamped to cash leg ⇒ fully invested vaults pay ~zero performance fee (review M-2) | M | **Mitigated(S3)**: fee withheld uniformly across cash and in-kind legs; asset-leg fees credited to the operator via the engine's per-token claim flow |
+
 ## PX — Payments and creation
 
 | ID | Mechanic | Attack vector | Sev | Mitigation / status |
@@ -110,7 +119,7 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 ## Coverage check
 
 Brief bullets → rows: execution (4/4), core mechanics (8/8), voting (9/9), entry/exit (11/11),
-sub-vaults (7/7), safety (5/5), payments/creation (3/3), agent-side (3, extra-scope). **40 rows
+sub-vaults (7/7), safety (5/5), payments/creation (3/3), agent-side (3, extra-scope). **44 rows
 + 3 agent-side.** Zero brief bullets without a row. Rows marked "None found" or "Accepted" are
 standing challenges for the Sprint 6 adversarial pass.
 

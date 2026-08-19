@@ -13,6 +13,12 @@ interface IRegistryView {
 
 interface IVaultUsdc {
     function usdc() external view returns (address);
+    function claimEscrowed(address asset) external;
+    function claimable(address member, address asset) external view returns (uint256);
+}
+
+interface IERC20Balance {
+    function balanceOf(address) external view returns (uint256);
 }
 
 /// @title FeeEngine — 10% performance fee on realized profit, HWM via registry carryforward
@@ -78,6 +84,37 @@ contract FeeEngine is IFeeEngine {
         claimableFees[registry.operatorAddressOf(opId)][token] += amountUsdc;
         registry.recordFeeCollected(opId, amountUsdc);
         emit FeeCredited(opId, token, amountUsdc);
+    }
+
+    /// @inheritdoc IFeeEngine
+    function onFeeCollectedAsset(
+        address,
+        /* member */
+        address asset,
+        uint256 amount
+    )
+        external
+    {
+        uint256 opId = registry.operatorOf(msg.sender);
+        require(opId != 0, UnattestedVault());
+        claimableFees[registry.operatorAddressOf(opId)][asset] += amount;
+        emit FeeCredited(opId, asset, amount);
+        // Note: asset-leg fees are credited at token amounts; USD-terms fee reporting to the
+        // registry stats happens on the cash leg only (indexer can price the asset legs, S7).
+    }
+
+    /// @notice Pull an in-kind fee slice that the vault escrowed after a failed transfer to
+    /// this engine (VaultCore EE-6 path), and credit it to the vault's operator.
+    function pullEscrowed(address vault, address asset) external {
+        uint256 opId = registry.operatorOf(vault);
+        require(opId != 0, UnattestedVault());
+        uint256 before = IERC20Balance(asset).balanceOf(address(this));
+        IVaultUsdc(vault).claimEscrowed(asset);
+        uint256 received = IERC20Balance(asset).balanceOf(address(this)) - before;
+        if (received > 0) {
+            claimableFees[registry.operatorAddressOf(opId)][asset] += received;
+            emit FeeCredited(opId, asset, received);
+        }
     }
 
     /// @notice Operator claims accumulated performance fees for a settlement token.

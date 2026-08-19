@@ -110,6 +110,45 @@ contract StubFeeEngine is IFeeEngine {
     function onFeeCollected(address, uint256 amountUsdc) external {
         lastCollected = amountUsdc;
     }
+
+    uint256 public lastAssetCollected;
+
+    function onFeeCollectedAsset(address, address, uint256 amount) external {
+        lastAssetCollected = amount;
+    }
+}
+
+/// H-1 fixtures: hostile modules that revert (or bomb) on every call — exits must not care.
+contract RevertingGovernance {
+    fallback() external {
+        revert("hostile");
+    }
+}
+
+contract RevertingFeeEngine {
+    fallback() external {
+        revert("hostile");
+    }
+}
+
+contract RevertingRegistry {
+    fallback() external {
+        revert("hostile");
+    }
+}
+
+/// H-2 fixture: token whose transfer() returns a single byte — must degrade to escrow.
+contract MalformedReturnToken {
+    uint8 public constant decimals = 18;
+    mapping(address => uint256) public balanceOf;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        return hex"01"; // 1 byte — previously reverted abi.decode, bricking exits
+    }
 }
 
 contract StubRegistry is IOperatorRegistry {

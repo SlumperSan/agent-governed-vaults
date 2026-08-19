@@ -19,4 +19,9 @@ interface IFeeEngine {
     /// its own onRealize return value (the vault's defensive clamp may reduce it; an
     /// undercollected fee is forgiven in the member's favor, not carried as debt).
     function onFeeCollected(address member, uint256 amountUsdc) external;
+
+    /// @notice Like onFeeCollected, for the in-kind leg: called per basket asset after the
+    /// vault transfers `amount` of `asset` to the engine (M-2: fees are withheld uniformly
+    /// across cash and in-kind payouts).
+    function onFeeCollectedAsset(address member, address asset, uint256 amount) external;
 }
