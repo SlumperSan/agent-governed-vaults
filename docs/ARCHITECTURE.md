@@ -57,6 +57,9 @@ contract; VaultCore holds immutable references set at construction (C-3 for the 
 - No chain-specific precompiles or opcode assumptions beyond Cancun.
 - All venue contact goes through `IExecutionAdapter`. The Base aggregation router integration
   is *an adapter implementation*, not a dependency of VaultCore. No CEX integrations, ever.
+  **Proven, not asserted:** two structurally-different adapters — `AggregationRouterAdapter`
+  (off-chain-routed calldata) and `DirectPoolAdapter` (on-chain V2-pool math) — both drive
+  `executeRebalance` identically behind the interface (`test/DirectPoolAdapter.t.sol`).
 - USDC is referenced as `IERC20 immutable settlementAsset` (6 decimals assumed **only** via a
   decimals read at construction; internal math is WAD 1e18).
 

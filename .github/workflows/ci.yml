@@ -46,4 +46,4 @@ jobs:
         with:
           node-version: '24'
       - name: Backend + frontend logic tests
-        run: node --test packages/indexer/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs
+        run: node --test packages/indexer/test/*.test.mjs packages/agent-sdk/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs

@@ -372,9 +372,7 @@ contract VaultCoreTest is Test {
 
         // Activating requires NAV → frozen (correctly reverts). Capital would be stuck IF
         // cancel also needed NAV — it does not.
-        vm.expectRevert(
-            abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, address(wbtcLike))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, address(wbtcLike)));
         vault.activate(alice);
 
         // But alice can always reclaim her pending deposit — cancelPending never reads the
