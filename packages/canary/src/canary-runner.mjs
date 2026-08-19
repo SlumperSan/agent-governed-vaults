@@ -258,6 +258,14 @@ export async function buildCanary(cfg, { log = console.log, error = console.erro
       : Math.max(0, toBlock - cfg.logLookbackBlocks);
     const span = Math.min(toBlock - fromBlock, cfg.maxLogSpanBlocks);
     const windowFrom = toBlock - span;
+    // After downtime the backlog can exceed one window. We scan the most recent MAX_LOG_SPAN_BLOCKS
+    // and move on, which SKIPS the older blocks — the event signals (module-events, fee-routing)
+    // never see them. Say so: a silent coverage gap is precisely what this package exists to
+    // prevent, and an operator who sees this line can widen MAX_LOG_SPAN_BLOCKS or sweep the gap
+    // by hand before it scrolls away.
+    if (windowFrom > fromBlock) {
+      error(`canary: event scan gap — blocks ${fromBlock}-${windowFrom - 1} (${windowFrom - fromBlock} blocks) were NOT scanned for ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=${cfg.maxLogSpanBlocks}; raise it or scan that range manually.`);
+    }
     const nowSec = await reader.chainNow();
 
     const { vaults, state } = await resolveVaults();

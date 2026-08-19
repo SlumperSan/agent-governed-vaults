@@ -263,3 +263,32 @@ test('the canary never writes to the indexer snapshot', async () => {
     assert.equal(await readFile(statePath, 'utf8'), before, 'the indexer snapshot must be read-only to the canary');
   });
 });
+
+test('a backlog larger than one window reports the unscanned gap instead of skipping it silently', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const canaryStatePath = join(dir, 'canary-state.json');
+    const err = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+      MAX_LOG_SPAN_BLOCKS: '10',
+    });
+    const canary = await buildCanary(cfg, { log: () => {}, error: (m) => err.push(m), client: {} });
+    let head = 1000;
+    canary.reader.headBlock = async () => head;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    await canary.runOnce();          // establishes lastScannedBlock = 995
+    assert.deepEqual(err, [], 'the first sweep is healthy and silent');
+
+    head = 2000;                     // the canary was down for ~1000 blocks
+    await canary.runOnce();
+    assert.equal(err.length, 1);
+    assert.match(err[0], /event scan gap/);
+    assert.match(err[0], /blocks 996-1984/);
+    assert.match(err[0], /MAX_LOG_SPAN_BLOCKS=10/);
+  });
+});

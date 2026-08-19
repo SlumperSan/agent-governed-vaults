@@ -256,6 +256,19 @@ vault. The cases:
 
 An empty watch set is reported loudly rather than read as a clean bill of health.
 
+**Event scan gaps.** If the canary is down long enough that the backlog exceeds
+`MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never
+scanned for `ModuleCallFailed`, `SliceEscrowed`, or fee outflows. It says so explicitly:
+
+```
+canary: event scan gap — blocks 996-1984 (989 blocks) were NOT scanned for
+ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=10;
+raise it or scan that range manually.
+```
+
+The level signals (a–d) read current state and are unaffected. Only the two window-scoped event
+signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
+
 ---
 
 ## 5. Operating notes
