@@ -13,6 +13,7 @@ chain-agnostic contracts, no CEX integrations.
 | `packages/agent-sdk/` | Env-agnostic client: the x402 402→authorize→retry loop + typed methods. |
 | `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
 | `apps/web/` | Vault Atlas — consumer app: discover, inspect governance/fees, deposit/exit. |
+| `scripts/` | Operational runners — `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
 | `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
 
 ## Contracts
@@ -46,16 +47,35 @@ and [`/llms.txt`](llms.txt).
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test          # contracts (116 tests, incl. invariant/fuzz)
-npm run test:backend                                # indexer + agent-sdk + api + web (46 tests)
+cd contracts && forge build && forge test          # contracts (119 tests, incl. invariant/fuzz)
+npm install && npm run test:backend                 # indexer + agent-sdk + api + web (81 tests)
 ```
 
 CI runs both plus `forge fmt --check`, a gas-snapshot gate, and slither ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
+## Run it
+
+| Goal | Start here |
+| --- | --- |
+| Deploy the contracts to Base Sepolia | [docs/TESTNET-CHECKLIST.md](docs/TESTNET-CHECKLIST.md) — one deploy command, one lifecycle smoke-test command |
+| Full deploy semantics and wiring order | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Run the live stack (indexer, API, web) | [docs/RUNTIME.md](docs/RUNTIME.md) |
+| Review the contracts | [docs/audit/README.md](docs/audit/README.md) |
+
 ## Status
 
-Contracts, indexer (+persistence/daemon), metered API (+discovery), agent SDK, and the consumer
-front end are built and tested to a pre-audit state. Not yet externally audited; not deployed to
-mainnet — see [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+**v0.1.0-rc1** — release candidate. Contracts, indexer (+persistence/daemon/runnable entrypoint),
+metered API (+discovery, x402 facilitator), agent SDK, and the consumer front end are built and
+tested to a pre-audit state, with a staged Base Sepolia deploy path and an external-audit package.
+Not yet externally audited; not deployed to any network.
+
+**Known blocker before any deployment:** `VaultFactory` compiles to 27,241 bytes of runtime code
+and exceeds the EIP-170 24,576-byte limit, because it embeds `VaultCore`'s creation code for
+`new VaultCore(...)`. Foundry's test EVM does not enforce EIP-170, so the suite is green while the
+factory is undeployable on-chain. `forge build --sizes` fails on this, which is why the `contracts`
+CI job is red. Tracked in [#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10);
+it must be resolved before running [docs/TESTNET-CHECKLIST.md](docs/TESTNET-CHECKLIST.md).
+
+See [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 License: BUSL-1.1 (contracts).

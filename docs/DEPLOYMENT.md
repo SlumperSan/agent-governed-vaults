@@ -8,6 +8,15 @@ unwired registry cannot be fixed after the fact).
 > **Testnet fast path:** [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md) packages §§1–4 into one
 > deploy command (`script/DeployTestnet.s.sol`, config-driven, includes the oracle stack and
 > execution adapter) plus one lifecycle smoke-test command (`scripts/smoke-test.mjs`).
+>
+> **After the contracts are live:** [RUNTIME.md](RUNTIME.md) is the operator runbook for the three
+> off-chain processes (indexer → API → web) that turn the deployed addresses into a live product.
+
+> ⛔ **Blocked as of v0.1.0-rc1.** `VaultFactory` is 27,241 bytes of runtime code and exceeds the
+> EIP-170 24,576-byte cap, so §1 below reverts on-chain. Nothing in this runbook can be executed
+> until [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) is resolved.
+> `forge test` stays green because Foundry's test EVM does not enforce EIP-170; `forge build --sizes`
+> is the check that catches it.
 
 ## 0. Preconditions
 

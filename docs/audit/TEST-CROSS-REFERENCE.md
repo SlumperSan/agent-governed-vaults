@@ -1,7 +1,7 @@
 # Threat-Model → Test Cross-Reference
 
 Every mechanic in [THREAT-MODEL.md](../THREAT-MODEL.md) mapped to the test(s) covering it.
-Suite: 117 tests across 15 files (`contracts/test/`), including 6 invariant/fuzz suites
+Suite: 119 tests across 16 files (`contracts/test/`), including 6 invariant/fuzz suites
 (256 runs × 16k calls). Rows with no dedicated test say so explicitly — traceability includes
 the honest gaps.
 

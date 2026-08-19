@@ -3,7 +3,14 @@
 Companion to the [Deployment Runbook](DEPLOYMENT.md). This is the operational, zero-code-edit
 path: fund a key, run **one command to deploy** and **one command to smoke-test** the full
 lifecycle. Everything chain-specific lives in the committed
-[`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json).
+[`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json). Once the addresses
+exist, [RUNTIME.md](RUNTIME.md) takes over: point the indexer and API at them and the stack is live.
+
+> ⛔ **Do not start yet (v0.1.0-rc1).** `VaultFactory` exceeds the EIP-170 runtime size cap
+> (27,241 / 24,576 bytes), so the deploy command in §3 reverts before any vault exists — you would
+> burn faucet funds for nothing. See
+> [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10); everything else in
+> this checklist is verified and stays valid once the factory fits.
 
 ## 1. What you need
 

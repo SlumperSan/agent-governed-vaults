@@ -6,9 +6,14 @@ live product: the **indexer**, the **API**, and the **web** front end. Everythin
 is delegated to an external **facilitator**.
 
 For the tested internals behind each piece, see [ARCHITECTURE.md](ARCHITECTURE.md); for contract
-deployment, [DEPLOYMENT.md](DEPLOYMENT.md) (the testnet deploy flow — `DeployTestnet.s.sol`, the
-`contracts/config/base-sepolia.json` infrastructure config, and `TESTNET-CHECKLIST.md` — ships with
-the testnet-deploy work).
+deployment, [DEPLOYMENT.md](DEPLOYMENT.md) — and for the operational Base Sepolia path that
+produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md)
+(`DeployTestnet.s.sol` driven by [`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json)).
+
+> Note (v0.1.0-rc1): contract deployment is currently blocked by
+> [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) (`VaultFactory` over
+> the EIP-170 size cap). The runtime stack below is independently tested and runs against any
+> deployed address set; it just has no chain to point at yet.
 
 ---
 
