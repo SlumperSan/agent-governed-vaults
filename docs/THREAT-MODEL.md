@@ -127,8 +127,8 @@ Confirmed findings and their fixes (regression suite `contracts/test/Sprint6Fixe
 | E1 | H | Fixed — `_childValueWad` now recurses depth-bounded so grandchild value is in root NAV (SV-7 at full depth) |
 | E2 | H | Fixed — oracle `maxStaleness` upper-capped (1 day) + saturating subtraction; closes the underflow-panic honeypot |
 | E3 | M | Fixed — rebalance leftover-sweep measures this-swap balance delta, no longer absorbs EE-6 escrow or donations |
-| E4 | M | Fixed — member exits skip children mid-rebalance instead of reverting deep in the stack |
-| E5 | M | Fixed — shortfall unwind reduces by MEASURED value; reverts clean (never silently underpays) if children can't cover now |
+| E4 | M | **Partially mitigated** — exits skip children mid-rebalance (no more deep-stack revert); but if the ONLY child holding the needed value is mid-rebalance and idle can't cover, the exit still reverts `ExitNeedsChildSettlement` (retry after the child settles, bounded by its timelock). Window narrowed, not closed |
+| E5 | M | **Partially mitigated** — silent underpayment fixed (reduce by measured value); but a persistently-escrowing child (e.g. blacklisted parent address) turns into a permanent `ExitNeedsChildSettlement` revert rather than escrow-and-continue as direct holdings do. Known residual (EE-6 asymmetry for child-held slices) |
 | E6 | M | Fixed — oracle floor `≥3` sources + strict-majority quorum + lower-median (no even-k swing / sum overflow) |
 | E7 | M | **Documented residual** — EE-5 latency arb threshold is gas within the oracle's drift band; bounded by the new 1-day staleness ceiling + non-zero exit fee. Full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
 | E8 | L | Fixed — `MAX_BASKET_ASSETS = 10` bounds navWad gas; recursion depth-capped |

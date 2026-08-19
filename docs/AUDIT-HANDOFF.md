@@ -61,6 +61,8 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding to its d
 | E7/EE-5 | Latency-arb on repeat deposits against stale NAV; threshold is gas within the oracle drift band | Bounded by the 1-day staleness ceiling + non-zero exit fee; full closure needs oracle-enforced mint-time freshness (design option) |
 | G3/CM-5 | Single-vault carry farming to shelter perf fees | Gated by the 1% exit-fee cap forcing ~100:1 capital fronting + leaderboard reputation drag; economic deterrent, not a code fix |
 | PX-1 | USDC blacklist on a vault address freezes the USDC leg | Inherent to the USDC settlement choice; in-kind escrow keeps non-USDC assets exitable |
+| E4 (S6) | A parent member exit whose cash need exceeds idle reverts `ExitNeedsChildSettlement` when the only covering child is mid-rebalance | Clean rollback + bounded retry (child timelock). Window narrowed vs. the original deep-stack revert, not eliminated |
+| E5 (S6) | A child that persistently escrows an in-kind slice back to the parent (e.g. blacklisted parent) turns the parent exit into a permanent revert, rather than escrow-and-continue as direct holdings do | Silent underpayment is fixed; the EE-6 asymmetry for child-held slices is a known residual — a deferred-claim mechanism would close it |
 
 ## Suggested audit focus (highest leverage)
 
