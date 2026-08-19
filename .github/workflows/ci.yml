@@ -18,10 +18,16 @@ jobs:
         with:
           version: v1.7.1
       - run: forge fmt --check
-      - run: forge build --sizes
+      - run: forge build
       - run: forge test -vvv
       - name: Gas snapshot (no regressions)
         run: forge snapshot --check
+      # Last on purpose: this currently fails on VaultFactory vs the EIP-170 cap
+      # (issue #10). Earlier in the job it short-circuited every step below it, so
+      # the suite and the gas gate never ran in CI. Keep it here and keep it
+      # failing — it is a real undeployability defect, not a flaky check.
+      - name: Runtime size limit (EIP-170)
+        run: forge build --sizes
 
   slither:
     runs-on: ubuntu-latest
