@@ -135,7 +135,11 @@ contract VaultCore {
     event WindowSkipped(address indexed member);
     event ExitQueued(address indexed member, uint256 shares);
     event ExitSettled(
-        address indexed member, uint256 sharesBurned, uint256 usdcPaid, uint256 exitFeeBps, uint256 perfFeeUsdc
+        address indexed member,
+        uint256 sharesBurned,
+        uint256 usdcPaid,
+        uint256 exitFeeBps,
+        uint256 perfFeeUsdc
     );
     event SliceEscrowed(address indexed member, address indexed asset, uint256 amount);
     event ModuleCallFailed(bytes32 indexed module, address indexed member);
@@ -432,7 +436,9 @@ contract VaultCore {
     /// the table. Deliberate, documented liveness decision.
     function _pendingExecution() internal view returns (bool) {
         (bool ok, uint256 word, uint256 retSize) = address(governance)
-            .boundedStaticCall(abi.encodeCall(IGovernance.hasPendingExecution, (address(this))), MODULE_CALL_GAS);
+            .boundedStaticCall(
+                abi.encodeCall(IGovernance.hasPendingExecution, (address(this))), MODULE_CALL_GAS
+            );
         return ok && retSize >= 32 && word != 0;
     }
 
@@ -551,8 +557,8 @@ contract VaultCore {
         uint256 perfFee;
         if (payoutValueUsdc > basisRemoved) {
             uint256 gain = payoutValueUsdc - basisRemoved;
-            (bool feeOk, uint256 feeWord,) =
-                address(feeEngine).boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, gain, 0)), MODULE_CALL_GAS);
+            (bool feeOk, uint256 feeWord,) = address(feeEngine)
+                .boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, gain, 0)), MODULE_CALL_GAS);
             if (feeOk) perfFee = feeWord;
             else emit ModuleCallFailed("feeEngine.onRealize", member);
             // Defensive clamp: never trust the module beyond its contract (≤ 10% of gain).
@@ -561,8 +567,8 @@ contract VaultCore {
             _recordRealization(member, gain, 0);
         } else {
             uint256 loss = basisRemoved - payoutValueUsdc;
-            (bool ok,,) =
-                address(feeEngine).boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, 0, loss)), MODULE_CALL_GAS);
+            (bool ok,,) = address(feeEngine)
+                .boundedCall(abi.encodeCall(IFeeEngine.onRealize, (member, 0, loss)), MODULE_CALL_GAS);
             if (!ok) emit ModuleCallFailed("feeEngine.onRealize", member);
             _recordRealization(member, 0, loss);
         }
@@ -597,7 +603,8 @@ contract VaultCore {
                 if (a.tryTransfer(address(feeEngine), feePart, MODULE_CALL_GAS)) {
                     (bool assetOk,,) = address(feeEngine)
                         .boundedCall(
-                            abi.encodeCall(IFeeEngine.onFeeCollectedAsset, (member, a, feePart)), MODULE_CALL_GAS
+                            abi.encodeCall(IFeeEngine.onFeeCollectedAsset, (member, a, feePart)),
+                            MODULE_CALL_GAS
                         );
                     if (!assetOk) emit ModuleCallFailed("feeEngine.onFeeCollectedAsset", member);
                 } else {
@@ -619,7 +626,8 @@ contract VaultCore {
     function allocateToChild(address child, uint256 amountUsdc) external nonReentrant {
         require(msg.sender == address(governance), OnlyGovernance());
         require(
-            subVaultRegistry != address(0) && ISubVaultEdges(subVaultRegistry).parentOf(child) == address(this),
+            subVaultRegistry != address(0)
+                && ISubVaultEdges(subVaultRegistry).parentOf(child) == address(this),
             NotRegisteredChild()
         );
         require(idleUsdc >= amountUsdc, InsufficientAssetBalance());
@@ -683,8 +691,9 @@ contract VaultCore {
     /// own _pendingExecution falls back to false), so attempting the redeem is safe.
     function _childPendingExecution(address child) internal view returns (bool) {
         address childGov = address(VaultCore(child).governance());
-        (bool ok, uint256 word, uint256 retSize) =
-            childGov.boundedStaticCall(abi.encodeCall(IGovernance.hasPendingExecution, (child)), MODULE_CALL_GAS);
+        (bool ok, uint256 word, uint256 retSize) = childGov.boundedStaticCall(
+            abi.encodeCall(IGovernance.hasPendingExecution, (child)), MODULE_CALL_GAS
+        );
         return ok && retSize >= 32 && word != 0;
     }
 
@@ -706,7 +715,10 @@ contract VaultCore {
     /// tokens constrained to USDC + basket, every output measured by the vault's OWN balance
     /// delta (EX-3 — the adapter's word is never the accounting source). Internal accounting
     /// is debited before and credited after each swap, so NAV stays truthful mid-rebalance.
-    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders) external nonReentrant {
+    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)
+        external
+        nonReentrant
+    {
         require(msg.sender == address(governance), OnlyGovernance());
         require(isAllowedAdapter[adapter], AdapterNotAllowed());
 
@@ -755,7 +767,8 @@ contract VaultCore {
     function _recordRealization(address member, uint256 gainUsdc, uint256 lossUsdc) internal {
         (bool ok,,) = address(operatorRegistry)
             .boundedCall(
-                abi.encodeCall(IOperatorRegistry.recordRealization, (member, gainUsdc, lossUsdc)), MODULE_CALL_GAS
+                abi.encodeCall(IOperatorRegistry.recordRealization, (member, gainUsdc, lossUsdc)),
+                MODULE_CALL_GAS
             );
         if (!ok) emit ModuleCallFailed("registry.recordRealization", member);
     }

@@ -58,7 +58,10 @@ contract Sprint6FixesTest is Test {
         fees = new FeeEngine(IRegistryView(address(registry)));
         gov = new Governance();
         factory = new VaultFactory(
-            IOperatorRegistry(address(registry)), IGovernance(address(gov)), IFeeEngine(address(fees)), address(subReg)
+            IOperatorRegistry(address(registry)),
+            IGovernance(address(gov)),
+            IFeeEngine(address(fees)),
+            address(subReg)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));
@@ -182,7 +185,8 @@ contract Sprint6FixesTest is Test {
 
     function test_finding2_saturatingNoUnderflowPanic() public {
         // A valid oracle (ceiling-bounded) never underflow-panics; median is the lower-median.
-        (address[] memory a, address[][] memory srcs, uint32[] memory st, uint8[] memory q) = _oracleArgs(1 hours);
+        (address[] memory a, address[][] memory srcs, uint32[] memory st, uint8[] memory q) =
+            _oracleArgs(1 hours);
         OracleAggregator o = new OracleAggregator(a, srcs, st, q);
         MockSource(srcs[0][0]).set(4_000e18, block.timestamp);
         MockSource(srcs[0][1]).set(4_010e18, block.timestamp);

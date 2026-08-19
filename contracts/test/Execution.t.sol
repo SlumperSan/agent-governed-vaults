@@ -4,7 +4,12 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {Governance} from "../src/Governance.sol";
-import {OracleAggregator, IPriceSource, ChainlinkSourceAdapter, IAggregatorV3} from "../src/OracleAggregator.sol";
+import {
+    OracleAggregator,
+    IPriceSource,
+    ChainlinkSourceAdapter,
+    IAggregatorV3
+} from "../src/OracleAggregator.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IExecutionAdapter} from "../src/interfaces/IExecutionAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
@@ -391,7 +396,9 @@ contract ExecutionTest is Test {
             amountIn: 100 * USDC_1,
             minAmountOut: 1,
             deadline: block.timestamp + 30 days,
-            routeData: abi.encodeCall(MockRouter.swap, (address(usdc), address(rogueToken), 100 * USDC_1, 6, 18))
+            routeData: abi.encodeCall(
+                MockRouter.swap, (address(usdc), address(rogueToken), 100 * USDC_1, 6, 18)
+            )
         });
         bytes memory payload = abi.encode(address(adapter), orders);
 

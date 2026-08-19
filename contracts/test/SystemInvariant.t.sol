@@ -28,7 +28,13 @@ contract SystemHandler is Test {
     uint256 constant USDC_1 = 1e6;
     uint256 public ghostNavPsFloor; // NAVps must never fall below this for remaining members
 
-    constructor(VaultCore parent_, VaultCore child_, MockERC20 usdc_, Governance gov_, address[] memory actors_) {
+    constructor(
+        VaultCore parent_,
+        VaultCore child_,
+        MockERC20 usdc_,
+        Governance gov_,
+        address[] memory actors_
+    ) {
         parent = parent_;
         child = child_;
         usdc = usdc_;
@@ -133,7 +139,10 @@ contract SystemInvariantTest is Test {
         fees = new FeeEngine(IRegistryView(address(registry)));
         gov = new Governance();
         factory = new VaultFactory(
-            IOperatorRegistry(address(registry)), IGovernance(address(gov)), IFeeEngine(address(fees)), address(subReg)
+            IOperatorRegistry(address(registry)),
+            IGovernance(address(gov)),
+            IFeeEngine(address(fees)),
+            address(subReg)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));
@@ -184,7 +193,11 @@ contract SystemInvariantTest is Test {
     /// Parent is always solvent: real USDC ≥ internal idle + escrowed pending. Child value is
     /// held as child shares, not parent USDC, so it is excluded here by design.
     function invariant_parentSolvency() public view {
-        assertGe(usdc.balanceOf(address(parent)), parent.idleUsdc() + parent.totalPendingUsdc(), "parent USDC backing");
+        assertGe(
+            usdc.balanceOf(address(parent)),
+            parent.idleUsdc() + parent.totalPendingUsdc(),
+            "parent USDC backing"
+        );
     }
 
     /// Child fully backs the parent's position (parent is the only child member here).

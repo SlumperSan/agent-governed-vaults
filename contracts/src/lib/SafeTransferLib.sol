@@ -31,7 +31,10 @@ library SafeTransferLib {
     /// bytes, a returndata bomb, or burns unlimited gas must degrade to `false` (→ escrow),
     /// never revert the enclosing settlement.
     /// @return ok true on success; false lets the caller escrow the slice for later claim.
-    function tryTransfer(address token, address to, uint256 amount, uint256 gasLimit) internal returns (bool ok) {
+    function tryTransfer(address token, address to, uint256 amount, uint256 gasLimit)
+        internal
+        returns (bool ok)
+    {
         assembly ("memory-safe") {
             let ptr := mload(0x40)
             mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)

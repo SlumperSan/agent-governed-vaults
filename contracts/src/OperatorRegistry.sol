@@ -138,7 +138,11 @@ contract OperatorRegistry is IOperatorRegistry {
 
     /// @notice Aggregate, all-vaults-included operator record (SF-4): monotone accumulators,
     /// nothing is ever removed or restated. Rankings/weighting are an indexer concern (S7).
-    function leaderboardEntry(uint256 opId) external view returns (address operator, OperatorStats memory stats) {
+    function leaderboardEntry(uint256 opId)
+        external
+        view
+        returns (address operator, OperatorStats memory stats)
+    {
         return (operatorAddressOf[opId], statsOf[opId]);
     }
 }

@@ -124,12 +124,18 @@ contract Governance is IGovernance {
 
     event VaultRegistered(address indexed vault, GovConfig config);
     event Proposed(
-        uint256 indexed pid, address indexed vault, ProposalType ptype, address indexed proposer, bytes32 actionHash
+        uint256 indexed pid,
+        address indexed vault,
+        ProposalType ptype,
+        address indexed proposer,
+        bytes32 actionHash
     );
     event Committed(uint256 indexed pid, address indexed voter);
     event Revealed(uint256 indexed pid, address indexed voter, bool support, uint256 weight);
     event DefaultApplied(uint256 indexed pid, address indexed member, bool support, uint256 weight);
-    event DelegatedRevealed(uint256 indexed pid, address indexed delegator, address indexed delegate, uint256 weight);
+    event DelegatedRevealed(
+        uint256 indexed pid, address indexed delegator, address indexed delegate, uint256 weight
+    );
     event Finalized(uint256 indexed pid, Status status);
     event Executed(uint256 indexed pid);
     event ProposalExpired(uint256 indexed pid);
@@ -245,7 +251,9 @@ contract Governance is IGovernance {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Active && block.timestamp < p.commitDeadline, WrongPhase());
         require(commitOf[pid][msg.sender] == bytes32(0), AlreadyCommitted());
-        require(IVaultSnapshots(p.vault).pastVotingEligibleShares(msg.sender, p.createdAt - 1) > 0, NoWeight());
+        require(
+            IVaultSnapshots(p.vault).pastVotingEligibleShares(msg.sender, p.createdAt - 1) > 0, NoWeight()
+        );
         commitOf[pid][msg.sender] = commitment;
         emit Committed(pid, msg.sender);
     }
@@ -257,7 +265,8 @@ contract Governance is IGovernance {
     function revealVote(uint256 pid, bool support, bytes32 salt) external {
         Proposal storage p = proposals[pid];
         require(
-            p.status == Status.Active && block.timestamp >= p.commitDeadline && block.timestamp < p.revealDeadline,
+            p.status == Status.Active && block.timestamp >= p.commitDeadline
+                && block.timestamp < p.revealDeadline,
             WrongPhase()
         );
         bytes32 c = commitOf[pid][msg.sender];
@@ -284,7 +293,8 @@ contract Governance is IGovernance {
     function revealDelegated(uint256 pid, address delegator) external {
         Proposal storage p = proposals[pid];
         require(
-            p.status == Status.Active && block.timestamp >= p.commitDeadline && block.timestamp < p.revealDeadline,
+            p.status == Status.Active && block.timestamp >= p.commitDeadline
+                && block.timestamp < p.revealDeadline,
             WrongPhase()
         );
         address del = delegateOf[p.vault][delegator];
@@ -310,7 +320,10 @@ contract Governance is IGovernance {
     /// accrual, i.e. re-checked at vote time, not just at delegation time.
     function _accrueDelegate(uint256 pid, address delegate_, uint256 weight, Proposal storage p) internal {
         uint256 accrued = delegateAccrued[pid][delegate_] + weight;
-        require(accrued * BPS <= uint256(configOf[p.vault].concentrationCapBps) * p.snapshotTotal, ConcentrationCap());
+        require(
+            accrued * BPS <= uint256(configOf[p.vault].concentrationCapBps) * p.snapshotTotal,
+            ConcentrationCap()
+        );
         delegateAccrued[pid][delegate_] = accrued;
     }
 
@@ -334,7 +347,8 @@ contract Governance is IGovernance {
     function applyStandingDefault(uint256 pid, address member) external {
         Proposal storage p = proposals[pid];
         require(
-            p.status == Status.Active && block.timestamp >= p.commitDeadline && block.timestamp < p.revealDeadline,
+            p.status == Status.Active && block.timestamp >= p.commitDeadline
+                && block.timestamp < p.revealDeadline,
             WrongPhase()
         );
         require(p.ptype == ProposalType.Rebalance, NotRebalance());
@@ -345,7 +359,9 @@ contract Governance is IGovernance {
         StandingDefault memory d = standingDefaultOf[p.vault][member];
         // F4 (S6): the default must be genuinely STANDING — set before the proposal existed —
         // and within its 72h TTL. The lower bound blocks tally-aware reveal-phase defaults.
-        require(d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable());
+        require(
+            d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable()
+        );
 
         uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(member, p.createdAt - 1);
         require(weight > 0, NoWeight());

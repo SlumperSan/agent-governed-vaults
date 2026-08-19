@@ -33,7 +33,9 @@ contract DirectPoolAdapter is IExecutionAdapter {
     address public immutable token1;
     uint256 public constant FEE_BPS = 30; // 0.30%, the canonical V2 fee
 
-    event SwapExecuted(address indexed vault, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut);
+    event SwapExecuted(
+        address indexed vault, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
+    );
 
     error Expired();
     error BadOrder();
@@ -61,7 +63,8 @@ contract DirectPoolAdapter is IExecutionAdapter {
         order.tokenIn.safeTransferFrom(msg.sender, address(this), order.amountIn);
 
         (uint112 r0, uint112 r1,) = pair.getReserves();
-        (uint256 reserveIn, uint256 reserveOut) = inIs0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        (uint256 reserveIn, uint256 reserveOut) =
+            inIs0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
         uint256 quoted = _amountOut(order.amountIn, reserveIn, reserveOut);
 
         uint256 outBefore = IERC20Bal(order.tokenOut).balanceOf(address(this));
@@ -78,7 +81,11 @@ contract DirectPoolAdapter is IExecutionAdapter {
     }
 
     /// @dev Constant-product amount-out with the 0.30% fee (Uniswap V2 formula).
-    function _amountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) internal pure returns (uint256) {
+    function _amountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256 amountInWithFee = amountIn * (10_000 - FEE_BPS);
         uint256 numerator = amountInWithFee * reserveOut;
         uint256 denominator = reserveIn * 10_000 + amountInWithFee;

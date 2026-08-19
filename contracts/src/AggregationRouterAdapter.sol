@@ -26,7 +26,9 @@ contract AggregationRouterAdapter is IExecutionAdapter {
     address public immutable router;
     mapping(bytes4 => bool) public allowedSelector;
 
-    event SwapExecuted(address indexed vault, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut);
+    event SwapExecuted(
+        address indexed vault, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
+    );
 
     error Expired();
     error SelectorNotAllowed();
@@ -47,7 +49,9 @@ contract AggregationRouterAdapter is IExecutionAdapter {
         require(block.timestamp <= order.deadline, Expired());
         require(order.minAmountOut > 0, BadOrder()); // minOut is mandatory, never optional
         require(order.tokenIn != order.tokenOut && order.amountIn > 0, BadOrder());
-        require(order.routeData.length >= 4 && allowedSelector[bytes4(order.routeData[0:4])], SelectorNotAllowed());
+        require(
+            order.routeData.length >= 4 && allowedSelector[bytes4(order.routeData[0:4])], SelectorNotAllowed()
+        );
 
         order.tokenIn.safeTransferFrom(msg.sender, address(this), order.amountIn);
         order.tokenIn.safeApprove(router, order.amountIn);
