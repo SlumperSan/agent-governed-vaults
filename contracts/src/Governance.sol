@@ -6,6 +6,8 @@ import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
 
 interface IVaultExecution {
     function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders) external;
+    function allocateToChild(address child, uint256 amountUsdc) external;
+    function redeemFromChild(address child, uint256 shares) external;
 }
 
 interface IVaultSnapshots {
@@ -29,7 +31,23 @@ interface IVaultSnapshots {
 /// Voting power is read from VaultCore checkpoints at proposal creation (VO-9): stake minted
 /// after `createdAt` — flash deposits included — carries zero weight, and Mode-F-locked or
 /// pending-deposit capital is already excluded by the vault's eligible-stake accounting.
+interface ISubVaultParent {
+    function parentOf(address child) external view returns (address);
+}
+
 contract Governance is IGovernance {
+    address public subVaultRegistry; // one-shot deploy wiring
+    address public immutable deployer = msg.sender;
+
+    error OnlyDeployer();
+    error AlreadyWiredSubRegistry();
+
+    function wireSubVaultRegistry(address r) external {
+        require(msg.sender == deployer, OnlyDeployer());
+        require(subVaultRegistry == address(0), AlreadyWiredSubRegistry());
+        subVaultRegistry = r;
+    }
+
     uint256 internal constant BPS = 10_000;
     uint256 public constant QUORUM_FLOOR_BPS = 2_500; // 25% protocol floor
     uint256 public constant TIMELOCK_HARD_CAP = 30 days;
@@ -38,7 +56,8 @@ contract Governance is IGovernance {
 
     enum ProposalType {
         Rebalance, // routine — the only type standing defaults apply to (VO-4)
-        RuleChange // full consensus + timelock (CM-8 / K-2)
+        RuleChange, // full consensus + timelock (CM-8 / K-2)
+        ChildAllocation // sub-vault capital moves (SV-1); normal quorum, no defaults
     }
 
     enum Status {
@@ -155,6 +174,14 @@ contract Governance is IGovernance {
         require(!vaultRegistered[vault], AlreadyRegistered());
         require(msg.sender == IVaultSnapshots(vault).creator(), NotVaultCreator());
         _validateConfig(cfg);
+        // SV-6: child quorum floors inherit — a child may never be easier to pass than its
+        // parent. Effective floor = max(childFloor, parentFloor).
+        if (subVaultRegistry != address(0)) {
+            address parent = ISubVaultParent(subVaultRegistry).parentOf(vault);
+            if (parent != address(0) && vaultRegistered[parent]) {
+                require(cfg.quorumBps >= configOf[parent].quorumBps, BadGovConfig());
+            }
+        }
         vaultRegistered[vault] = true;
         configOf[vault] = cfg;
         emit VaultRegistered(vault, cfg);
@@ -394,6 +421,11 @@ contract Governance is IGovernance {
             GovConfig memory newCfg = abi.decode(payload, (GovConfig));
             _validateConfig(newCfg);
             configOf[p.vault] = newCfg;
+        } else if (p.ptype == ProposalType.ChildAllocation) {
+            (address child, uint256 allocateUsdc, uint256 redeemShares) =
+                abi.decode(payload, (address, uint256, uint256));
+            if (allocateUsdc > 0) IVaultExecution(p.vault).allocateToChild(child, allocateUsdc);
+            if (redeemShares > 0) IVaultExecution(p.vault).redeemFromChild(child, redeemShares);
         } else if (payload.length > 0) {
             // Rebalance: decode the committed orders and drive the vault's execution path.
             // The payload hash was fixed at proposal time — voters approved THESE orders.

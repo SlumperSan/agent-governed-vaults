@@ -39,7 +39,10 @@ contract FeesAndRegistryTest is Test {
         fees = new FeeEngine(IRegistryView(address(registry)));
         gov = new Governance();
         factory = new VaultFactory(
-            IOperatorRegistry(address(registry)), IGovernance(address(gov)), IFeeEngine(address(fees))
+            IOperatorRegistry(address(registry)),
+            IGovernance(address(gov)),
+            IFeeEngine(address(fees)),
+            address(0)
         );
         registry.wire(address(factory), address(fees));
 

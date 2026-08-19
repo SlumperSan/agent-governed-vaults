@@ -11,6 +11,15 @@ interface IRegistryAttest {
     function attestVault(address vault, address operator) external;
 }
 
+interface ISubRegistryChild {
+    function registerChild(address parent, address child, uint256 childExitFeeMaxBps) external;
+}
+
+interface IVaultBasket {
+    function assetUnit(address a) external view returns (uint256);
+    function usdc() external view returns (address);
+}
+
 /// @title VaultFactory — permissionless canonical deployment + attestation
 /// @notice The canonical factory is what makes the registry trustworthy (CM-5, SF-4, PX-3):
 /// only vaults deployed here are attested, so carry marks and leaderboard rows can only be
@@ -24,16 +33,26 @@ contract VaultFactory {
     IOperatorRegistry public immutable registry;
     IGovernance public immutable governance;
     IFeeEngine public immutable feeEngine;
+    address public immutable subVaultRegistry;
 
     address[] public allVaults;
 
     event VaultCreated(address indexed vault, address indexed creator, address usdc, uint256 capacityCapUsdc);
 
-    constructor(IOperatorRegistry registry_, IGovernance governance_, IFeeEngine feeEngine_) {
+    constructor(
+        IOperatorRegistry registry_,
+        IGovernance governance_,
+        IFeeEngine feeEngine_,
+        address subVaultRegistry_
+    ) {
         registry = registry_;
         governance = governance_;
         feeEngine = feeEngine_;
+        subVaultRegistry = subVaultRegistry_;
     }
+
+    error BasketNotSubsetOfParent();
+    error UsdcMismatch();
 
     struct VaultParams {
         address usdc;
@@ -47,6 +66,29 @@ contract VaultFactory {
     }
 
     function createVault(VaultParams calldata p) external returns (address vault) {
+        vault = _deploy(p);
+        IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
+        allVaults.push(vault);
+        emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
+    }
+
+    /// @notice Deploy a CHILD vault under `parent` (SV-1). The edge is creation-time only —
+    /// cycles are structurally impossible. The child's basket must be a subset of the
+    /// parent's (same USDC), so in-kind child redemptions always map into parent accounting
+    /// and look-through pricing (SV-7) is always possible.
+    function createChildVault(VaultParams calldata p, address parent) external returns (address vault) {
+        require(IVaultBasket(parent).usdc() == p.usdc, UsdcMismatch());
+        for (uint256 i; i < p.basketAssets.length; ++i) {
+            require(IVaultBasket(parent).assetUnit(p.basketAssets[i]) != 0, BasketNotSubsetOfParent());
+        }
+        vault = _deploy(p);
+        ISubRegistryChild(subVaultRegistry).registerChild(parent, vault, p.exitFeeMaxBps);
+        IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
+        allVaults.push(vault);
+        emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
+    }
+
+    function _deploy(VaultParams calldata p) internal returns (address vault) {
         vault = address(
             new VaultCore(
                 p.usdc,
@@ -60,12 +102,10 @@ contract VaultFactory {
                 p.minDepositUsdc,
                 p.exitFeeMaxBps,
                 p.exitFeeDecayPeriod,
-                p.allowedAdapters
+                p.allowedAdapters,
+                subVaultRegistry
             )
         );
-        IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
-        allVaults.push(vault);
-        emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
     }
 
     function vaultCount() external view returns (uint256) {

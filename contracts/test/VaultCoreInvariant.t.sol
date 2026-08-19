@@ -194,7 +194,8 @@ contract VaultCoreInvariantTest is Test {
             10 * 1e6,
             100,
             30 days,
-            new address[](0)
+            new address[](0),
+            address(0)
         );
 
         handler = new Handler(vault, usdc, gov, creator);

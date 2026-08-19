@@ -10,6 +10,10 @@ import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {Checkpoints} from "./lib/Checkpoints.sol";
 import {BoundedCall} from "./lib/BoundedCall.sol";
 
+interface ISubVaultEdges {
+    function parentOf(address child) external view returns (address);
+}
+
 interface IERC20Metadata {
     function decimals() external view returns (uint8);
     function balanceOf(address) external view returns (uint256);
@@ -56,6 +60,7 @@ contract VaultCore {
     IFeeEngine public immutable feeEngine;
     IOracleAggregator public immutable oracle;
 
+    address public immutable subVaultRegistry; // SV edges; zero disables child allocation
     uint256 public immutable capacityCapUsdc; // deposits revert above this NAV (USDC units)
     uint256 public immutable minDepositUsdc; // dust / rounding-inflation defense
     uint256 public immutable exitFeeMaxBps; // ≤ EXIT_FEE_CAP_BPS
@@ -101,6 +106,11 @@ contract VaultCore {
     Checkpoints.History internal _holderCountHist;
     uint256 public holderCount; // addresses with shares > 0, creator included
 
+    // ───────────────────────────── sub-vaults ─────────────────────────────────
+    address[] public childVaults; // governance-allocated children (≤ MAX_CHILDREN)
+    mapping(address => bool) public isChildVault;
+    uint256 public constant MAX_CHILDREN = 8;
+
     // ────────────────────── in-kind escrow (EE-6 isolation) ───────────────────
     mapping(address => mapping(address => uint256)) public claimable; // member ⇒ asset ⇒ amount
 
@@ -131,6 +141,8 @@ contract VaultCore {
     event ModuleCallFailed(bytes32 indexed module, address indexed member);
     event EscrowClaimed(address indexed member, address indexed asset, uint256 amount);
     event RebalanceExecuted(address indexed adapter, uint256 orderCount);
+    event ChildAllocated(address indexed child, uint256 amountUsdc);
+    event ChildRedeemed(address indexed child, uint256 shares, uint256 usdcCredited);
 
     // ─────────────────────────────── errors ───────────────────────────────────
     error Reentrancy();
@@ -153,6 +165,9 @@ contract VaultCore {
     error BadSwapToken();
     error InsufficientAssetBalance();
     error SwapSlippage();
+    error NotRegisteredChild();
+    error TooManyChildren();
+    error ChildSettlementPending();
 
     // ─────────────────────────────── constructor ──────────────────────────────
     constructor(
@@ -167,8 +182,10 @@ contract VaultCore {
         uint256 minDepositUsdc_,
         uint256 exitFeeMaxBps_,
         uint256 exitFeeDecayPeriod_,
-        address[] memory allowedAdapters_
+        address[] memory allowedAdapters_,
+        address subVaultRegistry_
     ) {
+        subVaultRegistry = subVaultRegistry_;
         for (uint256 i; i < allowedAdapters_.length; ++i) {
             isAllowedAdapter[allowedAdapters_[i]] = true;
         }
@@ -215,6 +232,33 @@ contract VaultCore {
             uint256 bal = assetBalance[a];
             if (bal != 0) nav += bal * oracle.priceWad(a) / assetUnit[a];
         }
+        for (uint256 i; i < childVaults.length; ++i) {
+            nav += _childValueWad(childVaults[i]);
+        }
+    }
+
+    /// @dev SV-7 look-through: the child position is valued from the child's INTERNAL asset
+    /// accounting priced by THIS vault's own oracle — never from child-reported NAVps, and
+    /// never through the child's oracle choice. Child baskets are subsets of the parent's
+    /// (factory-enforced), so every child asset is priceable here; an unpriceable asset
+    /// fails safe via StaleOracle.
+    function _childValueWad(address child) internal view returns (uint256) {
+        VaultCore c = VaultCore(child);
+        uint256 myShares = c.sharesOf(address(this));
+        if (myShares == 0) return 0;
+        uint256 ts = c.totalShares();
+        uint256 childNav = c.idleUsdc() * usdcScalar;
+        uint256 n = c.basketLength();
+        for (uint256 i; i < n; ++i) {
+            address a = c.basketAssets(i);
+            uint256 bal = c.assetBalance(a);
+            if (bal != 0) childNav += bal * oracle.priceWad(a) / assetUnit[a];
+        }
+        return childNav * myShares / ts;
+    }
+
+    function childVaultCount() external view returns (uint256) {
+        return childVaults.length;
     }
 
     function navPerShareWad() public view returns (uint256) {
@@ -394,7 +438,16 @@ contract VaultCore {
         // ── Pass 1: internal accounting only (CEI — final before any external transfer) ──
         // Pro-rata payout; the exit-fee fraction of every slice STAYS in the vault, so NAVps
         // for remaining members is non-decreasing across any redemption (§4.6 invariant).
-        uint256 usdcPay = idleUsdc * burnShares / ts * keepBps / BPS;
+        // SV-5: the cash leg covers the exiter's share of idle AND child value, drawn from
+        // idle stables FIRST; child positions are unwound only for the shortfall.
+        uint256 childValTotalWad;
+        for (uint256 i; i < childVaults.length; ++i) {
+            childValTotalWad += _childValueWad(childVaults[i]);
+        }
+        uint256 cashTargetWad = (idleUsdc * usdcScalar + childValTotalWad) * burnShares / ts * keepBps / BPS;
+        uint256 usdcPay = cashTargetWad / usdcScalar;
+        if (usdcPay > idleUsdc) usdcPay = idleUsdc;
+        uint256 shortfallWad = cashTargetWad - usdcPay * usdcScalar;
         uint256 payoutValueWad = usdcPay * usdcScalar;
 
         sharesOf[member] = memberShares - burnShares;
@@ -417,6 +470,28 @@ contract VaultCore {
             assetBalance[a] -= slice;
             slices[i] = slice;
             payoutValueWad += slice * oracle.priceWad(a) / assetUnit[a];
+        }
+
+        // SV-5 shortfall: unwind children by value until the cash target is covered. The
+        // proceeds (already net of the child's own fees — stacking is real and displayed,
+        // SV-4) belong entirely to the exiter and never enter parent accounting.
+        for (uint256 i; shortfallWad > 0 && i < childVaults.length; ++i) {
+            address child = childVaults[i];
+            uint256 cv = _childValueWad(child);
+            if (cv == 0) continue;
+            uint256 takeWad = shortfallWad > cv ? cv : shortfallWad;
+            uint256 cs = VaultCore(child).sharesOf(address(this)) * takeWad / cv;
+            if (cs == 0) continue;
+            (uint256 childUsdc, uint256[] memory childDeltas) = _redeemChildMeasured(child, cs, false);
+            usdcPay += childUsdc;
+            payoutValueWad += childUsdc * usdcScalar;
+            for (uint256 j; j < childDeltas.length; ++j) {
+                if (childDeltas[j] == 0) continue;
+                slices[j] += childDeltas[j];
+                payoutValueWad += childDeltas[j] * oracle.priceWad(basketAssets[j])
+                / assetUnit[basketAssets[j]];
+            }
+            shortfallWad -= takeWad;
         }
 
         // ── Realized P&L + performance fee ──
@@ -486,6 +561,86 @@ contract VaultCore {
         if (usdcPay > 0) usdc.safeTransfer(member, usdcPay);
 
         emit ExitSettled(member, burnShares, usdcPay, feeBps, perfFee);
+    }
+
+    // ───────────────────────────── sub-vault flows ────────────────────────────
+
+    /// @notice Allocate idle USDC into a registered child vault. Governance-only (a
+    /// ChildAllocation proposal — standing defaults never apply, VO-4). Edges come from the
+    /// SubVaultRegistry, so deposits flow ONLY along creation-time parent→child links (SV-3).
+    function allocateToChild(address child, uint256 amountUsdc) external nonReentrant {
+        require(msg.sender == address(governance), OnlyGovernance());
+        require(
+            subVaultRegistry != address(0)
+                && ISubVaultEdges(subVaultRegistry).parentOf(child) == address(this),
+            NotRegisteredChild()
+        );
+        require(idleUsdc >= amountUsdc, InsufficientAssetBalance());
+
+        if (!isChildVault[child]) {
+            require(childVaults.length < MAX_CHILDREN, TooManyChildren());
+            isChildVault[child] = true;
+            childVaults.push(child);
+            // First allocation: irrevocably skip the child's observation window — the parent's
+            // own timelocked vote already served the scrutiny purpose (§5 reading for agents).
+            VaultCore(child).skipWindow();
+        }
+
+        idleUsdc -= amountUsdc;
+        usdc.safeApprove(child, amountUsdc);
+        VaultCore(child).deposit(amountUsdc);
+        usdc.safeApprove(child, 0);
+        emit ChildAllocated(child, amountUsdc);
+    }
+
+    /// @notice Redeem child shares back into the parent. Governance-only. In-kind proceeds
+    /// (child baskets ⊆ parent basket, factory-enforced) are credited to internal accounting
+    /// from measured deltas. Reverts if the child queues the exit (Mode F) — retry after the
+    /// child settles (bounded by the child's timelock + execution window).
+    function redeemFromChild(address child, uint256 shares) external nonReentrant {
+        require(msg.sender == address(governance), OnlyGovernance());
+        require(isChildVault[child], NotRegisteredChild());
+        (uint256 usdcDelta,) = _redeemChildMeasured(child, shares, true);
+        emit ChildRedeemed(child, shares, usdcDelta);
+    }
+
+    /// @dev Redeem `shares` from a child and measure proceeds. If `credit`, proceeds are
+    /// credited to internal accounting (governance redemptions); otherwise the measured
+    /// deltas stay un-credited for the caller to route (member-exit shortfall unwind).
+    function _redeemChildMeasured(address child, uint256 shares, bool credit)
+        internal
+        returns (uint256 usdcDelta, uint256[] memory assetDeltas)
+    {
+        uint256 usdcBefore = IERC20Metadata(usdc).balanceOf(address(this));
+        uint256 n = basketAssets.length;
+        assetDeltas = new uint256[](n);
+        uint256[] memory before = new uint256[](n);
+        for (uint256 i; i < n; ++i) {
+            before[i] = IERC20Metadata(basketAssets[i]).balanceOf(address(this));
+        }
+
+        VaultCore(child).requestExit(shares);
+        require(VaultCore(child).queuedExitShares(address(this)) == 0, ChildSettlementPending());
+
+        usdcDelta = IERC20Metadata(usdc).balanceOf(address(this)) - usdcBefore;
+        if (credit) idleUsdc += usdcDelta;
+        for (uint256 i; i < n; ++i) {
+            uint256 delta = IERC20Metadata(basketAssets[i]).balanceOf(address(this)) - before[i];
+            assetDeltas[i] = delta;
+            if (delta > 0 && credit) assetBalance[basketAssets[i]] += delta;
+        }
+    }
+
+    /// @notice Crank: pull a slice the child escrowed for this vault (child EE-6 path) and
+    /// credit it. Permissionless.
+    function pullChildEscrow(address child, address asset) external nonReentrant {
+        require(isChildVault[child], NotRegisteredChild());
+        require(assetUnit[asset] != 0 || asset == usdc, BadSwapToken());
+        uint256 before = IERC20Metadata(asset).balanceOf(address(this));
+        VaultCore(child).claimEscrowed(asset);
+        uint256 delta = IERC20Metadata(asset).balanceOf(address(this)) - before;
+        if (asset == usdc) idleUsdc += delta;
+        else assetBalance[asset] += delta;
     }
 
     // ───────────────────────────── rebalancing ────────────────────────────────

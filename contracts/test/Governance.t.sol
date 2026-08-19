@@ -45,7 +45,8 @@ contract GovernanceTest is Test {
             10 * USDC_1,
             100,
             30 days,
-            new address[](0)
+            new address[](0),
+            address(0)
         );
 
         vm.prank(creator);
@@ -468,7 +469,8 @@ contract GovernanceTest is Test {
             10 * USDC_1,
             100,
             30 days,
-            new address[](0)
+            new address[](0),
+            address(0)
         );
         vm.prank(creator);
         vm.expectRevert(Governance.BadGovConfig.selector);

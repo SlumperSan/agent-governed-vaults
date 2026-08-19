@@ -54,7 +54,8 @@ contract ModuleHardeningTest is Test {
             10 * USDC_1,
             0, // no exit fee — isolate module behavior
             0,
-            new address[](0)
+            new address[](0),
+            address(0)
         );
         address[2] memory who = [creator, alice];
         for (uint256 i; i < 2; ++i) {
