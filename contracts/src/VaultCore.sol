@@ -62,6 +62,7 @@ contract VaultCore {
     IOracleAggregator public immutable oracle;
 
     address public immutable subVaultRegistry; // SV edges; zero disables child allocation
+    address internal _cachedParentVault; // lazily resolved; a parent vault is a NON-voting member
     uint256 public immutable capacityCapUsdc; // deposits revert above this NAV (USDC units)
     uint256 public immutable minDepositUsdc; // dust / rounding-inflation defense
     uint256 public immutable exitFeeMaxBps; // ≤ EXIT_FEE_CAP_BPS
@@ -376,11 +377,30 @@ contract VaultCore {
         _snapshot(member);
     }
 
-    /// @dev Record post-mutation voting-eligible stake and holder count (VO-9 snapshots).
+    /// @notice The parent vault, if this is a sub-vault (else address(0)). A parent that has
+    /// allocated capital HOLDS shares here but is a smart contract with no vote path — counting
+    /// it as a voting member would make full-consensus RuleChange permanently unreachable and
+    /// distort every quorum (governance re-review, Area 1). It is therefore excluded from all
+    /// voting-eligible stake and holder counts. The edge is one-shot (set at child creation),
+    /// so cache it once resolved.
+    function parentVault() public view returns (address) {
+        if (_cachedParentVault != address(0)) return _cachedParentVault;
+        if (subVaultRegistry == address(0)) return address(0);
+        return ISubVaultEdges(subVaultRegistry).parentOf(address(this));
+    }
+
+    /// @dev Record post-mutation voting-eligible stake and holder count (VO-9 snapshots),
+    /// EXCLUDING the parent vault's non-voting position.
     function _snapshot(address member) internal {
-        _eligibleHist[member].push(sharesOf[member] - queuedExitShares[member]);
-        _totalEligibleHist.push(totalShares - totalQueuedShares);
-        _holderCountHist.push(holderCount);
+        address pv = parentVault();
+        if (pv != address(0) && _cachedParentVault == address(0)) _cachedParentVault = pv;
+
+        uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
+        uint256 pHeld = (pv != address(0) && sharesOf[pv] > 0) ? 1 : 0;
+
+        _eligibleHist[member].push(member == pv ? 0 : sharesOf[member] - queuedExitShares[member]);
+        _totalEligibleHist.push(totalShares - totalQueuedShares - pElig);
+        _holderCountHist.push(holderCount - pHeld);
     }
 
     // ───────────────────────────── redemptions ────────────────────────────────
@@ -773,11 +793,14 @@ contract VaultCore {
     /// @notice Stake eligible for voting and quorum denominators (Sprint 2): live shares minus
     /// Mode-F-locked shares. Pending deposits hold no shares at all (EE-1/EE-2).
     function votingEligibleShares(address member) external view returns (uint256) {
+        if (member == parentVault()) return 0; // parent vault is a non-voting member
         return sharesOf[member] - queuedExitShares[member];
     }
 
     function totalVotingEligibleShares() external view returns (uint256) {
-        return totalShares - totalQueuedShares;
+        address pv = parentVault();
+        uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
+        return totalShares - totalQueuedShares - pElig;
     }
 
     /// @notice Voting-eligible stake of `member` as of timestamp `ts` (proposal snapshots).

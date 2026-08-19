@@ -267,6 +267,51 @@ contract SubVaultsTest is Test {
         assertApproxEqAbs(parent.navWad(), 2_000 * USDC_1 * 1e12, 2e12, "NAV preserved");
     }
 
+    // ── Governance re-review Area 1: parent vault is a NON-voting member ─────
+
+    function test_childRuleChangePassesAfterParentAllocates() public {
+        // Register governance on both, allocate parent capital into the child, then run a
+        // full-consensus RuleChange on the CHILD. Pre-fix the parent's non-voting shares made
+        // revealedWeight == snapshotTotal unreachable → config permanently frozen.
+        gov.registerVault(address(parent), _gcfg(4_000));
+        vm.prank(operator);
+        gov.registerVault(address(child), _gcfg(4_000));
+
+        // A human member joins the child directly (EOA), plus the parent allocates.
+        usdc.mint(alice, 1_000 * USDC_1);
+        vm.startPrank(alice);
+        usdc.approve(address(child), type(uint256).max);
+        child.deposit(1_000 * USDC_1);
+        child.skipWindow();
+        vm.stopPrank();
+        vm.prank(address(gov));
+        parent.allocateToChild(address(child), 800 * USDC_1); // parent now holds child shares
+
+        // Parent is excluded from the child's voting-eligible stake.
+        assertEq(child.votingEligibleShares(address(parent)), 0, "parent non-voting");
+        assertEq(child.totalVotingEligibleShares(), child.sharesOf(alice), "only alice is eligible");
+        skip(1);
+
+        // Alice alone is now 100% of eligible stake → full consensus reachable.
+        Governance.GovConfig memory newCfg = _gcfg(5_000);
+        bytes memory payload = abi.encode(newCfg);
+        vm.prank(alice);
+        uint256 pid = gov.propose(address(child), Governance.ProposalType.RuleChange, keccak256(payload));
+        vm.prank(alice);
+        gov.commitVote(pid, keccak256(abi.encode(pid, alice, true, keccak256("s"))));
+        (,,,, uint64 cd, uint64 rd,,,,,,,,,,) = gov.proposals(pid);
+        vm.warp(cd);
+        vm.prank(alice);
+        gov.revealVote(pid, true, keccak256("s"));
+        vm.warp(rd);
+        gov.finalize(pid);
+        vm.warp(block.timestamp + 1 days);
+        gov.execute(pid, payload);
+
+        (,,,, uint16 q,,,) = gov.configOf(address(child));
+        assertEq(q, 5_000, "child RuleChange executed despite parent membership");
+    }
+
     function test_childFlowsAreGovernanceOnly() public {
         vm.expectRevert(VaultCore.OnlyGovernance.selector);
         parent.allocateToChild(address(child), 100 * USDC_1);
