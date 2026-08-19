@@ -112,8 +112,8 @@ contract OracleFuzzTest is Test {
     /// Below-quorum fresh sources always trip the breaker, never return a value.
     function testFuzz_belowQuorumTripsBreaker(uint8 freshCount) public {
         uint256 n = bound(freshCount, 0, 2); // < quorum (3)
-        for (uint256 i; // stale rest i < 5; ++i) {
-            srcs[i].set(4000e18, i < n ? block.timestamp : 1);
+        for (uint256 i; i < 5; ++i) {
+            srcs[i].set(4000e18, i < n ? block.timestamp : 1); // stale rest beyond n
         }
         vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, ASSET));
         oracle.priceWad(ASSET);
