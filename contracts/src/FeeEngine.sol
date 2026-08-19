@@ -52,13 +52,17 @@ contract FeeEngine is IFeeEngine {
     }
 
     /// @inheritdoc IFeeEngine
-    function onRealize(address member, uint256 gainUsdc, uint256 lossUsdc)
+    function onRealize(
+        address member,
+        uint256 gainUsdc,
+        uint256 /*lossUsdc*/
+    )
         external
         returns (uint256 feeUsdc)
     {
         uint256 opId = registry.operatorOf(msg.sender);
         require(opId != 0, UnattestedVault());
-        lossUsdc; // losses reach the carry via the vault's registry call; nothing to do here
+        // losses reach the carry via the vault's own registry call; nothing to do here
 
         if (gainUsdc > 0) {
             // HWM: net the gain against the cross-vault loss carryforward (§7). The registry

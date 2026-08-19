@@ -46,10 +46,7 @@ contract OracleAggregator is IOracleAggregator {
         uint8[] memory quorum_
     ) {
         uint256 n = assets_.length;
-        require(
-            n > 0 && sources_.length == n && maxStaleness_.length == n && quorum_.length == n,
-            BadOracleConfig()
-        );
+        require(n > 0 && sources_.length == n && maxStaleness_.length == n && quorum_.length == n, BadOracleConfig());
         for (uint256 i; i < n; ++i) {
             uint256 m = sources_[i].length;
             // Finding 6: enforce the §11/SF-1 floor — >= 3 sources and a STRICT MAJORITY
@@ -59,8 +56,7 @@ contract OracleAggregator is IOracleAggregator {
             // Finding 2: bound staleness both sides — nonzero and below the ceiling.
             require(maxStaleness_[i] > 0 && maxStaleness_[i] <= MAX_STALENESS_CEILING, BadOracleConfig());
             require(_cfg[assets_[i]].sources.length == 0, BadOracleConfig()); // no duplicates
-            _cfg[assets_[i]] =
-                AssetConfig({sources: sources_[i], maxStaleness: maxStaleness_[i], quorum: quorum_[i]});
+            _cfg[assets_[i]] = AssetConfig({sources: sources_[i], maxStaleness: maxStaleness_[i], quorum: quorum_[i]});
             assets.push(assets_[i]);
         }
     }

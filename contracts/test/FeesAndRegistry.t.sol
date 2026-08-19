@@ -39,10 +39,7 @@ contract FeesAndRegistryTest is Test {
         fees = new FeeEngine(IRegistryView(address(registry)));
         gov = new Governance();
         factory = new VaultFactory(
-            IOperatorRegistry(address(registry)),
-            IGovernance(address(gov)),
-            IFeeEngine(address(fees)),
-            address(0)
+            IOperatorRegistry(address(registry)), IGovernance(address(gov)), IFeeEngine(address(fees)), address(0)
         );
         registry.wire(address(factory), address(fees));
 
@@ -187,11 +184,7 @@ contract FeesAndRegistryTest is Test {
         _fundBasket(vaultB, 100); // 1e-6 wBTC ≈ $0.1... use small but nonzero gain
         uint256 collectedBefore = fees.claimableFees(operator, address(usdc));
         _exitAll(vaultB, alice);
-        assertEq(
-            fees.claimableFees(operator, address(usdc)),
-            collectedBefore,
-            "no fee while under water cross-vault"
-        );
+        assertEq(fees.claimableFees(operator, address(usdc)), collectedBefore, "no fee while under water cross-vault");
         assertLt(registry.carryOf(alice, opId), carry, "carry partially consumed by gain");
     }
 

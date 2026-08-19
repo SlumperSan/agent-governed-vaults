@@ -41,8 +41,8 @@ contract OperatorRegistry is IOperatorRegistry {
 
     address public feeEngine; // one-shot wiring; only caller allowed to record fee collection
 
-    event FactorySet(address factory);
-    event FeeEngineSet(address feeEngine);
+    event FactorySet(address indexed factory);
+    event FeeEngineSet(address indexed feeEngine);
     event OperatorRegistered(uint256 indexed opId, address indexed operator);
     event VaultAttested(address indexed vault, uint256 indexed opId);
     event RealizationRecorded(
@@ -56,6 +56,7 @@ contract OperatorRegistry is IOperatorRegistry {
     event FeeRecorded(uint256 indexed opId, uint256 amountUsdc);
 
     error OnlyDeployer();
+    error ZeroAddress();
     error AlreadyWired();
     error OnlyFactory();
     error OnlyFeeEngine();
@@ -71,6 +72,7 @@ contract OperatorRegistry is IOperatorRegistry {
     function wire(address factory_, address feeEngine_) external {
         require(msg.sender == deployer, OnlyDeployer());
         require(factory == address(0) && feeEngine == address(0), AlreadyWired());
+        require(factory_ != address(0) && feeEngine_ != address(0), ZeroAddress());
         factory = factory_;
         feeEngine = feeEngine_;
         emit FactorySet(factory_);
@@ -136,11 +138,7 @@ contract OperatorRegistry is IOperatorRegistry {
 
     /// @notice Aggregate, all-vaults-included operator record (SF-4): monotone accumulators,
     /// nothing is ever removed or restated. Rankings/weighting are an indexer concern (S7).
-    function leaderboardEntry(uint256 opId)
-        external
-        view
-        returns (address operator, OperatorStats memory stats)
-    {
+    function leaderboardEntry(uint256 opId) external view returns (address operator, OperatorStats memory stats) {
         return (operatorAddressOf[opId], statsOf[opId]);
     }
 }

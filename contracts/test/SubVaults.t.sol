@@ -47,10 +47,7 @@ contract SubVaultsTest is Test {
         fees = new FeeEngine(IRegistryView(address(registry)));
         gov = new Governance();
         factory = new VaultFactory(
-            IOperatorRegistry(address(registry)),
-            IGovernance(address(gov)),
-            IFeeEngine(address(fees)),
-            address(subReg)
+            IOperatorRegistry(address(registry)), IGovernance(address(gov)), IFeeEngine(address(fees)), address(subReg)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

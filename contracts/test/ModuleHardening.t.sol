@@ -122,13 +122,11 @@ contract ModuleHardeningTest is Test {
         address[] memory basket = new address[](1);
         basket[0] = address(bad);
 
-        VaultCore v = _newVault(
-            address(new StubGovernance()), address(new StubFeeEngine()), address(new StubRegistry()), basket
-        );
+        VaultCore v =
+            _newVault(address(new StubGovernance()), address(new StubFeeEngine()), address(new StubRegistry()), basket);
         // Simulate held position of the malformed token.
         bad.mint(address(v), 100e18);
-        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(bad))
-            .checked_write(uint256(100e18));
+        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(bad)).checked_write(uint256(100e18));
         assertEq(v.assetBalance(address(bad)), 100e18, "slot guard");
 
         uint256 bal = usdc.balanceOf(alice);
@@ -149,15 +147,13 @@ contract ModuleHardeningTest is Test {
         basket[0] = address(wbtc);
 
         StubFeeEngine fees = new StubFeeEngine();
-        VaultCore v =
-            _newVault(address(new StubGovernance()), address(fees), address(new StubRegistry()), basket);
+        VaultCore v = _newVault(address(new StubGovernance()), address(fees), address(new StubRegistry()), basket);
 
         // Fully invested: ALL idle converted to wBTC which then appreciated.
         stdstore.target(address(v)).sig("idleUsdc()").checked_write(uint256(0));
         assertEq(v.idleUsdc(), 0, "slot guard");
         wbtc.mint(address(v), 1e8);
-        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(wbtc))
-            .checked_write(uint256(1e8));
+        stdstore.target(address(v)).sig("assetBalance(address)").with_key(address(wbtc)).checked_write(uint256(1e8));
         assertEq(v.assetBalance(address(wbtc)), 1e8, "slot guard");
 
         fees.setFeeToCharge(type(uint256).max); // engine asks max; clamp gives 10% of gain

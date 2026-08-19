@@ -99,5 +99,5 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ```bash
 cd contracts && forge build && forge test -vvv    # 100 tests
 forge snapshot --check                              # gas regression gate
-slither . --filter-paths "lib|test|script"          # static analysis
+slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```

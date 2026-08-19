@@ -28,11 +28,12 @@ contract MockV2Pair is IUniswapV2Pair {
     }
 
     function getReserves() external view returns (uint112, uint112, uint32) {
-        return (
-            uint112(MockERC20(token0).balanceOf(address(this))),
-            uint112(MockERC20(token1).balanceOf(address(this))),
-            0
-        );
+        return
+            (
+                uint112(MockERC20(token0).balanceOf(address(this))),
+                uint112(MockERC20(token1).balanceOf(address(this))),
+                0
+            );
     }
 
     function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata) external {

@@ -28,6 +28,7 @@ contract SubVaultRegistry {
     event ChildRegistered(address indexed parent, address indexed child, uint256 depth);
 
     error OnlyDeployer();
+    error ZeroAddress();
     error AlreadyWired();
     error OnlyFactory();
     error DepthExceeded();
@@ -41,6 +42,7 @@ contract SubVaultRegistry {
     function wire(address factory_) external {
         require(msg.sender == deployer, OnlyDeployer());
         require(factory == address(0), AlreadyWired());
+        require(factory_ != address(0), ZeroAddress());
         factory = factory_;
     }
 

@@ -45,9 +45,7 @@ contract GovHandler is Test {
 
         address proposer = voters[proposerSeed % voters.length];
         vm.prank(proposer);
-        try gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(PAYLOAD)) returns (
-            uint256 pid
-        ) {
+        try gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(PAYLOAD)) returns (uint256 pid) {
             _drive(pid, voteMask, forMask);
         } catch {
             return; // proposer below threshold, cooldown, etc. — not a governance violation
@@ -74,8 +72,7 @@ contract GovHandler is Test {
         gov.finalize(pid);
 
         roundsRun++;
-        (,,,,,,,, Governance.Status st,,, uint256 memberCount, uint256 fw, uint256 aw, uint256 rw,) =
-            gov.proposals(pid);
+        (,,,,,,,, Governance.Status st,,, uint256 memberCount, uint256 fw, uint256 aw, uint256 rw,) = gov.proposals(pid);
         if (rw > maxRevealedWeightSeen) maxRevealedWeightSeen = rw;
         if (st == Governance.Status.Passed) {
             roundsPassed++;
@@ -116,19 +113,7 @@ contract GovernanceInvariantTest is Test {
 
         address[] memory basket = new address[](0);
         vault = new VaultCore(
-            address(usdc),
-            basket,
-            creator,
-            registry,
-            gov,
-            fees,
-            oracle,
-            0,
-            10 * 1e6,
-            0,
-            0,
-            new address[](0),
-            address(0)
+            address(usdc), basket, creator, registry, gov, fees, oracle, 0, 10 * 1e6, 0, 0, new address[](0), address(0)
         );
         vm.prank(creator);
         gov.registerVault(

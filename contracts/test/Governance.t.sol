@@ -241,8 +241,7 @@ contract GovernanceTest is Test {
         skip(1); // F4: default predates the proposal
 
         vm.prank(creator);
-        uint256 pid =
-            gov.propose(address(vault), Governance.ProposalType.RuleChange, keccak256(abi.encode(_cfg())));
+        uint256 pid = gov.propose(address(vault), Governance.ProposalType.RuleChange, keccak256(abi.encode(_cfg())));
         _revealPhase(pid);
         vm.expectRevert(Governance.NotRebalance.selector);
         gov.applyStandingDefault(pid, carol);
