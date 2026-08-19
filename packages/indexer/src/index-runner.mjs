@@ -84,8 +84,13 @@ export async function buildIndexer(cfg, { log = console.log, client } = {}) {
 
   // Fresh state (no snapshot) honors START_BLOCK; a resumed state keeps its own cursor.
   const st = daemon.getState();
-  if (st.lastBlock === 0 && st.lastLogIndex === -1 && cfg.startBlock > 0) {
+  const fresh = st.lastBlock === 0 && st.lastLogIndex === -1;
+  if (fresh && cfg.startBlock > 0) {
     st.lastBlock = cfg.startBlock - 1; // resumeCursor → startBlock
+    // Vaults are discovered from VaultCreated within polled ranges; any vault created BEFORE
+    // START_BLOCK will never be discovered (its VaultCore events go unindexed). Set START_BLOCK
+    // to the deploy block, not later. Warn so this is never silent.
+    log(`⚠ indexer: START_BLOCK=${cfg.startBlock} on a fresh snapshot — vaults created before block ${cfg.startBlock} will NOT be discovered. Use the factory deploy block.`);
   }
 
   async function start({ signal } = {}) {

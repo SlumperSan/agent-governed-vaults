@@ -20,6 +20,7 @@ services:
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json
+      PORT: 8402   # pin the CONTAINER port; ${PORT} below is the host-side knob only
     ports:
       - "${PORT:-8402}:8402"
     volumes:
