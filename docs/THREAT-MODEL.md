@@ -20,6 +20,10 @@ governance distortion, **L** = griefing / nuisance. Status: **Mitigated** (desig
 | EX-3 | Off-chain-generated route calldata | Route generator (agent or API) injects a route ending at attacker-controlled pool with fake token | H | Deferred(S4): adapter verifies output token identity and balance delta ≥ minOut on the vault's own accounting, not the router's return value |
 | EX-4 | Chain-agnostic design | Deploying to a chain where an assumed primitive differs (timestamp granularity, reorg depth) misprices windows/timelocks | L | Mitigated: `block.timestamp` only, no block-count arithmetic (§3); per-chain deployment checklist added in Sprint 9 |
 
+EX-1..EX-3 are not hypothetical: the SwapNet/Aperture exploit (Jan 2026, ~$13–17M) and the
+Dexible / Unizen / LI.FI incidents all follow the exact arbitrary-calldata pattern EX-1/EX-3
+describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
+
 ## CM — Core mechanics
 
 | ID | Mechanic | Attack vector | Sev | Mitigation / status |

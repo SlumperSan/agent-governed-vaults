@@ -251,5 +251,19 @@ accrues to the vault, preserving the §4.6 invariant.
    the canonical factory, else scores are forgeable).
 3. Sprint 4: adapter calldata safety — off-chain-routed swap calldata must be constrained
    (allow-listed routers, minOut enforced by the adapter itself, never by the router alone).
-4. Research brief (docs/RESEARCH-SPRINT1.md, in flight) may adjust §9 facilitator details and
-   §14.3 router patterns.
+4. Research findings ([RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)) now folded in:
+   - **C-4 has precedent**: ERC-7540's request/claim pattern maps directly onto Mode-F
+     forward-priced exits (full 7540 compliance stays ruled out with C-1). Swing pricing has
+     **zero** on-chain precedent — we are first; extra Sprint 6 scrutiny.
+   - **§14.3 confirmed and hardened**: a live Jan-2026 aggregator-adapter exploit class
+     (SwapNet/Aperture, ~$13–17M; earlier Dexible, Unizen, LI.FI) shares one root cause —
+     trusting off-chain-supplied call targets/calldata. `IExecutionAdapter` therefore carries a
+     governance-controlled (router, selector) allowlist and balance-delta-enforced minOut; never
+     a thin (target, calldata) pass-through.
+   - **§9 confirmed**: x402 V2 (June 2026) uses dedicated PAYMENT-* headers and settles USDC via
+     EIP-3009 `transferWithAuthorization` executed by the facilitator — no contract-layer
+     coupling, as designed.
+   - **§7 is novel**: no prior art for per-(member, operator) HWM — Enzyme/dHEDGE use global
+     per-vault marks. Treated as an unvalidated mechanism: extra invariant weight in Sprint 3.
+   - **§8 sizing input**: Kleros abandoned commit-reveal (2026) because voters *forget* to
+     reveal, not only grief. Sprint 2 must size reveal windows and forfeiture accordingly.
