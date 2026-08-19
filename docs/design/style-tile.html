@@ -1,0 +1,341 @@
+<title>Vault Atlas — Style Tile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ── 3-state theme: bare :root = light default ── */
+  :root {
+    --ground:#f2f2f7; --surface:#ffffff; --surface-2:#eaeaf1;
+    --line:#dbdbe6; --line-soft:#e8e8f0;
+    --ink:#17171f; --muted:#5f5f72; --faint:#9494a8;
+    --accent:#5a4ce0; --accent-soft:#ece9fd; --accent-ink:#ffffff;
+    --good:#178a4c; --good-soft:#e4f2ea;
+    --warn:#a56a09; --warn-soft:#f6ecd7;
+    --crit:#c23b3b; --crit-soft:#f7e2e2;
+    --frozen:#1c8aa6; --frozen-soft:#dcf0f4;
+    --shadow-1:0 1px 2px rgba(24,24,40,.05), 0 1px 3px rgba(24,24,40,.04);
+    --shadow-2:0 4px 16px rgba(24,24,40,.08), 0 1px 3px rgba(24,24,40,.05);
+    --display:'Newsreader','Source Serif 4',Georgia,serif;
+    --sans:'IBM Plex Sans',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c;
+    --line:#2b2b3a; --line-soft:#22222e;
+    --ink:#eaeaf3; --muted:#9393ab; --faint:#616178;
+    --accent:#8a7cf6; --accent-soft:#211d3a; --accent-ink:#14121f;
+    --good:#45c883; --good-soft:#123020;
+    --warn:#f0b429; --warn-soft:#312608;
+    --crit:#f2726a; --crit-soft:#331a17;
+    --frozen:#5fc9de; --frozen-soft:#0f2f39;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 6px 24px rgba(0,0,0,.5);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c;
+    --line:#2b2b3a; --line-soft:#22222e;
+    --ink:#eaeaf3; --muted:#9393ab; --faint:#616178;
+    --accent:#8a7cf6; --accent-soft:#211d3a; --accent-ink:#14121f;
+    --good:#45c883; --good-soft:#123020;
+    --warn:#f0b429; --warn-soft:#312608;
+    --crit:#f2726a; --crit-soft:#331a17;
+    --frozen:#5fc9de; --frozen-soft:#0f2f39;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 6px 24px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px; margin:0 auto; padding:34px 24px 90px;}
+  .tnum{font-variant-numeric:tabular-nums;}
+
+  /* header */
+  header.top{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:6px;}
+  h1.title{font-family:var(--display); font-weight:500; font-size:34px; line-height:1.15; letter-spacing:-0.01em; margin:0;}
+  .lede{font-family:var(--display); font-style:italic; font-weight:400; font-size:17px; line-height:1.5; color:var(--muted); max-width:60ch; margin:8px 0 0;}
+  button.theme{background:var(--surface); border:1px solid var(--line); color:var(--muted); font-family:var(--mono); font-size:12px; border-radius:var(--r-pill); padding:6px 13px; cursor:pointer;}
+  button.theme:hover{border-color:var(--accent); color:var(--accent);}
+
+  /* section scaffold */
+  .section-label{font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:0.14em; color:var(--faint); margin:44px 0 16px; display:flex; align-items:center; gap:10px;}
+  .section-label::after{content:""; flex:1; height:1px; background:var(--line);}
+  .row{display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;}
+  .col{display:flex; flex-direction:column; gap:14px;}
+
+  /* swatches */
+  .swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px;}
+  .sw{border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--surface);}
+  .sw .chip{height:56px;}
+  .sw .meta{padding:8px 10px; font-family:var(--mono); font-size:11px;}
+  .sw .meta b{display:block; color:var(--ink); font-weight:500;}
+  .sw .meta span{color:var(--faint);}
+
+  /* type specimens */
+  .type-spec{border-bottom:1px solid var(--line-soft); padding:12px 0; display:flex; justify-content:space-between; align-items:baseline; gap:20px;}
+  .type-spec .tag{font-family:var(--mono); font-size:11px; color:var(--faint); white-space:nowrap;}
+  .d34{font-family:var(--display); font-weight:500; font-size:34px; line-height:1.15;}
+  .d26{font-family:var(--display); font-weight:500; font-size:26px;}
+  .d20{font-family:var(--display); font-weight:500; font-size:20px;}
+  .d16{font-family:var(--display); font-weight:600; font-size:16px;}
+  .b15{font-size:15px;}
+  .m12{font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.14em;}
+  .num32{font-family:var(--mono); font-weight:500; font-size:32px; font-variant-numeric:tabular-nums;}
+
+  /* buttons */
+  .btn{font-family:var(--sans); font-size:14px; font-weight:500; border-radius:var(--r-sm); padding:10px 18px; min-height:40px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:8px; transition:box-shadow .15s, border-color .15s, background .15s;}
+  .btn.primary{background:var(--accent); color:var(--accent-ink);}
+  .btn.primary:hover{box-shadow:var(--shadow-2);}
+  .btn.secondary{background:var(--surface); border-color:var(--line); color:var(--ink);}
+  .btn.secondary:hover{border-color:var(--accent); color:var(--accent);}
+  .btn.ghost{background:transparent; color:var(--accent); padding:10px 8px;}
+  .btn.ghost:hover{background:var(--accent-soft);}
+  .btn.danger{background:transparent; border-color:var(--crit); color:var(--crit);}
+  .btn.danger:hover{background:var(--crit-soft);}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .btn[aria-disabled="true"]{cursor:not-allowed; background:var(--surface-2); color:var(--faint); border-color:var(--line);}
+  .btn-reason{font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; max-width:220px;}
+
+  /* pills */
+  .pill{display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11px; font-weight:500; padding:3px 9px; border-radius:var(--r-pill); border:1px solid transparent; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;}
+  .pill.modei{color:var(--good); background:var(--good-soft);}
+  .pill.modef{color:var(--warn); background:var(--warn-soft);}
+  .pill.root{color:var(--muted); border-color:var(--line);}
+  .pill.sub{color:var(--accent); background:var(--accent-soft);}
+  .pill.verified{color:var(--good); background:var(--good-soft);}
+  .pill.unverified{color:var(--muted); border-color:var(--line);}
+  .pill.frozen{color:var(--frozen); background:var(--frozen-soft);}
+  .pill.window{color:var(--frozen); background:var(--frozen-soft);}
+
+  /* cards */
+  .card{background:var(--surface); border-radius:var(--r-md); box-shadow:var(--shadow-1); padding:18px; display:flex; flex-direction:column; gap:12px; width:300px; border:1px solid transparent; transition:box-shadow .15s, border-color .15s, transform .15s;}
+  .card:hover{box-shadow:var(--shadow-2); border-color:var(--accent); transform:translateY(-2px);}
+  .card .chead{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .card .name{font-family:var(--display); font-weight:600; font-size:16px;}
+  .card .addr{font-family:var(--mono); font-size:11px; color:var(--faint);}
+  .card .pillrow{display:flex; gap:6px; flex-wrap:wrap;}
+  .card .navblock{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .card .nav{font-family:var(--mono); font-weight:500; font-size:32px; font-variant-numeric:tabular-nums;}
+  .delta{font-family:var(--mono); font-size:12.5px; font-weight:500; font-variant-numeric:tabular-nums; padding:2px 7px; border-radius:var(--r-sm);}
+  .delta.pos{color:var(--good); background:var(--good-soft);}
+  .delta.neg{color:var(--crit); background:var(--crit-soft);}
+  .card .asof{font-family:var(--mono); font-size:10.5px; color:var(--faint);}
+  .card .meta{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted);}
+  .capbar{height:6px; border-radius:3px; background:var(--surface-2); overflow:hidden;}
+  .capbar>span{display:block; height:100%; background:var(--accent); border-radius:3px;}
+  .capbar.warn>span{background:var(--warn);}
+  .caprow{display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--muted);}
+
+  /* frozen card mode */
+  .card.frozen{border-left:3px solid var(--frozen); background:linear-gradient(0deg,var(--frozen-soft),var(--frozen-soft)) padding-box, var(--surface);}
+  .card.frozen .nav{color:var(--faint); text-decoration:line-through; text-decoration-thickness:1px;}
+  .frozen-banner{font-size:12px; color:var(--frozen); background:var(--frozen-soft); border-radius:var(--r-sm); padding:8px 10px; line-height:1.45;}
+
+  /* sparkline card */
+  .chartcard{background:var(--surface); border-radius:var(--r-md); box-shadow:var(--shadow-1); padding:18px; width:340px;}
+  .chartcard .chead{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;}
+  .chartcard .axmax,.chartcard .axmin{font-family:var(--mono); font-size:10.5px; color:var(--faint);}
+
+  /* fee stack */
+  .feestack{border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; width:340px;}
+  .feestack .lvl{display:flex; justify-content:space-between; align-items:center; padding:11px 14px; border-bottom:1px solid var(--line-soft);}
+  .feestack .lvl:last-child{border-bottom:none;}
+  .feestack .lvl.total{background:var(--surface-2); font-weight:600;}
+  .feestack .lbl small{display:block; font-family:var(--mono); font-size:10.5px; color:var(--faint); text-transform:none; letter-spacing:0;}
+  .feestack .val{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .feestack .val.big{font-size:17px; color:var(--ink);}
+  .feenote{font-size:12.5px; color:var(--muted); margin:10px 2px 0; max-width:340px;}
+
+  /* risk disclosure */
+  .risk{border-left:3px solid var(--warn); background:var(--surface-2); border-radius:var(--r-md); padding:16px 18px; max-width:560px;}
+  .risk h3{font-family:var(--display); font-weight:600; font-size:16px; margin:0 0 4px;}
+  .risk .rsub{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--faint); margin-bottom:12px;}
+  .risk ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:11px;}
+  .risk li{display:grid; grid-template-columns:16px 1fr; gap:10px; font-size:13.5px; line-height:1.5;}
+  .risk li .g{color:var(--warn); font-family:var(--mono); font-weight:600; line-height:1.5;}
+  .risk li b{font-weight:600;}
+  .risk li .n{color:var(--muted);}
+
+  /* governance timeline */
+  .timeline{list-style:none; margin:0; padding:0; max-width:360px;}
+  .phase{display:grid; grid-template-columns:22px 1fr; gap:12px;}
+  .phase .track{display:flex; flex-direction:column; align-items:center;}
+  .phase .node{width:13px; height:13px; border-radius:50%; border:2px solid var(--line); background:var(--surface); margin-top:3px;}
+  .phase.done .node{background:var(--accent); border-color:var(--accent);}
+  .phase.active .node{border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft);}
+  .phase .stem{width:2px; flex:1; background:var(--line); margin:2px 0; min-height:16px;}
+  .phase.done .stem{background:var(--accent);}
+  .phase:last-child .stem{display:none;}
+  .phase .body{padding-bottom:16px;}
+  .phase .body .t{font-weight:600; font-size:14px;}
+  .phase .body .d{font-size:12.5px; color:var(--muted);}
+  .quorum{font-family:var(--mono); font-size:11px; color:var(--faint); margin-bottom:14px;}
+
+  .note{font-size:12px; color:var(--faint); font-family:var(--mono); margin-top:8px;}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="title">Vault Atlas — Style Tile</h1>
+      <p class="lede">The consumer register of the agent-governed index vault protocol: an editorial serif over the retained IBM&nbsp;Plex engineering backbone, cool neutrals, a single Iris accent, and semantic status kept honest.</p>
+    </div>
+    <button class="theme" id="themeBtn" type="button">◐ theme</button>
+  </header>
+
+  <!-- COLOR -->
+  <div class="section-label">Color tokens</div>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><b>--accent · Iris</b><span>brand / interaction</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--good)"></div><div class="meta"><b>--good</b><span>positive · passed</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--warn)"></div><div class="meta"><b>--warn</b><span>caution</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--crit)"></div><div class="meta"><b>--crit</b><span>loss · failed</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--frozen)"></div><div class="meta"><b>--frozen</b><span>oracle held</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink)"></div><div class="meta"><b>--ink</b><span>text</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--muted)"></div><div class="meta"><b>--muted</b><span>secondary</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-2); border-bottom:1px solid var(--line)"></div><div class="meta"><b>--surface-2</b><span>inset</span></div></div>
+  </div>
+
+  <!-- TYPE -->
+  <div class="section-label">Type scale — Newsreader · IBM Plex Sans · IBM Plex Mono</div>
+  <div>
+    <div class="type-spec"><span class="d34">Base Blue-Chip 5</span><span class="tag">display 34 · Newsreader 500</span></div>
+    <div class="type-spec"><span class="d26">Selected vault</span><span class="tag">h1 26 · Newsreader 500</span></div>
+    <div class="type-spec"><span class="d20">Active proposal</span><span class="tag">h2 20 · Newsreader 500</span></div>
+    <div class="type-spec"><span class="b15">Vaults pool USDC into spot index baskets; agents govern rebalances by commit-reveal vote.</span><span class="tag">body 15 · Plex Sans</span></div>
+    <div class="type-spec"><span class="m12">Operator leaderboard</span><span class="tag">label 11.5 · Plex Mono</span></div>
+    <div class="type-spec"><span class="num32 tnum">$4,820,400</span><span class="tag">num-xl 32 · Plex Mono tnum</span></div>
+  </div>
+
+  <!-- BUTTONS -->
+  <div class="section-label">Buttons & controls</div>
+  <div class="row" style="align-items:flex-start">
+    <button class="btn primary" type="button">Deposit USDC</button>
+    <button class="btn secondary" type="button">View governance</button>
+    <button class="btn ghost" type="button">Copy address</button>
+    <button class="btn danger" type="button">Queue Mode-F exit</button>
+    <div>
+      <button class="btn" aria-disabled="true" type="button">Deposit USDC</button>
+      <div class="btn-reason">NAV unavailable — oracle held. Deposits and exits resume when sources agree.</div>
+    </div>
+  </div>
+
+  <!-- PILLS -->
+  <div class="section-label">Status pills & badges</div>
+  <div class="row">
+    <span class="pill modei">Mode&nbsp;I · instant exits</span>
+    <span class="pill modef">Mode&nbsp;F · forward-priced</span>
+    <span class="pill root">root</span>
+    <span class="pill sub">sub · L2</span>
+    <span class="pill verified">✓ operator-verified</span>
+    <span class="pill unverified">unverified</span>
+    <span class="pill frozen">❄ oracle frozen</span>
+    <span class="pill window">◷ observation window · 3:41:12</span>
+  </div>
+
+  <!-- VAULT CARDS -->
+  <div class="section-label">Vault card — healthy, near-capacity, and frozen</div>
+  <div class="row">
+    <div class="card">
+      <div class="chead">
+        <div><div class="name">Base Blue-Chip 5</div><div class="addr">0x1111…1111</div></div>
+        <span class="pill root">root</span>
+      </div>
+      <div class="pillrow"><span class="pill modef">Mode&nbsp;F</span><span class="pill verified">✓ verified</span></div>
+      <div class="navblock"><span class="nav">$4,820,400</span><span class="delta pos">+2.4%</span></div>
+      <div class="asof">NAV as of 2026-08-18 14:02 UTC</div>
+      <div class="meta"><span>23 members</span><span>Meridian</span></div>
+      <div class="capbar"><span style="width:80%"></span></div>
+      <div class="caprow"><span>capacity</span><span>80%</span></div>
+    </div>
+
+    <div class="card">
+      <div class="chead">
+        <div><div class="name">BB5 · DeFi Sleeve</div><div class="addr">0x3333…3333</div></div>
+        <span class="pill sub">sub · L2</span>
+      </div>
+      <div class="pillrow"><span class="pill modei">Mode&nbsp;I</span><span class="pill verified">✓ verified</span></div>
+      <div class="navblock"><span class="nav">$610,000</span><span class="delta neg">−1.1%</span></div>
+      <div class="asof">NAV as of 2026-08-18 14:02 UTC</div>
+      <div class="meta"><span>4 members</span><span>Meridian</span></div>
+      <div class="capbar warn"><span style="width:94%"></span></div>
+      <div class="caprow"><span>capacity</span><span style="color:var(--warn)">94% · near cap</span></div>
+    </div>
+
+    <div class="card frozen">
+      <div class="chead">
+        <div><div class="name">Momentum Majors</div><div class="addr">0x2222…2222</div></div>
+        <span class="pill frozen">❄ frozen</span>
+      </div>
+      <div class="navblock"><span class="nav">$1,240,900</span></div>
+      <div class="asof">last known · 2026-08-18 11:47 UTC</div>
+      <div class="frozen-banner">Oracle breaker tripped — NAV reads are held. Deposits and exits are paused until price sources agree within tolerance.</div>
+    </div>
+  </div>
+
+  <!-- NAV + FEE -->
+  <div class="section-label">NAV history & fee breakdown</div>
+  <div class="row" style="align-items:flex-start">
+    <div class="chartcard">
+      <div class="chead"><span class="d16">NAV per share · 90d</span><span class="delta pos tnum">+6.2%</span></div>
+      <div class="axmax">1.084</div>
+      <svg viewBox="0 0 300 90" width="100%" height="90" preserveAspectRatio="none" role="img" aria-label="NAV per share, 90 days, up 6.2 percent">
+        <line x1="0" y1="66" x2="300" y2="66" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3"></line>
+        <path d="M0,60 L30,58 L60,63 L90,50 L120,54 L150,42 L180,46 L210,34 L240,30 L270,24 L300,18 L300,90 L0,90 Z" fill="var(--accent-soft)" opacity="0.6"></path>
+        <path d="M0,60 L30,58 L60,63 L90,50 L120,54 L150,42 L180,46 L210,34 L240,30 L270,24 L300,18" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <circle cx="300" cy="18" r="3" fill="var(--accent)"></circle>
+      </svg>
+      <div class="chead"><span class="axmin">1.000 · entry NAVps (dotted)</span><span class="axmin">min 0.981</span></div>
+    </div>
+
+    <div>
+      <div class="feestack">
+        <div class="lvl"><div class="lbl">Level 1 · root<small>perf 10% · exit 0.50%</small></div><div class="val">10% · 0.50%</div></div>
+        <div class="lvl"><div class="lbl">Level 2 · sub<small>perf 10% · exit 0.50%</small></div><div class="val">10% · 0.50%</div></div>
+        <div class="lvl total"><div class="lbl">Effective stacked total<small>perf compounds · exit cap ≤ 2.5%</small></div><div class="val big tnum">19% · 1.00%</div></div>
+      </div>
+      <p class="feenote">A depositor here pays <b>19%</b> effective performance fee across 2 levels — fees compound on net-of-fee gains, never additively. The 19% is what you pay; the per-level 10% is not.</p>
+    </div>
+  </div>
+
+  <!-- GOVERNANCE + RISK -->
+  <div class="section-label">Governance timeline & risk disclosure</div>
+  <div class="row" style="align-items:flex-start; gap:32px">
+    <div>
+      <div class="quorum">quorum 38% of voting-eligible stake · 25% protocol floor</div>
+      <ul class="timeline">
+        <li class="phase done"><div class="track"><div class="node"></div><div class="stem"></div></div><div class="body"><div class="t">Commit</div><div class="d">Encrypted votes committed; tally hidden.</div></div></li>
+        <li class="phase done"><div class="track"><div class="node"></div><div class="stem"></div></div><div class="body"><div class="t">Reveal</div><div class="d">Votes revealed; from here Mode-F exits price forward.</div></div></li>
+        <li class="phase active"><div class="track"><div class="node"></div><div class="stem"></div></div><div class="body"><div class="t">Timelock</div><div class="d">Passed — members may exit before execution.</div></div></li>
+        <li class="phase"><div class="track"><div class="node"></div><div class="stem"></div></div><div class="body"><div class="t">Execute</div><div class="d">Adapter swaps settle; queued exits price post-rebalance.</div></div></li>
+      </ul>
+    </div>
+
+    <div class="risk">
+      <h3>Before you deposit</h3>
+      <div class="rsub">plain-language risk disclosure</div>
+      <ul>
+        <li><span class="g">▸</span><span><b>Forward-priced exits (Mode&nbsp;F).</b> <span class="n">While a rebalance is pending, an exit settles at the price <i>after</i> it executes — not the price you see now — and cannot be cancelled.</span></span></li>
+        <li><span class="g">▸</span><span><b>Observation-window skip is permanent.</b> <span class="n">Opting to skip is once per agent per vault and cannot be undone.</span></span></li>
+        <li><span class="g">▸</span><span><b>Oracle halts freeze the vault.</b> <span class="n">If price sources disagree, deposits and exits are held until the breaker clears.</span></span></li>
+        <li><span class="g">▸</span><span><b>Stacked fees in sub-vaults.</b> <span class="n">Performance fees compound across levels; a Level-2 vault charges ~19% effective, not 10%.</span></span></li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="note">Static component sheet. Tokens mirror docs/design/VISUAL-DESIGN-SYSTEM.md · theme toggle cycles system → light → dark.</p>
+</div>
+
+<script>
+  const btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : cur === 'light' ? null : 'dark';
+    if (next) document.documentElement.setAttribute('data-theme', next);
+    else document.documentElement.removeAttribute('data-theme');
+    btn.textContent = next ? `◐ ${next}` : '◐ theme';
+  });
+</script>

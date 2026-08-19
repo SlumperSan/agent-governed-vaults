@@ -1,340 +1,453 @@
+<meta charset="utf-8">
 <title>Vault Atlas</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root {
-    --ground: #f4f4f9;
-    --surface: #ffffff;
-    --surface-2: #eeeef4;
-    --line: #dedee8;
-    --ink: #16161f;
-    --muted: #63637a;
-    --faint: #9a9ab0;
-    --accent: #5a4ce0;
-    --accent-soft: #ece9fd;
-    --good: #178a4c;
-    --warn: #b5730a;
-    --crit: #c23b3b;
-    --mono: 'IBM Plex Mono', ui-monospace, monospace;
-    --sans: 'IBM Plex Sans', system-ui, sans-serif;
-    --display: 'Archivo', var(--sans);
+    --ground:#f2f2f7; --surface:#fff; --surface-2:#eaeaf1; --line:#dbdbe6; --line-soft:#e8e8f0;
+    --ink:#17171f; --muted:#5f5f72; --faint:#8a8a9e; --accent:#5a4ce0; --accent-soft:#ece9fd; --accent-ink:#fff;
+    --good:#178a4c; --good-soft:#e4f2ea; --warn:#a56a09; --warn-soft:#f6ecd7;
+    --crit:#c23b3b; --crit-soft:#f7e2e2; --frozen:#1c8aa6; --frozen-soft:#dcf0f4;
+    --shadow-1:0 1px 2px rgba(24,24,40,.05),0 1px 3px rgba(24,24,40,.04);
+    --shadow-2:0 4px 16px rgba(24,24,40,.08),0 1px 3px rgba(24,24,40,.05);
+    --display:'Newsreader','Source Serif 4',Georgia,serif;
+    --sans:'IBM Plex Sans',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --maxw:1160px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ground: #0d0d15;
-      --surface: #16161f;
-      --surface-2: #1e1e2a;
-      --line: #2a2a39;
-      --ink: #e9e9f4;
-      --muted: #9494ad;
-      --faint: #64647e;
-      --accent: #8a7cf6;
-      --accent-soft: #211d3a;
-      --good: #4ade80;
-      --warn: #fbbf24;
-      --crit: #f87171;
-    }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c; --line:#2b2b3a; --line-soft:#22222e;
+    --ink:#eaeaf3; --muted:#9393ab; --faint:#616178; --accent:#8a7cf6; --accent-soft:#211d3a; --accent-ink:#14121f;
+    --good:#45c883; --good-soft:#123020; --warn:#f0b429; --warn-soft:#312608;
+    --crit:#f2726a; --crit-soft:#331a17; --frozen:#5fc9de; --frozen-soft:#0f2f39;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4); --shadow-2:0 6px 24px rgba(0,0,0,.5);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c; --line:#2b2b3a; --line-soft:#22222e;
+    --ink:#eaeaf3; --muted:#9393ab; --faint:#616178; --accent:#8a7cf6; --accent-soft:#211d3a; --accent-ink:#14121f;
+    --good:#45c883; --good-soft:#123020; --warn:#f0b429; --warn-soft:#312608;
+    --crit:#f2726a; --crit-soft:#331a17; --frozen:#5fc9de; --frozen-soft:#0f2f39;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4); --shadow-2:0 6px 24px rgba(0,0,0,.5);
   }
-  :root[data-theme="dark"] {
-    --ground: #0d0d15;
-    --surface: #16161f;
-    --surface-2: #1e1e2a;
-    --line: #2a2a39;
-    --ink: #e9e9f4;
-    --muted: #9494ad;
-    --faint: #64647e;
-    --accent: #8a7cf6;
-    --accent-soft: #211d3a;
-    --good: #4ade80;
-    --warn: #fbbf24;
-    --crit: #f87171;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--ground);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 80px; }
-  a { color: var(--accent); }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:22px 22px 90px}
+  a{color:var(--accent);text-decoration:none}
+  h1,h2,h3{font-family:var(--display);font-weight:500;letter-spacing:-.01em;margin:0;text-wrap:balance}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .label{font-family:var(--mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint)}
 
-  header.top {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 20px; flex-wrap: wrap; margin-bottom: 8px;
-  }
-  .brand { display: flex; align-items: baseline; gap: 12px; }
-  .brand h1 {
-    font-family: var(--display); font-weight: 800; font-size: 26px;
-    letter-spacing: -0.02em; margin: 0; text-wrap: balance;
-  }
-  .brand .tag {
-    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.14em; color: var(--muted);
-    border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
-  }
-  .metered {
-    display: flex; align-items: center; gap: 8px; font-family: var(--mono);
-    font-size: 12px; color: var(--muted);
-  }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
-  .lede { color: var(--muted); max-width: 62ch; margin: 4px 0 26px; }
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:18px;border-bottom:1px solid var(--line-soft)}
+  .brand{display:flex;align-items:baseline;gap:11px;cursor:pointer}
+  .brand .mk{font-family:var(--display);font-weight:600;font-size:22px;letter-spacing:-.02em}
+  .brand .tag{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+  .navbtns{display:flex;gap:6px;align-items:center}
+  .navlink{font-size:13.5px;color:var(--muted);padding:6px 11px;border-radius:var(--r-sm);cursor:pointer}
+  .navlink:hover,.navlink.on{color:var(--ink);background:var(--surface-2)}
+  .chip{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--good)}
+  button.ico{background:var(--surface);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:12px;border-radius:999px;padding:5px 11px;cursor:pointer}
+  button.ico:hover{border-color:var(--accent);color:var(--accent)}
 
-  .section-label {
-    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.16em; color: var(--faint); margin: 34px 0 12px;
-    display: flex; align-items: center; gap: 10px;
-  }
-  .section-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  /* buttons */
+  .btn{font-family:var(--sans);font-size:14px;font-weight:500;min-height:40px;padding:0 18px;border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn.secondary{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn.secondary:hover{border-color:var(--accent)}
+  .btn.ghost{background:transparent;color:var(--accent);min-height:36px;padding:0 10px}
+  .btn.danger{background:transparent;color:var(--crit);border-color:var(--crit)}
+  .btn[disabled]{opacity:.6;cursor:not-allowed}
+  .btn-reason{font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--sans)}
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-  .vault-card {
-    text-align: left; background: var(--surface); border: 1px solid var(--line);
-    border-radius: 12px; padding: 16px; cursor: pointer; color: inherit;
-    font: inherit; transition: border-color .15s, transform .15s;
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  .vault-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-  .vault-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .vault-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .vault-card .name { font-family: var(--display); font-weight: 700; font-size: 16px; }
-  .vault-card .addr { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-  .vault-card .nav { font-family: var(--mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .vault-card .row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .lede{font-family:var(--display);font-style:italic;font-size:17px;line-height:1.5;color:var(--muted);max-width:60ch;margin:22px 0 8px}
+  .seclabel{margin:34px 0 14px;display:flex;align-items:center;gap:10px}
+  .seclabel .label{margin:0}
+  .seclabel::after{content:"";flex:1;height:1px;background:var(--line-soft)}
 
-  .pill {
-    display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono);
-    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px;
-    border: 1px solid transparent; text-transform: uppercase; letter-spacing: 0.04em;
-  }
-  .pill.child { color: var(--accent); background: var(--accent-soft); }
-  .pill.root { color: var(--muted); border-color: var(--line); }
-  .pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
-  .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
-  .pill.mf { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+  /* vault grid + cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:14px}
+  .card{text-align:left;background:var(--surface);border:1px solid transparent;border-radius:var(--r-md);box-shadow:var(--shadow-1);padding:17px;cursor:pointer;color:inherit;font:inherit;display:flex;flex-direction:column;gap:11px;transition:box-shadow .15s,border-color .15s,transform .15s}
+  .card:hover{box-shadow:var(--shadow-2);border-color:var(--accent);transform:translateY(-2px)}
+  .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .card.frozen{background:var(--frozen-soft);border-color:var(--frozen)}
+  .card.quarantine{border-color:var(--crit);border-style:dashed}
+  .card .ttl{font-family:var(--display);font-weight:600;font-size:16px}
+  .card .addr{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .card .nav{font-family:var(--mono);font-size:29px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.1}
+  .card .asof{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .card .meta{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10.5px;font-weight:500;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;border:1px solid transparent}
+  .pill.root{border-color:var(--line);color:var(--muted)} .pill.sub{background:var(--accent-soft);color:var(--accent)}
+  .pill.mi{background:var(--good-soft);color:var(--good)} .pill.mf{background:var(--warn-soft);color:var(--warn)}
+  .pill.ver{background:var(--good-soft);color:var(--good)} .pill.unver{border-color:var(--crit);color:var(--crit)}
+  .pill.frz{background:var(--frozen-soft);color:var(--frozen)}
+  .delta{font-family:var(--mono);font-size:13px;padding:1px 7px;border-radius:999px}
+  .delta.pos{color:var(--good);background:var(--good-soft)} .delta.neg{color:var(--crit);background:var(--crit-soft)}
+  .meter{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+  .meter>span{display:block;height:100%;background:var(--accent);border-radius:3px}
+  .meter.warn>span{background:var(--warn)}
 
-  .capbar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
-  .capbar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  /* detail */
+  .detail{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-1);padding:24px;margin-top:6px}
+  .detail.frozen{background:var(--frozen-soft);border-color:var(--frozen)}
+  .back{font-size:13px;color:var(--muted);cursor:pointer;display:inline-flex;gap:6px;margin-bottom:16px}
+  .back:hover{color:var(--accent)}
+  .dhead{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;align-items:start}
+  .dhead h1{font-size:26px}
+  .dhead .addr{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:3px}
+  .navblock{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:18px 0 4px}
+  .navblock .big{font-family:var(--mono);font-size:32px;font-weight:500;font-variant-numeric:tabular-nums}
+  .navblock .big.frz{color:var(--frozen);text-decoration:line-through;opacity:.7}
+  .asofline{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-bottom:16px}
+  .cols{display:grid;grid-template-columns:1.2fr 1fr;gap:26px;margin-top:22px}
+  @media (max-width:760px){.cols{grid-template-columns:1fr}.card .nav{font-size:26px}}
+  .stat-row{display:flex;flex-wrap:wrap;gap:24px;margin:18px 0}
+  .stat .k{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+  .stat .v{font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums}
 
-  .detail { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-top: 4px; }
-  .detail.empty { color: var(--muted); font-family: var(--mono); font-size: 13px; text-align: center; padding: 40px; }
-  .detail h2 { font-family: var(--display); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 2px; font-size: 22px; }
-  .detail .sub { font-family: var(--mono); font-size: 12px; color: var(--faint); margin-bottom: 20px; }
-  .stat-row { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 24px; }
-  .stat .k { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); }
-  .stat .v { font-family: var(--mono); font-size: 20px; font-variant-numeric: tabular-nums; }
+  /* banner */
+  .banner{display:flex;gap:12px;align-items:start;padding:14px 16px;border-radius:var(--r-md);margin:16px 0;font-size:14px}
+  .banner.frozen{background:var(--frozen-soft);border:1px solid var(--frozen);color:var(--ink)}
+  .banner.info{background:var(--accent-soft);color:var(--ink)}
+  .banner .bt{font-weight:600;font-family:var(--sans)}
 
-  .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: 28px; }
-  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+  /* timeline */
+  .timeline{list-style:none;margin:14px 0 0;padding:0}
+  .ph{display:grid;grid-template-columns:20px 1fr;gap:12px}
+  .ph .tk{display:flex;flex-direction:column;align-items:center}
+  .ph .node{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);background:var(--surface);margin-top:3px}
+  .ph.done .node{background:var(--accent);border-color:var(--accent)}
+  .ph.active .node{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .ph .stem{width:2px;flex:1;background:var(--line);margin:2px 0;min-height:12px}
+  .ph.done .stem{background:var(--accent)}
+  .ph:last-child .stem{display:none}
+  .ph .bd{padding-bottom:15px}
+  .ph .bd .t{font-weight:600;font-size:13.5px}
+  .ph .bd .d{font-size:12.5px;color:var(--muted)}
 
-  .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
-  .phase { display: grid; grid-template-columns: 22px 1fr; gap: 12px; }
-  .phase .track { display: flex; flex-direction: column; align-items: center; }
-  .phase .node { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); margin-top: 3px; }
-  .phase.done .node { background: var(--accent); border-color: var(--accent); }
-  .phase.active .node { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-  .phase .stem { width: 2px; flex: 1; background: var(--line); margin: 2px 0; min-height: 14px; }
-  .phase.done .stem { background: var(--accent); }
-  .phase:last-child .stem { display: none; }
-  .phase .body { padding-bottom: 16px; }
-  .phase .body .t { font-weight: 600; font-size: 14px; }
-  .phase .body .d { font-size: 12.5px; color: var(--muted); }
-  .phase .body .m { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  /* risk panel */
+  .risk{background:var(--surface-2);border-left:3px solid var(--warn);border-radius:var(--r-sm);padding:14px 16px}
+  .risk.frz{border-left-color:var(--frozen)}
+  .risk h3{font-family:var(--sans);font-weight:600;font-size:13px;margin-bottom:10px}
+  .risk .r{display:flex;gap:9px;padding:7px 0;border-top:1px solid var(--line-soft);font-size:13px;color:var(--muted)}
+  .risk .r:first-of-type{border-top:none}
+  .risk .r b{color:var(--ink);font-weight:600;font-family:var(--sans)}
 
-  .feestack { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  .feestack .lvl { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line); }
-  .feestack .lvl:last-child { border-bottom: none; }
-  .feestack .lvl.total { background: var(--surface-2); font-weight: 600; }
-  .feestack .lvl .lbl { font-size: 13px; }
-  .feestack .lvl .lbl small { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-  .feestack .lvl .val { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  /* fee stack + basket */
+  .stack{border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+  .stack .l{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;border-bottom:1px solid var(--line-soft);font-size:13px}
+  .stack .l:last-child{border-bottom:none}
+  .stack .l.total{background:var(--surface-2);font-weight:600}
+  .stack .l small{display:block;font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .stack .l .v{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .basket{display:flex;flex-direction:column;gap:7px}
+  .basket .b{display:grid;grid-template-columns:70px 1fr 46px;align-items:center;gap:10px;font-size:12.5px}
+  .basket .bar{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+  .basket .bar>span{display:block;height:100%;background:var(--accent);opacity:.85}
+  .basket .pctn{font-family:var(--mono);text-align:right;color:var(--muted)}
 
-  table.lb { width: 100%; border-collapse: collapse; font-size: 14px; }
-  table.lb th, table.lb td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-  table.lb th { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); font-weight: 500; }
-  table.lb th:first-child, table.lb td:first-child { text-align: left; }
-  table.lb td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  table.lb .op { font-weight: 600; }
-  table.lb .rank { font-family: var(--mono); color: var(--faint); }
-  .net.pos { color: var(--good); }
-  .net.neg { color: var(--crit); }
-  .tablescroll { overflow-x: auto; }
+  /* leaderboard */
+  table.lb{width:100%;border-collapse:collapse;font-size:14px}
+  table.lb th,table.lb td{text-align:right;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
+  table.lb th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:500}
+  table.lb th:first-child,table.lb td:first-child{text-align:left}
+  table.lb td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .net.pos{color:var(--good)} .net.neg{color:var(--crit)}
+  .tscroll{overflow-x:auto}
 
-  .foot { margin-top: 40px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
-  .foot code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
-  button.theme { background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-family: var(--mono); font-size: 12px; border-radius: 999px; padding: 5px 12px; cursor: pointer; }
-  button.theme:hover { border-color: var(--accent); color: var(--accent); }
+  /* modal */
+  .scrim{position:fixed;inset:0;background:rgba(10,10,20,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-2);max-width:460px;width:100%;padding:24px}
+  .modal h2{font-size:21px;margin-bottom:6px}
+  .modal .sub{font-size:13.5px;color:var(--muted);margin-bottom:16px}
+  .modal .conseq{background:var(--warn-soft);border-radius:var(--r-sm);padding:13px 15px;font-size:13.5px;margin:14px 0}
+  .modal .conseq.mf{background:var(--warn-soft)} .modal .conseq.skip{background:var(--crit-soft)}
+  .modal .conseq b{font-weight:600}
+  .modal .acts{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+  .field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+  .field input{font-family:var(--mono);font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--ground);color:var(--ink)}
+  .countdown{font-family:var(--mono);color:var(--frozen);font-weight:600}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--ground);font-size:13.5px;padding:11px 18px;border-radius:999px;box-shadow:var(--shadow-2);z-index:60}
+  .foot{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line-soft);padding-top:16px}
+  .foot code{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="wrap">
   <header class="top">
-    <div class="brand">
-      <h1>Vault Atlas</h1>
+    <div class="brand" onclick="go('#/discover')">
+      <span class="mk">Vault Atlas</span>
       <span class="tag">agent-governed index vaults</span>
     </div>
-    <div style="display:flex; gap:14px; align-items:center;">
-      <div class="metered"><span class="dot"></span> x402 metered · <span id="rcpt">demo feed</span></div>
-      <button class="theme" id="themeBtn" type="button">◐ theme</button>
+    <div class="navbtns" id="nav"></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="chip"><span class="dot"></span> 0xA1c…9F2</span>
+      <button class="ico" id="themeBtn" type="button">◐</button>
     </div>
   </header>
-  <p class="lede">A live view over the protocol indexer. Vaults pool USDC into spot index baskets;
-    AI agents govern rebalances by commit-reveal vote. Reads are paid per-call over x402 —
-    this page shows a demo projection.</p>
-
-  <div class="section-label">Vault explorer</div>
-  <div class="grid" id="vaultGrid"></div>
-
-  <div class="section-label">Selected vault</div>
-  <div id="detail" class="detail empty">Select a vault to inspect its governance state and fee stack.</div>
-
-  <div class="section-label">Operator leaderboard · all vaults, no cherry-picking</div>
-  <div class="tablescroll">
-    <table class="lb" id="lb">
-      <thead><tr><th>Operator</th><th>Net realized</th><th>Gain</th><th>Loss</th><th>Fees earned</th><th>Vaults</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <p class="foot">Projection shapes match <code>packages/indexer</code>; fee math mirrors
-    <code>SubVaultRegistry</code>. Served live, this page follows the 402 → authorize → retry
-    flow (<code>apps/web/src/api-client.mjs</code>) against the metered API.</p>
+  <main id="view"></main>
+  <p class="foot">Demo projection — figures illustrative. Reads are metered over x402;
+    deposits, votes and exits are on-chain signatures. Design system: <code>docs/design/</code>.</p>
 </div>
+<div id="modal"></div>
+<div id="toast"></div>
 
 <script type="module">
-  // ── Fee math (mirrors SubVaultRegistry.stackedPerfFeeBps / stackedExitFeeCapBps) ──
-  const PERF = 1000;
-  const stackedPerf = (levels) => { let keep = 1e4; for (let i=0;i<levels;i++) keep = Math.floor(keep*(1e4-PERF)/1e4); return 1e4-keep; };
-  const pct = (bps) => (bps/100).toFixed(bps % 100 ? 2 : 0) + '%';
-  const usd = (n) => '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
-
-  // ── Demo projection (the exact shape packages/indexer emits) ──
+  // ── inline demo data (mirrors the indexer projection + daemon NAV enrichment) ──
+  const USDC = '0x'+'c'.repeat(40);
   const vaults = [
-    { vault:'0x1111000000000000000000000000000000001111', name:'Base Blue-Chip 5', operatorId:1, operator:'Meridian', nav:4_820_400, members:23, capacity:6_000_000, depth:0, exitFeeByLevel:[50],
-      proposal:{ title:'Rebalance → +4% ETH, −4% USDC idle', phase:2, mode:'F', quorum:'38% / 25% floor' } },
-    { vault:'0x2222000000000000000000000000000000002222', name:'Momentum Majors', operatorId:2, operator:'Halcyon', nav:1_240_900, members:9, capacity:2_000_000, depth:0, exitFeeByLevel:[100],
-      proposal:{ title:'RuleChange → timelock 3d→2d', phase:1, mode:'I', quorum:'full consensus' } },
-    { vault:'0x3333000000000000000000000000000000003333', name:'BB5 · DeFi Sleeve', operatorId:1, operator:'Meridian', nav:610_000, members:4, capacity:1_000_000, depth:1, parent:'Base Blue-Chip 5', exitFeeByLevel:[50,50],
-      proposal:{ title:'Rebalance → open AERO 8%', phase:3, mode:'I', quorum:'3-of-4 signers' } },
-    { vault:'0x4444000000000000000000000000000000004444', name:'Halcyon Micro', operatorId:2, operator:'Halcyon', nav:88_500, members:3, capacity:250_000, depth:0, exitFeeByLevel:[0],
-      proposal:null },
+    {i:0,vault:'0x1111000000000000000000000000000000001111',name:'Base Blue-Chip 5',operator:'Meridian',operatorId:1,verified:true,navPs:1.084,navUsd:4820400,asOf:'2026-08-18 14:22 UTC',entryPs:1.0,members:23,capUsd:6000000,depth:0,exitFee:[50],basket:[['WETH',.42],['cbBTC',.34],['AERO',.14],['USDC idle',.10]],hist:[1,1.01,.98,1.03,1.06,1.02,1.05,1.084],frozen:false,proposal:{title:'Rebalance → +4% WETH, −4% USDC idle',ptype:0,status:'Passed',phase:2,forPct:38,againstPct:6,quorumPct:25,revealedPct:44,mode:'F'}},
+    {i:1,vault:'0x2222000000000000000000000000000000002222',name:'Momentum Majors',operator:'Halcyon',operatorId:2,verified:true,navPs:.965,navUsd:1240900,asOf:'2026-08-18 14:21 UTC',entryPs:1.0,members:9,capUsd:2000000,depth:0,exitFee:[100],basket:[['WETH',.55],['cbBTC',.45]],hist:[1,1.04,1.01,.97,.94,.99,.96,.965],frozen:false,proposal:{title:'RuleChange → timelock 3d → 2d',ptype:1,status:'Active',phase:0,forPct:0,againstPct:0,quorumPct:25,revealedPct:0,mode:'I'}},
+    {i:2,vault:'0x3333000000000000000000000000000000003333',name:'BB5 · DeFi Sleeve',operator:'Meridian',operatorId:1,verified:true,navPs:1.12,navUsd:610000,asOf:'2026-08-18 14:22 UTC',entryPs:1.0,members:4,capUsd:1000000,depth:1,parent:'Base Blue-Chip 5',exitFee:[50,50],basket:[['AERO',.6],['WETH',.4]],hist:[1,1.05,1.09,1.14,1.1,1.12],frozen:false,proposal:null},
+    {i:3,vault:'0x4444000000000000000000000000000000004444',name:'Stable Yield Micro',operator:'Aster',operatorId:3,verified:true,navPs:.998,navUsd:88500,asOf:'2026-08-18 09:02 UTC',entryPs:1.0,members:3,capUsd:250000,depth:0,exitFee:[0],basket:[['cbBTC',1]],hist:[1,1,.999,.998],frozen:true,proposal:null},
+    {i:4,vault:'0x5555000000000000000000000000000000005555',name:'AlphaSeek Index',operator:'unattested',operatorId:0,verified:false,navPs:1.4,navUsd:2100000,asOf:'2026-08-18 14:20 UTC',entryPs:1.0,members:41,capUsd:3000000,depth:0,exitFee:[100],basket:[['???',1]],hist:[1,1.2,1.35,1.4],frozen:false,proposal:null,unattested:true},
   ];
-  const operators = [
-    { operatorId:2, operator:'Halcyon', net:412_000, gain:512_000, loss:100_000, fees:41_200, vaultCount:2 },
-    { operatorId:1, operator:'Meridian', net:286_500, gain:410_000, loss:123_500, fees:28_650, vaultCount:2 },
-    { operatorId:3, operator:'Aster', net:-54_000, gain:31_000, loss:85_000, fees:0, vaultCount:1 },
+  const operators=[
+    {rank:1,operator:'Halcyon',net:412000,gain:512000,loss:100000,fees:41200,vaultCount:2},
+    {rank:2,operator:'Meridian',net:286500,gain:410000,loss:123500,fees:28650,vaultCount:2},
+    {rank:3,operator:'Aster',net:-54000,gain:31000,loss:85000,fees:0,vaultCount:1},
   ];
+  const positions=[{i:0,shares:92250,bps:190,valueUsd:100000,tenure:46},{i:2,shares:44600,bps:820,valueUsd:50000,tenure:12}];
 
-  const phases = [
-    { t:'Commit', d:'Encrypted votes committed; tally hidden.' },
-    { t:'Reveal', d:'Votes revealed; Mode-F exits forward-price from here.' },
-    { t:'Timelock', d:'Passed — members may exit before execution.' },
-    { t:'Execute', d:'Adapter swaps settle; queued exits price post-rebalance.' },
-  ];
+  // ── helpers ──
+  const usd=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const pct=b=>(b/100).toFixed(b%100?2:0)+'%';
+  const short=a=>a.slice(0,6)+'…'+a.slice(-4);
+  const stackedPerf=lv=>{let k=1e4;for(let i=0;i<lv;i++)k=Math.floor(k*9000/1e4);return 1e4-k;}; // mirrors SubVaultRegistry
+  const el=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+  const $=(s,r=document)=>r.querySelector(s);
+  window.go=(h)=>{location.hash=h;};
 
-  const grid = document.getElementById('vaultGrid');
-  const short = (a) => a.slice(0,6)+'…'+a.slice(-4);
-
-  vaults.forEach((v, i) => {
-    const b = document.createElement('button');
-    b.className = 'vault-card'; b.type = 'button'; b.setAttribute('aria-pressed','false');
-    const capPct = Math.min(100, Math.round(v.nav/v.capacity*100));
-    b.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
-        <div><div class="name">${v.name}</div><div class="addr">${short(v.vault)}</div></div>
-        <span class="pill ${v.depth?'child':'root'}">${v.depth? 'sub · L'+(v.depth+1) : 'root'}</span>
-      </div>
-      <div class="nav">${usd(v.nav)}</div>
-      <div class="row"><span>${v.members} members</span><span>${v.operator}</span></div>
-      <div class="capbar"><span style="width:${capPct}%"></span></div>
-      <div class="row"><span>capacity</span><span>${capPct}%</span></div>`;
-    b.addEventListener('click', () => select(i));
-    grid.appendChild(b);
-  });
-
-  function select(i) {
-    [...grid.children].forEach((c,ci)=>c.setAttribute('aria-pressed', ci===i?'true':'false'));
-    const v = vaults[i];
-    const levels = v.depth + 1;
-    const stackPerf = stackedPerf(levels);
-    const stackExit = v.exitFeeByLevel.reduce((a,b)=>a+b,0);
-    const feeRows = v.exitFeeByLevel.map((f,li)=>`
-      <div class="lvl"><div class="lbl">Level ${li+1}${li===0?' · root':''}<small>perf 10% · exit ${pct(f)}</small></div>
-      <div class="val">${pct(f)}</div></div>`).join('');
-
-    const prop = v.proposal ? `
-      <ul class="timeline">${phases.map((p,pi)=>`
-        <li class="phase ${pi < v.proposal.phase ? 'done' : pi===v.proposal.phase ? 'active' : ''}">
-          <div class="track"><div class="node"></div><div class="stem"></div></div>
-          <div class="body"><div class="t">${p.t}</div><div class="d">${p.d}</div></div>
-        </li>`).join('')}</ul>` :
-      `<div class="detail empty" style="margin:0">No active proposal — exits settle instant (Mode I).</div>`;
-
-    const modePill = v.proposal ? (v.proposal.mode==='F'
-      ? '<span class="pill mf">Mode F · forward-priced exits</span>'
-      : '<span class="pill good">Mode I · instant exits</span>') : '';
-
-    document.getElementById('detail').className = 'detail';
-    document.getElementById('detail').innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:start;gap:16px;flex-wrap:wrap">
-        <div><h2>${v.name}</h2><div class="sub">${v.vault}${v.parent?' · child of '+v.parent:''}</div></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${modePill}</div>
-      </div>
-      <div class="stat-row">
-        <div class="stat"><div class="k">NAV</div><div class="v">${usd(v.nav)}</div></div>
-        <div class="stat"><div class="k">Members</div><div class="v">${v.members}</div></div>
-        <div class="stat"><div class="k">Operator</div><div class="v" style="font-size:16px">${v.operator}</div></div>
-        <div class="stat"><div class="k">Depth</div><div class="v">${v.depth+1} / 3</div></div>
-      </div>
-      <div class="cols">
-        <div>
-          <div class="section-label" style="margin-top:0">Active proposal ${v.proposal?'· '+v.proposal.quorum:''}</div>
-          ${v.proposal?`<div style="font-weight:600;margin-bottom:14px">${v.proposal.title}</div>`:''}
-          ${prop}
-        </div>
-        <div>
-          <div class="section-label" style="margin-top:0">Cumulative effective fee</div>
-          <div class="feestack">
-            ${feeRows}
-            <div class="lvl total"><div class="lbl">Stacked total<small>perf compounds · exit cap ≤ 2.5%</small></div>
-              <div class="val">${pct(stackPerf)} · ${pct(stackExit)}</div></div>
-          </div>
-          <p style="font-size:12.5px;color:var(--muted);margin-top:12px">
-            A depositor here pays <b>${pct(stackPerf)}</b> effective performance fee across
-            ${levels} level${levels>1?'s':''} — fees compound on net-of-fee gains, never additively.</p>
-        </div>
-      </div>`;
-    document.getElementById('detail').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  function sparkline(hist,entry){
+    const w=260,h=54,pad=4;const mn=Math.min(...hist,entry),mx=Math.max(...hist,entry);const rng=mx-mn||1;
+    const x=i=>pad+i*(w-2*pad)/(hist.length-1);
+    const y=v=>h-pad-(v-mn)/rng*(h-2*pad);
+    const pts=hist.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const area=`M${pad},${h-pad} L${pts.split(' ').join(' L')} L${w-pad},${h-pad} Z`;
+    const by=y(entry).toFixed(1);
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" aria-hidden="true" style="max-width:${w}px">
+      <path d="${area}" fill="var(--accent-soft)"/>
+      <line x1="${pad}" y1="${by}" x2="${w-pad}" y2="${by}" stroke="var(--line)" stroke-dasharray="3 3"/>
+      <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${x(hist.length-1)}" cy="${y(hist[hist.length-1])}" r="3" fill="var(--accent)"/>
+    </svg>`;
+  }
+  function deltaChip(navPs,entry){
+    const d=(navPs/entry-1)*100;const s=d>=0?'pos':'neg';const g=d>=0?'+':'−';
+    return `<span class="delta ${s}">${g}${Math.abs(d).toFixed(1)}%</span>`;
+  }
+  function statusPills(v){
+    let p=[];
+    p.push(v.depth?`<span class="pill sub">sub · L${v.depth+1}</span>`:`<span class="pill root">root</span>`);
+    if(v.frozen)p.push(`<span class="pill frz">◆ oracle frozen</span>`);
+    else if(v.proposal&&v.proposal.mode==='F')p.push(`<span class="pill mf">Mode F</span>`);
+    else p.push(`<span class="pill mi">Mode I</span>`);
+    p.push(v.verified?`<span class="pill ver">✓ verified</span>`:`<span class="pill unver">⚠ unverified</span>`);
+    return p.join('');
   }
 
-  // ── Leaderboard ──
-  const tb = document.querySelector('#lb tbody');
-  operators.forEach((o,i)=>{
-    const tr = document.createElement('tr');
-    const cls = o.net>=0?'pos':'neg';
-    tr.innerHTML = `
-      <td><span class="rank">${i+1}</span> <span class="op">${o.operator}</span></td>
-      <td class="num net ${cls}">${o.net>=0?'+':'−'}${usd(Math.abs(o.net))}</td>
-      <td class="num">${usd(o.gain)}</td>
-      <td class="num">${usd(o.loss)}</td>
-      <td class="num">${usd(o.fees)}</td>
-      <td class="num">${o.vaultCount}</td>`;
-    tb.appendChild(tr);
-  });
+  // ── views ──
+  function vaultCard(v){
+    const capPct=Math.min(100,Math.round(v.navUsd/v.capUsd*100));
+    const cls=['card'];if(v.frozen)cls.push('frozen');if(v.unattested)cls.push('quarantine');
+    const nav=v.frozen?`<div class="nav" style="color:var(--frozen)">— <span style="font-size:12px">held</span></div>`
+      :`<div class="nav">${v.navPs.toFixed(3)} ${deltaChip(v.navPs,v.entryPs)}</div><div class="asof">NAV/share · as of ${v.asOf}</div>`;
+    return `<button class="${cls.join(' ')}" onclick="go('#/vault/${v.i}')">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+        <div><div class="ttl">${v.name}</div><div class="addr">${short(v.vault)}</div></div>
+      </div>
+      <div class="pills">${statusPills(v)}</div>
+      ${nav}
+      <div class="meta"><span>${v.members} members</span><span>${v.operator}</span></div>
+      <div class="meter ${capPct>90?'warn':''}"><span style="width:${capPct}%"></span></div>
+      <div class="meta"><span>capacity</span><span class="num">${capPct}%</span></div>
+    </button>`;
+  }
 
-  select(0);
+  function renderDiscover(){
+    const attested=vaults.filter(v=>!v.unattested), flagged=vaults.filter(v=>v.unattested);
+    return `
+    <p class="lede">Pool USDC into agent-governed index baskets. See exactly what each vault holds,
+      who runs it, what it costs, and how it votes — before you commit a dollar.</p>
+    <div class="seclabel"><span class="label">Vaults</span></div>
+    <div class="grid">${attested.map(vaultCard).join('')}</div>
+    <div class="seclabel"><span class="label">Unverified — proceed with caution</span></div>
+    <div class="banner info"><div><span class="bt">Anyone can create a vault.</span>
+      These are not attested to a registered operator (operatorId 0). Their branding is unearned —
+      treat balances and returns as unverified. The registry, not the name, is the trust signal.</div></div>
+    <div class="grid">${flagged.map(vaultCard).join('')}</div>
+    <div class="seclabel"><span class="label">Operator leaderboard · all vaults, no cherry-picking</span></div>
+    <div class="tscroll"><table class="lb"><thead><tr><th>Operator</th><th>Net realized</th><th>Gain</th><th>Loss</th><th>Fees</th><th>Vaults</th></tr></thead><tbody>
+      ${operators.map(o=>`<tr><td><span class="num" style="color:var(--faint)">${o.rank}</span> <b>${o.operator}</b></td>
+        <td class="n net ${o.net>=0?'pos':'neg'}">${o.net>=0?'+':'−'}${usd(Math.abs(o.net))}</td>
+        <td class="n">${usd(o.gain)}</td><td class="n">${usd(o.loss)}</td><td class="n">${usd(o.fees)}</td><td class="n">${o.vaultCount}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  }
 
-  // ── Theme toggle (cycles system → light → dark) ──
-  const btn = document.getElementById('themeBtn');
-  btn.addEventListener('click', () => {
-    const cur = document.documentElement.getAttribute('data-theme');
-    const next = cur === 'dark' ? 'light' : cur === 'light' ? null : 'dark';
-    if (next) document.documentElement.setAttribute('data-theme', next);
-    else document.documentElement.removeAttribute('data-theme');
-    btn.textContent = next ? `◐ ${next}` : '◐ theme';
+  function govTimeline(p){
+    const phases=[['Commit','Encrypted votes committed; the tally stays hidden.'],
+      ['Reveal','Votes revealed. From here, exits price forward (Mode F).'],
+      ['Timelock','Passed. Members may exit before it executes.'],
+      ['Execute','Swaps settle; queued exits price at the post-rebalance NAV.']];
+    return `<ul class="timeline">${phases.map((ph,i)=>`
+      <li class="ph ${i<p.phase?'done':i===p.phase?'active':''}">
+        <div class="tk"><div class="node"></div><div class="stem"></div></div>
+        <div class="bd"><div class="t">${ph[0]}</div><div class="d">${ph[1]}</div></div></li>`).join('')}</ul>`;
+  }
+
+  function renderVault(i){
+    const v=vaults[i];if(!v)return renderDiscover();
+    const lv=v.depth+1, sp=stackedPerf(lv), se=v.exitFee.reduce((a,b)=>a+b,0);
+    const capPct=Math.min(100,Math.round(v.navUsd/v.capUsd*100));
+    const frozenBanner=v.frozen?`<div class="banner frozen"><div><span class="bt">This vault's oracle is frozen.</span>
+      The multi-source price feed disagreed beyond tolerance, so every valuation — and every deposit and
+      exit — is held by design until the sources agree again. Your funds are not lost; they are paused.</div></div>`:'';
+    const unattestedBanner=v.unattested?`<div class="banner" style="background:var(--crit-soft)"><div>
+      <span class="bt">Unverified vault.</span> Not attested to a registered operator. Balances, returns,
+      and basket shown are self-reported and unverified. We do not recommend depositing.</div></div>`:'';
+    const nav=v.frozen
+      ?`<span class="big frz">${v.navPs.toFixed(3)}</span><span class="delta" style="background:var(--frozen-soft);color:var(--frozen)">last known · held</span>`
+      :`<span class="big">${v.navPs.toFixed(3)}</span>${deltaChip(v.navPs,v.entryPs)}`;
+    const canAct=!v.frozen&&!v.unattested;
+    const depositBtn=canAct?`<button class="btn primary" onclick="openDeposit(${i})">Deposit USDC</button>`
+      :`<div><button class="btn primary" disabled>Deposit USDC</button><div class="btn-reason">${v.frozen?'Held — oracle frozen':'Unverified vault'}</div></div>`;
+    const exitBtn=canAct?`<button class="btn secondary" onclick="openExit(${i})">Exit</button>`:'';
+
+    return `
+    <div class="back" onclick="go('#/discover')">← All vaults</div>
+    <div class="detail ${v.frozen?'frozen':''}">
+      <div class="dhead">
+        <div><h1>${v.name}</h1><div class="addr">${v.vault}${v.parent?' · child of '+v.parent:''}</div>
+          <div class="pills" style="margin-top:10px">${statusPills(v)}</div></div>
+        <div style="text-align:right">${sparkline(v.hist,v.entryPs)}<div class="asofline">NAV/share history</div></div>
+      </div>
+      ${frozenBanner}${unattestedBanner}
+      <div class="navblock">${nav}</div>
+      <div class="asofline">${v.frozen?'Last valuation':'NAV/share'} · as of ${v.asOf} · ${usd(v.navUsd)} total</div>
+      <div class="stat-row">
+        <div class="stat"><div class="k">Members</div><div class="v">${v.members}</div></div>
+        <div class="stat"><div class="k">Operator</div><div class="v" style="font-size:15px">${v.operator}</div></div>
+        <div class="stat"><div class="k">Capacity</div><div class="v">${capPct}%</div></div>
+        <div class="stat"><div class="k">Depth</div><div class="v">${v.depth+1} / 3</div></div>
+      </div>
+      <div style="display:flex;gap:10px;margin:6px 0 4px">${depositBtn}${exitBtn}</div>
+      <div class="cols">
+        <div>
+          ${v.proposal?`<div class="seclabel" style="margin-top:8px"><span class="label">Active proposal</span></div>
+            <div style="font-weight:600;margin-bottom:2px">${v.proposal.title}</div>
+            <div style="font-size:12.5px;color:var(--muted)">Quorum ${pct(v.proposal.revealedPct*100)} of voting-eligible stake · ${pct(v.proposal.quorumPct*100)} floor · ${v.proposal.forPct}% for / ${v.proposal.againstPct}% against</div>
+            ${govTimeline(v.proposal)}`
+            :`<div class="seclabel" style="margin-top:8px"><span class="label">Governance</span></div>
+              <div class="banner info" style="margin-top:0"><div>No active proposal. Exits settle instantly at current NAV (Mode I).</div></div>`}
+          <div class="seclabel"><span class="label">Basket</span></div>
+          <div class="basket">${v.basket.map(([s,w])=>`<div class="b"><span>${s}</span><div class="bar"><span style="width:${w*100}%"></span></div><span class="pctn">${(w*100).toFixed(0)}%</span></div>`).join('')}</div>
+        </div>
+        <div>
+          <div class="seclabel" style="margin-top:8px"><span class="label">What it costs</span></div>
+          <div class="stack">
+            ${v.exitFee.map((f,li)=>`<div class="l"><div>Level ${li+1}${li===0?' · root':''}<small>10% of profit · exit ≤ ${pct(f)}</small></div><div class="v">${pct(f)}</div></div>`).join('')}
+            <div class="l total"><div>Effective across ${lv} level${lv>1?'s':''}<small>performance fees compound</small></div><div class="v">${pct(sp)} · ${pct(se)}</div></div>
+          </div>
+          <div class="seclabel"><span class="label">Risks to understand</span></div>
+          <div class="risk ${v.frozen?'frz':''}">
+            <h3>Before you deposit</h3>
+            <div class="r"><b>Observation window.</b> Your first deposit is held 4 hours with no shares or votes — unless you irreversibly skip it.</div>
+            <div class="r"><b>Forward-priced exits.</b> Exiting between a vote passing and executing settles at the price <i>after</i> the rebalance, and cannot be cancelled.</div>
+            <div class="r"><b>Oracle can freeze.</b> If price sources disagree, all deposits and exits halt by design until they reconcile.</div>
+            ${lv>1?`<div class="r"><b>Stacked fees.</b> As a sub-vault, fees compound across ${lv} levels — ${pct(sp)} effective on profit.</div>`:''}
+            <div class="r"><b>Performance fee is per-operator.</b> Your losses under an operator offset future fees under that same operator — reputation is portable.</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderPortfolio(){
+    if(!positions.length)return `<div class="banner info"><div>No positions yet. <a onclick="go('#/discover')">Explore vaults →</a></div></div>`;
+    const total=positions.reduce((a,p)=>a+p.valueUsd,0);
+    return `<p class="lede">Your positions across the protocol.</p>
+    <div class="navblock"><span class="big">${usd(total)}</span><span class="delta pos">+${'6.2'}%</span></div>
+    <div class="asofline">Total value · illustrative</div>
+    <div class="seclabel"><span class="label">Positions</span></div>
+    <div class="grid">${positions.map(p=>{const v=vaults[p.i];return `
+      <div class="card" style="cursor:default">
+        <div class="ttl">${v.name}</div><div class="addr">${short(v.vault)}</div>
+        <div class="pills">${statusPills(v)}</div>
+        <div class="nav">${usd(p.valueUsd)}</div>
+        <div class="meta"><span class="num">${p.shares.toLocaleString()} shares · ${(p.bps/100).toFixed(2)}%</span><span>${p.tenure}d tenure</span></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn secondary" style="flex:1" onclick="go('#/vault/${p.i}')">View</button>
+          <button class="btn secondary" style="flex:1" onclick="openExit(${p.i})">Exit</button></div>
+      </div>`;}).join('')}</div>`;
+  }
+
+  // ── modals (consequence-before-action) ──
+  window.openDeposit=(i)=>{
+    const v=vaults[i];
+    $('#modal').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal" role="dialog" aria-modal="true">
+      <h2>Deposit into ${v.name}</h2>
+      <div class="sub">Settlement in USDC. This is your first deposit into this vault.</div>
+      <div class="field"><span class="label">Amount (USDC)</span><input id="amt" inputmode="decimal" placeholder="1,000.00" value="1,000.00"></div>
+      <div class="conseq"><b>4-hour observation window.</b> Your deposit is escrowed for
+        <span class="countdown">04:00:00</span> — no shares, no votes — then activates at the NAV
+        <i>at activation</i>. You may cancel any time before it activates.
+        <div style="margin-top:9px"><label style="display:flex;gap:8px;align-items:start;font-size:12.5px"><input type="checkbox" id="skip" style="margin-top:3px">
+          <span>Skip the window and enter now. <b>Irreversible</b> — once per wallet per vault.</span></label></div></div>
+      <div class="acts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="confirmDeposit('${v.name}')">Sign deposit →</button></div>
+    </div></div>`;
+  };
+  window.confirmDeposit=(name)=>{const skip=$('#skip')?.checked;closeModal();
+    toast(skip?`Signed — entered ${name} immediately (window skipped)`:`Signed — deposit escrowed in ${name}; activates in 4h`);};
+
+  window.openExit=(i)=>{
+    const v=vaults[i];const modeF=v.proposal&&v.proposal.mode==='F';
+    const conseq=modeF
+      ?`<div class="conseq mf"><b>Mode F — forward-priced.</b> A rebalance has passed and is pending, so this
+         exit is <b>queued</b> and settles at the NAV <i>after</i> the rebalance executes. It <b>cannot be
+         cancelled</b>. You carry the rebalance outcome.</div>`
+      :`<div class="conseq" style="background:var(--good-soft)"><b>Mode I — instant.</b> No rebalance is pending, so this
+         exit settles now at current NAV, paid pro-rata in-kind (basket assets + USDC), minus the exit fee.</div>`;
+    $('#modal').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal" role="dialog" aria-modal="true">
+      <h2>Exit ${v.name}</h2>
+      <div class="sub">Redeem your shares. Exit fee ${pct(v.exitFee.reduce((a,b)=>a+b,0))} max, decaying with tenure, paid to remaining members.</div>
+      <div class="field"><span class="label">Shares to redeem</span><input inputmode="decimal" placeholder="all" value="all"></div>
+      ${conseq}
+      <div class="acts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn ${modeF?'danger':'primary'}" onclick="confirmExit('${v.name}',${modeF})">${modeF?'Queue forward-priced exit →':'Sign exit →'}</button></div>
+    </div></div>`;
+  };
+  window.confirmExit=(name,modeF)=>{closeModal();
+    toast(modeF?`Exit queued in ${name} — settles after the rebalance executes`:`Signed — exited ${name} at current NAV`);};
+
+  window.closeModal=()=>{$('#modal').innerHTML='';};
+  let toastT;
+  function toast(msg){const t=$('#toast');t.innerHTML=`<div class="toast">${msg}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>t.innerHTML='',4200);}
+
+  // ── router ──
+  function router(){
+    const h=location.hash||'#/discover';const parts=h.slice(2).split('/');
+    let html;
+    if(parts[0]==='vault')html=renderVault(Number(parts[1]));
+    else if(parts[0]==='portfolio')html=renderPortfolio();
+    else html=renderDiscover();
+    $('#view').innerHTML=html;
+    const nav=[['Discover','#/discover'],['Portfolio','#/portfolio']];
+    $('#nav').innerHTML=nav.map(([t,u])=>`<span class="navlink ${h.startsWith(u)?'on':''}" onclick="go('${u}')">${t}</span>`).join('');
+    window.scrollTo(0,0);
+  }
+  window.addEventListener('hashchange',router);
+  router();
+
+  // ── theme ──
+  $('#themeBtn').addEventListener('click',()=>{
+    const c=document.documentElement.getAttribute('data-theme');
+    const n=c==='dark'?'light':c==='light'?null:'dark';
+    if(n)document.documentElement.setAttribute('data-theme',n);else document.documentElement.removeAttribute('data-theme');
   });
 </script>
