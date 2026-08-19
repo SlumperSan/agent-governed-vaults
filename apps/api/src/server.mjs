@@ -24,8 +24,9 @@ function jsonStringify(obj) {
  * @param {import('./x402.mjs').Facilitator} deps.facilitator
  * @param {import('./x402.mjs').PriceSpec} deps.price
  * @param {() => number} [deps.now]
+ * @param {boolean} [deps.cors]  emit permissive CORS headers + answer preflight (browser live mode)
  */
-export function createApi({ state, facilitator, price, now = () => Date.now() }) {
+export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false }) {
   const seenNonces = new Set();
 
   /** @returns {Promise<{status:number, headers:Record<string,string>, body:string}>} */
@@ -71,12 +72,13 @@ export function createApi({ state, facilitator, price, now = () => Date.now() })
 
     const mp = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})\/members\/(0x[0-9a-fA-F]{40})$/);
     if (mp) {
-      return { status: 200, headers: paidHeaders, body: jsonStringify(memberPosition(state, mp[1], mp[2])) };
+      // Projection keys are canonical lowercase (see chain.normalizeLog); match the lookup.
+      return { status: 200, headers: paidHeaders, body: jsonStringify(memberPosition(state, mp[1].toLowerCase(), mp[2].toLowerCase())) };
     }
 
     const m = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})$/);
     if (m) {
-      const v = vaultView(state, m[1]);
+      const v = vaultView(state, m[1].toLowerCase());
       if (!v) return { status: 404, headers: paidHeaders, body: jsonStringify({ error: 'unknown vault' }) };
       return { status: 200, headers: paidHeaders, body: jsonStringify(v) };
     }
@@ -84,14 +86,35 @@ export function createApi({ state, facilitator, price, now = () => Date.now() })
     return { status: 404, headers: paidHeaders, body: jsonStringify({ error: 'not found' }) };
   }
 
+  // CORS is required for the browser live mode (apps/web ?api=…): a cross-origin fetch cannot see
+  // the payment-required/response headers without Expose-Headers, and the paid retry's custom
+  // payment-signature header triggers a preflight OPTIONS that must be answered before the method
+  // check. Off by default so existing same-process tests are unaffected.
+  const corsHeaders = cors
+    ? {
+        'access-control-allow-origin': '*',
+        'access-control-expose-headers': `${HEADERS.REQUIRED}, ${HEADERS.RESPONSE}`,
+      }
+    : {};
+
   const server = createServer((req, res) => {
+    if (cors && req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        ...corsHeaders,
+        'access-control-allow-methods': 'GET, OPTIONS',
+        'access-control-allow-headers': `${HEADERS.SIGNATURE}, content-type`,
+        'access-control-max-age': '600',
+      });
+      res.end();
+      return;
+    }
     handle(req.method ?? 'GET', req.url ?? '/', req.headers)
       .then(({ status, headers, body }) => {
-        res.writeHead(status, { 'content-type': 'application/json', ...headers });
+        res.writeHead(status, { 'content-type': 'application/json', ...corsHeaders, ...headers });
         res.end(body);
       })
       .catch((err) => {
-        res.writeHead(500, { 'content-type': 'application/json' });
+        res.writeHead(500, { 'content-type': 'application/json', ...corsHeaders });
         res.end(jsonStringify({ error: 'internal', detail: String(err?.message ?? err) }));
       });
   });

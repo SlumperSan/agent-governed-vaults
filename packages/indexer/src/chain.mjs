@@ -1,62 +1,49 @@
 // @ts-check
 /**
- * Production chain adapter: turns on-chain logs into the normalized events that projections.mjs
- * folds. This is the ONLY chain-coupled file; it is not unit-tested (it needs a live RPC).
- * Kept deliberately thin so the tested core (projections) carries the logic.
+ * Log normalization: turn an ABI-decoded viem log into the normalized event that projections.mjs
+ * folds. This and rpc.mjs are the only chain-coupled files; the tested projection core carries the
+ * logic. `normalizeLog` is pure and unit-tested; the RPC wiring lives in rpc.mjs.
  *
- * Uses viem when installed; falls back to a clear error otherwise. Wire it from a runner that
- * polls `getLogs` from the factory + known vault addresses and feeds `apply()`.
- *
- * Event → normalized-name mapping (matches the Solidity event names the API relies on):
- *   VaultFactory.VaultCreated, OperatorRegistry.OperatorRegistered / VaultAttested /
- *   RealizationRecorded / FeeRecorded, SubVaultRegistry.ChildRegistered,
+ * Event → normalized-name mapping (matches the Solidity event names the projection relies on):
+ *   VaultFactory.VaultCreated; OperatorRegistry.OperatorRegistered / VaultAttested /
+ *   RealizationRecorded / FeeRecorded; SubVaultRegistry.ChildRegistered; Governance.Proposed /
+ *   Revealed / DefaultApplied / DelegatedRevealed / Finalized / Executed / ProposalExpired;
  *   VaultCore.DepositPending / DepositActivated / PendingCancelled / ExitSettled.
  */
 
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** Lowercase anything that is a 20-byte hex address; leave bytes32/nonces/values untouched. */
+function canon(v) {
+  return typeof v === 'string' && ADDRESS_RE.test(v) ? v.toLowerCase() : v;
+}
+
 /**
  * Decode a viem-style log (already matched to an ABI event) into a normalized event.
- * @param {{eventName:string, address:string, blockNumber:bigint, logIndex:number, args:Record<string,any>}} log
+ *
+ * Address canonicalization is load-bearing: viem returns `log.address` lowercased but decoded
+ * address ARGS EIP-55 checksummed, so a vault seen via `args.vault` (VaultCreated) and via
+ * `log.address` (its own DepositActivated) would key two different Map entries and split the
+ * projection. We lowercase every address-shaped value — the emitting `vault` and each arg — so a
+ * vault has exactly one canonical key everywhere.
+ *
+ * @param {{eventName:string, address:string, blockNumber:bigint|number, logIndex:number, args:Record<string,any>}} log
  * @param {string} [vaultAddress] the emitting vault, when the event is vault-scoped
  */
 export function normalizeLog(log, vaultAddress) {
   const args = {};
-  for (const [k, v] of Object.entries(log.args ?? {})) {
-    args[k] = typeof v === 'bigint' ? v : v;
-  }
+  for (const [k, v] of Object.entries(log.args ?? {})) args[k] = canon(v);
+  const vault = canon(vaultAddress ?? args.vault ?? log.address);
   return {
     name: log.eventName,
-    vault: vaultAddress ?? args.vault ?? log.address,
+    vault,
     blockNumber: Number(log.blockNumber),
-    logIndex: log.logIndex,
+    logIndex: Number(log.logIndex),
     args,
   };
 }
 
-/**
- * Create a poller that reads new logs and applies them to `state`. `client` is a viem
- * PublicClient; `contracts` maps a label to { address, abi }. Caller supplies the apply fn.
- *
- * Returns an async `poll(fromBlock, toBlock)` — schedule it however you like (setInterval, a
- * cron, or the harness). Left as a factory so tests can drive it with a fake client.
- *
- * @param {Object} cfg
- * @param {any} cfg.client
- * @param {Array<{address:string, abi:any[]}>} cfg.sources
- * @param {(evt:import('./projections.mjs').Event) => void} cfg.onEvent
- */
-export function createPoller({ client, sources, onEvent }) {
-  return async function poll(fromBlock, toBlock) {
-    for (const src of sources) {
-      const logs = await client.getLogs({
-        address: src.address,
-        fromBlock: BigInt(fromBlock),
-        toBlock: BigInt(toBlock),
-      });
-      for (const log of logs) {
-        // Assumes the caller passed an ABI-aware client that populates eventName/args.
-        if (!log.eventName) continue;
-        onEvent(normalizeLog(log));
-      }
-    }
-  };
+/** Deterministic fold order: (blockNumber, logIndex). daemon.tick applies in returned order. */
+export function sortEvents(events) {
+  return [...events].sort((x, y) => x.blockNumber - y.blockNumber || x.logIndex - y.logIndex);
 }

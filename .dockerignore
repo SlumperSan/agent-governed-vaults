@@ -1,0 +1,9 @@
+.git
+node_modules
+contracts
+docs
+data
+**/*.md
+.env
+.env.*
+!.env.example
