@@ -49,6 +49,18 @@
  * @property {number} revealedVoters
  */
 
+/**
+ * Event names the projection folds. Kept in sync with the apply() switch and asserted against
+ * the compiled contract ABIs by test/event-coverage.test.mjs, so a Solidity event rename can
+ * never silently drift from the indexer (the class of bug the consumer-UX review caught).
+ */
+export const HANDLED_EVENTS = Object.freeze([
+  'VaultCreated', 'VaultAttested', 'ChildRegistered', 'OperatorRegistered',
+  'RealizationRecorded', 'FeeRecorded', 'DepositPending', 'PendingCancelled',
+  'DepositActivated', 'ExitSettled', 'Proposed', 'Revealed', 'DefaultApplied',
+  'DelegatedRevealed', 'Finalized', 'Executed', 'ProposalExpired',
+]);
+
 export function emptyState() {
   return {
     /** @type {Map<string, VaultState>} */ vaults: new Map(),
