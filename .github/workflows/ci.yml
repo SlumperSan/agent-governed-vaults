@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [protocol/main, main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - run: forge fmt --check
+      - run: forge build --sizes
+      - run: forge test -vvv
+      - name: Gas snapshot (no regressions)
+        run: forge snapshot --check
+
+  slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - run: cd contracts && forge build
+      - name: Slither
+        uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts/
+          slither-args: --filter-paths "lib|test|script"
+        continue-on-error: true  # advisory until the audit-prep triage in the runbook
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Backend + frontend logic tests
+        run: node --test packages/indexer/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs
