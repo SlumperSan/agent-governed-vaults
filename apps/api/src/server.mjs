@@ -11,7 +11,7 @@
 
 import { createServer } from 'node:http';
 import { gate, HEADERS } from './x402.mjs';
-import { leaderboard, vaultView, memberPosition } from '../../../packages/indexer/src/projections.mjs';
+import { leaderboard, vaultView, memberPosition, listVaults } from '../../../packages/indexer/src/projections.mjs';
 
 /** JSON with bigint support (as decimal strings). */
 function jsonStringify(obj) {
@@ -37,6 +37,23 @@ export function createApi({ state, facilitator, price, now = () => Date.now() })
     if (path === '/health')
       return { status: 200, headers: {}, body: jsonStringify({ ok: true, lastBlock: state.lastBlock }) };
 
+    // Free discovery document — agents bootstrap from here (pricing, routes, spec pointer).
+    if (path === '/.well-known/x402')
+      return {
+        status: 200,
+        headers: {},
+        body: jsonStringify({
+          x402Version: 2,
+          price: { asset: price.asset, amount: price.amount, payTo: price.payTo, network: price.network },
+          routes: {
+            free: ['/health', '/.well-known/x402'],
+            metered: ['/vaults', '/vaults/{address}', '/vaults/{address}/members/{member}', '/operators/leaderboard'],
+          },
+          openapi: 'docs/api/openapi.yaml',
+          llms: '/llms.txt',
+        }),
+      };
+
     // Everything else is metered.
     const lc = {};
     for (const [k, v] of Object.entries(headers)) lc[k.toLowerCase()] = v;
@@ -48,6 +65,9 @@ export function createApi({ state, facilitator, price, now = () => Date.now() })
     const paidHeaders = verdict.headers;
     if (path === '/operators/leaderboard')
       return { status: 200, headers: paidHeaders, body: jsonStringify({ leaderboard: leaderboard(state) }) };
+
+    if (path === '/vaults')
+      return { status: 200, headers: paidHeaders, body: jsonStringify({ vaults: listVaults(state) }) };
 
     const mp = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})\/members\/(0x[0-9a-fA-F]{40})$/);
     if (mp) {

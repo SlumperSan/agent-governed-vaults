@@ -303,6 +303,19 @@ export function vaultView(state, vault) {
   return { ...v, holders: shareBook(state, vault).size, activeProposal: proposal };
 }
 
+/** Summary list of all known vaults — the discovery surface for agents. */
+export function listVaults(state) {
+  return [...state.vaults.values()].map((v) => ({
+    vault: v.vault,
+    operatorId: v.operatorId,
+    memberCount: v.memberCount,
+    depth: v.depth,
+    parent: v.parent,
+    capacityCapUsdc: v.capacityCapUsdc,
+    attested: v.operatorId !== 0, // operatorId 0 = unattested (scam-quarantine signal)
+  }));
+}
+
 /** A member's share position in a vault (0 if none). */
 export function memberPosition(state, vault, member) {
   const shares = shareBook(state, vault).get(member) ?? 0n;

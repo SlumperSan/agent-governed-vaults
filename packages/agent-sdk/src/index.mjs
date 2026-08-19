@@ -91,6 +91,18 @@ export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetc
     async leaderboard() {
       return request('/operators/leaderboard');
     },
+    /** List all known vaults (metered) — the discovery surface. */
+    async listVaults() {
+      return request('/vaults');
+    },
+    /** A member's position in a vault (metered). */
+    async memberPosition(vault, member) {
+      return request(`/vaults/${vault}/members/${member}`);
+    },
+    /** Free discovery document: pricing, routes, spec pointers. No payment. */
+    async discovery() {
+      return (await request('/.well-known/x402')).data;
+    },
     /** Escape hatch for routes the typed methods don't cover yet. */
     request,
   };

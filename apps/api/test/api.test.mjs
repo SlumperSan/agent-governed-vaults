@@ -140,3 +140,26 @@ test('leaderboard route serves aggregated operators when paid', async () => {
   const body = JSON.parse(paid.body);
   assert.equal(body.leaderboard[0].netRealizedUsdc, '100');
 });
+
+test('discovery document is free and lists pricing + routes', async () => {
+  const api = seededApi(okFacilitator);
+  const r = await api.handle('GET', '/.well-known/x402', {});
+  assert.equal(r.status, 200);
+  const doc = JSON.parse(r.body);
+  assert.equal(doc.x402Version, 2);
+  assert.equal(doc.price.asset, USDC);
+  assert.ok(doc.routes.metered.includes('/vaults'));
+  assert.ok(doc.routes.free.includes('/health'));
+});
+
+test('vault list route requires payment then returns discovery data', async () => {
+  const api = seededApi(okFacilitator);
+  const unpaid = await api.handle('GET', '/vaults', {});
+  assert.equal(unpaid.status, 402);
+  const paid = await api.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope({ nonce: '0xlist1' }) });
+  assert.equal(paid.status, 200);
+  const body = JSON.parse(paid.body);
+  assert.equal(body.vaults.length, 1);
+  assert.equal(body.vaults[0].vault, VAULT);
+  assert.equal(body.vaults[0].attested, true);
+});

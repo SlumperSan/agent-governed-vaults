@@ -26,7 +26,9 @@ const client = createProtocolClient({
   domain: { name: 'USD Coin', version: '2', chainId: 8453, verifyingContract: USDC_BASE },
 });
 
-const { data } = await client.leaderboard();   // pays automatically, returns typed rows
+const disc = await client.discovery();          // free: pricing + routes + spec pointers
+const { data } = await client.listVaults();     // discover the vault set (paid)
+const { data: lb } = await client.leaderboard();// operator leaderboard (paid)
 const vault = await client.getVault(vaultAddr); // { data: VaultView, receipt }
 await client.health();                          // free
 ```

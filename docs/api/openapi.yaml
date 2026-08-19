@@ -14,6 +14,50 @@ servers:
   - url: https://api.example.xyz
     description: Placeholder — set to the deployed API origin.
 paths:
+  /.well-known/x402:
+    get:
+      summary: Discovery document (free) — pricing, routes, spec pointers
+      operationId: discovery
+      responses:
+        '200':
+          description: Discovery
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  x402Version: { type: integer, enum: [2] }
+                  price: { type: object }
+                  routes: { type: object }
+                  openapi: { type: string }
+                  llms: { type: string }
+  /vaults:
+    get:
+      summary: List all known vaults (metered) — the discovery surface for agents
+      operationId: listVaults
+      responses:
+        '200':
+          description: Vault list
+          headers:
+            payment-response: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vaults:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        vault: { type: string }
+                        operatorId: { type: integer }
+                        memberCount: { type: integer }
+                        depth: { type: integer }
+                        parent: { type: [string, 'null'] }
+                        capacityCapUsdc: { type: string }
+                        attested: { type: boolean, description: "false = unattested (operatorId 0), scam-quarantine signal" }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
   /health:
     get:
       summary: Liveness and last indexed block (free, no payment)
