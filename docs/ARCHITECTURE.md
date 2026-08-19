@@ -229,6 +229,10 @@ special-case them.
   capital; the multi-source median is the mitigation, and no escape hatch will be added, since
   any escape hatch is exactly the stale-price exit the breaker exists to prevent).
 - **Capacity caps** per vault (§6).
+- **Pending capital is never frozen.** `cancelPending` reads no oracle, so a depositor can always
+  reclaim an un-activated (observation-window) deposit even while the breaker is tripped — the
+  freeze traps only *active* share capital, not capital still in the window (verified by
+  `test_pendingDepositCancellableDuringOracleFreeze`; resolves consumer-UX open question OQ-1).
 - **Leaderboard integrity** via the shared registry (§7).
 
 ## 12. Upgrade posture

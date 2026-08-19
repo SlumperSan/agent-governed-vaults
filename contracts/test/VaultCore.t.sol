@@ -355,6 +355,37 @@ contract VaultCoreTest is Test {
         vault.requestExit(half);
     }
 
+    // ── oracle-freeze safety: pending capital is NOT trapped (UX OQ-1) ───────
+
+    function test_pendingDepositCancellableDuringOracleFreeze() public {
+        _seedCreator(1_000 * USDC_1);
+        _fundBasket(1e8, 0); // vault holds a priced asset → navWad reads the oracle
+
+        // Alice makes a first deposit (enters the observation window).
+        vm.prank(alice);
+        vault.deposit(500 * USDC_1);
+        assertEq(vault.totalPendingUsdc(), 500 * USDC_1);
+
+        skip(4 hours); // window elapsed, so activate reaches the NAV read
+        // Oracle breaker trips.
+        oracle.setStale(true);
+
+        // Activating requires NAV → frozen (correctly reverts). Capital would be stuck IF
+        // cancel also needed NAV — it does not.
+        vm.expectRevert(
+            abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, address(wbtcLike))
+        );
+        vault.activate(alice);
+
+        // But alice can always reclaim her pending deposit — cancelPending never reads the
+        // oracle, so pending capital is never trapped by the K-4 freeze.
+        uint256 bal = usdc.balanceOf(alice);
+        vm.prank(alice);
+        vault.cancelPending();
+        assertEq(usdc.balanceOf(alice) - bal, 500 * USDC_1, "pending refunded during freeze");
+        assertEq(vault.totalPendingUsdc(), 0);
+    }
+
     // ── realization hooks (CM-3, §7) ─────────────────────────────────────────
 
     function test_realizedGainReportedToFeeEngineAndRegistry() public {
