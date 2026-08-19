@@ -13,4 +13,10 @@ interface IFeeEngine {
     /// @return feeUsdc performance fee to withhold from the payout, in USDC units.
     ///         MUST be 0 when gainUsdc is 0. MUST be ≤ 10% of gainUsdc net of carryforward.
     function onRealize(address member, uint256 gainUsdc, uint256 lossUsdc) external returns (uint256 feeUsdc);
+
+    /// @notice Called by the vault AFTER transferring the (possibly clamped) fee, with the
+    /// amount actually sent — the engine must credit the operator from this figure, never from
+    /// its own onRealize return value (the vault's defensive clamp may reduce it; an
+    /// undercollected fee is forgiven in the member's favor, not carried as debt).
+    function onFeeCollected(address member, uint256 amountUsdc) external;
 }

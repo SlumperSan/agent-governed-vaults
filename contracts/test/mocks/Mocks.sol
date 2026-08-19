@@ -104,6 +104,12 @@ contract StubFeeEngine is IFeeEngine {
         lastLoss = lossUsdc;
         return gainUsdc > 0 ? feeToCharge : 0;
     }
+
+    uint256 public lastCollected;
+
+    function onFeeCollected(address, uint256 amountUsdc) external {
+        lastCollected = amountUsdc;
+    }
 }
 
 contract StubRegistry is IOperatorRegistry {

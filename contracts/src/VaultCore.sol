@@ -399,6 +399,7 @@ contract VaultCore {
         if (perfFee > 0) {
             usdcPay -= perfFee;
             usdc.safeTransfer(address(feeEngine), perfFee);
+            feeEngine.onFeeCollected(member, perfFee);
         }
         if (usdcPay > 0) usdc.safeTransfer(member, usdcPay);
 

@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.26;
+
+import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
+import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
+
+interface IRegistryView {
+    function operatorOf(address vault) external view returns (uint256);
+    function carryOf(address member, uint256 opId) external view returns (uint256);
+    function operatorAddressOf(uint256 opId) external view returns (address);
+    function recordFeeCollected(uint256 opId, uint256 amountUsdc) external;
+}
+
+interface IVaultUsdc {
+    function usdc() external view returns (address);
+}
+
+/// @title FeeEngine — 10% performance fee on realized profit, HWM via registry carryforward
+/// @notice Sprint 3 module. Crystallization happens ONLY at member redemption (CM-3): the
+/// vault calls onRealize with the member's realized P&L, the engine nets it against the
+/// (member, operator) loss carryforward read from the registry — PRE-update, the registry
+/// consumes it afterward in the same settlement — and returns 10% of the net gain.
+///
+/// The vault may clamp the returned fee (hostile-module defense) and reports what it actually
+/// transferred via onFeeCollected; operators are credited strictly from collected amounts.
+contract FeeEngine is IFeeEngine {
+    using SafeTransferLib for address;
+
+    uint256 public constant PERF_FEE_BPS = 1_000; // 10%
+    uint256 internal constant BPS = 10_000;
+
+    IRegistryView public immutable registry;
+
+    /// @notice Collected fees awaiting operator claim: operator address ⇒ token ⇒ amount.
+    mapping(address => mapping(address => uint256)) public claimableFees;
+
+    event FeeAssessed(address indexed vault, address indexed member, uint256 netGain, uint256 fee);
+    event FeeCredited(uint256 indexed opId, address indexed token, uint256 amount);
+    event FeesClaimed(address indexed operator, address indexed token, uint256 amount);
+
+    error UnattestedVault();
+    error NothingToClaim();
+
+    constructor(IRegistryView registry_) {
+        registry = registry_;
+    }
+
+    /// @inheritdoc IFeeEngine
+    function onRealize(address member, uint256 gainUsdc, uint256 lossUsdc)
+        external
+        returns (uint256 feeUsdc)
+    {
+        uint256 opId = registry.operatorOf(msg.sender);
+        require(opId != 0, UnattestedVault());
+        lossUsdc; // losses reach the carry via the vault's registry call; nothing to do here
+
+        if (gainUsdc > 0) {
+            // HWM: net the gain against the cross-vault loss carryforward (§7). The registry
+            // consumes the carry right after this call in the same vault settlement.
+            uint256 carry = registry.carryOf(member, opId);
+            uint256 netGain = gainUsdc > carry ? gainUsdc - carry : 0;
+            feeUsdc = netGain * PERF_FEE_BPS / BPS;
+            emit FeeAssessed(msg.sender, member, netGain, feeUsdc);
+        }
+    }
+
+    /// @inheritdoc IFeeEngine
+    function onFeeCollected(
+        address,
+        /* member */
+        uint256 amountUsdc
+    )
+        external
+    {
+        uint256 opId = registry.operatorOf(msg.sender);
+        require(opId != 0, UnattestedVault());
+        address token = IVaultUsdc(msg.sender).usdc();
+        claimableFees[registry.operatorAddressOf(opId)][token] += amountUsdc;
+        registry.recordFeeCollected(opId, amountUsdc);
+        emit FeeCredited(opId, token, amountUsdc);
+    }
+
+    /// @notice Operator claims accumulated performance fees for a settlement token.
+    function claimFees(address token) external {
+        uint256 amt = claimableFees[msg.sender][token];
+        require(amt > 0, NothingToClaim());
+        claimableFees[msg.sender][token] = 0;
+        token.safeTransfer(msg.sender, amt);
+        emit FeesClaimed(msg.sender, token, amt);
+    }
+}
