@@ -1,0 +1,18 @@
+# Normalize line endings to LF for all text so Windows dev + Linux CI agree
+# (prevents forge fmt --check / diff drift across platforms).
+* text=auto eol=lf
+
+# Explicit for the source we lint/format
+*.sol   text eol=lf
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+
+# Vendored deps + build artifacts: leave to their own devices / don't diff
+contracts/lib/**       linguist-vendored
+contracts/out/**       -text
