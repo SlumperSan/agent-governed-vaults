@@ -1,9 +1,11 @@
-# Single image for both runtime processes (indexer + API). Pick which to run via the compose
-# service command or a `docker run` override. Both are non-custodial: no keys, no fund movement.
+# Single image for all three runtime processes (indexer + API + canary). Pick which to run via
+# the compose service command or a `docker run` override. All three are non-custodial: no keys,
+# no fund movement. The canary is additionally read-only against the chain — it never sends.
 #
 #   docker build -t vault-runtime .
 #   docker run --env-file .env vault-runtime npm run start:indexer
 #   docker run --env-file .env -p 8402:8402 vault-runtime npm run start:api
+#   docker run --env-file .env vault-runtime npm run start:canary
 FROM node:24-slim
 
 WORKDIR /app
