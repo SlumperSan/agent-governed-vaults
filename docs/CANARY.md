@@ -283,6 +283,12 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
   logged and stepped over; the sweep continues.
 - **One broken vault does not blind the others.** A signal that errors becomes a DEGRADED result for
   that vault and the sweep carries on.
+- **Cold start sees no history.** With the default `LOG_LOOKBACK_BLOCKS=0`, the first sweep scans a
+  single block, so `ModuleCallFailed`, `SliceEscrowed`, and fee outflows from *before* the canary
+  started are never reported. That is deliberate — starting a monitor should not replay a backlog as
+  fresh pages — but if you are standing the canary up after a vault has been live for a while, set
+  `LOG_LOOKBACK_BLOCKS` to cover the gap for the first run. The level signals (a–d) read current
+  state and are complete from the first sweep regardless.
 - **Sizing.** A sweep is `O(vaults × basket assets × oracle sources)` reads. The default 30s cadence
   is comfortable for a handful of vaults on a normal RPC; raise `CANARY_POLL_INTERVAL_MS` before
   raising your rate limit.
