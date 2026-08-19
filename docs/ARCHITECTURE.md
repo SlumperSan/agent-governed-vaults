@@ -134,7 +134,18 @@ accrue to; routing it anywhere else would violate the operator prohibition).
 
 Invariant: **NAVps for remaining members is non-decreasing across any redemption.**
 
-### 4.7 Swing pricing (cash redemptions only)
+### 4.7 Swing pricing (cash redemptions only) — SPECIFIED, NOT IN v1
+
+> **Status: not implemented in v1, and deliberately so.** v1 ships **in-kind redemption only**
+> (§4.5): an exiter receives their pro-rata slice of every basket asset, so a large exit imposes
+> **no NAV dilution on remaining members** — the exiter carries their own execution cost when they
+> sell. Swing pricing exists solely to neutralise the first-mover dilution of *cash* redemptions,
+> and with no cash-redemption path there is nothing to swing (the §4.6 NAVps-non-decreasing
+> invariant already holds without it — proven by the invariant suites). The formula below is the
+> spec for the **future, optional** cash-redemption path (delivered via the execution adapter, so
+> the vault itself needs no venue liquidity). It is out of the audited surface. The brief's
+> "swing pricing on oversized redemptions" requirement is satisfied-by-omission in v1: in-kind
+> redemption makes oversized exits harmless without a haircut.
 
 For a cash redemption of fraction `x = redeemValue / NAV` exceeding threshold `θ`:
 

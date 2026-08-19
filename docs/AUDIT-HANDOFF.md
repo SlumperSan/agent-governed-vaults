@@ -69,6 +69,19 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding to its d
 | E4 (S6) | A parent member exit whose cash need exceeds idle reverts `ExitNeedsChildSettlement` when the only covering child is mid-rebalance | Clean rollback + bounded retry (child timelock). Window narrowed vs. the original deep-stack revert, not eliminated |
 | E5 (S6) | A child that persistently escrows an in-kind slice back to the parent (e.g. blacklisted parent) turns the parent exit into a permanent revert, rather than escrow-and-continue as direct holdings do | Silent underpayment is fixed; the EE-6 asymmetry for child-held slices is a known residual — a deferred-claim mechanism would close it |
 
+## Scope notes — specified but NOT in the audited surface
+
+To prevent doc/code confusion during review, these are described in ARCHITECTURE.md but are
+**not implemented in v1** and carry no contract code:
+
+- **Swing pricing (§4.7).** v1 ships in-kind-only redemption, which imposes no dilution on
+  remaining members, so swing pricing is unnecessary (the §4.6 NAVps-non-decreasing invariant
+  holds without it — see the invariant suites). Swing is specified for the future optional
+  cash-redemption path (via the execution adapter). EE-11 is therefore N/A in v1.
+- **ERC-4626 compliance.** Deliberately not claimed (commitment C-1) — in-kind redemption,
+  forward pricing, and the (future) swing pricing each break `previewRedeem` round-trips. Only
+  4626-shaped read views exist, and they are indicative, not compliant.
+
 ## Suggested audit focus (highest leverage)
 
 1. The two-mode exit accounting in `_settleExit` — the forward-pricing seam (VO-8 × K-1) and the
