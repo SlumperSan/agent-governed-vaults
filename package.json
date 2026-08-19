@@ -1,0 +1,9 @@
+{
+  "name": "index-vault-protocol",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build:contracts": "cd contracts && forge build",
+    "test:contracts": "cd contracts && forge test -vv"
+  }
+}
