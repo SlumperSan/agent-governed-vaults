@@ -43,6 +43,9 @@ contract Governance is IGovernance {
     error AlreadyWiredSubRegistry();
     error ZeroSubRegistry();
 
+    /// @notice One-shot deploy-time wiring of the SubVaultRegistry used for SV-6 quorum-floor
+    /// inheritance. Deployer-only, callable once, permanently locked after.
+    /// @param r the SubVaultRegistry address (nonzero)
     function wireSubVaultRegistry(address r) external {
         require(msg.sender == deployer, OnlyDeployer());
         require(subVaultRegistry == address(0), AlreadyWiredSubRegistry());
@@ -172,6 +175,8 @@ contract Governance is IGovernance {
 
     /// @notice Register a vault's governance config. Once, by the vault's creator. Config is
     /// thereafter immutable except via a full-consensus RuleChange proposal (CM-8).
+    /// @param vault the VaultCore to register
+    /// @param cfg governance parameters (validated; child quorum must respect the parent floor)
     function registerVault(address vault, GovConfig calldata cfg) external {
         require(!vaultRegistered[vault], AlreadyRegistered());
         require(msg.sender == IVaultSnapshots(vault).creator(), NotVaultCreator());
@@ -204,6 +209,13 @@ contract Governance is IGovernance {
 
     // ───────────────────────────── proposals ──────────────────────────────────
 
+    /// @notice Open a proposal. One active proposal per vault (CM-6 serialization); proposer
+    /// must clear the stake threshold and cooldown; snapshots are taken strictly before
+    /// creation so same-second (flash) stake carries zero weight (VO-9).
+    /// @param vault the target vault (must be registered)
+    /// @param ptype Rebalance | RuleChange | ChildAllocation — fixes quorum regime and payload shape
+    /// @param actionHash keccak256 of the exact execution payload voters are approving
+    /// @return pid the new proposal id
     function propose(address vault, ProposalType ptype, bytes32 actionHash) external returns (uint256 pid) {
         require(vaultRegistered[vault], NotRegistered());
         GovConfig memory cfg = configOf[vault];
@@ -247,6 +259,8 @@ contract Governance is IGovernance {
     // ─────────────────────────── commit-reveal ────────────────────────────────
 
     /// @notice Commit `keccak256(abi.encode(pid, voter, support, salt))` during the commit phase.
+    /// @param pid the proposal id
+    /// @param commitment the vote commitment hash (binds pid + voter — no cross-proposal replay)
     function commitVote(uint256 pid, bytes32 commitment) external {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Active && block.timestamp < p.commitDeadline, WrongPhase());
@@ -262,6 +276,9 @@ contract Governance is IGovernance {
     /// toward nothing (VO-6: non-reveal costs the committer their voice, not the vault its
     /// quorum). Research note: mature systems lost votes to *forgotten* reveals (Kleros) —
     /// agents should automate reveal; the standing-default mechanism is the routine fallback.
+    /// @param pid the proposal id
+    /// @param support the committed vote direction (must match the commitment)
+    /// @param salt the committed salt
     function revealVote(uint256 pid, bool support, bytes32 salt) external {
         Proposal storage p = proposals[pid];
         require(
@@ -290,6 +307,8 @@ contract Governance is IGovernance {
 
     /// @notice Crank a non-participating delegator's weight onto their delegate's revealed
     /// direction. Permissionless. Self-participation (commit) takes precedence over delegation.
+    /// @param pid the proposal id
+    /// @param delegator the member whose standing delegation should be applied
     function revealDelegated(uint256 pid, address delegator) external {
         Proposal storage p = proposals[pid];
         require(
@@ -329,12 +348,18 @@ contract Governance is IGovernance {
 
     // ─────────────────────────── standing defaults ────────────────────────────
 
+    /// @notice Declare a standing absentee vote for future ROUTINE REBALANCE proposals on
+    /// `vault`. Expires 72h after being set (VO-3); only applies to proposals created AFTER it
+    /// was set (G4). Counts toward tallies, never toward quorum (VO-2/K-3).
+    /// @param vault the vault the default applies to
+    /// @param support the pre-declared direction
     function setStandingDefault(address vault, bool support) external {
         require(vaultRegistered[vault], NotRegistered());
         standingDefaultOf[vault][msg.sender] = StandingDefault(true, support, uint64(block.timestamp));
         emit StandingDefaultSet(vault, msg.sender, support);
     }
 
+    /// @notice Clear the caller's standing default for `vault`.
     function clearStandingDefault(address vault) external {
         delete standingDefaultOf[vault][msg.sender];
         emit StandingDefaultCleared(vault, msg.sender);
@@ -344,6 +369,8 @@ contract Governance is IGovernance {
     /// the reveal phase. Permissionless crank. Defaults count toward the tally, NEVER toward
     /// quorum (VO-2/K-3), expire 72h after being set (VO-3), and are structurally limited to
     /// the Rebalance proposal type on-chain (VO-4 — the type is not proposer-asserted text).
+    /// @param pid the proposal id (must be a Rebalance in its reveal phase)
+    /// @param member the non-participating member whose default should be applied
     function applyStandingDefault(uint256 pid, address member) external {
         Proposal storage p = proposals[pid];
         require(
@@ -377,6 +404,8 @@ contract Governance is IGovernance {
 
     /// @notice Set or clear (address(0)) a standing delegate for a vault. Not changeable while
     /// a proposal is in flight — prevents mid-proposal delegation games.
+    /// @param vault the vault the delegation applies to
+    /// @param delegate_ the delegate whose revealed direction carries the caller's weight
     function setDelegate(address vault, address delegate_) external {
         require(vaultRegistered[vault], NotRegistered());
         uint256 activePid = activeProposalOf[vault];
@@ -390,6 +419,10 @@ contract Governance is IGovernance {
 
     // ─────────────────────────── finalize / execute ───────────────────────────
 
+    /// @notice Tally a proposal after its reveal deadline. Quorum regime: RuleChange = full
+    /// consensus; <5 members at creation = strict signer majority (CM-7); otherwise revealed
+    /// stake ≥ quorumBps of snapshot (VO-2). Passing starts the timelock + execution window.
+    /// @param pid the proposal id
     function finalize(uint256 pid) external {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Active && block.timestamp >= p.revealDeadline, WrongPhase());
@@ -421,6 +454,9 @@ contract Governance is IGovernance {
     /// @notice Execute a passed proposal after its timelock, within its execution window.
     /// Rebalance payload execution is wired to the execution adapter in Sprint 4; in Sprint 2
     /// execution is the state transition that releases Mode-F queued exits at post-vote NAV.
+    /// @param pid the passed proposal id
+    /// @param payload the exact bytes hashed into actionHash at propose time; decoded per the
+    /// stored proposal type (never inferred from payload shape)
     function execute(uint256 pid, bytes calldata payload) external {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Passed, NotPassed());
@@ -450,6 +486,7 @@ contract Governance is IGovernance {
     }
 
     /// @notice Mark a passed-but-unexecuted proposal expired once its window lapses (EE-10).
+    /// @param pid the passed proposal id past its execution window
     function markExpired(uint256 pid) external {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Passed && block.timestamp > p.expiresAt, WrongPhase());
@@ -488,6 +525,7 @@ contract Governance is IGovernance {
         return false;
     }
 
+    /// @inheritdoc IGovernance
     function isExecutor(address vault, address account) external view returns (bool) {
         return account == address(this) && vaultRegistered[vault];
     }

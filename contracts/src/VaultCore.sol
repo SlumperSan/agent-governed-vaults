@@ -175,6 +175,22 @@ contract VaultCore {
     error ExitNeedsChildSettlement();
 
     // ─────────────────────────────── constructor ──────────────────────────────
+
+    /// @notice Deploy a vault. Every trust-relevant choice is fixed here and immutable after —
+    /// members inspect the config before depositing; there are no setters.
+    /// @param usdc_ settlement asset (decimals read at runtime, must be ≤ 18)
+    /// @param basketAssets_ index basket (≤ MAX_BASKET_ASSETS; no zero/duplicate/USDC entries)
+    /// @param creator_ vault creator — the 5% withdrawal gate binds to this address
+    /// @param operatorRegistry_ canonical registry for (member, operator) marks (C-3)
+    /// @param governance_ governance module consulted for the Mode-I/Mode-F exit switch
+    /// @param feeEngine_ performance-fee module called at redemption settlement
+    /// @param oracle_ multi-source median price oracle (staleness breaker freezes NAV paths)
+    /// @param capacityCapUsdc_ max NAV in USDC units; 0 opts out of the cap (SF-3)
+    /// @param minDepositUsdc_ minimum deposit, must be nonzero (dust/rounding defense)
+    /// @param exitFeeMaxBps_ tenure-decayed exit fee ceiling, ≤ EXIT_FEE_CAP_BPS (1%)
+    /// @param exitFeeDecayPeriod_ seconds until the exit fee decays to zero (nonzero iff fee set)
+    /// @param allowedAdapters_ execution-adapter allowlist, fixed forever (EX-1)
+    /// @param subVaultRegistry_ parent/child edge registry; zero disables child allocation
     constructor(
         address usdc_,
         address[] memory basketAssets_,
@@ -230,6 +246,7 @@ contract VaultCore {
 
     /// @notice Vault NAV in WAD USD terms. Pending deposits are excluded (EE-1). Reverts while
     /// the oracle breaker is tripped — freezing everything, including exits, by design (K-4).
+    /// @return nav idle USDC + oracle-priced basket + look-through-priced child positions, WAD
     function navWad() public view returns (uint256 nav) {
         nav = idleUsdc * usdcScalar;
         uint256 n = basketAssets.length;
@@ -279,10 +296,13 @@ contract VaultCore {
         }
     }
 
+    /// @notice Number of registered child vaults (≤ MAX_CHILDREN).
     function childVaultCount() external view returns (uint256) {
         return childVaults.length;
     }
 
+    /// @notice NAV per share, WAD. 1e18 before the first deposit.
+    /// @return NAVps in WAD; reverts with the oracle breaker like navWad
     function navPerShareWad() public view returns (uint256) {
         uint256 ts = totalShares;
         return ts == 0 ? WAD : navWad() * WAD / ts;
@@ -293,6 +313,8 @@ contract VaultCore {
     /// @notice Deposit USDC. First-ever deposit by an agent enters the 4-hour observation
     /// window as escrowed pending capital (no shares, no NAV inclusion, no voting rights).
     /// Repeat deposits and window-skipped agents mint immediately at current NAV.
+    /// @param amountUsdc deposit size in USDC units (≥ minDepositUsdc); receipt is measured,
+    /// so fee-on-transfer shortfalls below the minimum revert
     function deposit(uint256 amountUsdc) external nonReentrant {
         require(amountUsdc > 0, ZeroAmount());
         require(amountUsdc >= minDepositUsdc, BelowMinDeposit());
@@ -324,6 +346,7 @@ contract VaultCore {
 
     /// @notice Activate a pending deposit after the observation window. Shares mint at
     /// activation-time NAV (forward pricing on entry, §4.3). Callable by anyone.
+    /// @param member the depositor whose pending deposit matured
     function activate(address member) external nonReentrant {
         PendingDeposit memory p = pendingDeposit[member];
         require(p.amountUsdc > 0, NoPending());
@@ -386,6 +409,7 @@ contract VaultCore {
     /// distort every quorum (governance re-review, Area 1). It is therefore excluded from all
     /// voting-eligible stake and holder counts. The edge is one-shot (set at child creation),
     /// so cache it once resolved.
+    /// @return the registered parent vault, or address(0) for a root vault
     function parentVault() public view returns (address) {
         if (_cachedParentVault != address(0)) return _cachedParentVault;
         if (subVaultRegistry == address(0)) return address(0);
@@ -412,6 +436,7 @@ contract VaultCore {
     /// Mode I — no passed-but-unexecuted rebalance ⇒ settles now at current NAV, in kind.
     /// Mode F — rebalance passed and pending ⇒ queued, settles at post-execution NAV.
     /// Queued shares stay outstanding but are locked: no voting eligibility, irrevocable.
+    /// @param shares share amount to redeem (≤ balance; one queued exit per member at a time)
     function requestExit(uint256 shares) external nonReentrant {
         require(shares > 0, ZeroAmount());
         require(queuedExitShares[msg.sender] == 0, ExitAlreadyQueued());
@@ -445,6 +470,7 @@ contract VaultCore {
     /// @notice Settle a queued Mode-F exit once no execution is pending (the rebalance executed,
     /// or its proposal expired — either way settlement is at *current* NAV, which post-execution
     /// is the post-rebalance NAV; EE-10 guarantees no indefinite lock). Callable by anyone.
+    /// @param member the member whose queued Mode-F exit should settle
     function settleQueuedExit(address member) external nonReentrant {
         uint256 shares = queuedExitShares[member];
         require(shares > 0, NoQueuedExit());
@@ -623,6 +649,8 @@ contract VaultCore {
     /// @notice Allocate idle USDC into a registered child vault. Governance-only (a
     /// ChildAllocation proposal — standing defaults never apply, VO-4). Edges come from the
     /// SubVaultRegistry, so deposits flow ONLY along creation-time parent→child links (SV-3).
+    /// @param child registered child vault (registry edge parentOf(child) == this)
+    /// @param amountUsdc idle USDC to allocate into the child
     function allocateToChild(address child, uint256 amountUsdc) external nonReentrant {
         require(msg.sender == address(governance), OnlyGovernance());
         require(
@@ -652,6 +680,8 @@ contract VaultCore {
     /// (child baskets ⊆ parent basket, factory-enforced) are credited to internal accounting
     /// from measured deltas. Reverts if the child queues the exit (Mode F) — retry after the
     /// child settles (bounded by the child's timelock + execution window).
+    /// @param child child vault to redeem from (must be a locally registered child)
+    /// @param shares child-vault shares to redeem
     function redeemFromChild(address child, uint256 shares) external nonReentrant {
         require(msg.sender == address(governance), OnlyGovernance());
         require(isChildVault[child], NotRegisteredChild());
@@ -699,6 +729,8 @@ contract VaultCore {
 
     /// @notice Crank: pull a slice the child escrowed for this vault (child EE-6 path) and
     /// credit it. Permissionless.
+    /// @param child child vault holding the escrowed slice
+    /// @param asset USDC or a basket asset to claim from the child's escrow
     function pullChildEscrow(address child, address asset) external nonReentrant {
         require(isChildVault[child], NotRegisteredChild());
         require(assetUnit[asset] != 0 || asset == usdc, BadSwapToken());
@@ -715,6 +747,8 @@ contract VaultCore {
     /// tokens constrained to USDC + basket, every output measured by the vault's OWN balance
     /// delta (EX-3 — the adapter's word is never the accounting source). Internal accounting
     /// is debited before and credited after each swap, so NAV stays truthful mid-rebalance.
+    /// @param adapter allowlisted execution adapter to route every leg through
+    /// @param orders swap legs; tokenIn/tokenOut restricted to USDC + basket assets
     function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)
         external
         nonReentrant
@@ -774,6 +808,7 @@ contract VaultCore {
     }
 
     /// @notice Claim an in-kind slice that was escrowed after a failed asset transfer (EE-6).
+    /// @param asset the escrowed token to claim; reverts if nothing is claimable
     function claimEscrowed(address asset) external nonReentrant {
         uint256 amt = claimable[msg.sender][asset];
         require(amt > 0, NothingToClaim());
@@ -795,11 +830,15 @@ contract VaultCore {
 
     /// @notice Stake eligible for voting and quorum denominators (Sprint 2): live shares minus
     /// Mode-F-locked shares. Pending deposits hold no shares at all (EE-1/EE-2).
+    /// @param member the member queried (a registered parent vault always reads 0)
+    /// @return eligible share weight for `member`
     function votingEligibleShares(address member) external view returns (uint256) {
         if (member == parentVault()) return 0; // parent vault is a non-voting member
         return sharesOf[member] - queuedExitShares[member];
     }
 
+    /// @notice Total voting-eligible stake: supply minus Mode-F-locked shares minus the parent
+    /// vault's non-voting position.
     function totalVotingEligibleShares() external view returns (uint256) {
         address pv = parentVault();
         uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
@@ -807,24 +846,33 @@ contract VaultCore {
     }
 
     /// @notice Voting-eligible stake of `member` as of timestamp `ts` (proposal snapshots).
+    /// @param member the member queried
+    /// @param ts historical timestamp (Governance reads createdAt − 1, VO-9)
+    /// @return the last checkpointed eligible weight at or before `ts` (0 if none)
     function pastVotingEligibleShares(address member, uint64 ts) external view returns (uint256) {
         return _eligibleHist[member].getAt(ts);
     }
 
+    /// @notice Total voting-eligible stake as of timestamp `ts` (quorum denominators).
+    /// @param ts historical timestamp (Governance reads createdAt − 1, VO-9)
     function pastTotalVotingEligibleShares(uint64 ts) external view returns (uint256) {
         return _totalEligibleHist.getAt(ts);
     }
 
     /// @notice Holder count as of `ts` — drives the <5-member absolute-signer-count regime
     /// (CM-7: regime is fixed per proposal at creation, membership changes never flip it).
+    /// @param ts historical timestamp (Governance reads createdAt − 1)
     function pastHolderCount(uint64 ts) external view returns (uint256) {
         return _holderCountHist.getAt(ts);
     }
 
+    /// @notice Current tenure-decayed exit fee for `member`, in bps (before any sole-holder
+    /// waiver applied at settlement).
     function exitFeeBpsOf(address member) external view returns (uint256) {
         return _exitFeeBps(member);
     }
 
+    /// @notice Number of basket assets (excludes USDC).
     function basketLength() external view returns (uint256) {
         return basketAssets.length;
     }
@@ -836,15 +884,21 @@ contract VaultCore {
 
     // 4626-SHAPED, INDICATIVE ONLY (C-1): no compliance claim; previews ignore exit fees,
     // observation windows, forward pricing and in-kind mechanics.
+
+    /// @notice Indicative-only NAV in USDC units (C-1: NOT an ERC-4626 compliance claim).
     function totalAssets() external view returns (uint256) {
         return navWad() / usdcScalar;
     }
 
+    /// @notice Indicative-only share preview for a USDC amount; ignores window, fees and
+    /// forward pricing (C-1).
     function convertToShares(uint256 assets) external view returns (uint256) {
         uint256 ts = totalShares;
         return ts == 0 ? assets * usdcScalar : assets * usdcScalar * ts / navWad();
     }
 
+    /// @notice Indicative-only USDC value of `shares`; the real redemption is in-kind and
+    /// fee-bearing (C-1).
     function convertToAssets(uint256 shares) external view returns (uint256) {
         uint256 ts = totalShares;
         return ts == 0 ? shares / usdcScalar : shares * navWad() / ts / usdcScalar;
