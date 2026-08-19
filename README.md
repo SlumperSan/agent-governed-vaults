@@ -51,7 +51,10 @@ cd contracts && forge build && forge test          # contracts (119 tests, incl.
 npm install && npm run test:backend                 # indexer + agent-sdk + api + web (81 tests)
 ```
 
-CI runs both plus `forge fmt --check`, a gas-snapshot gate, and slither ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+CI runs both plus `forge fmt --check`, a gas-snapshot gate, an EIP-170 runtime size check, and
+slither ([.github/workflows/ci.yml](.github/workflows/ci.yml)). The gas gate covers the 115
+deterministic tests — fuzz gas is a mean over a corpus that isn't reproducible across machines, so
+it's measured but not gated (regenerate with `forge snapshot --nmt "testFuzz"`).
 
 ## Run it
 
