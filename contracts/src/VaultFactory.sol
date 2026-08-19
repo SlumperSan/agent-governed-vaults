@@ -39,6 +39,10 @@ contract VaultFactory {
 
     event VaultCreated(address indexed vault, address indexed creator, address usdc, uint256 capacityCapUsdc);
 
+    /// @param registry_ canonical OperatorRegistry (attestation target)
+    /// @param governance_ governance module every deployed vault binds to
+    /// @param feeEngine_ fee module every deployed vault binds to
+    /// @param subVaultRegistry_ parent/child edge registry passed into every vault
     constructor(
         IOperatorRegistry registry_,
         IGovernance governance_,
@@ -65,6 +69,10 @@ contract VaultFactory {
         address[] allowedAdapters;
     }
 
+    /// @notice Deploy and attest a root vault. Permissionless; `msg.sender` becomes the
+    /// vault's creator (5% gate identity) and its attested operator.
+    /// @param p the creator's immutable vault configuration
+    /// @return vault the deployed VaultCore address
     function createVault(VaultParams calldata p) external returns (address vault) {
         vault = _deploy(p);
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
@@ -76,6 +84,9 @@ contract VaultFactory {
     /// cycles are structurally impossible. The child's basket must be a subset of the
     /// parent's (same USDC), so in-kind child redemptions always map into parent accounting
     /// and look-through pricing (SV-7) is always possible.
+    /// @param p the child's immutable vault configuration (same USDC, basket ⊆ parent's)
+    /// @param parent the parent vault to register the creation-time edge under
+    /// @return vault the deployed child VaultCore address
     function createChildVault(VaultParams calldata p, address parent) external returns (address vault) {
         require(IVaultBasket(parent).usdc() == p.usdc, UsdcMismatch());
         for (uint256 i; i < p.basketAssets.length; ++i) {
@@ -108,6 +119,7 @@ contract VaultFactory {
         );
     }
 
+    /// @notice Number of vaults ever deployed by this factory.
     function vaultCount() external view returns (uint256) {
         return allVaults.length;
     }

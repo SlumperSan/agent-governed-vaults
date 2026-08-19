@@ -36,6 +36,8 @@ contract AggregationRouterAdapter is IExecutionAdapter {
     error Slippage();
     error BadOrder();
 
+    /// @param router_ the aggregation router this adapter is permanently pinned to (EX-2)
+    /// @param selectors_ the router function selectors routeData may invoke (EX-1)
     constructor(address router_, bytes4[] memory selectors_) {
         require(router_ != address(0) && selectors_.length > 0, BadOrder());
         router = router_;

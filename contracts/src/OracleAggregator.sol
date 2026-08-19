@@ -39,6 +39,13 @@ contract OracleAggregator is IOracleAggregator {
 
     error BadOracleConfig();
 
+    /// @notice Fix the full per-asset source configuration forever. Floors are load-bearing
+    /// (the creator is untrusted): ≥3 sources, strict-majority freshness quorum, staleness
+    /// bounded to (0, 1 day].
+    /// @param assets_ the priceable assets (no duplicates)
+    /// @param sources_ per-asset IPriceSource sets (3–15 each; mechanism diversity per SF-1)
+    /// @param maxStaleness_ per-asset freshness bound in seconds, ≤ MAX_STALENESS_CEILING
+    /// @param quorum_ per-asset minimum fresh sources, strict majority of the set
     constructor(
         address[] memory assets_,
         address[][] memory sources_,
@@ -99,6 +106,12 @@ contract OracleAggregator is IOracleAggregator {
         return fresh[(k - 1) / 2];
     }
 
+    /// @notice The immutable source configuration for `asset` — what a prospective member
+    /// inspects before depositing into a vault priced by this aggregator.
+    /// @param asset the asset queried
+    /// @return sources the source set
+    /// @return maxStaleness per-source freshness bound, seconds
+    /// @return quorum minimum fresh sources before the breaker trips
     function assetConfig(address asset)
         external
         view
@@ -125,6 +138,7 @@ contract ChainlinkSourceAdapter is IPriceSource {
 
     error BadFeed();
 
+    /// @param feed_ the AggregatorV3 feed to wrap (decimals ≤ 18)
     constructor(IAggregatorV3 feed_) {
         feed = feed_;
         uint8 d = feed_.decimals();
@@ -132,6 +146,10 @@ contract ChainlinkSourceAdapter is IPriceSource {
         scale = 10 ** (18 - d);
     }
 
+    /// @notice WAD-normalized feed price. Non-positive answers surface as (0, 0), which the
+    /// aggregator treats as not-fresh rather than a revert.
+    /// @return priceWad USD price of one whole token, WAD (0 if the feed answer is invalid)
+    /// @return updatedAt the feed's last-update timestamp (0 if invalid)
     function latestPrice() external view returns (uint256, uint256) {
         (, int256 answer,, uint256 updatedAt,) = feed.latestRoundData();
         if (answer <= 0) return (0, 0); // aggregator treats as not-fresh

@@ -69,6 +69,8 @@ contract OperatorRegistry is IOperatorRegistry {
     }
 
     /// @notice One-shot deploy-time wiring. Immutable thereafter — not an ongoing admin power.
+    /// @param factory_ the canonical VaultFactory (sole attestation caller)
+    /// @param feeEngine_ the FeeEngine (sole fee-stat recorder)
     function wire(address factory_, address feeEngine_) external {
         require(msg.sender == deployer, OnlyDeployer());
         require(factory == address(0) && feeEngine == address(0), AlreadyWired());
@@ -81,6 +83,11 @@ contract OperatorRegistry is IOperatorRegistry {
 
     // ───────────────────────────── identity ───────────────────────────────────
 
+    /// @notice Mint a fresh operator id for a not-yet-registered address. Permissionless and
+    /// harmless: it grants no authority and can never rebind an existing operator (CM-4 — a
+    /// fresh identity restarts at zero track record).
+    /// @param operator the address to register
+    /// @return opId the newly assigned operator id (ids start at 1; 0 = unregistered)
     function registerOperator(address operator) public returns (uint256 opId) {
         require(operatorIdOf[operator] == 0, AlreadyOperator());
         opId = ++operatorCount;
@@ -90,6 +97,8 @@ contract OperatorRegistry is IOperatorRegistry {
     }
 
     /// @notice Attest a factory-deployed vault to its operator. Factory-only (CM-5).
+    /// @param vault the freshly deployed vault
+    /// @param operator the creator identity (auto-registered if new)
     function attestVault(address vault, address operator) external {
         require(msg.sender == factory, OnlyFactory());
         uint256 opId = operatorIdOf[operator];
@@ -128,6 +137,8 @@ contract OperatorRegistry is IOperatorRegistry {
     }
 
     /// @notice Fee-engine callback so collected fees appear in the aggregate record.
+    /// @param opId the operator credited
+    /// @param amountUsdc the fee amount actually collected, USDC units
     function recordFeeCollected(uint256 opId, uint256 amountUsdc) external {
         require(msg.sender == feeEngine, OnlyFeeEngine());
         statsOf[opId].lifetimeFeesUsdc += amountUsdc;
@@ -138,6 +149,9 @@ contract OperatorRegistry is IOperatorRegistry {
 
     /// @notice Aggregate, all-vaults-included operator record (SF-4): monotone accumulators,
     /// nothing is ever removed or restated. Rankings/weighting are an indexer concern (S7).
+    /// @param opId the operator queried
+    /// @return operator the operator's address
+    /// @return stats lifetime gain/loss/fees/vault-count accumulators
     function leaderboardEntry(uint256 opId)
         external
         view

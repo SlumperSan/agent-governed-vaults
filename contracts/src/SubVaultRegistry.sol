@@ -39,6 +39,9 @@ contract SubVaultRegistry {
         deployer = msg.sender;
     }
 
+    /// @notice One-shot deploy-time wiring of the canonical factory — the only address ever
+    /// allowed to register child edges. Locked after the first call.
+    /// @param factory_ the canonical VaultFactory (nonzero)
     function wire(address factory_) external {
         require(msg.sender == deployer, OnlyDeployer());
         require(factory == address(0), AlreadyWired());
@@ -48,6 +51,9 @@ contract SubVaultRegistry {
 
     /// @notice Register a freshly deployed child under `parent`. Factory-only, creation-time
     /// only. `childExitFeeMaxBps` is the child's exit-fee ceiling, used for the stack cap.
+    /// @param parent the parent vault (depth must stay under MAX_DEPTH)
+    /// @param child the freshly deployed child (must be unknown to the registry)
+    /// @param childExitFeeMaxBps the child's immutable exit-fee ceiling, bps (SV-4 stack input)
     function registerChild(address parent, address child, uint256 childExitFeeMaxBps) external {
         require(msg.sender == factory, OnlyFactory());
         require(parentOf[child] == address(0) && depthOf[child] == 0, AlreadyRegistered());
@@ -71,6 +77,8 @@ contract SubVaultRegistry {
 
     /// @notice Cumulative effective performance fee across the ancestor chain, for display
     /// (SV-4): 1 − (1 − f)^levels, in bps. Depth-capped by construction.
+    /// @param vault the vault whose chain is priced
+    /// @return bps the effective stacked performance fee in bps
     function stackedPerfFeeBps(address vault) external view returns (uint256 bps) {
         uint256 levels = depthOf[vault] + 1;
         uint256 keep = 10_000;
@@ -81,6 +89,8 @@ contract SubVaultRegistry {
     }
 
     /// @notice Cumulative exit-fee ceiling across the ancestor chain, in bps (SV-4 display).
+    /// @param vault the vault whose chain is summed (self included)
+    /// @return bps the summed exit-fee ceilings, bps
     function stackedExitFeeCapBps(address vault) external view returns (uint256 bps) {
         address a = vault;
         while (a != address(0)) {

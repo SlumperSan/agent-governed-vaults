@@ -47,6 +47,7 @@ contract FeeEngine is IFeeEngine {
     error UnattestedVault();
     error NothingToClaim();
 
+    /// @param registry_ the canonical OperatorRegistry (carry reads, identity, fee stats)
     constructor(IRegistryView registry_) {
         registry = registry_;
     }
@@ -109,6 +110,8 @@ contract FeeEngine is IFeeEngine {
 
     /// @notice Pull an in-kind fee slice that the vault escrowed after a failed transfer to
     /// this engine (VaultCore EE-6 path), and credit it to the vault's operator.
+    /// @param vault the attested vault holding the escrowed fee slice
+    /// @param asset the escrowed token; credit is the measured balance delta
     function pullEscrowed(address vault, address asset) external {
         uint256 opId = registry.operatorOf(vault);
         require(opId != 0, UnattestedVault());
@@ -122,6 +125,7 @@ contract FeeEngine is IFeeEngine {
     }
 
     /// @notice Operator claims accumulated performance fees for a settlement token.
+    /// @param token USDC or a basket asset with a nonzero claimable balance for the caller
     function claimFees(address token) external {
         uint256 amt = claimableFees[msg.sender][token];
         require(amt > 0, NothingToClaim());

@@ -42,6 +42,7 @@ contract DirectPoolAdapter is IExecutionAdapter {
     error TokenNotInPair();
     error Slippage();
 
+    /// @param pair_ the V2-style pair this adapter is permanently pinned to
     constructor(IUniswapV2Pair pair_) {
         pair = pair_;
         token0 = pair_.token0();
