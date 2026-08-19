@@ -125,7 +125,7 @@ components:
         idleUsdc: { type: string }
         memberCount: { type: integer }
         pendingCount: { type: integer, description: deposits in the 4h observation window }
-        capacityCapUsdc: { type: string }
+        capacityCapUsdc: { type: string, description: "max NAV in USDC base units; 0 = uncapped" }
         parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
         depth: { type: integer, description: 0 root … 2 grandchild }
         holders: { type: integer }

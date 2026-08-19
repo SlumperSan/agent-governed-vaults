@@ -63,7 +63,7 @@ contract VaultCore {
 
     address public immutable subVaultRegistry; // SV edges; zero disables child allocation
     address internal _cachedParentVault; // lazily resolved; a parent vault is a NON-voting member
-    uint256 public immutable capacityCapUsdc; // deposits revert above this NAV (USDC units)
+    uint256 public immutable capacityCapUsdc; // max NAV (USDC units); 0 = uncapped (no limit)
     uint256 public immutable minDepositUsdc; // dust / rounding-inflation defense
     uint256 public immutable exitFeeMaxBps; // ≤ EXIT_FEE_CAP_BPS
     uint256 public immutable exitFeeDecayPeriod; // seconds until fee decays to zero
@@ -196,7 +196,7 @@ contract VaultCore {
         }
         require(usdc_ != address(0) && creator_ != address(0), BadConfig());
         require(exitFeeMaxBps_ <= EXIT_FEE_CAP_BPS, BadConfig());
-        require(capacityCapUsdc_ > 0 && minDepositUsdc_ > 0, BadConfig());
+        require(minDepositUsdc_ > 0, BadConfig()); // capacityCapUsdc_ == 0 ⇒ uncapped
         require(exitFeeMaxBps_ == 0 || exitFeeDecayPeriod_ > 0, BadConfig());
 
         usdc = usdc_;
@@ -298,8 +298,11 @@ contract VaultCore {
         require(amountUsdc >= minDepositUsdc, BelowMinDeposit());
 
         // Capacity measured against NAV + escrowed pending (both will count once active).
+        // capacityCapUsdc == 0 means the vault opted out of a cap (SF-3 is optional).
         uint256 navUsdc = navWad() / usdcScalar;
-        require(navUsdc + totalPendingUsdc + amountUsdc <= capacityCapUsdc, CapacityExceeded());
+        if (capacityCapUsdc != 0) {
+            require(navUsdc + totalPendingUsdc + amountUsdc <= capacityCapUsdc, CapacityExceeded());
+        }
 
         // Measure actual receipt — internal accounting never trusts the request amount.
         uint256 balBefore = IERC20Metadata(usdc).balanceOf(address(this));
@@ -824,6 +827,11 @@ contract VaultCore {
 
     function basketLength() external view returns (uint256) {
         return basketAssets.length;
+    }
+
+    /// @notice False when the vault opted out of a capacity cap (capacityCapUsdc == 0).
+    function isCapped() external view returns (bool) {
+        return capacityCapUsdc != 0;
     }
 
     // 4626-SHAPED, INDICATIVE ONLY (C-1): no compliance claim; previews ignore exit fees,

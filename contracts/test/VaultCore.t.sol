@@ -160,6 +160,35 @@ contract VaultCoreTest is Test {
         vault.deposit(11 * USDC_1);
     }
 
+    function test_uncappedVaultAcceptsUnboundedDeposits() public {
+        // A vault created with capacityCapUsdc == 0 is uncapped.
+        address[] memory basket = new address[](0);
+        VaultCore un = new VaultCore(
+            address(usdc),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            0, // uncapped
+            10 * USDC_1,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+        assertFalse(un.isCapped(), "reports uncapped");
+
+        usdc.mint(creator, 100_000_000 * USDC_1);
+        vm.startPrank(creator);
+        usdc.approve(address(un), type(uint256).max);
+        un.deposit(50_000_000 * USDC_1); // far beyond any per-vault cap in the suite
+        un.skipWindow();
+        vm.stopPrank();
+        assertGt(un.totalShares(), 0, "large deposit accepted, no CapacityExceeded");
+    }
+
     function test_minDepositEnforced() public {
         vm.prank(alice);
         vm.expectRevert(VaultCore.BelowMinDeposit.selector);

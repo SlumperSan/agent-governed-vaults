@@ -253,7 +253,8 @@
 
   // ── views ──
   function vaultCard(v){
-    const capPct=Math.min(100,Math.round(v.navUsd/v.capUsd*100));
+    const uncapped=!v.capUsd;
+    const capPct=uncapped?0:Math.min(100,Math.round(v.navUsd/v.capUsd*100));
     const cls=['card'];if(v.frozen)cls.push('frozen');if(v.unattested)cls.push('quarantine');
     const nav=v.frozen?`<div class="nav" style="color:var(--frozen)">— <span style="font-size:12px">held</span></div>`
       :`<div class="nav">${v.navPs.toFixed(3)} ${deltaChip(v.navPs,v.entryPs)}</div><div class="asof">NAV/share · as of ${v.asOf}</div>`;
@@ -264,8 +265,9 @@
       <div class="pills">${statusPills(v)}</div>
       ${nav}
       <div class="meta"><span>${v.members} members</span><span>${v.operator}</span></div>
-      <div class="meter ${capPct>90?'warn':''}"><span style="width:${capPct}%"></span></div>
-      <div class="meta"><span>capacity</span><span class="num">${capPct}%</span></div>
+      ${uncapped?`<div class="meta"><span>capacity</span><span class="num">uncapped</span></div>`
+        :`<div class="meter ${capPct>90?'warn':''}"><span style="width:${capPct}%"></span></div>
+      <div class="meta"><span>capacity</span><span class="num">${capPct}%</span></div>`}
     </button>`;
   }
 
@@ -303,7 +305,7 @@
   function renderVault(i){
     const v=vaults[i];if(!v)return renderDiscover();
     const lv=v.depth+1, sp=stackedPerf(lv), se=v.exitFee.reduce((a,b)=>a+b,0);
-    const capPct=Math.min(100,Math.round(v.navUsd/v.capUsd*100));
+    const capPct=v.capUsd?Math.min(100,Math.round(v.navUsd/v.capUsd*100)):0;
     const frozenBanner=v.frozen?`<div class="banner frozen"><div><span class="bt">This vault's oracle is frozen.</span>
       The multi-source price feed disagreed beyond tolerance, so every valuation — and every deposit and
       exit — is held by design until the sources agree again. Your funds are not lost; they are paused.</div></div>`:'';
@@ -332,7 +334,7 @@
       <div class="stat-row">
         <div class="stat"><div class="k">Members</div><div class="v">${v.members}</div></div>
         <div class="stat"><div class="k">Operator</div><div class="v" style="font-size:15px">${v.operator}</div></div>
-        <div class="stat"><div class="k">Capacity</div><div class="v">${capPct}%</div></div>
+        <div class="stat"><div class="k">Capacity</div><div class="v">${v.capUsd?capPct+'%':'uncapped'}</div></div>
         <div class="stat"><div class="k">Depth</div><div class="v">${v.depth+1} / 3</div></div>
       </div>
       <div style="display:flex;gap:10px;margin:6px 0 4px">${depositBtn}${exitBtn}</div>
