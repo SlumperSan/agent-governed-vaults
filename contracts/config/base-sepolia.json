@@ -1,0 +1,54 @@
+{
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  "router": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
+  "routerName": "Uniswap SwapRouter02 (Base Sepolia)",
+  "routerAllowedSignatures": [
+    "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+    "exactInput((bytes,address,uint256,uint256))"
+  ],
+  "maxStalenessSeconds": 86400,
+  "assets": [
+    {
+      "symbol": "WETH",
+      "token": "0x4200000000000000000000000000000000000006",
+      "quorum": 2,
+      "feeds": [
+        "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+        "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+        "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+      ],
+      "feedDescription": "Chainlink ETH / USD (proxy, 8 decimals)"
+    },
+    {
+      "symbol": "LINK",
+      "token": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
+      "quorum": 2,
+      "feeds": [
+        "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61",
+        "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61",
+        "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61"
+      ],
+      "feedDescription": "Chainlink LINK / USD (proxy, 8 decimals)"
+    }
+  ],
+  "testnetCompromise": "Base Sepolia has exactly ONE Chainlink feed per pair, so the >=3-source constructor floor is met by deploying three ChainlinkSourceAdapter instances over the same canonical feed (distinct source addresses, quorum 2-of-3). This satisfies the OracleAggregator constructor mechanically but NOT the SF-1 mechanism-diversity listing criterion. A mainnet config MUST list >=3 mechanism-diverse sources (e.g. Chainlink push + a TWAP source + a pull-oracle wrapper) per asset.",
+  "smoke": {
+    "capacityCapUsdc": "1000000000",
+    "minDepositUsdc": "1000000",
+    "depositUsdc": "5000000",
+    "exitFeeMaxBps": 50,
+    "exitFeeDecayPeriod": 604800,
+    "gov": {
+      "commitDuration": 3600,
+      "revealDuration": 3600,
+      "timelockDuration": 0,
+      "executionWindow": 86400,
+      "quorumBps": 2500,
+      "proposalThresholdBps": 0,
+      "concentrationCapBps": 10000,
+      "proposalCooldown": 0
+    }
+  }
+}

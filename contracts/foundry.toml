@@ -7,7 +7,7 @@ evm_version = "cancun"
 via_ir = true
 optimizer = true
 optimizer_runs = 800
-fs_permissions = []
+fs_permissions = [{access = "read", path = "./config"}]
 
 [profile.default.fuzz]
 runs = 512
