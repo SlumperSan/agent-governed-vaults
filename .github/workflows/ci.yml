@@ -45,5 +45,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: npm
+      # Without this the viem-backed tests skip themselves and the suite silently
+      # reports 80/81 forever. Install first so the full 81 actually run.
+      - run: npm ci
+      # abis.test.mjs cross-checks the indexer's embedded event fragments against
+      # compiled artifacts, and skips itself when contracts/out is absent — so the
+      # drift guard only bites if this job has built the contracts.
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - run: cd contracts && forge build
       - name: Backend + frontend logic tests
-        run: node --test packages/indexer/test/*.test.mjs packages/agent-sdk/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs
+        run: npm run test:backend
+      # Entrypoints and operational runners have no unit tests — they are exercised
+      # by hand against a live chain. Parse them so a syntax error can't reach a
+      # 6-hour smoke run or a production boot.
+      - name: Syntax-check entrypoints and operational scripts
+        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs
