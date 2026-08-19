@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: Index Vault Protocol — Metered API
+  version: 1.0.0
+  description: >
+    Read API over the indexed state of the agent-governed index-vault protocol. Read routes are
+    metered with x402 (V2): an unpaid request returns 402 with a `PAYMENT-REQUIRED` challenge;
+    the client re-requests with a `PAYMENT-SIGNATURE` header carrying an EIP-3009
+    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. The server
+    holds no keys and moves no funds. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
+  license:
+    name: BUSL-1.1
+servers:
+  - url: https://api.example.xyz
+    description: Placeholder — set to the deployed API origin.
+paths:
+  /health:
+    get:
+      summary: Liveness and last indexed block (free, no payment)
+      operationId: health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  lastBlock: { type: integer }
+  /vaults/{address}:
+    get:
+      summary: Vault projection (metered)
+      operationId: getVault
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+      responses:
+        '200':
+          description: Vault view
+          headers:
+            payment-response:
+              schema: { type: string }
+              description: JSON receipt of the settled x402 payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VaultView' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '404': { description: Unknown vault }
+  /operators/leaderboard:
+    get:
+      summary: Operator leaderboard — all attested vaults, no cherry-picking (metered)
+      operationId: leaderboard
+      responses:
+        '200':
+          description: Leaderboard
+          headers:
+            payment-response: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leaderboard:
+                    type: array
+                    items: { $ref: '#/components/schemas/LeaderboardRow' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+components:
+  responses:
+    PaymentRequired:
+      description: >
+        Payment required. The `PAYMENT-REQUIRED` header carries the JSON challenge; authorize it
+        with an EIP-3009 envelope and retry with `PAYMENT-SIGNATURE`.
+      headers:
+        payment-required:
+          schema: { $ref: '#/components/schemas/Challenge' }
+          description: JSON-encoded x402 challenge.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              challenge: { $ref: '#/components/schemas/Challenge' }
+  schemas:
+    Challenge:
+      type: object
+      description: x402 V2 payment challenge.
+      properties:
+        scheme: { type: string, enum: [exact] }
+        x402Version: { type: integer, enum: [2] }
+        asset: { type: string, description: USDC token address }
+        amount: { type: string, description: integer, USDC base units (6dp) }
+        payTo: { type: string }
+        network: { type: string, example: base }
+        nonce: { type: string }
+        expiresAt: { type: integer, description: unix ms }
+    PaymentEnvelope:
+      type: object
+      description: Sent base64-encoded in the PAYMENT-SIGNATURE header.
+      properties:
+        x402Version: { type: integer, enum: [2] }
+        scheme: { type: string, enum: [exact] }
+        network: { type: string }
+        signature: { type: string, description: EIP-712 signature over the authorization }
+        authorization:
+          type: object
+          properties:
+            from: { type: string }
+            to: { type: string }
+            value: { type: string }
+            validAfter: { type: string }
+            validBefore: { type: string }
+            nonce: { type: string }
+            asset: { type: string }
+    VaultView:
+      type: object
+      properties:
+        vault: { type: string }
+        creator: { type: string }
+        operatorId: { type: integer }
+        totalShares: { type: string, description: WAD, decimal string }
+        idleUsdc: { type: string }
+        memberCount: { type: integer }
+        pendingCount: { type: integer, description: deposits in the 4h observation window }
+        capacityCapUsdc: { type: string }
+        parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
+        depth: { type: integer, description: 0 root … 2 grandchild }
+        holders: { type: integer }
+    LeaderboardRow:
+      type: object
+      properties:
+        operatorId: { type: integer }
+        operator: { type: string }
+        netRealizedUsdc: { type: string }
+        lifetimeGainUsdc: { type: string }
+        lifetimeLossUsdc: { type: string }
+        lifetimeFeesUsdc: { type: string }
+        vaultCount: { type: integer }

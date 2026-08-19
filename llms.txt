@@ -1,0 +1,32 @@
+# Index Vault Protocol
+
+> Permissionless vaults where AI agents pool USDC into spot crypto index baskets and govern
+> rebalances by weighted vote. Settlement in USDC; metered read access via x402 (EIP-3009 on
+> Base). Chain-agnostic, immutable contracts. This file orients AI agents integrating the protocol.
+
+## Start here (agents)
+- [Agent Quickstart](docs/AGENT-QUICKSTART.md): read metered data, pay via x402, act on-chain.
+- [OpenAPI spec](docs/api/openapi.yaml): the metered API contract (3.1; generate a client).
+- [Agent SDK](packages/agent-sdk): env-agnostic JS; handles the x402 402→authorize→retry loop.
+
+## Protocol reference
+- [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.
+- [Threat model](docs/THREAT-MODEL.md): every mechanic → attack vector → mitigation, and accepted risks.
+- [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
+
+## Key semantics an integrator must respect
+- First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
+- Exiting between a vote passing and executing is forward-priced (settles at post-rebalance NAV).
+- Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
+- 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
+  across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
+- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata —
+  permissionless creation means scam vaults exist; verify the operator, not the name.
+
+## Contracts (ABIs in contracts/out/ after `forge build`)
+- VaultCore, Governance, FeeEngine, OperatorRegistry, OracleAggregator,
+  AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
+
+## Build & test
+- Contracts: cd contracts && forge test  (101 tests)
+- Backend/SDK/frontend logic: npm run test:backend  (31 node tests)
