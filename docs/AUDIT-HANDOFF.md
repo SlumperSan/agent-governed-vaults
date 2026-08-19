@@ -105,6 +105,6 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 
 ```bash
 cd contracts && forge build && forge test -vvv    # 119 tests
-forge snapshot --check                              # gas regression gate
+forge snapshot --check --fuzz-seed 1                # gas regression gate (seed pinned: fuzz gas is corpus-dependent)
 slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
