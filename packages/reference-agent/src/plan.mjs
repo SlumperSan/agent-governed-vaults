@@ -60,7 +60,10 @@ export function plan({ world, config, entryMarks = new Map(), log }) {
     const vote = decideVote({
       governance: o.governance,
       chain: o.chain,
-      votingWeight: shares,
+      // Snapshot-measured voting weight, NOT the share balance: shares deposited after the
+      // proposal opened, still in the observation window, or locked behind a Mode-F exit carry no
+      // vote. An unreadable weight falls to 0, which blocks a commit — failing closed.
+      votingWeight: o.votingWeight ?? 0n,
       nowSec,
       config: config.policy.vote,
       timing: config.policy.timing,
@@ -90,8 +93,10 @@ export function plan({ world, config, entryMarks = new Map(), log }) {
         reason: vote.reason,
       });
       log.decide(`${short} COMMIT ${vote.support ? 'FOR' : 'AGAINST'} proposal ${o.governance.proposal.pid} — ${vote.reason}`);
-    } else if (o.governance?.proposal) {
-      log.decide(`${short} no vote action — ${vote.reason}`);
+    } else if (o.governance?.proposal || vote.degraded) {
+      // A degraded verdict is a warning, not an informational line: it means the agent could not
+      // determine whether it owes a reveal.
+      (vote.degraded ? log.warn : log.decide)(`${short} no vote action — ${vote.reason}`);
     }
 
     // ── Mode F: release shares already queued behind an executed rebalance ────

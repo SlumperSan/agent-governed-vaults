@@ -398,3 +398,104 @@ test('a tick that throws does not kill the session', async () => {
   assert.equal(ticks.length, 2, 'the loop survives so the next tick can rediscover its obligations');
   assert.ok(ticks.every((t) => /rpc exploded/.test(t.error)));
 });
+
+// ── end-to-end: a degraded governance read must not drop a reveal ────────────
+
+test('END TO END: a failed revealedOf read still produces the reveal intent', async () => {
+  // The whole S-4 chain under a partial RPC failure: commitment readable, revealed unreadable.
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const account = { address: acct.address, signMessage: (a) => acct.signMessage(a) };
+  const vote = await buildVote({ account, chainId: 84532, vault: V_HELD, pid: 42n, support: true });
+
+  const gov = govFixture(vote.commitment);
+  gov[V_HELD].revealed = null; // the read failed
+  gov[V_HELD].hasOutstandingCommit = true; // …which chain.mjs derives via `revealed !== true`
+
+  const { log } = silentLogger();
+  const agent = createAgent({
+    config: loadConfig({ api: { baseUrl: 'http://api.test' }, chain: { chainId: 84532, governance: '0x' + '9'.repeat(40), usdc: CHALLENGE.asset } }),
+    account,
+    payer: payerFor(acct),
+    chainReader: createStubChainReader(chainFixture(), gov),
+    log,
+    fetchImpl: mockApi().fetchImpl,
+    entryMarks: { [V_HELD]: WAD },
+    nowSec: () => NOW,
+  });
+  const r = await agent.tick();
+  assert.equal(r.intents[0].kind, 'reveal', 'an unknown reveal status must not silently drop the obligation');
+});
+
+test('END TO END: an unreadable proposal warns instead of reporting "no active proposal"', async () => {
+  const gov = { [V_HELD]: { hasPendingExecution: true, activePid: 42n, proposal: null, proposalUnknown: true, commitment: null, hasOutstandingCommit: false, revealed: null } };
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const { log, lines } = silentLogger();
+  const agent = createAgent({
+    config: loadConfig({ api: { baseUrl: 'http://api.test' }, chain: { chainId: 84532, governance: '0x' + '9'.repeat(40), usdc: CHALLENGE.asset } }),
+    account: { address: acct.address, signMessage: (a) => acct.signMessage(a) },
+    payer: payerFor(acct),
+    chainReader: createStubChainReader(chainFixture(), gov),
+    log,
+    fetchImpl: mockApi().fetchImpl,
+    entryMarks: { [V_HELD]: WAD },
+    nowSec: () => NOW,
+  });
+  const r = await agent.tick();
+  const d = r.decisions.find((x) => x.kind === 'vote' && x.vault === V_HELD);
+  assert.equal(d.degraded, true);
+  assert.ok(lines.some((l) => l.includes('could NOT be read')), 'the operator must see that this is unknown');
+});
+
+test('END TO END: voting weight comes from the snapshot measure, not the share balance', async () => {
+  // Shares deposited after the proposal opened carry no vote. A commit built on sharesOf would be
+  // a vote that can never count.
+  const fixture = chainFixture();
+  fixture[V_HELD].votingEligibleShares = 0n; // no snapshot weight…
+  fixture[V_HELD].self = { ...fixture[V_HELD].self, shares: 1_500n * USDC }; // …despite holding shares
+  const gov = govFixture();
+  gov[V_HELD].hasPendingExecution = false;
+  gov[V_HELD].proposal = { ...gov[V_HELD].proposal, commitDeadline: NOW + 600 }; // commit phase open
+
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const { log } = silentLogger();
+  const agent = createAgent({
+    config: loadConfig({ api: { baseUrl: 'http://api.test' }, chain: { chainId: 84532, governance: '0x' + '9'.repeat(40), usdc: CHALLENGE.asset } }),
+    account: { address: acct.address, signMessage: (a) => acct.signMessage(a) },
+    payer: payerFor(acct),
+    chainReader: createStubChainReader(fixture, gov),
+    log,
+    fetchImpl: mockApi().fetchImpl,
+    entryMarks: { [V_HELD]: WAD },
+    nowSec: () => NOW,
+  });
+  const r = await agent.tick();
+  assert.equal(r.intents.filter((i) => i.kind === 'commit').length, 0, 'zero snapshot weight ⇒ no commit');
+  const d = r.decisions.find((x) => x.kind === 'vote' && x.vault === V_HELD);
+  assert.match(d.reason, /no voting-eligible stake/);
+});
+
+test('END TO END: with snapshot weight, the commit is cast', async () => {
+  const fixture = chainFixture();
+  fixture[V_HELD].votingEligibleShares = 1_500n * USDC;
+  const gov = govFixture();
+  gov[V_HELD].hasPendingExecution = false;
+  gov[V_HELD].proposal = { ...gov[V_HELD].proposal, commitDeadline: NOW + 600 };
+
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const { log } = silentLogger();
+  const agent = createAgent({
+    config: loadConfig({ api: { baseUrl: 'http://api.test' }, chain: { chainId: 84532, governance: '0x' + '9'.repeat(40), usdc: CHALLENGE.asset } }),
+    account: { address: acct.address, signMessage: (a) => acct.signMessage(a) },
+    payer: payerFor(acct),
+    chainReader: createStubChainReader(fixture, gov),
+    log,
+    fetchImpl: mockApi().fetchImpl,
+    entryMarks: { [V_HELD]: WAD },
+    nowSec: () => NOW,
+  });
+  const r = await agent.tick();
+  const commit = r.results.find((x) => x.intent === 'commit');
+  assert.ok(commit, 'drift of 3000bps is above the band, so the evaluator supports it');
+  assert.equal(commit.call.functionName, 'commitVote');
+  assert.equal(commit.sent, false, 'still a dry run');
+});

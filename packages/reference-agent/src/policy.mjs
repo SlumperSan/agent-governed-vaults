@@ -270,6 +270,17 @@ export function votePhase(proposal, nowSec) {
  */
 export function decideVote({ governance, chain, votingWeight, nowSec, config, timing }) {
   const p = governance?.proposal;
+
+  // A read that FAILED is not a read that said "nothing here". Reporting "no active proposal"
+  // because `proposals(pid)` errored would be a reassuring lie on the one path where being wrong
+  // forfeits a vote — so an unreadable proposal is surfaced as unknown and flagged degraded.
+  if (!p && BigInt(governance?.activePid ?? 0n) > 0n)
+    return {
+      action: 'none',
+      support: null,
+      degraded: true,
+      reason: `proposal ${governance.activePid} is active but its state could NOT be read — this is unknown, not "nothing to do". Retrying next tick.`,
+    };
   if (!p) return { action: 'none', support: null, reason: 'no active proposal on this vault' };
 
   const phase = votePhase(p, nowSec);
@@ -304,6 +315,15 @@ export function decideVote({ governance, chain, votingWeight, nowSec, config, ti
       secondsToDeadline: p.revealDeadline - nowSec,
     };
   }
+
+  // Likewise: we could not read whether we hold a commit. Say so rather than concluding we don't.
+  if (governance.commitUnknown)
+    return {
+      action: 'none',
+      support: null,
+      degraded: true,
+      reason: `could not read commitOf for proposal ${governance.activePid} — whether a reveal is owed is UNKNOWN. Retrying next tick.`,
+    };
 
   // ── commit ─────────────────────────────────────────────────────────────────
   if (phase !== 'commit')

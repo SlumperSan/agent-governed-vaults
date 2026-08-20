@@ -395,3 +395,43 @@ test('vote: a custom evaluator object can be plugged in directly', () => {
 test('vote: no active proposal, no action', () => {
   assert.equal(decideVote({ governance: { proposal: null }, chain: goodChain(), votingWeight: 1n, nowSec: 0, config: CFG.policy.vote, timing: CFG.policy.timing }).action, 'none');
 });
+
+// ── degraded reads must not masquerade as "nothing to do" ───────────────────
+
+test('an unreadable proposal is reported as UNKNOWN, not as "no active proposal"', () => {
+  const r = decideVote({
+    governance: { proposal: null, activePid: 42n, proposalUnknown: true, hasOutstandingCommit: false },
+    chain: goodChain(),
+    votingWeight: 100n * USDC,
+    nowSec: 500,
+    config: CFG.policy.vote,
+    timing: CFG.policy.timing,
+  });
+  assert.equal(r.action, 'none');
+  assert.equal(r.degraded, true);
+  assert.match(r.reason, /could NOT be read/);
+  assert.doesNotMatch(r.reason, /no active proposal/, 'a failed read must never report an absence');
+});
+
+test('an unreadable commitOf is reported as UNKNOWN, not as "we hold no commit"', () => {
+  const r = decideVote({
+    governance: { proposal: proposal(), activePid: 42n, hasOutstandingCommit: false, commitUnknown: true, revealed: null },
+    chain: goodChain(),
+    votingWeight: 100n * USDC,
+    nowSec: 1500, // reveal phase
+    config: CFG.policy.vote,
+    timing: CFG.policy.timing,
+  });
+  assert.equal(r.degraded, true);
+  assert.match(r.reason, /UNKNOWN/);
+});
+
+test('a genuinely absent proposal is still reported plainly', () => {
+  const r = decideVote({
+    governance: { proposal: null, activePid: 0n, proposalUnknown: false },
+    chain: goodChain(), votingWeight: 1n, nowSec: 0, config: CFG.policy.vote, timing: CFG.policy.timing,
+  });
+  assert.equal(r.action, 'none');
+  assert.equal(r.degraded, undefined);
+  assert.match(r.reason, /no active proposal/);
+});

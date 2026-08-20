@@ -149,6 +149,12 @@ export async function perceive({ client, chainReader, budget, config, member, lo
     const fees = await chainReader.readStackedFees(config.chain.subvaultRegistry ?? null, address);
     const governance = await chainReader.readGovernance(address, member);
 
+    // Voting weight is measured at the proposal's snapshot, not now, and it is NOT the share
+    // balance — see chain.readVotingWeight. Only worth a read when there is something to vote on.
+    const votingWeight = governance?.proposal
+      ? await chainReader.readVotingWeight(address, member, governance.proposal.createdAt)
+      : null;
+
     const opId = registryOperatorId ?? Number(v.operatorId ?? 0);
     observed.push({
       summary: v,
@@ -156,6 +162,7 @@ export async function perceive({ client, chainReader, budget, config, member, lo
       chain,
       fees,
       governance,
+      votingWeight,
       registryOperatorId,
       operatorRow: operatorById.get(opId) ?? null,
     });

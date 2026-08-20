@@ -260,3 +260,65 @@ test('the stub reader marks everything it produces', async () => {
   assert.equal(v.stub, true, 'stub values must be distinguishable from live ones in the narrative');
   assert.equal(v.navPerShareWad, 5n);
 });
+
+// ── read failures on the S-4 path must never read as "nothing to do" ─────────
+
+test('a FAILED revealedOf read still yields an outstanding commit (fail toward revealing)', async () => {
+  // The silent forfeiture this pins: `revealed === false` would require a SUCCESSFUL read, so one
+  // RPC hiccup on revealedOf would drop the reveal obligation and the vote with it. An unnecessary
+  // reveal attempt costs gas and reverts; a skipped one costs the vote.
+  const client = fakeClient(
+    { ...TABLE, activeProposalOf: 42n, proposals: new Array(16).fill(0n), commitOf: '0x' + 'ab'.repeat(32) },
+    new Set(['revealedOf']),
+  );
+  const reader = createChainReader({ client, governance: '0x' + '9'.repeat(40) });
+  const g = await reader.readGovernance('0x' + '1'.repeat(40), '0x' + '2'.repeat(40));
+  assert.equal(g.revealed, null, 'the read failed, so this is unknown');
+  assert.equal(g.hasOutstandingCommit, true, 'unknown must not be treated as already-revealed');
+});
+
+test('a FAILED commitOf read is reported as unknown, not as "no commit"', async () => {
+  const client = fakeClient(
+    { ...TABLE, activeProposalOf: 42n, proposals: new Array(16).fill(0n), revealedOf: false },
+    new Set(['commitOf']),
+  );
+  const reader = createChainReader({ client, governance: '0x' + '9'.repeat(40) });
+  const g = await reader.readGovernance('0x' + '1'.repeat(40), '0x' + '2'.repeat(40));
+  assert.equal(g.commitUnknown, true);
+  assert.equal(g.hasOutstandingCommit, false, 'we cannot claim a commit we did not read…');
+});
+
+test('a FAILED proposals read is flagged, so the agent does not report "no active proposal"', async () => {
+  const client = fakeClient({ ...TABLE, activeProposalOf: 42n, commitOf: ZERO_BYTES32, revealedOf: false }, new Set(['proposals']));
+  const reader = createChainReader({ client, governance: '0x' + '9'.repeat(40) });
+  const g = await reader.readGovernance('0x' + '1'.repeat(40), '0x' + '2'.repeat(40));
+  assert.equal(g.proposalUnknown, true);
+  assert.equal(g.activePid, 42n, 'the pid read succeeded — we know something is there');
+  assert.equal(g.proposal, null);
+});
+
+// ── voting weight is not the share balance ──────────────────────────────────
+
+test('voting weight is read at the proposal SNAPSHOT, not as sharesOf now', async () => {
+  const client = fakeClient({ ...TABLE, pastVotingEligibleShares: (args) => (args[1] === 1234n ? 777n : 0n) });
+  const reader = createChainReader({ client });
+  const w = await reader.readVotingWeight('0x' + '1'.repeat(40), '0x' + '2'.repeat(40), 1234);
+  assert.equal(w, 777n);
+  const call = client.calls.find((c) => c.functionName === 'pastVotingEligibleShares');
+  assert.ok(call, 'must use the snapshot measure, the same one quorum uses');
+  assert.equal(call.args[1], 1234n);
+  assert.notEqual(w, TABLE.sharesOf, 'a share balance is not a voting weight');
+});
+
+test('with no snapshot timestamp it falls back to current voting-eligible stake', async () => {
+  const client = fakeClient({ ...TABLE, votingEligibleShares: 5n });
+  const reader = createChainReader({ client });
+  assert.equal(await reader.readVotingWeight('0x' + '1'.repeat(40), '0x' + '2'.repeat(40)), 5n);
+  assert.ok(client.calls.some((c) => c.functionName === 'votingEligibleShares'));
+});
+
+test('an unreadable voting weight is null, which the planner turns into a blocked commit', async () => {
+  const reader = createChainReader({ client: fakeClient(TABLE, new Set(['pastVotingEligibleShares'])) });
+  assert.equal(await reader.readVotingWeight('0x' + '1'.repeat(40), '0x' + '2'.repeat(40), 1n), null);
+  assert.equal(await reader.readVotingWeight('0x' + '1'.repeat(40), null, 1n), null, 'no member, no weight');
+});

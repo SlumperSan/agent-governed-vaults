@@ -56,6 +56,7 @@ PERCEIVE   metered API (via the agent SDK, under a spend cap)
            direct chain reads
              VaultCore   navPerShareWad · exitFeeBpsOf · pendingDeposit · sharesOf
                          queuedExitShares · idleUsdc · totalAssets · capacityCapUsdc
+                         pastVotingEligibleShares (the snapshot measure, NOT sharesOf)
              Governance  hasPendingExecution · activeProposalOf · proposals
                          commitOf · revealedOf
              registries  operatorOf · stackedPerfFeeBps · stackedExitFeeCapBps
@@ -270,6 +271,27 @@ reconstruction before spending gas on a call that would otherwise revert.
 
 A reveal it owes therefore outranks every other action in the plan, including a policy that would
 no longer cast that vote today.
+
+### Unknown is not "nothing to do"
+
+Everywhere else the agent fails closed, and the reveal path is no exception — but here failing
+closed means failing *toward* revealing. An outstanding commit is derived as
+`commitment != 0 && revealed !== true`, deliberately **not** `revealed === false`: the latter
+requires a *successful* read returning false, so one failed `revealedOf` call would drop the
+obligation and forfeit the vote, silently, while the log asserted there was nothing to do. An
+unnecessary reveal attempt costs gas and reverts harmlessly; a skipped one costs the vote.
+
+The same applies to `proposals(pid)` and `commitOf`: a read failure is reported as **unknown** and
+flagged `degraded`, so the agent says "proposal 42 is active but its state could NOT be read"
+rather than "no active proposal on this vault". The next tick retries.
+
+### Voting weight is not the share balance
+
+Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)` — the measure the
+contract counts, and the same one quorum uses. Shares deposited after a proposal opened, still
+inside the observation window, or locked behind a Mode-F exit carry **no** vote, so committing on
+`sharesOf` would cast votes that can never count. An unreadable weight falls to zero, which blocks
+the commit.
 
 ### The reproducibility caveat
 

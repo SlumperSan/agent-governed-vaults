@@ -57,6 +57,11 @@ export const VAULT_READ_ABI = Object.freeze([
   fn('minDepositUsdc', [], [U()]),
   fn('exitFeeBpsOf', [A('member')], [U()]),
   fn('sharesOf', [A()], [U()]),
+  // Voting weight is NOT sharesOf: pending deposits and Mode-F-locked shares hold no vote, and a
+  // proposal measures stake at its snapshot timestamp — the same measure quorum uses
+  // (AGENT-QUICKSTART §3). Committing on sharesOf would cast votes that can never count.
+  fn('votingEligibleShares', [A('member')], [U()]),
+  fn('pastVotingEligibleShares', [A('member'), { name: 'ts', type: 'uint64' }], [U()]),
   fn('queuedExitShares', [A()], [U()]),
   fn('windowCleared', [A()], [{ name: '', type: 'bool' }]),
   fn('skipOptIn', [A()], [{ name: '', type: 'bool' }]),
@@ -271,6 +276,24 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
       return r.ok ? Number(r.value) : null;
     },
 
+    /**
+     * The agent's VOTING-ELIGIBLE stake — not its share balance.
+     *
+     * At a proposal's snapshot timestamp when one is given, because that is the measure the
+     * contract counts (and the same one quorum uses). Reading `sharesOf` instead would let the
+     * agent commit a vote with zero snapshot weight — deposited after the proposal opened, or
+     * locked behind a Mode-F exit — which can never count.
+     *
+     * @param {string} vault @param {string|null} member @param {number|null} [ts]
+     */
+    async readVotingWeight(vault, member, ts = null) {
+      if (!member) return null;
+      const r = ts
+        ? await read(lc(vault), VAULT_READ_ABI, 'pastVotingEligibleShares', [member, BigInt(ts)])
+        : await read(lc(vault), VAULT_READ_ABI, 'votingEligibleShares', [member]);
+      return r.ok ? BigInt(r.value) : null;
+    },
+
     /** Stacked fees for a (possibly nested) vault. Null when no registry address is known. */
     async readStackedFees(subvaultRegistry, vault) {
       if (!subvaultRegistry) return { stackedPerfFeeBps: null, stackedExitFeeCapBps: null, depth: null };
@@ -306,9 +329,12 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
       let proposal = null;
       let commitment = null;
       let revealed = null;
+      let proposalUnknown = false;
+      let commitUnknown = false;
       if (pid > 0n) {
         const p = await read(governance, GOVERNANCE_READ_ABI, 'proposals', [pid]);
         if (p.ok) proposal = { pid, ...decodeProposal(p.value) };
+        else proposalUnknown = true;
         if (voter) {
           const [c, r] = await Promise.all([
             read(governance, GOVERNANCE_READ_ABI, 'commitOf', [pid, voter]),
@@ -316,6 +342,7 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
           ]);
           commitment = c.ok ? String(c.value) : null;
           revealed = r.ok ? Boolean(r.value) : null;
+          commitUnknown = !c.ok;
         }
       }
 
@@ -327,8 +354,15 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
         activePid: pid,
         proposal,
         commitment,
-        hasOutstandingCommit: commitment != null && commitment !== ZERO_BYTES32 && revealed === false,
+        // `revealed !== true`, NOT `revealed === false`. A failed `revealedOf` read yields null,
+        // and treating null as "already revealed" would silently drop a reveal obligation because
+        // one RPC call hiccuped — forfeiting the vote (S-4). An unnecessary reveal attempt costs
+        // gas and reverts harmlessly; a skipped one costs the vote. Fail toward revealing.
+        hasOutstandingCommit: commitment != null && commitment !== ZERO_BYTES32 && revealed !== true,
         revealed,
+        // Read failures are reported as UNKNOWN, never folded into "nothing to do" — see decideVote.
+        proposalUnknown,
+        commitUnknown,
       };
     },
   };
@@ -371,6 +405,13 @@ export function createStubChainReader(fixture = {}, govFixture = {}) {
     },
     async readOperatorId(_registry, vault) {
       return fixture[lc(vault)]?.operatorId ?? null;
+    },
+    async readVotingWeight(vault, member, _ts = null) {
+      if (!member) return null;
+      const f = fixture[lc(vault)] ?? {};
+      // Fixtures may state voting weight explicitly; otherwise fall back to the share balance,
+      // which is what a settled, window-cleared position looks like.
+      return f.votingEligibleShares ?? f.self?.shares ?? 0n;
     },
     async readStackedFees(_registry, vault) {
       const f = fixture[lc(vault)] ?? {};
