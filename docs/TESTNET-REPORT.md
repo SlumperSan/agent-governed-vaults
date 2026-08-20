@@ -136,6 +136,32 @@ unblock the run; landing the Sprint-8 merge train does. Note too that TESTNET-CH
 `protocol/main` already documents `VaultDeployer` — the committed docs describe a contract that
 exists only in the unmerged #17.
 
+### Merge order is forced — and #11/#12 are not actually broken
+
+The `contracts` check fails on **#11 and #12** but passes on **#17**. Inspecting the failing job
+([run 32286311397](https://github.com/SlumperSan/agent-governed-vaults/actions/runs/32286311397/job/96176551996))
+shows the failure is **entirely the inherited size gate**, not anything those branches changed:
+
+```
+[PASS] invariant_feeNeverExceedsNetGainTenth()  (runs: 256, calls: 16384, reverts: 0)
+[PASS] invariant_revealedNeverExceedsSnapshot() (runs: 256, calls: 16384, reverts: 0)
+Run forge build --sizes
+Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)
+| VaultFactory | 27,241 | 27,524 | -2,665 | 21,628 |
+```
+
+Their own suites are green; they inherit `protocol/main`'s oversized factory and trip the size gate
+that CI runs last. So the order is forced:
+
+1. Review and merge **#17** — it is `MERGEABLE / CLEAN` with all three checks green.
+2. Rebase **#11** and **#12** onto the new `protocol/main`; their `contracts` check should go green
+   with no code change, since the size gate is the only thing failing. Both are currently
+   `MERGEABLE / UNSTABLE` — unstable *because* of that check, not because of conflicts.
+3. Tag `v0.1.0-rc2` and confirm CI green on `protocol/main`.
+
+All three PRs have `reviewDecision: ''` (no reviews). #17 is the one that genuinely needs a contract
+review before merging — it changes the deployment shape.
+
 ### Not done, and why
 
 - **No faucet funding requested.** Pointless until the base is settled; the deploy would revert
