@@ -546,6 +546,11 @@ curl -s localhost:8402/metrics
 Counters read `0` before their first event rather than being absent: a missing series and a zero
 series look identical in a graph, and only one of them is good news.
 
+> **`/metrics` is rate-limited like every other free route**, and a scraper usually shares an IP
+> with the operator debugging next to it. During an incident that is exactly when you burn the
+> bucket on `curl` and get a 429 from the endpoint you most need. Give the burst room
+> (`RATE_LIMIT_BURST`), or set `RATE_LIMIT_PER_SEC=0` on a deployment whose only clients are yours.
+
 **On indexer lag.** The API has **no RPC client by design** — it serves the snapshot and nothing
 else — so it cannot know the chain head and must not claim a blocks-behind figure. It reports how
 long ago the snapshot was written, which is the number that actually tells you the indexer stopped,
@@ -595,6 +600,7 @@ was **not** clean — verify the snapshot before restarting.
 | `verify` says snapshot **UNUSABLE** | bad write, or a schema change | Restore from `.1` per §8.3. Keep the bad file. |
 | Every backup is unreadable | disk or filesystem fault | Delete the snapshot, set `START_BLOCK` to the **factory deploy block**, let it rebuild from chain history. Then check the disk — this should not happen. |
 | API returning 429s to your own front end | one shared IP behind a proxy | Set `TRUST_PROXY=1` **iff** a reverse proxy overwrites `x-forwarded-for`; otherwise raise `RATE_LIMIT_BURST`. Never set `TRUST_PROXY` on a directly-reachable API (§8.4). |
+| `/metrics` returning 429 mid-incident | your own `curl`s share the scraper's bucket | Wait one refill, or raise `RATE_LIMIT_BURST`. `ops-check` and `verify` read files, not HTTP, so they keep working when the API will not answer you (§8.5). |
 | API returning 402 to a paying agent | asset/network/amount mismatch, or a dead facilitator | `curl -s <api>/.well-known/x402` and compare against what the agent signs. Then check `FACILITATOR_URL` is reachable — a failed settlement is reported as a 402. |
 | Canary silent for a long time | healthy — silence *is* the healthy state | Confirm with `ops-check canary`, or set `HEARTBEAT_MS` for a periodic "still watching" line. |
 | Canary logs `event scan gap` | it was down longer than one `MAX_LOG_SPAN_BLOCKS` window | Those blocks were **not** scanned for module/fee events. Raise `MAX_LOG_SPAN_BLOCKS` and sweep the named range by hand before it scrolls away. |
