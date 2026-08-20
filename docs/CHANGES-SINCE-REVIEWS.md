@@ -98,9 +98,10 @@ The intended audit reference is the tag **`v0.2.0-audit`**.
 > **If that tag does not exist in the repository, it was not created**, and the reason is
 > recorded here rather than left as a mystery. The Sprint-10 session could not merge PR #17: the
 > `gh pr merge` call was refused by the agent harness's permission classifier, and performing the
-> equivalent local merge-and-push was declined as the same action by another name. That confirms
-> the premise of [issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14),
-> which a prior session had recorded as unverified.
+> equivalent local merge-and-push was declined as the same action by another name. The Sprint-8
+> merge train ([issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14)) is
+> blocked on exactly this, which is why no rc2 was ever cut. A prior session had recorded the
+> restriction as unverified because it had not attempted the call; it is now verified.
 >
 > Everything else in the freeze is complete: the review, the fixes, the package sync. What
 > remains is a merge and a tag, by a human with merge rights:

@@ -84,9 +84,9 @@ review did and did not cover, then [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md
 > **If `v0.2.0-audit` is not present in the repository, the freeze is content-complete but
 > untagged**, because PRs [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
 > [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19) still need a human merge —
-> the agent harness's permission classifier refuses `gh pr merge`
-> ([#14](https://github.com/SlumperSan/agent-governed-vaults/issues/14), premise now confirmed).
-> The exact merge-and-tag commands are in
+> the agent harness's permission classifier refuses `gh pr merge`, which is also what has kept
+> the Sprint-8 merge train ([#14](https://github.com/SlumperSan/agent-governed-vaults/issues/14))
+> from running. The exact merge-and-tag commands are in
 > [docs/CHANGES-SINCE-REVIEWS.md §4](docs/CHANGES-SINCE-REVIEWS.md).
 
 **Deployability blocker cleared (Sprint 7).** `VaultFactory` compiled to 27,241 bytes against the
