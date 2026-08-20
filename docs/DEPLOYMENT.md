@@ -105,7 +105,15 @@ Run each check against the live addresses:
 
 ## 6. Canary monitoring (post-launch)
 
-Watch continuously; page on any breach:
+Watch continuously; page on any breach. Every row below is implemented in `packages/canary` and runs
+as a service — see **[CANARY.md](CANARY.md)** for thresholds, tuning, and the response to each:
+
+```bash
+RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json npm run start:canary
+```
+
+It is silent while healthy, emits one line per signal transition, and is read-only against the chain
+(no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
 | Signal | Alert condition |
 | --- | --- |
@@ -114,7 +122,7 @@ Watch continuously; page on any breach:
 | Share conservation | `Σ sharesOf != totalShares` (indexer vs. chain read) |
 | Exit liveness | any `requestExit` reverting for a non-gate reason (H-1 regression sentinel) |
 | Fee routing | any USDC leaving a vault to an operator address outside the FeeEngine claim flow |
-| Module-call failures | `ModuleCallFailed` events (a creator-chosen module misbehaving) |
+| Module-call failures | `ModuleCallFailed` and `SliceEscrowed` events (a creator-chosen module or a basket token misbehaving) |
 
 ## 7. Mainnet gate
 

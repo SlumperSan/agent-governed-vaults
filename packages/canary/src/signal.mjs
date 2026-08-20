@@ -1,0 +1,68 @@
+// @ts-check
+/**
+ * The vocabulary every signal check returns. Kept tiny and pure so a signal module can be read,
+ * tested, and reasoned about without knowing anything about the runner, the sinks, or the RPC.
+ *
+ * Three statuses, and the third one matters:
+ *   ok      — measured, within threshold.
+ *   alert   — measured, out of threshold. Pages.
+ *   skipped — could NOT be measured (no eligible member to probe with, oracle breaker tripped,
+ *             archive state unavailable…). A check that cannot run is not a check that passed,
+ *             so it never collapses into `ok`. The runner reports OK→SKIPPED as its own
+ *             transition line, which is how a dead sentinel becomes visible instead of silent.
+ *
+ * @typedef {'ok'|'alert'|'skipped'} SignalStatus
+ * @typedef {Object} SignalResult
+ * @property {string} id            stable identity for transition tracking: signal|vault|key
+ * @property {string} signal        signal name (e.g. 'oracle-freshness')
+ * @property {string} vault         the vault this observation is about
+ * @property {string} [key]         sub-key when a signal fans out (e.g. per basket asset)
+ * @property {SignalStatus} status
+ * @property {string} message       one actionable line: what is wrong, measured vs threshold
+ * @property {string} [measured]    the measured value, formatted
+ * @property {string} [threshold]   the threshold it was compared against, formatted
+ * @property {Record<string, any>} [detail]  structured extras for the webhook payload
+ */
+
+/** Stable transition key. Per-asset fan-out gets its own key so one stale asset cannot flap a vault. */
+export function signalId(signal, vault, key) {
+  return key ? `${signal}|${vault}|${key}` : `${signal}|${vault}`;
+}
+
+const build = (status) => (
+  /**
+   * @param {{signal:string, vault:string, key?:string, message:string,
+   *          measured?:string, threshold?:string, detail?:Record<string,any>}} fields
+   * @returns {SignalResult}
+   */
+  (fields) => ({ ...fields, status, id: signalId(fields.signal, fields.vault, fields.key) })
+);
+
+export const ok = build('ok');
+export const alert = build('alert');
+export const skipped = build('skipped');
+
+/** Short vault label for alert lines: 0x1234…cdef. Full address always rides in `detail`. */
+export function shortAddr(a) {
+  return typeof a === 'string' && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : String(a);
+}
+
+/**
+ * |a - b| as a fraction of max(a, b), in basis points. Integer math end to end — divergence
+ * thresholds must never round through a float. Returns 0 when both sides are zero.
+ * @param {bigint} a @param {bigint} b @returns {bigint}
+ */
+export function divergenceBps(a, b) {
+  const hi = a > b ? a : b;
+  if (hi === 0n) return 0n;
+  const diff = a > b ? a - b : b - a;
+  return (diff * 10000n) / hi;
+}
+
+/** Render integer basis points as a percentage string, e.g. 137n -> "1.37%". */
+export function bpsToPct(bps) {
+  const n = typeof bps === 'bigint' ? bps : BigInt(bps);
+  const whole = n / 100n;
+  const frac = (n < 0n ? -n : n) % 100n;
+  return `${whole}.${String(frac).padStart(2, '0')}%`;
+}
