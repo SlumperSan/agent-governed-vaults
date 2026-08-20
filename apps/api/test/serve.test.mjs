@@ -8,13 +8,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { rm, writeFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { resolveApiConfig, facilitatorFromConfig, buildApiServer } from '../src/serve.mjs';
 import { createApi } from '../src/server.mjs';
 import { createStubFacilitator } from '../src/facilitator.mjs';
 import { applyAll } from '../../../packages/indexer/src/projections.mjs';
 import { saveSnapshot } from '../../../packages/indexer/src/store.mjs';
+import { readHeartbeatFile } from '../../../packages/oplog/src/heartbeat.mjs';
 
 const USDC = '0x' + 'c'.repeat(40);
 const PAYTO = '0x' + '9'.repeat(40);
@@ -110,5 +111,62 @@ test('no CORS headers by default (existing behavior preserved)', async () => {
   } finally {
     server.close();
     await once(server, 'close');
+  }
+});
+
+// ── hardening config (Sprint 13) ──
+
+test('rate-limit config: defaults, and RATE_LIMIT_PER_SEC=0 turns the limiter off', () => {
+  assert.deepEqual(resolveApiConfig(BASE_ENV).rateLimit, { enabled: true, capacity: 60, refillPerSec: 5, maxKeys: 10_000 });
+  assert.equal(resolveApiConfig({ ...BASE_ENV, RATE_LIMIT_PER_SEC: '0' }).rateLimit.enabled, false);
+  const tuned = resolveApiConfig({ ...BASE_ENV, RATE_LIMIT_PER_SEC: '1', RATE_LIMIT_BURST: '10', RATE_LIMIT_MAX_IPS: '50' }).rateLimit;
+  assert.deepEqual(tuned, { enabled: true, capacity: 10, refillPerSec: 1, maxKeys: 50 });
+});
+
+test('rate-limit config rejects nonsense instead of silently disabling the limiter', () => {
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, RATE_LIMIT_PER_SEC: '-1' }), /RATE_LIMIT_PER_SEC must be >= 0/);
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, RATE_LIMIT_BURST: '0' }), /RATE_LIMIT_BURST must be > 0/);
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, RATE_LIMIT_BURST: 'lots' }), /RATE_LIMIT_BURST must be > 0/);
+});
+
+test('TRUST_PROXY is OFF unless explicitly set — x-forwarded-for is client-spoofable', () => {
+  assert.equal(resolveApiConfig(BASE_ENV).trustProxy, false);
+  assert.equal(resolveApiConfig({ ...BASE_ENV, TRUST_PROXY: '1' }).trustProxy, true);
+  assert.equal(resolveApiConfig({ ...BASE_ENV, TRUST_PROXY: 'true' }).trustProxy, true);
+  assert.equal(resolveApiConfig({ ...BASE_ENV, TRUST_PROXY: 'yes-please' }).trustProxy, false);
+});
+
+test('request caps default sensibly and are overridable', () => {
+  assert.deepEqual(resolveApiConfig(BASE_ENV).limits, { maxUrlLength: 2048, maxBodyBytes: 8192, maxHeaderBytes: 16384 });
+  const l = resolveApiConfig({ ...BASE_ENV, MAX_URL_BYTES: '512', MAX_BODY_BYTES: '1024', MAX_HEADER_BYTES: '4096' }).limits;
+  assert.deepEqual(l, { maxUrlLength: 512, maxBodyBytes: 1024, maxHeaderBytes: 4096 });
+});
+
+test('heartbeatDir defaults alongside the snapshot, and HEARTBEAT_DIR overrides it', () => {
+  assert.equal(resolveApiConfig({ ...BASE_ENV, STATE_PATH: '/data/indexer-state.json' }).heartbeatDir, dirname('/data/indexer-state.json'));
+  assert.equal(resolveApiConfig({ ...BASE_ENV, HEARTBEAT_DIR: '/hb' }).heartbeatDir, '/hb');
+});
+
+test('buildApiServer beats the API heartbeat only on a SUCCESSFUL reload', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'serve-hb-'));
+  const path = join(dir, 'indexer-state.json');
+  try {
+    const V = '0x' + '1'.repeat(40);
+    await saveSnapshot(path, applyAll([{ name: 'VaultCreated', vault: V, blockNumber: 5, logIndex: 0, args: { vault: V, creator: V, usdc: USDC, capacityCapUsdc: 1n } }]));
+    const cfg = resolveApiConfig({ ...BASE_ENV, STATE_PATH: path, HEARTBEAT_DIR: dir });
+    const { reload, heartbeat } = await buildApiServer(cfg, { log: {} });
+
+    assert.equal(await reload(), true);
+    const first = await readHeartbeatFile(heartbeat.path);
+    assert.equal(first.service, 'api');
+    assert.equal(first.detail.lastBlock, 5);
+
+    // A process that is up but has lost its snapshot must NOT keep looking healthy to ops-check.
+    await writeFile(path, '{ torn', 'utf8');
+    assert.equal(await reload(), false);
+    const second = await readHeartbeatFile(heartbeat.path);
+    assert.equal(second.ts, first.ts, 'heartbeat not refreshed by a failed reload');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });

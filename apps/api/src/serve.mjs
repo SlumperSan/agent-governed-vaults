@@ -15,14 +15,24 @@
  *   PRICE_AMOUNT (10000 = $0.01)  PRICE_NETWORK (base)
  *   FACILITATOR (stub | http)   FACILITATOR_URL (required when FACILITATOR=http)
  *   CORS (1 to enable — needed for the browser live mode)
+ *   RATE_LIMIT_BURST (60)  RATE_LIMIT_PER_SEC (5, 0 disables)  RATE_LIMIT_MAX_IPS (10000)
+ *   TRUST_PROXY (1 iff a reverse proxy in front of this process sets x-forwarded-for)
+ *   MAX_URL_BYTES (2048)  MAX_BODY_BYTES (8192)  MAX_HEADER_BYTES (16384)
+ *   HEARTBEAT_DIR (dirname of STATE_PATH)  LOG_FORMAT (json|pretty)  LOG_LEVEL (info)
  *
  * Run: `PRICE_ASSET=… PRICE_PAYTO=… node apps/api/src/serve.mjs`
  */
 
 import { fileURLToPath } from 'node:url';
-import { createApi } from './server.mjs';
+import { stat } from 'node:fs/promises';
+import { createApi, DEFAULT_LIMITS } from './server.mjs';
 import { createHttpFacilitator, createStubFacilitator } from './facilitator.mjs';
+import { createRateLimiter } from './ratelimit.mjs';
+import { createMetrics } from './metrics.mjs';
 import { loadSnapshot } from '../../../packages/indexer/src/store.mjs';
+import { loggerFromEnv } from '../../../packages/oplog/src/logger.mjs';
+import { createHeartbeat, defaultHeartbeatDir } from '../../../packages/oplog/src/heartbeat.mjs';
+import { createShutdown } from '../../../packages/oplog/src/shutdown.mjs';
 
 /**
  * Parse + validate the API config from a raw env object. Pure and testable.
@@ -42,11 +52,19 @@ export function resolveApiConfig(env) {
     throw new Error('api: FACILITATOR=http requires FACILITATOR_URL');
 
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
+  const flag = (k) => env[k] === '1' || env[k] === 'true';
+
+  const refillPerSec = num('RATE_LIMIT_PER_SEC', 5);
+  const capacity = num('RATE_LIMIT_BURST', 60);
+  if (!Number.isFinite(refillPerSec) || refillPerSec < 0) throw new Error(`api: RATE_LIMIT_PER_SEC must be >= 0, got '${env.RATE_LIMIT_PER_SEC}'`);
+  if (!Number.isFinite(capacity) || capacity <= 0) throw new Error(`api: RATE_LIMIT_BURST must be > 0, got '${env.RATE_LIMIT_BURST}'`);
+
+  const statePath = env.STATE_PATH || './data/indexer-state.json';
   return {
-    statePath: env.STATE_PATH || './data/indexer-state.json',
+    statePath,
     port: num('PORT', 8402),
     reloadMs: num('RELOAD_MS', 5000),
-    cors: env.CORS === '1' || env.CORS === 'true',
+    cors: flag('CORS'),
     price: {
       asset: env.PRICE_ASSET,
       amount: env.PRICE_AMOUNT || '10000',
@@ -55,6 +73,18 @@ export function resolveApiConfig(env) {
     },
     facilitatorKind: facilitator,
     facilitatorUrl: env.FACILITATOR_URL,
+    // RATE_LIMIT_PER_SEC=0 turns the limiter off entirely — for a private deployment where the
+    // only client is your own front end and an accidental 429 is worse than an unbounded scrape.
+    rateLimit: { enabled: refillPerSec > 0, capacity, refillPerSec, maxKeys: num('RATE_LIMIT_MAX_IPS', 10_000) },
+    // Off by default and it must stay that way: x-forwarded-for is client-spoofable, so trusting
+    // it without a proxy that overwrites it lets one attacker mint a fresh bucket per request.
+    trustProxy: flag('TRUST_PROXY'),
+    limits: {
+      maxUrlLength: num('MAX_URL_BYTES', DEFAULT_LIMITS.maxUrlLength),
+      maxBodyBytes: num('MAX_BODY_BYTES', DEFAULT_LIMITS.maxBodyBytes),
+      maxHeaderBytes: num('MAX_HEADER_BYTES', DEFAULT_LIMITS.maxHeaderBytes),
+    },
+    heartbeatDir: defaultHeartbeatDir({ ...env, STATE_PATH: statePath }),
   };
 }
 
@@ -69,44 +99,100 @@ export function facilitatorFromConfig(cfg, { fetchImpl } = {}) {
  * Build the API server from config. Loads the initial snapshot and exposes a `reload()` that
  * refreshes state IN PLACE (so createApi's closure stays valid) — fault-tolerant: a malformed or
  * version-mismatched snapshot is logged and the previous good state is kept serving.
+ *
+ * `reload()` also drives the two operational signals the API is uniquely placed to report: the
+ * snapshot's age (the indexer-lag metric — see metrics.mjs on why age, not blocks-behind) and the
+ * API's own heartbeat, which is written on a SUCCESSFUL reload so a process that is up but has
+ * lost its snapshot does not look healthy to ops-check.
+ *
  * @param {ReturnType<typeof resolveApiConfig>} cfg
- * @param {{facilitator?:object, log?:(m:string)=>void}} [opts]
+ * @param {{facilitator?:object, log?:any, now?:() => number}} [opts]
  */
-export async function buildApiServer(cfg, { facilitator, log = console.log } = {}) {
+export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('api'), now = () => Date.now() } = {}) {
   const state = await loadSnapshot(cfg.statePath);
   const fac = facilitator ?? facilitatorFromConfig(cfg);
-  const api = createApi({ state, facilitator: fac, price: cfg.price, cors: cfg.cors });
+  const metrics = createMetrics();
+  const rateLimit = cfg.rateLimit?.enabled
+    ? createRateLimiter({ capacity: cfg.rateLimit.capacity, refillPerSec: cfg.rateLimit.refillPerSec, maxKeys: cfg.rateLimit.maxKeys, now })
+    : null;
+
+  const startedAt = now();
+  let snapshotMtimeMs = await mtimeOrNull(cfg.statePath);
+  metrics.gauge('vault_api_uptime_seconds', () => Math.round((now() - startedAt) / 1000));
+  metrics.gauge('vault_indexer_snapshot_age_seconds', () => (snapshotMtimeMs == null ? -1 : Math.round((now() - snapshotMtimeMs) / 1000)));
+
+  const heartbeat = createHeartbeat({
+    dir: cfg.heartbeatDir, service: 'api',
+    // Three reload cycles of silence is a dead API, with room for one slow disk read.
+    staleAfterMs: Math.max(30_000, cfg.reloadMs * 3),
+    onError: (err) => log.warn?.('heartbeat.failed', { error: String(err?.message ?? err) }),
+  });
+
+  const api = createApi({
+    state, facilitator: fac, price: cfg.price, cors: cfg.cors,
+    rateLimit, metrics, limits: cfg.limits, trustProxy: cfg.trustProxy, log,
+  });
 
   async function reload() {
     try {
       const fresh = await loadSnapshot(cfg.statePath);
       // Replace the Map/scalar fields on the SAME object the API closes over.
       Object.assign(state, fresh);
+      snapshotMtimeMs = await mtimeOrNull(cfg.statePath);
+      await heartbeat.beat({ lastBlock: state.lastBlock, vaults: state.vaults.size });
       return true;
     } catch (err) {
-      log(`api: snapshot reload failed, keeping stale state at block ${state.lastBlock}: ${err?.message ?? err}`);
+      metrics.inc('vault_api_snapshot_reload_failures_total');
+      log.warn?.('snapshot.reload_failed', { path: cfg.statePath, lastBlock: state.lastBlock, error: String(err?.message ?? err) });
       return false;
     }
   }
 
-  return { api, state, reload };
+  return { api, state, reload, metrics, rateLimit, heartbeat, log };
+}
+
+async function mtimeOrNull(path) {
+  try {
+    return (await stat(path)).mtimeMs;
+  } catch {
+    return null;
+  }
 }
 
 // ── entrypoint ──
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
+  const log = loggerFromEnv('api');
   const cfg = resolveApiConfig(process.env);
-  buildApiServer(cfg).then(({ api, state, reload }) => {
+  buildApiServer(cfg, { log }).then(async ({ api, state, reload, metrics, heartbeat }) => {
     if (cfg.facilitatorKind === 'stub') {
-      console.warn('⚠ api: FACILITATOR=stub — payments are ACCEPTED WITHOUT on-chain settlement (dev only). Set FACILITATOR=http + FACILITATOR_URL for production.');
+      log.warn('facilitator.stub', { msg: 'payments are ACCEPTED WITHOUT on-chain settlement (dev only). Set FACILITATOR=http + FACILITATOR_URL for production.' });
     }
     const timer = setInterval(reload, cfg.reloadMs);
     if (typeof timer.unref === 'function') timer.unref();
+    await heartbeat.beat({ lastBlock: state.lastBlock, vaults: state.vaults.size }, { force: true });
+
+    // SIGTERM: stop reloading, stop accepting, let in-flight responses finish, then close.
+    // `closeIdleConnections` is what makes this bounded — keep-alive sockets with no request in
+    // flight would otherwise hold the server open for their full timeout.
+    createShutdown({ log })
+      .onShutdown('api.stop-reload', () => clearInterval(timer))
+      .onShutdown('api.drain', () => new Promise((resolve) => {
+        api.server.close(() => resolve(undefined));
+        api.server.closeIdleConnections?.();
+      }))
+      .onShutdown('api.final-metrics', () => log.info('metrics.final', metrics.snapshot()))
+      .install();
+
     api.server.listen(cfg.port, () => {
-      console.log(`api: listening on :${cfg.port} — snapshot ${cfg.statePath} (block ${state.lastBlock}), reload ${cfg.reloadMs}ms, facilitator ${cfg.facilitatorKind}${cfg.cors ? ', cors on' : ''}`);
+      log.info('listening', {
+        port: cfg.port, snapshot: cfg.statePath, lastBlock: state.lastBlock, reloadMs: cfg.reloadMs,
+        facilitator: cfg.facilitatorKind, cors: cfg.cors, trustProxy: cfg.trustProxy,
+        rateLimit: cfg.rateLimit.enabled ? `${cfg.rateLimit.refillPerSec}/s burst ${cfg.rateLimit.capacity}` : 'off',
+      });
     });
   }).catch((err) => {
-    console.error(err?.message ?? err);
+    log.error('startup.failed', { error: String(err?.message ?? err) });
     process.exit(1);
   });
 }

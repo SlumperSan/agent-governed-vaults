@@ -31,6 +31,7 @@ paths:
                   routes: { type: object }
                   openapi: { type: string }
                   llms: { type: string }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /vaults:
     get:
       summary: List all known vaults (metered) — the discovery surface for agents
@@ -72,6 +73,28 @@ paths:
                 properties:
                   ok: { type: boolean }
                   lastBlock: { type: integer }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /metrics:
+    get:
+      summary: >
+        Operational counters (free, rate-limited). Prometheus text exposition format, readable
+        with plain curl. `vault_indexer_snapshot_age_seconds` is the indexer-lag signal: the API
+        holds no RPC client by design, so it reports how long ago the snapshot was written rather
+        than claiming a blocks-behind figure it cannot know. See docs/RUNTIME.md section 8.
+      operationId: metrics
+      responses:
+        '200':
+          description: Counters
+          content:
+            text/plain:
+              schema: { type: string }
+              example: |
+                # HELP vault_api_requests_total HTTP requests received
+                # TYPE vault_api_requests_total counter
+                vault_api_requests_total 1841
+                vault_indexer_last_block 8204113
+                vault_indexer_snapshot_age_seconds 11
+        '429': { $ref: '#/components/responses/RateLimited' }
   /vaults/{address}:
     get:
       summary: Vault projection (metered)
@@ -113,6 +136,24 @@ paths:
         '402': { $ref: '#/components/responses/PaymentRequired' }
 components:
   responses:
+    RateLimited:
+      description: >
+        Per-IP token bucket exhausted on a FREE route. The metered routes are deliberately not
+        rate-limited: x402 is their rate limiter, since every metered read costs the caller USDC.
+      headers:
+        retry-after:
+          schema: { type: integer }
+          description: Seconds to wait before retrying.
+        x-ratelimit-limit:
+          schema: { type: integer }
+          description: Burst capacity, in requests.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              retryAfterSec: { type: integer }
     PaymentRequired:
       description: >
         Payment required. The `PAYMENT-REQUIRED` header carries the JSON challenge; authorize it
