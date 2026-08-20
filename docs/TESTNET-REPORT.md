@@ -1,21 +1,30 @@
 # Base Sepolia Testnet Run — Report
 
-**Status: ⛔ PRE-FLIGHT ONLY — the lifecycle was NOT run.**
+**Status: PRE-FLIGHT GREEN — awaiting the human-signed deploy.**
 
-This report records Sprint 9 pre-flight verification. No deployment was made, no transaction was
-broadcast, and no lifecycle phase was exercised. The run is **blocked on repository state**, not on
-infrastructure: the base revision named in the sprint brief does not exist, and two of the four
-runtime components Sprint 9 must exercise are not present on any candidate base. Details in §4.
+The blocker that stopped the first attempt is **resolved**: the Sprint-8 merge train landed, so
+`protocol/main` now carries the EIP-170 fix, the canary, and the reference agent, and
+`forge build --sizes` exits 0. Pre-flight has been re-run against that base and is green.
 
-Sprint issue: [#15](https://github.com/SlumperSan/agent-governed-vaults/issues/15) — **left open.**
+Nothing has been deployed yet. No transaction has been broadcast, no key handled. The run resumes at
+§6 the moment a funded deployer key exists.
+
+Sprint issue: [#15](https://github.com/SlumperSan/agent-governed-vaults/issues/15) — **open until a
+full green lifecycle is documented here.**
 
 | | |
 | --- | --- |
-| Date (UTC) | 2026-08-20 |
-| Report branch | `sprint-9/testnet-run` (from `protocol/main` @ `20d1b4f8`) |
+| Report branch | `sprint-9/testnet-run` (PR [#18](https://github.com/SlumperSan/agent-governed-vaults/pull/18)) |
+| Base | `protocol/main` @ `5081f9b9` (merge train complete; tags `v0.1.0-rc2`, `v0.2.0-audit`) |
 | Chain | Base Sepolia, chainId **84532** |
 | RPC | `https://base-sepolia-rpc.publicnode.com` |
 | Chain interaction | **read-only** (`cast call` / `cast block`) — no key handled, nothing signed |
+
+> **Worktree note.** This branch is worked in a **separate git worktree**, not the shared checkout at
+> `C:\Users\Micha\desktop\x402` — that one was on `sprint-13/prod-ops` with uncommitted Sprint-13
+> files and untracked Sprint-11 oracle files, and a branch switch would have swept another sprint's
+> work into this PR. Concurrent sessions share this repo; see the `concurrent-sessions-git-add`
+> note.
 
 ---
 
@@ -27,16 +36,16 @@ Sprint issue: [#15](https://github.com/SlumperSan/agent-governed-vaults/issues/1
 | cast | 1.7.1 (`4072e487`) | v1.7.1 | ✅ |
 | node | v24.18.0 | ≥ 20 | ✅ |
 
-RPC liveness: `chainId` = **84532** (matches the config's expected value), head block **45740507**,
-latest block timestamp `1787249334` (Thu 2026-08-20 18:08:54 UTC). `sepolia.base.org` was not used —
-the publicnode endpoint responded normally throughout, consistent with the known-infra note.
+RPC liveness: `chainId` **84532**, head block **45748604**. `sepolia.base.org` was not used — the
+publicnode endpoint responded normally throughout, consistent with the known-infra note.
 
 ---
 
 ## 2. Config addresses — verified live on-chain
 
 Every address in [`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json) was
-read back from the live chain. **All six match the committed config exactly.**
+read back from the live chain. **All six match the committed config exactly.** Re-verified against
+the post-merge base.
 
 ### Tokens
 
@@ -48,13 +57,12 @@ read back from the live chain. **All six match the committed config exactly.**
 
 ### Chainlink feeds
 
-| Address | `description()` | `decimals()` | Latest answer | `updatedAt` | Age at check | OK |
-| --- | --- | --- | --- | --- | --- | --- |
-| `0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1` | `"ETH / USD"` | 8 | `232952631758` → **$2,329.53** | `1787249318` | **16 s** | ✅ |
-| `0xb113F5A928BCfF189C998ab20d753a47F9dE5A61` | `"LINK / USD"` | 8 | `1070832000` → **$10.708** | `1787249180` | **154 s** | ✅ |
+| Address | `description()` | `decimals()` | Age at check | vs `maxStaleness` 86,400 s | OK |
+| --- | --- | --- | --- | --- | --- |
+| `0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1` | `"ETH / USD"` | 8 | **258 s** | fresh | ✅ |
+| `0xb113F5A928BCfF189C998ab20d753a47F9dE5A61` | `"LINK / USD"` | 8 | **480 s** | fresh | ✅ |
 
-Both feeds are **fresh** against the config's `maxStalenessSeconds = 86400`. The `StaleOracle`
-preflight warning described in TESTNET-CHECKLIST §6 is **not** expected for a run started now.
+No `StaleOracle` preflight warning (TESTNET-CHECKLIST §6) is expected for a run started now.
 
 ### Router
 
@@ -62,154 +70,74 @@ preflight warning described in TESTNET-CHECKLIST §6 is **not** expected for a r
 | --- | --- | --- | --- |
 | `0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4` | `codesize` | 24,497 B (code present) | ✅ |
 
-Pinned as Uniswap SwapRouter02, with only `exactInputSingle` / `exactInput` allow-listed.
-
 > **Carried forward, not a new finding:** the oracle config lists the *same* Chainlink feed three
 > times per asset to satisfy the `OracleAggregator` ≥3-source floor (2-of-3 quorum over three
-> distinct adapter instances). This is the documented, deliberate testnet compromise — it is **not**
-> SF-1 mechanism diversity. Already recorded in the config's `testnetCompromise` field and in
-> TESTNET-CHECKLIST §3; restated so this run record stands alone.
+> distinct adapter instances). This is the documented, deliberate testnet compromise — **not** SF-1
+> mechanism diversity. Recorded in the config's `testnetCompromise` field and TESTNET-CHECKLIST §3.
 
 ---
 
-## 3. `forge build --sizes` — RED on the stated base
+## 3. `forge build --sizes` — GREEN
 
-Measured directly in this session on both candidate revisions.
-
-### On `protocol/main` @ `20d1b4f8` (the base named in the brief)
+Measured on this branch over the post-merge base. **Exit code 0.**
 
 | Contract | Runtime (B) | Runtime margin (B) | EIP-170 |
 | --- | --- | --- | --- |
 | `VaultCore` | 23,016 | 1,560 | ✅ |
-| **`VaultFactory`** | **27,241** | **−2,665** | ❌ **OVER CAP** |
-| `VaultDeployer` | *(does not exist)* | — | — |
-
-### On `sprint-7/eip170-fix` @ `b9355d54` (PR #17, unmerged)
-
-| Contract | Runtime (B) | Runtime margin (B) | EIP-170 |
-| --- | --- | --- | --- |
-| `VaultCore` | 23,016 | 1,560 | ✅ |
-| **`VaultFactory`** | **2,718** | **21,858** | ✅ |
+| `VaultFactory` | **2,718** | 21,858 | ✅ |
 | `VaultDeployer` | 938 | 23,638 | ✅ |
+| `Governance` | 11,990 | 12,586 | ✅ |
+| `FeeEngine` | 2,983 | 21,593 | ✅ |
+| `OperatorRegistry` | 2,219 | 22,357 | ✅ |
+| `AggregationRouterAdapter` | 2,066 | 22,510 | ✅ |
+| `SubVaultRegistry` | 1,605 | 22,971 | ✅ |
+| `OracleAggregator` | 1,212 | 23,364 | ✅ |
+| `ChainlinkSourceAdapter` | 636 | 23,940 | ✅ |
 
-All other contracts sit comfortably under cap on both revisions (largest remaining: `Governance`
-11,990 B, margin 12,586 B).
-
-**Consequence:** on `protocol/main` the one-command deploy in TESTNET-CHECKLIST §3 reverts before
-any vault exists. Funding a key and broadcasting against that base would burn faucet funds for
-nothing — exactly the failure the checklist's own ⛔ banner warns about.
-
-> **Observation (not a bug — no issue filed):** the fix relocates `VaultCore`'s creation code rather
-> than shrinking `VaultCore`, which still sits at 23,016 B with only **1,560 B** of headroom. That is
-> by design and the contracts are post-review; noted because future `VaultCore` growth has little
-> room before meeting the same wall the factory just cleared.
-
----
-
-## 4. Why the run is blocked
-
-The brief states the base is `protocol/main` @ **v0.1.0-rc2 — CI fully green including sizes**. Four
-verified facts contradict that. Issue #15 itself says *"Run AFTER Sprint 8 (rc2, CI fully green)"* —
-**Sprint 8 never landed.**
-
-| # | Claim in brief | Verified reality | Evidence |
-| --- | --- | --- | --- |
-| 1 | base @ `v0.1.0-rc2` | **No such tag.** Only `v0.1.0-rc1` exists | `git fetch --all --tags`; `git tag -l` |
-| 2 | sizes green | `VaultFactory` **−2,665 B** over cap | `forge build --sizes` on `20d1b4f8` (§3) |
-| 3 | fix is in the base | `origin/protocol/main` = `20d1b4f8`, lacks `12b49d80` | `git branch -a --contains 12b49d80` → fix branch only |
-| 4 | Sprint 8 merged | PR #17 **OPEN**, unmerged (it *is* reviewed — see below) | `gh pr view 17` |
-
-### The gap is wider than the EIP-170 fix
-
-Sprint 9 step 4 must run the **indexer, API, canary, and reference agent**. The canary and the
-reference agent are on neither `protocol/main` nor `sprint-7/eip170-fix` — they live on their own
-unmerged branches:
-
-| PR | Branch | Provides | State |
-| --- | --- | --- | --- |
-| [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) | `sprint-7/eip170-fix` | deployable `VaultFactory` + `VaultDeployer` | OPEN, CI green, **reviewed PASS** |
-| [#11](https://github.com/SlumperSan/agent-governed-vaults/pull/11) | `sprint-5/canary` | `docs/CANARY.md`, `packages/canary/` | OPEN, **reviewed PASS** |
-| [#12](https://github.com/SlumperSan/agent-governed-vaults/pull/12) | `sprint-6/reference-agent` | `packages/reference-agent/` | OPEN, **reviewed PASS** |
-
-> **Review status — read the comments, not the API field.** `gh pr view --json reviewDecision`
-> returns `''` and `reviews: []` for all three, which reads as "unreviewed". It is not: each PR
-> carries a substantive `## Review: PASS ✅` comment from `SlumperSan` (#11 at 15:54Z, #12 at
-> 15:55Z, #17 at 17:47Z on 2026-08-20), including an adversarial line-by-line pass on
-> `VaultDeployer`'s assembly and a sha256 proof that `VaultCore`'s bytecode object is bit-identical
-> to `protocol/main` (`7a433965…`). They were posted as **issue comments rather than formal GitHub
-> review objects**, so the API fields stay empty. All three are reviewed and approved.
-
-**No single revision in the repository contains all three.** Choosing a different base does not
-unblock the run; landing the Sprint-8 merge train does. Note too that TESTNET-CHECKLIST §3 on
-`protocol/main` already documents `VaultDeployer` — the committed docs describe a contract that
-exists only in the unmerged #17.
-
-### Merge order is forced — and #11/#12 are not actually broken
-
-The `contracts` check fails on **#11 and #12** but passes on **#17**. Inspecting the failing job
-([run 32286311397](https://github.com/SlumperSan/agent-governed-vaults/actions/runs/32286311397/job/96176551996))
-shows the failure is **entirely the inherited size gate**, not anything those branches changed:
-
-```
-[PASS] invariant_feeNeverExceedsNetGainTenth()  (runs: 256, calls: 16384, reverts: 0)
-[PASS] invariant_revealedNeverExceedsSnapshot() (runs: 256, calls: 16384, reverts: 0)
-Run forge build --sizes
-Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)
-| VaultFactory | 27,241 | 27,524 | -2,665 | 21,628 |
-```
-
-Their own suites are green; they inherit `protocol/main`'s oversized factory and trip the size gate
-that CI runs last. So the order is forced:
-
-1. Merge **#17** — `MERGEABLE / CLEAN`, all three checks green, reviewed PASS.
-2. Rebase **#11** then **#12** onto the new `protocol/main`; their `contracts` check should go green
-   with no code change, since the size gate is the only thing failing. Both are currently
-   `MERGEABLE / UNSTABLE` — unstable *because* of that check, not because of conflicts. Both PRs'
-   own reviews independently confirm this same order, and both edit the `test:backend` line in
-   `package.json`, so expect one conflict there — **keep both globs**.
-3. Tag `v0.1.0-rc2` and confirm CI green on `protocol/main`.
-
-**The merge train is not blocked on review or on code.** All three PRs are reviewed PASS, and #17
-reports `MERGEABLE / CLEAN` with all three checks green. What remains is the merge operation itself,
-which has simply not been performed.
-
-> **On [issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14) (\"permission
-> classifier denies `gh pr merge`\") — its premise may be stale.** That was recorded by a prior
-> session. This session ran `gh pr create`, `gh pr edit`, `git push` and `forge build --sizes`
-> without any denial, so the broad tool restriction #14 describes was not reproduced here. `gh pr
-> merge` itself was **not** attempted — merging is a human action under this sprint's division of
-> labour, and it is not something to probe speculatively. Treat #14 as unconfirmed rather than as a
-> known blocker: try the merge first, and only re-open the permissions question if it actually
-> fails.
-
-### Not done, and why
-
-- **No faucet funding requested.** Pointless until the base is settled; the deploy would revert
-  regardless of balance.
-- **No deploy command handed over.** It would have reverted on the stated base.
-- **No integration branch created.** The three PRs are reviewed and ready; what is missing is the
-  merge itself (#14), which is a repository action for the human, not something to route around by
-  building a parallel integration branch that no review or CI run covers.
-- **No issues filed.** Nothing found is a defect — the config is correct, every address verifies, the
-  toolchain is right. The blocker is repository/process state, which belongs in this report and in
-  the Sprint-8 merge train, not in a new bug issue.
-- **Issue #15 left open.** Its precondition (Sprint 8 / rc2) is unmet, and its DONE criterion — a full
-  green lifecycle with indexer/API/canary/agent all exercised — is not met.
+> **Observation (not a bug — no issue filed):** the EIP-170 fix relocated `VaultCore`'s creation code
+> rather than shrinking `VaultCore`, which still sits at 23,016 B with **1,560 B** of headroom. By
+> design and frozen byte-identical at `v0.2.0-audit`; noted because future `VaultCore` growth has
+> little room.
 
 ---
 
-## 5. What is ready to go
+## 4. First attempt — blocker, now resolved
 
-Everything not dependent on the blocked base is verified and will not need redoing:
+Recorded for the paper trail. The first Sprint-9 attempt (2026-08-20) stopped at pre-flight because
+the base named in the brief did not exist: no `v0.1.0-rc2` tag, `protocol/main` lacked the EIP-170
+fix, and `forge build --sizes` measured `VaultFactory` at **27,241 B — 2,665 B over the cap**, so the
+checklist §3 deploy would have reverted before any vault existed. The canary (#11) and reference
+agent (#12) were also absent from every candidate base. No funds were spent.
 
-- ✅ RPC endpoint live, correct chain, no 503s observed
-- ✅ All 6 config addresses confirmed on-chain (symbol / decimals / description all match)
-- ✅ Both Chainlink feeds fresh — no stale-oracle warning expected
-- ✅ Router has code at the pinned address
-- ✅ Toolchain at required versions
-- ✅ Size profile characterised on both candidate revisions
+**All of that is now fixed.** `protocol/main` @ `5081f9b9` contains #17, #11, #12 and #19; tags
+`v0.1.0-rc2` and `v0.2.0-audit` exist; sizes are green (§3); `docs/CANARY.md`,
+`packages/canary/` and `packages/reference-agent/` are present.
 
-**To unblock:** land the Sprint-8 merge train — merge #17, rebase and merge #11 then #12 (keeping
-both `test:backend` globs), tag `v0.1.0-rc2`, confirm CI green including sizes on `protocol/main`.
-All three are already reviewed PASS, so this is a merge operation, not a review cycle. Then re-run
-this pre-flight (~2 min) and proceed to funding and deploy.
+One process note worth keeping: `gh pr view --json reviewDecision` returns `''` / `reviews: []` for
+this repo's PRs, which reads as "unreviewed" but is not — reviews are posted as **issue comments**,
+not formal review objects. Read `--json comments` before concluding a PR is unreviewed.
+
+---
+
+## 5. Observation on the deploy script
+
+`DeployTestnet.s.sol` deploys `VaultDeployer` (line 80) and pins it into the factory (line 86), but
+its `console2.log` block prints only seven addresses and **omits `VaultDeployer`**. Not blocking —
+the address is recoverable from
+`contracts/broadcast/DeployTestnet.s.sol/84532/run-latest.json` — and the deploy path is
+deliberately **not** being edited immediately before a real broadcast, so the script stays exactly
+what CI exercised. The address book in §7 will carry `VaultDeployer` regardless.
+
+---
+
+## 6. Deploy — PENDING (human-signed)
+
+**Blocked on a funded deployer key.** `~/.foundry/keystores/` does not exist, so no key has been
+imported. Current Base Sepolia gas price is **0.006 gwei**, so the checklist's ≥ 0.05 ETH is ample.
+
+Handover instructions are in the session message. Nothing here can proceed until the human
+completes the keystore import and funding, and the balances are confirmed on-chain.
+
+*(Sections 7–11 — address book, lifecycle phases with independent verification, canary
+observations, agent dry-run transcript, gas actually paid, and findings — are filled in as the run
+progresses.)*
