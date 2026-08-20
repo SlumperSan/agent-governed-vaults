@@ -282,27 +282,80 @@ Nothing was silently re-baselined.
 > consequence is that **no contract change was possible this sprint**, because a bytecode change
 > invalidates `.gas-snapshot` and it cannot be regenerated here (see F-1).
 
-Evidence commit: **`<CI_COMMIT>`** — this branch's own CI run, **`<CI_RUN_URL>`**.
+Evidence commit: **`cba28ea9`** — this branch's own CI run,
+[**32405635945**](https://github.com/SlumperSan/agent-governed-vaults/actions/runs/32405635945),
+all three jobs green. Commits after `cba28ea9` on this branch are **documentation only**
+(`docs/**.md`); the one a sceptical reader would want to check is the SLITHER-TRIAGE update, which
+is a `.md` file and changes no gate input.
+
+**This branch touches no `.sol` file at all.** Every contract result below is therefore
+attributable to PR #17's content, not to Sprint 10 — which is the same thing as saying Sprint 10
+changed no contract behaviour.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Format | `forge fmt --check` | `<FMT>` |
-| Contract suites | `forge test -vvv` | `<FORGE_TESTS>` |
-| Gas gate | `forge snapshot --check --nmt "testFuzz"` | `<GAS>` |
-| Size gate | `forge build --sizes` | `<SIZES>` |
+| Format | `forge fmt --check` | **pass** — no diff (and no `.sol` file is touched by this branch) |
+| Contract suites | `forge test -vvv` | **128 / 128 pass**, 0 failed, 0 skipped, 17 suites (incl. 6 invariant/fuzz suites at 256 runs × 16,384 calls) |
+| Gas gate | `forge snapshot --check --nmt "testFuzz"` | **pass** — 124 deterministic entries, no regression. Matches `.gas-snapshot`'s 124 entries exactly |
+| Size gate | `forge build --sizes` | **pass** — every contract under EIP-170. Was RED on `protocol/main` (`VaultFactory` −2,665 B) |
 | Backend suites | `npm run test:backend` | **81 / 81 pass**, 0 fail — run locally this session *and* in CI |
-| Slither | `slither . --filter-paths …` (advisory) | `<SLITHER>` |
+| Slither | `slither . --filter-paths "^lib/\|^test/\|^script/"` (advisory) | 254 results, **no new detector class** vs the pre-fix baseline — see below |
 
 ### `forge build --sizes` margins
 
-<SIZES_TABLE>
+The two that matter, and the one to watch:
+
+| Contract | Runtime (B) | Runtime margin | Initcode (B) | Initcode margin (EIP-3860) |
+| --- | --- | --- | --- | --- |
+| `VaultFactory` | **2,718** | **21,858** | 3,044 | 46,108 |
+| `VaultDeployer` | **938** | **23,638** | **26,148** | **23,004** |
+| `VaultCore` | **23,016** | **1,560** | **24,731** | 24,421 |
+| `Governance` | 11,990 | 12,586 | 12,036 | 37,116 |
+| `FeeEngine` | 2,983 | 21,593 | 3,138 | 46,014 |
+| `OperatorRegistry` | 2,219 | 22,357 | 2,265 | 46,887 |
+| `OracleAggregator` | 1,212 | 23,364 | 2,582 | 46,570 |
+| `SubVaultRegistry` | 1,605 | 22,971 | 1,650 | 47,502 |
+| `AggregationRouterAdapter` | 2,066 | 22,510 | 2,453 | 46,699 |
+| `DirectPoolAdapter` | 2,317 | 22,259 | 2,711 | 46,441 |
+
+`VaultFactory` went 27,241 B → **2,718 B**: from 2,665 B *over* the cap to 21,858 B under it.
+
+**The margin to watch is `VaultCore`'s 1,560 B**, and it is worth being explicit about what the
+fix did and did not do. It relocated VaultCore's creation code; it did **not** shrink VaultCore.
+The binding constraint simply moved: `VaultCore`'s *creation* code (24,731 B) must now fit inside
+`VaultDeployer`'s initcode under EIP-3860, where 23,004 B of headroom remains. So there are two
+live ceilings, and the tighter one by far is VaultCore's own 1,560 B of runtime margin. Sprint 9
+recorded the same observation. It is not a defect — it is the thing to check before any future
+`VaultCore` feature lands.
 
 ### Slither — NEW findings only
 
 Triaged as a **delta against `protocol/main`**, not as an absolute list, per the brief. Detector
 inventories were extracted from both runs and compared:
 
-<SLITHER_DELTA>
+**Baseline** (`protocol/main`, run 32280963144): 239 results, 35 contracts.
+**With the Sprint-7 fix** (run 32393557172): 245 results, 37 contracts.
+**With F-3's widened filter** (run 32405635945, this branch): **254 results**, 37 contracts.
+
+*Sprint 7 introduced exactly two new detector classes* — `assembly` (3 sites, all in
+`VaultDeployer`) and `too-many-digits` (the compiler-embedded `type(VaultCore).creationCode`
+blob). Both are informational and by design; both now carry triage rows. `missing-inheritance`
+gained one instance (`VaultDeployer` vs `IVaultDeployer`) under an existing row. Nothing else
+moved — every other detector was already firing before the fix, on the same code.
+
+*F-3's widening added 9 results and* **no new detector class at all**:
+
+| Detector | Newly visible instances | Already dispositioned? |
+| --- | --- | --- |
+| `assembly` | `BoundedCall.boundedCall`, `BoundedCall.boundedStaticCall`, `SafeTransferLib.tryTransfer` | yes — the H-1 / H-2 fixes, hand-reviewed in SPRINT1 |
+| `low-level-calls` | `SafeTransferLib.safeTransfer` / `safeTransferFrom` / `safeApprove` | yes — deliberate, so non-standard ERC-20s can be tolerated rather than revert |
+| `incorrect-equality` | `Checkpoints.push` — `ts == uint64(block.timestamp)` | yes — the same-second overwrite idiom; strict equality is the point |
+| `timestamp` | `Checkpoints.push` | yes — C-2 clock commitment |
+| `too-many-digits` | `SafeTransferLib.tryTransfer#40` — the padded ERC-20 selector | yes — a selector, not a magic number |
+
+9 of 9 accounted for; 245 + 9 = 254. **Nothing above informational was hiding behind the filter.**
+The anchored pattern was verified to do both halves of its job: `src/lib/` results appear, and
+zero `lib/forge-std/` results leaked in.
 
 ---
 
@@ -494,4 +547,38 @@ so no regression test and no gas-snapshot regeneration were possible. The two br
   stated here and in the repository README, *not* softened into "one open item." A real defect in
   never-analysed hardening code is a stop, not a footnote.
 
-<VERDICT>
+**Reading against that rule: the first branch. The freeze stands.**
+
+The widened run surfaced nine results and not one new detector class. Every one is a further
+instance of a class already dispositioned, in code that human review had already covered — the
+H-1 and H-2 hardening assembly, and the `Checkpoints` same-second overwrite. So F-3 lands in its
+strongest form: **a blind spot found, closed, and nothing above informational hiding behind it.**
+The gap was real and worth fixing; it was not concealing a defect.
+
+On the contract delta itself:
+
+- **No High or Medium finding.** The three trust-chain questions in the brief are answered
+  negatively and with code citations (§3.1–3.3); the assembly was walked opcode by opcode
+  (§3.5); the test and CI edits were read line by line for a relaxed assertion and contain none
+  (§4).
+- **`VaultCore.sol` did not change** — proven twice by independent methods (§1). The largest
+  and most critical contract in the package carries its three prior reviews forward untouched.
+- **One accepted residual**, F-1, recorded in threat-model row **PX-4** with both its merits and
+  the toolchain constraint that made a fix impossible in this session. It is the one item where an
+  external auditor's independent judgement is actively wanted.
+- **The full battery is green** at `cba28ea9`: 128/128 contract tests, 81/81 backend, gas gate,
+  size gate, format. No check was suppressed, weakened, or reordered to achieve it.
+
+**Recommendation: this content is ready for external audit.**
+
+One caveat, and it is about process rather than code. The intended reference is the tag
+`v0.2.0-audit`, which **does not exist**, because tagging requires merging PRs #17 and #19 and
+this session's `gh pr merge` was refused by the agent harness's permission classifier. The local
+merge-and-push equivalent was declined as the same action by another name. The freeze is therefore
+**content-complete but untagged**; the exact merge-and-tag sequence is in
+[CHANGES-SINCE-REVIEWS.md §4](../CHANGES-SINCE-REVIEWS.md). Until a human runs it, the audit
+candidate's content is the head of `sprint-10/audit-freeze`
+([PR #19](https://github.com/SlumperSan/agent-governed-vaults/pull/19)).
+
+Sprint issue [#16](https://github.com/SlumperSan/agent-governed-vaults/issues/16) is **left open**:
+its DONE criterion names the tag, and the tag is not placed.
