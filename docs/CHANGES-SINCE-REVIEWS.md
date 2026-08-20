@@ -25,7 +25,7 @@ deployment fix**:
 
 | File | What changed |
 | --- | --- |
-| `src/VaultDeployer.sol` | **New.** 106 lines, ~25 assembly. Holds `VaultCore`'s creation code because EIP-170 leaves it nowhere else to live. Zero authority. |
+| `src/VaultDeployer.sol` | **New.** 106 lines / 59 non-comment, ~25 assembly. Holds `VaultCore`'s creation code because EIP-170 leaves it nowhere else to live. Zero authority. |
 | `src/VaultFactory.sol` | A fifth constructor parameter + `immutable`, and `_deploy` calling `vaultDeployer.deploy(abi.encode(...))` instead of `new VaultCore(...)`. Nothing else. |
 | `script/Deploy.s.sol`, `script/DeployTestnet.s.sol` | Construct the deployer before the factory (forced: the pin is `immutable`). |
 | `test/Eip170.t.sol` | **New.** 9 tests guarding the fix. |
@@ -55,7 +55,7 @@ undeployable on any chain.
 - **`VaultCore.sol` has three internal passes** and did not change since. Its walkthrough stands.
 - **`VaultDeployer.sol` has exactly one** (Sprint 10). It is the newest code in the package and
   the only contract carrying hand-written assembly written after the Sprint-6 rounds. If your
-  budget is uneven, this ~106-line file has the least accumulated scrutiny per line.
+  budget is uneven, this file (59 non-comment lines) has the least accumulated scrutiny per line.
 - **`src/lib/` — `SafeTransferLib`, `BoundedCall`, `Checkpoints` — has never been seen by
   Slither.** Sprint 10 found that the CI filter `--filter-paths "lib|test|script"` was an
   unanchored regex that also matched `src/lib/`. Human review covered these files (the H-1 and

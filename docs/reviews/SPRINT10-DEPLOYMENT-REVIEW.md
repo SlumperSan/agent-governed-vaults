@@ -46,7 +46,7 @@ So the reviewed surface is:
 
 | File | Change |
 | --- | --- |
-| `src/VaultDeployer.sol` | **new**, 106 lines, ~25 of them assembly |
+| `src/VaultDeployer.sol` | **new**, 106 lines / 59 non-comment, ~25 of them assembly |
 | `src/VaultFactory.sol` | fifth constructor parameter + immutable; `_deploy` body |
 | `script/Deploy.s.sol`, `script/DeployTestnet.s.sol` | construct the deployer before the factory |
 | `test/Eip170.t.sol` | **new**, 9 tests |
@@ -69,9 +69,9 @@ as a decision rather than left as a silent omission.
 
 | # | Sev | Where | Consequence | Disposition |
 | --- | --- | --- | --- | --- |
-| **F-1** | Info | `VaultFactory.sol:56-66` | The constructor validates none of its five immutables. `vaultDeployer_` is the one that now carries the "attested ⇒ canonical code" guarantee, and Slither structurally cannot see it. | **Accepted** — see the disposition, which includes a constraint this session could not work around |
+| **F-1** | Info | `VaultFactory.sol:54-66` | The constructor validates none of its five immutables. `vaultDeployer_` is the one that now carries the "attested ⇒ canonical code" guarantee, and Slither structurally cannot see it. | **Accepted** — see the disposition, which includes a constraint this session could not work around |
 | **F-2** | Info (doc) | `audit/walkthroughs/VaultFactory.md` | "a bogus `parent` fails at `registerChild`" is true only for parents that do not implement three view functions. A crafted mock passes. Outcome is benign, but the doc would steer an auditor away from probing it. | **Fixed** (doc corrected) |
-| **F-3** | **Low** | `.github/workflows/ci.yml:56` | `--filter-paths "lib\|test\|script"` also matches `src/lib/`, so **`SafeTransferLib`, `BoundedCall` and `Checkpoints` have never been analysed by Slither** — while SLITHER-TRIAGE.md carries a row that reads as a disposition of findings for them. | **Fixed** (filter anchored) + triage re-run |
+| **F-3** | **Low** | `.github/workflows/ci.yml:56` (pre-fix) | `--filter-paths "lib\|test\|script"` also matches `src/lib/`, so **`SafeTransferLib`, `BoundedCall` and `Checkpoints` have never been analysed by Slither** — while SLITHER-TRIAGE.md carries a row that reads as a disposition of findings for them. | **Fixed** (filter anchored) + triage re-run |
 | **F-4** | Info (doc) | `AUDIT-HANDOFF.md` build block | `slither` is listed beside the hard gates without noting it is `continue-on-error` and therefore advisory. | **Fixed** (one sentence) |
 
 **No High or Medium severity finding was found in the Sprint-7 contract delta.** That is the
@@ -310,7 +310,7 @@ inventories were extracted from both runs and compared:
 
 ### F-1 — `VaultFactory`'s constructor validates none of its five immutables (Info, accepted)
 
-**File:** `VaultFactory.sol:56-66`.
+**File:** `VaultFactory.sol:54-66`.
 
 ```solidity
 constructor(
@@ -403,7 +403,7 @@ not read as a new alarm.
 
 ### F-3 — Slither has never analysed `src/lib/` (Low, fixed)
 
-**File:** `.github/workflows/ci.yml:56` —
+**File:** `.github/workflows/ci.yml`, line 56 as reviewed —
 `slither-args: --filter-paths "lib|test|script"`.
 
 The intent is to exclude Foundry's dependency directory `contracts/lib/`, plus `test/` and
