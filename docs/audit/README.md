@@ -40,6 +40,15 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**;
   adversarially reviewed in Sprint 10 (see §6)
 
+**Outside the `v0.2.0-audit` freeze** — added in Sprint 11, additive `IPriceSource`
+implementations that modify nothing in the frozen tree, with **zero** internal review passes
+(see [../CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) §5). Audit them only if your
+engagement scope was extended past the tag:
+
+- [walkthroughs/UniswapV3TwapSource.md](walkthroughs/UniswapV3TwapSource.md) — spot-market TWAP
+  source, plus two vendored Uniswap math libraries under their own licenses
+- [walkthroughs/PythSource.md](walkthroughs/PythSource.md) — pull-oracle source
+
 Cross-references:
 
 - [TEST-CROSS-REFERENCE.md](TEST-CROSS-REFERENCE.md) — every threat-model mechanic → the test(s) covering it

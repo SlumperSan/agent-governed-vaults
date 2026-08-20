@@ -85,9 +85,10 @@ Stated because the absence is easy to misread.
   deployed bytecode to compare against.**
 - **`v0.1.0-rc2` was never cut.** The Sprint-8 merge train did not run. Any document referring to
   an rc2 base is describing a plan, not a tag.
-- **PRs #11 (canary) and #12 (reference agent) are unmerged**, and neither contains Solidity
-  (§1). Out of contract-audit scope either way.
-- **PR #17 itself may still be unmerged** when you read this — see §4.
+- **PRs #11 (canary) and #12 (reference agent)** contain no Solidity (§1) and are out of
+  contract-audit scope either way. *Corrected in Sprint 11:* both are now merged, as are #17
+  and #19 — see §4.
+- **`v0.2.0-audit` now exists** and the §4 warning below no longer applies — see §4.
 
 ---
 
@@ -95,26 +96,62 @@ Stated because the absence is easy to misread.
 
 The intended audit reference is the tag **`v0.2.0-audit`**.
 
-> **If that tag does not exist in the repository, it was not created**, and the reason is
-> recorded here rather than left as a mystery. The Sprint-10 session could not merge PR #17: the
-> `gh pr merge` call was refused by the agent harness's permission classifier, and performing the
+**Resolved in Sprint 11.** The tag exists, on `origin`, at `5081f9b9` — the head of
+`protocol/main`. PRs #17, #19, #11 and #12 are all merged.
+
+> **Historical note, kept because it explains a gap in the record.** At the Sprint-10 freeze the
+> tag did *not* exist, and this section carried the reason: that session could not merge PR #17
+> — the `gh pr merge` call was refused by the agent harness's permission classifier, and the
 > equivalent local merge-and-push was declined as the same action by another name. The Sprint-8
-> merge train ([issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14)) is
-> blocked on exactly this, which is why no rc2 was ever cut. A prior session had recorded the
-> restriction as unverified because it had not attempted the call; it is now verified.
->
-> Everything else in the freeze is complete: the review, the fixes, the package sync. What
-> remains is a merge and a tag, by a human with merge rights:
->
-> ```bash
-> gh pr merge 17 --merge          # the EIP-170 fix — reviewed PASS, CI green, MERGEABLE/CLEAN
-> gh pr merge 19 --merge          # this sprint: review + doc/CI fixes
-> git checkout protocol/main && git pull
-> git tag -a v0.2.0-audit -m "Audit candidate: EIP-170 deployment split, re-reviewed"
-> git push origin v0.2.0-audit
-> ```
->
-> Until then, the audit-candidate *content* is the head of `sprint-10/audit-freeze`
-> ([PR #19](https://github.com/SlumperSan/agent-governed-vaults/pull/19)), which contains
-> PR #17 in full plus this sprint's changes. Auditing a branch head is workable; it is simply
-> not the frozen reference the package intends.
+> merge train ([issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14)) was
+> blocked on exactly this, which is why **no `v0.1.0-rc2` was ever cut** — that statement in §3
+> still stands. A human with merge rights has since performed the merges and created the tag.
+
+
+---
+
+## 5. Post-freeze additions (Sprint 11) — outside `v0.2.0-audit`
+
+Everything above describes the tree **at** the tag. This section describes work landed on
+`protocol/main` **after** it. If your engagement is scoped to `v0.2.0-audit`, none of this is in
+scope; read it so you know what exists, not so you audit it.
+
+**Nothing inside the freeze was modified.** Measurable the same way §1 is:
+
+| Question | Command | Answer |
+| --- | --- | --- |
+| Did any frozen contract change? | `git diff v0.2.0-audit..protocol/main -- contracts/src/OracleAggregator.sol contracts/src/VaultCore.sol contracts/src/VaultFactory.sol contracts/src/VaultDeployer.sol contracts/src/Governance.sol contracts/src/FeeEngine.sol contracts/src/OperatorRegistry.sol contracts/src/SubVaultRegistry.sol contracts/src/AggregationRouterAdapter.sol contracts/src/DirectPoolAdapter.sol contracts/src/lib contracts/src/interfaces` | **No** — empty |
+| What is new under `contracts/src/`? | `git diff --stat v0.2.0-audit..protocol/main -- contracts/src/` | only `src/oracle/**`, all new files |
+
+### What was added
+
+| File | What it is |
+| --- | --- |
+| `src/oracle/UniswapV3TwapSource.sol` | **New.** Spot-market TWAP `IPriceSource` — the second SF-1 mechanism class. Two-hop capable, USDC pinned to $1.00. |
+| `src/oracle/PythSource.sol` | **New.** Pull-oracle `IPriceSource` — the third class. Vendored minimal `IPyth`. |
+| `src/oracle/vendor/TickMath.sol` | **New, third-party.** Uniswap v3-core tick math, ported to 0.8.26. **GPL-2.0-or-later**, in its own file under its own header. |
+| `src/oracle/vendor/FullMath.sol` | **New, third-party.** Uniswap v3-core 512-bit `mulDiv`, ported to 0.8.26. **MIT**, likewise. |
+| `test/UniswapV3TwapSource.t.sol`, `test/PythSource.t.sol`, `test/MixedOracleSources.t.sol`, `test/mocks/OracleSourceMocks.sol` | **New.** 58 tests: golden tick fixtures, expo table, freshness guards, constructor validation, fuzz, and three-class integration behind the unmodified aggregator. |
+| `config/base-mainnet.json` | **New.** Base mainnet address draft, marked `UNVERIFIED-ON-CHAIN` with its own verification checklist. Nothing reads it yet. |
+| `docs/audit/walkthroughs/{UniswapV3TwapSource,PythSource}.md` | **New.** Per-source walkthroughs to the standard of the frozen set. |
+| `docs/DEPLOYMENT.md` §0/§2/§4 | The mainnet oracle stack is now specified as three mechanism classes at quorum 2-of-3, with the `maxStaleness` and pool-cardinality traps called out. |
+| `contracts/.gas-snapshot` | Regenerated (`forge snapshot --nmt "testFuzz"`). **Additions only** — 51 new entries, no existing entry changed. |
+
+### Coverage, stated honestly
+
+- **Both new sources have ZERO internal adversarial review passes.** The frozen contracts have
+  one to three each (§2). These have their test suites and nothing else. They are the least
+  scrutinized Solidity in the repository, and they feed the contract that prices everything.
+- **The vendored math is third-party code under two different licenses**, neither of which is
+  this repository's BUSL-1.1. They are kept in separate files under their own SPDX headers, and
+  only the `tick → sqrtPrice` direction of `TickMath` was taken. The 20 magic constants were
+  verified against an independent 120-decimal-digit reference over 685 ticks (max relative
+  deviation 2.3e-10) rather than trusted from memory, and the resulting values are pinned as
+  golden fixtures. **The license mix is a decision a human should confirm**, not a technical
+  finding.
+- **Neither source has ever been run against a real chain.** Every test drives a mock pool or a
+  mock Pyth contract. `base-mainnet.json` is documentation-derived and explicitly
+  `UNVERIFIED-ON-CHAIN`; §3's "no deployment exists" is still true.
+- **`UniswapV3TwapSource` adds an external call per source per `navWad`** (the self-STATICCALL
+  containment that makes its `(0, 0)` contract total). That compounds Sprint-6 **Finding 8**'s
+  gas scaling, and Finding 8's disposition has not been revisited in light of it.
