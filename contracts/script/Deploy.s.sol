@@ -7,7 +7,8 @@ import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
@@ -22,8 +23,11 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 ///   1. OperatorRegistry + SubVaultRegistry — no dependencies.
 ///   2. FeeEngine — needs the OperatorRegistry address.
 ///   3. Governance — no constructor deps; sub-vault registry wired post-deploy.
-///   4. VaultFactory — needs registry + governance + feeEngine + subRegistry addresses.
-///   5. Wire back-references: registry.wire(factory, feeEngine); subReg.wire(factory);
+///   4. VaultDeployer — no dependencies, but MUST precede the factory: the factory pins it
+///      immutably. It carries VaultCore's creation code, which is why the factory itself no
+///      longer does and finally fits under EIP-170 (#10).
+///   5. VaultFactory — needs registry + governance + feeEngine + subRegistry + vaultDeployer.
+///   6. Wire back-references: registry.wire(factory, feeEngine); subReg.wire(factory);
 ///      gov.wireSubVaultRegistry(subReg). Only now can vaults be created.
 ///
 /// Oracles and execution adapters are NOT protocol singletons — each vault creator supplies
@@ -37,6 +41,7 @@ contract Deploy is Script {
             SubVaultRegistry subReg,
             FeeEngine feeEngine,
             Governance governance,
+            VaultDeployer vaultDeployer,
             VaultFactory factory
         )
     {
@@ -46,11 +51,13 @@ contract Deploy is Script {
         subReg = new SubVaultRegistry();
         feeEngine = new FeeEngine(IRegistryView(address(registry)));
         governance = new Governance();
+        vaultDeployer = new VaultDeployer();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
             IGovernance(address(governance)),
             IFeeEngine(address(feeEngine)),
-            address(subReg)
+            address(subReg),
+            IVaultDeployer(address(vaultDeployer))
         );
 
         // One-shot wiring — irreversible after this transaction.
@@ -64,6 +71,7 @@ contract Deploy is Script {
         console2.log("SubVaultRegistry", address(subReg));
         console2.log("FeeEngine       ", address(feeEngine));
         console2.log("Governance      ", address(governance));
+        console2.log("VaultDeployer   ", address(vaultDeployer));
         console2.log("VaultFactory    ", address(factory));
     }
 }
