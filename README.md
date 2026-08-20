@@ -67,10 +67,27 @@ it's measured but not gated (regenerate with `forge snapshot --nmt "testFuzz"`).
 
 ## Status
 
-**v0.1.0-rc1** — release candidate. Contracts, indexer (+persistence/daemon/runnable entrypoint),
-metered API (+discovery, x402 facilitator), agent SDK, and the consumer front end are built and
-tested to a pre-audit state, with a staged Base Sepolia deploy path and an external-audit package.
-Not yet externally audited; not deployed to any network.
+**Audit candidate frozen — awaiting external audit.** Contracts, indexer
+(+persistence/daemon/runnable entrypoint), metered API (+discovery, x402 facilitator), agent SDK,
+and the consumer front end are built and tested to a pre-audit state, with a staged Base Sepolia
+deploy path and a complete external-audit package. **Not yet externally audited. Not deployed to
+any network** — the Base Sepolia work reached pre-flight only, and nothing was ever broadcast
+([docs/TESTNET-REPORT.md](docs/TESTNET-REPORT.md)).
+
+Four internal adversarial review rounds are complete. The last
+([docs/reviews/SPRINT10-DEPLOYMENT-REVIEW.md](docs/reviews/SPRINT10-DEPLOYMENT-REVIEW.md)) covered
+the EIP-170 deployment split — the only contract change since the Sprint-6 reviews — and found no
+High or Medium issue. **Audit this tag: `v0.2.0-audit`.** Start at
+[docs/CHANGES-SINCE-REVIEWS.md](docs/CHANGES-SINCE-REVIEWS.md), which states exactly what internal
+review did and did not cover, then [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md).
+
+> **If `v0.2.0-audit` is not present in the repository, the freeze is content-complete but
+> untagged**, because PRs [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
+> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19) still need a human merge —
+> the agent harness's permission classifier refuses `gh pr merge`
+> ([#14](https://github.com/SlumperSan/agent-governed-vaults/issues/14), premise now confirmed).
+> The exact merge-and-tag commands are in
+> [docs/CHANGES-SINCE-REVIEWS.md §4](docs/CHANGES-SINCE-REVIEWS.md).
 
 **Deployability blocker cleared (Sprint 7).** `VaultFactory` compiled to 27,241 bytes against the
 EIP-170 24,576-byte limit, because `new VaultCore(...)` embeds `VaultCore`'s entire creation code —
