@@ -3,7 +3,8 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
@@ -142,7 +143,8 @@ contract SystemInvariantTest is Test {
             IOperatorRegistry(address(registry)),
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
-            address(subReg)
+            address(subReg),
+            IVaultDeployer(address(new VaultDeployer()))
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

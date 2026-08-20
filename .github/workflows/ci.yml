@@ -27,17 +27,19 @@ jobs:
       # not reproducible: it shifts by ~0.01% between machines and between runs
       # on one machine, and pinning --fuzz-seed does not fix it (a `forge clean`
       # alone moves the numbers). Gating on that measures noise, so the gate
-      # covers the 115 deterministic tests. Regenerate with:
+      # covers the 124 deterministic tests. Regenerate with:
       #   cd contracts && forge snapshot --nmt "testFuzz"
       # Do not reach for `--tolerance`: it silences the fuzz entries but then
       # falsely flags all 15 invariant entries, which record runs/calls/reverts
       # rather than a gas number.
       - name: Gas snapshot (no regressions)
         run: forge snapshot --check --nmt "testFuzz"
-      # Last on purpose: this currently fails on VaultFactory vs the EIP-170 cap
-      # (issue #10). Earlier in the job it short-circuited every step below it, so
-      # the suite and the gas gate never ran in CI. Keep it here and keep it
-      # failing — it is a real undeployability defect, not a flaky check.
+      # Stays last. It used to fail here on VaultFactory vs the EIP-170 cap (issue
+      # #10) — a real undeployability defect, kept red on purpose rather than
+      # suppressed. Ordering it last meant the suite and the gas gate still ran.
+      # Green since Sprint 7 moved VaultCore's creation code into VaultDeployer.
+      # Never add `code_size_limit` to foundry.toml or drop `--sizes` to keep it
+      # green: that would turn undeployability back into a passing check.
       - name: Runtime size limit (EIP-170)
         run: forge build --sizes
 
@@ -53,7 +55,14 @@ jobs:
         uses: crytic/slither-action@v0.4.0
         with:
           target: contracts/
-          slither-args: --filter-paths "lib|test|script"
+          # Anchored on purpose (Sprint 10, F-3). The old pattern was
+          # "lib|test|script" — an unanchored regex, so it also matched
+          # src/lib/, and SafeTransferLib, BoundedCall and Checkpoints were
+          # silently excluded from every Slither run this project ever did.
+          # ~150 LoC of Medium-risk primitives carrying the H-1 and H-2 fixes.
+          # Only Foundry's dependency dir (contracts/lib/), test/ and script/
+          # are meant to be filtered. Keep the anchors.
+          slither-args: --filter-paths "^lib/|^test/|^script/"
         continue-on-error: true  # advisory until the audit-prep triage in the runbook
 
   backend:
@@ -80,4 +89,4 @@ jobs:
       # by hand against a live chain. Parse them so a syntax error can't reach a
       # 6-hour smoke run or a production boot.
       - name: Syntax-check entrypoints and operational scripts
-        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs
+        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs

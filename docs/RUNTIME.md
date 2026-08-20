@@ -10,10 +10,10 @@ deployment, [DEPLOYMENT.md](DEPLOYMENT.md) — and for the operational Base Sepo
 produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md)
 (`DeployTestnet.s.sol` driven by [`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json)).
 
-> Note (v0.1.0-rc1): contract deployment is currently blocked by
+> Note (Sprint 7): contract deployment was blocked by
 > [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) (`VaultFactory` over
-> the EIP-170 size cap). The runtime stack below is independently tested and runs against any
-> deployed address set; it just has no chain to point at yet.
+> the EIP-170 size cap) and no longer is. The runtime stack below is unaffected either way — it is
+> independently tested and runs against any deployed address set.
 
 ---
 
@@ -22,12 +22,12 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 ```
    Base RPC ──logs──▶  indexer  ──snapshot file──▶  API  ──HTTP/x402──▶  web
  (viem getLogs)     (index-runner.mjs)  (JSON)   (serve.mjs)          (index.html?api=)
-                                                     │
-                                          verifyAndSettle │ (no key here)
-                                                     ▼
-                                            facilitator (external)
-                                          verifies EIP-712 sig + settles
-                                          USDC.transferWithAuthorization
+       │                                   │             │
+       │                          (reads)  │    verifyAndSettle │ (no key here)
+       │                                   ▼             ▼
+       └──eth_call / eth_getLogs──▶      canary    facilitator (external)
+              (read-only)         (canary-runner.mjs)  verifies EIP-712 sig + settles
+                                  alerts on transition  USDC.transferWithAuthorization
 ```
 
 - The **indexer** reads real logs from a Base RPC via viem, folds them into projection state, and
@@ -37,6 +37,11 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
   to verify+settle each payment.
 - The **facilitator** is where settlement (and the only key) lives. In production this is a
   **remote HTTP facilitator** you point the API at. You may also run your own settler (§6).
+- The **canary** watches the deployed contracts for the [DEPLOYMENT §6](DEPLOYMENT.md) signals and
+  alerts on transitions. It reads the chain directly (`eth_call`/`eth_getLogs`) and reads — never
+  writes — the indexer snapshot, which two of its signals compare against chain state. It is
+  read-only on top of being keyless: no wallet client, no account, never sends a transaction. Full
+  guide in [CANARY.md](CANARY.md).
 - The **web** app is self-contained demo by default; with `?api=<url>` it renders live data.
 
 **Wiring order** (each step needs the previous one's output):
@@ -46,6 +51,8 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 2. Start the **indexer** with the RPC + those addresses. Let it catch up.
 3. Start the **API** pointed at the same snapshot file + a facilitator + the USDC price.
 4. Open the **web** app with `?api=<api-url>` (or ship the API URL into a deployed build).
+5. Start the **canary** against the same RPC + snapshot, once the indexer has caught up. It is
+   independent of the API and the web app — run it from step 2 onward if you prefer.
 
 ---
 
@@ -179,6 +186,25 @@ Production notes:
 | `RELOAD_MS` | | `5000` | snapshot re-read cadence |
 | `CORS` | | off | `1`/`true` to enable CORS + preflight (browser live mode) |
 
+### Canary (`npm run start:canary`)
+
+Read-only post-launch monitor — see [CANARY.md](CANARY.md) for what each signal means and what to do
+when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `STATE_PATH`, and
+`OPERATOR_REGISTRY_ADDRESS` from the indexer block above.
+
+| Var | Required | Default | Meaning |
+|---|---|---|---|
+| `RPC_URL` | ✅ | — | Base HTTP RPC endpoint |
+| `STATE_PATH` | | `./data/indexer-state.json` | indexer snapshot; the vault set is discovered from it (read-only) |
+| `VAULTS` | | — | explicit vault list, to run without an indexer |
+| `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
+| `CANARY_STATE_PATH` | | `./data/canary-state.json` | its OWN transition state — never the indexer's |
+| `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence; named apart from the indexer's `POLL_INTERVAL_MS` |
+| `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
+| `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
+| `ORACLE_MIN_MARGIN` | | `0` | alert when fresh sources minus quorum <= this |
+| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line |
+
 The `PRICE_ASSET`/`PRICE_NETWORK`/`CHAIN_ID` must agree across the API and whatever wallet/agent
 pays: the challenge binds the payment to that exact asset + network.
 
@@ -206,6 +232,11 @@ id returned to the client is the settlement tx hash.
 ## 7. Non-custodial guarantees
 
 - The **indexer** is read-only: `getLogs` and `getBlockNumber` only. It never signs or sends.
+- The **canary** is read-only too: `eth_call`, `eth_getLogs`, `eth_blockNumber`,
+  `eth_getBlockByNumber`. It builds a viem *public* client — there is no wallet client, no account,
+  and no key in `packages/canary`. Its `requestExit` probe is an `eth_call` with an impersonated
+  `from`, which never touches a key and never changes chain state. Enforced by tests, not just
+  documented.
 - The **API** holds no key. It only asks a facilitator to `verifyAndSettle`; it serves the resource
   when settlement succeeds. USDC moves via EIP-3009 executed **by the facilitator**, from payer to
   `payTo`, never through the API.

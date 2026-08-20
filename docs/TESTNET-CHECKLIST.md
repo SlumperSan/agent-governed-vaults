@@ -54,9 +54,10 @@ cd contracts && forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url 
 
 This deploys, in one broadcast:
 
-1. the five protocol singletons (`OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`,
-   `Governance`, `VaultFactory`) with their **irreversible** one-shot wiring — identical to
-   `Deploy.s.sol`;
+1. the six protocol singletons (`OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`,
+   `Governance`, `VaultDeployer`, `VaultFactory`) with their **irreversible** one-shot wiring —
+   identical to `Deploy.s.sol`. `VaultDeployer` precedes the factory, which pins it immutably
+   (#10); it takes no arguments and needs no wiring;
 2. three `ChainlinkSourceAdapter` instances per basket asset (WETH, LINK) over the verified
    Chainlink feeds below;
 3. one `OracleAggregator` (3 sources per asset, 2-of-3 quorum, `maxStaleness = 1 day`);

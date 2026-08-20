@@ -8,9 +8,10 @@
   "scripts": {
     "build:contracts": "cd contracts && forge build",
     "test:contracts": "cd contracts && forge test -vv",
-    "test:backend": "node --test packages/indexer/test/*.test.mjs packages/agent-sdk/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs",
+    "test:backend": "node --test packages/indexer/test/*.test.mjs packages/canary/test/*.test.mjs packages/agent-sdk/test/*.test.mjs packages/reference-agent/test/*.test.mjs apps/api/test/*.test.mjs apps/web/test/*.test.mjs",
     "start:indexer": "node packages/indexer/src/index-runner.mjs",
-    "start:api": "node apps/api/src/serve.mjs"
+    "start:api": "node apps/api/src/serve.mjs",
+    "start:canary": "node packages/canary/src/canary-runner.mjs"
   },
   "dependencies": {
     "viem": "^2.21.0"

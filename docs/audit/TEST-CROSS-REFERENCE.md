@@ -1,7 +1,7 @@
 # Threat-Model → Test Cross-Reference
 
 Every mechanic in [THREAT-MODEL.md](../THREAT-MODEL.md) mapped to the test(s) covering it.
-Suite: 119 tests across 16 files (`contracts/test/`), including 6 invariant/fuzz suites
+Suite: 128 tests across 17 files (`contracts/test/`), including 6 invariant/fuzz suites
 (256 runs × 16k calls). Rows with no dedicated test say so explicitly — traceability includes
 the honest gaps.
 
@@ -107,7 +107,26 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 
 | Row / mechanic | Tests |
 | --- | --- |
-| One-shot wiring, locked back-references, valid order | `Deploy::test_deployWiresAndLocks` |
+| One-shot wiring, locked back-references, valid order | `Deploy::test_deployWiresAndLocks`, `DeployTestnet::test_testnetDeployWiresFullStack` (both also assert the factory's immutable `vaultDeployer` pin) |
+| EIP-170 deployability of every contract (#10) | `Eip170::test_everyDeployedContractFitsUnderEip170` (budgets far tighter than the cap, so re-embedding VaultCore's creation code fails loudly), `::test_vaultCoreCreationCodeFitsInsideTheDeployersInitcode` (the EIP-3860 bound the fix trades onto) |
+| PX-4 (a) deployer confers no attestation | `Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested` (bypass vault is byte-identical to a factory vault, immutables included — only attestation differs), `::test_attestationRemainsFactoryOnly`, `::test_factoryPinsItsDeployerImmutably` |
+| PX-4 (b) CREATEd bytes are compile-time-pinned, not caller-supplied | `Eip170::test_deployerCreationCodeIsTheCompiledVaultCore`, `::test_codeChunksAreInertData` |
+| Factory behaviour preserved across the deployer hop | `Eip170::test_deployedVaultBindsTheSameSingletonsAndCreator`, `::test_vaultCoreConstructorRevertsStillBubbleThroughTheFactory`; the pre-existing suites are unchanged and still cover attestation, edge registration and basket-subset (`FeesAndRegistry`, `SubVaults`, `Sprint6Fixes`) |
+
+## What this cross-reference deliberately does not cover
+
+**The canary and the reference agent are out of contract-audit scope, and no row below maps to
+them.** `packages/canary/` (PR #11 — a read-only post-launch watcher) and
+`packages/reference-agent/` (PR #12 — a policy-driven vault member) are off-chain TypeScript.
+Neither ships a Solidity file: `git diff protocol/main...sprint-5/canary -- contracts/` and the
+same for `sprint-6/reference-agent` are both **empty**. They custody nothing, hold no keys, and
+cannot affect on-chain state that the contracts do not already gate. They are covered by the
+backend suite, not by this document, exactly as `packages/indexer`, `apps/api` and `apps/web` are.
+Stated explicitly so their absence reads as a scope decision rather than a coverage gap.
+
+Both are also **unmerged as of the audit tag** — see
+[CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) for what the tagged tree does and does not
+contain.
 
 ## Known coverage gaps (candidates for the audit, not oversights)
 

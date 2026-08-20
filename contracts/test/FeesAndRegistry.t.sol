@@ -3,7 +3,8 @@ pragma solidity 0.8.26;
 
 import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
@@ -42,7 +43,8 @@ contract FeesAndRegistryTest is Test {
             IOperatorRegistry(address(registry)),
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
-            address(0)
+            address(0),
+            IVaultDeployer(address(new VaultDeployer()))
         );
         registry.wire(address(factory), address(fees));
 
