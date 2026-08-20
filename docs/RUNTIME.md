@@ -10,10 +10,10 @@ deployment, [DEPLOYMENT.md](DEPLOYMENT.md) — and for the operational Base Sepo
 produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md)
 (`DeployTestnet.s.sol` driven by [`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json)).
 
-> Note (v0.1.0-rc1): contract deployment is currently blocked by
+> Note (Sprint 7): contract deployment was blocked by
 > [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) (`VaultFactory` over
-> the EIP-170 size cap). The runtime stack below is independently tested and runs against any
-> deployed address set; it just has no chain to point at yet.
+> the EIP-170 size cap) and no longer is. The runtime stack below is unaffected either way — it is
+> independently tested and runs against any deployed address set.
 
 ---
 

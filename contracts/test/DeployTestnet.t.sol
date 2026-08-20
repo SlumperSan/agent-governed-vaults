@@ -8,6 +8,7 @@ import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {OracleAggregator} from "../src/OracleAggregator.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 
@@ -44,6 +45,7 @@ contract DeployTestnetTest is Test {
             SubVaultRegistry subReg,
             FeeEngine feeEngine,
             Governance gov,
+            VaultDeployer vaultDeployer,
             VaultFactory factory,
             OracleAggregator aggregator,
             AggregationRouterAdapter routerAdapter
@@ -54,6 +56,7 @@ contract DeployTestnetTest is Test {
         assertEq(registry.feeEngine(), address(feeEngine), "registry feeEngine");
         assertEq(subReg.factory(), address(factory), "subReg factory");
         assertEq(gov.subVaultRegistry(), address(subReg), "gov subReg");
+        assertEq(address(factory.vaultDeployer()), address(vaultDeployer), "factory vaultDeployer");
         vm.startPrank(registry.deployer());
         vm.expectRevert(OperatorRegistry.AlreadyWired.selector);
         registry.wire(address(1), address(2));

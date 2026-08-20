@@ -7,7 +7,8 @@ import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {OracleAggregator, ChainlinkSourceAdapter, IAggregatorV3} from "../src/OracleAggregator.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
@@ -52,6 +53,7 @@ contract DeployTestnet is Script {
             SubVaultRegistry subReg,
             FeeEngine feeEngine,
             Governance governance,
+            VaultDeployer vaultDeployer,
             VaultFactory factory,
             OracleAggregator aggregator,
             AggregationRouterAdapter routerAdapter
@@ -75,11 +77,13 @@ contract DeployTestnet is Script {
         subReg = new SubVaultRegistry();
         feeEngine = new FeeEngine(IRegistryView(address(registry)));
         governance = new Governance();
+        vaultDeployer = new VaultDeployer();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
             IGovernance(address(governance)),
             IFeeEngine(address(feeEngine)),
-            address(subReg)
+            address(subReg),
+            IVaultDeployer(address(vaultDeployer))
         );
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));

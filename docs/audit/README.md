@@ -37,6 +37,8 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/DirectPoolAdapter.md](walkthroughs/DirectPoolAdapter.md)
 - [walkthroughs/SubVaultRegistry.md](walkthroughs/SubVaultRegistry.md)
 - [walkthroughs/VaultFactory.md](walkthroughs/VaultFactory.md)
+- [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**, and the
+  only contract in this package that has had no internal adversarial pass (see §6)
 
 Cross-references:
 
@@ -50,6 +52,10 @@ Cross-references:
                        ┌────────────────────────────────────────────────┐
                        │                 VaultFactory                   │  permissionless deploy;
                        │  createVault / createChildVault → attest       │  the ONLY attestation path
+                       │            │ CREATEs via (immutable pin)       │
+                       │            ▼                                   │
+                       │      VaultDeployer — holds VaultCore's         │  no authority of its
+                       │      creation code (EIP-170, #10)              │  own (PX-4)
                        └───────┬───────────────────┬────────────────────┘
                      attests   │                   │ registers child edge
                                ▼                   ▼
@@ -88,7 +94,8 @@ Cross-references:
 | `AggregationRouterAdapter.sol` | ~76 | Off-chain-routed DEX-aggregation execution (pinned router + selector allowlist) | High — external calls |
 | `DirectPoolAdapter.sol` | ~94 | On-chain V2-pool execution (second adapter proving venue abstraction) | High — external calls |
 | `SubVaultRegistry.sol` | ~95 | Parent/child edges, depth cap 3, exit-fee stack cap, fee-stack display views | Medium |
-| `VaultFactory.sol` | ~114 | Permissionless deploy + attestation; child-basket-subset enforcement | Medium |
+| `VaultFactory.sol` | ~120 | Permissionless deploy + attestation; child-basket-subset enforcement | Medium |
+| `VaultDeployer.sol` | ~60 | Holds VaultCore's creation code (EIP-170 forced, #10). Zero authority; ~25 lines of assembly | Medium |
 | `lib/BoundedCall.sol` | ~46 | Gas- and returndata-bounded module calls (H-1 fix) | Medium |
 | `lib/Checkpoints.sol` | ~46 | Timestamp-keyed stake history (VO-9 snapshots) | Medium |
 | `lib/SafeTransferLib.sol` | ~58 | Safe transfers + assembly non-reverting `tryTransfer` (H-2 fix) | Medium |
@@ -102,7 +109,11 @@ The protocol has **four distinct trust tiers**. Getting these straight matters b
 defenses only make sense against the right adversary:
 
 1. **Protocol singletons (trusted-by-all, immutable):** `OperatorRegistry`, `FeeEngine`,
-   `Governance`, `SubVaultRegistry`, `VaultFactory`. One canonical set, deployed and one-shot
+   `Governance`, `SubVaultRegistry`, `VaultFactory`, and — since Sprint 7 — `VaultDeployer`,
+   which holds VaultCore's creation code because EIP-170 leaves it nowhere else to live (#10).
+   The deployer is a singleton by position only: it carries **no authority whatsoever** and is
+   trusted by nobody for anything (see
+   [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md)). One canonical set, deployed and one-shot
    wired together (§5 below). No admin functions exist after wiring. Vaults deployed by the
    canonical factory reference these; the factory is what makes carry marks and leaderboard
    rows trustworthy (CM-5) — nothing stops someone deploying a *look-alike* stack, but it
@@ -160,10 +171,11 @@ From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`):
 2. SubVaultRegistry()                      — no deps
 3. FeeEngine(registry)                     — immutable registry ref
 4. Governance()                            — no ctor deps
-5. VaultFactory(registry, governance, feeEngine, subVaultRegistry)
-6. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
-7. subVaultRegistry.wire(factory)          — one-shot, locks child registration
-8. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
+5. VaultDeployer()                         — no deps; MUST precede the factory (#10)
+6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer)
+7. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
+8. subVaultRegistry.wire(factory)          — one-shot, locks child registration
+9. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
 ```
 
 Oracles and adapters are **not** singletons — each creator supplies their own at
@@ -177,6 +189,13 @@ a trust gap (nothing privileged happens in between).
 ## 6. What has already been reviewed
 
 Three internal adversarial passes, all findings fixed or explicitly dispositioned:
+
+> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
+> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
+> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
+> also the shortest contract in scope (~60 lines). If review budget has to be allocated
+> unevenly, this is the file with the least prior scrutiny per line.
 
 | Review | Scope | Outcome |
 | --- | --- | --- |
@@ -229,7 +248,7 @@ to that contract.
 ```bash
 cd contracts
 forge build
-forge test                                   # 119 tests, incl. 6 invariant/fuzz suites
+forge test                                   # 128 tests, incl. 6 invariant/fuzz suites
 forge snapshot --check --nmt "testFuzz"      # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 slither . --filter-paths "lib|test|script"   # triaged: docs/reviews/SLITHER-TRIAGE.md
 ```
