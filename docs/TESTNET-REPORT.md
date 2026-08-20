@@ -117,7 +117,7 @@ verified facts contradict that. Issue #15 itself says *"Run AFTER Sprint 8 (rc2,
 | 1 | base @ `v0.1.0-rc2` | **No such tag.** Only `v0.1.0-rc1` exists | `git fetch --all --tags`; `git tag -l` |
 | 2 | sizes green | `VaultFactory` **−2,665 B** over cap | `forge build --sizes` on `20d1b4f8` (§3) |
 | 3 | fix is in the base | `origin/protocol/main` = `20d1b4f8`, lacks `12b49d80` | `git branch -a --contains 12b49d80` → fix branch only |
-| 4 | Sprint 8 merged | PR #17 **OPEN**, `reviews: []`, `reviewDecision: ""` | `gh pr view 17` |
+| 4 | Sprint 8 merged | PR #17 **OPEN**, unmerged (it *is* reviewed — see below) | `gh pr view 17` |
 
 ### The gap is wider than the EIP-170 fix
 
@@ -127,9 +127,17 @@ unmerged branches:
 
 | PR | Branch | Provides | State |
 | --- | --- | --- | --- |
-| [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) | `sprint-7/eip170-fix` | deployable `VaultFactory` + `VaultDeployer` | OPEN, CI green, **0 reviews** |
-| [#11](https://github.com/SlumperSan/agent-governed-vaults/pull/11) | `sprint-5/canary` | `docs/CANARY.md`, `packages/canary/` | OPEN, unmerged |
-| [#12](https://github.com/SlumperSan/agent-governed-vaults/pull/12) | `sprint-6/reference-agent` | `packages/reference-agent/` | OPEN, unmerged |
+| [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) | `sprint-7/eip170-fix` | deployable `VaultFactory` + `VaultDeployer` | OPEN, CI green, **reviewed PASS** |
+| [#11](https://github.com/SlumperSan/agent-governed-vaults/pull/11) | `sprint-5/canary` | `docs/CANARY.md`, `packages/canary/` | OPEN, **reviewed PASS** |
+| [#12](https://github.com/SlumperSan/agent-governed-vaults/pull/12) | `sprint-6/reference-agent` | `packages/reference-agent/` | OPEN, **reviewed PASS** |
+
+> **Review status — read the comments, not the API field.** `gh pr view --json reviewDecision`
+> returns `''` and `reviews: []` for all three, which reads as "unreviewed". It is not: each PR
+> carries a substantive `## Review: PASS ✅` comment from `SlumperSan` (#11 at 15:54Z, #12 at
+> 15:55Z, #17 at 17:47Z on 2026-08-20), including an adversarial line-by-line pass on
+> `VaultDeployer`'s assembly and a sha256 proof that `VaultCore`'s bytecode object is bit-identical
+> to `protocol/main` (`7a433965…`). They were posted as **issue comments rather than formal GitHub
+> review objects**, so the API fields stay empty. All three are reviewed and approved.
 
 **No single revision in the repository contains all three.** Choosing a different base does not
 unblock the run; landing the Sprint-8 merge train does. Note too that TESTNET-CHECKLIST §3 on
@@ -153,23 +161,27 @@ Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)
 Their own suites are green; they inherit `protocol/main`'s oversized factory and trip the size gate
 that CI runs last. So the order is forced:
 
-1. Review and merge **#17** — it is `MERGEABLE / CLEAN` with all three checks green.
-2. Rebase **#11** and **#12** onto the new `protocol/main`; their `contracts` check should go green
+1. Merge **#17** — `MERGEABLE / CLEAN`, all three checks green, reviewed PASS.
+2. Rebase **#11** then **#12** onto the new `protocol/main`; their `contracts` check should go green
    with no code change, since the size gate is the only thing failing. Both are currently
-   `MERGEABLE / UNSTABLE` — unstable *because* of that check, not because of conflicts.
+   `MERGEABLE / UNSTABLE` — unstable *because* of that check, not because of conflicts. Both PRs'
+   own reviews independently confirm this same order, and both edit the `test:backend` line in
+   `package.json`, so expect one conflict there — **keep both globs**.
 3. Tag `v0.1.0-rc2` and confirm CI green on `protocol/main`.
 
-All three PRs have `reviewDecision: ''` (no reviews). #17 is the one that genuinely needs a contract
-review before merging — it changes the deployment shape.
+**The merge train is not blocked on review or on code — only on who can run `gh pr merge`.** All
+three PRs are reviewed PASS and #17 has been verified to merge cleanly with a post-merge
+`forge build --sizes` exit 0. Tracked as
+[issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14).
 
 ### Not done, and why
 
 - **No faucet funding requested.** Pointless until the base is settled; the deploy would revert
   regardless of balance.
 - **No deploy command handed over.** It would have reverted on the stated base.
-- **No integration branch created.** #17 is unreviewed and, by its own title, *changes the deployment
-  shape*. Merging unreviewed contract changes so they can be broadcast is the "contract bugs get
-  issues, not hotfixes" constraint in another form. That call belongs to the human.
+- **No integration branch created.** The three PRs are reviewed and ready; what is missing is the
+  merge itself (#14), which is a repository action for the human, not something to route around by
+  building a parallel integration branch that no review or CI run covers.
 - **No issues filed.** Nothing found is a defect — the config is correct, every address verifies, the
   toolchain is right. The blocker is repository/process state, which belongs in this report and in
   the Sprint-8 merge train, not in a new bug issue.
@@ -189,6 +201,7 @@ Everything not dependent on the blocked base is verified and will not need redoi
 - ✅ Toolchain at required versions
 - ✅ Size profile characterised on both candidate revisions
 
-**To unblock:** land the Sprint-8 merge train (#17 reviewed + merged, plus #11 and #12), tag
-`v0.1.0-rc2`, confirm CI green including sizes on `protocol/main` — then re-run this pre-flight
-(cheap, ~2 min) and proceed to funding and deploy.
+**To unblock:** land the Sprint-8 merge train — merge #17, rebase and merge #11 then #12 (keeping
+both `test:backend` globs), tag `v0.1.0-rc2`, confirm CI green including sizes on `protocol/main`.
+All three are already reviewed PASS, so this is a merge operation, not a review cycle. Then re-run
+this pre-flight (~2 min) and proceed to funding and deploy.
