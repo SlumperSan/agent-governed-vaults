@@ -76,7 +76,10 @@ deliberately.
    executable bytes, so the `00` at index 10 is simultaneously the last header byte and the
    first byte of the returned runtime; `CODECOPY` reads from `0x0a` for `len+1` bytes. Walk
    the off-by-one — a mistake here corrupts the blob, though every vault-creating test would
-   fail loudly and immediately.
+   fail loudly and immediately. The `uint16(len + 1)` length would truncate silently above
+   65,534 B per chunk, i.e. a creation code over ~131 KB — unreachable behind the EIP-3860
+   bound already asserted in review focus 5, and constructor-only code that could not survive
+   a single test run.
 2. **Memory handling in `deploy`.** The free-memory pointer is advanced *before* the copies,
    so the `memory-safe` annotation holds. Length arithmetic is `extcodesize - 1` per chunk to
    skip the `STOP`.

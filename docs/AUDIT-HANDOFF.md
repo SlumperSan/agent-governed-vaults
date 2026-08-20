@@ -75,6 +75,13 @@ global runtime gas on every contract and, once the deployer exists, buys nothing
 
 ## What has already been reviewed (two internal rounds)
 
+> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
+> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
+> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
+> also the shortest contract in scope (~60 lines). If review budget has to be allocated
+> unevenly, this is the file with the least prior scrutiny per line.
+
 - [reviews/SPRINT1-SECURITY-REVIEW.md](reviews/SPRINT1-SECURITY-REVIEW.md) — VaultCore. 4 findings
   (H-1 module-liveness lockup, H-2 returndata-bomb, M-1 creator-gate strand, M-2 in-kind fee
   dodge), **all fixed**, regression suite `test/ModuleHardening.t.sol`.

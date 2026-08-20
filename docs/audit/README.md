@@ -37,6 +37,8 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/DirectPoolAdapter.md](walkthroughs/DirectPoolAdapter.md)
 - [walkthroughs/SubVaultRegistry.md](walkthroughs/SubVaultRegistry.md)
 - [walkthroughs/VaultFactory.md](walkthroughs/VaultFactory.md)
+- [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**, and the
+  only contract in this package that has had no internal adversarial pass (see §6)
 
 Cross-references:
 
@@ -50,6 +52,10 @@ Cross-references:
                        ┌────────────────────────────────────────────────┐
                        │                 VaultFactory                   │  permissionless deploy;
                        │  createVault / createChildVault → attest       │  the ONLY attestation path
+                       │            │ CREATEs via (immutable pin)       │
+                       │            ▼                                   │
+                       │      VaultDeployer — holds VaultCore's         │  no authority of its
+                       │      creation code (EIP-170, #10)              │  own (PX-4)
                        └───────┬───────────────────┬────────────────────┘
                      attests   │                   │ registers child edge
                                ▼                   ▼
@@ -88,7 +94,8 @@ Cross-references:
 | `AggregationRouterAdapter.sol` | ~76 | Off-chain-routed DEX-aggregation execution (pinned router + selector allowlist) | High — external calls |
 | `DirectPoolAdapter.sol` | ~94 | On-chain V2-pool execution (second adapter proving venue abstraction) | High — external calls |
 | `SubVaultRegistry.sol` | ~95 | Parent/child edges, depth cap 3, exit-fee stack cap, fee-stack display views | Medium |
-| `VaultFactory.sol` | ~114 | Permissionless deploy + attestation; child-basket-subset enforcement | Medium |
+| `VaultFactory.sol` | ~120 | Permissionless deploy + attestation; child-basket-subset enforcement | Medium |
+| `VaultDeployer.sol` | ~60 | Holds VaultCore's creation code (EIP-170 forced, #10). Zero authority; ~25 lines of assembly | Medium |
 | `lib/BoundedCall.sol` | ~46 | Gas- and returndata-bounded module calls (H-1 fix) | Medium |
 | `lib/Checkpoints.sol` | ~46 | Timestamp-keyed stake history (VO-9 snapshots) | Medium |
 | `lib/SafeTransferLib.sol` | ~58 | Safe transfers + assembly non-reverting `tryTransfer` (H-2 fix) | Medium |
@@ -182,6 +189,13 @@ a trust gap (nothing privileged happens in between).
 ## 6. What has already been reviewed
 
 Three internal adversarial passes, all findings fixed or explicitly dispositioned:
+
+> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
+> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
+> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
+> also the shortest contract in scope (~60 lines). If review budget has to be allocated
+> unevenly, this is the file with the least prior scrutiny per line.
 
 | Review | Scope | Outcome |
 | --- | --- | --- |
