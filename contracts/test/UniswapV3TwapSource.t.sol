@@ -76,6 +76,10 @@ contract UniswapV3TwapSourceTest is Test {
         assertEq(TickMath.getSqrtRatioAtTick(-100000), 533968626430936354154228408, "tick -100000");
         assertEq(TickMath.getSqrtRatioAtTick(196256), 1446476584571639225752396618629938, "ETH/USDC tick");
         assertEq(TickMath.getSqrtRatioAtTick(-196267), 4337194613517777023204848, "USDC/ETH tick");
+        // Straddling the point where `_quote` switches from the Q64.192 form to Q64.128.
+        assertEq(TickMath.getSqrtRatioAtTick(443636), 340275971719517849884101479065584693834, "tick 443636");
+        assertEq(TickMath.getSqrtRatioAtTick(443637), 340292985092780127046320864355664555423, "tick 443637");
+        assertEq(TickMath.getSqrtRatioAtTick(500000), 5697689776495288729098254600827762987878, "tick 500000");
     }
 
     /// The two endpoints Uniswap publishes as `MIN_SQRT_RATIO`/`MAX_SQRT_RATIO`. Between them
@@ -153,6 +157,48 @@ contract UniswapV3TwapSourceTest is Test {
         assertEq(p, 3266577487000000000000, "cbETH price via WETH"); // $3266.577487
         assertEq(src.intermediate(), address(weth), "bridging token recorded");
         assertTrue(src.intermediateIsToken0B(), "hop-two direction");
+    }
+
+    /// `_quote` has two branches: the Q64.192 form while `sqrtRatioX96` fits in 128 bits, and a
+    /// Q64.128 form above it. Every fixture above lives on the FIRST branch — real pools never
+    /// reach the crossover — so without these two tests a transposed shift in the second branch
+    /// would pass the whole suite. The crossover is at tick 443637, established by bisection
+    /// against the same independent reference that produced the golden ratios.
+    function test_quoteCrossoverBranchIsWhereExpected() public pure {
+        assertLe(TickMath.getSqrtRatioAtTick(443636), type(uint128).max, "443636 is the Q64.192 branch");
+        assertGt(TickMath.getSqrtRatioAtTick(443637), type(uint128).max, "443637 is the Q64.128 branch");
+    }
+
+    /// The two branches must agree where they meet. These are ADJACENT ticks evaluated by
+    /// DIFFERENT code paths, so the price step between them can only be one tick — 1 bp. A
+    /// wrong shift in the Q64.128 branch shows up here as an order-of-magnitude discontinuity,
+    /// not a rounding difference.
+    function test_quoteBranchesAreContinuousAcrossTheCrossover() public {
+        MockV3Pool below = _healthyPool(address(weth), address(usdc), 443636);
+        MockV3Pool above = _healthyPool(address(weth), address(usdc), 443637);
+        (uint256 pBelow,) = _oneHop(address(weth), below).latestPrice();
+        (uint256 pAbove,) = _oneHop(address(weth), above).latestPrice();
+
+        assertEq(pBelow, 18446050711097703529776342895654370894000000000000, "Q64.192 side");
+        assertEq(pAbove, 18447895316168813300129320530133980662000000000000, "Q64.128 side");
+        assertGt(pAbove, pBelow, "one tick up must price higher across the branch change");
+        assertLt((pAbove - pBelow) * 10_000 / pBelow, 5, "branch discontinuity, not a one-tick step");
+    }
+
+    /// Golden values well inside the Q64.128 branch, including the extreme tick — the widest
+    /// value the whole path can produce without overflowing the final WAD scaling.
+    function test_priceFixture_highTicksUseTheQ64_128Branch() public {
+        MockV3Pool mid = _healthyPool(address(weth), address(usdc), 500000);
+        (uint256 p,) = _oneHop(address(weth), mid).latestPrice();
+        assertEq(p, 5171760815372400971558161893748917540546000000000000, "tick 500000");
+
+        MockV3Pool top = _healthyPool(address(weth), address(usdc), TickMath.MAX_TICK);
+        (uint256 pTop,) = _oneHop(address(weth), top).latestPrice();
+        assertEq(
+            pTop,
+            340256786836388094070642339899681172762184831912720469415000000000000,
+            "MAX_TICK still prices rather than overflowing"
+        );
     }
 
     // --------------------------------------------------------------------------------------
@@ -428,7 +474,8 @@ contract UniswapV3TwapSourceTest is Test {
     /// Price is monotone in the mean tick, in the direction the token ordering implies. Uses a
     /// tick gap wide enough that the two branches' rounding cannot invert the comparison.
     function testFuzz_priceMonotoneInTick(int256 rawTick, uint16 gap, bool assetIsToken0) public {
-        int24 t = int24(bound(rawTick, -400000, 400000 - int256(uint256(gap)) - 1));
+        // Deliberately spans the 443637 branch crossover in both directions.
+        int24 t = int24(bound(rawTick, -600000, 600000 - int256(uint256(gap)) - 1));
         int24 t2 = t + int24(int256(uint256(gap))) + 1;
 
         MockV3Pool poolLow = assetIsToken0

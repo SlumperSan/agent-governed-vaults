@@ -53,7 +53,15 @@ Constructor enforces:
    `observe([window, 0])`, and takes `(tc[1] − tc[0]) / window` **floored toward negative
    infinity**.
 3. `_quote(tick, baseAmount, baseIsToken0)` — `TickMath.getSqrtRatioAtTick` then the standard
-   two-branch `FullMath.mulDiv` (Q64.192 while the ratio fits in 128 bits, Q64.128 above).
+   two-branch `FullMath.mulDiv` (Q64.192 while the ratio fits in 128 bits, Q64.128 above). The
+   crossover is at **tick 443637**, located by bisection against the same independent reference
+   that produced the golden ratios. No real pool reaches it, so the second branch would
+   otherwise be exercised only by "does not revert" fuzz — `test_quoteCrossoverBranchIsWhereExpected`
+   pins where the branch flips, `test_quoteBranchesAreContinuousAcrossTheCrossover` evaluates
+   the two adjacent ticks 443636/443637 through the two different paths and requires the step
+   between them to be the one basis point a single tick is worth, and
+   `test_priceFixture_highTicksUseTheQ64_128Branch` pins golden values at tick 500000 and at
+   `MAX_TICK`.
 4. Multiply the USDC leg by `usdcScale` to reach WAD.
 5. `updatedAt = block.timestamp`.
 
