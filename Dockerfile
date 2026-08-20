@@ -6,6 +6,10 @@
 #   docker run --env-file .env vault-runtime npm run start:indexer
 #   docker run --env-file .env -p 8402:8402 vault-runtime npm run start:api
 #   docker run --env-file .env vault-runtime npm run start:canary
+#
+# Two operational commands ship in the same image and need no env at all:
+#   docker run -v vault-state:/data vault-runtime node packages/oplog/src/ops-check.mjs --dir=/data
+#   docker run -v vault-state:/data vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
 FROM node:24-slim
 
 WORKDIR /app
