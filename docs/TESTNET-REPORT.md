@@ -169,10 +169,18 @@ that CI runs last. So the order is forced:
    `package.json`, so expect one conflict there — **keep both globs**.
 3. Tag `v0.1.0-rc2` and confirm CI green on `protocol/main`.
 
-**The merge train is not blocked on review or on code — only on who can run `gh pr merge`.** All
-three PRs are reviewed PASS and #17 has been verified to merge cleanly with a post-merge
-`forge build --sizes` exit 0. Tracked as
-[issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14).
+**The merge train is not blocked on review or on code.** All three PRs are reviewed PASS, and #17
+reports `MERGEABLE / CLEAN` with all three checks green. What remains is the merge operation itself,
+which has simply not been performed.
+
+> **On [issue #14](https://github.com/SlumperSan/agent-governed-vaults/issues/14) (\"permission
+> classifier denies `gh pr merge`\") — its premise may be stale.** That was recorded by a prior
+> session. This session ran `gh pr create`, `gh pr edit`, `git push` and `forge build --sizes`
+> without any denial, so the broad tool restriction #14 describes was not reproduced here. `gh pr
+> merge` itself was **not** attempted — merging is a human action under this sprint's division of
+> labour, and it is not something to probe speculatively. Treat #14 as unconfirmed rather than as a
+> known blocker: try the merge first, and only re-open the permissions question if it actually
+> fails.
 
 ### Not done, and why
 
