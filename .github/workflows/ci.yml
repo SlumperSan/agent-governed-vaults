@@ -55,7 +55,14 @@ jobs:
         uses: crytic/slither-action@v0.4.0
         with:
           target: contracts/
-          slither-args: --filter-paths "lib|test|script"
+          # Anchored on purpose (Sprint 10, F-3). The old pattern was
+          # "lib|test|script" — an unanchored regex, so it also matched
+          # src/lib/, and SafeTransferLib, BoundedCall and Checkpoints were
+          # silently excluded from every Slither run this project ever did.
+          # ~150 LoC of Medium-risk primitives carrying the H-1 and H-2 fixes.
+          # Only Foundry's dependency dir (contracts/lib/), test/ and script/
+          # are meant to be filtered. Keep the anchors.
+          slither-args: --filter-paths "^lib/|^test/|^script/"
         continue-on-error: true  # advisory until the audit-prep triage in the runbook
 
   backend:

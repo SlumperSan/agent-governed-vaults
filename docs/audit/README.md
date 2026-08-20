@@ -37,8 +37,8 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/DirectPoolAdapter.md](walkthroughs/DirectPoolAdapter.md)
 - [walkthroughs/SubVaultRegistry.md](walkthroughs/SubVaultRegistry.md)
 - [walkthroughs/VaultFactory.md](walkthroughs/VaultFactory.md)
-- [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**, and the
-  only contract in this package that has had no internal adversarial pass (see §6)
+- [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**;
+  adversarially reviewed in Sprint 10 (see §6)
 
 Cross-references:
 
@@ -188,14 +188,15 @@ a trust gap (nothing privileged happens in between).
 
 ## 6. What has already been reviewed
 
-Three internal adversarial passes, all findings fixed or explicitly dispositioned:
+Four internal adversarial passes, all findings fixed or explicitly dispositioned:
 
-> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
-> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
-> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
-> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
-> also the shortest contract in scope (~60 lines). If review budget has to be allocated
-> unevenly, this is the file with the least prior scrutiny per line.
+> **`VaultDeployer.sol` post-dated every one of these rounds. Sprint 10 closed that gap.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only contract
+> here containing hand-written assembly: an 11-byte SSTORE2 header emitted in the constructor,
+> and a memory-assembly `CREATE` in `deploy`. Both were walked opcode by opcode in
+> [SPRINT10-DEPLOYMENT-REVIEW](../reviews/SPRINT10-DEPLOYMENT-REVIEW.md) §3.5 — **no High or Medium
+> finding**. It remains the file with the least *accumulated* scrutiny (one internal pass, versus
+> three for `VaultCore`), so it is still where uneven review budget should go first.
 
 | Review | Scope | Outcome |
 | --- | --- | --- |
@@ -203,6 +204,7 @@ Three internal adversarial passes, all findings fixed or explicitly dispositione
 | [SPRINT6-EXECUTION-REVIEW](../reviews/SPRINT6-EXECUTION-REVIEW.md) | Oracle / execution / sub-vaults | 8 findings (2H/5M/1L) — fixed or documented, regression `test/Sprint6Fixes.t.sol` |
 | [SPRINT6-GOVERNANCE-REVIEW](../reviews/SPRINT6-GOVERNANCE-REVIEW.md) | Governance / economics | 5 findings (1H/2M/2 documented) — fixed/documented |
 | [SPRINT6-GOVERNANCE-ACCEPTED-ROWS](../reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md) | The deliberately-Accepted governance rows | K-3/VO-2/VO-3 + snapshots hold; GA-1 (parent froze child RuleChange) **fixed**; VO-7 doc-corrected |
+| [SPRINT10-DEPLOYMENT-REVIEW](../reviews/SPRINT10-DEPLOYMENT-REVIEW.md) | The EIP-170 deployment split — `VaultDeployer.sol`, `VaultFactory._deploy`, deploy scripts, and the test/CI edits alongside them | **No High or Medium.** 4 findings: F-1 unvalidated factory immutables (**accepted**, PX-4), F-2 + F-4 doc corrections (**fixed**), F-3 `src/lib/` excluded from every Slither run to date (**fixed**) |
 
 The threat model's "Sprint 6 adversarial pass" table maps every finding ID (E1–E8, G1–G5,
 GA-1/GA-2) to its disposition. Each walkthrough's "Accepted risks" section lists what applies

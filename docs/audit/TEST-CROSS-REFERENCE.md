@@ -113,6 +113,21 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | PX-4 (b) CREATEd bytes are compile-time-pinned, not caller-supplied | `Eip170::test_deployerCreationCodeIsTheCompiledVaultCore`, `::test_codeChunksAreInertData` |
 | Factory behaviour preserved across the deployer hop | `Eip170::test_deployedVaultBindsTheSameSingletonsAndCreator`, `::test_vaultCoreConstructorRevertsStillBubbleThroughTheFactory`; the pre-existing suites are unchanged and still cover attestation, edge registration and basket-subset (`FeesAndRegistry`, `SubVaults`, `Sprint6Fixes`) |
 
+## What this cross-reference deliberately does not cover
+
+**The canary and the reference agent are out of contract-audit scope, and no row below maps to
+them.** `packages/canary/` (PR #11 — a read-only post-launch watcher) and
+`packages/reference-agent/` (PR #12 — a policy-driven vault member) are off-chain TypeScript.
+Neither ships a Solidity file: `git diff protocol/main...sprint-5/canary -- contracts/` and the
+same for `sprint-6/reference-agent` are both **empty**. They custody nothing, hold no keys, and
+cannot affect on-chain state that the contracts do not already gate. They are covered by the
+backend suite, not by this document, exactly as `packages/indexer`, `apps/api` and `apps/web` are.
+Stated explicitly so their absence reads as a scope decision rather than a coverage gap.
+
+Both are also **unmerged as of the audit tag** — see
+[CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) for what the tagged tree does and does not
+contain.
+
 ## Known coverage gaps (candidates for the audit, not oversights)
 
 1. **MO-3 settle-time non-recheck** and **G4 lower-bound** have review-verified fixes but no

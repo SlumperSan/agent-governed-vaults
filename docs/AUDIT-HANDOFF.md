@@ -1,8 +1,30 @@
 # Audit Handoff Package
 
-Sprint 9. Everything an external auditor needs to scope the engagement. The protocol is
-immutable (no proxies, no admin upgrade path), so the audit surface is the deployed bytecode —
-there is no "we'll patch it later."
+Everything an external auditor needs to scope the engagement. Current as of the **Sprint-10
+audit freeze**. The protocol is immutable (no proxies, no admin upgrade path), so whatever ships
+is the audit surface permanently — there is no "we'll patch it later."
+
+## Audit this tag: `v0.2.0-audit`
+
+> **If `v0.2.0-audit` is not present in the repository, it was not created — the freeze is
+> content-complete but untagged.** Tagging requires merging PRs
+> [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
+> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19), and the agent session that
+> prepared this freeze had `gh pr merge` refused by its harness permission classifier. The exact
+> merge-and-tag commands, and the branch head that holds the audit-candidate content in the
+> meantime, are in [CHANGES-SINCE-REVIEWS.md §4](CHANGES-SINCE-REVIEWS.md).
+
+**Read [CHANGES-SINCE-REVIEWS.md](CHANGES-SINCE-REVIEWS.md) first**, then this file. It is one
+page stating what changed since the internal reviews, which rounds covered what, and — more
+usefully — what internal review did **not** cover.
+
+**There is no deployed bytecode to audit against.** The protocol has never been deployed to any
+network, mainnet or testnet. [TESTNET-REPORT.md](TESTNET-REPORT.md) is a **pre-flight record
+only**: nothing was broadcast and no key was ever handled. What it does establish, live on Base
+Sepolia, is that all six configured addresses verify on-chain (USDC/WETH/LINK symbols and
+decimals, both Chainlink feeds fresh, the pinned router has code) and that the toolchain is at
+the required versions. That is configuration evidence, not deployment evidence. The audit surface
+is the source at the tag above.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
@@ -73,14 +95,15 @@ global runtime gas on every contract and, once the deployer exists, buys nothing
   challenge them, but know they were chosen (esp. K-4: the oracle breaker freezes exits by
   design; there is intentionally no escape hatch).
 
-## What has already been reviewed (two internal rounds)
+## What has already been reviewed (four internal rounds)
 
-> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
-> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
-> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
-> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
-> also the shortest contract in scope (~60 lines). If review budget has to be allocated
-> unevenly, this is the file with the least prior scrutiny per line.
+> **`VaultDeployer.sol` post-dated every one of these rounds. Sprint 10 closed that gap.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only contract
+> here containing hand-written assembly: an 11-byte SSTORE2 header emitted in the constructor,
+> and a memory-assembly `CREATE` in `deploy`. Both were walked opcode by opcode in
+> [SPRINT10-DEPLOYMENT-REVIEW](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) §3.5 — **no High or Medium
+> finding**. It remains the file with the least *accumulated* scrutiny (one internal pass, versus
+> three for `VaultCore`), so it is still where uneven review budget should go first.
 
 - [reviews/SPRINT1-SECURITY-REVIEW.md](reviews/SPRINT1-SECURITY-REVIEW.md) — VaultCore. 4 findings
   (H-1 module-liveness lockup, H-2 returndata-bomb, M-1 creator-gate strand, M-2 in-kind fee
@@ -94,6 +117,11 @@ A third pass ([reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md](reviews/SPRINT6-GOVE
 challenged the deliberately-Accepted governance rows: K-3/VO-2/VO-3 and snapshot soundness hold
 as designed; it found GA-1 (parent-vault-as-non-voting-member froze child RuleChange — **fixed**)
 and confirmed VO-7's mid-reveal tally visibility is benign under commit-binding.
+
+- [reviews/SPRINT10-DEPLOYMENT-REVIEW.md](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) — the EIP-170
+  deployment split (`VaultDeployer.sol`, `VaultFactory._deploy`, the deploy scripts). **No High or
+  Medium finding**; 4 informational/low, one of which (F-3) found that `src/lib/` had been
+  excluded from every Slither run the project had done.
 
 The threat model's "Sprint 6 adversarial pass" table maps every finding to its disposition.
 
@@ -147,7 +175,16 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv    # 128 tests
-forge snapshot --check --nmt "testFuzz"             # gas regression gate (fuzz gas is corpus-dependent, so not gated)
-slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
+cd contracts && forge build && forge test -vvv     # 128 tests
+forge snapshot --check --nmt "testFuzz"            # gas regression gate (fuzz gas is corpus-dependent, so not gated)
+forge build --sizes                                # EIP-170 gate
+slither . --filter-paths "^lib/|^test/|^script/"   # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
+
+The first three are **blocking** CI gates. `slither` is **advisory** — its CI step is
+`continue-on-error: true`, so a new high-severity static-analysis finding does **not** turn CI
+red; [SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md) is the record of what was dispositioned and
+why. The filter pattern is anchored as of Sprint 10: the previous unanchored `"lib|test|script"`
+also matched `src/lib/`, which excluded `SafeTransferLib`, `BoundedCall` and `Checkpoints` from
+every Slither run the project had done
+([SPRINT10-DEPLOYMENT-REVIEW §F-3](reviews/SPRINT10-DEPLOYMENT-REVIEW.md)).

@@ -68,9 +68,17 @@ because the factory pins it immutably. `Deploy.s.sol` documents the ordering.
    (identity = whoever controls creation), but confirm downstream assumptions (leaderboard,
    carry) hold for contract operators.
 2. **Child-subset check reads `parent.assetUnit`** — `assetUnit != 0 ⇔ in basket` on
-   VaultCore, and the parent address comes from the caller; a bogus `parent` fails at
-   `registerChild` (factory-only writer, parent must exist for depth/fee reads) — walk that
-   failure ordering.
+   VaultCore, and the parent address comes from the caller. An EOA or a non-conforming contract
+   fails: `registerChild` calls `IVaultFees(parent).exitFeeMaxBps()` in the fee-stack loop, which
+   reverts on a codeless or method-less address. But a *crafted* mock implementing three view
+   functions — `usdc()`, `assetUnit(address)`, `exitFeeMaxBps()` — passes every gate
+   (`depthOf[fake] == 0`, so depth 1; a `0` fee keeps the stack under cap), producing a real
+   attested child whose `parentOf` is a fake. Sprint 10 traced the outcome and it is **benign**:
+   the fake gains nothing (`VaultCore.allocateToChild` requires `parentOf(child) ==
+   address(this)`, and a non-VaultCore fake has no such function), and the child loses nothing
+   (the edge is used only by `parentVault()`, to exclude a parent's position from voting-eligible
+   stake — and the fake holds no shares). Recorded so the case is not re-derived from scratch;
+   see [SPRINT10-DEPLOYMENT-REVIEW §F-2](../../reviews/SPRINT10-DEPLOYMENT-REVIEW.md).
 3. **No de-attestation exists.** A vault attested is attested forever (SF-5 retention). The
    factory has no owner, no pause, no list curation.
 
