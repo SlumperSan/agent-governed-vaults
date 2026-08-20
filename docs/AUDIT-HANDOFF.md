@@ -73,14 +73,15 @@ global runtime gas on every contract and, once the deployer exists, buys nothing
   challenge them, but know they were chosen (esp. K-4: the oracle breaker freezes exits by
   design; there is intentionally no escape hatch).
 
-## What has already been reviewed (two internal rounds)
+## What has already been reviewed (four internal rounds)
 
-> **`VaultDeployer.sol` post-dates every one of these rounds and has had NO adversarial pass.**
-> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only
-> contract here containing hand-written assembly that was not reviewed internally: an 11-byte
-> SSTORE2 header emitted in the constructor, and a memory-assembly `CREATE` in `deploy`. It is
-> also the shortest contract in scope (~60 lines). If review budget has to be allocated
-> unevenly, this is the file with the least prior scrutiny per line.
+> **`VaultDeployer.sol` post-dated every one of these rounds. Sprint 10 closed that gap.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only contract
+> here containing hand-written assembly: an 11-byte SSTORE2 header emitted in the constructor,
+> and a memory-assembly `CREATE` in `deploy`. Both were walked opcode by opcode in
+> [SPRINT10-DEPLOYMENT-REVIEW](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) §3.5 — **no High or Medium
+> finding**. It remains the file with the least *accumulated* scrutiny (one internal pass, versus
+> three for `VaultCore`), so it is still where uneven review budget should go first.
 
 - [reviews/SPRINT1-SECURITY-REVIEW.md](reviews/SPRINT1-SECURITY-REVIEW.md) — VaultCore. 4 findings
   (H-1 module-liveness lockup, H-2 returndata-bomb, M-1 creator-gate strand, M-2 in-kind fee
@@ -94,6 +95,11 @@ A third pass ([reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md](reviews/SPRINT6-GOVE
 challenged the deliberately-Accepted governance rows: K-3/VO-2/VO-3 and snapshot soundness hold
 as designed; it found GA-1 (parent-vault-as-non-voting-member froze child RuleChange — **fixed**)
 and confirmed VO-7's mid-reveal tally visibility is benign under commit-binding.
+
+- [reviews/SPRINT10-DEPLOYMENT-REVIEW.md](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) — the EIP-170
+  deployment split (`VaultDeployer.sol`, `VaultFactory._deploy`, the deploy scripts). **No High or
+  Medium finding**; 4 informational/low, one of which (F-3) found that `src/lib/` had been
+  excluded from every Slither run the project had done.
 
 The threat model's "Sprint 6 adversarial pass" table maps every finding to its disposition.
 
@@ -147,7 +153,16 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv    # 128 tests
-forge snapshot --check --nmt "testFuzz"             # gas regression gate (fuzz gas is corpus-dependent, so not gated)
-slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
+cd contracts && forge build && forge test -vvv     # 128 tests
+forge snapshot --check --nmt "testFuzz"            # gas regression gate (fuzz gas is corpus-dependent, so not gated)
+forge build --sizes                                # EIP-170 gate
+slither . --filter-paths "^lib/|^test/|^script/"   # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
+
+The first three are **blocking** CI gates. `slither` is **advisory** — its CI step is
+`continue-on-error: true`, so a new high-severity static-analysis finding does **not** turn CI
+red; [SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md) is the record of what was dispositioned and
+why. The filter pattern is anchored as of Sprint 10: the previous unanchored `"lib|test|script"`
+also matched `src/lib/`, which excluded `SafeTransferLib`, `BoundedCall` and `Checkpoints` from
+every Slither run the project had done
+([SPRINT10-DEPLOYMENT-REVIEW §F-3](reviews/SPRINT10-DEPLOYMENT-REVIEW.md)).
