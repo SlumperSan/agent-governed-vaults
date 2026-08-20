@@ -1,8 +1,30 @@
 # Audit Handoff Package
 
-Sprint 9. Everything an external auditor needs to scope the engagement. The protocol is
-immutable (no proxies, no admin upgrade path), so the audit surface is the deployed bytecode —
-there is no "we'll patch it later."
+Everything an external auditor needs to scope the engagement. Current as of the **Sprint-10
+audit freeze**. The protocol is immutable (no proxies, no admin upgrade path), so whatever ships
+is the audit surface permanently — there is no "we'll patch it later."
+
+## Audit this tag: `v0.2.0-audit`
+
+> **If `v0.2.0-audit` is not present in the repository, it was not created — the freeze is
+> content-complete but untagged.** Tagging requires merging PRs
+> [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
+> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19), and the agent session that
+> prepared this freeze had `gh pr merge` refused by its harness permission classifier. The exact
+> merge-and-tag commands, and the branch head that holds the audit-candidate content in the
+> meantime, are in [CHANGES-SINCE-REVIEWS.md §4](CHANGES-SINCE-REVIEWS.md).
+
+**Read [CHANGES-SINCE-REVIEWS.md](CHANGES-SINCE-REVIEWS.md) first**, then this file. It is one
+page stating what changed since the internal reviews, which rounds covered what, and — more
+usefully — what internal review did **not** cover.
+
+**There is no deployed bytecode to audit against.** The protocol has never been deployed to any
+network, mainnet or testnet. [TESTNET-REPORT.md](TESTNET-REPORT.md) is a **pre-flight record
+only**: nothing was broadcast and no key was ever handled. What it does establish, live on Base
+Sepolia, is that all six configured addresses verify on-chain (USDC/WETH/LINK symbols and
+decimals, both Chainlink feeds fresh, the pinned router has code) and that the toolchain is at
+the required versions. That is configuration evidence, not deployment evidence. The audit surface
+is the source at the tag above.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
