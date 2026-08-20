@@ -29,5 +29,23 @@ services:
       - indexer
     restart: unless-stopped
 
+  # Post-launch canary (docs/CANARY.md). Read-only against the chain: no key, no wallet, no
+  # transaction — it only reads. It mounts the shared volume because two of its signals compare
+  # the indexer's projection against chain state; it reads that snapshot and never writes it.
+  # Silent while healthy: one line per signal transition, nothing otherwise. Set ALERT_WEBHOOK_URL
+  # in .env to also POST each transition.
+  canary:
+    build: .
+    command: npm run start:canary
+    env_file: .env
+    environment:
+      STATE_PATH: /data/indexer-state.json        # the indexer snapshot (read-only to this service)
+      CANARY_STATE_PATH: /data/canary-state.json  # its OWN transition state — never the indexer's
+    volumes:
+      - vault-state:/data
+    depends_on:
+      - indexer
+    restart: unless-stopped
+
 volumes:
   vault-state:

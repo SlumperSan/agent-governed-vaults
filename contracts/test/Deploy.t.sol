@@ -8,6 +8,7 @@ import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultDeployer} from "../src/VaultDeployer.sol";
 
 /// Proves the deploy script wires the system correctly and locks every one-shot back-reference.
 contract DeployTest is Test {
@@ -18,6 +19,7 @@ contract DeployTest is Test {
             SubVaultRegistry subReg,
             FeeEngine feeEngine,
             Governance gov,
+            VaultDeployer vaultDeployer,
             VaultFactory factory
         ) = d.run();
 
@@ -27,6 +29,8 @@ contract DeployTest is Test {
         assertEq(subReg.factory(), address(factory), "subReg factory");
         assertEq(gov.subVaultRegistry(), address(subReg), "gov subReg");
         assertEq(address(factory.subVaultRegistry()), address(subReg), "factory subReg");
+        // #10: the factory's one construction path, pinned immutably at deploy time.
+        assertEq(address(factory.vaultDeployer()), address(vaultDeployer), "factory vaultDeployer");
 
         // Every wiring is now permanently locked. The deployer is the Deploy contract; even
         // AS the deployer, re-wiring reverts AlreadyWired (one-shot). Non-deployers get

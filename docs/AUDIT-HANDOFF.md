@@ -1,8 +1,30 @@
 # Audit Handoff Package
 
-Sprint 9. Everything an external auditor needs to scope the engagement. The protocol is
-immutable (no proxies, no admin upgrade path), so the audit surface is the deployed bytecode —
-there is no "we'll patch it later."
+Everything an external auditor needs to scope the engagement. Current as of the **Sprint-10
+audit freeze**. The protocol is immutable (no proxies, no admin upgrade path), so whatever ships
+is the audit surface permanently — there is no "we'll patch it later."
+
+## Audit this tag: `v0.2.0-audit`
+
+> **If `v0.2.0-audit` is not present in the repository, it was not created — the freeze is
+> content-complete but untagged.** Tagging requires merging PRs
+> [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
+> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19), and the agent session that
+> prepared this freeze had `gh pr merge` refused by its harness permission classifier. The exact
+> merge-and-tag commands, and the branch head that holds the audit-candidate content in the
+> meantime, are in [CHANGES-SINCE-REVIEWS.md §4](CHANGES-SINCE-REVIEWS.md).
+
+**Read [CHANGES-SINCE-REVIEWS.md](CHANGES-SINCE-REVIEWS.md) first**, then this file. It is one
+page stating what changed since the internal reviews, which rounds covered what, and — more
+usefully — what internal review did **not** cover.
+
+**There is no deployed bytecode to audit against.** The protocol has never been deployed to any
+network, mainnet or testnet. [TESTNET-REPORT.md](TESTNET-REPORT.md) is a **pre-flight record
+only**: nothing was broadcast and no key was ever handled. What it does establish, live on Base
+Sepolia, is that all six configured addresses verify on-chain (USDC/WETH/LINK symbols and
+decimals, both Chainlink feeds fresh, the pinned router has code) and that the toolchain is at
+the required versions. That is configuration evidence, not deployment evidence. The audit surface
+is the source at the tag above.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
@@ -22,22 +44,66 @@ there is no "we'll patch it later."
 | `OracleAggregator.sol` | ~140 | median + staleness breaker | **Critical** — prices everything |
 | `AggregationRouterAdapter.sol` | ~80 | DEX-aggregation execution | High — external calls |
 | `SubVaultRegistry.sol` | ~100 | edges, depth, fee-stack caps | Medium |
-| `VaultFactory.sol` | ~90 | permissionless deploy + attestation | Medium |
+| `VaultFactory.sol` | ~120 | permissionless deploy + attestation | Medium |
+| `VaultDeployer.sol` | ~60 | holds VaultCore's creation code (EIP-170 forced, #10); no authority | Medium |
 | `lib/` (SafeTransferLib, Checkpoints, BoundedCall) | ~150 | primitives | Medium |
 
 Out of scope for the contract audit (separate review): `packages/indexer`, `apps/api`
 (x402 metering), `apps/web`. These never custody funds; the API server holds no keys.
 
+## Deployment shape changed after this package was assembled
+
+Stated plainly because it post-dates the rest of this document. At v0.1.0-rc1 the protocol was
+**undeployable**: `VaultFactory` compiled to 27,241 B against EIP-170's 24,576 B cap, because
+`new VaultCore(...)` embeds VaultCore's entire creation code
+([#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). `forge test` was green
+throughout — Foundry's test EVM does not enforce EIP-170 — so only `forge build --sizes` caught it.
+
+The governing constraint, and the reason the obvious fixes do not work: **VaultCore's creation
+code (24,731 B) is larger than the runtime cap itself.** Any contract holding
+`new VaultCore(...)` is therefore over the cap before its own logic; a minimal helper doing
+nothing else measured 25,100 B, and the entire `optimizer_runs` ladder from 800 down to 50 buys
+only 229 B.
+
+**Sprint 7 fix:** a new `VaultDeployer` carries the creation code in its own *creation* code
+(where EIP-3860's 49,152 B cap applies) and writes it into two immutable, non-executable data
+contracts at construction. `VaultFactory` pins that deployer immutably and calls it with
+ABI-encoded constructor arguments only. Net effect on the audit surface:
+
+- **`VaultCore.sol` is byte-identical** — not one line changed, its walkthrough stands as written.
+- **`VaultFactory.sol`** changed in exactly two places: a fifth constructor parameter, and
+  `_deploy` calling the deployer instead of `new VaultCore(...)`. All attestation, edge
+  registration and basket-subset logic is untouched.
+- **One new contract to review**, `VaultDeployer.sol`
+  ([walkthrough](audit/walkthroughs/VaultDeployer.md)), which holds no authority of any kind.
+- **The trust anchor is unchanged.** `OperatorRegistry.attestVault` is still factory-only, so
+  calling the deployer directly yields an unattested vault — the same position anyone was in
+  before, deploying VaultCore themselves. New threat-model row **PX-4** covers the added link.
+- **No proxy, no delegatecall, no upgrade path** was introduced. The "immutable, no proxies"
+  claim at the top of this file holds verbatim.
+
+The optimizer settings were deliberately **not** changed: the 229 B available would have cost
+global runtime gas on every contract and, once the deployer exists, buys nothing — VaultCore's
+1,560 B of headroom is no longer on the deployability path.
+
 ## Design intent (read first)
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — module boundaries, NAV/share math, the C-1..C-5
   commitments, and the resolved contradictions K-1..K-4.
-- [THREAT-MODEL.md](THREAT-MODEL.md) — 44 mechanic→vector→mitigation rows plus the Sprint 6
+- [THREAT-MODEL.md](THREAT-MODEL.md) — 45 mechanic→vector→mitigation rows plus the Sprint 6
   finding dispositions. **The "Accepted" rows are deliberate tradeoffs, not oversights** — please
   challenge them, but know they were chosen (esp. K-4: the oracle breaker freezes exits by
   design; there is intentionally no escape hatch).
 
-## What has already been reviewed (two internal rounds)
+## What has already been reviewed (four internal rounds)
+
+> **`VaultDeployer.sol` post-dated every one of these rounds. Sprint 10 closed that gap.**
+> It is the newest code in the package (Sprint 7, forced by EIP-170 — #10) and the only contract
+> here containing hand-written assembly: an 11-byte SSTORE2 header emitted in the constructor,
+> and a memory-assembly `CREATE` in `deploy`. Both were walked opcode by opcode in
+> [SPRINT10-DEPLOYMENT-REVIEW](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) §3.5 — **no High or Medium
+> finding**. It remains the file with the least *accumulated* scrutiny (one internal pass, versus
+> three for `VaultCore`), so it is still where uneven review budget should go first.
 
 - [reviews/SPRINT1-SECURITY-REVIEW.md](reviews/SPRINT1-SECURITY-REVIEW.md) — VaultCore. 4 findings
   (H-1 module-liveness lockup, H-2 returndata-bomb, M-1 creator-gate strand, M-2 in-kind fee
@@ -52,11 +118,16 @@ challenged the deliberately-Accepted governance rows: K-3/VO-2/VO-3 and snapshot
 as designed; it found GA-1 (parent-vault-as-non-voting-member froze child RuleChange — **fixed**)
 and confirmed VO-7's mid-reveal tally visibility is benign under commit-binding.
 
+- [reviews/SPRINT10-DEPLOYMENT-REVIEW.md](reviews/SPRINT10-DEPLOYMENT-REVIEW.md) — the EIP-170
+  deployment split (`VaultDeployer.sol`, `VaultFactory._deploy`, the deploy scripts). **No High or
+  Medium finding**; 4 informational/low, one of which (F-3) found that `src/lib/` had been
+  excluded from every Slither run the project had done.
+
 The threat model's "Sprint 6 adversarial pass" table maps every finding to its disposition.
 
 ## Invariants proven (Foundry)
 
-119 tests, incl. these invariant suites (256 runs × 16k calls each):
+128 tests, incl. these invariant suites (256 runs × 16k calls each):
 - `Σ member shares == totalShares` across every path (VaultCore + system-level with children)
 - **NAVps non-decreasing for remaining members across any redemption** (§4.6) — proven with and
   without sub-vaults present
@@ -104,7 +175,16 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv    # 119 tests
-forge snapshot --check --nmt "testFuzz"             # gas regression gate (fuzz gas is corpus-dependent, so not gated)
-slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
+cd contracts && forge build && forge test -vvv     # 128 tests
+forge snapshot --check --nmt "testFuzz"            # gas regression gate (fuzz gas is corpus-dependent, so not gated)
+forge build --sizes                                # EIP-170 gate
+slither . --filter-paths "^lib/|^test/|^script/"   # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
+
+The first three are **blocking** CI gates. `slither` is **advisory** — its CI step is
+`continue-on-error: true`, so a new high-severity static-analysis finding does **not** turn CI
+red; [SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md) is the record of what was dispositioned and
+why. The filter pattern is anchored as of Sprint 10: the previous unanchored `"lib|test|script"`
+also matched `src/lib/`, which excluded `SafeTransferLib`, `BoundedCall` and `Checkpoints` from
+every Slither run the project had done
+([SPRINT10-DEPLOYMENT-REVIEW §F-3](reviews/SPRINT10-DEPLOYMENT-REVIEW.md)).

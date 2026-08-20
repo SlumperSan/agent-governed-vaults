@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-import {VaultCore} from "./VaultCore.sol";
 import {IOperatorRegistry} from "./interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "./interfaces/IGovernance.sol";
 import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
@@ -13,6 +12,10 @@ interface IRegistryAttest {
 
 interface ISubRegistryChild {
     function registerChild(address parent, address child, uint256 childExitFeeMaxBps) external;
+}
+
+interface IVaultDeployer {
+    function deploy(bytes calldata ctorArgs) external returns (address vault);
 }
 
 interface IVaultBasket {
@@ -34,6 +37,10 @@ contract VaultFactory {
     IGovernance public immutable governance;
     IFeeEngine public immutable feeEngine;
     address public immutable subVaultRegistry;
+    /// @dev The factory's ONLY vault construction path, pinned at construction (#10). See
+    /// VaultDeployer: it exists because VaultCore's creation code alone exceeds EIP-170, and it
+    /// holds no authority of its own — attestation stays factory-gated in OperatorRegistry.
+    IVaultDeployer public immutable vaultDeployer;
 
     address[] public allVaults;
 
@@ -43,16 +50,19 @@ contract VaultFactory {
     /// @param governance_ governance module every deployed vault binds to
     /// @param feeEngine_ fee module every deployed vault binds to
     /// @param subVaultRegistry_ parent/child edge registry passed into every vault
+    /// @param vaultDeployer_ the VaultDeployer holding VaultCore's creation code (deploy it first)
     constructor(
         IOperatorRegistry registry_,
         IGovernance governance_,
         IFeeEngine feeEngine_,
-        address subVaultRegistry_
+        address subVaultRegistry_,
+        IVaultDeployer vaultDeployer_
     ) {
         registry = registry_;
         governance = governance_;
         feeEngine = feeEngine_;
         subVaultRegistry = subVaultRegistry_;
+        vaultDeployer = vaultDeployer_;
     }
 
     error BasketNotSubsetOfParent();
@@ -99,9 +109,13 @@ contract VaultFactory {
         emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
     }
 
+    /// @dev Constructor arguments are encoded here and CREATEd by `vaultDeployer` — the same
+    /// argument tuple `new VaultCore(...)` used to build, in the same order. The vault's code
+    /// comes from the deployer's compile-time-pinned blob, never from a caller, and a failing
+    /// VaultCore constructor still bubbles its own revert (e.g. `BadConfig`) through.
     function _deploy(VaultParams calldata p) internal returns (address vault) {
-        vault = address(
-            new VaultCore(
+        vault = vaultDeployer.deploy(
+            abi.encode(
                 p.usdc,
                 p.basketAssets,
                 msg.sender, // creator — the 5% lock and gate bind to this identity

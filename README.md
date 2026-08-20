@@ -11,6 +11,7 @@ chain-agnostic contracts, no CEX integrations.
 | `contracts/` | Foundry project — the protocol (immutable, no proxies). |
 | `packages/indexer/` | Chain-agnostic event projections + persistence + a runnable daemon. |
 | `packages/agent-sdk/` | Env-agnostic client: the x402 402→authorize→retry loop + typed methods. |
+| `packages/canary/` | Read-only post-launch watcher for the DEPLOYMENT §6 signals ([docs/CANARY.md](docs/CANARY.md)). |
 | `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
 | `apps/web/` | Vault Atlas — consumer app: discover, inspect governance/fees, deposit/exit. |
 | `scripts/` | Operational runners — `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
@@ -47,12 +48,12 @@ and [`/llms.txt`](llms.txt).
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test          # contracts (119 tests, incl. invariant/fuzz)
+cd contracts && forge build && forge test          # contracts (128 tests, incl. invariant/fuzz)
 npm install && npm run test:backend                 # indexer + agent-sdk + api + web (81 tests)
 ```
 
 CI runs both plus `forge fmt --check`, a gas-snapshot gate, an EIP-170 runtime size check, and
-slither ([.github/workflows/ci.yml](.github/workflows/ci.yml)). The gas gate covers the 115
+slither ([.github/workflows/ci.yml](.github/workflows/ci.yml)). The gas gate covers the 124
 deterministic tests — fuzz gas is a mean over a corpus that isn't reproducible across machines, so
 it's measured but not gated (regenerate with `forge snapshot --nmt "testFuzz"`).
 
@@ -67,17 +68,39 @@ it's measured but not gated (regenerate with `forge snapshot --nmt "testFuzz"`).
 
 ## Status
 
-**v0.1.0-rc1** — release candidate. Contracts, indexer (+persistence/daemon/runnable entrypoint),
-metered API (+discovery, x402 facilitator), agent SDK, and the consumer front end are built and
-tested to a pre-audit state, with a staged Base Sepolia deploy path and an external-audit package.
-Not yet externally audited; not deployed to any network.
+**Audit candidate frozen — awaiting external audit.** Contracts, indexer
+(+persistence/daemon/runnable entrypoint), metered API (+discovery, x402 facilitator), agent SDK,
+and the consumer front end are built and tested to a pre-audit state, with a staged Base Sepolia
+deploy path and a complete external-audit package. **Not yet externally audited. Not deployed to
+any network** — the Base Sepolia work reached pre-flight only, and nothing was ever broadcast
+([docs/TESTNET-REPORT.md](docs/TESTNET-REPORT.md)).
 
-**Known blocker before any deployment:** `VaultFactory` compiles to 27,241 bytes of runtime code
-and exceeds the EIP-170 24,576-byte limit, because it embeds `VaultCore`'s creation code for
-`new VaultCore(...)`. Foundry's test EVM does not enforce EIP-170, so the suite is green while the
-factory is undeployable on-chain. `forge build --sizes` fails on this, which is why the `contracts`
-CI job is red. Tracked in [#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10);
-it must be resolved before running [docs/TESTNET-CHECKLIST.md](docs/TESTNET-CHECKLIST.md).
+Four internal adversarial review rounds are complete. The last
+([docs/reviews/SPRINT10-DEPLOYMENT-REVIEW.md](docs/reviews/SPRINT10-DEPLOYMENT-REVIEW.md)) covered
+the EIP-170 deployment split — the only contract change since the Sprint-6 reviews — and found no
+High or Medium issue. **Audit this tag: `v0.2.0-audit`.** Start at
+[docs/CHANGES-SINCE-REVIEWS.md](docs/CHANGES-SINCE-REVIEWS.md), which states exactly what internal
+review did and did not cover, then [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md).
+
+> **If `v0.2.0-audit` is not present in the repository, the freeze is content-complete but
+> untagged**, because PRs [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
+> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19) still need a human merge —
+> the agent harness's permission classifier refuses `gh pr merge`, which is also what has kept
+> the Sprint-8 merge train ([#14](https://github.com/SlumperSan/agent-governed-vaults/issues/14))
+> from running. The exact merge-and-tag commands are in
+> [docs/CHANGES-SINCE-REVIEWS.md §4](docs/CHANGES-SINCE-REVIEWS.md).
+
+**Deployability blocker cleared (Sprint 7).** `VaultFactory` compiled to 27,241 bytes against the
+EIP-170 24,576-byte limit, because `new VaultCore(...)` embeds `VaultCore`'s entire creation code —
+so the factory was undeployable on any chain while the suite stayed green, since Foundry's test EVM
+does not enforce EIP-170. The catch: VaultCore's creation code (24,731 B) is larger than the runtime
+cap *by itself*, so it cannot live in any contract's runtime. It now lives in `VaultDeployer`'s
+**creation** code, which the deployer's constructor writes into two immutable, non-executable data
+contracts; the factory pins that deployer immutably and sends it constructor arguments only. The
+factory is 2,718 B, `forge build --sizes` passes, and the trust model is unchanged — attestation is
+still factory-only, so calling the deployer directly yields an unattested vault. Closes
+[#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10); see threat-model row PX-4 and
+[docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md).
 
 See [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
