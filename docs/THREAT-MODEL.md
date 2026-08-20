@@ -105,6 +105,7 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 | PX-1 | Settlement in USDC | USDC blacklist hits the vault contract address → deposits/redemptions of the settlement leg freeze | H | **Accepted**: centralized-asset risk is inherent to the USDC choice in the brief; in-kind redemption (EE-6 escrow isolation) keeps non-USDC basket assets exitable. Documented, not defended |
 | PX-2 | x402 metered access | Payment-flow attacks (replay, facilitator compromise) against the API layer | M | Deferred(S7): x402 is strictly off-chain (§9); contracts unaffected by any x402 failure. API treats x402 receipts per reference-implementation verification; agent-side spend limits per llm-trading-agent-security |
 | PX-3 | Permissionless vault creation | Scam vaults imitating reputable operators (name/metadata spoofing) to harvest deposits | M | Deferred(S3): operator identity is the registry key, not display metadata; leaderboard and API surface registry identity first. Residual accepted — permissionless means scam vaults exist; the registry makes them distinguishable, not impossible |
+| PX-4 | Vault construction split into `VaultDeployer` (S7, EIP-170 forced — #10) | The new link is used to (a) get an attacker-shaped vault attested, or (b) make the factory CREATE code it did not choose | H | **Mitigated(S7)**: neither is reachable. (a) `VaultDeployer` holds no authority — no owner, no post-construction state, and it never calls any singleton; `OperatorRegistry.attestVault` remains callable only by the one-shot-wired `VaultFactory`, so calling `deploy` directly yields an **unattested** VaultCore, exactly what anyone could already get by deploying VaultCore themselves (`Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested`). (b) The creation code is embedded at compile time in the deployer's own initcode and written to two immutable, non-executable data contracts by its constructor — never supplied by a caller; the factory sends only ABI-encoded constructor arguments and pins its deployer address immutably (`Eip170::test_deployerCreationCodeIsTheCompiledVaultCore`). No proxy, no delegatecall and no upgrade path is introduced — the deployed vault is a plain immutable VaultCore |
 
 ## Agent-side (off-chain) — recorded, out of contract scope
 
@@ -149,7 +150,8 @@ Confirmed findings and their fixes (regression suite `contracts/test/Sprint6Fixe
 ## Coverage check
 
 Brief bullets → rows: execution (4/4), core mechanics (8/8), voting (9/9), entry/exit (11/11),
-sub-vaults (7/7), safety (5/5), payments/creation (3/3), agent-side (3, extra-scope). **44 rows
+sub-vaults (7/7), safety (5/5), payments/creation (4/4 — PX-4 added in Sprint 7 for the
+EIP-170-forced factory→deployer split, #10), agent-side (3, extra-scope). **45 rows
 + 3 agent-side.** Zero brief bullets without a row. Rows marked "None found" or "Accepted" are
 standing challenges for the Sprint 6 adversarial pass.
 

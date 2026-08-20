@@ -1,7 +1,7 @@
 # Threat-Model → Test Cross-Reference
 
 Every mechanic in [THREAT-MODEL.md](../THREAT-MODEL.md) mapped to the test(s) covering it.
-Suite: 119 tests across 16 files (`contracts/test/`), including 6 invariant/fuzz suites
+Suite: 128 tests across 17 files (`contracts/test/`), including 6 invariant/fuzz suites
 (256 runs × 16k calls). Rows with no dedicated test say so explicitly — traceability includes
 the honest gaps.
 
@@ -107,7 +107,11 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 
 | Row / mechanic | Tests |
 | --- | --- |
-| One-shot wiring, locked back-references, valid order | `Deploy::test_deployWiresAndLocks` |
+| One-shot wiring, locked back-references, valid order | `Deploy::test_deployWiresAndLocks`, `DeployTestnet::test_testnetDeployWiresFullStack` (both also assert the factory's immutable `vaultDeployer` pin) |
+| EIP-170 deployability of every contract (#10) | `Eip170::test_everyDeployedContractFitsUnderEip170` (budgets far tighter than the cap, so re-embedding VaultCore's creation code fails loudly), `::test_vaultCoreCreationCodeFitsInsideTheDeployersInitcode` (the EIP-3860 bound the fix trades onto) |
+| PX-4 (a) deployer confers no attestation | `Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested` (bypass vault is byte-identical to a factory vault, immutables included — only attestation differs), `::test_attestationRemainsFactoryOnly`, `::test_factoryPinsItsDeployerImmutably` |
+| PX-4 (b) CREATEd bytes are compile-time-pinned, not caller-supplied | `Eip170::test_deployerCreationCodeIsTheCompiledVaultCore`, `::test_codeChunksAreInertData` |
+| Factory behaviour preserved across the deployer hop | `Eip170::test_deployedVaultBindsTheSameSingletonsAndCreator`, `::test_vaultCoreConstructorRevertsStillBubbleThroughTheFactory`; the pre-existing suites are unchanged and still cover attestation, edge registration and basket-subset (`FeesAndRegistry`, `SubVaults`, `Sprint6Fixes`) |
 
 ## Known coverage gaps (candidates for the audit, not oversights)
 

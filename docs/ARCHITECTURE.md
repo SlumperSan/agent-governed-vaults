@@ -14,7 +14,9 @@ leaderboard, signal feeds) is paid via x402; **x402 never appears in the contrac
 
 ```
                     ┌─────────────────────────────────────────────┐
-                    │                VaultFactory                 │  permissionless deploy
+                    │       VaultFactory → VaultDeployer          │  permissionless deploy
+                    │  attests + registers    holds VaultCore's   │  (deployer holds no
+                    │                         creation code (#10) │   authority — PX-4)
                     └──────────────────┬──────────────────────────┘
                                        │ creates
 ┌───────────────┐   auth    ┌──────────▼──────────┐    prices   ┌──────────────────┐

@@ -102,7 +102,11 @@ The protocol has **four distinct trust tiers**. Getting these straight matters b
 defenses only make sense against the right adversary:
 
 1. **Protocol singletons (trusted-by-all, immutable):** `OperatorRegistry`, `FeeEngine`,
-   `Governance`, `SubVaultRegistry`, `VaultFactory`. One canonical set, deployed and one-shot
+   `Governance`, `SubVaultRegistry`, `VaultFactory`, and — since Sprint 7 — `VaultDeployer`,
+   which holds VaultCore's creation code because EIP-170 leaves it nowhere else to live (#10).
+   The deployer is a singleton by position only: it carries **no authority whatsoever** and is
+   trusted by nobody for anything (see
+   [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md)). One canonical set, deployed and one-shot
    wired together (§5 below). No admin functions exist after wiring. Vaults deployed by the
    canonical factory reference these; the factory is what makes carry marks and leaderboard
    rows trustworthy (CM-5) — nothing stops someone deploying a *look-alike* stack, but it
@@ -160,10 +164,11 @@ From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`):
 2. SubVaultRegistry()                      — no deps
 3. FeeEngine(registry)                     — immutable registry ref
 4. Governance()                            — no ctor deps
-5. VaultFactory(registry, governance, feeEngine, subVaultRegistry)
-6. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
-7. subVaultRegistry.wire(factory)          — one-shot, locks child registration
-8. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
+5. VaultDeployer()                         — no deps; MUST precede the factory (#10)
+6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer)
+7. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
+8. subVaultRegistry.wire(factory)          — one-shot, locks child registration
+9. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
 ```
 
 Oracles and adapters are **not** singletons — each creator supplies their own at
@@ -229,7 +234,7 @@ to that contract.
 ```bash
 cd contracts
 forge build
-forge test                                   # 119 tests, incl. 6 invariant/fuzz suites
+forge test                                   # 128 tests, incl. 6 invariant/fuzz suites
 forge snapshot --check --nmt "testFuzz"      # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 slither . --filter-paths "lib|test|script"   # triaged: docs/reviews/SLITHER-TRIAGE.md
 ```

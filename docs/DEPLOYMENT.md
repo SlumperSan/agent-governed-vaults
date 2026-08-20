@@ -12,11 +12,13 @@ unwired registry cannot be fixed after the fact).
 > **After the contracts are live:** [RUNTIME.md](RUNTIME.md) is the operator runbook for the three
 > off-chain processes (indexer → API → web) that turn the deployed addresses into a live product.
 
-> ⛔ **Blocked as of v0.1.0-rc1.** `VaultFactory` is 27,241 bytes of runtime code and exceeds the
-> EIP-170 24,576-byte cap, so §1 below reverts on-chain. Nothing in this runbook can be executed
-> until [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) is resolved.
-> `forge test` stays green because Foundry's test EVM does not enforce EIP-170; `forge build --sizes`
-> is the check that catches it.
+> ✅ **Unblocked (Sprint 7).** `VaultFactory` was 27,241 bytes of runtime code against the
+> EIP-170 24,576-byte cap, so §1 reverted on-chain and nothing in this runbook could be executed
+> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). VaultCore's
+> creation code is larger than the runtime cap all by itself, so it now lives in `VaultDeployer`
+> — deployed first, then pinned immutably by the factory. The factory is 2,718 B and
+> `forge build --sizes` passes. **§1 gained a sixth singleton**; the wiring order is otherwise
+> unchanged.
 
 ## 0. Preconditions
 
@@ -30,7 +32,7 @@ unwired registry cannot be fixed after the fact).
 
 ## 1. Deploy the singletons
 
-The five protocol singletons + their one-shot wiring deploy in one transaction via
+The six protocol singletons + their one-shot wiring deploy in one transaction via
 [`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol):
 
 ```bash
@@ -41,12 +43,16 @@ forge script script/Deploy.s.sol:Deploy \
   --broadcast --verify
 ```
 
-This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultFactory`
-and performs the **irreversible** wiring:
+This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
+`VaultFactory` and performs the **irreversible** wiring:
 `registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`.
 `test/Deploy.t.sol` asserts each wire locks; re-running any wire reverts `AlreadyWired`.
 
-Record the five addresses printed by the script.
+Ordering note (#10): `VaultDeployer` **must** be deployed before `VaultFactory`, which pins it
+immutably in its constructor. It takes no constructor arguments and needs no wiring — it holds
+no authority (see [audit/walkthroughs/VaultDeployer.md](audit/walkthroughs/VaultDeployer.md)).
+
+Record the six addresses printed by the script.
 
 ## 2. Deploy per-vault infrastructure (not singletons)
 

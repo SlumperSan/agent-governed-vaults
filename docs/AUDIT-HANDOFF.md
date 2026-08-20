@@ -22,17 +22,53 @@ there is no "we'll patch it later."
 | `OracleAggregator.sol` | ~140 | median + staleness breaker | **Critical** — prices everything |
 | `AggregationRouterAdapter.sol` | ~80 | DEX-aggregation execution | High — external calls |
 | `SubVaultRegistry.sol` | ~100 | edges, depth, fee-stack caps | Medium |
-| `VaultFactory.sol` | ~90 | permissionless deploy + attestation | Medium |
+| `VaultFactory.sol` | ~120 | permissionless deploy + attestation | Medium |
+| `VaultDeployer.sol` | ~60 | holds VaultCore's creation code (EIP-170 forced, #10); no authority | Medium |
 | `lib/` (SafeTransferLib, Checkpoints, BoundedCall) | ~150 | primitives | Medium |
 
 Out of scope for the contract audit (separate review): `packages/indexer`, `apps/api`
 (x402 metering), `apps/web`. These never custody funds; the API server holds no keys.
 
+## Deployment shape changed after this package was assembled
+
+Stated plainly because it post-dates the rest of this document. At v0.1.0-rc1 the protocol was
+**undeployable**: `VaultFactory` compiled to 27,241 B against EIP-170's 24,576 B cap, because
+`new VaultCore(...)` embeds VaultCore's entire creation code
+([#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). `forge test` was green
+throughout — Foundry's test EVM does not enforce EIP-170 — so only `forge build --sizes` caught it.
+
+The governing constraint, and the reason the obvious fixes do not work: **VaultCore's creation
+code (24,731 B) is larger than the runtime cap itself.** Any contract holding
+`new VaultCore(...)` is therefore over the cap before its own logic; a minimal helper doing
+nothing else measured 25,100 B, and the entire `optimizer_runs` ladder from 800 down to 50 buys
+only 229 B.
+
+**Sprint 7 fix:** a new `VaultDeployer` carries the creation code in its own *creation* code
+(where EIP-3860's 49,152 B cap applies) and writes it into two immutable, non-executable data
+contracts at construction. `VaultFactory` pins that deployer immutably and calls it with
+ABI-encoded constructor arguments only. Net effect on the audit surface:
+
+- **`VaultCore.sol` is byte-identical** — not one line changed, its walkthrough stands as written.
+- **`VaultFactory.sol`** changed in exactly two places: a fifth constructor parameter, and
+  `_deploy` calling the deployer instead of `new VaultCore(...)`. All attestation, edge
+  registration and basket-subset logic is untouched.
+- **One new contract to review**, `VaultDeployer.sol`
+  ([walkthrough](audit/walkthroughs/VaultDeployer.md)), which holds no authority of any kind.
+- **The trust anchor is unchanged.** `OperatorRegistry.attestVault` is still factory-only, so
+  calling the deployer directly yields an unattested vault — the same position anyone was in
+  before, deploying VaultCore themselves. New threat-model row **PX-4** covers the added link.
+- **No proxy, no delegatecall, no upgrade path** was introduced. The "immutable, no proxies"
+  claim at the top of this file holds verbatim.
+
+The optimizer settings were deliberately **not** changed: the 229 B available would have cost
+global runtime gas on every contract and, once the deployer exists, buys nothing — VaultCore's
+1,560 B of headroom is no longer on the deployability path.
+
 ## Design intent (read first)
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — module boundaries, NAV/share math, the C-1..C-5
   commitments, and the resolved contradictions K-1..K-4.
-- [THREAT-MODEL.md](THREAT-MODEL.md) — 44 mechanic→vector→mitigation rows plus the Sprint 6
+- [THREAT-MODEL.md](THREAT-MODEL.md) — 45 mechanic→vector→mitigation rows plus the Sprint 6
   finding dispositions. **The "Accepted" rows are deliberate tradeoffs, not oversights** — please
   challenge them, but know they were chosen (esp. K-4: the oracle breaker freezes exits by
   design; there is intentionally no escape hatch).
@@ -56,7 +92,7 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding to its d
 
 ## Invariants proven (Foundry)
 
-119 tests, incl. these invariant suites (256 runs × 16k calls each):
+128 tests, incl. these invariant suites (256 runs × 16k calls each):
 - `Σ member shares == totalShares` across every path (VaultCore + system-level with children)
 - **NAVps non-decreasing for remaining members across any redemption** (§4.6) — proven with and
   without sub-vaults present
@@ -104,7 +140,7 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv    # 119 tests
+cd contracts && forge build && forge test -vvv    # 128 tests
 forge snapshot --check --nmt "testFuzz"             # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 slither . --filter-paths "lib|test|script"          # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```

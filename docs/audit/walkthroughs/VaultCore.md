@@ -2,6 +2,13 @@
 
 **Risk: Critical (holds all funds).** ~850 LoC. `contracts/src/VaultCore.sol`.
 
+> **Sprint 7 note (#10).** This contract is **byte-identical** after the EIP-170 fix — not one
+> line changed, and this walkthrough stands as written. What changed is who runs its constructor:
+> `VaultFactory` no longer writes `new VaultCore(...)` but calls `VaultDeployer`, which holds
+> this contract's creation code pinned at compile time. Same code, same constructor, same
+> arguments, same immutables. See [VaultDeployer.md](VaultDeployer.md). VaultCore's own runtime
+> is 23,016 B — 1,560 B under the cap, and no longer on the critical path for deployability.
+
 ## Purpose
 
 The vault itself: share accounting, NAV, deposits with a 4-hour observation window, two-mode

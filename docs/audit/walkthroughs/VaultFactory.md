@@ -1,6 +1,13 @@
 # Walkthrough — VaultFactory.sol
 
-**Risk: Medium.** ~114 LoC. `contracts/src/VaultFactory.sol`.
+**Risk: Medium.** ~120 LoC. `contracts/src/VaultFactory.sol`.
+
+> **Sprint 7 change (#10).** The factory no longer writes `new VaultCore(...)`. It encodes
+> the constructor arguments and calls `vaultDeployer.deploy(...)`, an immutable address pinned
+> at construction. This was forced by EIP-170 — VaultCore's creation code alone exceeds the
+> runtime cap, so the factory could not be deployed at all (27,241 B). Read
+> [VaultDeployer.md](VaultDeployer.md) alongside this file; **the trust chain is unchanged**,
+> it just has one more link: factory → its one pinned deployer → VaultCore creation code.
 
 ## Purpose
 
@@ -23,6 +30,7 @@ binds to this identity) and its attested operator.
 | Function | Notes |
 | --- | --- |
 | `createVault(params)` | `_deploy` → `registry.attestVault(vault, msg.sender)` → record in `allVaults` |
+| `vaultDeployer` | Immutable. The factory's ONLY vault construction path (#10). Named `vaultDeployer`, not `deployer`, because the singletons already use `deployer` for the account that deployed them (`registry.deployer()`) |
 | `createChildVault(params, parent)` | Additionally: **child USDC must equal parent USDC** and **child basket ⊆ parent basket** (`assetUnit != 0` check per asset) — the property that makes in-kind child redemptions always map into parent accounting and look-through pricing always resolvable (SV-7). Then `subVaultRegistry.registerChild(parent, vault, exitFeeMaxBps)` (depth + fee-stack checks live there) + attestation |
 | `vaultCount` / `allVaults` | Enumeration for the indexer |
 
@@ -32,6 +40,26 @@ After `createVault`, the creator registers the vault's `GovConfig` with Governan
 second transaction (`governance.registerVault`). Until then no proposals can exist and exits
 settle Mode I. Nothing privileged can happen in the gap: the vault is fully functional for
 deposits/exits, and `registerVault` is creator-gated on the vault's own `creator()`.
+
+## The deployer hop (#10)
+
+`_deploy` `abi.encode`s the same 13-argument tuple `new VaultCore(...)` used to build, in the
+same order, and hands it to `vaultDeployer.deploy`. Three properties to check, each with a
+test behind it:
+
+- **The code is not caller-supplied.** The deployer holds VaultCore's creation code pinned at
+  compile time; the factory sends only constructor arguments. See
+  [VaultDeployer.md](VaultDeployer.md).
+- **Reverts still bubble.** A failing VaultCore constructor surfaces unchanged, so
+  `createVault` with a bad config still reverts `VaultCore.BadConfig()`
+  (`Eip170::test_vaultCoreConstructorRevertsStillBubbleThroughTheFactory`,
+  `Sprint6Fixes::test_finding8_basketCapEnforced`).
+- **The attestation anchor did not move.** The deployer holds no authority and is not the
+  registry's `factory`; calling it directly yields an unattested vault
+  (`Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested`).
+
+The one genuinely new wiring requirement: **the deployer must be deployed before the factory**,
+because the factory pins it immutably. `Deploy.s.sol` documents the ordering.
 
 ## Review focus
 
@@ -51,4 +79,6 @@ deposits/exits, and `registerVault` is creator-gated on the vault's own `creator
 - **PX-3:** permissionless creation means scam vaults exist; the registry makes them
   distinguishable (identity-first surfacing), not impossible.
 - Vaults deployed *outside* the factory can imitate the shape but are never attested — their
-  marks and stats simply don't exist in the canonical registry.
+  marks and stats simply don't exist in the canonical registry. Since Sprint 7 this includes
+  vaults created by calling `VaultDeployer.deploy` directly, which is the same case rather than
+  a new one (PX-4).
