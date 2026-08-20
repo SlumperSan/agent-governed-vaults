@@ -482,4 +482,16 @@ Recorded so the audit firm can direct budget away from ground already covered:
 
 ## 8. Verdict
 
+**The decision rule was written down before the widened Slither run was read**, so that the
+outcome could not be talked into the answer the sprint wanted. F-3 removed a blind spot over
+`src/lib/` — code carrying the H-1 and H-2 hardening fixes that no analyser had ever examined —
+and this session had **no ability to fix anything it found there**: `forge` was unavailable (§5),
+so no regression test and no gas-snapshot regeneration were possible. The two branches:
+
+- **If the widened run surfaces nothing above informational** — the freeze stands. F-3 becomes
+  the strongest version of itself: a gap found, closed, and nothing hiding behind it.
+- **If it surfaces anything High or Medium** — the verdict is **not audit-ready at this content**,
+  stated here and in the repository README, *not* softened into "one open item." A real defect in
+  never-analysed hardening code is a stop, not a footnote.
+
 <VERDICT>

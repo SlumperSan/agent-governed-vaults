@@ -31,7 +31,7 @@ deployment fix**:
 | `test/Eip170.t.sol` | **New.** 9 tests guarding the fix. |
 | 7 existing test files | Fixture plumbing only — one import and one constructor argument each; the two deploy tests each gained an assertion. **No assertion was weakened.** |
 | `.github/workflows/ci.yml` | Comment updates; then Sprint 10's F-3 filter fix. |
-| `.gas-snapshot` | Regenerated. Every delta reconciled to the mechanism — see the review, §4. |
+| `.gas-snapshot` | Regenerated **in Sprint 7**, when the fix was written. Sprint 10 did not re-run it — it read the diff entry by entry and reconciled every delta to the mechanism (review §4). |
 
 **Why it was necessary, in one sentence:** `VaultCore`'s *creation* code is 24,731 B, larger than
 EIP-170's 24,576 B runtime cap all by itself, so any contract containing `new VaultCore(...)`

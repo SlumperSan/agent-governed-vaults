@@ -13,9 +13,10 @@ reference for what is signal vs. noise.
 > independently in the CI logs: `assembly` fired **zero** times on `protocol/main` despite
 > `SafeTransferLib`'s assembly `tryTransfer`, and `low-level-calls` fired on
 > `AggregationRouterAdapter` **only** while `BoundedCall` is built entirely on low-level calls.
-> The pattern is now anchored (`"^lib/|^test/|^script/"`). Any row below dated before Sprint 10
-> that mentions `src/lib/` reflects **human** review, not analyser output — the `low-level-calls`
-> row is re-labelled accordingly.
+> The pattern is now anchored — see "Running it" below for the exact form, which was chosen
+> against a real CI run rather than by inspection. Any row below dated before Sprint 10 that
+> mentions `src/lib/` reflects **human** review, not analyser output — the `low-level-calls` row
+> is re-labelled accordingly.
 
 ## Fixed
 
