@@ -290,12 +290,55 @@ put `VaultCore`'s 24.7 KB creation code on chain once, so the factory never has 
 
 ---
 
-## 7. Smoke test — PENDING (human-signed)
+## 7. Smoke test — IN PROGRESS
 
-Awaiting the human-run `node scripts/smoke-test.mjs`. Roughly 6–7 h wall clock: a 4 h observation
-window plus 1 h commit and 1 h reveal. Resumable — `Ctrl+C` and re-run resumes at the pending phase.
+Started 2026-08-21 18:40:00 UTC by the human. Every phase below is verified **independently against
+the chain** with `cast call`, not read from the runner's own output.
 
-Each phase will be verified independently against the chain here as it lands.
+**Smoke vault: `0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330`** — runtime codesize **23,016 B**,
+exactly `VaultCore`'s compiled size, so the factory produced a byte-identical instance of the frozen
+`v0.2.0-audit` artifact.
 
-*(Sections 8–10 — runtime stack, canary observations, agent dry-run transcript — follow the smoke
-run.)*
+| Phase | Tx | Block | Verified | ✓ |
+| --- | --- | --- | --- | --- |
+| preflight | — | — | oracle live: WETH $2,420.93, LINK $11.59 | ✅ |
+| createVault | `0xf6c75899…8352` | 45784662 | vault code present, `operatorOf(vault) == 1` | ✅ |
+| registerVault | `0x58ad84f0…cc27` | 45784665 | all 8 `configOf` fields match config | ✅ |
+| usdc.approve | `0x45845b5a…c680` | 45784667 | — | ✅ |
+| deposit(5 USDC) | `0x8c85dec7…f8ce` | 45784670 | escrowed, **`navWad() == 0`** | ✅ |
+| activate | — | — | *waiting — 4 h window ends chain time 1787352028* | ⏳ |
+
+### 7.1 EE-1 verified live — pending deposits excluded from NAV
+
+The property most worth proving on a real chain, since it is what stops a depositor from moving NAV:
+
+| Read | Value | Meaning |
+| --- | --- | --- |
+| vault USDC balance | `5000000` | 5 USDC physically held by the vault |
+| `totalPendingUsdc()` | `5000000` | recorded as escrowed |
+| **`navWad()`** | **`0`** | **pending excluded from NAV** |
+| `totalShares()` | `0` | no shares minted yet |
+| `sharesOf(signer)` | `0` | — |
+| `holderCount()` | `0` | — |
+| `pendingDeposit(signer)` | `(5000000, 1787352028)` | amount + maturity |
+| signer USDC | `20000000` → `15000000` | exactly 5 USDC moved |
+
+The vault holds real USDC while `navWad()` reads zero. EE-1 holds against live state.
+
+### 7.2 Governance config accepted verbatim
+
+`configOf(vault)` against `base-sepolia.json` → `smoke.gov` — **all eight fields identical**:
+
+| Field | On-chain | Config | ✓ |
+| --- | --- | --- | --- |
+| `commitDuration` | 3600 | 3600 | ✅ |
+| `revealDuration` | 3600 | 3600 | ✅ |
+| `timelockDuration` | 0 | 0 | ✅ |
+| `executionWindow` | 86400 | 86400 | ✅ |
+| `quorumBps` | 2500 | 2500 | ✅ (at the 25 % floor) |
+| `proposalThresholdBps` | 0 | 0 | ✅ |
+| `concentrationCapBps` | 10000 | 10000 | ✅ |
+| `proposalCooldown` | 0 | 0 | ✅ |
+
+*(Remaining phases — activate, propose, commit, reveal, finalize, execute, exit — and sections 8–10
+for the runtime stack, canary and agent follow as the run progresses.)*
