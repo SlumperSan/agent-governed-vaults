@@ -340,5 +340,117 @@ The vault holds real USDC while `navWad()` reads zero. EE-1 holds against live s
 | `concentrationCapBps` | 10000 | 10000 | ✅ |
 | `proposalCooldown` | 0 | 0 | ✅ |
 
-*(Remaining phases — activate, propose, commit, reveal, finalize, execute, exit — and sections 8–10
-for the runtime stack, canary and agent follow as the run progresses.)*
+*(Remaining phases — activate, propose, commit, reveal, finalize, execute, exit — are appended as
+they land.)*
+
+---
+
+## 8. Runtime stack — ✅ ALL FOUR RAN AGAINST THE LIVE DEPLOYMENT
+
+Run during the 4 h observation window. All read-only; no process here holds a key.
+
+### 8.1 Indexer — discovers the smoke vault
+
+Started with the deployed addresses and `START_BLOCK=45784186` (the factory deploy block).
+
+```
+indexer up: chain 84532, 0 known vaults, resume block 45784186
+indexed [45784186..45784762] — 4 events, now at 45784762
+```
+
+The projection it built **matches every independent chain read** in §7:
+
+| Projected field | Indexer | Chain (§7) | ✓ |
+| --- | --- | --- | --- |
+| `vault` | `0x97025d1c…6330` | same | ✅ |
+| `creator` | `0x0f80606a…9f35` | deployer | ✅ |
+| `operatorId` | 1 | `operatorOf() == 1` | ✅ |
+| `totalShares` | `"0"` | `0` | ✅ |
+| `pendingCount` | 1 | one pending deposit | ✅ |
+| `memberCount` | 0 | `holderCount() == 0` | ✅ |
+| `capacityCapUsdc` | `"1000000000"` | config `smoke.capacityCapUsdc` | ✅ |
+
+The operator projection also resolved: `operatorId 1`, `vaultCount 1`, zero realizations.
+
+### 8.2 API — serves it, gated and replay-protected
+
+Started with `FACILITATOR=stub`.
+
+- `/health` (free) → `{"ok":true,"lastBlock":45784801}`
+- `/.well-known/x402` (free) → advertises v2, $0.01/read, free vs metered route lists
+- `/vaults` **unpaid** → `402` with a well-formed challenge ✅
+- `/vaults` **paid** → `{"vault":"0x97025d1c…","operatorId":1,"attested":true,…}` ✅
+- `/vaults/0x97025d1c…` → full detail, `totalShares "0"`, `pendingCount 1` — matches chain ✅
+- `/operators/leaderboard` → operator 1, `vaultCount 1` ✅
+
+**Replay protection confirmed live:** re-sending an already-used nonce was rejected with
+`payment invalid: replayed-nonce` and a fresh challenge, rather than being served.
+
+### 8.3 Canary — one honest DEGRADED, not a false OK
+
+```
+canary up: chain 84532, read-only, polling every 30000ms. Silence means healthy.
+DEGRADED [exit-liveness] exit-liveness sentinel CANNOT RUN on vault 0x9702…6330: the indexer
+projection lists no member holding shares, so requestExit has no valid caller to probe with —
+this vault is unmonitored for H-1, it is not healthy
+heartbeat: 1 vault(s), 8 signal(s) tracked, 1 not OK
+```
+
+**This is correct behaviour, not a defect.** The deposit is still pending, so no address holds
+shares and the exit-liveness probe genuinely has no caller to test with. CANARY.md specifies
+DEGRADED is deliberately *not* folded into OK — a sentinel that has stopped being able to run is
+exactly what you would otherwise never notice. Seven other signals stayed silent (healthy). This
+should flip to OK once `activate` mints shares.
+
+### 8.4 Reference agent — dry-run, live perceive→decide→act
+
+Run against the local API **and** live chain reads. Full transcript:
+
+```
+│ x402-vaults reference agent — MODE: DRY-RUN                                   │
+│ WILL NOT sign or send any on-chain transaction.                               │
+│ WILL sign x402 payment authorizations for metered reads, up to $0.25.         │
+│ skipWindow (irreversible): disabled.                                          │
+
+── PERCEIVE ──
+· discovery: x402 v2, $0.01 per metered read on base-sepolia
+· health: ok=true, last indexed block 45784863
+· listVaults: 1 vault(s) known to the indexer
+· leaderboard: 1 operator(s) with realized history
+· vault 0x97025d1c… op=1 nav/share=1000000000000000000 members=0 position=none
+
+── DECIDE ──
+  0x97025d1c… join gates:
+    ✓ operator-attested: attested, operatorId=1
+    ✗ operator-net-positive: operator has no realizations at all — "not yet
+      negative" is not a track record
+    ✓ capacity-available: $995 free of $1000 cap; need $25 (floor $25)
+    ✓ fees-in-bounds: stacked perf 1000bps (max 1000) / exit 50bps (max 100)
+    ✓ depth-within-limit: vault depth 0, max 0
+    ✓ concurrency-limit: holding 0 of max 3 vaults
+    ✓ nav-readable: NAV/share reads cleanly
+    ✓ meets-min-deposit: depositing $25, vault minimum $1
+· 0x97025d1c… no join — blocked on: operator-net-positive
+
+── ACT ──
+· nothing due this tick
+
+── SESSION ──
+· x402: 3 paid read(s), $0.03 of $0.25 spent, $0.22 left
+· mode: dry-run — 0 transaction(s) sent, 0 described but not sent
+```
+
+Its live reads cross-check against the committed config: `$1000 cap` = `capacityCapUsdc`
+1000000000, `minimum $1` = `minDepositUsdc` 1000000, `exit 50bps` = `exitFeeMaxBps` 50.
+
+The single failing gate is the **right** decision — the operator has zero realized history, and the
+agent declines to join on "not yet negative". No transactions sent or described, and the x402 budget
+gate metered 3 reads at $0.03.
+
+> **Operational note (not a defect).** A first run without `--subvault-registry` reported
+> `✗ fees-in-bounds: stacked performance fee unreadable — refusing to join blind to fees`. That was
+> a misconfiguration on the operator's side, and the agent **failed safe**: `chain.mjs:299` returns
+> `null` for the fee reads when the registry is absent, and the gate refuses rather than falling
+> back to the defaults present at `chain.mjs:419-420`. Refusing to join blind to fees is the correct
+> behaviour. Worth flagging in the runbook: pass `--subvault-registry` or fee gates will always
+> block.
