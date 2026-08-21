@@ -225,9 +225,18 @@ address. The broadcast JSON has the same class of problem in a different place: 
 `transactions[i].contractName` does not align with the receipt reached through
 `transactions[i].hash`.
 
-Taking either at face value would have produced a **wrong address book** — specifically swapping
-`VaultFactory` and `VaultDeployer`, which would then have broken the indexer's factory watch and
-every downstream consumer.
+Taking the **console lines** at face value would have produced a wrong address book — specifically
+swapping `VaultFactory` and `VaultDeployer`, which would then have broken the indexer's factory
+watch and every downstream consumer.
+
+> **Scope of the misalignment — checked, because the smoke runner depends on it.**
+> `scripts/smoke-test.mjs:127-129` resolves addresses from this same JSON, pairing
+> `tx.contractName` with `tx.contractAddress` **from the same transaction object**. That pairing is
+> **correct**; only `contractName` ↔ the receipt reached via `tx.hash` is misaligned. Replaying the
+> runner's exact extraction against the verified address book returns all seven singletons
+> correctly, plus `VaultDeployer` and all six `ChainlinkSourceAdapter` instances. **No script fix
+> was needed and none was made.** Do not conclude from this deviation that the broadcast JSON is
+> untrustworthy for addresses — it is not; the console labels are.
 
 Three independent sources agree with each other and with what is recorded above:
 
