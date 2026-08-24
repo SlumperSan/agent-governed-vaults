@@ -86,15 +86,23 @@ export function buildEnvelope({ authorization, signature, network }) {
  * @param {(typedData:object) => Promise<string>} p.sign
  * @param {number} p.nowSec
  * @param {number} [p.ttlSec]
+ * @param {number} [p.skewSec]  how far to backdate `validAfter` (default 60)
  * @returns {Promise<object>} the envelope for the PAYMENT-SIGNATURE header
  */
-export async function authorizeFromChallenge({ challenge, walletAddress, domain, sign, nowSec, ttlSec = 300 }) {
+export async function authorizeFromChallenge({ challenge, walletAddress, domain, sign, nowSec, ttlSec = 300, skewSec = 60 }) {
+  if (!(skewSec >= 0)) throw new Error('authorizeFromChallenge: skewSec must be >= 0');
+  if (!(ttlSec > 0)) throw new Error('authorizeFromChallenge: ttlSec must be > 0');
   /** @type {Eip3009Authorization} */
   const authorization = {
     from: walletAddress,
     to: challenge.payTo,
     value: challenge.amount,
-    validAfter: String(nowSec - 5),
+    // Backdated against clock skew. EIP-3009 compares validAfter to the timestamp of the block
+    // that MINES the settlement, not to the signer's clock, and the token reverts outright on
+    // `validAfter >= block.timestamp`. A payer whose clock runs even slightly ahead of the chain
+    // therefore signs an authorization that is not yet valid when it lands. The old 5-second
+    // margin left no room for that; 60s costs nothing and removes a whole class of flake.
+    validAfter: String(nowSec - skewSec),
     validBefore: String(nowSec + ttlSec),
     nonce: challenge.nonce,
     asset: challenge.asset,

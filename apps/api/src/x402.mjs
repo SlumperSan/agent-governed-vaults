@@ -18,6 +18,8 @@
  * and no network: production wiring passes an HTTP facilitator client; tests pass a stub.
  */
 
+import { randomBytes } from 'node:crypto';
+
 const HEADER_REQUIRED = 'payment-required';
 const HEADER_SIGNATURE = 'payment-signature';
 const HEADER_RESPONSE = 'payment-response';
@@ -35,15 +37,22 @@ const HEADER_RESPONSE = 'payment-response';
  * @property {(challenge:object, envelope:object) => Promise<{ok:boolean, receiptId?:string, reason?:string}>} verifyAndSettle
  */
 
-let __nonceCounter = 0n;
 
 /**
- * Build the 402 challenge for a route. Deterministic given (nonce, now) so it is testable.
+ * Build the 402 challenge for a route. Injectable `nonce`/`nowMs` keep it deterministic for tests.
+ *
+ * The nonce MUST be unpredictable and globally unique, not a counter: the agent SDK reuses
+ * `challenge.nonce` verbatim as the EIP-3009 authorization nonce, and EIP-3009 nonces are burned
+ * permanently on-chain per (authorizer, nonce). A process-local counter restarts at 1 on every
+ * boot, so the first paid read after any API restart would present an authorization nonce that a
+ * previous run already consumed — the settlement reverts as `authorization-used` and the route is
+ * unpayable until the counter walks past the burned range. Observed and fixed in sprint 14; see
+ * docs/X402-LIVE-REPORT.md.
  * @param {PriceSpec} price
  * @param {{nonce?:string, nowMs:number, ttlMs?:number}} opts
  */
 export function buildChallenge(price, opts) {
-  const nonce = opts.nonce ?? `0x${(++__nonceCounter).toString(16).padStart(64, '0')}`;
+  const nonce = opts.nonce ?? `0x${randomBytes(32).toString('hex')}`;
   return {
     scheme: 'exact', // EIP-3009 exact-amount authorization
     x402Version: 2,

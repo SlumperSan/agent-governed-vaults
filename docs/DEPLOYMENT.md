@@ -28,7 +28,13 @@ unwired registry cannot be fixed after the fact).
   from a file.
 - The canonical USDC address for the chain (Base Sepolia: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`).
 - Per-asset oracle **source** addresses (≥3 independent, mechanism-diverse — SF-1) for every
-  basket asset a vault will list.
+  basket asset a vault will list. On mainnet that means **three mechanism classes**, not three
+  addresses — see §2.
+- For a mainnet oracle stack, also: the Chainlink feed proxies, the Uniswap V3 pools you will
+  TWAP (**and their current `observationCardinality`** — see §2), and the Pyth contract plus
+  price ids. [`contracts/config/base-mainnet.json`](../contracts/config/base-mainnet.json)
+  drafts all of these for Base. It is marked **UNVERIFIED-ON-CHAIN**: run the `verification`
+  checklist inside it against a Base RPC before using any address from it.
 
 ## 1. Deploy the singletons
 
@@ -58,10 +64,62 @@ Record the six addresses printed by the script.
 
 Oracles and execution adapters are **per-vault choices**, not protocol singletons (C-2/SF-1):
 
-1. **OracleAggregator** per source-set: `new OracleAggregator(assets, sources[][], maxStaleness[], quorum[])`.
-   Constructor now enforces (post-S6): `≥3` sources, `quorum > m/2` (strict majority),
-   `0 < maxStaleness ≤ 1 day`. Pick `maxStaleness` tight (minutes) for volatile baskets — it
-   bounds the EE-5 latency-arb window.
+1. **The oracle stack — three mechanism classes, quorum 2-of-3.** Deploy the source adapters
+   first, then the aggregator over them.
+
+   `OracleAggregator`'s constructor counts *addresses*; SF-1's listing criterion counts
+   *mechanisms*. Three `ChainlinkSourceAdapter`s over three Chainlink feeds satisfy the former
+   and defeat the latter — a single upstream wearing three hats. That is exactly the
+   `testnetCompromise` recorded in
+   [`base-sepolia.json`](../contracts/config/base-sepolia.json), acceptable only because Base
+   Sepolia has one feed per pair and no real capital. **A mainnet stack is:**
+
+   | Class | Adapter | Fails when | `updatedAt` |
+   | --- | --- | --- | --- |
+   | push | `ChainlinkSourceAdapter` | the aggregator pauses or hits a circuit limit | feed's `updatedAt` |
+   | spot TWAP | `UniswapV3TwapSource` | the pool goes quiet or thin | `block.timestamp` (see below) |
+   | pull | `PythSource` | no keeper pays to post an update | Pyth `publishTime` |
+
+   with **quorum 2** — the strict-majority floor for a 3-source set, and the only value that
+   both satisfies the constructor and leaves one source of failure headroom (quorum 3 lets any
+   single dark source freeze the asset). Order per asset:
+
+   ```solidity
+   // a. push
+   new ChainlinkSourceAdapter(IAggregatorV3(feedProxy));
+   // b. spot TWAP — poolB is address(0) when poolA already quotes USDC
+   new UniswapV3TwapSource(asset, usdc, poolA, poolB, 1800, 900, 3600);
+   // c. pull
+   new PythSource(IPyth(pythContract), priceId, 100 /* max 1% confidence band */);
+   // d. the aggregator over all three, quorum 2
+   new OracleAggregator(assets, sources, maxStaleness, quorum);
+   ```
+
+   Three things will bite, in decreasing order of how quietly:
+
+   - **`maxStaleness` is no longer a pure volatility knob.** The old advice here — "pick it
+     tight (minutes)" — is correct for a push-only stack and wrong the moment a pull oracle is
+     in the set. Pyth's on-chain price only advances when a keeper *pays* to post, so a
+     60-second bound drops that leg on most reads and silently demotes 2-of-3 into 2-of-2 with
+     no headroom. Choose it against the **observed on-chain publish cadence** of the pinned
+     price ids (base-mainnet.json pins 1 hour), or fund a keeper at a known cadence. It still
+     bounds the EE-5 latency-arb window, so do not simply max it out — this is now a real
+     tradeoff rather than "as tight as you can stand".
+   - **Grow the V3 pools' `observationCardinality` before deploying.** A pool writes at most
+     one observation per block, only on a swap; covering a 1800-second window on 2-second
+     blocks needs ~900 slots. `increaseObservationCardinalityNext` is permissionless but paid
+     per slot. `UniswapV3TwapSource`'s constructor **rejects a pool that cannot already serve
+     its window** — that failure is the feature: without it the source would return a
+     one-block-manipulable spot price wearing a TWAP's name, permanently fresh.
+   - **`UniswapV3TwapSource` pins USDC to $1.00** rather than measuring it. A sustained depeg
+     mis-prices that leg by exactly the depeg; the cross-class median is the only mitigation.
+     Monitor USDC/USD off-chain (the reference feeds are listed in base-mainnet.json).
+
+   The three classes are integration-tested together in
+   `contracts/test/MixedOracleSources.t.sol`: mixed classes reach quorum and median correctly,
+   any one class going dark leaves the breaker un-tripped, and every *pair* going dark trips it
+   (K-4, deliberately — the freeze includes exits and there is no hatch).
+
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
 
@@ -92,6 +150,14 @@ Run each check against the live addresses:
 - [ ] A test deposit → 4h window → `activate` mints shares; `navWad()` excludes the pending amount.
 - [ ] `oracle.priceWad(asset)` returns a sane median; disabling one source keeps quorum;
       disabling to below quorum reverts `StaleOracle` (breaker works).
+- [ ] Each source class **individually** returns a sane price and a plausible `updatedAt`:
+      `chainlinkSource.latestPrice()`, `twapSource.latestPrice()`, `pythSource.latestPrice()`.
+      All three should agree within single-digit bps in a calm market — a large gap means a
+      wrong pool, feed or price id, not a market inefficiency.
+- [ ] No source returns `(0, 0)` on a healthy chain. A permanently-silent source is invisible
+      inside a 2-of-3 quorum until the day one of the other two fails. For the TWAP source,
+      `computePriceWad()` reverts with the specific reason where `latestPrice()` merely
+      withholds — use it to diagnose.
 - [ ] A full governance dry-run on testnet: propose → commit → reveal → finalize → execute a
       no-op rebalance; confirm a Mode-F exit during reveal settles at post-execution NAV.
 - [ ] Exit path: instant Mode-I exit pays pro-rata; exit fee accrues to remainers, never the operator.

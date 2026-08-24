@@ -1,0 +1,225 @@
+{
+  "startedAt": "2026-08-24T22:19:17.432Z",
+  "steps": [
+    {
+      "name": "chain-identified",
+      "at": "2026-08-24T22:19:17.719Z",
+      "detail": "chainId 84532, head 45920835, local-vs-chain clock skew -1s"
+    },
+    {
+      "name": "accounts-ready",
+      "at": "2026-08-24T22:19:17.747Z",
+      "detail": "settler 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35, ephemeral payer 0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC"
+    },
+    {
+      "name": "usdc-domain-verified",
+      "at": "2026-08-24T22:19:17.855Z",
+      "detail": "name=\"USDC\" version=\"2\" separator=0x71f17a3b2ff373b803d70a5a07c046c1a2bc8e89c09ef722fcb047abe94c9818"
+    },
+    {
+      "name": "payer-funded",
+      "at": "2026-08-24T22:19:22.373Z",
+      "detail": "0.05 USDC → 0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC in 0x3cfd7aedbd9f320c7a1c8a978569e39d7aa76c90424b316608ecd554fbe05f0b"
+    },
+    {
+      "name": "facilitator-up",
+      "at": "2026-08-24T22:19:22.488Z",
+      "detail": "http://127.0.0.1:8403/settle"
+    },
+    {
+      "name": "api-up",
+      "at": "2026-08-24T22:19:22.492Z",
+      "detail": "http://127.0.0.1:8402 (FACILITATOR=http → http://127.0.0.1:8403/settle), price 0.01 USDC"
+    },
+    {
+      "name": "402-challenge",
+      "at": "2026-08-24T22:19:22.496Z",
+      "detail": "nonce 0x7eb1f6217cf37f203292a30af3b8641ad6347e09418ac63fc86452948ba858ff"
+    },
+    {
+      "name": "paid-read-settled",
+      "at": "2026-08-24T22:19:27.429Z",
+      "detail": "289ms, tx 0xd0a777b7ce011b8085d1f81182bb3d72da4269d6ad4cfc86ffc558a7412c6a84, payer -10000 / payTo +10000 base units"
+    },
+    {
+      "name": "replay-at-facilitator",
+      "at": "2026-08-24T22:19:27.550Z",
+      "detail": "200 {\"ok\":false,\"reason\":\"authorization-used\"}"
+    },
+    {
+      "name": "replay-at-api",
+      "at": "2026-08-24T22:19:27.551Z",
+      "detail": "402 payment invalid: replayed-nonce"
+    }
+  ],
+  "deviations": [
+    {
+      "what": "EIP-712 domain name",
+      "expectedByDefault": "USD Coin",
+      "actualOnChain": "USDC",
+      "impact": "signing with the old hardcoded default produces a signature that recovers to a stranger (signer-mismatch); every settlement would fail"
+    }
+  ],
+  "chain": {
+    "chainId": 84532,
+    "rpcUrl": "https://base-sepolia-rpc.publicnode.com",
+    "headBlock": 45920835,
+    "headTimestamp": 1787609958,
+    "localTimestamp": 1787609957,
+    "clockSkewSec": -1
+  },
+  "accounts": {
+    "settler": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "payer": "0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC",
+    "payTo": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "payerIsEphemeral": true
+  },
+  "usdcDomain": {
+    "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "name": "USDC",
+    "version": "2",
+    "chainId": 84532,
+    "onChainSeparator": "0x71f17a3b2ff373b803d70a5a07c046c1a2bc8e89c09ef722fcb047abe94c9818",
+    "computedSeparator": "0x71f17a3b2ff373b803d70a5a07c046c1a2bc8e89c09ef722fcb047abe94c9818",
+    "matches": true
+  },
+  "funding": {
+    "txHash": "0x3cfd7aedbd9f320c7a1c8a978569e39d7aa76c90424b316608ecd554fbe05f0b",
+    "amount": "50000",
+    "block": 45920837,
+    "gasUsed": "62147",
+    "status": "success"
+  },
+  "wiring": {
+    "apiBaseUrl": "http://127.0.0.1:8402",
+    "facilitatorUrl": "http://127.0.0.1:8403/settle",
+    "facilitatorKind": "http",
+    "apiHoldsKey": false,
+    "price": "10000",
+    "network": "base-sepolia"
+  },
+  "challenge": {
+    "status": 402,
+    "header": {
+      "scheme": "exact",
+      "x402Version": 2,
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "amount": "10000",
+      "payTo": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+      "network": "base-sepolia",
+      "nonce": "0x7eb1f6217cf37f203292a30af3b8641ad6347e09418ac63fc86452948ba858ff",
+      "expiresAt": 1787610262494
+    }
+  },
+  "balances": [
+    {
+      "label": "before-paid-read",
+      "payerUsdc": "50000",
+      "payToUsdc": "19950000",
+      "settlerWei": "499872938227068012"
+    },
+    {
+      "label": "after-settlement-mined",
+      "payerUsdc": "40000",
+      "payToUsdc": "19960000",
+      "settlerWei": "499872407971444872"
+    },
+    {
+      "label": "final",
+      "payerUsdc": "40000",
+      "payToUsdc": "19960000",
+      "settlerWei": "499872407971444872"
+    }
+  ],
+  "paidRead": {
+    "route": "/vaults",
+    "latencyMs": 289,
+    "settlementConfirmedMs": 4598,
+    "receiptId": "0xd0a777b7ce011b8085d1f81182bb3d72da4269d6ad4cfc86ffc558a7412c6a84",
+    "vaultsReturned": 3,
+    "envelope": {
+      "x402Version": 2,
+      "scheme": "exact",
+      "network": "base-sepolia",
+      "signature": "0x7907340a2e9ca408a495c3adf2e70f72e2d387f95c697f69d3eac3e8914375c67b2e472719df3e10e5c2f8c4a3833123b8f9592cf802b70eaaa5cdbbd6a78d4d1b",
+      "authorization": {
+        "from": "0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC",
+        "to": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+        "value": "10000",
+        "validAfter": "1787609902",
+        "validBefore": "1787610262",
+        "nonce": "0x86e0df07bcd46a3c8acb1362c77f74f3a695aa7682a318e55a15dd277bfe85f4",
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+      }
+    },
+    "challenge": {
+      "scheme": "exact",
+      "x402Version": 2,
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "amount": "10000",
+      "payTo": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+      "network": "base-sepolia",
+      "nonce": "0x86e0df07bcd46a3c8acb1362c77f74f3a695aa7682a318e55a15dd277bfe85f4",
+      "expiresAt": 1787610262582
+    },
+    "settlement": {
+      "txHash": "0xd0a777b7ce011b8085d1f81182bb3d72da4269d6ad4cfc86ffc558a7412c6a84",
+      "status": "success",
+      "block": 45920839,
+      "blockTimestamp": 1787609966,
+      "from": "0x0f80606a2283fd9c67ce2eec79b90e95907f9f35",
+      "to": "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+      "gasUsed": "85768",
+      "effectiveGasPrice": "6042847",
+      "feeWei": "518282901496",
+      "feeEth": "0.000000518282901496",
+      "nonce": 32,
+      "logCount": 2,
+      "logs": [
+        {
+          "address": "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+          "topics": [
+            "0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5",
+            "0x000000000000000000000000efd880bf4e740ff96c41c8b01db1ece64887e7cc",
+            "0x86e0df07bcd46a3c8acb1362c77f74f3a695aa7682a318e55a15dd277bfe85f4"
+          ],
+          "data": "0x"
+        },
+        {
+          "address": "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+          "topics": [
+            "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+            "0x000000000000000000000000efd880bf4e740ff96c41c8b01db1ece64887e7cc",
+            "0x0000000000000000000000000f80606a2283fd9c67ce2eec79b90e95907f9f35"
+          ],
+          "data": "0x0000000000000000000000000000000000000000000000000000000000002710"
+        }
+      ]
+    },
+    "deltas": {
+      "payerUsdc": "-10000",
+      "payToUsdc": "10000",
+      "settlerWei": "-530255623140"
+    },
+    "validAfterMarginSec": 64
+  },
+  "replayAtFacilitator": {
+    "status": 200,
+    "body": {
+      "ok": false,
+      "reason": "authorization-used"
+    },
+    "latencyMs": 121
+  },
+  "replayAtApi": {
+    "status": 402,
+    "error": "payment invalid: replayed-nonce"
+  },
+  "finishedAt": "2026-08-24T22:19:27.628Z",
+  "verifyWith": {
+    "settlementReceipt": "cast receipt 0xd0a777b7ce011b8085d1f81182bb3d72da4269d6ad4cfc86ffc558a7412c6a84 --rpc-url https://base-sepolia-rpc.publicnode.com",
+    "authorizationState": "cast call 0x036CbD53842c5426634e7929541eC2318f3dCF7e 'authorizationState(address,bytes32)(bool)' 0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC 0x86e0df07bcd46a3c8acb1362c77f74f3a695aa7682a318e55a15dd277bfe85f4 --rpc-url https://base-sepolia-rpc.publicnode.com",
+    "payerBalance": "cast call 0x036CbD53842c5426634e7929541eC2318f3dCF7e 'balanceOf(address)(uint256)' 0xEFD880BF4E740ff96C41c8B01DB1eCe64887e7CC --rpc-url https://base-sepolia-rpc.publicnode.com",
+    "domain": "cast call 0x036CbD53842c5426634e7929541eC2318f3dCF7e 'DOMAIN_SEPARATOR()(bytes32)' --rpc-url https://base-sepolia-rpc.publicnode.com"
+  }
+}

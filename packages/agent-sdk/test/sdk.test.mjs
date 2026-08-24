@@ -78,3 +78,29 @@ test('SDK-produced envelope is accepted by the real server gate', async () => {
   const verdict = await gate({ headers: { 'payment-signature': sigHeader }, price, facilitator, nowMs: 1000_000 });
   assert.equal(verdict.status, 200, 'server accepts the SDK envelope end to end');
 });
+
+// ── validAfter clock skew (sprint-14 live hardening) ──
+
+test('authorizeFromChallenge backdates validAfter by 60s so a fast local clock cannot invalidate it', async () => {
+  const challenge = { asset: USDC, amount: '10000', payTo: '0x' + '2'.repeat(40), network: 'base-sepolia', nonce: '0x' + 'a'.repeat(64) };
+  const domain = { name: 'USDC', version: '2', chainId: 84532, verifyingContract: USDC };
+  const env = await authorizeFromChallenge({
+    challenge, walletAddress: '0x' + '1'.repeat(40), domain, sign: async () => '0xsig', nowSec: 1_000_000,
+  });
+  // EIP-3009 compares validAfter against the timestamp of the block that mines the settlement, so
+  // a payer clock even slightly ahead of chain time used to sign an authorization that was "not
+  // yet valid" on arrival. The old margin was 5s.
+  assert.equal(env.authorization.validAfter, '999940');
+  assert.equal(env.authorization.validBefore, '1000300');
+});
+
+test('authorizeFromChallenge lets an operator widen or zero the skew margin', async () => {
+  const challenge = { asset: USDC, amount: '10000', payTo: '0x' + '2'.repeat(40), network: 'base-sepolia', nonce: '0x' + 'a'.repeat(64) };
+  const domain = { name: 'USDC', version: '2', chainId: 84532, verifyingContract: USDC };
+  const mk = (skewSec) => authorizeFromChallenge({
+    challenge, walletAddress: '0x' + '1'.repeat(40), domain, sign: async () => '0xsig', nowSec: 1_000_000, skewSec,
+  });
+  assert.equal((await mk(0)).authorization.validAfter, '1000000');
+  assert.equal((await mk(300)).authorization.validAfter, '999700');
+  await assert.rejects(() => mk(-1), /skewSec must be >= 0/);
+});

@@ -1,0 +1,138 @@
+{
+  "chainName": "base-mainnet",
+  "chainId": 8453,
+  "status": "UNVERIFIED-ON-CHAIN",
+  "statusNote": "DRAFT. Every address, pool, feed and price id below was written from documentation, NOT read from Base mainnet. Same convention as base-sepolia.json before its Sprint-9 pre-flight pass. No script may consume this file until a session with a Base mainnet RPC has run the verification checklist in `verification` below and flipped `status` to VERIFIED-ON-CHAIN with the block height it was checked at. Deploying against an unverified address list is exactly the irreversible mistake DEPLOYMENT.md §0 warns about: the contracts are immutable, so a wrong feed or pool is permanent for that vault.",
+
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "usdcNote": "Circle-native USDC on Base (6 decimals). NOT USDbC (0xd9aA...4CA2), the bridged legacy token. Getting this wrong silently prices every vault against the wrong dollar.",
+
+  "router": "0x2626664c2603336E57B271c5C0b26F421741e481",
+  "routerName": "Uniswap SwapRouter02 (Base mainnet)",
+  "routerAllowedSignatures": [
+    "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+    "exactInput((bytes,address,uint256,uint256))"
+  ],
+
+  "maxStalenessSeconds": 3600,
+  "maxStalenessNote": "One hour, NOT the 'tight (minutes)' figure DEPLOYMENT.md §2 recommends for a pure push-feed stack. That advice is correct for Chainlink and wrong for a stack containing a pull oracle: the Pyth leg only advances when a keeper pays to post, so a 60-second bound drops it from the fresh set on most reads and silently demotes 2-of-3 into 2-of-2 with no failure headroom (asserted in test/MixedOracleSources.t.sol::test_tightStalenessSilentlyDemotesPullLegAndRemovesHeadroom). Tighten this only after measuring the observed worst-case on-chain publish gap for the pinned price ids, or after funding a keeper at a known cadence. Ceiling is 1 day (OracleAggregator.MAX_STALENESS_CEILING).",
+
+  "pyth": "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a",
+  "pythNote": "Pyth receiver contract. UNVERIFIED. Pyth deploys the same address across many chains, which makes a copy-paste error from another chain's docs indistinguishable from a correct entry — verify `code.length > 0` on Base specifically, and that getPriceUnsafe returns for each id below.",
+  "pythMaxConfBps": 100,
+  "pythMaxConfBpsNote": "Reject a Pyth reading whose confidence interval exceeds 1% of price — a feed in disagreement with itself declines to vote rather than casting an uncertain one. Ceiling is 2000 (PythSource.MAX_CONF_BPS_CEILING).",
+
+  "twapDefaults": {
+    "windowSeconds": 1800,
+    "minCardinality": 900,
+    "maxObservationAgeSeconds": 3600,
+    "cardinalityNote": "A V3 pool writes at most ONE observation per block, only on a swap. Base targets 2-second blocks, so covering a 1800-second window in the worst case (a swap every block) needs 1800/2 = 900 slots. `increaseObservationCardinalityNext` is permissionless but the growth is paid per slot (roughly 20k gas each; ~18M gas to go from 1 to 900, so it is done incrementally over several transactions). Check each pool's current `observationCardinality` via slot0() BEFORE deploying: UniswapV3TwapSource's constructor rejects a pool that cannot already serve the window, which is the intended failure — grow the cardinality first, then deploy.",
+    "windowNote": "30 minutes. Bounds are [300, 86400] (MIN_WINDOW/MAX_WINDOW). Longer resists manipulation better and tracks a moving market worse; this is the SF-1 knob, and it is immutable per source."
+  },
+
+  "assets": [
+    {
+      "symbol": "WETH",
+      "token": "0x4200000000000000000000000000000000000006",
+      "decimals": 18,
+      "quorum": 2,
+      "quorumNote": "2 of 3 — the strict-majority floor for a 3-source set, and the only value that both satisfies OracleAggregator's constructor and leaves one source of failure headroom. Quorum 3 would let any single dark source freeze the asset.",
+      "sources": [
+        {
+          "class": "push",
+          "adapter": "ChainlinkSourceAdapter",
+          "feed": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+          "description": "Chainlink ETH / USD (proxy, 8 decimals, Base mainnet)"
+        },
+        {
+          "class": "spot-twap",
+          "adapter": "UniswapV3TwapSource",
+          "poolA": "0xd0b53D9277642d899DF5C87A3966A349A798F224",
+          "poolAPair": "WETH/USDC",
+          "poolAFeeTier": 500,
+          "poolB": "0x0000000000000000000000000000000000000000",
+          "route": "direct — poolA already quotes USDC, so no intermediate leg",
+          "description": "Uniswap V3 WETH/USDC 0.05% pool. Token ordering on Base puts WETH at token0, so the mean tick is NEGATIVE and the floor-rounding path in _meanTick is the live one (fixture: test_priceFixture_assetIsToken0_negativeTick)."
+        },
+        {
+          "class": "pull",
+          "adapter": "PythSource",
+          "priceId": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+          "description": "Pyth ETH / USD (Crypto.ETH/USD)"
+        }
+      ]
+    },
+    {
+      "symbol": "cbETH",
+      "token": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+      "decimals": 18,
+      "quorum": 2,
+      "sources": [
+        {
+          "class": "push",
+          "adapter": "ChainlinkSourceAdapter",
+          "feed": "0xd7818272B9e248357d13057AAb0B417aF31E817d",
+          "description": "Chainlink cbETH / USD (proxy, 8 decimals, Base mainnet)"
+        },
+        {
+          "class": "spot-twap",
+          "adapter": "UniswapV3TwapSource",
+          "poolA": "0x10648BA41B8565907Cfa1496765fA4D95390aa0d",
+          "poolAPair": "cbETH/WETH",
+          "poolAFeeTier": 500,
+          "poolB": "0xd0b53D9277642d899DF5C87A3966A349A798F224",
+          "poolBPair": "WETH/USDC",
+          "poolBFeeTier": 500,
+          "route": "two-hop — cbETH -> WETH -> USDC; WETH is the intermediate",
+          "description": "Uniswap V3 cbETH/WETH 0.05% composed with the WETH/USDC 0.05% pool (fixture: test_priceFixture_twoHopThroughIntermediate). BOTH pools must independently satisfy the cardinality and window checks; the shared WETH/USDC pool is therefore load-bearing for two assets at once — a correlation worth stating, since it means a single pool going quiet withdraws the TWAP leg from both WETH and cbETH simultaneously."
+        },
+        {
+          "class": "pull",
+          "adapter": "PythSource",
+          "priceId": "0x15ecddd26d49e1a8f1de9376ebebc03916ede873447c1255d2d5891b92ce5717",
+          "description": "Pyth cbETH / USD (Crypto.CBETH/USD)"
+        }
+      ]
+    }
+  ],
+
+  "usdcReferenceFeeds": {
+    "chainlinkUsdcUsd": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
+    "pythUsdcUsd": "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a",
+    "note": "NOT wired into any source. Listed because UniswapV3TwapSource pins USDC to $1.00 rather than measuring it, so a sustained depeg mis-prices its leg by exactly the depeg. These two feeds are the off-chain monitoring inputs for that residual (a canary signal, not an on-chain input) — reading USDC/USD on-chain inside the TWAP source would reintroduce the very push-feed dependency the source exists to be independent of."
+  },
+
+  "verification": {
+    "note": "Run every line against a Base mainnet RPC before flipping `status`. This mirrors the Sprint-9 Base Sepolia pre-flight (docs/TESTNET-REPORT.md) — configuration evidence, not deployment evidence.",
+    "checks": [
+      "usdc: symbol() == 'USDC', decimals() == 6, and it is the Circle-native token, not USDbC",
+      "each asset token: symbol() and decimals() match the entry",
+      "each Chainlink feed: decimals() == 8, description() matches, latestRoundData() is fresh and positive",
+      "each V3 pool: token0()/token1() match the stated pair EXACTLY (ordering included — it decides the tick sign), fee() matches the stated tier",
+      "each V3 pool: slot0().observationCardinality >= twapDefaults.minCardinality; if not, grow it with increaseObservationCardinalityNext BEFORE deploying and re-check",
+      "each V3 pool: observe([1800, 0]) succeeds AND the oldest retained observation predates the window (the constructor enforces this, so a failure here is a failed deployment, not a runtime surprise)",
+      "pyth: code.length > 0, and getPriceUnsafe(id) returns for every price id listed, with expo inside [-36, 18]",
+      "cross-check: the three classes for each asset agree within a sane band (single-digit bps in calm markets). A large gap means a wrong pool, a wrong feed, or a wrong price id — not a market inefficiency",
+      "router: code.length > 0 and the two allow-listed selectors resolve"
+    ]
+  },
+
+  "smoke": {
+    "capacityCapUsdc": "1000000000",
+    "minDepositUsdc": "1000000",
+    "depositUsdc": "5000000",
+    "exitFeeMaxBps": 50,
+    "exitFeeDecayPeriod": 604800,
+    "gov": {
+      "commitDuration": 3600,
+      "revealDuration": 3600,
+      "timelockDuration": 86400,
+      "executionWindow": 86400,
+      "quorumBps": 2500,
+      "proposalThresholdBps": 0,
+      "concentrationCapBps": 10000,
+      "proposalCooldown": 0
+    },
+    "govNote": "Unlike base-sepolia.json this sets a non-zero timelockDuration: a testnet smoke run wants zero delay, mainnet capital wants a day to react to a passed proposal."
+  }
+}
