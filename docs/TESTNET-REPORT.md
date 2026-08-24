@@ -502,6 +502,45 @@ The single failing gate is the **right** decision — the operator has zero real
 agent declines to join on "not yet negative". No transactions sent or described, and the x402 budget
 gate metered 3 reads at $0.03.
 
+### 8.5 Canary transitions after activation — the predicted recovery, observed
+
+The canary was restarted after the operator's machine reboot, now that shares exist. It produced
+**five OK transitions and zero ALERTs**, including the exact recovery §8.3 predicted:
+
+```
+RECOVERED [exit-liveness]      exits live on vault 0x9702…6330: requestExit(1) static-calls
+                               clean as 0x0f80…9f35 (measured no revert, threshold no non-gate revert)
+RECOVERED [nav-backing]        navWad 5000000000000000000 vs recomputed 5000000000000000000
+                               (0.00%, threshold 0.50%)
+RECOVERED [share-conservation] 5000000000000000000 shares across 1 holders
+                               (measured Δ 0 shares, threshold exactly 0)
+RECOVERED [module-events]      no ModuleCallFailed or SliceEscrowed (0 events, threshold 0)
+RECOVERED [fee-routing]        0 USDC outflow(s), none to an operator address
+```
+
+**`exit-liveness` DEGRADED → RECOVERED is the headline.** In §8.3 it correctly refused to report OK
+while no member held shares, because the probe had no valid caller. Now that `activate` minted
+shares, the same probe static-calls `requestExit(1)` cleanly. The signal tracked a real state
+change in both directions rather than defaulting to healthy — which is the whole design claim.
+
+`nav-backing` at **0.00 %** divergence independently corroborates the §7.3 activation numbers by a
+different route: the canary recomputes NAV from holdings and compares it against `navWad()`.
+
+> **Operational finding — canary log coverage gap after long downtime (not a defect).** On restart
+> the canary reported honestly:
+> ```
+> event scan gap — blocks 45796963-45913071 (116109 blocks) were NOT scanned for
+> ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=2000;
+> raise it or scan that range manually.
+> ```
+> After ~68 h of downtime the event backlog far exceeded the per-sweep cap, so the two log-derived
+> signals have a **coverage hole** across that range. The canary **says so out loud rather than
+> reporting a silent OK**, which is the correct behaviour and consistent with its DEGRADED
+> philosophy. Worth carrying into the ops runbook: after extended downtime, either raise
+> `MAX_LOG_SPAN_BLOCKS` for a catch-up run or scan the gap manually before trusting those two
+> signals. Nothing in the smoke lifecycle occurred in that window — the vault was idle — so this
+> run is unaffected.
+
 > **Operational note (not a defect).** A first run without `--subvault-registry` reported
 > `✗ fees-in-bounds: stacked performance fee unreadable — refusing to join blind to fees`. That was
 > a misconfiguration on the operator's side, and the agent **failed safe**: `chain.mjs:299` returns
