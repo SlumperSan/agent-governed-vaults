@@ -176,7 +176,74 @@ const USDC_ABI = [
     inputs: [{ name: 'authorizer', type: 'address' }, { name: 'nonce', type: 'bytes32' }],
     outputs: [{ name: '', type: 'bool' }],
   },
+  { type: 'function', name: 'name', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+  { type: 'function', name: 'version', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+  { type: 'function', name: 'DOMAIN_SEPARATOR', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'bytes32' }] },
 ];
+
+export { USDC_ABI };
+
+/**
+ * Discover the token's REAL EIP-712 domain from the chain and prove it reproduces the token's own
+ * `DOMAIN_SEPARATOR()`.
+ *
+ * Why this exists: a wrong domain string does not fail loudly. It produces a perfectly valid
+ * signature over the wrong struct hash, which recovers to a stranger's address, which surfaces as
+ * `signer-mismatch` — a message that points at the signature, not at the config that actually
+ * broke. FiatTokenV2 deployments genuinely disagree on this field: mainnet USDC uses
+ * `"USD Coin"`, while Base Sepolia's `0x036CbD…F7e` reports `"USDC"` (verified in sprint 14).
+ * Anything that hardcodes one of them is wrong on the other chain.
+ *
+ * So we never trust a constant: read `name()`/`version()`, recompute the separator locally, and
+ * compare it to what the contract reports. A match means our typed-data reconstruction is
+ * byte-identical to what the token will verify against. A mismatch means the token derives its
+ * domain some other way, and every settlement we attempt would fail — so callers should refuse to
+ * start rather than serve a facilitator that cannot settle.
+ *
+ * @param {{publicClient:any, usdcAddress:string, chainId:number}} cfg
+ * @returns {Promise<{name:string, version:string, chainId:number, verifyingContract:string,
+ *                    onChainSeparator:string, computedSeparator:string, matches:boolean}>}
+ */
+export async function readUsdcDomain({ publicClient, usdcAddress, chainId }) {
+  if (!ADDR_RE.test(usdcAddress ?? '')) throw new Error('readUsdcDomain: usdcAddress required');
+  const { domainSeparator } = await import('viem').catch(() => {
+    throw new Error('facilitator: viem is not installed — run `npm install viem`');
+  });
+  const read = (functionName) => publicClient.readContract({ address: usdcAddress, abi: USDC_ABI, functionName });
+  const [name, version, onChainSeparator] = await Promise.all([
+    read('name'), read('version'), read('DOMAIN_SEPARATOR'),
+  ]);
+  const domain = { name, version, chainId, verifyingContract: usdcAddress };
+  const computedSeparator = domainSeparator({ domain });
+  return {
+    ...domain,
+    onChainSeparator,
+    computedSeparator,
+    matches: String(computedSeparator).toLowerCase() === String(onChainSeparator).toLowerCase(),
+  };
+}
+
+/**
+ * `readUsdcDomain`, but throws with both separators on mismatch. Call at process start so a broken
+ * domain is a startup failure instead of a per-request `signer-mismatch`.
+ * @param {{publicClient:any, usdcAddress:string, chainId:number}} cfg
+ */
+export async function assertUsdcDomain(cfg) {
+  const d = await readUsdcDomain(cfg);
+  if (!d.matches)
+    throw new Error(
+      `facilitator: EIP-712 domain mismatch for ${cfg.usdcAddress} on chain ${cfg.chainId}.
+` +
+        `  token name()/version(): ${JSON.stringify(d.name)} / ${JSON.stringify(d.version)}
+` +
+        `  computed DOMAIN_SEPARATOR: ${d.computedSeparator}
+` +
+        `  on-chain DOMAIN_SEPARATOR: ${d.onChainSeparator}
+` +
+        'Every settlement would fail signature recovery. Refusing to start.',
+    );
+  return d;
+}
 
 /**
  * Run-your-own settling facilitator: recover the payer, then settle the EIP-3009 authorization by

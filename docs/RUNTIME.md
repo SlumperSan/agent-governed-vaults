@@ -39,7 +39,8 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
   serves read routes gated by the x402 payment scheme. It holds **no key** — it asks a facilitator
   to verify+settle each payment.
 - The **facilitator** is where settlement (and the only key) lives. In production this is a
-  **remote HTTP facilitator** you point the API at. You may also run your own settler (§6).
+  **remote HTTP facilitator** you point the API at. You may also run your own settler — this repo
+  ships one (`apps/api/src/facilitator-server.mjs`), proven live on Base Sepolia (§6).
 - The **canary** watches the deployed contracts for the [DEPLOYMENT §6](DEPLOYMENT.md) signals and
   alerts on transitions. It reads the chain directly (`eth_call`/`eth_getLogs`) and reads — never
   writes — the indexer snapshot, which two of its signals compare against chain state. It is
@@ -210,6 +211,21 @@ Production notes:
 | `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `api.heartbeat.json` is written (§8.2) |
 | `LOG_FORMAT` / `LOG_LEVEL` | | | as above (§8.1) |
 
+### Settling facilitator (`scripts/live-x402-run.mjs`, or your own runner — §6)
+
+Only relevant if you run your own settler. **This is the one process that holds a key.**
+
+| Var | Required | Default | Meaning |
+|---|---|---|---|
+| `FACILITATOR_I_UNDERSTAND_THIS_SPENDS_FUNDS` | ✅ | — | must be exactly `yes`; startup refuses otherwise |
+| `SETTLER_KEYSTORE` | ✅ | — | path to a V3 keystore file (e.g. `~/.foundry/keystores/<name>`) |
+| `SETTLER_KEYSTORE_PASSWORD` | ✅ | — | decrypted in-process; the key never enters the environment |
+| `RPC_URL` | | Base Sepolia public node | JSON-RPC endpoint |
+| `USDC_ADDRESS` | | Base Sepolia USDC | settlement token |
+
+A raw `SETTLER_PRIVATE_KEY` / `PAYER_PRIVATE_KEY` in the environment is **rejected**, not honoured:
+a key in env is one leaked shell history, `ps` listing or crash dump away from a drained wallet.
+
 ### Canary (`npm run start:canary`)
 
 Read-only post-launch monitor — see [CANARY.md](CANARY.md) for what each signal means and what to do
@@ -237,22 +253,111 @@ pays: the challenge binds the payment to that exact asset + network.
 
 ---
 
-## 6. Running your own settling facilitator (optional)
+## 6. Running your own settling facilitator
 
 If you don't use a third-party facilitator, run your own settler. It recovers the EIP-712 payer from
 the signed authorization and settles `USDC.transferWithAuthorization` on-chain. **It needs a funded
 account to pay gas — a key you supply and control.** This repo never embeds, reads from env, or logs
-a key: `createSettlingFacilitator` takes a viem account you inject at runtime.
+a key: the facilitator takes a viem account you inject at runtime.
 
-`apps/api/src/facilitator.mjs` exports `createSettlingFacilitator({ publicClient, walletClient,
-usdcAddress, chainId })`. Wire it in a small process you own (a viem `WalletClient` built from your
-account), expose an HTTP endpoint that calls its `verifyAndSettle`, and point the API's
-`FACILITATOR_URL` at it. Keep that process — and its key — isolated from the API and the indexer,
-which stay keyless.
+This path is no longer theoretical. It has settled a real paid read on Base Sepolia — see
+[X402-LIVE-REPORT.md](X402-LIVE-REPORT.md) for the transaction hashes, balance deltas, gas costs and
+the replay rejection, all verified independently with `cast`.
 
-Settlement path per request: validate envelope shape → recover signer == `authorization.from` →
-check the on-chain authorization nonce is unused → `simulateContract` → `writeContract`. The receipt
-id returned to the client is the settlement tx hash.
+### 6.1 The entrypoint
+
+`apps/api/src/facilitator-server.mjs` exports `startFacilitatorServer(...)`, which wraps
+`createSettlingFacilitator` in exactly the HTTP shape `createHttpFacilitator` posts:
+
+```
+POST /settle   { x402Version: 2, challenge, envelope }  →  { ok: true, receiptId }
+                                                        →  { ok: false, reason }
+GET  /health                                            →  { ok, settler, chainId, usdc, domain }
+```
+
+Note the status-code convention: a payment that was understood and **rejected** comes back as
+`200 {ok:false, reason}`, not a 4xx. `createHttpFacilitator` collapses any non-2xx into
+`facilitator-http-<status>` and discards the body, so anything the payer could act on — an expired
+authorization, a burned nonce — must return 200 or the reason is lost in transit. 4xx is reserved
+for a malformed request, 500 for an internal fault.
+
+### 6.2 Starting it
+
+The server never builds an account. Write a small runner you own that injects one — see
+`scripts/live-x402-run.mjs` for a complete working example, including keystore decryption that
+keeps the private key out of your environment and your shell history:
+
+```js
+import { privateKeyToAccount } from 'viem/accounts';
+import { startFacilitatorServer } from './apps/api/src/facilitator-server.mjs';
+
+const account = privateKeyToAccount(/* … your key, never from env … */);
+await startFacilitatorServer({
+  account,
+  publicClient,          // viem PublicClient
+  walletClient,          // viem WalletClient built from `account`
+  usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  chainId: 84532,
+  port: 8403,
+});
+```
+
+Then point the API at it and keep the API keyless:
+
+```
+FACILITATOR=http FACILITATOR_URL=http://127.0.0.1:8403/settle npm run start:api
+```
+
+Startup refuses, rather than degrades, on any of three conditions:
+
+| Condition | Why it is fatal |
+|---|---|
+| No injected account | There is nothing to sign with. A "dry-run" fallback would teach you the flag is optional. |
+| `FACILITATOR_I_UNDERSTAND_THIS_SPENDS_FUNDS` ≠ `yes` | This process broadcasts transfers and burns gas. Consent is explicit, mirroring the reference agent's execute gate. |
+| The token's EIP-712 domain doesn't reproduce its own `DOMAIN_SEPARATOR()` | Every settlement would fail signature recovery. Better a loud refusal now than an opaque `signer-mismatch` per request. |
+
+### 6.3 The EIP-712 domain is read from the token, never hardcoded
+
+FiatTokenV2 deployments genuinely disagree on the domain `name`. Mainnet USDC reports `"USD Coin"`;
+**Base Sepolia's `0x036CbD…F7e` reports `"USDC"`**. Signing under the wrong name does not fail
+loudly — it produces a structurally valid signature over a different struct hash, which recovers to
+an unrelated address and surfaces as `signer-mismatch`, pointing at the signature rather than at the
+config that actually broke.
+
+So the facilitator reads `name()` and `version()` at boot, recomputes the domain separator, and
+refuses to start unless it equals what the token reports. Do the same on the payer side rather than
+trusting a constant. To check a chain by hand:
+
+```
+cast call <usdc> 'name()(string)' --rpc-url <rpc>
+cast call <usdc> 'version()(string)' --rpc-url <rpc>
+cast call <usdc> 'DOMAIN_SEPARATOR()(bytes32)' --rpc-url <rpc>
+```
+
+### 6.4 Per-request path
+
+Shape validation → server-side price re-check → recover signer == `authorization.from` → on-chain
+`authorizationState` nonce check → `simulateContract` → `writeContract`. The receipt id returned to
+the client is the settlement tx hash.
+
+The **price re-check** is defense in depth, and it is not redundant with the API's own check. The
+API's check protects the API from a lying payer; this one protects your funded account from a lying
+*caller*. Without it the service is an open relay: anyone who can reach it can have it broadcast any
+authorization they hold, to any recipient, at your gas expense. Bind it to a trusted API and do not
+expose it publicly — it defaults to `127.0.0.1`.
+
+### 6.5 Replay protection has two independent layers
+
+They fail differently and you should not mistake one for the other:
+
+- **API, local:** an in-memory `seenNonces` set rejects a resubmitted envelope as `replayed-nonce`
+  before the facilitator is ever called. Cheap, but process-local — it does not survive a restart
+  and does not cover a second API instance.
+- **Chain, authoritative:** EIP-3009 burns the nonce per `(authorizer, nonce)`. The facilitator
+  checks `authorizationState` and returns `authorization-used`. This is the real guarantee, and it
+  holds across processes, restarts and operators.
+
+Both were exercised live; see the report.
 
 ---
 

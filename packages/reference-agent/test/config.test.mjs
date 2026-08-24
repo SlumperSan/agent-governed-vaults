@@ -125,3 +125,13 @@ test('overrides merge deeply without dropping sibling defaults', () => {
   assert.equal(cfg.policy.join.requireAttestedOperator, true, 'sibling default must survive');
   assert.equal(cfg.policy.timing.revealSafetyMarginSec, 1800, 'unrelated branch must survive');
 });
+
+test('the default USDC domain matches the default chain, not mainnet', () => {
+  // These two fields travel together into every x402 signature the agent makes (perceive.mjs
+  // builds the EIP-712 domain from them). The default chain is Base Sepolia, whose token reports
+  // name() == "USDC" — the old 'USD Coin' default was mainnet's and could never recover here.
+  // Verified against the live token in docs/X402-LIVE-REPORT.md §6.
+  assert.equal(DEFAULT_CONFIG.chain.chainId, 84532);
+  assert.equal(DEFAULT_CONFIG.chain.usdcName, 'USDC');
+  assert.equal(DEFAULT_CONFIG.chain.usdcVersion, '2');
+});
