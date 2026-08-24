@@ -33,6 +33,9 @@
     "basket": ["WETH"],
     "capacityCapUsdc": "200000000",
     "minDepositUsdc": "1000000",
+    "parentDepositUsdc": "4000000",
+    "allocateUsdc": "2000000",
+    "amountsNote": "Drill 2 deposits 4 USDC into the PARENT and allocates 2 of it into the child, leaving 2 idle. Keeping some idle is deliberate: it proves the parent NAV conservation check is reading a real split rather than a total transfer, and it leaves room for the redeem round trip.",
     "exitFeeMaxBps": 25,
     "exitFeeDecayPeriod": 302400,
     "gov": {
@@ -46,7 +49,7 @@
       "proposalCooldown": 0
     },
     "govNote": "SV-6 / _requireParentQuorumFloor: a child's quorum may not sit below its parent's. Parent runs 2500, child runs 5000, so the floor is satisfied with margin.",
-    "allocateUsdc": "4000000"
+    "allocateUsdc": "2000000"
   },
 
   "parentDeposit": {
