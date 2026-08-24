@@ -306,7 +306,10 @@ exactly `VaultCore`'s compiled size, so the factory produced a byte-identical in
 | registerVault | `0x58ad84f0…cc27` | 45784665 | all 8 `configOf` fields match config | ✅ |
 | usdc.approve | `0x45845b5a…c680` | 45784667 | — | ✅ |
 | deposit(5 USDC) | `0x8c85dec7…f8ce` | 45784670 | escrowed, **`navWad() == 0`** | ✅ |
-| activate | — | — | *waiting — 4 h window ends chain time 1787352028* | ⏳ |
+| activate | `0xe8f14d16…b9c47` | — | shares minted at NAV 1.0, `navWad()` now 5e18 | ✅ |
+| propose | `0x95c5e565…6190` | — | pid 1, `actionHash` matches payload | ✅ |
+| commit | `0xcad2f15a…3231` | — | commit accepted, salt persisted before the tx | ✅ |
+| reveal | — | — | **missed — window lapsed during a machine restart** | ⚠️ |
 
 ### 7.1 EE-1 verified live — pending deposits excluded from NAV
 
@@ -340,8 +343,60 @@ The vault holds real USDC while `navWad()` reads zero. EE-1 holds against live s
 | `concentrationCapBps` | 10000 | 10000 | ✅ |
 | `proposalCooldown` | 0 | 0 | ✅ |
 
-*(Remaining phases — activate, propose, commit, reveal, finalize, execute, exit — are appended as
-they land.)*
+### 7.3 Activation verified — pending converts to shares at NAV 1.0
+
+After the 4 h observation window, `activate` minted against the escrowed deposit. Confirmed by
+direct reads, and it is the exact mirror of the EE-1 state in §7.1:
+
+| Read | Before (§7.1) | After activate | Meaning |
+| --- | --- | --- | --- |
+| `navWad()` | `0` | **`5000000000000000000`** | NAV now reflects the deposit |
+| `totalShares()` | `0` | **`5000000000000000000`** | shares minted |
+| `totalPendingUsdc()` | `5000000` | **`0`** | escrow fully consumed |
+| `sharesOf(signer)` | `0` | `5000000000000000000` | credited to the depositor |
+| `holderCount()` | `0` | `1` | first holder |
+| `navPerShareWad()` | — | **`1000000000000000000`** | exactly 1.0 |
+
+5 USDC in, 5e18 shares out, NAV/share exactly 1.0 — no dilution, no rounding drift on the first
+deposit.
+
+### 7.4 Governance leg reached commit, then the reveal window lapsed
+
+`propose` created **pid 1** and `commit` was accepted. Proposal state read directly from
+`Governance.proposals(1)`:
+
+| Field | Value | Note |
+| --- | --- | --- |
+| `vault` | `0x97025D1c…6330` | ✅ |
+| `proposer` | `0x0f80606a…9f35` | ✅ |
+| `createdAt` | 1787361390 | snapshot timestamp |
+| `commitDeadline` | 1787364990 | |
+| `revealDeadline` | 1787368590 | |
+| `status` | **1 = `Active`** | never advanced |
+| `actionHash` | `0x881a681a…8721` | matches the persisted payload ✅ |
+| `snapshotTotal` | `5000000000000000000` | all shares eligible |
+| `memberCount` | 1 | fixes the signer quorum regime (CM-7) |
+| **`revealedWeight`** | **`0`** | **the commit was never revealed** |
+
+**Cause: the operator's machine restarted mid-run**, killing the smoke runner during the 1 h commit
+phase. By the time it was noticed, chain time had advanced ~68 h — well past `revealDeadline` and
+past the 24 h `executionWindow`.
+
+**This is not a protocol defect and no issue is filed.** It is the documented EE-10 path
+(TESTNET-CHECKLIST §6): a proposal stranded by a long pause is expired via `markExpired` and the
+governance leg re-run. Two properties held up under an unplanned failure, which is better evidence
+than a clean run would have given:
+
+1. **The salt was persisted *before* the commit transaction**, so it survived the restart — a reveal
+   can never be stranded by a crash between "sign" and "record". It is in
+   `scripts/.smoke-state.json` as `salt`, with the matching `actionHash` and `pid`.
+2. **Nothing is stuck.** Shares, NAV and the deposit are all intact; only the no-op rebalance
+   proposal is dead. The vault remains fully operable.
+
+The governance leg (propose → commit → reveal → finalize) must be re-run — roughly 2 h, being
+1 h commit plus 1 h reveal.
+
+*(Remaining phases — reveal, finalize, execute, exit — are appended as they land.)*
 
 ---
 
