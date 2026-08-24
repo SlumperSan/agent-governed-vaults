@@ -18,8 +18,10 @@ import { loadSnapshot, saveSnapshot, resumeCursor } from './store.mjs';
  * @param {number} [cfg.confirmations]               lag behind head before indexing (reorg safety)
  * @param {number} [cfg.batchBlocks]                 max blocks per poll
  * @param {(msg:string)=>void} [cfg.log]
+ * @param {(state:any)=>Promise<any>} [cfg.save]     how a batch is persisted; defaults to a plain
+ *        atomic snapshot. index-runner injects a writer that also keeps a backup ring.
  */
-export function createIndexerDaemon({ statePath, fetchEvents, headBlock, confirmations = 5, batchBlocks = 2000, log = () => {} }) {
+export function createIndexerDaemon({ statePath, fetchEvents, headBlock, confirmations = 5, batchBlocks = 2000, log = () => {}, save = (st) => saveSnapshot(statePath, st) }) {
   let state = null;
   let running = false;
 
@@ -49,19 +51,29 @@ export function createIndexerDaemon({ statePath, fetchEvents, headBlock, confirm
       state.lastBlock = to;
       state.lastLogIndex = -1;
     }
-    await saveSnapshot(statePath, state);
+    await save(state);
     log(`indexed [${from}..${to}] — ${events.length} events, now at ${state.lastBlock}`);
     return events.length;
   }
 
-  /** Run until caught up with the chain head (drains all batches). Returns total events applied. */
-  async function catchUp() {
+  /**
+   * Run until caught up with the chain head (drains all batches). Returns total events applied.
+   *
+   * `signal` is checked BETWEEN batches, which is what makes SIGTERM honest: a cold-start backlog
+   * is minutes of `tick()` calls, and without this the process would ignore the signal for all of
+   * them and die by SIGKILL mid-fold. Since `tick()` snapshots each batch, stopping between two of
+   * them means "finished the current batch and persisted it" literally rather than aspirationally.
+   *
+   * @param {{signal?:AbortSignal}} [opts]
+   */
+  async function catchUp({ signal } = {}) {
     let total = 0;
     for (;;) {
       const n = await tick();
-      const head = await headBlock();
-      if (resumeCursor(state).fromBlock > head - confirmations) return total + n;
       total += n;
+      if (signal?.aborted) return total;
+      const head = await headBlock();
+      if (resumeCursor(state).fromBlock > head - confirmations) return total;
     }
   }
 

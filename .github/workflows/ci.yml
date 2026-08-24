@@ -76,6 +76,15 @@ jobs:
       # Without this the viem-backed tests skip themselves and the suite silently
       # reports 80/81 forever. Install first so the full 81 actually run.
       - run: npm ci
+      # ops-check is a cron job and a compose healthcheck, so its exit CODE is the contract.
+      # Assert it with no heartbeats present: it must fail (1), not crash (2) and not pass.
+      - name: ops-check fails on absent heartbeats
+        run: |
+          set +e
+          node packages/oplog/src/ops-check.mjs --dir=./no-such-dir
+          code=$?
+          set -e
+          test "$code" = "1" || { echo "expected exit 1, got $code"; exit 1; }
       # abis.test.mjs cross-checks the indexer's embedded event fragments against
       # compiled artifacts, and skips itself when contracts/out is absent — so the
       # drift guard only bites if this job has built the contracts.
@@ -89,4 +98,4 @@ jobs:
       # by hand against a live chain. Parse them so a syntax error can't reach a
       # 6-hour smoke run or a production boot.
       - name: Syntax-check entrypoints and operational scripts
-        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs
+        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs && node --check packages/oplog/src/ops-check.mjs

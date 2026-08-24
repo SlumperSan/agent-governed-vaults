@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { classifyProposal } from './proposal-recovery.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
@@ -166,6 +167,7 @@ const T_EXIT_SETTLED = keccakOf('ExitSettled(address,uint256,uint256,uint256,uin
 
 const PROPOSAL_SIG = 'proposals(uint256)(address,uint8,address,uint64,uint64,uint64,uint64,uint64,uint8,bytes32,uint256,uint256,uint256,uint256,uint256,uint256)';
 const P_COMMIT_DEADLINE = 4, P_REVEAL_DEADLINE = 5, P_EXPIRES_AT = 7, P_STATUS = 8;
+const P_REVEALED_VOTER_COUNT = 15;
 const STATUS = ['None', 'Active', 'Passed', 'Defeated', 'Executed', 'Expired'];
 
 // ────────────────────────────────── phases ──────────────────────────────────
@@ -353,20 +355,46 @@ function stepExit() {
   save();
 }
 
-/** If a resumed run finds the passed proposal's execution window lapsed, expire it cleanly
- *  and rerun the governance leg (EE-10 guarantees no lock either way). */
-function recoverExpiredProposal() {
+/** Settle a proposal a resumed run can no longer finish, and rerun the governance leg
+ *  (EE-10 guarantees no lock either way). Three ways a long pause strands one:
+ *
+ *   (a) Passed, but the execution window lapsed  → markExpired.
+ *   (b) already Expired / Defeated               → nothing to send, just redo.
+ *   (c) still Active with the REVEAL window shut and nothing revealed → it can never
+ *       pass, because no reveal can land any more. This case needs finalize(), which
+ *       settles it Defeated: markExpired() rejects non-Passed proposals, and
+ *       _refreshStatus() only auto-expires Passed ones, so propose() would otherwise
+ *       revert ProposalActive() forever and the run could never move on.
+ *
+ * (c) is reachable whenever the runner is interrupted between commit and reveal — a
+ * machine restart is enough — and was previously unhandled: the run resumed straight
+ * into revealVote() against a shut window and died on WrongPhase.
+ */
+function recoverStrandedProposal() {
   if (!state.pid || state.steps.execute?.done) return;
   const p = call(dep.governance, PROPOSAL_SIG, state.pid);
   const status = STATUS[Number(p[P_STATUS])];
   const now = chainNow();
-  if ((status === 'Passed' && now > Number(p[P_EXPIRES_AT])) || status === 'Expired') {
-    log(`proposal ${state.pid} expired unexecuted — marking expired and rerunning the governance leg`);
-    if (status === 'Passed') send('governance.markExpired', dep.governance, 'markExpired(uint256)', state.pid);
-    for (const s of ['propose', 'commit', 'reveal', 'finalize']) delete state.steps[s];
-    delete state.pid; delete state.salt; delete state.commitDeadline; delete state.revealDeadline;
-    save();
+
+  const { stranded, action, reason } = classifyProposal({
+    status,
+    now,
+    expiresAt: Number(p[P_EXPIRES_AT]),
+    revealDeadline: Number(p[P_REVEAL_DEADLINE]),
+    revealedVoterCount: Number(p[P_REVEALED_VOTER_COUNT]),
+  });
+  if (!stranded) return;
+
+  log(`proposal ${state.pid} stranded in ${status} (${reason}) — settling it and rerunning the governance leg`);
+  if (action === 'markExpired') {
+    send('governance.markExpired', dep.governance, 'markExpired(uint256)', state.pid);
+  } else if (action === 'finalize') {
+    // finalize() with revealedVoterCount 0 fails quorum under every regime → Defeated.
+    send('governance.finalize', dep.governance, 'finalize(uint256)', state.pid);
   }
+  for (const s of ['propose', 'commit', 'reveal', 'finalize']) delete state.steps[s];
+  delete state.pid; delete state.salt; delete state.commitDeadline; delete state.revealDeadline;
+  save();
 }
 
 // ────────────────────────────────── main ──────────────────────────────────
@@ -388,7 +416,7 @@ log('Base Sepolia lifecycle smoke test');
 log('phases: create → register → deposit → [4h window] → activate → propose → commit → [1h] → reveal → [1h] → finalize → execute(no-op) → exit');
 log(`deployment: factory ${dep.factory}, governance ${dep.governance}, aggregator ${dep.aggregator}`);
 preflight();
-recoverExpiredProposal();
+recoverStrandedProposal();
 
 for (const [name, fn] of steps) {
   if (state.steps[name]?.done) {
