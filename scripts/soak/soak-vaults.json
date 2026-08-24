@@ -1,6 +1,9 @@
 {
   "note": "Vault definitions for the Sprint-12 soak drills. Deliberately DIFFERENT from the Sprint-9 smoke vault in basket, caps, fees and governance, so that drill 1's leaderboard aggregation is proving real cross-vault aggregation rather than summing two identical rows.",
 
+  "agentDepositUsdc": "1000000",
+  "agentDepositNote": "Drill 5: the agent deposits exactly the smoke vault minDepositUsdc (1.00 USDC), read from chain. The throwaway holds 3.00, leaving margin for gas-adjacent retries without over-committing a key that exists only for this drill.",
+
   "smokeVault": {
     "address": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330",
     "note": "The Sprint-9 vault. Basket [WETH, LINK]. Fully exited at the end of Sprint-9 (0 shares, 0 NAV), so drills 2 and 5 must re-deposit into it. Host for drill 2 (sub-vault) and drill 5 (agent execute mode)."
