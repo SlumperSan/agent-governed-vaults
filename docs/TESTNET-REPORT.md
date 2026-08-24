@@ -449,6 +449,15 @@ one would revert.
 under the run's rule 6. No GitHub issue filed: the defect is in this branch's own tooling and is
 fixed here, not a protocol finding.
 
+**Confirmed working on-chain.** The next resume logged
+`proposal 1 stranded in Active … settling it and rerunning the governance leg`, and
+`proposals(1)` now reads **status 3 = `Defeated`** — settled, so `propose()` was unblocked. It
+re-proposed as **pid 2** (`0x2e6806c5…cb66`), committed (`0x3285bb15…8c83`), waited out the commit
+hour, and revealed (`0x759e928f…4e7d`, block 45917822). `proposals(2)` then read
+`revealedWeight 5000000000000000000`, `revealedVoterCount 1`, `forWeight 5000000000000000000`,
+`againstWeight 0`, with the **same `actionHash` `0x881a681a…8721`** as the dead proposal — the
+payload survived the recovery unchanged.
+
 *(Remaining phases — reveal, finalize, execute, exit — are appended as they land.)*
 
 ---
