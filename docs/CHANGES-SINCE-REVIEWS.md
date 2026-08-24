@@ -76,13 +76,18 @@ undeployable on any chain.
 
 Stated because the absence is easy to misread.
 
-- **No testnet deployment exists.** [TESTNET-REPORT.md](TESTNET-REPORT.md) is a **pre-flight
-  record only** — nothing was broadcast, no key was ever handled, no contract was deployed to any
-  chain. What it *does* establish, live on Base Sepolia, is that all six configured addresses
-  verify on-chain (USDC/WETH/LINK symbols and decimals, both Chainlink feeds fresh with correct
-  descriptions and decimals, the pinned router has code), and that the toolchain is at the
-  required versions. That is configuration evidence, not deployment evidence. **There is no
-  deployed bytecode to compare against.**
+- **A Base Sepolia deployment now exists; no mainnet deployment does.**
+  [TESTNET-REPORT.md](TESTNET-REPORT.md) *was* a pre-flight record only, and this section said so
+  for the life of the freeze. That is **no longer true**: PR #18 deployed the protocol to Base
+  Sepolia — 17 transactions, deploy block 45784186, every address and wire confirmed by direct
+  chain reads rather than from the deploy log — and ran the full lifecycle green. The addresses
+  are recorded in
+  [`contracts/config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json).
+  **So there IS deployed bytecode to compare against, on Base Sepolia**, built from commit
+  `153d4cf3`; the contract sources there are the frozen `v0.2.0-audit` tree. There is still no
+  mainnet deployment, and `contracts/config/base-mainnet.json` (§5) is an unverified draft.
+  *Corrected in Sprint 11* — the prior wording was written before PR #18 landed and would have
+  told an auditor the opposite of the truth.
 - **`v0.1.0-rc2` was never cut.** The Sprint-8 merge train did not run. Any document referring to
   an rc2 base is describing a plan, not a tag.
 - **PRs #11 (canary) and #12 (reference agent)** contain no Solidity (§1) and are out of
@@ -150,8 +155,11 @@ scope; read it so you know what exists, not so you audit it.
   golden fixtures. **The license mix is a decision a human should confirm**, not a technical
   finding.
 - **Neither source has ever been run against a real chain.** Every test drives a mock pool or a
-  mock Pyth contract. `base-mainnet.json` is documentation-derived and explicitly
-  `UNVERIFIED-ON-CHAIN`; §3's "no deployment exists" is still true.
+  mock Pyth contract — so the Uniswap and Pyth interface shapes are asserted against this
+  repository's understanding of them, not against the deployed contracts. `base-mainnet.json` is
+  documentation-derived and explicitly `UNVERIFIED-ON-CHAIN`. Note the asymmetry with the frozen
+  tree: that code now has a Base Sepolia deployment behind it (§3), these two sources have
+  nothing.
 - **`UniswapV3TwapSource` adds an external call per source per `navWad`** (the self-STATICCALL
   containment that makes its `(0, 0)` contract total). That compounds Sprint-6 **Finding 8**'s
   gas scaling, and Finding 8's disposition has not been revisited in light of it.
