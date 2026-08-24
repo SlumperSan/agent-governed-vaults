@@ -1,6 +1,6 @@
 # Base Sepolia Testnet Run — Report
 
-**Status: DEPLOYED AND VERIFIED — awaiting the human-signed smoke run.**
+**Status: ✅ COMPLETE — full green lifecycle on Base Sepolia, every phase independently verified.**
 
 The blocker that stopped the first attempt is **resolved**: the Sprint-8 merge train landed, so
 `protocol/main` now carries the EIP-170 fix, the canary, and the reference agent, and
@@ -12,11 +12,16 @@ from the deploy log. That distinction turned out to matter: forge mislabelled co
 output, and taking it at face value would have swapped `VaultFactory` and `VaultDeployer` in the
 address book (§6.3).
 
-The run now waits on the human-signed smoke test (§7). Nothing in this session broadcast a
-transaction or handled a key — all verification here is `cast call` / `cast receipt`.
+**The full lifecycle ran green** (§7): create → register → deposit → 4 h window → activate →
+propose → commit → 1 h → reveal → 1 h → finalize → execute → Mode-I exit, ending in an **exact
+USDC round trip**. The indexer, API, canary and reference agent all ran against the live
+deployment (§8). One script bug was found, fixed and tested (§7.5); no contract defect was found.
 
-Sprint issue: [#15](https://github.com/SlumperSan/agent-governed-vaults/issues/15) — **open until a
-full green lifecycle is documented here.**
+Nothing in this session broadcast a transaction or handled a key — every verification here is
+`cast call` / `cast receipt` against the RPC, independent of the runner's own output.
+
+Sprint issue: [#15](https://github.com/SlumperSan/agent-governed-vaults/issues/15) — **satisfied by
+this report.**
 
 | | |
 | --- | --- |
@@ -309,7 +314,12 @@ exactly `VaultCore`'s compiled size, so the factory produced a byte-identical in
 | activate | `0xe8f14d16…b9c47` | — | shares minted at NAV 1.0, `navWad()` now 5e18 | ✅ |
 | propose | `0x95c5e565…6190` | — | pid 1, `actionHash` matches payload | ✅ |
 | commit | `0xcad2f15a…3231` | — | commit accepted, salt persisted before the tx | ✅ |
-| reveal | — | — | **missed — window lapsed during a machine restart** | ⚠️ |
+| ~~reveal~~ | — | — | ~~missed — window lapsed during a machine restart~~ → recovered, see §7.5 | ⚠️→✅ |
+| *(recovery)* | — | 45917xxx | pid 1 settled `Defeated`; re-proposed as **pid 2** | ✅ |
+| reveal (pid 2) | `0x759e928f…4e7d` | 45917822 | `revealedWeight` 0 → 5e18, `revealedVoterCount` 1 | ✅ |
+| finalize | `0x35fd2d9c…aa98` | 45919002 | status → **`Passed`** (signer regime 1-of-1) | ✅ |
+| execute | `0x12822402…5a17` | 45919005 | **`RebalanceExecuted`** emitted by the vault | ✅ |
+| exit (Mode I) | `0xfb4f8a59…b38b` | 45919008 | **exact** USDC round trip, all shares burned | ✅ |
 
 ### 7.1 EE-1 verified live — pending deposits excluded from NAV
 
@@ -459,6 +469,72 @@ hour, and revealed (`0x759e928f…4e7d`, block 45917822). `proposals(2)` then re
 payload survived the recovery unchanged.
 
 *(Remaining phases — reveal, finalize, execute, exit — are appended as they land.)*
+
+### 7.6 Final state — verified independently after `SMOKE TEST PASSED`
+
+Read from the chain after the runner reported success, not from its output.
+
+**Proposal 2** — `status 4 = Executed`, `forWeight 5000000000000000000`, `revealedWeight
+5000000000000000000`, `revealedVoterCount 1`. Quorum under the signer regime (`memberCount 1 < 5`)
+required `revealedVoterCount * 2 > memberCount` → `2 > 1` ✅, with `forWeight > againstWeight` ✅.
+
+**Events, confirmed emitted by the vault itself:**
+
+| Event | Topic | Emitter |
+| --- | --- | --- |
+| `RebalanceExecuted(address,uint256)` | `0x08b62dd2…55c4` | vault `0x97025d1c…6330` ✅ |
+| `ExitSettled(address,uint256,uint256,uint256,uint256)` | `0xb5e85a0d…4167` | vault `0x97025d1c…6330` ✅ |
+
+The exit transaction also carries a USDC `Transfer` (`0xddf252ad…`) and an `OperatorRegistry`
+realization log — the money actually moved, it was not merely bookkeeping.
+
+**Vault fully unwound:**
+
+| Read | Value | Expected |
+| --- | --- | --- |
+| `totalShares()` | `0` | all burned ✅ |
+| `sharesOf(signer)` | `0` | ✅ |
+| `holderCount()` | `0` | ✅ |
+| `navWad()` | `0` | ✅ |
+| `totalPendingUsdc()` | `0` | ✅ |
+| vault USDC balance | `0` | fully drained ✅ |
+
+**Exact USDC round trip — the headline assertion:**
+
+| | USDC |
+| --- | --- |
+| Signer before deposit | 20.000000 |
+| Deposited | −5.000000 |
+| Returned at Mode-I exit | +5.000000 |
+| **Signer after exit** | **20.000000** (`20000000` raw) ✅ |
+
+**Not one unit lost.** The sole-holder fee waiver held exactly — no performance fee, no exit fee, no
+rounding drift across a full deposit → activate → govern → execute → exit cycle.
+
+### 7.7 Lifecycle gas actually paid
+
+All ten transactions returned `status 1`. Read from `cast receipt`, at 0.006 gwei.
+
+| Phase | Gas |
+| --- | --- |
+| createVault | 5,030,669 |
+| activate | 330,090 |
+| propose | 226,233 |
+| exit (Mode I) | 198,918 |
+| deposit | 161,829 |
+| reveal | 157,070 |
+| registerGov | 84,101 |
+| commit | 64,330 |
+| finalize | 47,066 |
+| execute (no-op) | 46,428 |
+| **Total** | **6,346,734** |
+
+`createVault` at 79 % is the whole cost — it CREATEs a 23,016 B `VaultCore` through the
+`VaultDeployer`. Everything after it is cheap: the entire governance round (propose → commit →
+reveal → finalize → execute) costs **541,127** gas, about a tenth of one vault creation.
+
+Deployer ETH: **0.5 → 0.499873325223620703**, so the deploy *plus* the entire lifecycle *plus* the
+recovery transactions cost **0.000126674776 ETH** — roughly 0.025 % of the funded balance.
 
 ---
 
@@ -610,3 +686,52 @@ different route: the canary recomputes NAV from holdings and compares it against
 > back to the defaults present at `chain.mjs:419-420`. Refusing to join blind to fees is the correct
 > behaviour. Worth flagging in the runbook: pass `--subvault-registry` or fee gates will always
 > block.
+
+---
+
+## 9. Findings
+
+**No contract defect was found.** The protocol behaved exactly as specified across the full
+lifecycle, including under an unplanned failure. **No GitHub issue was filed**, because nothing
+found is a protocol bug — the one real defect was in this branch's own tooling and is fixed here.
+
+| # | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | Smoke resume could not recover a proposal stranded before reveal — deadlocked the vault's governance | **Blocking (script)** | **Fixed on this branch + 9 tests** (§7.5) |
+| 2 | forge mislabels contracts in its own deploy output; would have swapped `VaultFactory`/`VaultDeployer` in the address book | Cosmetic (tooling) | Documented; address book built from chain reads (§6.3) |
+| 3 | `DeployTestnet.s.sol` omits `VaultDeployer` from its `console2.log` block | Cosmetic | Documented, not patched before a live broadcast (§5) |
+| 4 | Canary leaves a log coverage gap after long downtime (`MAX_LOG_SPAN_BLOCKS`) | Operational | Documented; runbook note (§8.5) |
+| 5 | Reference agent's fee gate always blocks without `--subvault-registry` | Operational | Documented; agent fails safe (§8.4) |
+| 6 | `VaultCore` retains only 1,560 B of EIP-170 headroom | Observation | By design, frozen byte-identical (§3) |
+
+### Properties demonstrated on a live chain
+
+- **EE-1** — escrowed pending deposits excluded from NAV: vault held 5 USDC while `navWad()` read
+  `0` (§7.1).
+- **Activation** — 5 USDC → 5e18 shares at `navPerShareWad` exactly `1e18`, no rounding drift (§7.3).
+- **Commit–reveal governance** — full round including snapshot weighting and the signer-regime
+  quorum (§7.6).
+- **Mode-I exit** — exact USDC round trip to the unit, sole-holder fee waiver (§7.6).
+- **EE-10** — a proposal stranded by a real machine restart locked no funds; shares, NAV and the
+  deposit were all intact and the vault stayed fully operable (§7.4).
+- **Salt durability** — persisted *before* the commit transaction, so it survived an unplanned
+  process kill; a reveal cannot be stranded by a crash between signing and recording (§7.4).
+- **x402 replay protection** — a re-used nonce was rejected, not served (§8.2).
+- **Canary honesty** — `exit-liveness` reported DEGRADED rather than OK when it could not run, then
+  recovered when shares existed, tracking real state in both directions (§8.3, §8.5).
+- **Agent fail-safe** — refused to join a vault whose fees it could not read, rather than assuming
+  defaults (§8.4).
+
+### What this run did NOT cover
+
+Honest scope limits, unchanged from TESTNET-CHECKLIST §4 — both need a second funded key:
+
+- **Oracle breaker trip below quorum** — never exercised; the no-op lifecycle never priced a
+  non-zero basket balance.
+- **Mode-F exit settling at post-execution NAV** — only Mode-I was exercised.
+- **Multi-member governance** — `memberCount` was 1 throughout, so the run tested the *signer*
+  quorum regime (`revealedVoterCount * 2 > memberCount`) and never the **stake** quorum regime
+  (`revealedWeight * BPS >= quorumBps * snapshotTotal`) that applies at ≥ 5 members.
+- **Non-trivial rebalance** — the executed proposal was a deliberate no-op (adapter + zero orders),
+  so `AggregationRouterAdapter` never actually routed a swap through Uniswap.
+- **Fee accrual** — no performance fee was ever charged, since the sole holder exited at par.
