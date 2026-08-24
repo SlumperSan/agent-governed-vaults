@@ -1,0 +1,61 @@
+{
+  "note": "Vault definitions for the Sprint-12 soak drills. Deliberately DIFFERENT from the Sprint-9 smoke vault in basket, caps, fees and governance, so that drill 1's leaderboard aggregation is proving real cross-vault aggregation rather than summing two identical rows.",
+
+  "smokeVault": {
+    "address": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330",
+    "note": "The Sprint-9 vault. Basket [WETH, LINK]. Fully exited at the end of Sprint-9 (0 shares, 0 NAV), so drills 2 and 5 must re-deposit into it. Host for drill 2 (sub-vault) and drill 5 (agent execute mode)."
+  },
+
+  "vaultB": {
+    "label": "soak-B",
+    "note": "Drill 1's second vault and drill 3's Mode-F host. Basket is LINK-ONLY -- a strict subset of the smoke vault's basket, which makes it a different risk profile for the leaderboard AND keeps it eligible to be a child of the smoke vault should we need a second sub-vault case. Governance runs a 50% quorum against the smoke vault's 25% floor.",
+    "basket": ["LINK"],
+    "capacityCapUsdc": "500000000",
+    "minDepositUsdc": "2000000",
+    "depositUsdc": "5000000",
+    "exitFeeMaxBps": 25,
+    "exitFeeDecayPeriod": 302400,
+    "gov": {
+      "commitDuration": 3600,
+      "revealDuration": 3600,
+      "timelockDuration": 0,
+      "executionWindow": 86400,
+      "quorumBps": 5000,
+      "proposalThresholdBps": 0,
+      "concentrationCapBps": 10000,
+      "proposalCooldown": 0
+    }
+  },
+
+  "childVault": {
+    "label": "soak-child",
+    "note": "Drill 2's sub-vault, created under the smoke vault. Basket [WETH] is a strict subset of the parent's [WETH, LINK] -- VaultFactory.createChildVault enforces the subset rule and the same USDC. exitFeeMaxBps must keep the SV-4 stacked ceiling under the registry cap: parent 50 + child 25 = 75 bps.",
+    "basket": ["WETH"],
+    "capacityCapUsdc": "200000000",
+    "minDepositUsdc": "1000000",
+    "exitFeeMaxBps": 25,
+    "exitFeeDecayPeriod": 302400,
+    "gov": {
+      "commitDuration": 3600,
+      "revealDuration": 3600,
+      "timelockDuration": 0,
+      "executionWindow": 86400,
+      "quorumBps": 5000,
+      "proposalThresholdBps": 0,
+      "concentrationCapBps": 10000,
+      "proposalCooldown": 0
+    },
+    "govNote": "SV-6 / _requireParentQuorumFloor: a child's quorum may not sit below its parent's. Parent runs 2500, child runs 5000, so the floor is satisfied with margin.",
+    "allocateUsdc": "4000000"
+  },
+
+  "parentDeposit": {
+    "depositUsdc": "8000000",
+    "note": "Into the smoke vault, funding drill 2's allocation into the child (4 USDC) with idle USDC left over so the parent's own NAV stays non-zero and look-through arithmetic has two non-trivial terms to check."
+  },
+
+  "budget": {
+    "creatorUsdcTotal": "13000000",
+    "note": "13 of the creator's 20 USDC: 5 into vault B (drills 1+3) and 8 into the smoke vault (drill 2). 7 USDC held in reserve so a stranded drill can be re-run without a faucet round trip."
+  }
+}
