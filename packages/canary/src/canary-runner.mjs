@@ -37,9 +37,12 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import { loadSnapshot } from '../../indexer/src/store.mjs';
+import { createCanaryStateWriter, loadCanaryState, verifyCanaryState, formatCanaryStateReport } from './state-file.mjs';
+import { loggerFromEnv } from '../../oplog/src/logger.mjs';
+import { createHeartbeat, defaultHeartbeatDir } from '../../oplog/src/heartbeat.mjs';
+import { createShutdown } from '../../oplog/src/shutdown.mjs';
+import { resolveDurabilityOptions } from '../../oplog/src/durable.mjs';
 import { createChainReader } from './reader.mjs';
 import { createTransitionTracker } from './transitions.mjs';
 import { createConsoleSink, createWebhookSink, emitAll } from './sinks.mjs';
@@ -77,41 +80,31 @@ export function resolveCanaryConfig(env) {
     throw new Error(`canary: OPERATOR_REGISTRY_ADDRESS is not a 20-byte address: ${operatorRegistry}`);
   }
 
+  const statePath = env.STATE_PATH || './data/indexer-state.json';
+  const pollIntervalMs = num('CANARY_POLL_INTERVAL_MS', 30_000);
   return {
     rpcUrl: env.RPC_URL,
     chainId: num('CHAIN_ID', 8453),
     chainName: env.CHAIN_NAME || 'base',
-    statePath: env.STATE_PATH || './data/indexer-state.json',
+    statePath,
     canaryStatePath: env.CANARY_STATE_PATH || './data/canary-state.json',
+    ...resolveDurabilityOptions(env),
+    heartbeatDir: defaultHeartbeatDir({ ...env, STATE_PATH: statePath }),
+    // Three missed sweeps, floored at 60s. A canary sweep is many RPC round-trips, so its
+    // tolerance is looser than the indexer's on purpose.
+    heartbeatStaleMs: Math.max(60_000, pollIntervalMs * 3),
     vaults,
     operatorRegistry,
     extraOperators,
     webhookUrl: env.ALERT_WEBHOOK_URL || null,
     confirmations: num('CONFIRMATIONS', 5),
-    pollIntervalMs: num('CANARY_POLL_INTERVAL_MS', 30_000),
+    pollIntervalMs,
     navDivergenceBps: num('NAV_DIVERGENCE_BPS', 50),
     oracleMinMargin: num('ORACLE_MIN_MARGIN', 0),
     logLookbackBlocks: num('LOG_LOOKBACK_BLOCKS', 0),
     maxLogSpanBlocks: num('MAX_LOG_SPAN_BLOCKS', 2000),
     heartbeatMs: num('HEARTBEAT_MS', 0),
   };
-}
-
-/** Atomic write, same write-temp-then-rename discipline the indexer's snapshot uses. */
-async function saveCanaryState(path, obj) {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  await writeFile(tmp, JSON.stringify(obj), 'utf8');
-  await rename(tmp, path);
-}
-
-async function loadCanaryState(path) {
-  try {
-    return JSON.parse(await readFile(path, 'utf8'));
-  } catch (err) {
-    if (err && err.code === 'ENOENT') return { transitions: {}, lastScannedBlock: null };
-    throw err;
-  }
 }
 
 /**
@@ -219,7 +212,13 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
  * Build a wired (but not started) canary. Returns `runOnce()` for a single sweep and `start()`
  * for the forever loop.
  */
-export async function buildCanary(cfg, { log = console.log, error = console.error, client, fetchImpl, now = () => new Date() } = {}) {
+export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('canary'), client, fetchImpl, now = () => new Date() } = {}) {
+  // The transition lines ARE the product here, so they keep their own stdout/stderr split (`2>`
+  // gives a pure alert feed). Left uninjected they now flow through the structured logger like
+  // everything else; the tests inject plain string sinks and are unaffected.
+  const line = log ?? logger.text('canary.transition');
+  const errLine = error ?? logger.text('canary.transition', 'error');
+
   const reader = createChainReader({
     client, rpcUrl: cfg.rpcUrl, chainId: cfg.chainId, chainName: cfg.chainName,
   });
@@ -229,8 +228,17 @@ export async function buildCanary(cfg, { log = console.log, error = console.erro
   let lastScannedBlock = persisted.lastScannedBlock ?? null;
   let poll = 0;
 
-  const sinks = [createConsoleSink({ log, error })];
-  if (cfg.webhookUrl) sinks.push(createWebhookSink({ url: cfg.webhookUrl, fetchImpl, onError: error }));
+  const stateWriter = createCanaryStateWriter({
+    path: cfg.canaryStatePath, backups: cfg.backups ?? 0, backupIntervalMs: cfg.backupIntervalMs ?? 0,
+  });
+  const heartbeat = createHeartbeat({
+    dir: cfg.heartbeatDir ?? './data', service: 'canary',
+    staleAfterMs: cfg.heartbeatStaleMs ?? 120_000,
+    onError: (err) => logger.warn?.('heartbeat.failed', { error: String(err?.message ?? err) }),
+  });
+
+  const sinks = [createConsoleSink({ log: line, error: errLine })];
+  if (cfg.webhookUrl) sinks.push(createWebhookSink({ url: cfg.webhookUrl, fetchImpl, onError: errLine }));
 
   /** The vault set: explicit VAULTS if given, else every vault the indexer has projected. */
   async function resolveVaults() {
@@ -243,7 +251,7 @@ export async function buildCanary(cfg, { log = console.log, error = console.erro
     try {
       return await loadSnapshot(cfg.statePath);
     } catch (err) {
-      error(`canary: could not read the indexer snapshot at ${cfg.statePath}: ${err?.message ?? err}`);
+      errLine(`canary: could not read the indexer snapshot at ${cfg.statePath}: ${err?.message ?? err}`);
       return null;
     }
   }
@@ -264,13 +272,13 @@ export async function buildCanary(cfg, { log = console.log, error = console.erro
     // prevent, and an operator who sees this line can widen MAX_LOG_SPAN_BLOCKS or sweep the gap
     // by hand before it scrolls away.
     if (windowFrom > fromBlock) {
-      error(`canary: event scan gap — blocks ${fromBlock}-${windowFrom - 1} (${windowFrom - fromBlock} blocks) were NOT scanned for ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=${cfg.maxLogSpanBlocks}; raise it or scan that range manually.`);
+      errLine(`canary: event scan gap — blocks ${fromBlock}-${windowFrom - 1} (${windowFrom - fromBlock} blocks) were NOT scanned for ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=${cfg.maxLogSpanBlocks}; raise it or scan that range manually.`);
     }
     const nowSec = await reader.chainNow();
 
     const { vaults, state } = await resolveVaults();
     if (vaults.length === 0) {
-      error(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath})`);
+      errLine(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath})`);
       return { transitions: [], results: [], vaults: [] };
     }
 
@@ -280,49 +288,113 @@ export async function buildCanary(cfg, { log = console.log, error = console.erro
     });
 
     const transitions = tracker.observe(results, { poll, timestamp: now().toISOString() });
-    await emitAll(sinks, transitions, { onError: error });
+    await emitAll(sinks, transitions, { onError: errLine });
 
     lastScannedBlock = toBlock;
-    await saveCanaryState(cfg.canaryStatePath, { transitions: tracker.snapshot(), lastScannedBlock });
+    await flush();
     return { transitions, results, vaults };
   }
 
-  async function start({ signal } = {}) {
-    log(`canary up: chain ${cfg.chainId}, read-only, polling every ${cfg.pollIntervalMs}ms. Silence means healthy.`);
-    let lastHeartbeat = 0;
+  /** Persist what the tracker knows right now. Called after every sweep, and on shutdown. */
+  async function flush() {
+    await stateWriter.save({ transitions: tracker.snapshot(), lastScannedBlock });
+    return { tracked: tracker.size, lastScannedBlock };
+  }
+
+  const ac = new AbortController();
+  /** @type {Promise<void>|null} */
+  let running = null;
+
+  async function loop(signal) {
+    let lastHeartbeatLine = 0;
     for (;;) {
-      if (signal?.aborted) return;
+      if (signal.aborted) return;
       try {
         const { vaults } = await runOnce();
-        if (cfg.heartbeatMs > 0 && Date.now() - lastHeartbeat >= cfg.heartbeatMs) {
-          lastHeartbeat = Date.now();
+        // Only a SUCCESSFUL sweep counts as watching. A canary that cannot reach the RPC is not
+        // monitoring anything and must not keep telling ops-check that it is.
+        await heartbeat.beat({ vaults: vaults.length, tracked: tracker.size, notOk: tracker.unhealthy().length, lastScannedBlock });
+        if (cfg.heartbeatMs > 0 && Date.now() - lastHeartbeatLine >= cfg.heartbeatMs) {
+          lastHeartbeatLine = Date.now();
           const bad = tracker.unhealthy();
-          log(`canary heartbeat: ${vaults.length} vault(s), ${tracker.size} signal(s) tracked, ${bad.length} not OK${bad.length ? `: ${bad.map((b) => b.id).join(', ')}` : ''}`);
+          line(`canary heartbeat: ${vaults.length} vault(s), ${tracker.size} signal(s) tracked, ${bad.length} not OK${bad.length ? `: ${bad.map((b) => b.id).join(', ')}` : ''}`);
         }
       } catch (err) {
         // A poll failure is an RPC problem, not a protocol problem. Say so and keep watching.
-        error(`canary poll error (will retry): ${err?.message ?? err}`);
+        logger.warn?.('sweep.failed', { error: String(err?.message ?? err) });
+        errLine(`canary poll error (will retry): ${err?.message ?? err}`);
       }
       await sleep(cfg.pollIntervalMs, signal);
     }
   }
 
-  return { reader, tracker, runOnce, start };
+  async function start({ signal } = {}) {
+    if (signal) {
+      if (signal.aborted) ac.abort();
+      else signal.addEventListener('abort', () => ac.abort(), { once: true });
+    }
+    logger.info?.('starting', {
+      chainId: cfg.chainId, pollIntervalMs: cfg.pollIntervalMs, statePath: cfg.statePath,
+      canaryStatePath: cfg.canaryStatePath, tracked: tracker.size, readOnly: true,
+    });
+    line(`canary up: chain ${cfg.chainId}, read-only, polling every ${cfg.pollIntervalMs}ms. Silence means healthy.`);
+    running = loop(ac.signal);
+    return running;
+  }
+
+  /**
+   * Stop cleanly: abort the sweep loop, wait for the in-flight sweep, then FLUSH the transition
+   * state. Losing that file is not fatal but costs one duplicate page per still-firing signal on
+   * the next start — precisely the noise an operator restarting a service does not need.
+   */
+  async function stop() {
+    ac.abort();
+    if (running) await running.catch(() => {});
+    const flushed = await flush();
+    logger.info?.('stopped', { ...flushed, canaryStatePath: cfg.canaryStatePath });
+    return flushed;
+  }
+
+  return { reader, tracker, runOnce, start, stop, flush, heartbeat, logger };
 }
 
 function sleep(ms, signal) {
   return new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => { clearTimeout(t); resolve(undefined); }, { once: true });
+    const t = setTimeout(finish, ms);
+    function finish() {
+      clearTimeout(t);
+      // Removed explicitly: this sleeps once per sweep against a signal that lives as long as the
+      // process, so leaving listeners attached would leak one per sweep forever.
+      signal?.removeEventListener?.('abort', finish);
+      resolve(undefined);
+    }
+    signal?.addEventListener('abort', finish, { once: true });
   });
 }
 
 // ── entrypoint ──
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  const cfg = resolveCanaryConfig(process.env);
-  buildCanary(cfg).then(({ start }) => start()).catch((err) => {
-    console.error(err?.message ?? err);
-    process.exit(1);
-  });
+  const argv = process.argv.slice(2);
+  // `verify` runs BEFORE config resolution, so it works with no RPC_URL and no env at all —
+  // which is the state of the shell you are in when you need it.
+  if (argv[0] === 'verify') {
+    const path = argv[1] || process.env.CANARY_STATE_PATH || './data/canary-state.json';
+    const report = await verifyCanaryState(path);
+    (report.ok ? console.log : console.error)(formatCanaryStateReport(report));
+    process.exit(report.ok ? 0 : 1);
+  } else {
+    const logger = loggerFromEnv('canary');
+    try {
+      const cfg = resolveCanaryConfig(process.env);
+      const { start, stop } = await buildCanary(cfg, { logger });
+      createShutdown({ log: logger })
+        .onShutdown('canary.flush-transitions', stop)
+        .install();
+      await start();
+    } catch (err) {
+      logger.error('startup.failed', { error: String(err?.message ?? err) });
+      process.exit(1);
+    }
+  }
 }
