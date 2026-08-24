@@ -1,0 +1,86 @@
+{
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": "2026-08-21T00:00:00Z",
+  "deployBlock": 45784186,
+  "startBlock": 45784186,
+  "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "sourceCommit": "153d4cf3",
+  "rpc": "https://base-sepolia-rpc.publicnode.com",
+  "explorer": "https://sepolia.basescan.org",
+  "note": "Addresses below were verified independently on-chain (codesize + wiring reads via cast), not taken from the deploy log. See the deviation recorded in docs/TESTNET-REPORT.md: forge's per-transaction console labels and the broadcast JSON's contractName<->hash alignment were both scrambled for this run; the '== Return ==' block, Basescan verification, and on-chain reads all agree with what is recorded here.",
+
+  "singletons": {
+    "OperatorRegistry": "0xC5F3A734618019C4abE512dD9BF3D5B852494bDB",
+    "SubVaultRegistry": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979",
+    "FeeEngine": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "Governance": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "VaultDeployer": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "VaultFactory": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB"
+  },
+
+  "oracle": {
+    "OracleAggregator": "0xEc1976579Af27b3dF5fd103390acAb22E4b566F4",
+    "maxStalenessSeconds": 86400,
+    "assets": {
+      "WETH": {
+        "token": "0x4200000000000000000000000000000000000006",
+        "quorum": 2,
+        "sources": [
+          "0x790A308f1ac06FeD4C79884BAD25d0C721C5B125",
+          "0xc36198FD2c7C62738159ED1FF965679105FAF05a",
+          "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1"
+        ],
+        "underlyingFeed": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+      },
+      "LINK": {
+        "token": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
+        "quorum": 2,
+        "sources": [
+          "0xd415F712E84737c711942332e22c5EFB8B457869",
+          "0x9B2B1DF61C9f452899ae6258f18c3008Bf466fFF",
+          "0x61a840C5f3F56f954A0433DfeD17088D7418e096"
+        ],
+        "underlyingFeed": "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61"
+      }
+    }
+  },
+
+  "execution": {
+    "AggregationRouterAdapter": "0x1D8794279035CC04C9BCF939AB956845916998c1",
+    "router": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
+    "routerName": "Uniswap SwapRouter02 (Base Sepolia)"
+  },
+
+  "infrastructure": {
+    "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  },
+
+  "vaultCoreDataContracts": {
+    "note": "Created by VaultDeployer's constructor as SSTORE2-style non-executable data holding VaultCore's creation code. 12366 + 12367 = 24733 bytes, minus the two STOP prefix bytes = 24731, exactly VaultCore's initcode size. These are data, not compiled contracts, so forge's verifier reports 'no matching bytecode' for them -- expected, not an error.",
+    "chunks": [
+      "0xf449c167f1d0d98a22e4c8072e69c779fb8884bb",
+      "0x896114bac81da0965febf6b21bd2f984d1b93e1f"
+    ]
+  },
+
+  "verifiedWiring": {
+    "registry.factory()": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "registry.feeEngine()": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "subReg.factory()": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "gov.subVaultRegistry()": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979",
+    "factory.registry()": "0xC5F3A734618019C4abE512dD9BF3D5B852494bDB",
+    "factory.governance()": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "factory.feeEngine()": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "factory.subVaultRegistry()": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979",
+    "factory.vaultDeployer()": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "routerAdapter.router()": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"
+  },
+
+  "gas": {
+    "totalGasUsed": 13158066,
+    "gasPriceWei": 6000000,
+    "totalPaidEth": "0.000078948396",
+    "note": "Per-contract gas is recorded in docs/TESTNET-REPORT.md, keyed by address from cast receipt rather than from the broadcast JSON."
+  }
+}

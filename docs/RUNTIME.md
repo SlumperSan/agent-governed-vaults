@@ -5,6 +5,9 @@ live product: the **indexer**, the **API**, and the **web** front end. Everythin
 **non-custodial** — no process in this repo holds a private key or moves funds. Payment settlement
 is delegated to an external **facilitator**.
 
+**Running it is §1–§7; keeping it running is [§8 Operations](#8-operations)** — log format, backup
+and restore, rate limits, metrics, the `ops-check` script and an incident quick-table.
+
 For the tested internals behind each piece, see [ARCHITECTURE.md](ARCHITECTURE.md); for contract
 deployment, [DEPLOYMENT.md](DEPLOYMENT.md) — and for the operational Base Sepolia path that
 produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECKLIST.md)
@@ -137,8 +140,11 @@ cp .env.example .env     # fill in RPC_URL, addresses, PRICE_*, and:
 docker compose up --build
 ```
 
-`docker-compose.yml` runs `indexer` (writes `/data/indexer-state.json`) and `api` (reads it,
-publishes `:8402`) against a shared `vault-state` volume. Both `restart: unless-stopped`.
+`docker-compose.yml` runs `indexer` (writes `/data/indexer-state.json`), `api` (reads it, publishes
+`:8402`) and `canary` against a shared `vault-state` volume. All three are `restart: unless-stopped`
+and carry a **healthcheck** that reads that service's own heartbeat file (§8.2), so a process that
+is up but wedged — the failure a restart policy never notices — shows as `unhealthy` in
+`docker compose ps`. Each also has a `stop_grace_period` long enough for its shutdown hooks (§8.6).
 
 Production notes:
 - Put the API behind TLS (a reverse proxy). `CORS=1` is required if the browser front end is served
@@ -148,7 +154,11 @@ Production notes:
 - The API serves **stale-but-valid** state if a snapshot reload ever fails (corrupt/partial write),
   and logs it — it never serves a torn read (snapshots are written temp-then-rename).
 - Back up / persist the snapshot volume to avoid a full re-index on a fresh host (or set
-  `START_BLOCK` to the deploy block so a cold start skips empty history).
+  `START_BLOCK` to the deploy block so a cold start skips empty history). The rotating backup ring
+  and the restore procedure are in §8.3.
+- Set `TRUST_PROXY=1` **only** when that reverse proxy overwrites `x-forwarded-for`; otherwise the
+  per-IP rate limiter buckets every client together. See §8.4 — the header is client-spoofable, so
+  the wrong answer here is worse than either default.
 
 ---
 
@@ -170,6 +180,11 @@ Production notes:
 | `CONFIRMATIONS` | | `5` | blocks to lag behind head (reorg safety) |
 | `BATCH_BLOCKS` | | `2000` | max blocks per `getLogs` batch |
 | `POLL_INTERVAL_MS` | | `12000` | poll cadence once caught up |
+| `SNAPSHOT_BACKUPS` | | `3` | rotating backup copies kept (§8.3); `0` disables |
+| `SNAPSHOT_BACKUP_INTERVAL_MS` | | `300000` | minimum spacing between backups — not per write |
+| `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `indexer.heartbeat.json` is written (§8.2) |
+| `LOG_FORMAT` | | TTY-dependent | `json` or `pretty` (§8.1) |
+| `LOG_LEVEL` | | `info` | `debug` \| `info` \| `warn` \| `error` |
 
 ### API (`npm run start:api`)
 
@@ -185,6 +200,15 @@ Production notes:
 | `PORT` | | `8402` | HTTP listen port |
 | `RELOAD_MS` | | `5000` | snapshot re-read cadence |
 | `CORS` | | off | `1`/`true` to enable CORS + preflight (browser live mode) |
+| `RATE_LIMIT_PER_SEC` | | `5` | per-IP sustained rate on the FREE routes; `0` disables (§8.4) |
+| `RATE_LIMIT_BURST` | | `60` | per-IP burst on the free routes |
+| `RATE_LIMIT_MAX_IPS` | | `10000` | cap on tracked IPs |
+| `TRUST_PROXY` | | off | honour `x-forwarded-for` — ONLY behind a proxy that overwrites it |
+| `MAX_URL_BYTES` | | `2048` | longer request-target → `414` |
+| `MAX_BODY_BYTES` | | `8192` | larger request body → `413` |
+| `MAX_HEADER_BYTES` | | `16384` | Node's header cap |
+| `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `api.heartbeat.json` is written (§8.2) |
+| `LOG_FORMAT` / `LOG_LEVEL` | | | as above (§8.1) |
 
 ### Canary (`npm run start:canary`)
 
@@ -203,7 +227,10 @@ when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `ST
 | `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
 | `ORACLE_MIN_MARGIN` | | `0` | alert when fresh sources minus quorum <= this |
-| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line |
+| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2) |
+| `SNAPSHOT_BACKUPS` / `SNAPSHOT_BACKUP_INTERVAL_MS` | | `3` / `300000` | backup ring for the canary state file too (§8.3) |
+| `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `canary.heartbeat.json` is written (§8.2) |
+| `LOG_FORMAT` / `LOG_LEVEL` | | | as above (§8.1) |
 
 The `PRICE_ASSET`/`PRICE_NETWORK`/`CHAIN_ID` must agree across the API and whatever wallet/agent
 pays: the challenge binds the payment to that exact asset + network.
@@ -243,3 +270,340 @@ id returned to the client is the settlement tx hash.
 - The **web** browser signer is a dummy against a dev facilitator; real signing is the user's wallet.
 - The only key in the whole stack is the settlement key inside the facilitator (yours in §6, or the
   third party's), which is a **relayer** paying gas — it never takes custody of vault funds.
+
+---
+
+## 8. Operations
+
+Everything in §1–§7 gets the stack running. This section is about keeping it running: what the logs
+look like, how to back up and restore, what the API refuses and why, what to scrape, and what to do
+at 3am. One person should be able to run, monitor, back up, restore and restart the whole off-chain
+stack from this section alone.
+
+The shared plumbing lives in [`packages/oplog`](../packages/oplog/) — a logger, heartbeat files, an
+`ops-check` script and a shutdown helper, all dependency-free. **viem remains the only runtime
+dependency in the repo**, and none of these four modules import it.
+
+### 8.1 Log format
+
+Every service emits **one JSON object per line** with the same four fields plus event-specific ones:
+
+```json
+{"ts":"2026-08-20T14:03:22.481Z","level":"info","service":"indexer","event":"batch.indexed","from":8204001,"to":8204113,"events":3}
+```
+
+| Field | Meaning |
+|---|---|
+| `ts` | ISO-8601 UTC, millisecond precision |
+| `level` | `debug` \| `info` \| `warn` \| `error` |
+| `service` | `indexer` \| `api` \| `canary` |
+| `event` | dotted event name — the thing to grep for |
+
+`warn` and `error` go to **stderr**, everything else to **stdout**, so `2>` gives a pure problem
+feed. When stdout is a **TTY** the same records render as human lines instead:
+
+```
+14:03:22.481 INFO  indexer batch.indexed  from=8204001 to=8204113 events=3
+```
+
+That means `npm run start:indexer` in a shell is readable and the identical command under Docker
+(no TTY) emits JSON, with no flag to remember. Force either with `LOG_FORMAT=json|pretty`; raise or
+lower the floor with `LOG_LEVEL`.
+
+Events worth knowing:
+
+| Event | Service | Means |
+|---|---|---|
+| `starting` / `listening` | all | boot, with the resolved config on the line |
+| `batch.indexed` (via `indexer.progress`) | indexer | a block range was folded and snapshotted |
+| `poll.failed` / `sweep.failed` | indexer, canary | one cycle failed; it will retry |
+| `snapshot.reload_failed` | api | serving **stale-but-valid** state — see the incident table |
+| `http.rate_limited` | api | a free route returned 429 |
+| `canary.transition` | canary | a signal changed state — **the** line to page on |
+| `heartbeat.failed` | all | could not write the heartbeat file (disk?) |
+| `shutdown.begin` / `.step` / `.complete` | all | a clean stop, hook by hook |
+| `shutdown.timeout` / `.forced` | all | a stop that did **not** finish cleanly |
+
+Alert transitions are also delivered to `ALERT_WEBHOOK_URL` as structured JSON if set — the log is
+not the only path (see [CANARY.md](CANARY.md)).
+
+### 8.2 Heartbeats and `ops-check`
+
+`restart: unless-stopped` catches a process that **crashes**. It does nothing about one that is
+**wedged** — up, holding its port, indexing nothing. So each service writes
+`<HEARTBEAT_DIR>/<service>.heartbeat.json` on every successful work cycle, and `ops-check` fails
+when one goes stale.
+
+"Successful" is load-bearing. The heartbeat means *I am doing my job*, not *my process exists*:
+
+| Service | Beats when | So it goes stale if |
+|---|---|---|
+| `indexer` | boot, then after each poll cycle | it stops polling or wedges on an RPC call |
+| `api` | after each **successful** snapshot reload | it loses or cannot parse the snapshot |
+| `canary` | after each **successful** sweep | it cannot reach the chain — i.e. is not watching |
+
+Each file carries its own `staleAfterMs`, written by the service that knows its cadence (three
+missed cycles, floored). Nothing has to be kept in sync by hand.
+
+```bash
+node packages/oplog/src/ops-check.mjs --dir=./data
+```
+
+Exit **0** with one line per service when all are fresh; exit **1** listing the bad ones otherwise
+(**2** on a usage error, so a broken invocation is never mistaken for a healthy stack):
+
+```
+ops-check: 1 of 3 service(s) UNHEALTHY: canary(stale)
+FAIL canary   stale      age=612s  last beat 612s ago, limit 90s — canary is down or wedged
+ok   indexer  fresh      age=4s    pid=12 lastBlock=8204113 vaults=7
+ok   api      fresh      age=2s    pid=14 lastBlock=8204113 vaults=7
+```
+
+`missing`, `unreadable` and `future` (clock skew) are failures too, each named separately because
+each has a different fix.
+
+**Cron it** — this is the whole-stack view:
+
+```bash
+*/5 * * * * cd /srv/vaults && node packages/oplog/src/ops-check.mjs --dir=./data || mail -s 'vault stack unhealthy' you@example.com
+```
+
+**Compose already runs it**, but per-service: each container healthchecks only *its own*
+heartbeat. A whole-stack check inside the indexer container would mark the indexer unhealthy
+because the *canary* died, and Docker would restart the wrong process.
+
+```bash
+docker compose ps          # STATUS column shows healthy / unhealthy per service
+```
+
+Override every service's own budget with `--max-age-ms=N`, or pick services positionally
+(`ops-check.mjs indexer api`).
+
+### 8.3 Backups and restore
+
+Both state files — the indexer snapshot and the canary's transition state — are written
+temp-then-rename (atomic: a crash never truncates) **and** kept in a rotating backup ring
+(`SNAPSHOT_BACKUPS=3`, `SNAPSHOT_BACKUP_INTERVAL_MS=300000`):
+
+```
+data/indexer-state.json      ← live
+data/indexer-state.json.1    ← newest backup (~5 min old)
+data/indexer-state.json.2
+data/indexer-state.json.3    ← oldest, ~15 min
+```
+
+Atomicity survives a crash. The ring survives the other way state dies: **a write that succeeded
+and was wrong.** Backups are spaced by *time*, not per write — the indexer snapshots every batch,
+so a per-write ring would give a 36-second horizon, useless when corruption is noticed minutes
+later. The live file is *copied* into slot 1, never renamed, so it never blinks out of existence
+under the API's reload timer.
+
+Tune the horizon: `SNAPSHOT_BACKUPS × SNAPSHOT_BACKUP_INTERVAL_MS` is how far back you can go.
+Defaults give 15 minutes. `SNAPSHOT_BACKUPS=0` disables the ring; writes stay atomic.
+
+**Inspect before you act.** `verify` loads a state file and reports it without starting a poller
+and without an RPC — it needs no environment at all, which matters because whoever is verifying a
+snapshot after a crash has none of the six indexer variables set:
+
+```bash
+node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
+node packages/canary/src/canary-runner.mjs  verify ./data/canary-state.json
+```
+
+```
+snapshot ./data/indexer-state.json: OK
+  cursor      lastBlock=8204113 lastLogIndex=-1 → resumes from block 8204114
+  counts      vaults=7 operators=12 proposals=3 shareBooks=7 holders=64 activeProposals=1
+  file        184213 bytes, written 2026-08-20T14:03:22.481Z (11s ago)
+  backups     3 (newest first)
+    .1  lastBlock=8202901 vaults=7 183902 bytes  2026-08-20T13:58:20.114Z
+    .2  lastBlock=8201640 vaults=7 183511 bytes  2026-08-20T13:53:19.882Z
+    .3  lastBlock=8200388 vaults=6 182004 bytes  2026-08-20T13:48:19.630Z
+```
+
+Exit 0 if usable, 1 if not. Each backup is parsed and reported with **its own** cursor and counts,
+so "restore from which one?" is answerable at a glance, and a corrupt rung is flagged individually
+rather than poisoning the rest.
+
+**Restore procedure** (indexer snapshot; the canary's is identical with its own paths):
+
+1. **Stop the writer.** Nothing else may be writing while you swap files.
+   ```bash
+   docker compose stop indexer
+   ```
+2. **Verify the candidates** and pick a rung by its printed cursor, not by its number. `.1` is
+   usually the one you want, but a clean shutdown takes a final snapshot, which can push the ring
+   along by one — so read the `lastBlock` and `vaults=` on each rung rather than assuming.
+   ```bash
+   node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
+   ```
+3. **Keep the bad file.** It is the only evidence of what went wrong, and it is what the ring is
+   about to overwrite.
+   ```bash
+   mv ./data/indexer-state.json ./data/indexer-state.json.bad-$(date +%s)
+   ```
+4. **Put the backup in place** — copy, do not move, so the ring stays intact if step 5 fails.
+   ```bash
+   cp ./data/indexer-state.json.1 ./data/indexer-state.json
+   ```
+5. **Verify the restored file** and note the cursor it will resume from.
+   ```bash
+   node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
+   ```
+6. **Start the writer.** It resumes from `lastBlock + 1` and re-indexes the gap; the projection is
+   a pure fold over events, so replaying the range that the backup was missing rebuilds exactly the
+   state that was lost. Catch-up is bounded by `BATCH_BLOCKS` per poll.
+   ```bash
+   docker compose start indexer
+   docker compose logs -f indexer      # watch batch.indexed reach the head
+   ```
+
+> **If every backup is bad**, delete the snapshot and set `START_BLOCK` to the **factory deploy
+> block**. The indexer rebuilds from chain history — slow, never wrong. Do **not** set a later
+> block to save time: vaults created before `START_BLOCK` are never discovered and their events go
+> unindexed forever. The indexer warns loudly when you do this on a fresh snapshot.
+
+> **Restoring the canary's state is optional.** Deleting it costs one duplicate page per signal
+> that is currently firing, and nothing else. If the alternative is a stale cursor causing an event
+> scan gap, delete it.
+
+In Docker the files live in the `vault-state` volume. Reach them with a throwaway container:
+
+```bash
+docker run --rm -v vault-state:/data vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+```
+
+Back the volume up off-host as well — the ring protects against a bad write, not a dead disk:
+
+```bash
+docker run --rm -v vault-state:/data -v "$PWD":/backup alpine tar czf /backup/vault-state-$(date +%F).tar.gz -C /data .
+```
+
+### 8.4 Rate limits and request caps
+
+The API applies a **per-IP token bucket to the free routes only** — `/health`,
+`/.well-known/x402`, `/metrics`:
+
+| Var | Default | Meaning |
+|---|---|---|
+| `RATE_LIMIT_PER_SEC` | `5` | sustained requests per second per IP; **`0` disables the limiter** |
+| `RATE_LIMIT_BURST` | `60` | burst an IP may take at once |
+| `RATE_LIMIT_MAX_IPS` | `10000` | cap on tracked IPs |
+
+Over the limit returns **429** with `retry-after` and `x-ratelimit-limit`.
+
+**The paid routes are deliberately unlimited: x402 *is* their rate limiter.** Every metered read
+costs the caller real USDC through a facilitator settlement, so flooding `/vaults` is a purchase,
+not a denial-of-service. An *unpaid* request to a metered route returns 402 without a facilitator
+call, a state read or a disk touch, so it is not a lever worth pulling either.
+
+Memory is bounded because an unbounded per-IP map would itself be the denial-of-service. Buckets
+that have fully refilled are pruned first — they carry no information — and only under sustained
+pressure does it fall back to evicting the least-recently-used, which does hand that IP a fresh
+burst. That trade is deliberate: remembering an attacker perfectly is not worth letting them choose
+the heap size.
+
+**Behind a reverse proxy, set `TRUST_PROXY=1`.** Without it every request appears to come from the
+proxy and all clients share one bucket. **Do not set it when the API is reachable directly**:
+`x-forwarded-for` is client-spoofable, so trusting it without a proxy that overwrites the header
+lets one attacker mint a fresh bucket per request and defeat the limiter entirely.
+
+Request caps, applied before any handler work:
+
+| Var | Default | Over the limit |
+|---|---|---|
+| `MAX_URL_BYTES` | `2048` | `414 URI Too Long` |
+| `MAX_BODY_BYTES` | `8192` | `413 Payload Too Large` (declared *and* chunked) |
+| `MAX_HEADER_BYTES` | `16384` | connection refused by Node |
+
+This is a GET-only read API, so a request body is already a sign of something wrong. Non-`GET`
+gets `405`.
+
+### 8.5 Metrics
+
+`GET /metrics` returns Prometheus text exposition format — free, rate-limited, and readable with
+plain `curl`, which is the case that matters during an incident.
+
+```bash
+curl -s localhost:8402/metrics
+```
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `vault_api_requests_total` | counter | requests received |
+| `vault_api_payment_required_total` | counter | 402s issued |
+| `vault_api_settlements_total` | counter | payments verified + settled |
+| `vault_api_rate_limited_total` | counter | 429s issued |
+| `vault_api_rejected_total` | counter | refused on method/size/URL limits |
+| `vault_api_errors_total` | counter | unhandled errors turned into a 500 |
+| `vault_api_snapshot_reload_failures_total` | counter | reloads that failed, leaving stale state serving |
+| `vault_api_uptime_seconds` | gauge | seconds since this process started serving |
+| `vault_indexer_last_block` | gauge | last block in the snapshot being served |
+| **`vault_indexer_snapshot_age_seconds`** | gauge | **seconds since the indexer last wrote the snapshot — the lag signal** |
+| `vault_api_rate_limit_buckets` | gauge | per-IP buckets currently tracked |
+| `vault_api_seen_nonces` | gauge | payment nonces held for local replay defence |
+
+Counters read `0` before their first event rather than being absent: a missing series and a zero
+series look identical in a graph, and only one of them is good news.
+
+> **`/metrics` is rate-limited like every other free route**, and a scraper usually shares an IP
+> with the operator debugging next to it. During an incident that is exactly when you burn the
+> bucket on `curl` and get a 429 from the endpoint you most need. Give the burst room
+> (`RATE_LIMIT_BURST`), or set `RATE_LIMIT_PER_SEC=0` on a deployment whose only clients are yours.
+
+**On indexer lag.** The API has **no RPC client by design** — it serves the snapshot and nothing
+else — so it cannot know the chain head and must not claim a blocks-behind figure. It reports how
+long ago the snapshot was written, which is the number that actually tells you the indexer stopped,
+and the metric is named for exactly that. Alert on it:
+
+```
+vault_indexer_snapshot_age_seconds > 5 × POLL_INTERVAL_MS/1000     # for 2 minutes
+```
+
+For true blocks-behind, compare `vault_indexer_last_block` against your own RPC's head — the
+indexer is the process that has an RPC connection, not the API.
+
+### 8.6 Restarting safely
+
+All three services handle `SIGTERM` (and `SIGINT`), running ordered hooks before exiting:
+
+| Service | On SIGTERM |
+|---|---|
+| `indexer` | finishes the **current batch**, snapshots, exits. The batch loop checks for the signal *between* batches, so a cold-start backlog does not swallow the signal. |
+| `api` | stops reloading, stops accepting, drains in-flight responses (`closeIdleConnections` bounds the wait), logs a final metrics line. |
+| `canary` | finishes the in-flight sweep, then **flushes** its transition state so the restart does not re-page every standing alert. |
+
+A hook that throws is logged and the remaining hooks still run — a failed snapshot must not block
+the API drain. A **second** signal exits immediately, and a watchdog force-exits if the hooks never
+finish, so the process cannot outlive its own shutdown.
+
+Compose sets `stop_grace_period` per service (indexer 45s, api 30s, canary 60s) so Docker waits for
+the hooks instead of `SIGKILL`ing through them.
+
+```bash
+docker compose restart indexer      # clean stop, clean resume from the snapshot
+docker compose down                 # stops all three cleanly; the volume survives
+```
+
+Look for `shutdown.complete` in the logs. `shutdown.timeout` or `shutdown.forced` means the stop
+was **not** clean — verify the snapshot before restarting.
+
+### 8.7 Incident quick-table
+
+| Symptom | Most likely | Do this |
+|---|---|---|
+| `ops-check` says a service is **stale** | crashed or wedged | `docker compose ps` / `logs --tail=100 <svc>`. Restart it: `docker compose restart <svc>`. If it goes stale again quickly, the RPC is the usual culprit — check `poll.failed`/`sweep.failed` lines. |
+| `ops-check` says **missing** | never started, or wrong `HEARTBEAT_DIR` | Confirm the service is up at all, then that `HEARTBEAT_DIR` (or `dirname(STATE_PATH)`) matches what you passed `--dir`. |
+| `ops-check` says **future** | clock skew between checker and service | Fix NTP on the host. Do not raise the threshold — a wrong clock also corrupts every `ts` in the logs. |
+| `vault_indexer_snapshot_age_seconds` climbing | indexer stopped or is stuck on the RPC | `ops-check` the indexer; check its logs for `poll.failed`. The API keeps serving the last good block, correctly and staleley — it is not the broken piece. |
+| API logs `snapshot.reload_failed` | torn, corrupt, or version-mismatched snapshot | The API is serving **stale-but-valid** state — no torn read reaches a client. `verify` the snapshot (§8.3); if it is bad, restore and restart the indexer. The API picks the fix up on its next reload with no restart. |
+| `verify` says snapshot **UNUSABLE** | bad write, or a schema change | Restore from `.1` per §8.3. Keep the bad file. |
+| Every backup is unreadable | disk or filesystem fault | Delete the snapshot, set `START_BLOCK` to the **factory deploy block**, let it rebuild from chain history. Then check the disk — this should not happen. |
+| API returning 429s to your own front end | one shared IP behind a proxy | Set `TRUST_PROXY=1` **iff** a reverse proxy overwrites `x-forwarded-for`; otherwise raise `RATE_LIMIT_BURST`. Never set `TRUST_PROXY` on a directly-reachable API (§8.4). |
+| `/metrics` returning 429 mid-incident | your own `curl`s share the scraper's bucket | Wait one refill, or raise `RATE_LIMIT_BURST`. `ops-check` and `verify` read files, not HTTP, so they keep working when the API will not answer you (§8.5). |
+| API returning 402 to a paying agent | asset/network/amount mismatch, or a dead facilitator | `curl -s <api>/.well-known/x402` and compare against what the agent signs. Then check `FACILITATOR_URL` is reachable — a failed settlement is reported as a 402. |
+| Canary silent for a long time | healthy — silence *is* the healthy state | Confirm with `ops-check canary`, or set `HEARTBEAT_MS` for a periodic "still watching" line. |
+| Canary logs `event scan gap` | it was down longer than one `MAX_LOG_SPAN_BLOCKS` window | Those blocks were **not** scanned for module/fee events. Raise `MAX_LOG_SPAN_BLOCKS` and sweep the named range by hand before it scrolls away. |
+| Canary re-pages everything after a restart | its state file was lost or not flushed | Harmless but noisy. Check for `shutdown.timeout` on the last stop; `verify` the canary state (§8.3). |
+| Logs are prose, not JSON | stdout is a TTY | Expected. Set `LOG_FORMAT=json` to force JSON anywhere. |
+| `shutdown.timeout` in the logs | a hook wedged | Verify the state file before restarting — the clean-stop guarantee did not hold for that stop. |

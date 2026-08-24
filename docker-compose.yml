@@ -3,6 +3,18 @@
 #
 #   cp .env.example .env   # fill in RPC_URL + deployed addresses + price
 #   docker compose up --build
+#
+# HEALTHCHECKS. Every service writes a heartbeat file into the shared volume on each successful
+# work cycle, and healthchecks itself with `ops-check` (docs/RUNTIME.md §8). Each container checks
+# only ITS OWN heartbeat on purpose: a whole-stack check inside the indexer would mark the indexer
+# unhealthy because the canary died, and Docker would restart the wrong process. Cross-service
+# coverage belongs in the cron form, which checks all three at once.
+#
+# The heartbeats mean "I am doing my job", not "my process exists" — the API beats on a successful
+# snapshot reload and the canary on a successful sweep — so a wedged process, the exact failure
+# `restart: unless-stopped` never notices on its own, goes unhealthy here.
+#
+# `node` is the only interpreter available: node:24-slim ships neither curl nor wget.
 services:
   indexer:
     build: .
@@ -10,9 +22,19 @@ services:
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json
+      HEARTBEAT_DIR: /data
     volumes:
       - vault-state:/data
     restart: unless-stopped
+    # SIGTERM finishes the current batch, snapshots, and exits. A cold-start catch-up can sit in
+    # one batch for a while, so give it room past the compose default of 10s.
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "node", "packages/oplog/src/ops-check.mjs", "--dir=/data", "indexer"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   api:
     build: .
@@ -20,6 +42,7 @@ services:
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json
+      HEARTBEAT_DIR: /data
       PORT: 8402   # pin the CONTAINER port; ${PORT} below is the host-side knob only
     ports:
       - "${PORT:-8402}:8402"
@@ -28,6 +51,13 @@ services:
     depends_on:
       - indexer
     restart: unless-stopped
+    stop_grace_period: 30s   # SIGTERM stops reloading, then drains in-flight responses
+    healthcheck:
+      test: ["CMD", "node", "packages/oplog/src/ops-check.mjs", "--dir=/data", "api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # Post-launch canary (docs/CANARY.md). Read-only against the chain: no key, no wallet, no
   # transaction — it only reads. It mounts the shared volume because two of its signals compare
@@ -41,11 +71,19 @@ services:
     environment:
       STATE_PATH: /data/indexer-state.json        # the indexer snapshot (read-only to this service)
       CANARY_STATE_PATH: /data/canary-state.json  # its OWN transition state — never the indexer's
+      HEARTBEAT_DIR: /data
     volumes:
       - vault-state:/data
     depends_on:
       - indexer
     restart: unless-stopped
+    stop_grace_period: 60s   # SIGTERM finishes the in-flight sweep, then flushes transitions
+    healthcheck:
+      test: ["CMD", "node", "packages/oplog/src/ops-check.mjs", "--dir=/data", "canary"]
+      interval: 60s          # a sweep is heavier and slower than an indexer poll
+      timeout: 15s
+      retries: 3
+      start_period: 90s      # the first sweep reads every vault on the chain
 
 volumes:
   vault-state:
