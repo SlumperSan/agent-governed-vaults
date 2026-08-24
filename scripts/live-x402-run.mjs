@@ -209,7 +209,11 @@ async function main() {
     address: cfg.usdcAddress, abi: ERC20_ABI, functionName: 'transfer', args: [payer.address, cfg.fund],
   });
   const fundRcpt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
-  t.funding = { txHash: fundHash, amount: cfg.fund.toString(), block: Number(fundRcpt.blockNumber), gasUsed: fundRcpt.gasUsed.toString(), status: fundRcpt.status };
+  t.funding = {
+    txHash: fundHash, amount: cfg.fund.toString(), block: Number(fundRcpt.blockNumber),
+    gasUsed: fundRcpt.gasUsed.toString(), status: fundRcpt.status,
+    feeWei: (fundRcpt.gasUsed * (fundRcpt.effectiveGasPrice ?? 0n) + (fundRcpt.l1Fee ?? 0n)).toString(),
+  };
   step('payer-funded', { detail: `${usdc(cfg.fund)} → ${payer.address} in ${fundHash}` });
 
   // ── 4. bring up the facilitator (the only process holding a key) ──
@@ -288,8 +292,14 @@ async function main() {
       to: settleRcpt.to,
       gasUsed: settleRcpt.gasUsed.toString(),
       effectiveGasPrice: settleRcpt.effectiveGasPrice?.toString() ?? null,
-      feeWei: (settleRcpt.gasUsed * (settleRcpt.effectiveGasPrice ?? 0n)).toString(),
-      feeEth: formatEther(settleRcpt.gasUsed * (settleRcpt.effectiveGasPrice ?? 0n)),
+      // Base is an OP-stack L2, so the settler is charged an L1 data fee on TOP of
+      // gasUsed * effectiveGasPrice. Reporting only the L2 execution fee understates what the
+      // operator actually pays (by ~2.3% in the recorded run) and would not reconcile against the
+      // settler's ETH balance delta. viem surfaces it as `l1Fee` on OP-stack receipts.
+      l2ExecFeeWei: (settleRcpt.gasUsed * (settleRcpt.effectiveGasPrice ?? 0n)).toString(),
+      l1DataFeeWei: (settleRcpt.l1Fee ?? 0n).toString(),
+      feeWei: (settleRcpt.gasUsed * (settleRcpt.effectiveGasPrice ?? 0n) + (settleRcpt.l1Fee ?? 0n)).toString(),
+      feeEth: formatEther(settleRcpt.gasUsed * (settleRcpt.effectiveGasPrice ?? 0n) + (settleRcpt.l1Fee ?? 0n)),
       nonce: settleTx.nonce,
       logCount: settleRcpt.logs.length,
       logs: settleRcpt.logs.map((l) => ({ address: l.address, topics: l.topics, data: l.data })),
