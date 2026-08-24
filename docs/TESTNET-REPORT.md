@@ -396,6 +396,59 @@ than a clean run would have given:
 The governance leg (propose → commit → reveal → finalize) must be re-run — roughly 2 h, being
 1 h commit plus 1 h reveal.
 
+### 7.5 SCRIPT BUG (found, fixed on this branch, tested) — resume could not recover a proposal stranded before reveal
+
+**This blocked the run.** Resuming after the restart did **not** auto-recover. The runner went
+straight to `revealVote` on the dead pid 1 and died:
+
+```
+Error: Failed to estimate gas: execution reverted, data: "0xe2586bcc": WrongPhase
+  cast send 0x4addcac4… revealVote(uint256,bool,bytes32) 1 true 0x2ee9e3ce… failed
+  at stepReveal (scripts/smoke-test.mjs:307)
+```
+
+**Root cause.** `recoverExpiredProposal()` only recognised two states:
+
+```js
+if ((status === 'Passed' && now > Number(p[P_EXPIRES_AT])) || status === 'Expired') {
+```
+
+Our proposal is **`Active`** with a lapsed *reveal* deadline — it was never revealed, so it never
+reached `Passed`, and the guard misses it entirely.
+
+**Why it is a genuine deadlock, not just a bad error message.** Verified against
+`Governance.sol`:
+
+- `markExpired()` requires `status == Passed` — it rejects an `Active` proposal.
+- `_refreshStatus()` auto-expires **only** `Passed` proposals, so this one never settles itself.
+- `propose()` requires the vault's active proposal to be settled, so **every future proposal
+  would revert `ProposalActive()`**.
+
+Left unfixed, the vault's governance is permanently unusable by this runner — the interruption
+window is the entire 1 h commit phase, and a machine restart is enough to hit it. TESTNET-CHECKLIST
+§6 already promises this recovery ("the runner auto-expires it and repeats
+propose→commit→reveal→finalize"); the implementation only ever covered the post-finalize case.
+
+**Fix.** `finalize()` requires exactly `status == Active && now >= revealDeadline` — our state — and
+with `revealedVoterCount == 0` quorum fails under every regime, settling it **`Defeated`**, which
+*is* settled, so `propose()` proceeds. Confirmed by static call before changing anything:
+`cast call finalize(1) --from 0x0f80…` returned `0x`, exit 0.
+
+The decision was extracted to a pure module, `scripts/proposal-recovery.mjs`, because
+`smoke-test.mjs` drives `cast` at import time and cannot be unit-tested directly. `smoke-test.mjs`
+now imports it, so there is one source of truth.
+
+**Tests:** `scripts/test/proposal-recovery.test.mjs`, 9 cases wired into `test:backend`
+(**337/337 green**, up from 328). They pin the real on-chain values from `proposals(1)` and cover
+the boundaries that matter — notably that a proposal with a reveal *already landed* is **not**
+reclassified as stranded (that is ordinary `stepFinalize` work, and wrongly recovering it would
+throw away a valid vote), and that `Expired`/`Defeated` need no transaction at all since sending
+one would revert.
+
+**Contracts were not touched** — they are post-freeze at `v0.2.0-audit`. This is a script-only fix
+under the run's rule 6. No GitHub issue filed: the defect is in this branch's own tooling and is
+fixed here, not a protocol finding.
+
 *(Remaining phases — reveal, finalize, execute, exit — are appended as they land.)*
 
 ---
