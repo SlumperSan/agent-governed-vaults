@@ -55,8 +55,15 @@ const b64 = (obj) => {
  * @param {{name:string, version:string, chainId:number, verifyingContract:string}} cfg.domain
  * @param {typeof fetch} [cfg.fetchImpl]
  * @param {() => number} [cfg.nowSec]
+ * @param {number} [cfg.skewSec]  backdating applied to `validAfter` (see eip3009.authorizeFromChallenge)
+ * @param {(payment:{path:string, challenge:object, envelope:object}) => void} [cfg.onPayment]
+ *   Observability hook, fired after an authorization is signed and BEFORE the paid retry. Exists
+ *   so a caller can record exactly what it paid with — a receipt id alone cannot be replayed,
+ *   audited, or re-verified against the chain, but the envelope can. Purely passive: the return
+ *   value is ignored and a throw is not caught, so a buggy hook fails loudly rather than silently
+ *   dropping a payment that has already been signed.
  */
-export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetch, nowSec = () => Math.floor(Date.now() / 1000) }) {
+export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetch, nowSec = () => Math.floor(Date.now() / 1000), skewSec, onPayment }) {
   async function request(path) {
     const url = `${baseUrl}${path}`;
     let res = await fetchImpl(url);
@@ -69,7 +76,9 @@ export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetc
         domain,
         sign: wallet.sign,
         nowSec: nowSec(),
+        ...(skewSec === undefined ? {} : { skewSec }),
       });
+      onPayment?.({ path, challenge, envelope });
       res = await fetchImpl(url, { headers: { 'payment-signature': b64(envelope) } });
     }
     const body = await res.json().catch(() => ({}));

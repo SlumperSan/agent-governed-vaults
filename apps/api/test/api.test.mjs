@@ -163,3 +163,27 @@ test('vault list route requires payment then returns discovery data', async () =
   assert.equal(body.vaults[0].vault, VAULT);
   assert.equal(body.vaults[0].attested, true);
 });
+
+// ── challenge nonce: unpredictable and process-independent (sprint-14 live bug) ──
+
+test('buildChallenge issues a unique, unpredictable nonce — never a restart-resetting counter', () => {
+  const p = { asset: '0x' + 'c'.repeat(40), amount: '10000', payTo: '0x' + '2'.repeat(40), network: 'base-sepolia' };
+  const nonces = new Set();
+  for (let i = 0; i < 512; i++) nonces.add(buildChallenge(p, { nowMs: 0 }).nonce);
+
+  assert.equal(nonces.size, 512, 'every challenge must carry a distinct nonce');
+  for (const n of nonces) assert.match(n, /^0x[0-9a-f]{64}$/, 'nonce must be a 32-byte hex string');
+
+  // The regression: a module-level counter made the FIRST nonce of every process `0x…0001`. The
+  // agent SDK reuses challenge.nonce as the EIP-3009 authorization nonce, and EIP-3009 burns
+  // nonces permanently per (authorizer, nonce) — so a fresh API process would hand out an
+  // authorization nonce a previous process had already spent, and the settlement would revert as
+  // `authorization-used` forever after.
+  const counterish = `0x${'0'.repeat(63)}1`;
+  assert.ok(!nonces.has(counterish), 'a low counter-shaped nonce would collide across restarts');
+});
+
+test('buildChallenge still honours an injected nonce so tests stay deterministic', () => {
+  const p = { asset: '0x' + 'c'.repeat(40), amount: '10000', payTo: '0x' + '2'.repeat(40), network: 'base-sepolia' };
+  assert.equal(buildChallenge(p, { nowMs: 0, nonce: '0xfeed' }).nonce, '0xfeed');
+});
