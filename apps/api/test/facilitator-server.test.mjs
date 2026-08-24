@@ -402,3 +402,30 @@ test('an already-used authorization is refused before simulate (the live replay 
   assert.deepEqual(res.body, { ok: false, reason: 'authorization-used' });
   assert.equal(simulated, false, 'a burned nonce must be caught before spending a simulate call');
 });
+
+test('v is normalized from the 0/1 convention to 27/28 — the branch, not just the output (viem)', {
+  skip: !viem || !accounts ? 'viem not installed' : false,
+}, async () => {
+  // viem already returns v in {27,28}, so the live run never exercised `if (v < 27) v += 27`.
+  // Rewrite the trailing byte into the 0/1 convention some wallets emit and assert the settlement
+  // still recovers the SAME payer — which only holds if the normalization actually runs.
+  const { env, payer } = await signedEnvelope();
+  const originalV = parseInt(env.signature.slice(130, 132), 16);
+  assert.ok(originalV === 27 || originalV === 28, `precondition: viem emitted v=${originalV}`);
+
+  const legacy = { ...env, signature: env.signature.slice(0, 130) + (originalV - 27).toString(16).padStart(2, '0') };
+  assert.match(legacy.signature.slice(130), /^0[01]$/, 'the fixture must actually use the 0/1 convention');
+
+  const sent = [];
+  const { publicClient, walletClient } = stubClients();
+  publicClient.simulateContract = async (req) => { sent.push(req); return { request: req }; };
+  const srv = await startFacilitatorServer({
+    account: ACCOUNT, publicClient, walletClient, usdcAddress: USDC, chainId: 84532,
+    env: CONSENT, listen: false, log: () => {},
+  });
+
+  const res = await srv.handle('POST', '/settle', { x402Version: 2, challenge: { price: price() }, envelope: legacy });
+  assert.equal(res.body.ok, true, `a 0/1-convention v must still settle, got ${JSON.stringify(res.body)}`);
+  assert.equal(sent[0].args[6], originalV, 'the normalized v must reach the token, not the raw 0/1 byte');
+  assert.equal(sent[0].args[0].toLowerCase(), payer.address.toLowerCase(), 'and it must recover the same payer');
+});

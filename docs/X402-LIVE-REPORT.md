@@ -192,13 +192,26 @@ surfaced when the rehearsal was re-run with 3-second blocks.
 
 See §4. Cost was understated by 2.3% and failed to reconcile with the settler's balance delta.
 
-### 7.6 `v`-normalization — checked, not exercised
+### 7.6 Reference-agent signed with the mainnet domain on a testnet chain
+
+`DEFAULT_CONFIG` in `packages/reference-agent/src/config.mjs` paired `chainId: 84532` with
+`usdcName: 'USD Coin'` — the exact combination §7.1 proves cannot recover. The facilitator and the
+payer path were fixed, but this default would have walked a reference-agent operator into the same
+opaque `signer-mismatch`. Now `'USDC'`, with a test asserting the domain matches the default chain
+and a comment saying to re-read both from the token if `chainId` changes.
+
+### 7.7 `v`-normalization — not a bug, and now genuinely tested
 
 The suspected `v` bug did not materialise. viem's `signTypedData` already returns `v ∈ {27, 28}`
-(the live signature ended `…1b` = 27), so `facilitator.mjs`'s `if (v < 27) v += 27` was a no-op
-here. It is still correct to keep — wallets that return `v ∈ {0, 1}` exist — but **this run did not
-prove that branch**. It is covered only by a unit assertion, and is the least-tested path in the
-settlement code.
+(the live signature ended `…1b` = 27), so `facilitator.mjs`'s `if (v < 27) v += 27` was a no-op in
+this run — **the live loop did not exercise that branch.**
+
+The first version of this report claimed the branch was "covered by a unit assertion." It was not:
+the assertion checked that the *output* was in `{27, 28}`, which passes whether the normalization
+ran or not. The branch had no coverage at all. There is now a test that rewrites a real signature's
+trailing byte into the 0/1 convention and asserts the settlement still recovers the same payer —
+which only holds if the normalization actually runs. The branch is covered by unit test, still not
+by a live signature.
 
 ## 8. Spec observations
 
@@ -294,5 +307,5 @@ key-holding-facilitator split; the price re-check and consent gate as shipped.
 
 **Not proven:** mainnet (domain name differs — the boot assertion is what makes that safe);
 concurrent settlements from one settler (tx-nonce contention is untested); facilitator behaviour
-under RPC failure mid-broadcast; the `v ∈ {0,1}` normalization branch (§7.6); and any load beyond a
-single request.
+under RPC failure mid-broadcast; the `v ∈ {0,1}` normalization branch against a *real* wallet that
+emits it (§7.7 covers it by unit test only); and any load beyond a single request.

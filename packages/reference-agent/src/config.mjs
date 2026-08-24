@@ -62,7 +62,18 @@ export const DEFAULT_CONFIG = Object.freeze({
     subvaultRegistry: null,
     /** USDC address — the EIP-712 verifyingContract for x402 authorizations. */
     usdc: null,
-    usdcName: 'USD Coin',
+    /**
+     * The USDC EIP-712 domain. These MUST match what the token reports on `chainId` above, and
+     * FiatTokenV2 deployments disagree: Base Sepolia's `0x036CbD…F7e` reports `"USDC"`, while
+     * mainnet USDC reports `"USD Coin"`. Since this config defaults to base-sepolia (84532), the
+     * default here is `"USDC"` — pairing it with `"USD Coin"` produced a valid signature over the
+     * wrong struct hash, recovering to a stranger and failing as an opaque `signer-mismatch`.
+     *
+     * Change `chainId` and you must change these too. Read them from the token rather than
+     * guessing: `cast call <usdc> 'name()(string)'` / `'version()(string)'`, and confirm the pair
+     * reproduces `DOMAIN_SEPARATOR()`. See docs/X402-LIVE-REPORT.md §6.
+     */
+    usdcName: 'USDC',
     usdcVersion: '2',
   },
 
