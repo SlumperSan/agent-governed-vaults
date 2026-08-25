@@ -101,6 +101,26 @@ test('join: an operator with NO realizations is refused — "not yet negative" i
   assert.match(r.checks.find((c) => c.name === 'operator-net-positive').detail, /no realizations/);
 });
 
+test('join: requireProvenOperator=false accepts a zero-net operator — the flag was inert', () => {
+  // Regression. `requireProvenOperator: false` is documented as "Refuse an operator with no
+  // realizations at all" being turned OFF, but an extra `net > 0n` in the gate refused them
+  // anyway, so the flag did nothing in the one case it exists for. A brand-new operator could
+  // therefore never be joined by any configuration. Found live in the Sprint-12 soak, where the
+  // agent declined the smoke vault with "net realized $0 (gain $0 / loss $0), floor $0".
+  const cfg = { ...CFG.policy.join, requireProvenOperator: false, minOperatorNetRealizedUsdc: '0' };
+  const r = join({ operatorRow: goodOp({ netRealizedUsdc: '0', lifetimeGainUsdc: '0', lifetimeLossUsdc: '0' }), config: cfg });
+  const gate = r.checks.find((c) => c.name === 'operator-net-positive');
+  assert.equal(gate.ok, true, `zero net must clear a zero floor once the flag is off: ${gate.detail}`);
+});
+
+test('join: the floor still excludes negatives when requireProvenOperator is off', () => {
+  // The safety the removed `net > 0n` was providing is provided by the floor itself.
+  const cfg = { ...CFG.policy.join, requireProvenOperator: false, minOperatorNetRealizedUsdc: '0' };
+  const r = join({ operatorRow: goodOp({ netRealizedUsdc: '-1' }), config: cfg });
+  assert.equal(r.checks.find((c) => c.name === 'operator-net-positive').ok, false);
+  assert.equal(r.join, false);
+});
+
 test('join: an UNCAPPED vault (capacityCapUsdc == 0) has capacity, it is not full', () => {
   // The bug this pins: a naive `deposit <= cap` refuses every uncapped vault.
   const r = join({ chain: goodChain({ capacityCapUsdc: 0n, isCapped: false }) });
