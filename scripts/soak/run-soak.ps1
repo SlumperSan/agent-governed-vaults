@@ -110,10 +110,13 @@ $env:SOAK_PROBE_MEMBER = $Deployer
 
 if (Test-Path $PidFile) { Remove-Item $PidFile -Force }
 
-function Start-Bg([string]$Name, [string]$File, [string[]]$Args) {
+# NOTE: the argument parameter must NOT be called $Args. PowerShell is case-insensitive and
+# $args is an automatic variable, so a parameter of that name is silently shadowed by the
+# (empty) built-in and Start-Process receives null.
+function Start-Bg([string]$Name, [string]$File, [string[]]$ArgList) {
   $out = Join-Path $LogDir "$Name.log"
   $err = Join-Path $LogDir "$Name.err.log"
-  $p = Start-Process -FilePath $File -ArgumentList $Args -NoNewWindow -PassThru `
+  $p = Start-Process -FilePath $File -ArgumentList $ArgList -NoNewWindow -PassThru `
        -RedirectStandardOutput $out -RedirectStandardError $err
   Add-Content -Path $PidFile -Value "$Name=$($p.Id)"
   Write-Host ("  started {0,-16} pid {1}" -f $Name, $p.Id) -ForegroundColor Green
@@ -129,16 +132,62 @@ function Start-Track([string]$Name, [string[]]$Scripts) {
   return Start-Bg $Name 'powershell.exe' @('-NoProfile','-ExecutionPolicy','Bypass','-Command', $inner)
 }
 
-Write-Host "`nstarting read-only services..." -ForegroundColor Cyan
-Start-Bg 'indexer' 'node' @('packages/indexer/src/index-runner.mjs')       | Out-Null
-Start-Bg 'api'     'node' @('apps/api/src/serve.mjs')                      | Out-Null
-Start-Bg 'canary'  'node' @('packages/canary/src/canary-runner.mjs')       | Out-Null
-Start-Bg 'sampler' 'node' @('scripts/soak/oracle-sampler.mjs')             | Out-Null
+# Services read their configuration from .env (RPC_URL, the contract addresses, START_BLOCK,
+# STATE_PATH, ...). Starting them WITHOUT --env-file silently produces a differently-configured
+# indexer pointing at defaults, which is worse than not starting one at all.
+$EnvArg = @()
+if (Test-Path (Join-Path $Root '.env')) { $EnvArg = @('--env-file=.env') }
+else { Write-Host "`n  WARNING: no .env found - services will run on defaults" -ForegroundColor Yellow }
 
-# The indexer must be running and caught up BEFORE createVault is signed, or drill 1's
-# dynamic-discovery claim is indistinguishable from a cold backfill.
-Write-Host "`nletting the indexer catch up (30s) before any vault is created..." -ForegroundColor Cyan
-Start-Sleep -Seconds 30
+# A second copy of a service is not harmless: two indexers write the same STATE_PATH, and two
+# samplers interleave lines into the same series. Detect what is already running and leave it.
+function Test-AlreadyRunning([string]$Needle) {
+  $procs = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+             Where-Object { $_.CommandLine -and $_.CommandLine -like "*$Needle*" })
+  return ,$procs
+}
+
+function Start-Service-Once([string]$Name, [string]$Script) {
+  $existing = Test-AlreadyRunning $Script
+  if ($existing.Count -gt 0) {
+    $ids = ($existing | ForEach-Object { $_.ProcessId }) -join ', '
+    if ($existing.Count -gt 1) {
+      Write-Host ("  {0,-8} ALREADY RUNNING x{1} (pids {2}) - DUPLICATES, consider stopping all but one" -f $Name, $existing.Count, $ids) -ForegroundColor Red
+    } else {
+      Write-Host ("  {0,-8} already running (pid {1}) - reusing it" -f $Name, $ids) -ForegroundColor Yellow
+    }
+    return
+  }
+  Start-Bg $Name 'node' ($EnvArg + @($Script)) | Out-Null
+}
+
+Write-Host "`nstarting read-only services..." -ForegroundColor Cyan
+Start-Service-Once 'indexer' 'packages/indexer/src/index-runner.mjs'
+Start-Service-Once 'api'     'apps/api/src/serve.mjs'
+Start-Service-Once 'canary'  'packages/canary/src/canary-runner.mjs'
+Start-Service-Once 'sampler' 'scripts/soak/oracle-sampler.mjs'
+
+# The indexer must be running and CAUGHT UP before createVault is signed, or drill 1's
+# dynamic-discovery claim is indistinguishable from a cold backfill. Rather than sleeping a
+# fixed 30s and hoping, read its own state file and wait until it is within a few blocks of
+# the chain head.
+Write-Host "`nwaiting for the indexer to catch up to the chain head..." -ForegroundColor Cyan
+$statePath = Join-Path $Root 'data\indexer-state.json'
+$deadline = (Get-Date).AddMinutes(5)
+while ($true) {
+  Start-Sleep -Seconds 10
+  if (-not (Test-Path $statePath)) { Write-Host '  (no indexer state yet)'; continue }
+  try {
+    $last = (Get-Content $statePath -Raw | ConvertFrom-Json).lastBlock
+    $head = [int](cast block-number --rpc-url $env:BASE_SEPOLIA_RPC)
+    $lag = $head - $last
+    Write-Host ("  indexer at {0}, head {1} (lag {2} blocks)" -f $last, $head, $lag)
+    if ($lag -le 20) { Write-Host '  caught up.' -ForegroundColor Green; break }
+  } catch { Write-Host "  (could not read progress: $($_.Exception.Message))" }
+  if ((Get-Date) -gt $deadline) {
+    throw 'indexer did not catch up within 5 minutes - do NOT start the drills; drill 1 cannot prove dynamic discovery against a lagging indexer'
+  }
+}
 
 Write-Host "`nstarting drill tracks (these run in PARALLEL - governance serializes per vault)..." -ForegroundColor Cyan
 Start-Track 'trackA' @('scripts/soak/drill1-multivault.mjs','scripts/soak/drill3-modef.mjs') | Out-Null
