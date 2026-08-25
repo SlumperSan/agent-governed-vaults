@@ -79,7 +79,7 @@ const MAX_TICKS = Number(process.env.SOAK_MAX_TICKS ?? 40);
 
 const { state, save, saveFirst } = openState(STATE_PATH, dep.factory);
 
-async function buildAgent(phase, cfgIn, account, walletClient) {
+async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) {
   const { createAgent } = await import('../../packages/reference-agent/src/agent.mjs');
   const { loadConfig } = await import('../../packages/reference-agent/src/config.mjs');
   const { createChainReader } = await import('../../packages/reference-agent/src/chain.mjs');
@@ -118,14 +118,14 @@ async function buildAgent(phase, cfgIn, account, walletClient) {
 
   const agent = createAgent({
     config, account, payer: account, chainReader, log: wrapped,
-    env: process.env, fetchImpl: fetch, walletClient,
+    env: process.env, fetchImpl: fetch, walletClient, entryMarks,
   });
   return { agent, events, config };
 }
 
 /** Run ticks until `done()` says the on-chain goal is reached, or the tick budget runs out. */
-async function tickUntil(phase, cfgIn, account, walletClient, done, label) {
-  const { agent, events, config } = await buildAgent(phase, cfgIn, account, walletClient);
+async function tickUntil(phase, cfgIn, account, walletClient, done, label, entryMarks = {}) {
+  const { agent, events, config } = await buildAgent(phase, cfgIn, account, walletClient, entryMarks);
   assert(config.mode === 'execute', `agent built in ${config.mode} mode — the gate did not engage`);
   for (let i = 0; i < MAX_TICKS; i++) {
     if (done()) { log(`${label}: goal already satisfied on-chain`); break; }
@@ -186,7 +186,10 @@ if (want('join') && !state.phases?.join?.done) {
 
 // ── activate ──
 if (want('activate') && !state.phases?.activate?.done) {
-  if (state.availableAt) await waitUntilChainTime(state.availableAt, 'agent observation window (4h)');
+  // skipWindow() activates a pending deposit immediately (VaultCore.sol:369), so shares may
+  // already exist long before availableAt. Only wait for the window when nothing is minted yet.
+  const preShares = callU(VAULT, 'sharesOf(address)(uint256)', account.address);
+  if (preShares === 0n && state.availableAt) await waitUntilChainTime(state.availableAt, 'agent observation window (4h)');
   const done = () => callU(VAULT, 'sharesOf(address)(uint256)', account.address) > 0n;
   const events = await tickUntil('activate', cfgIn, account, walletClient, done, 'activate');
   const shares = callU(VAULT, 'sharesOf(address)(uint256)', account.address);
@@ -220,18 +223,25 @@ if (want('vote') && !state.phases?.vote?.done) {
 
 // ── exit (forced drawdown trigger) ──
 if (want('exit') && !state.phases?.exit?.done) {
-  log('retuning policy.exit.maxDrawdownBps to 1 — a FORCED trigger, not a real drawdown');
+  // TWO forcings, both stated in the transcript. The smoke vault holds only idle USDC, so its
+  // navPerShare is exactly 1e18 and cannot fall — no threshold detects a drawdown that does not
+  // exist. So the entry MARK is seeded 2% above the true NAVps (seeded marks take precedence,
+  // agent.mjs:101), making the agent PERCEIVE a ~200bp drawdown against its 1bp threshold. This
+  // proves the perceive→decide→requestExit path end to end; it is NOT evidence of a real loss.
+  log('forcing the exit trigger: entry mark seeded 2% above true NAVps, threshold 1bp');
+  const seededMark = (10n ** 18n * 102n) / 100n;
   const done = () =>
     callU(VAULT, 'sharesOf(address)(uint256)', account.address) === 0n
     || callU(VAULT, 'queuedExitShares(address)(uint256)', account.address) > 0n;
-  const events = await tickUntil('exit', cfgIn, account, walletClient, done, 'exit');
+  const events = await tickUntil('exit', cfgIn, account, walletClient, done, 'exit',
+    { [VAULT.toLowerCase()]: seededMark });
   const shares = callU(VAULT, 'sharesOf(address)(uint256)', account.address);
   const queued = callU(VAULT, 'queuedExitShares(address)(uint256)', account.address);
   const usdcAfter = callU(dep.usdc, 'balanceOf(address)(uint256)', account.address);
   log(`agent exited: shares ${shares}, queued ${queued}, USDC ${usdcAfter}`);
   record('exit', events, {
     sharesAfter: shares.toString(), queuedAfter: queued.toString(), usdcAfter: usdcAfter.toString(),
-    forcedTrigger: 'policy.exit.maxDrawdownBps lowered to 1 bp — proves the RULE fires; not evidence of a real drawdown',
+    forcedTrigger: 'entry mark seeded to 1.02e18 vs true navPerShare 1.0e18 (~200bp perceived drawdown) against a 1bp threshold — proves the perceive→decide→requestExit path fires; the vault is pure idle USDC and its NAVps never moved',
   });
 }
 
