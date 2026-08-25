@@ -44,7 +44,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
-  ROOT, RPC, log, assert, eq, call, callU, send, chainNow, waitUntilChainTime,
+  ROOT, RPC, log, assert, eq, call, callU, send, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
 } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
@@ -147,24 +147,91 @@ function stepVerifyRegistryEdge() {
   save();
 }
 
+/**
+ * Deposit into the parent.
+ *
+ * `deposit` takes ONE OF TWO PATHS (VaultCore.sol:335):
+ *
+ *     if (windowCleared[msg.sender] || sharesOf[msg.sender] > 0)  -> mint immediately
+ *     else                                                        -> escrow, 4h window
+ *
+ * The deployer cleared the window on the smoke vault back in Sprint 9, and `windowCleared` is
+ * permanent, so THIS deposit mints on the spot and there is no window to wait out. Asserting a
+ * pending balance here was simply wrong — it read 0 because the shares already existed.
+ *
+ * The drill reads the flag BEFORE depositing and asserts whichever outcome the flag predicts,
+ * so it stays correct on a fresh vault (drill 1's vault B) as well as this one.
+ */
 function stepParentDeposit() {
+  // RESUME GUARD: an interrupted run may already have deposited. Shares or a pending balance
+  // mean the money is in — depositing again would silently double the stake.
+  const sharesAlready = callU(PARENT, 'sharesOf(address)(uint256)', state.signer);
+  const [pendingAlready] = call(PARENT, 'pendingDeposit(address)(uint256,uint64)', state.signer);
+  if (sharesAlready > 0n || BigInt(pendingAlready) > 0n) {
+    log(`parent deposit already in place (shares ${sharesAlready}, pending ${pendingAlready}) — not depositing again`);
+    saveFirst('parentMintedImmediately', sharesAlready > 0n);
+    state.steps.parentDeposit = {
+      done: true, tx: '(adopted from a prior attempt)',
+      shares: sharesAlready.toString(), pending: pendingAlready, adopted: true,
+    };
+    save();
+    return;
+  }
+
+  const cleared = call(PARENT, 'windowCleared(address)(bool)', state.signer)[0] === 'true';
+  log(`windowCleared[signer] = ${cleared} -> deposit will ${cleared ? 'MINT IMMEDIATELY' : 'escrow for 4h'}`);
+
   send('usdc.approve(parent)', dep.usdc, 'approve(address,uint256)', PARENT, PARENT_DEPOSIT);
   const r = send(`parent.deposit(${PARENT_DEPOSIT})`, PARENT, 'deposit(uint256)', PARENT_DEPOSIT);
-  const [pending, availableAt] = call(PARENT, 'pendingDeposit(address)(uint256,uint64)', state.signer);
-  assert(BigInt(pending) === BigInt(PARENT_DEPOSIT), `pending ${pending} != ${PARENT_DEPOSIT}`);
-  saveFirst('parentAvailableAt', Number(availableAt));
-  log(`parent deposit escrowed; observation window ends at chain time ${availableAt}`);
-  state.steps.parentDeposit = { done: true, tx: r.transactionHash, pending, availableAt: Number(availableAt) };
+
+  if (cleared) {
+    const shares = pollUntil(
+      () => callU(PARENT, 'sharesOf(address)(uint256)', state.signer),
+      (v) => v > 0n,
+      { label: 'parent shares minted' },
+    );
+    saveFirst('parentMintedImmediately', true);
+    log(`parent deposit minted immediately: ${shares} shares (no observation window — the signer cleared it in Sprint 9)`);
+    state.steps.parentDeposit = { done: true, tx: r.transactionHash, mintedImmediately: true, shares: shares.toString() };
+  } else {
+    const [pending, availableAt] = pollUntil(
+      () => call(PARENT, 'pendingDeposit(address)(uint256,uint64)', state.signer),
+      (v) => BigInt(v[0]) > 0n,
+      { label: 'parent pending deposit' },
+    );
+    assert(BigInt(pending) === BigInt(PARENT_DEPOSIT), `pending ${pending} != ${PARENT_DEPOSIT}`);
+    saveFirst('parentAvailableAt', Number(availableAt));
+    saveFirst('parentMintedImmediately', false);
+    log(`parent deposit escrowed; observation window ends at chain time ${availableAt}`);
+    state.steps.parentDeposit = { done: true, tx: r.transactionHash, mintedImmediately: false, pending, availableAt: Number(availableAt) };
+  }
   save();
 }
 
 async function stepParentActivate() {
+  // Nothing to activate when the deposit already minted — activate() would revert with no
+  // pending deposit. Skipping is the correct behaviour, not a shortcut.
+  if (state.parentMintedImmediately) {
+    const idle = callU(PARENT, 'idleUsdc()(uint256)');
+    const nav = callU(PARENT, 'navWad()(uint256)');
+    assert(idle >= BigInt(ALLOCATE_USDC),
+      `parent idleUsdc ${idle} < allocation ${ALLOCATE_USDC}; nothing to allocate`);
+    log(`activation not required — shares were minted at deposit. idleUsdc ${idle}, navWad ${nav}`);
+    state.steps.parentActivate = {
+      done: true, tx: '(not required)', skipped: 'windowCleared signer minted at deposit',
+      idleUsdc: idle.toString(), navWad: nav.toString(),
+    };
+    save();
+    return;
+  }
   await waitUntilChainTime(state.parentAvailableAt, 'parent observation window (4h)');
   const r = send('parent.activate', PARENT, 'activate(address)', state.signer);
-  const idle = callU(PARENT, 'idleUsdc()(uint256)');
+  const idle = pollUntil(
+    () => callU(PARENT, 'idleUsdc()(uint256)'),
+    (v) => v >= BigInt(ALLOCATE_USDC),
+    { label: 'parent idleUsdc after activation' },
+  );
   const nav = callU(PARENT, 'navWad()(uint256)');
-  assert(idle >= BigInt(ALLOCATE_USDC),
-    `parent idleUsdc ${idle} < allocation ${ALLOCATE_USDC}; nothing to allocate`);
   log(`parent activated: idleUsdc ${idle}, navWad ${nav}`);
   state.steps.parentActivate = { done: true, tx: r.transactionHash, idleUsdc: idle.toString(), navWad: nav.toString() };
   save();

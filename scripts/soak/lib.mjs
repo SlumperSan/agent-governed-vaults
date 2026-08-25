@@ -157,6 +157,28 @@ export function send(label, to, sig, ...args) {
   assert(receipt.status === '0x1' || receipt.status === 1,
     `${label}: transaction reverted (${receipt.transactionHash})`);
   log(`   mined ${receipt.transactionHash} (block ${Number(receipt.blockNumber)})`);
+
+  // READ-YOUR-WRITES. The public RPC endpoints are load-balanced, so the node that answers the
+  // next `cast call` is not necessarily the one that just served this receipt. Reading state
+  // immediately after a send therefore fails intermittently and looks exactly like a contract
+  // bug — drill 1's createVault mined, and the codesize read one second later returned 0 while
+  // the same read moments afterwards returned 23016.
+  //
+  // Blocking here rather than at each call site means every drill gets this for free, and no
+  // future assertion can forget it. Cost is a second or two per transaction against a soak
+  // measured in hours.
+  const mined = Number(receipt.blockNumber);
+  try {
+    pollUntil(
+      () => Number(cast(['block-number', '--rpc-url', RPC])),
+      (head) => head >= mined,
+      { label: `RPC to reach block ${mined}`, attempts: 20, delayMs: 750 },
+    );
+  } catch (e) {
+    // Not fatal on its own: the transaction is mined either way, and the per-assertion polls
+    // remain as the backstop. Say so rather than failing a good run on a slow endpoint.
+    log(`   WARNING: RPC did not visibly reach block ${mined} (${e.message}); subsequent reads may lag`);
+  }
   return receipt;
 }
 
@@ -173,6 +195,42 @@ export async function waitUntilChainTime(target, label) {
     log(`waiting for ${label}: ${Math.floor(remain / 60)}m${remain % 60}s remaining (chain ${now}, target ${target})`);
     await sleep(Math.min(60, remain) * 1000);
   }
+}
+
+/**
+ * Poll a read until it satisfies `ok`, or give up.
+ *
+ * `cast send` returns as soon as it has a receipt, but the public RPC endpoints are
+ * load-balanced and the very next `cast call` can land on a node that has not yet applied that
+ * block. Reading state immediately after a send therefore fails intermittently and looks
+ * exactly like a contract bug: drill 1's first successful `createVault` mined fine and the
+ * codesize read one second later returned 0, while the same read seconds afterwards returned
+ * 23016.
+ *
+ * Use this for any read whose expected value is a DIRECT consequence of a transaction just
+ * sent. Do not use it to paper over a value that is genuinely wrong — it gives up and throws.
+ *
+ * @template T
+ * @param {() => T} read
+ * @param {(v: T) => boolean} ok
+ * @param {{label: string, attempts?: number, delayMs?: number}} opts
+ * @returns {T}
+ */
+export function pollUntil(read, ok, { label, attempts = 12, delayMs = 1500 }) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    try {
+      last = read();
+      if (ok(last)) {
+        if (i > 0) log(`   ${label}: settled after ${i + 1} read(s)`);
+        return last;
+      }
+    } catch (e) {
+      last = /** @type {any} */ (`read threw: ${e.message}`);
+    }
+  }
+  throw new Error(`${label}: still unsatisfied after ${attempts} reads over ~${Math.round(attempts * delayMs / 1000)}s (last value: ${String(last)})`);
 }
 
 /**

@@ -27,7 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime,
+  ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast,
 } from './lib.mjs';
 import { loadDeployment, wiringExpectations } from './deployment.mjs';
@@ -102,22 +102,43 @@ function readIndexerSnapshot() {
 }
 
 function stepCreateVaultB() {
-  const params = `(${dep.usdc},[${TOKENS_B.join(',')}],${dep.aggregator},${B.capacityCapUsdc},${B.minDepositUsdc},${B.exitFeeMaxBps},${B.exitFeeDecayPeriod},[${dep.adapter}])`;
-  const r = send('factory.createVault(soak-B)', dep.factory,
-    'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params);
-  const created = r.logs.find((l) => l.topics?.[0] === TOPIC.VaultCreated());
-  assert(created, 'VaultCreated not found in receipt');
-  const vault = topicToAddress(created.topics[1]);
-  saveFirst('vaultB', vault);
-  saveFirst('createBlock', Number(r.blockNumber));
+  // RESUME GUARD. `vaultB` is persisted immediately after the send, BEFORE the verification
+  // reads below. If one of those reads failed (they are RPC-lag prone), the step is not marked
+  // done but the vault genuinely exists — re-running createVault here would silently deploy a
+  // SECOND vault and spend another 5M gas. Adopt the existing one instead.
+  let r = null;
+  let vault = state.vaultB;
+  if (vault && Number(cast(['codesize', vault, '--rpc-url', RPC])) > 0) {
+    log(`vault B ${vault} already exists from an earlier attempt — adopting it rather than creating a second`);
+  } else {
+    const params = `(${dep.usdc},[${TOKENS_B.join(',')}],${dep.aggregator},${B.capacityCapUsdc},${B.minDepositUsdc},${B.exitFeeMaxBps},${B.exitFeeDecayPeriod},[${dep.adapter}])`;
+    r = send('factory.createVault(soak-B)', dep.factory,
+      'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params);
+    const created = r.logs.find((l) => l.topics?.[0] === TOPIC.VaultCreated());
+    assert(created, 'VaultCreated not found in receipt');
+    vault = topicToAddress(created.topics[1]);
+    saveFirst('vaultB', vault);
+    saveFirst('createBlock', Number(r.blockNumber));
+  }
 
-  // Independent verification: re-read from the chain, not from the receipt.
-  const codesize = Number(cast(['codesize', vault, '--rpc-url', RPC]));
-  assert(codesize > 0, 'vault B has no code');
-  const opId = callU(dep.registry, 'operatorOf(address)(uint256)', vault);
-  assert(opId !== 0n, 'vault B not attested in OperatorRegistry');
+  // Independent verification: re-read from the chain, not from the receipt. Polled, because the
+  // public RPC is load-balanced and the node answering this read may not have applied the block
+  // that the send just mined — a real observation, not a hypothetical.
+  const codesize = pollUntil(
+    () => Number(cast(['codesize', vault, '--rpc-url', RPC])),
+    (n) => n > 0,
+    { label: 'vault B codesize' },
+  );
+  const opId = pollUntil(
+    () => callU(dep.registry, 'operatorOf(address)(uint256)', vault),
+    (v) => v !== 0n,
+    { label: 'vault B operator attestation' },
+  );
   log(`vault B ${vault} created (codesize ${codesize}, operator id ${opId})`);
-  state.steps.createVaultB = { done: true, tx: r.transactionHash, vault, codesize, operatorId: String(opId) };
+  state.steps.createVaultB = {
+    done: true, tx: r?.transactionHash ?? state.steps.createVaultB?.tx ?? '(adopted from a prior attempt)',
+    vault, codesize, operatorId: String(opId),
+  };
   save();
 }
 
