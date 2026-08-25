@@ -251,13 +251,26 @@ test('EXECUTE: with both conditions met, intents are actually sent (against a mo
 
   const r = await agent.tick();
   assert.equal(r.mode, 'execute');
-  assert.equal(sent.length, r.intents.length, 'every due intent is sent');
+  // A deposit sends TWO transactions: the ERC-20 approval and then the deposit itself.
+  // VaultCore.deposit pulls with safeTransferFrom, so without the allowance it reverts
+  // TransferFromFailed(0x6e1c8d15) before reaching any vault logic.
+  const depositIntents = r.intents.filter((i) => i.kind === 'deposit').length;
+  assert.equal(sent.length, r.intents.length + depositIntents, 'every due intent is sent, plus one approval per deposit');
   assert.equal(r.results.every((x) => x.sent === true), true);
   assert.ok(lines.some((l) => l.includes('[EXECUTE] sent')));
 
   const deposit = sent.find((t) => t.functionName === 'deposit');
   assert.equal(deposit.address, V_JOIN);
   assert.equal(deposit.args[0], 25n * USDC);
+
+  // The approval must target the TOKEN, name the vault as spender, be for exactly the deposit
+  // amount (so a successful deposit consumes it back to zero), and land BEFORE the deposit.
+  const approve = sent.find((t) => t.functionName === 'approve');
+  assert.ok(approve, 'a deposit must be preceded by an ERC-20 approval');
+  assert.equal(approve.args[0], V_JOIN, 'the vault is the spender');
+  assert.equal(approve.args[1], 25n * USDC, 'approve exactly the deposit amount, leaving no standing allowance');
+  assert.ok(sent.indexOf(approve) < sent.indexOf(deposit), 'the approval must precede the deposit');
+  assert.equal(r.results.find((x) => x.intent === 'deposit').approvalHash, '0xhash' + (sent.indexOf(approve) + 1));
 
   const exit = sent.find((t) => t.functionName === 'requestExit');
   assert.equal(exit.address, V_HELD);
