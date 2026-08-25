@@ -230,3 +230,37 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
   assert.equal(p.exit.forced, true);
   assert.notEqual(policyFor('join', { depositUsdc: '1' }).exit.forced, true);
 });
+
+// ───────────────────── send lock (nonce contention) ─────────────────────
+//
+// Regression: the first unattended launch ran two drill tracks in parallel against ONE signer.
+// Governance serializes per vault, but nonces are per ACCOUNT, so two concurrent `cast send`
+// calls collided and both drills died. Cross-process exclusion is verified separately by
+// running two node processes; these cover the in-process contract.
+
+import { withSendLock, ROOT as LIB_ROOT } from '../soak/lib.mjs';
+
+const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
+
+test('withSendLock runs the body, returns its value, and releases the lock', () => {
+  const before = fs.existsSync(LOCK);
+  const got = withSendLock(() => 'receipt');
+  assert.equal(got, 'receipt');
+  assert.equal(fs.existsSync(LOCK), before, 'the lock must not outlive the call');
+});
+
+test('the lock is released even when the body throws — a reverted tx must not deadlock the run', () => {
+  assert.throws(() => withSendLock(() => { throw new Error('reverted'); }), /reverted/);
+  assert.equal(fs.existsSync(LOCK), false, 'a throwing send must still release the lock');
+});
+
+test('a stale lock from a crashed drill is broken rather than waited on forever', () => {
+  fs.mkdirSync(path.dirname(LOCK), { recursive: true });
+  fs.writeFileSync(LOCK, '99999 crashed-holder\n');
+  // Backdate it past the 5-minute staleness bound.
+  const old = new Date(Date.now() - 10 * 60_000);
+  fs.utimesSync(LOCK, old, old);
+  const got = withSendLock(() => 'proceeded');
+  assert.equal(got, 'proceeded', 'a dead holder must not block the rest of the soak');
+  assert.equal(fs.existsSync(LOCK), false);
+});

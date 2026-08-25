@@ -48,15 +48,74 @@ export const eq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 export const clean = (line) => line.replace(/\s+\[[^\]]*\]$/, '').trim();
 
 export function cast(args, { interactive = false } = {}) {
+  // `interactive` exists so a keystore PASSWORD PROMPT can reach a human at a terminal. But
+  // inheriting stderr also throws cast's error text away, and an unattended run
+  // (--password-file, output redirected to a log file) has no human to prompt and badly needs
+  // that text. So inherit only when there is actually a TTY to inherit from; otherwise pipe and
+  // keep the diagnostics. Getting this wrong cost a debugging round: every failure in the first
+  // unattended launch read as a bare "Command failed" with the reason discarded.
+  const passThrough = interactive && Boolean(process.stdin.isTTY);
   try {
     return execFileSync(CAST, args, {
       encoding: 'utf8',
-      stdio: [interactive ? 'inherit' : 'ignore', 'pipe', interactive ? 'inherit' : 'pipe'],
+      stdio: [passThrough ? 'inherit' : 'ignore', 'pipe', passThrough ? 'inherit' : 'pipe'],
       windowsHide: true,
     }).trim();
   } catch (e) {
     const detail = e.stderr ? String(e.stderr).trim() : e.message;
     throw new Error(`cast ${args.slice(0, 3).join(' ')} failed: ${detail}`);
+  }
+}
+
+/**
+ * Cross-process mutex around transaction SUBMISSION.
+ *
+ * Drills run in parallel tracks, and governance serializes per VAULT — but the signer is
+ * shared, and Ethereum nonces are per ACCOUNT, not per vault. Two concurrent `cast send`
+ * calls each fetch the same pending nonce and one loses. That is exactly how the first
+ * unattended launch failed: drill 1's `createVault` overlapped drill 2's `createChildVault`,
+ * and both static-called clean afterwards because nothing was wrong with the calls.
+ *
+ * Locking only the send keeps the parallelism that is actually worth having. The ~14 hours of
+ * this soak are `waitUntilChainTime`, not signing; serializing a handful of two-second
+ * broadcasts costs nothing and lets the waiting continue to overlap.
+ *
+ * @template T
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function withSendLock(fn) {
+  const lockPath = path.join(ROOT, 'data', '.soak-send.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  const STALE_MS = 5 * 60_000;
+  const deadline = Date.now() + 10 * 60_000;
+  let fd;
+  for (;;) {
+    try {
+      fd = fs.openSync(lockPath, 'wx'); // atomic create-or-fail
+      fs.writeSync(fd, `${process.pid} ${new Date().toISOString()}\n`);
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // A drill that crashed mid-send must not deadlock the rest of the run.
+      try {
+        const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (age > STALE_MS) {
+          log(`send lock is ${Math.round(age / 1000)}s old — assuming a dead holder and breaking it`);
+          fs.unlinkSync(lockPath);
+          continue;
+        }
+      } catch { /* holder released it between our check and now — just retry */ }
+      if (Date.now() > deadline) throw new Error(`could not acquire the send lock at ${lockPath} within 10 minutes`);
+      // Synchronous sleep: this whole library is sync because execFileSync is.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try { fs.closeSync(fd); } catch { /* already closed */ }
+    try { fs.unlinkSync(lockPath); } catch { /* already gone */ }
   }
 }
 
@@ -89,10 +148,11 @@ export function send(label, to, sig, ...args) {
   assert(SIGNER_ARGS.length > 0,
     'SOAK_SIGNER_ARGS is required (e.g. "--account deployer --password-file .pw"); this script never handles the key itself');
   log(`tx: ${label}`);
-  const out = cast(
+  // Serialized across drills — see withSendLock. The nonce is per account, not per vault.
+  const out = withSendLock(() => cast(
     ['send', to, sig, ...args.map(String), '--rpc-url', RPC, '--json', ...SIGNER_ARGS],
     { interactive: true },
-  );
+  ));
   const receipt = JSON.parse(out.slice(out.indexOf('{')));
   assert(receipt.status === '0x1' || receipt.status === 1,
     `${label}: transaction reverted (${receipt.transactionHash})`);
