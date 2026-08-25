@@ -187,12 +187,35 @@ export const abiEncode = (sig, ...args) => cast(['abi-encode', sig, ...args.map(
 export const topicToAddress = (t) => '0x' + t.slice(26);
 export const chainNow = () => Number(cast(['block', 'latest', '-f', 'timestamp', '--rpc-url', RPC]));
 
-export async function waitUntilChainTime(target, label) {
+/**
+ * Wait until chain time passes `target`, plus a safety margin.
+ *
+ * The margin is not padding — it is required for correctness against a load-balanced RPC.
+ * `chainNow()` asks one node for the latest block's timestamp; the gas estimation inside the
+ * very next `cast send` may be answered by a DIFFERENT node that is a block or two behind. So
+ * returning the instant `now >= target` produces a transaction estimated against a state where
+ * the deadline has not yet passed, and it reverts on a boundary the contract would otherwise
+ * have accepted.
+ *
+ * Both drills hit this on the same run, two hours apart, against `>=` requires:
+ *   drill 1 `activate`  -> WindowNotElapsed (0x8e3e8125)
+ *   drill 2 `finalize`  -> WrongPhase       (0xe2586bcc)
+ * In both cases the value was correct seconds later, and re-reading confirmed the chain had
+ * genuinely passed the deadline. 30s is ~15 Base blocks, comfortably beyond observed divergence
+ * and irrelevant against windows measured in hours.
+ *
+ * @param {number} target chain timestamp to pass
+ * @param {string} label  human description for the log
+ * @param {{marginSec?: number}} [opts]
+ */
+export async function waitUntilChainTime(target, label, { marginSec = 30 } = {}) {
+  const effective = target + marginSec;
   for (;;) {
     const now = chainNow();
-    if (now >= target) return;
-    const remain = target - now;
-    log(`waiting for ${label}: ${Math.floor(remain / 60)}m${remain % 60}s remaining (chain ${now}, target ${target})`);
+    if (now >= effective) return;
+    const remain = effective - now;
+    const past = now >= target ? ' (deadline passed; holding for RPC-divergence margin)' : '';
+    log(`waiting for ${label}: ${Math.floor(remain / 60)}m${remain % 60}s remaining (chain ${now}, target ${target}+${marginSec}s)${past}`);
     await sleep(Math.min(60, remain) * 1000);
   }
 }
