@@ -94,7 +94,11 @@ async function buildAgent(phase, cfgIn, account, walletClient) {
       subvaultRegistry: dep.subRegistry.toLowerCase(), // omit and the fee gate always blocks
       usdc: dep.usdc.toLowerCase(), usdcName: 'USDC', usdcVersion: '2',
     },
-    policy: policyFor(phase, { depositUsdc: soak.agentDepositUsdc ?? '1', maxDrawdownBps: 1000 }),
+    // UNITS. `policy.join.depositUsdc` is in WHOLE USDC (the shipped default is '25'), not the
+    // 6-decimal base units the contracts and soak-vaults.json use everywhere else. Feeding it
+    // "1000000" asked the agent to deposit one MILLION dollars, and its capacity gate correctly
+    // refused: "$996 free of $1000 cap; need $1000000". The gate was right; the config was mine.
+    policy: policyFor(phase, { depositUsdc: soak.agentDepositWholeUsdc ?? '1', maxDrawdownBps: 1000 }),
   });
 
   const events = [];

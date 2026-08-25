@@ -1,8 +1,8 @@
 {
   "note": "Vault definitions for the Sprint-12 soak drills. Deliberately DIFFERENT from the Sprint-9 smoke vault in basket, caps, fees and governance, so that drill 1's leaderboard aggregation is proving real cross-vault aggregation rather than summing two identical rows.",
 
-  "agentDepositUsdc": "1000000",
-  "agentDepositNote": "Drill 5: the agent deposits exactly the smoke vault minDepositUsdc (1.00 USDC), read from chain. The throwaway holds 3.00, leaving margin for gas-adjacent retries without over-committing a key that exists only for this drill.",
+  "agentDepositWholeUsdc": "1",
+  "agentDepositNote": "Drill 5: WHOLE USDC, not base units. policy.join.depositUsdc in the reference agent is denominated in dollars (its shipped default is \"25\"), unlike every other amount in this file. 1 = the smoke vault minimum of 1.00 USDC. Passing base units here made the agent request a million-dollar deposit and its capacity gate correctly refused.",
 
   "smokeVault": {
     "address": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330",
