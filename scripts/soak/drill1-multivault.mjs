@@ -88,10 +88,23 @@ function preflight() {
 
   // Snapshot the indexer's position BEFORE anything is signed. This is what makes the
   // dynamic-discovery claim falsifiable rather than assumed.
-  const snap = readIndexerSnapshot();
-  saveFirst('indexerHeadBefore', headBlockOf(snap));
-  saveFirst('vaultsKnownBefore', vaultsIn(snap));
-  log(`indexer before: head ${state.indexerHeadBefore}, ${state.vaultsKnownBefore.length} vault(s) known`);
+  //
+  // CAPTURE IT ONCE. `saveFirst` flushes to disk before a dependent send — it does NOT mean
+  // "write only if absent", and it overwrites on every call. Re-running preflight on a resume
+  // therefore replaced the pre-creation snapshot with a post-creation one, and the discovery
+  // assertion then correctly refused its own evidence: "vault B was already in the indexer
+  // snapshot before it was created". The snapshot is only meaningful while the vault does not
+  // yet exist, so take it only then.
+  if (!state.steps.createVaultB?.done && state.indexerHeadBefore === undefined) {
+    const snap = readIndexerSnapshot();
+    saveFirst('indexerHeadBefore', headBlockOf(snap));
+    saveFirst('vaultsKnownBefore', vaultsIn(snap));
+    log(`indexer before: head ${state.indexerHeadBefore}, ${state.vaultsKnownBefore.length} vault(s) known`);
+  } else {
+    assert(state.indexerHeadBefore !== undefined,
+      'no pre-creation indexer snapshot in state, and vault B already exists — dynamic discovery cannot be proven for this vault. Use SOAK_RESET=1 with a fresh vault, or record the reconstruction and its provenance explicitly.');
+    log(`indexer before (captured earlier, retained): head ${state.indexerHeadBefore}, ${state.vaultsKnownBefore.length} vault(s) known`);
+  }
   log('preflight OK');
 }
 
@@ -227,6 +240,10 @@ async function stepVerifyDynamicDiscovery() {
         done: true, headBefore: state.indexerHeadBefore, headAfter: head,
         vaultsBefore: state.vaultsKnownBefore.length, vaultsAfter: known.length,
         createBlock: state.createBlock,
+        // The load-bearing inequality, stated so the report does not have to re-derive it:
+        // a snapshot taken at headBefore cannot contain a vault created in a LATER block.
+        headBeforeIsEarlierThanCreation: Number(state.indexerHeadBefore) < Number(state.createBlock),
+        ...(state.discoveryProvenance ? { provenance: state.discoveryProvenance } : {}),
       };
       save();
       return;
