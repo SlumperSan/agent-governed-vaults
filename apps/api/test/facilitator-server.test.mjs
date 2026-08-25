@@ -107,11 +107,24 @@ test('checkChallengePrice compares addresses case-insensitively (EIP-55 vs lower
   );
 });
 
-test('checkChallengePrice tolerates a flattened challenge and skips when no price is asserted', () => {
+test('checkChallengePrice tolerates a flattened challenge, and FAILS CLOSED when none is posted', () => {
   assert.deepEqual(checkChallengePrice(price(), envelope()), { ok: true });
   assert.deepEqual(checkChallengePrice(price({ payTo: '0x' + 'e'.repeat(40) }), envelope()), { ok: false, reason: 'recipient-mismatch' });
-  assert.deepEqual(checkChallengePrice(undefined, envelope()), { ok: true });
-  assert.deepEqual(checkChallengePrice({}, envelope()), { ok: true });
+  // Regression (PR #27 review finding): an ABSENT challenge used to skip the re-check entirely,
+  // making the server-side price/recipient binding opt-out by omission. The API always posts a
+  // challenge, so the only caller this refuses is one bypassing the API — the open-relay case.
+  assert.deepEqual(checkChallengePrice(undefined, envelope()), { ok: false, reason: 'no-challenge' });
+  assert.deepEqual(checkChallengePrice({}, envelope()), { ok: false, reason: 'no-challenge' });
+});
+
+test('a settle request with NO challenge field is rejected before any chain client is touched', async () => {
+  const calls = [];
+  const facilitator = { verifyAndSettle: async (...a) => { calls.push(a); return { ok: true, receiptId: '0x1' }; } };
+  const handle = createSettleHandler({ facilitator });
+  const res = await handle('POST', '/settle', { x402Version: 2, envelope: envelope() });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { ok: false, reason: 'no-challenge' });
+  assert.equal(calls.length, 0, 'the facilitator (and therefore the chain) must never be reached');
 });
 
 test('checkChallengePrice rejects a malformed payTo rather than ignoring it', () => {

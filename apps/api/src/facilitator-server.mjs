@@ -112,7 +112,13 @@ export function gateSettlement({ account = null, env = {} }) {
  */
 export function checkChallengePrice(challenge, envelope) {
   const price = challenge?.price ?? (challenge?.payTo || challenge?.amount ? challenge : null);
-  if (!price) return { ok: true }; // nothing asserted → nothing to contradict
+  // FAIL CLOSED. This used to return ok when no challenge was posted ("nothing asserted →
+  // nothing to contradict"), which made the re-check opt-out by omission: POST /settle with the
+  // challenge field simply absent skipped the only server-side price/recipient binding and went
+  // straight to broadcast at the operator's gas expense — the open relay this check exists to
+  // prevent. The API always posts a challenge, so the only caller this refuses is one bypassing
+  // the API. Flagged in PR #27's review; closed here for launch.
+  if (!price) return { ok: false, reason: 'no-challenge' };
   const auth = envelope?.authorization ?? {};
 
   if (price.payTo != null) {
