@@ -37,6 +37,13 @@ contract OracleAggregator is IOracleAggregator {
     uint32 public constant MAX_STALENESS_CEILING = 1 days;
     uint8 public constant MIN_SOURCES = 3; // §11 / SF-1: median of >= 3 independent sources
 
+    /// @dev H-1: the lower median `fresh[(k-1)/2]` is `fresh[0]` — the MINIMUM — at k == 2.
+    /// The old constructor permitted quorum 2 of 3, so the documented mainnet configuration
+    /// selected min() rather than a median whenever one source failed, biased one-directionally
+    /// DOWNWARD, which is the exploitable direction for share issuance (C-4). Below three fresh
+    /// sources there is no median to take, so the breaker trips instead.
+    uint8 public constant MIN_MEDIAN = 3;
+
     error BadOracleConfig();
 
     /// @notice Fix the full per-asset source configuration forever. Floors are load-bearing
@@ -62,10 +69,26 @@ contract OracleAggregator is IOracleAggregator {
             // Finding 6: enforce the §11/SF-1 floor — >= 3 sources and a STRICT MAJORITY
             // freshness quorum, so no single source can freeze or move an asset.
             require(m >= MIN_SOURCES && m <= 15, BadOracleConfig());
-            require(quorum_[i] > m / 2 && quorum_[i] <= m, BadOracleConfig());
+            // H-1: quorum must also reach MIN_MEDIAN, so a config can never select min().
+            // NOTE the deliberate consequence: at m == 3 this forces quorum == 3, i.e. any one
+            // source failing trips the breaker. Fault tolerance and median integrity cannot both
+            // be had at m == 3 — the resolution is m >= 5, not a lower quorum.
+            require(quorum_[i] >= MIN_MEDIAN && quorum_[i] > m / 2 && quorum_[i] <= m, BadOracleConfig());
             // Finding 2: bound staleness both sides — nonzero and below the ceiling.
             require(maxStaleness_[i] > 0 && maxStaleness_[i] <= MAX_STALENESS_CEILING, BadOracleConfig());
-            require(_cfg[assets_[i]].sources.length == 0, BadOracleConfig()); // no duplicates
+            require(_cfg[assets_[i]].sources.length == 0, BadOracleConfig()); // no duplicate assets
+            for (uint256 a; a < m; ++a) {
+                // C-3(a): a codeless source address (one deploy typo) returns empty data
+                // forever. Rejected here, where it is still fixable, rather than bricking the
+                // asset permanently at the first read.
+                require(sources_[i][a].code.length > 0, BadOracleConfig());
+                // M-1: [S,S,S] satisfied "3 sources" and any quorum, and its median is just S.
+                // Correlated upstreams behind distinct addresses stay out of code's reach (the
+                // accepted SF-1 residual); literal address equality does not.
+                for (uint256 b = a + 1; b < m; ++b) {
+                    require(sources_[i][a] != sources_[i][b], BadOracleConfig());
+                }
+            }
             _cfg[assets_[i]] =
                 AssetConfig({sources: sources_[i], maxStaleness: maxStaleness_[i], quorum: quorum_[i]});
             assets.push(assets_[i]);
@@ -83,13 +106,15 @@ contract OracleAggregator is IOracleAggregator {
         // Saturating: never underflow-panic even if maxStaleness somehow exceeded the clock.
         uint256 minUpdated = block.timestamp > cfg.maxStaleness ? block.timestamp - cfg.maxStaleness : 0;
         for (uint256 i; i < m; ++i) {
-            // A reverting source is simply not fresh — one broken feed must not trip the
-            // breaker while quorum still holds elsewhere.
-            try IPriceSource(cfg.sources[i]).latestPrice() returns (uint256 p, uint256 updatedAt) {
-                if (p > 0 && updatedAt >= minUpdated) fresh[k++] = p;
-            } catch {}
+            // A broken source is simply not fresh — one broken feed must not trip the breaker
+            // while quorum still holds elsewhere. C-3: this now holds for MALFORMED RETURNS too,
+            // not only for genuine reverts. See _tryLatestPrice.
+            (bool ok, uint256 p, uint256 updatedAt) = _tryLatestPrice(cfg.sources[i]);
+            if (ok && p > 0 && updatedAt >= minUpdated) fresh[k++] = p;
         }
-        if (k < cfg.quorum) revert StaleOracle(asset);
+        // H-1: quorum alone is not enough — the median itself needs three elements. Both bounds
+        // are checked because deployed aggregators may carry a pre-H-1 quorum of 2.
+        if (k < cfg.quorum || k < MIN_MEDIAN) revert StaleOracle(asset);
 
         // Median of the fresh set (insertion sort; m ≤ 15).
         for (uint256 i = 1; i < k; ++i) {
@@ -102,8 +127,37 @@ contract OracleAggregator is IOracleAggregator {
             fresh[j] = key;
         }
         // Lower median: no averaging (no even-k swing, no sum overflow-freeze). Majority-fresh
-        // quorum guarantees the middle element is bounded by the honest set.
+        // quorum AND k >= 3 together guarantee the middle element is bounded by the honest set.
         return fresh[(k - 1) / 2];
+    }
+
+    /// @dev C-3 remediation. `try/catch` CANNOT absorb a decode failure: Solidity decodes the
+    /// returned buffer in the CALLER's frame, after the callee has already returned
+    /// successfully. So a source returning 32 bytes, zero bytes, or having no code at all made
+    /// `priceWad` revert unconditionally — regardless of quorum, with empty returndata rather
+    /// than `StaleOracle`, for every vault wired to this aggregator, permanently. A genuine
+    /// `revert` was absorbed correctly, which is exactly why the gap survived review.
+    ///
+    /// A raw staticcall with an explicit length check absorbs both cases. The returndata copy is
+    /// bounded to the two words actually needed, so a returndata-bombing source cannot OOG the
+    /// reader either — that would be the same defect class one layer out.
+    /// @param src the price source to poll
+    /// @return ok true only if the call succeeded AND returned at least two well-formed words
+    /// @return p the reported WAD price (meaningless unless ok)
+    /// @return updatedAt the reported update timestamp (meaningless unless ok)
+    function _tryLatestPrice(address src) internal view returns (bool ok, uint256 p, uint256 updatedAt) {
+        bytes4 sel = IPriceSource.latestPrice.selector;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, sel)
+            let success := staticcall(gas(), src, ptr, 4, 0, 0)
+            if and(success, iszero(lt(returndatasize(), 64))) {
+                returndatacopy(ptr, 0, 64)
+                p := mload(ptr)
+                updatedAt := mload(add(ptr, 32))
+                ok := 1
+            }
+        }
     }
 
     /// @notice The immutable source configuration for `asset` — what a prospective member

@@ -128,7 +128,7 @@ contract ExecutionTest is Test {
         uint32[] memory maxStale = new uint32[](1);
         maxStale[0] = 1 hours;
         uint8[] memory quorum = new uint8[](1);
-        quorum[0] = 2;
+        quorum[0] = 3; // H-1: MIN_MEDIAN
         oracle = new OracleAggregator(assets, sources, maxStale, quorum);
 
         router = new MockRouter();
@@ -207,10 +207,20 @@ contract ExecutionTest is Test {
         assertEq(oracle.priceWad(address(weth)), 4_000e18, "median of dispersed set");
     }
 
-    function test_oneDeadSourceStillQuorum() public {
-        s1.setBroken(true); // reverting source ≠ breaker while quorum holds
-        uint256 p = oracle.priceWad(address(weth));
-        assertEq(p, 3_999e18, "lower median of the two fresh sources (Finding 6)");
+    /// H-1 CHANGED THIS TEST'S ANSWER, deliberately. It previously asserted that one dead
+    /// source still priced, on "the lower median of the two fresh sources" — which is exactly
+    /// the defect: a two-element lower median is the MINIMUM, so this fixture was pinning a
+    /// silent downward price selector as correct behaviour.
+    ///
+    /// At m == 3 the aggregator can have median integrity or single-failure tolerance, not
+    /// both, and integrity is the one that cannot be given up. So one dead source now trips
+    /// the breaker here. **The cost is real and is not hidden** — it is the reason
+    /// base-mainnet.json must move to five sources per asset, where a dead source costs
+    /// headroom instead of the price. See MixedOracleSources.t.sol for the m == 5 shape.
+    function test_oneDeadSourceTripsBreakerAtThreeSources() public {
+        s1.setBroken(true);
+        vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, address(weth)));
+        oracle.priceWad(address(weth));
     }
 
     function test_belowQuorumTripsBreaker() public {
