@@ -1094,7 +1094,8 @@ is correctly defended.
 
 ### 4.4 Audit test artifacts
 
-All under `docs/audit/tests/`; `contracts/src` never modified.
+All under `contracts/test/audit/`; `contracts/src` never modified. (They were authored under
+`docs/audit/tests/` and moved when they landed in PR #36 — that path is not in the tree.)
 
 | File | Tests | Covers |
 |---|---|---|
@@ -1109,8 +1110,16 @@ All under `docs/audit/tests/`; `contracts/src` never modified.
 | `AuditVoteAfterExit.t.sol` | 2 | C-5 (incl. passing VO-9 control) |
 | **Total** | **33** | **33 passing** |
 
+The table above is the count **as audited**, against the pre-remediation tree. **30 are in the
+tree today:** the three C-2 cases in `AuditExecutionWindowFreeze.t.sol` were removed when the C-2
+hard caps landed (PR #36) — they asserted the *unfixed* behaviour, so keeping them would mean a
+permanently-red suite, which is noise rather than evidence. That file's header records the removal
+and the exploits survive in git history; the fix is pinned by
+`Governance.t.sol::test_phaseDurationHardCapsEnforced`. Verified 2026-08-27: the command below
+runs 9 suites / 30 tests, all passing.
+
 ```bash
-cp docs/audit/tests/Audit*.t.sol contracts/test/ && cd contracts && forge test --match-path "test/Audit*.t.sol" -vv
+cd contracts && forge test --match-path "test/audit/Audit*.t.sol" -vv
 ```
 
 ### 4.5 `SLITHER-TRIAGE.md` — incorrect dispositions

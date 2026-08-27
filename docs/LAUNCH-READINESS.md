@@ -21,7 +21,8 @@ Evidence-based per issue [#24](https://github.com/SlumperSan/agent-governed-vaul
 every row names a verifiable artifact — a report, a tag, a transaction, a CI run — and anything
 unverifiable is marked NO-GO or CONDITIONAL, never assumed. First assessed 2026-08-25 at
 `protocol/main` = `ad9396d7`; **battery re-run and re-recorded 2026-08-27 at `protocol/main` =
-`e7dadf34`** (§5) — the ref this document actually ships in. That re-run was not a formality:
+`e7dadf34`** (§5) — the tip of `protocol/main` at the time of measurement. That re-run was not a
+formality:
 `Governance.sol` changed and the exploit suite landed between the two refs (PRs #36, #37, #30),
 so the original record described a tree that is no longer the tree. The verdict is unchanged.
 **The `v0.3.0-audit` tag is withdrawn as an engagement reference** (gate 1); it remains a valid
@@ -120,9 +121,11 @@ language, for a reader who is not an auditor.
 
 ## 5. Battery record at this ref
 
-Re-run in full on **2026-08-27** at `protocol/main` = **`e7dadf34`** (the merge of PR #30), from a
-clean checkout of that exact commit. The earlier record in this section was taken at `ad9396d7`
-and is superseded: `Governance.sol`, `.gas-snapshot`, `Governance.t.sol`, nine
+Re-run in full on **2026-08-27** against `e7dadf34` (the merge of PR #30), from a clean checkout
+of that exact commit. **These results carry forward to whatever commit this document lands at**,
+because every change since `e7dadf34` is confined to `docs/` — no source, test, or snapshot file
+is touched, so no gate can move. Re-run the battery for real the moment that stops being true.
+The earlier record in this section was taken at `ad9396d7` and is superseded: `Governance.sol`, `.gas-snapshot`, `Governance.t.sol`, nine
 `contracts/test/audit/` suites and ~500 lines of soak tests all landed after it, so its
 "contracts untouched by this branch" note had stopped being true.
 
