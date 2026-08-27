@@ -115,11 +115,14 @@ The intended audit reference is the tag **`v0.2.0-audit`**.
 
 ---
 
-## 5. Post-freeze additions (Sprint 11) — outside `v0.2.0-audit`
+## 5. Post-freeze additions (Sprint 11) — outside `v0.2.0-audit`, INSIDE `v0.3.0-audit`
 
-Everything above describes the tree **at** the tag. This section describes work landed on
-`protocol/main` **after** it. If your engagement is scoped to `v0.2.0-audit`, none of this is in
-scope; read it so you know what exists, not so you audit it.
+Everything above describes the tree **at** the `v0.2.0-audit` tag. This section describes work
+landed on `protocol/main` **after** it. The engagement reference has since moved to
+**`v0.3.0-audit`** (see AUDIT-HANDOFF.md), which includes these files precisely so that the
+warning this section used to carry — "scoped to `v0.2.0-audit`, none of this is in scope" — no
+longer produces an audit of an oracle aggregator that excludes two of its three source classes.
+Read this section as the provenance record for the least-reviewed part of the surface.
 
 **Nothing inside the freeze was modified.** Measurable the same way §1 is:
 

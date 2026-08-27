@@ -7,5 +7,12 @@ contracts/broadcast/
 data/
 scripts/.smoke-state.json
 
+# Keystore password files. Unattended soak/smoke runs use `--password-file`;
+# these must never be committed, whatever they are named.
+*.pw
+.pw
+*password*.txt
+
 # Sprint-12 soak: per-drill resumable state (run records, not source)
+scripts/.soak-state-*.json
 scripts/soak/.state-*.json

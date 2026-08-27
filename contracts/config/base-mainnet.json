@@ -1,8 +1,28 @@
 {
   "chainName": "base-mainnet",
   "chainId": 8453,
-  "status": "UNVERIFIED-ON-CHAIN",
-  "statusNote": "DRAFT. Every address, pool, feed and price id below was written from documentation, NOT read from Base mainnet. Same convention as base-sepolia.json before its Sprint-9 pre-flight pass. No script may consume this file until a session with a Base mainnet RPC has run the verification checklist in `verification` below and flipped `status` to VERIFIED-ON-CHAIN with the block height it was checked at. Deploying against an unverified address list is exactly the irreversible mistake DEPLOYMENT.md §0 warns about: the contracts are immutable, so a wrong feed or pool is permanent for that vault.",
+  "status": "VERIFIED-ON-CHAIN",
+  "statusNote": "Every address, pool, feed and price id below was READ FROM Base mainnet and matched against this file on 2026-08-24 at block 50412867, by `node scripts/verify-mainnet-config.mjs` — 22/22 checks passed. Re-run that script after ANY edit to this file, and before a mainnet deploy regardless: it is read-only, needs no key, and costs nothing. This is CONFIGURATION evidence, not deployment evidence — no contract has been deployed to Base mainnet. Deploying against an unverified address list is exactly the irreversible mistake DEPLOYMENT.md §0 warns about: the contracts are immutable, so a wrong feed or pool is permanent for that vault.",
+  "verifiedOnChain": {
+    "at": "2026-08-24",
+    "blockNumber": 50412867,
+    "chainId": 8453,
+    "rpc": "https://mainnet.base.org",
+    "script": "scripts/verify-mainnet-config.mjs",
+    "checksPassed": 22,
+    "checksTotal": 22,
+    "observed": {
+      "usdc": "symbol USDC, 6dp, Circle-native (not USDbC)",
+      "router": "24,497 bytes of code; both allow-listed selectors resolve (0x04e45aaf, 0xb858183f)",
+      "pyth": "680 bytes of code on Base specifically — not a cross-chain copy-paste",
+      "poolOrdering": "WETH poolA = WETH/USDC fee 500; cbETH poolA = cbETH/WETH fee 500; cbETH poolB = WETH/USDC fee 500 — all orderings as configured, which is what fixes the sign of the mean tick",
+      "cardinality": "WETH poolA 5000, cbETH poolA 2000, cbETH poolB 5000 — all comfortably above the 900 minimum, so no increaseObservationCardinalityNext is needed before deploying",
+      "twapWindow": "observe([1800,0]) succeeded on all three pools — the full 30-minute window is retained",
+      "crossClassAgreement": "WETH chainlink $2486.17 vs pyth $2485.04 (4.5 bps apart); cbETH chainlink $2828.18 vs pyth $2813.17 (53.2 bps apart)"
+    },
+    "operationalNote": "cbETH's Pyth price was 2549s old at check time — inside the 3600s maxStaleness bound but not by much. Pyth is a PULL oracle: a low-activity feed stays stale until someone pays to update it. Before a mainnet deploy, push a fresh update for every price id here and re-check, or expect PythSource to withhold and the asset to run on 2-of-3 with no headroom.",
+    "chainlinkDescriptionNote": "The cbETH feed's on-chain description() is 'CBETH / USD' (capitalised); this file's prose says 'cbETH / USD'. Cosmetic — the address, decimals and answer all verified. The check treats description as advisory and does not fail on wording."
+  },
 
   "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   "usdcNote": "Circle-native USDC on Base (6 decimals). NOT USDbC (0xd9aA...4CA2), the bridged legacy token. Getting this wrong silently prices every vault against the wrong dollar.",

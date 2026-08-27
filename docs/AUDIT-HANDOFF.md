@@ -4,27 +4,37 @@ Everything an external auditor needs to scope the engagement. Current as of the 
 audit freeze**. The protocol is immutable (no proxies, no admin upgrade path), so whatever ships
 is the audit surface permanently — there is no "we'll patch it later."
 
-## Audit this tag: `v0.2.0-audit`
+## Audit this tag: `v0.3.0-audit`
 
-> **If `v0.2.0-audit` is not present in the repository, it was not created — the freeze is
-> content-complete but untagged.** Tagging requires merging PRs
-> [#17](https://github.com/SlumperSan/agent-governed-vaults/pull/17) and
-> [#19](https://github.com/SlumperSan/agent-governed-vaults/pull/19), and the agent session that
-> prepared this freeze had `gh pr merge` refused by its harness permission classifier. The exact
-> merge-and-tag commands, and the branch head that holds the audit-candidate content in the
-> meantime, are in [CHANGES-SINCE-REVIEWS.md §4](CHANGES-SINCE-REVIEWS.md).
+> `v0.3.0-audit` is cut at the `protocol/main` commit that merged this document update, and
+> supersedes **`v0.2.0-audit`** (`5081f9b9`) as the engagement reference. The delta between the
+> two tags' contract surface is exactly four **additive** files under `contracts/src/oracle/` —
+> Sprint 11's mechanism-diverse price sources and their vendored math (see the Scope table).
+> Every file present in `v0.2.0-audit` is byte-identical in `v0.3.0-audit`. Verify, don't trust:
+>
+> ```
+> git diff v0.2.0-audit v0.3.0-audit --name-status -- contracts/src
+> ```
+>
+> must show only `A` lines. The older tag remains valid as the Sprint-10 freeze reference; it is
+> simply not the full audit surface any more, because a firm scoped to it would review an oracle
+> aggregator while excluding two of its three source mechanism classes.
 
 **Read [CHANGES-SINCE-REVIEWS.md](CHANGES-SINCE-REVIEWS.md) first**, then this file. It is one
 page stating what changed since the internal reviews, which rounds covered what, and — more
 usefully — what internal review did **not** cover.
 
-**There is no deployed bytecode to audit against.** The protocol has never been deployed to any
-network, mainnet or testnet. [TESTNET-REPORT.md](TESTNET-REPORT.md) is a **pre-flight record
-only**: nothing was broadcast and no key was ever handled. What it does establish, live on Base
-Sepolia, is that all six configured addresses verify on-chain (USDC/WETH/LINK symbols and
-decimals, both Chainlink feeds fresh, the pinned router has code) and that the toolchain is at
-the required versions. That is configuration evidence, not deployment evidence. The audit surface
-is the source at the tag above.
+**There IS deployed bytecode on Base Sepolia to compare against** — this paragraph originally
+said the opposite, and PR [#18](https://github.com/SlumperSan/agent-governed-vaults/pull/18)
+falsified it. The full protocol was deployed 2026-08-21 (deploy block 45,784,186, 17
+transactions, all contracts Basescan-verified; address book at
+`contracts/config/deployments/base-sepolia.json`), and a full lifecycle plus a multi-day soak
+(deposit → activate → commit/reveal governance → rebalance → both exit modes → sub-vault
+allocate/redeem) has since run against it — see [TESTNET-REPORT.md](TESTNET-REPORT.md) and
+`SOAK-REPORT.md` if present. On-chain `codesize` for every singleton matches what this tree
+builds exactly (e.g. VaultFactory 2,718 B, Governance 11,990 B). **No mainnet deployment
+exists.** The audit surface is the source at the tag above; the testnet instance is corroborating
+evidence, not the reference.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
@@ -42,6 +52,9 @@ is the source at the tag above.
 | `FeeEngine.sol` | ~110 | 10% perf fee, HWM netting, operator claims | High |
 | `OperatorRegistry.sol` | ~150 | identity, cross-vault carry, leaderboard | High |
 | `OracleAggregator.sol` | ~140 | median + staleness breaker | **Critical** — prices everything |
+| `oracle/UniswapV3TwapSource.sol` | ~370 | spot-TWAP `IPriceSource` (SF-1 mechanism class 2); one- or two-hop, USDC pinned to $1 | **Critical** — feeds the aggregator. Added POST-FREEZE (Sprint 11, PR #25): one internal adversarial review round, no prior external eyes — the least-scrutinized contracts here |
+| `oracle/PythSource.sol` | ~150 | pull-oracle `IPriceSource` (class 3); expo→WAD, confidence gate | **Critical** — same provenance and caveat as above |
+| `oracle/vendor/` (TickMath, FullMath) | ~170 | vendored Uniswap math under original licenses (GPL-2.0-or-later / MIT) | High — vendored; license mix vs BUSL is flagged for counsel, not for the technical audit |
 | `AggregationRouterAdapter.sol` | ~80 | DEX-aggregation execution | High — external calls |
 | `SubVaultRegistry.sol` | ~100 | edges, depth, fee-stack caps | Medium |
 | `VaultFactory.sol` | ~120 | permissionless deploy + attestation | Medium |
@@ -168,6 +181,13 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
    commit-reveal quorum math at the <5-member regime boundary.
 3. The recursive look-through `_fullNavWad` (S6 E1 fix) — depth bounding, and whether a
    descendant vault can misprice an ancestor's NAV.
+4. The post-freeze oracle sources (`UniswapV3TwapSource`, `PythSource`) — these have had the
+   least internal scrutiny of anything in scope. Specifically: the Q64.192/Q64.128 branch
+   crossover and $1e-6 output quantization in the TWAP math (quantization is a filed,
+   documented listing constraint below ~$0.01/token, not a defect for majors), tick-sign
+   handling across token orderings, two-hop composition through a shared intermediate pool,
+   and the Pyth expo/confidence gates. An internal re-derivation at 200-digit precision
+   reproduced all committed fixtures (PR #25 review), but no external eyes have touched them.
 4. `OracleAggregator` median robustness and the `BoundedCall` returndata handling.
 5. `AggregationRouterAdapter` against the 2026 arbitrary-calldata exploit class (the reason the
    selector allowlist + measured-delta minOut exist).
