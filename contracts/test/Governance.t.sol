@@ -479,6 +479,69 @@ contract GovernanceTest is Test {
         gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(REBALANCE_PAYLOAD));
     }
 
+    /// AI pre-audit C-2: commitDuration, revealDuration and executionWindow were FLOOR-ONLY.
+    /// All three are uint32, so any of them could be set to ~136 years, and a vault frozen
+    /// mid-proposal cannot legislate its way out (an unresolvable proposal also blocks every
+    /// future proposal, including the RuleChange that would shorten the window) while every exit
+    /// stays queued in Mode F. Immutable protocol, no admin: permanent. Exploits are in
+    /// test/audit/AuditExecutionWindowFreeze.t.sol and AuditDosExitLiveness.t.sol, which now
+    /// revert at setup instead of demonstrating the freeze.
+    function test_phaseDurationHardCapsEnforced() public {
+        MockERC20 usdc2 = new MockERC20("USDC", 6);
+        address[] memory basket = new address[](0);
+        VaultCore v2 = new VaultCore(
+            address(usdc2),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            1e15,
+            10 * USDC_1,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+
+        // Each bound rejected independently — one cap covering for another would be a false pass.
+        Governance.GovConfig memory c = _cfg();
+        c.commitDuration = uint32(gov.COMMIT_HARD_CAP() + 1);
+        vm.prank(creator);
+        vm.expectRevert(Governance.BadGovConfig.selector);
+        gov.registerVault(address(v2), c);
+
+        c = _cfg();
+        c.revealDuration = uint32(gov.REVEAL_HARD_CAP() + 1);
+        vm.prank(creator);
+        vm.expectRevert(Governance.BadGovConfig.selector);
+        gov.registerVault(address(v2), c);
+
+        c = _cfg();
+        c.executionWindow = uint32(gov.EXECUTION_WINDOW_HARD_CAP() + 1);
+        vm.prank(creator);
+        vm.expectRevert(Governance.BadGovConfig.selector);
+        gov.registerVault(address(v2), c);
+
+        // The uint32 ceiling itself — the value the exploits actually used.
+        c = _cfg();
+        c.revealDuration = type(uint32).max;
+        vm.prank(creator);
+        vm.expectRevert(Governance.BadGovConfig.selector);
+        gov.registerVault(address(v2), c);
+
+        // And a config sitting exactly ON each cap must still be accepted: the fix must bound the
+        // range, not quietly narrow it.
+        c = _cfg();
+        c.commitDuration = uint32(gov.COMMIT_HARD_CAP());
+        c.revealDuration = uint32(gov.REVEAL_HARD_CAP());
+        c.executionWindow = uint32(gov.EXECUTION_WINDOW_HARD_CAP());
+        vm.prank(creator);
+        gov.registerVault(address(v2), c);
+        assertTrue(gov.vaultRegistered(address(v2)), "a config exactly at the caps must register");
+    }
+
     function test_timelockHardCapEnforced() public {
         Governance.GovConfig memory bad = _cfg();
         bad.timelockDuration = 31 days;
