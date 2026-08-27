@@ -5,8 +5,9 @@
 This is not the "audit hasn't happened yet" NO-GO this document originally carried. An AI
 pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9 High,
 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35), with **33
-executing exploit tests** committed under `contracts/test/audit/`. C-2 is fixed; **C-1, C-3, C-4
-and C-5 are open.** Two of them lose member funds outright.
+executing exploit tests**, of which **30 are committed** under `contracts/test/audit/` — the three
+C-2 cases were removed once C-2 was fixed, for the reason recorded in §5. C-2 is fixed; **C-1,
+C-3, C-4 and C-5 are open.** Two of them lose member funds outright.
 
 **Read this before anything else in the document:** every "GO" row below was earned by evidence
 of *correct operation* — deployment, lifecycle, soak, settlement. None of it is evidence of
