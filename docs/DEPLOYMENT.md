@@ -140,6 +140,14 @@ Then the creator registers governance config in a second tx:
 Child vaults use `createChildVault(params, parent)` — basket must be a subset of the parent's
 (same USDC), depth ≤ 3, stacked exit-fee ≤ 2.5%.
 
+> **Do not create a child vault on any live deployment right now.** Critical **C-1**
+> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is open: a child funded
+> only by its parent has an **empty electorate**, so one minimum deposit buys sole governance
+> control — and capture equals drain, because `minAmountOut` is proposer-supplied. `createChildVault`
+> is also unauthorized on `parent` (L-1), so *anyone* can attach one. Root vaults only until #33 is
+> remediated and re-reviewed — see [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and
+> [INCIDENTS.md](INCIDENTS.md) §8. The protocol is **NO-GO for mainnet** in any case.
+
 ## 4. Post-deploy verification (before any real capital)
 
 Run each check against the live addresses:
