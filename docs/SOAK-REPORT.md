@@ -19,11 +19,7 @@ state files carry every hash cited here.
 | 2 — sub-vault | **PASS** | parent NAV **unchanged to the wei** across allocate; round trip drift **0** |
 | 3 — Mode-F exit | **PASS** | exit during reveal **queued** (not settled), settlement refused while pending, settled after execution |
 | 4 — oracle freeze | **PASS (no event)** | no staleness in the window — worst age 1.4% of the bound; `cancelPending` **executed live**, escrow returned exactly |
-| 5 — agent execute | **PASS**¹ | agent joined, activated, committed AND revealed through its own loop, exited on a forced trigger |
-
-¹ Drill 5's reveal/exit tail completes at ~14:30 UTC on 2026-08-25; its section below marks
-exactly which rows were recorded before this report was finalized. *(This footnote is deleted
-when the tail lands.)*
+| 5 — agent execute | **PASS** | agent joined, activated, committed AND revealed live, then **exited Mode F on its own policy decision** |
 
 ---
 
@@ -174,13 +170,25 @@ agent directly and the `AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS` gate is still requ
 
 | Phase | Evidence |
 | --- | --- |
-| join — agent decided via its gates, then signed | approve `0xd3cabae0…fdc02ad` + deposit `0xe52748f4…dd6198` — 1.00 USDC escrowed, availableAt recorded |
-| freeze-safety detour | `cancelPending` executed (§4), re-approve `0xc6fc064a…ac30583`, re-deposit `0xa37efac2…84efe9fc` — the un-cleared path exercised twice |
-| activate — via `skipWindow` | `0x7037781d…c716d6fc` (block 45,946,235): 1e18 shares minted immediately; `skipOptIn` now permanently true for this agent on this vault |
-| vote host | proposal 6, raised **after** activation so the agent is in the snapshot: 5e18 across 2 members (propose `0x1810a8ef…3a091c22`) |
-| vote — commit | **agent committed through its own loop, tick 1** (deployer's companion commit: `0xa0eb4b27…3168eaa1`) |
-| vote — reveal | *pending — lands ~13:26 UTC; the salt is re-derived, never stored (S-4)* |
-| exit — forced trigger | *pending — fires after execution, ~14:30 UTC* |
+| join — agent decided via its own gates, then signed | approve `0xd3cabae0…fdc02ad` + deposit `0xe52748f4…dd6198` — 1.00 USDC escrowed |
+| freeze-safety detour | `cancelPending` **executed** `0x927157d3…88f5a4` (escrow returned exactly), re-approve `0xc6fc064a…ac30583`, re-deposit `0xa37efac2…84efe9fc` |
+| activate — via `skipWindow` | `0x7037781d…c716d6fc` (block 45,946,235): 1e18 shares minted immediately |
+| vote host | proposal 6, raised **after** activation so the agent is in the snapshot: 5e18 across **2 members** (propose `0x1810a8ef…3a091c22`) |
+| vote — commit | agent committed through its own loop, tick 1 (deployer companion: `0xa0eb4b27…3168eaa1`) |
+| vote — **reveal** | **`revealedOf(6, agent) == true` on-chain.** The salt was re-derived from a signature, never stored — S-4 proven live (companion reveal `0x1a1599e1…6ce5df`) |
+| exit — agent's own decision | `0x9bc48dab…00b6c660`. Its log: `✓ drawdown: NAV/share 1.0000 vs entry 1.0200 = 196bps down, threshold 1bps` → `EXIT — exit triggered by: drawdown [MODE F: forward-priced]` |
+| settle | `0x875f8642…a183f76d` — 1e18 shares settled after execution. Final: agent shares **0**, USDC 2,995,100 |
+
+**The most valuable result in this drill was not planned.** The agent's exit fired *during the
+pending-execution window*, so its own policy took the **Mode-F** branch — and the agent's log
+shows it understood that (`[MODE F: forward-priced]`). Drill 3 proved Mode F with a scripted
+human; this proves an autonomous agent reaches the same seam unaided and prices correctly through
+it. The queued exit was then settled by a third party (`settleQueuedExit` is callable by anyone —
+EE-10), which is the intended liveness property, exercised end to end.
+
+The agent also paid a real exit fee: 1,000,000 units deposited, 995,100 returned — **4,900 units
+(≈49 bps)** against the vault's 50 bps ceiling with almost no decay elapsed. Fee routing worked on
+a live agent position, not a fixture.
 
 **Deviations from the naive reading of #21, on the record:**
 
@@ -189,10 +197,12 @@ agent directly and the `AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS` gate is still requ
   that had *never* been exercised live; the natural deposit → 4h → activate path was already
   exercised in this soak by drill 1 and by the agent's own first deposit. Net coverage went up.
 - **The exit trigger is forced by construction and says so.** The smoke vault holds only idle
-  USDC; its NAVps is pinned at exactly 1e18 and cannot fall, so no threshold detects a drawdown
-  that does not exist. The agent's *entry mark* was seeded 2% above true NAVps, making it
-  perceive ~200 bps against a 1 bp threshold. This proves the perceive→decide→requestExit path
-  fires end to end; it is **not** evidence of a real loss.
+  USDC; its NAVps is pinned at exactly 1e18 and cannot fall, so *no threshold alone* could ever
+  detect a drawdown that does not exist — lowering `maxDrawdownBps` would have proven nothing.
+  The agent's *entry mark* was therefore seeded 2% above true NAVps, and it measured the gap
+  itself: `196bps down, threshold 1bps`. What is proven is the **perceive→decide→act path**,
+  including that the agent correctly identifies the Mode-F branch; it is **not** evidence of a
+  real loss, and the vault's NAVps never moved.
 - The x402-metered reads the agent paid for ran against `FACILITATOR=stub` — the 402 challenge/
   gate/budget path was exercised ($0.05–0.25 of session budget spent), on-chain settlement was
   not. Live settlement is Sprint 14's separately-proven result (X402-LIVE-REPORT.md).
@@ -248,6 +258,15 @@ members, not a museum piece.
 
 ## 9. What is now proven, and what is not
 
+**A note on scope, added after this soak completed.** An AI pre-audit run against the frozen
+contracts on 2026-08-25 found **five Critical and nine High** findings (see
+`docs/audit/AI-AUDIT-REPORT.md` and issues #31–#35). Nothing in this soak contradicts them and
+nothing here should be read as clearing them: **this soak exercised the happy paths and the
+designed failure modes; it did not attempt adversarial exploitation.** Every drill acted as an
+honest participant. That is the correct scope for a soak — but it means a green soak and a
+vulnerable protocol are entirely compatible, and both are true here. The most striking evidence
+is that the protocol's own 189 tests and all 33 audit exploit tests pass *simultaneously*.
+
 **Proven live on the deployment:** multi-vault aggregation over genuinely different configs;
 dynamic discovery by two independent daemons; SV-3/SV-4 edges and stacked-fee caps; SV-7
 look-through as an exact conservation law with a drift-0 round trip; EE-1 on a second vault;
@@ -260,4 +279,6 @@ canary tracking every one of those causes.
 occurred; the sepolia feed topology cannot produce partial degradation); post-execution pricing
 as a *numeric* delta (no-op rebalance); any real-swap execution path (no token ever moved
 through the router); the x402 settle path under the agent (stub facilitator — proven separately
-in Sprint 14); and multi-operator competition (one operator identity ran everything).
+in Sprint 14); and multi-operator competition (one operator identity ran everything). **Above all: nothing here
+is evidence of security.** No drill attempted to steal, brick, capture, or grief anything — see
+the scope note above.
