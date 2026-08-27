@@ -94,6 +94,10 @@ contract Sprint6FixesTest is Test {
     // ── Finding 1: recursive look-through captures grandchild value ──────────
 
     function test_finding1_grandchildValueInRootNav() public {
+        // L-1: children may only be attached by the PARENT's creator, so the parent is
+        // created by `operator` here too. Previously the parent was created by the test
+        // contract and the child by `operator` - a shape the factory now rejects.
+        vm.prank(operator);
         VaultCore parent = VaultCore(factory.createVault(_params(_wethBasket())));
         vm.prank(operator);
         VaultCore child = VaultCore(factory.createChildVault(_params(_wethBasket()), address(parent)));
@@ -136,6 +140,10 @@ contract Sprint6FixesTest is Test {
 
     function test_finding4_pendingChildDoesNotBlockWhenIdleCovers() public {
         // idle alone covers the exit → child never touched, no revert regardless of child state.
+        // L-1: children may only be attached by the PARENT's creator, so the parent is
+        // created by `operator` here too. Previously the parent was created by the test
+        // contract and the child by `operator` - a shape the factory now rejects.
+        vm.prank(operator);
         VaultCore parent = VaultCore(factory.createVault(_params(_wethBasket())));
         vm.prank(operator);
         VaultCore child = VaultCore(factory.createChildVault(_params(_wethBasket()), address(parent)));

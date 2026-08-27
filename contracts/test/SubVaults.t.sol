@@ -65,6 +65,10 @@ contract SubVaultsTest is Test {
         address[] memory pBasket = new address[](2);
         pBasket[0] = address(wbtc);
         pBasket[1] = address(weth);
+        // L-1: children may only be attached by the PARENT's creator, so the parent is
+        // created by `operator` here too. Previously the parent was created by the test
+        // contract and the child by `operator` - a shape the factory now rejects.
+        vm.prank(operator);
         parent = VaultCore(factory.createVault(_params(pBasket, 50)));
 
         address[] memory cBasket = new address[](1);
@@ -143,7 +147,8 @@ contract SubVaultsTest is Test {
         // 1% + 1% = 2% ok; a third 1% level crosses the 2.5% stack cap (SV-4).
         address[] memory b = new address[](1);
         b[0] = address(weth);
-        address p2 = factory.createVault(_params(b, 100));
+        vm.prank(operator);
+        address p2 = factory.createVault(_params(b, 100)); // L-1: same creator down the chain
         vm.prank(operator);
         address c2 = factory.createChildVault(_params(b, 100), p2); // stacked 2% ok
         vm.prank(operator);
@@ -161,7 +166,8 @@ contract SubVaultsTest is Test {
 
     function test_childQuorumFloorInheritsFromParent() public {
         Governance.GovConfig memory pCfg = _gcfg(4_000);
-        gov.registerVault(address(parent), pCfg); // parent creator = this test contract
+        vm.prank(operator);
+        gov.registerVault(address(parent), pCfg); // parent creator = operator (see setUp, L-1)
 
         Governance.GovConfig memory low = _gcfg(3_000); // below parent's 40%
         vm.prank(operator);
@@ -275,6 +281,7 @@ contract SubVaultsTest is Test {
         // Register governance on both, allocate parent capital into the child, then run a
         // full-consensus RuleChange on the CHILD. Pre-fix the parent's non-voting shares made
         // revealedWeight == snapshotTotal unreachable → config permanently frozen.
+        vm.prank(operator);
         gov.registerVault(address(parent), _gcfg(4_000));
         vm.prank(operator);
         gov.registerVault(address(child), _gcfg(4_000));
@@ -319,5 +326,27 @@ contract SubVaultsTest is Test {
         parent.allocateToChild(address(child), 100 * USDC_1);
         vm.expectRevert(VaultCore.OnlyGovernance.selector);
         parent.redeemFromChild(address(child), 1);
+    }
+
+    /// @notice L-1 REMEDIATED. `createChildVault` performed no authorization on `parent`, so
+    /// ANYONE could permanently attach an arbitrary child under any vault — `registerChild` is
+    /// creation-time-only and there is no removal path. Low on its own (moving funds still needs
+    /// the parent's governance), but it was load-bearing in C-1: an attacker who created the
+    /// child was its `creator`, registered its GovConfig themselves, and set
+    /// `timelockDuration = 0` — removing the parent's only chance to race a `redeemFromChild`
+    /// proposal through before the child's timelock elapsed.
+    function test_remediated_onlyTheParentsCreatorMayAttachAChild() public {
+        address[] memory b = new address[](1);
+        b[0] = address(weth);
+
+        address mallory = makeAddr("mallory");
+        vm.prank(mallory);
+        vm.expectRevert(VaultFactory.NotParentCreator.selector);
+        factory.createChildVault(_params(b, 50), address(parent));
+
+        // The parent's own creator still can.
+        vm.prank(operator);
+        address ok = factory.createChildVault(_params(b, 50), address(parent));
+        assertEq(subReg.parentOf(ok), address(parent), "edge registered for the legitimate creator");
     }
 }

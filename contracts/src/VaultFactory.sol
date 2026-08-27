@@ -21,6 +21,7 @@ interface IVaultDeployer {
 interface IVaultBasket {
     function assetUnit(address a) external view returns (uint256);
     function usdc() external view returns (address);
+    function creator() external view returns (address);
 }
 
 /// @title VaultFactory — permissionless canonical deployment + attestation
@@ -67,6 +68,7 @@ contract VaultFactory {
 
     error BasketNotSubsetOfParent();
     error UsdcMismatch();
+    error NotParentCreator();
 
     struct VaultParams {
         address usdc;
@@ -98,6 +100,13 @@ contract VaultFactory {
     /// @param parent the parent vault to register the creation-time edge under
     /// @return vault the deployed child VaultCore address
     function createChildVault(VaultParams calldata p, address parent) external returns (address vault) {
+        // L-1: this performed NO authorization on `parent`. Anyone could permanently attach an
+        // arbitrary child under any vault — `registerChild` is creation-time-only with no
+        // removal path — and, being the child's own creator, register its GovConfig with
+        // `timelockDuration = 0`. That is what removed the parent's only race in C-1: the
+        // parent's members could otherwise try to push a `redeemFromChild` proposal through
+        // before the child's timelock elapsed. Low standalone, load-bearing in composition.
+        require(msg.sender == IVaultBasket(parent).creator(), NotParentCreator());
         require(IVaultBasket(parent).usdc() == p.usdc, UsdcMismatch());
         for (uint256 i; i < p.basketAssets.length; ++i) {
             require(IVaultBasket(parent).assetUnit(p.basketAssets[i]) != 0, BasketNotSubsetOfParent());

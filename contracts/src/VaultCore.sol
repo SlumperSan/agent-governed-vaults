@@ -52,6 +52,20 @@ contract VaultCore {
     uint256 public constant CREATOR_MIN_STAKE_BPS = 500; // 5%
     uint256 public constant EXIT_FEE_CAP_BPS = 100; // 1% protocol cap
 
+    /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own
+    /// oracle. THREAT-MODEL EX-2 stated this bound as "minOut bound from oracle median ±
+    /// tolerance" and no such bound existed: both execution paths compared the measured output
+    /// delta only against the caller-supplied `minAmountOut`, and the oracle was never
+    /// consulted on the execution path at all. Measuring honestly against a floor of 1 wei
+    /// still yields 1 wei — which is what made governance capture equal a DRAIN (C-1, C-5)
+    /// rather than a bounded bad trade.
+    ///
+    /// Deliberately a PROTOCOL CONSTANT, not a creator-supplied parameter as the finding
+    /// suggested. The creator is untrusted by explicit design, and a creator-set
+    /// `maxSlippageBps = 10000` would be a silent no-op — reproducing M-6, where every named
+    /// defence turned out to be optional and the only worked config disabled all three.
+    uint256 public constant MAX_REBALANCE_SLIPPAGE_BPS = 200; // 2%
+
     // ─────────────────────────────── immutables ───────────────────────────────
     address public immutable usdc;
     uint256 public immutable usdcScalar; // 10**(18 - usdcDecimals)
@@ -169,6 +183,7 @@ contract VaultCore {
     error BadSwapToken();
     error InsufficientAssetBalance();
     error SwapSlippage();
+    error MinOutTooLow();
     error NotRegisteredChild();
     error TooManyChildren();
     error ChildSettlementPending();
@@ -760,6 +775,19 @@ contract VaultCore {
             IExecutionAdapter.SwapOrder calldata o = orders[i];
             require(o.tokenOut == usdc || assetUnit[o.tokenOut] != 0, BadSwapToken());
 
+            // H-4: bound the ORDER against the vault's own oracle before executing it. The
+            // measured-delta check below (`received >= o.minAmountOut`) is a genuine defence
+            // against a lying router (EX-3) and is frequently mistaken for a slippage bound; it
+            // is not one. This is the slippage bound. It costs rebalancing a dependency on
+            // oracle liveness, which is consistent with the rest of the design — every other
+            // NAV path already freezes on staleness (K-4) — but it is a real coupling and is
+            // stated rather than assumed.
+            require(
+                _valueWad(o.tokenOut, o.minAmountOut) * BPS
+                    >= _valueWad(o.tokenIn, o.amountIn) * (BPS - MAX_REBALANCE_SLIPPAGE_BPS),
+                MinOutTooLow()
+            );
+
             // Debit internal accounting for the input leg.
             if (o.tokenIn == usdc) {
                 require(idleUsdc >= o.amountIn, InsufficientAssetBalance());
@@ -794,6 +822,16 @@ contract VaultCore {
             }
         }
         emit RebalanceExecuted(adapter, orders.length);
+    }
+
+    /// @dev USD value of `amount` units of `token`, WAD. USDC is the settlement unit and is
+    /// valued at par, exactly as every other NAV path values it (`:251`, `:282`).
+    /// @param token USDC or a basket asset
+    /// @param amount raw token units
+    /// @return WAD-scaled USD value
+    function _valueWad(address token, uint256 amount) internal view returns (uint256) {
+        if (token == usdc) return amount * usdcScalar;
+        return amount * oracle.priceWad(token) / assetUnit[token];
     }
 
     /// @dev H-1: best-effort mark recording — a reverting registry loses the mark (event-logged),

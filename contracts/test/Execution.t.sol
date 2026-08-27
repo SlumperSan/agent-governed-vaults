@@ -432,4 +432,133 @@ contract ExecutionTest is Test {
         vm.expectRevert(VaultCore.BadSwapToken.selector);
         gov.execute(pid, payload);
     }
+
+    // ── H-4: the EX-2 slippage bound, which was documented but never implemented ──────────
+
+    /// @dev Drive a Rebalance proposal all the way to the point of execution.
+    function _passRebalance(IExecutionAdapter.SwapOrder[] memory orders)
+        internal
+        returns (bytes memory payload, uint256 pid)
+    {
+        payload = abi.encode(address(adapter), orders);
+        vm.prank(creator);
+        pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
+        vm.prank(creator);
+        gov.commitVote(pid, keccak256(abi.encode(pid, creator, true, SALT)));
+        vm.prank(alice);
+        gov.commitVote(pid, keccak256(abi.encode(pid, alice, true, SALT)));
+        (uint64 commitD, uint64 revealD,) = _deadlines(pid);
+        vm.warp(commitD);
+        vm.prank(creator);
+        gov.revealVote(pid, true, SALT);
+        vm.prank(alice);
+        gov.revealVote(pid, true, SALT);
+        vm.warp(revealD);
+        gov.finalize(pid);
+        (,, uint64 execAt) = _deadlines(pid);
+        vm.warp(execAt);
+        // A full governance round outlives the 1-hour staleness bound, so refresh the sources
+        // exactly as the flagship e2e test does. Rebalance now READS the oracle (H-4), which
+        // makes this mandatory rather than incidental.
+        _setAllSources(4_000e18);
+    }
+
+    function _usdcToWeth(uint256 amountInUsdc, uint256 minOutWeth)
+        internal
+        view
+        returns (IExecutionAdapter.SwapOrder[] memory orders)
+    {
+        orders = new IExecutionAdapter.SwapOrder[](1);
+        orders[0] = IExecutionAdapter.SwapOrder({
+            tokenIn: address(usdc),
+            tokenOut: address(weth),
+            amountIn: amountInUsdc,
+            minAmountOut: minOutWeth,
+            deadline: block.timestamp + 30 days,
+            routeData: abi.encodeCall(MockRouter.swap, (address(usdc), address(weth), amountInUsdc, 6, 18))
+        });
+    }
+
+    /// @notice THE C-1 / C-5 DRAIN PAYLOAD, now refused. `minAmountOut` was proposer-supplied
+    /// and the adapter accepted 1 wei, so a captured vault could route its entire balance
+    /// through an attacker-chosen path and book one wei — "capture equals drain". The vault now
+    /// bounds the ORDER against its own oracle before executing it.
+    function test_h4_oneWeiMinOutIsRejectedAgainstTheOracle() public {
+        router.setRate(0.00025e18);
+        (bytes memory payload, uint256 pid) = _passRebalance(_usdcToWeth(1_500 * USDC_1, 1));
+        vm.expectRevert(VaultCore.MinOutTooLow.selector);
+        gov.execute(pid, payload);
+    }
+
+    /// @notice The measured-delta check is NOT a slippage bound, and this is the difference.
+    /// A router that honestly delivers exactly the 1 wei it promised satisfies
+    /// `received >= o.minAmountOut` perfectly — EX-3 is about a LYING router, EX-2 is about a
+    /// bad PRICE, and only the latter is what a captured governance exploits.
+    function test_h4_anHonestRouterDeliveringOneWeiIsStillRefused() public {
+        router.setRate(1); // delivers ~nothing, honestly
+        (bytes memory payload, uint256 pid) = _passRebalance(_usdcToWeth(1_500 * USDC_1, 1));
+        vm.expectRevert(VaultCore.MinOutTooLow.selector);
+        gov.execute(pid, payload);
+    }
+
+    /// @notice The boundary, asserted exactly. wETH is $4,000, so 1,500 USDC is worth
+    /// 0.375 wETH; the 2% bound puts the floor at 0.3675 wETH.
+    /// One wei under the floor is refused. Split from its sibling below because a reverted
+    /// execute leaves the proposal Passed until expiry, and a vault allows one at a time.
+    function test_h4_oneWeiUnderTheFloorIsRefused() public {
+        uint256 floorOut = 0.375e18 * (10_000 - vault.MAX_REBALANCE_SLIPPAGE_BPS()) / 10_000;
+        assertEq(floorOut, 0.3675e18, "2% of fair value on a $4,000 asset");
+
+        router.setRate(0.00025e18);
+        (bytes memory payload, uint256 pid) = _passRebalance(_usdcToWeth(1_500 * USDC_1, floorOut - 1));
+        vm.expectRevert(VaultCore.MinOutTooLow.selector);
+        gov.execute(pid, payload);
+    }
+
+    /// Exactly on the floor is accepted — the bound must not block legitimate rebalancing,
+    /// which is the failure mode a too-tight slippage constant would produce.
+    function test_h4_exactlyOnTheFloorStillExecutes() public {
+        uint256 floorOut = 0.375e18 * (10_000 - vault.MAX_REBALANCE_SLIPPAGE_BPS()) / 10_000;
+        router.setRate(0.00025e18);
+        (bytes memory payload, uint256 pid) = _passRebalance(_usdcToWeth(1_500 * USDC_1, floorOut));
+        gov.execute(pid, payload);
+        assertGt(vault.assetBalance(address(weth)), 0, "the legitimate rebalance still executes");
+    }
+
+    /// @notice The bound is symmetric — it applies to selling basket assets back to USDC too,
+    /// which is the direction a captured vault would use to exit into something it controls.
+    function test_h4_boundAppliesToTheAssetToUsdcDirection() public {
+        // First give the vault some wETH via a legitimate rebalance.
+        router.setRate(0.00025e18);
+        (bytes memory p1, uint256 pid1) = _passRebalance(_usdcToWeth(1_500 * USDC_1, 0.3675e18));
+        gov.execute(pid1, p1);
+        uint256 held = vault.assetBalance(address(weth));
+        assertGt(held, 0, "vault holds wETH");
+
+        // Now try to dump it for 1 USDC unit.
+        IExecutionAdapter.SwapOrder[] memory orders = new IExecutionAdapter.SwapOrder[](1);
+        orders[0] = IExecutionAdapter.SwapOrder({
+            tokenIn: address(weth),
+            tokenOut: address(usdc),
+            amountIn: held,
+            minAmountOut: 1,
+            deadline: block.timestamp + 30 days,
+            routeData: abi.encodeCall(MockRouter.swap, (address(weth), address(usdc), held, 18, 6))
+        });
+        (bytes memory p2, uint256 pid2) = _passRebalance(orders);
+        vm.expectRevert(VaultCore.MinOutTooLow.selector);
+        gov.execute(pid2, p2);
+    }
+
+    /// @notice The coupling this fix introduces, asserted rather than assumed: rebalancing now
+    /// depends on oracle liveness. That is consistent with the rest of the design — every other
+    /// NAV path already freezes on staleness (K-4) — but it is a new dependency for execution
+    /// specifically, and it should fail closed, not open.
+    function test_h4_aStaleOracleBlocksRebalanceRatherThanSkippingTheBound() public {
+        router.setRate(0.00025e18);
+        (bytes memory payload, uint256 pid) = _passRebalance(_usdcToWeth(1_500 * USDC_1, 0.3675e18));
+        skip(2 hours); // every source now stale
+        vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, address(weth)));
+        gov.execute(pid, payload);
+    }
 }
