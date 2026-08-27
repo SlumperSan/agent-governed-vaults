@@ -12,5 +12,7 @@ scripts/.smoke-state.json
 *.pw
 .pw
 *password*.txt
+
+# Sprint-12 soak: per-drill resumable state (run records, not source)
 scripts/.soak-state-*.json
 scripts/soak/.state-*.json

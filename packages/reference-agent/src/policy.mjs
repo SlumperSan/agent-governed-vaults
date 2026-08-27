@@ -84,7 +84,14 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
     checks.push(
       check(
         'operator-net-positive',
-        net > 0n && net >= minNet,
+        // The floor does the work. The extra `net > 0n` that used to sit here made
+        // `requireProvenOperator: false` INERT: the branch above already refuses an operator with
+        // no realizations while that flag is on, so reaching here with it off is a caller
+        // explicitly accepting a no-track-record operator — and `net > 0n` refused them anyway,
+        // which is not what the flag documents ("Refuse an operator with no realizations at all").
+        // Nothing is loosened for the default config: `minOperatorNetRealizedUsdc` defaults to 0,
+        // so negatives are still excluded, and requireProvenOperator defaults to true.
+        net >= minNet,
         `net realized $${fromBaseUnits(net)} (gain $${fromBaseUnits(gain)} / loss $${fromBaseUnits(loss)}), floor $${fromBaseUnits(minNet)}`,
       ),
     );
