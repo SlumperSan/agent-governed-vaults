@@ -1,21 +1,34 @@
 # Launch readiness — mainnet go/no-go
 
-**VERDICT: NO-GO.** The external audit has not been performed. One row below is NO-GO and one is
-CONDITIONAL; everything else is GO with evidence. The shortest path to GO is at the bottom and
-contains exactly two items, one of which takes half an hour.
+**VERDICT: NO-GO — five confirmed Critical vulnerabilities, four of them unfixed.**
+
+This is not the "audit hasn't happened yet" NO-GO this document originally carried. An AI
+pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9 High,
+15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35), with **33
+executing exploit tests** committed under `contracts/test/audit/`. C-2 is fixed; **C-1, C-3, C-4
+and C-5 are open.** Two of them lose member funds outright.
+
+**Read this before anything else in the document:** every "GO" row below was earned by evidence
+of *correct operation* — deployment, lifecycle, soak, settlement. None of it is evidence of
+*security*, and the two are not substitutes. The clearest demonstration is that the protocol's
+own 189 tests and all 33 exploit tests pass **simultaneously**: the suite was never structured
+to catch this class. A green board and an exploitable protocol are entirely compatible, and both
+are true here.
 
 Evidence-based per issue [#24](https://github.com/SlumperSan/agent-governed-vaults/issues/24):
 every row names a verifiable artifact — a report, a tag, a transaction, a CI run — and anything
 unverifiable is marked NO-GO or CONDITIONAL, never assumed. Assessed 2026-08-25 at
-`protocol/main` = `ad9396d7`, audit tag `v0.3.0-audit`.
+`protocol/main` = `ad9396d7`. **The `v0.3.0-audit` tag is withdrawn as an engagement reference**
+(gate 1); it remains a valid historical marker of the pre-remediation tree.
 
 ## 1. Go/no-go checklist
 
 | # | Gate | Verdict | Evidence |
 | --- | --- | --- | --- |
-| 1 | External audit completed, findings remediated | **NO-GO** | Engagement not yet started. The package shipped 2026-08-25 at tag `v0.3.0-audit` (22 contract files — including the Sprint-11 oracle sources a `v0.2.0-audit` scope would have silently excluded; [AUDIT-HANDOFF.md](AUDIT-HANDOFF.md)). **An immutable protocol with real money and no external review is a NO-GO headline, not a footnote.** |
+| 0 | **No known unfixed Critical vulnerabilities** | **NO-GO** | **4 open Criticals.** C-1 (#33) a funded sub-vault has an empty electorate — capture for one minimum deposit, and capture equals drain because `minAmountOut` is proposer-supplied; C-3 (#31) one malformed source permanently bricks pricing for every vault on the aggregator; C-4 (#32) a depressed price mints excess shares atomically — measured **−88.9%** of a victim's stake; C-5 (#34) voting weight survives a full exit. C-2 fixed (PR #36). Each has an executing test in `contracts/test/audit/`. |
+| 1 | External audit completed, findings remediated | **NO-GO** | Not started — and **must not be commissioned against `v0.3.0-audit`**, which contains all five Criticals. That tag is withdrawn as an engagement reference. The corrected tree will differ materially across `Governance`, `OracleAggregator`, `UniswapV3TwapSource`, `VaultCore`, `SafeTransferLib` and `VaultFactory`, so the engagement is a **full** review, not a delta. |
 | 2 | Testnet full lifecycle proven (#15) | **GO** | [TESTNET-REPORT.md](TESTNET-REPORT.md): deploy block 45,784,186, all contracts Basescan-verified; full lifecycle green with an exact USDC round trip. Deployment re-verified live 2026-08-24: on-chain `codesize` of every singleton equals what this tree builds. |
-| 3 | Soak drills incl. Mode-F + sub-vault (#21) | **GO** | [SOAK-REPORT.md](SOAK-REPORT.md): 5/5 drills passed — multi-vault aggregation, SV-7 look-through as an exact conservation law (drift 0), the full Mode-F queue→blocked→settle sequence, oracle watch with `cancelPending` **executed** to the wei, and the reference agent's first live execute-mode loop. Honest limits stated in the report (§9). |
+| 3 | Soak drills incl. Mode-F + sub-vault (#21) | **GO** (correctness only — see gate 0) | [SOAK-REPORT.md](SOAK-REPORT.md): 5/5 drills passed — multi-vault aggregation, SV-7 look-through as an exact conservation law (drift 0), the full Mode-F queue→blocked→settle sequence, oracle watch with `cancelPending` **executed** to the wei, and the reference agent's first live execute-mode loop. Honest limits stated in the report (§9). |
 | 4 | Live x402 settlement (#23) | **GO** | [X402-LIVE-REPORT.md](X402-LIVE-REPORT.md): real `transferWithAuthorization` on Base Sepolia, 14/14 independent `cast` checks; independently re-verified during the PR #27 review gate (balance deltas, events, nonce burn, all four domain separators re-derived). |
 | 5 | Mainnet oracle stack: 3 mechanism-diverse classes, config verified on mainnet RPC | **GO** | Contracts: Sprint 11 (PR #25, 189 forge tests, TWAP math re-derived independently at review). Config: `contracts/config/base-mainnet.json` is **VERIFIED-ON-CHAIN — 22/22 checks at Base mainnet block 50,412,867** (`scripts/verify-mainnet-config.mjs`; re-run it before deploying, it is read-only). |
 | 6 | Canary operational | **GO** | Ran throughout the soak; every transition it ever recorded reconciles to a specific drill action, including dynamically discovering two new vaults on its own (SOAK-REPORT §6). |
@@ -78,7 +91,7 @@ language, for a reader who is not an auditor.
 
 | # | Risk | Worst case | Why ship anyway |
 | --- | --- | --- | --- |
-| 1 | **Immutability itself** | A critical bug that survives the audit is permanent; funds in affected vaults may be unrecoverable | The audit (gate 1), small staged caps, and the strongest testnet record we could produce. This is the protocol's core trade, made openly |
+| 1 | **Immutability itself** | A critical bug that survives review is permanent; funds in affected vaults may be unrecoverable | **This row is no longer hypothetical.** Five Criticals were found in the frozen tree, four still open — every one requiring redeploy because nothing can be patched. Mitigation is the audit (gate 1), remediation (gate 0), small staged caps, and the testnet record. The trade is made openly, and its cost is now measured rather than assumed |
 | 2 | **Oracle freeze (K-4)** | All capital in a vault frozen for the duration of a staleness event — exits included, no hatch | Freezing beats mispricing. Three mechanism-diverse sources at 2-of-3 on mainnet; `cancelPending` (the one guaranteed path, for unactivated deposits) **executed live** in the soak; canary alerts; playbook §1 |
 | 3 | **TWAP leg prices USDC at $1.00** | A sustained USDC depeg mis-prices that leg by exactly the depeg | 2-of-3 quorum outvotes the pinned leg; the two reference feeds for off-chain depeg monitoring are named in the config; measuring USDC on-chain would reintroduce the push-feed dependency the TWAP leg exists to avoid |
 | 4 | **One WETH/USDC pool serves TWAP legs of both launch assets** | That pool going quiet withdraws a source from both assets at once | Disclosed in the config rather than hidden; quorum headroom holds (2-of-3 remains); pool cardinality 5000 verified on-chain |
@@ -99,16 +112,42 @@ language, for a reader who is not an auditor.
 | slither | green | same run |
 | mainnet config | 22/22 at block 50,412,867 | `scripts/verify-mainnet-config.mjs` |
 
-## 6. The shortest path to GO
+## 6. The path to GO
 
-1. **The audit** (gate 1) — package is in the firm's hands as of 2026-08-25; on findings:
-   contracts are frozen, so every finding becomes remediate-and-redeploy or accept-with-reasons,
-   and this document's verdict flips only when each is closed on the record.
-2. **One recorded restore drill** (gate 7) — ~30 minutes: corrupt a copy of the indexer state,
-   restore from the backup ring, `verify`, diff against a fresh backfill. No keys, no chain
-   writes.
+The order matters, and it is longer than this document originally claimed.
 
-Nothing else stands between this repository and mainnet. When both close, cut
-`v1.0.0-launch-candidate`, re-run this battery at the tag, and the remaining steps are the
-human-only ones in DEPLOYMENT.md: fund the deployer, deploy, verify, wire, and walk the caps up
-vault by vault.
+1. **Remediate the four open Criticals.** C-3 and C-5 are self-contained. **C-1 must not be
+   rushed** — the report is explicit that its own suggested fix does not preserve GA-1, so it
+   reopens a design decision and is the likeliest place to introduce Critical #6. C-4 is largely
+   *consequential*: fixing C-3, H-1, H-2 and M-1 removes its trigger, with a mint-time NAV bound
+   as defence in depth.
+2. **Work the High tier (#35) — and treat H-3 as structural.** H-3 says the repo's own V3 mock
+   makes an entire defect class undetectable by its own suite. Replace the mock, re-run, and
+   treat every new failure as a finding. Related: **eight documented threat-model mitigations do
+   not hold as written**, several naming the exact attack that defeats them. The threat model is
+   unusually thorough, which is what makes trusting it dangerous.
+3. **Re-run the full drill battery** against the corrected contracts. Every result in
+   SOAK-REPORT.md was earned against code that is about to change.
+4. **Commission the external audit** on the corrected tree, at a **new tag**.
+5. **One recorded restore drill** (gate 7) — ~30 minutes, no keys, no chain writes. Unaffected by
+   any of the above and can be done at any time.
+
+Only then does `v1.0.0-launch-candidate` become meaningful.
+
+## 7. What changed in this assessment, and why it is stated so bluntly
+
+An earlier draft of this document put the verdict at NO-GO for one reason: the audit had not been
+performed. Every other row was GO, and the shortest path was described as two items, one of them
+half an hour of work.
+
+That draft was accurate about what it measured and wrong about what it implied. It measured
+whether the protocol *works* — deployment, lifecycle, soak, settlement, ops — and the answer is
+genuinely yes, on strong evidence. It implied readiness, and the answer to that is no, by a wide
+margin.
+
+The lesson worth carrying past this sprint: **a green board measures the tests you wrote, and the
+tests you wrote encode the failures you already imagined.** Five Criticals sat underneath 189
+passing tests, a clean multi-day soak, and a verified deployment. Nothing on the board was false.
+The board was simply not measuring the thing that matters most before real money, and no amount
+of additional green rows would have revealed that — only an adversary would, whether hired,
+simulated, or uninvited.
