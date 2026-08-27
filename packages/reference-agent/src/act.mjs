@@ -32,6 +32,15 @@ export const VAULT_WRITE_ABI = Object.freeze([
   { type: 'function', name: 'skipWindow', inputs: [], outputs: [], stateMutability: 'nonpayable' },
 ]);
 
+/**
+ * ERC-20 approve. `VaultCore.deposit` pulls with `safeTransferFrom`, so a deposit from an account
+ * with no allowance reverts `TransferFromFailed(address)` (0x6e1c8d15) before it touches any vault
+ * logic. Nothing in the agent ever set an allowance, which made execute-mode deposits impossible.
+ */
+export const ERC20_WRITE_ABI = Object.freeze([
+  { type: 'function', name: 'approve', inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable' },
+]);
+
 export const GOVERNANCE_WRITE_ABI = Object.freeze([
   {
     type: 'function',
@@ -80,6 +89,19 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
           functionName: 'deposit',
           args: [BigInt(intent.args.amountUsdc)],
           human: `VaultCore(${intent.vault}).deposit($${fromBaseUnits(BigInt(intent.args.amountUsdc))} USDC)`,
+          // `deposit` PULLS via safeTransferFrom, so it needs an allowance first. Declared here
+          // rather than hidden in run(), so dry-run prints it too and the two modes still describe
+          // the same sequence.
+          approvalFirst: config.chain.usdc
+            ? {
+              to: config.chain.usdc,
+              contract: 'USDC',
+              abi: ERC20_WRITE_ABI,
+              functionName: 'approve',
+              args: [intent.vault, BigInt(intent.args.amountUsdc)],
+              human: `USDC(${config.chain.usdc}).approve(${intent.vault}, $${fromBaseUnits(BigInt(intent.args.amountUsdc))})`,
+            }
+            : null,
         };
 
       case 'activate':
@@ -214,14 +236,41 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
     }
 
     if (mode === 'dry-run') {
+      if (call.approvalFirst) log.act(`[DRY-RUN] would send: ${call.approvalFirst.human}`);
       log.act(`[DRY-RUN] would send: ${call.human}`);
       log.info(`           why: ${intent.reason}`);
-      return { intent: intent.kind, vault: intent.vault, sent: false, dryRun: true, call: describe(call) };
+      return {
+        intent: intent.kind, vault: intent.vault, sent: false, dryRun: true,
+        call: describe(call),
+        ...(call.approvalFirst ? { approval: describe(call.approvalFirst) } : {}),
+      };
     }
 
     if (!walletClient) {
       log.error(`cannot send ${intent.kind}: execute mode has no wallet client injected`);
       return { intent: intent.kind, vault: intent.vault, sent: false, refused: true, error: 'no wallet client' };
+    }
+
+    let approvalHash = null;
+    if (call.approvalFirst) {
+      // Sent unconditionally rather than after reading the current allowance: the actor has no
+      // read client, and USDC (FiatTokenV2) permits setting a new allowance directly. Approving
+      // the EXACT deposit amount means a successful deposit consumes it back to zero, so no
+      // standing allowance is left behind.
+      try {
+        approvalHash = await walletClient.writeContract({
+          address: call.approvalFirst.to,
+          abi: call.approvalFirst.abi,
+          functionName: call.approvalFirst.functionName,
+          args: call.approvalFirst.args,
+          account,
+          chain: null,
+        });
+        log.act(`[EXECUTE] sent ${call.approvalFirst.human}  tx=${approvalHash}`);
+      } catch (err) {
+        log.error(`[EXECUTE] approval for ${intent.kind} on ${intent.vault} FAILED — ${String(err?.shortMessage ?? err?.message ?? err)}`);
+        return { intent: intent.kind, vault: intent.vault, sent: false, error: `approval failed: ${String(err?.message ?? err)}` };
+      }
     }
 
     try {
@@ -234,7 +283,7 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
         chain: null,
       });
       log.act(`[EXECUTE] sent ${call.human}  tx=${hash}`);
-      return { intent: intent.kind, vault: intent.vault, sent: true, hash, call: describe(call) };
+      return { intent: intent.kind, vault: intent.vault, sent: true, hash, call: describe(call), ...(approvalHash ? { approvalHash } : {}) };
     } catch (err) {
       log.error(`[EXECUTE] ${intent.kind} on ${intent.vault} FAILED — ${String(err?.shortMessage ?? err?.message ?? err)}`);
       return { intent: intent.kind, vault: intent.vault, sent: false, error: String(err?.message ?? err) };

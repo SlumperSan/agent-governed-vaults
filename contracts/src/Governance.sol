@@ -56,6 +56,17 @@ contract Governance is IGovernance {
     uint256 internal constant BPS = 10_000;
     uint256 public constant QUORUM_FLOOR_BPS = 2_500; // 25% protocol floor
     uint256 public constant TIMELOCK_HARD_CAP = 30 days;
+    /// @notice Upper bounds on the phase durations (AI pre-audit C-2). These were FLOOR-ONLY, and
+    /// every one of them is `uint32` — settable to ~136 years. That is not a theoretical range:
+    /// a vault frozen mid-proposal cannot legislate its way out, because `_isSettled` counts only
+    /// Defeated/Executed/Expired, so an unresolvable proposal also blocks every future proposal,
+    /// including the `RuleChange` that would shorten the window. Meanwhile `hasPendingExecution`
+    /// stays true, so `requestExit` queues Mode-F and `settleQueuedExit` reverts — every exit in
+    /// the vault is frozen, permanently, with no admin and no upgrade path to undo it.
+    /// Confirmed by `test/audit/AuditExecutionWindowFreeze.t.sol` and `AuditDosExitLiveness.t.sol`.
+    uint256 public constant COMMIT_HARD_CAP = 30 days;
+    uint256 public constant REVEAL_HARD_CAP = 30 days;
+    uint256 public constant EXECUTION_WINDOW_HARD_CAP = 90 days;
     uint256 public constant DEFAULT_TTL = 72 hours; // standing-default expiry
     uint256 public constant SIGNER_REGIME_BELOW = 5; // <5 members ⇒ absolute signer counts
 
@@ -199,9 +210,12 @@ contract Governance is IGovernance {
     }
 
     function _validateConfig(GovConfig memory cfg) internal pure {
-        require(cfg.commitDuration >= 1 hours && cfg.revealDuration >= 1 hours, BadGovConfig());
+        require(cfg.commitDuration >= 1 hours && cfg.commitDuration <= COMMIT_HARD_CAP, BadGovConfig());
+        require(cfg.revealDuration >= 1 hours && cfg.revealDuration <= REVEAL_HARD_CAP, BadGovConfig());
         require(cfg.timelockDuration <= TIMELOCK_HARD_CAP, BadGovConfig());
-        require(cfg.executionWindow >= 1 hours, BadGovConfig());
+        require(
+            cfg.executionWindow >= 1 hours && cfg.executionWindow <= EXECUTION_WINDOW_HARD_CAP, BadGovConfig()
+        );
         require(cfg.quorumBps >= QUORUM_FLOOR_BPS && cfg.quorumBps <= BPS, BadGovConfig());
         require(cfg.proposalThresholdBps <= BPS, BadGovConfig());
         require(cfg.concentrationCapBps > 0 && cfg.concentrationCapBps <= BPS, BadGovConfig());
