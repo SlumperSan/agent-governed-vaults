@@ -1,7 +1,15 @@
 {
   "chainName": "base-mainnet",
   "chainId": 8453,
-  "status": "VERIFIED-ON-CHAIN",
+  "status": "NOT-DEPLOYABLE — REBUILD REQUIRED AFTER THE 2026-08-27 SECURITY REMEDIATION",
+  "blockingNote": "THIS FILE CANNOT BE DEPLOYED AS WRITTEN. Three independent constructor requirements added by the security remediation now reject it, and each needs a human decision plus real on-chain addresses that must not be invented: (1) H-1 — every asset carries quorum 2, and OracleAggregator now requires quorum >= MIN_MEDIAN (3), because a two-element lower median is a MINIMUM, not a median; (2) H-1 again — with only 3 sources per asset, quorum 3 means any single dark source freezes the asset, so each asset needs >= 5 sources to have BOTH median integrity and failure headroom, i.e. two further independently-operated sources per asset whose addresses are not in this file; (3) H-2 — twapDefaults pairs windowSeconds 1800 with maxObservationAgeSeconds 3600, and UniswapV3TwapSource now requires maxObservationAge <= window / 20 (= 90s at this window), because the newest observation age is exactly the live tick's weight in the reported mean. Both rejections are pinned as tests: MixedOracleSources::test_remediated_theOldThreeSourceQuorumTwoShapeIsRejected and AuditTwapRealCostModel::test_remediated_constructorRejectsMaxObsAgeAboveTheWindowFraction. The on-chain verification below remains TRUE of the addresses it checked, and is retained for that reason — but it is now evidence about a configuration that no longer builds. Re-run scripts/verify-mainnet-config.mjs after rebuilding, and note M-12: that script cannot observe maxObservationAgeSeconds at all, so it would not have caught (3).",
+  "rebuildChecklist": [
+    "Choose 2 further sources per asset (mechanism- or at least operator-diverse; see MixedOracleSources.t.sol for why operator diversity has to carry the 4th and 5th slots while only three mechanism classes are implemented), and record their real Base mainnet addresses.",
+    "Set quorum to 3 for every asset (MIN_MEDIAN, strict majority of 5, and two failures of headroom).",
+    "Set twapDefaults.maxObservationAgeSeconds <= windowSeconds / 20. At window 1800 that is 90. A pool too quiet to satisfy 90s needs a LONGER window, not a looser age — the ratio is the contamination bound.",
+    "Re-check every pool's observationCardinality against the (possibly longer) window before deploying.",
+    "Re-run scripts/verify-mainnet-config.mjs, and treat its 22/22 as necessary rather than sufficient (M-12)."
+  ],
   "statusNote": "Every address, pool, feed and price id below was READ FROM Base mainnet and matched against this file on 2026-08-24 at block 50412867, by `node scripts/verify-mainnet-config.mjs` — 22/22 checks passed. Re-run that script after ANY edit to this file, and before a mainnet deploy regardless: it is read-only, needs no key, and costs nothing. This is CONFIGURATION evidence, not deployment evidence — no contract has been deployed to Base mainnet. Deploying against an unverified address list is exactly the irreversible mistake DEPLOYMENT.md §0 warns about: the contracts are immutable, so a wrong feed or pool is permanent for that vault.",
   "verifiedOnChain": {
     "at": "2026-08-24",
@@ -46,6 +54,8 @@
     "windowSeconds": 1800,
     "minCardinality": 900,
     "maxObservationAgeSeconds": 3600,
+    "maxObservationAgeBlockingNote": "REJECTED BY THE CURRENT CONTRACTS (H-2). 3600 against a 1800s window meant the newest observation could be TWICE the window old while guard 3 still passed — and the newest-observation age IS the live tick's weight in the reported mean (min(A,W)/W), so this permitted a reported '30-minute TWAP' composed entirely of a single live tick, stamped zero seconds old. The constructor now requires maxObservationAge <= window / 20; at window 1800 the loosest legal value is 90.",
+    "minCardinalityNote_L4": "L-4: 900 is off by one. A ring of C slots spans (C-1) x blocktime, so 900 slots cover 1798s against an 1800s window and the constructor reverts; 901 succeeds. Fails closed, and the deployed pools are at 5000/2000/5000 so it is not currently triggered — but it would bite the next asset listing, and it must be corrected as part of the rebuild.",
     "cardinalityNote": "A V3 pool writes at most ONE observation per block, only on a swap. Base targets 2-second blocks, so covering a 1800-second window in the worst case (a swap every block) needs 1800/2 = 900 slots. `increaseObservationCardinalityNext` is permissionless but the growth is paid per slot (roughly 20k gas each; ~18M gas to go from 1 to 900, so it is done incrementally over several transactions). Check each pool's current `observationCardinality` via slot0() BEFORE deploying: UniswapV3TwapSource's constructor rejects a pool that cannot already serve the window, which is the intended failure — grow the cardinality first, then deploy.",
     "windowNote": "30 minutes. Bounds are [300, 86400] (MIN_WINDOW/MAX_WINDOW). Longer resists manipulation better and tracks a moving market worse; this is the SF-1 knob, and it is immutable per source."
   },
@@ -56,7 +66,7 @@
       "token": "0x4200000000000000000000000000000000000006",
       "decimals": 18,
       "quorum": 2,
-      "quorumNote": "2 of 3 — the strict-majority floor for a 3-source set, and the only value that both satisfies OracleAggregator's constructor and leaves one source of failure headroom. Quorum 3 would let any single dark source freeze the asset.",
+      "quorumNote": "REJECTED BY THE CURRENT CONTRACTS (H-1). This note used to read: '2 of 3 — the strict-majority floor, and the only value that both satisfies the constructor and leaves one source of failure headroom.' Both halves were true and the conclusion was still wrong: at two FRESH sources the aggregator returns fresh[0], the minimum, not a median — a one-directional downward price selector, and downward is the direction that mints excess shares (C-4). The headroom concern was real; the answer is 5 sources with quorum 3, not quorum 2 with 3. Left at 2 deliberately so this file fails loudly at construction rather than looking deployable.",
       "sources": [
         {
           "class": "push",
@@ -87,6 +97,7 @@
       "token": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
       "decimals": 18,
       "quorum": 2,
+      "quorumNote": "REJECTED BY THE CURRENT CONTRACTS (H-1) — see the WETH asset's quorumNote and the rebuildChecklist at the top of this file. Needs 5 sources at quorum 3.",
       "sources": [
         {
           "class": "push",
