@@ -173,6 +173,7 @@ contract VaultCore {
     error AlreadyOptedIn();
     error InsufficientShares();
     error ExitAlreadyQueued();
+    error SlippageExceeded(); // M-15: deposit minted fewer shares than minSharesOut
     error NoQueuedExit();
     error ExecutionStillPending();
     error CreatorStakeGate();
@@ -344,6 +345,21 @@ contract VaultCore {
     /// @param amountUsdc deposit size in USDC units (≥ minDepositUsdc); receipt is measured,
     /// so fee-on-transfer shortfalls below the minimum revert
     function deposit(uint256 amountUsdc) external nonReentrant {
+        _deposit(amountUsdc, 0);
+    }
+
+    /// @notice Deposit with slippage protection (M-15). `minSharesOut` bounds the shares minted on
+    /// the IMMEDIATE-mint path only (returning or window-cleared depositor) — the user-side defence
+    /// against a depressed NAV minting fewer shares than expected (the C-4/H-1/H-2 anomaly seen from
+    /// the depositor's side). A first-time deposit is escrowed pending and prices at activation, so
+    /// `minSharesOut` does not apply there; pass 0 to opt out.
+    /// @param amountUsdc deposit size in USDC units (≥ minDepositUsdc)
+    /// @param minSharesOut minimum shares to mint on the immediate path, or 0 to opt out
+    function deposit(uint256 amountUsdc, uint256 minSharesOut) external nonReentrant {
+        _deposit(amountUsdc, minSharesOut);
+    }
+
+    function _deposit(uint256 amountUsdc, uint256 minSharesOut) internal {
         require(amountUsdc > 0, ZeroAmount());
         require(amountUsdc >= minDepositUsdc, BelowMinDeposit());
 
@@ -361,7 +377,8 @@ contract VaultCore {
         require(received >= minDepositUsdc, BelowMinDeposit());
 
         if (windowCleared[msg.sender] || sharesOf[msg.sender] > 0) {
-            _mintShares(msg.sender, received);
+            uint256 minted = _mintShares(msg.sender, received);
+            require(minted >= minSharesOut, SlippageExceeded()); // M-15 (immediate path only)
             emit DepositActivated(msg.sender, received, sharesOf[msg.sender]);
         } else {
             require(pendingDeposit[msg.sender].amountUsdc == 0, PendingExists());
@@ -419,11 +436,11 @@ contract VaultCore {
         emit DepositActivated(member, amountUsdc, sharesOf[member]);
     }
 
-    function _mintShares(address member, uint256 amountUsdc) internal {
+    function _mintShares(address member, uint256 amountUsdc) internal returns (uint256 minted) {
         uint256 amountWad = amountUsdc * usdcScalar;
         uint256 ts = totalShares;
         // Round down against the depositor; internal-accounting NAV makes donation moot (EE-1).
-        uint256 minted = ts == 0 ? amountWad : amountWad * ts / navWad();
+        minted = ts == 0 ? amountWad : amountWad * ts / navWad();
         require(minted > 0, ZeroAmount());
 
         if (sharesOf[member] == 0) {
@@ -472,6 +489,11 @@ contract VaultCore {
     /// Mode F — rebalance passed and pending ⇒ queued, settles at post-execution NAV.
     /// Queued shares stay outstanding but are locked: no voting eligibility, irrevocable.
     /// @param shares share amount to redeem (≤ balance; one queued exit per member at a time)
+    /// @dev M-15 note: unlike `deposit`, exit has no `minValueOut` overload. The byte budget did
+    /// not fit both, and the deposit side is the primary user-side defence (the C-4/H-1/H-2
+    /// depressed-price anomaly mints excess shares to a DEPOSITOR; an exiter at a depressed NAV
+    /// receives fewer assets but is the party choosing to exit and can read NAV first). The exit
+    /// side is documented as a residual — see AI-AUDIT-REPORT.md M-15.
     function requestExit(uint256 shares) external nonReentrant {
         require(shares > 0, ZeroAmount());
         require(queuedExitShares[msg.sender] == 0, ExitAlreadyQueued());
