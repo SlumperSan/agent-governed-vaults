@@ -64,7 +64,8 @@ contract Eip170Test is Test {
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
             address(subReg),
-            IVaultDeployer(address(vaultDeployer))
+            IVaultDeployer(address(vaultDeployer)),
+            true // asserts subVaultRegistry wiring propagates through the factory
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

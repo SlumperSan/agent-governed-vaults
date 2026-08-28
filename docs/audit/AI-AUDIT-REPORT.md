@@ -230,6 +230,24 @@ re-verified against the change. Additionally gate `createChildVault` on the pare
 governance. **Requires redeploy + re-review of `VaultCore`'s snapshot logic, `Governance`'s quorum
 regimes, and `VaultFactory`.**
 
+> **REMEDIATION STATUS — FIXED at launch (2026-08-28, Phase 2, "root vaults only").** The
+> recommended in-contract fix above was evaluated and **rejected**: `pHeld = 0` breaks the
+> legitimate parent+1-member child (the absolute-signer regime needs `1*2 > 2`, false), and the
+> tension is structural — any voting denominator that excludes the parent lets a dust depositor
+> govern the parent's allocation, and including it makes the child ungovernable (the parent is a
+> contract with no vote path). There is **no purely-internal fix**; a correct fix needs a new
+> "parent casts the child's vote" governance mechanism, which is a product decision, new attack
+> surface, and larger than the finding. The owner's decision is to **ship launch with sub-vaults
+> disabled at the contract level** and defer that mechanism to a post-launch, post-audit release.
+> `VaultFactory` gains an immutable `allowSubVaults` (false at launch): `createChildVault` reverts
+> `SubVaultsDisabled`, and every deployed vault is wired `subVaultRegistry = address(0)` so it is
+> intrinsically root-only. Because `registerChild` is factory-only and `allocateToChild` requires a
+> registered edge, no vault can ever be funded as a child, so the empty-electorate precondition is
+> **unreachable**. This closes **C-1, H-5, H-6, H-7, H-9** and residual-risk row 9 as a class.
+> VaultCore bytes are **unchanged**. Regression: `contracts/test/audit/AuditRootVaultsOnly.t.sol`
+> — one test reproduces the live capture with sub-vaults enabled, one proves it unreachable at
+> launch. (L-1's `createChildVault` creator gate, already merged, is retained behind the new gate.)
+
 ---
 
 ### C-2 — Governance duration parameters are unbounded above: a single `propose()` call can freeze every exit in a vault permanently
@@ -456,6 +474,16 @@ deviates from a recent reference beyond a tolerance. This is the "oracle-enforce
 freshness" option the threat model identifies under **E7/EE-5** and explicitly did not ship; C-4
 raises the cost of that omission considerably. **Requires redeploy + re-review of `VaultCore`'s
 deposit path.**
+
+> **REMEDIATION STATUS — root cause CLOSED; defence-in-depth DEFERRED (2026-08-28, Phase 2).** The
+> trigger is gone: **C-3, H-1, H-2 and M-1 are all merged**, so no wrong or attacker-chosen price
+> reaches `_mintShares` through real code, and the measured exploit's precondition no longer holds.
+> What remains is the *defence-in-depth* mint-time NAV-deviation bound only. It lands in
+> `VaultCore`, which currently has **1,014 B of EIP-170 headroom** — too tight to add it safely
+> alongside the other in-VaultCore fixes — so it is **deferred to the VaultCore-headroom sprint**
+> (see #40, #32) and tracked as the remaining, non-blocking half of #32. It is a second layer, not
+> the fix: the exploitable path is already closed. (M-15, the user-side `minSharesOut`/deadline, is
+> the same deposit-path change and is deferred with it.)
 
 ---
 
@@ -965,7 +993,7 @@ and look-through paths.**
 
 | ID | Finding | Status |
 |---|---|---|
-| **L-1** | **`VaultFactory.createChildVault` performs no authorization on `parent`** (`:100-110`) — only `parent.usdc() == p.usdc` and the basket-subset rule. Anyone may permanently attach an arbitrary child under any vault; `registerChild` is creation-time-only with **no removal path**. Low standalone (moving funds still needs the parent's governance), but it is the enabler that removes the timelock race in **C-1**. Fix: require `msg.sender == VaultCore(parent).creator()`. | CONFIRMED |
+| **L-1** | **`VaultFactory.createChildVault` performs no authorization on `parent`** (`:100-110`) — only `parent.usdc() == p.usdc` and the basket-subset rule. Anyone may permanently attach an arbitrary child under any vault; `registerChild` is creation-time-only with **no removal path**. Low standalone (moving funds still needs the parent's governance), but it is the enabler that removes the timelock race in **C-1**. Fix: require `msg.sender == VaultCore(parent).creator()`. | **FIXED** (merged, commit `b50f652a`): `VaultFactory.createChildVault` now requires `msg.sender == parent.creator()` (`NotParentCreator`); regression `SubVaults::test_remediated_onlyTheParentsCreatorMayAttachAChild`. Now moot at launch behind the C-1 `allowSubVaults` gate, but retained for the enabled path. |
 | **L-2** | **`SHORTFALL_DUST_WAD` passes at the canonical 6 decimals with exactly zero margin.** The maximum truncation residual is `usdcScalar − 1 = 1e12 − 1` against a `<= 1e12` bound — one unit of slack. Correct today, but there is no headroom for any future change to the residual's derivation, and the relationship is undocumented and unasserted. Fix: assert the invariant explicitly rather than relying on the coincidence. | CONFIRMED (derivation) |
 | **L-3** | **`BoundedCall` returns a word built from uninitialised memory** for 1–31-byte returndata (`:19-25`, `:34-43`). Two of five call sites gate on `retSize >= 32`; **`VaultCore.sol:588` (`perfFee = feeWord`) does not**. Bounded to Low by the `cap = gain/10` clamp at `:590-592` and by `feeEngine` being factory-pinned. Fix: zero `ptr` before the copy, or gate on `retSize`. | CONFIRMED |
 | **L-4** | **`minCardinality: 900` in `base-mainnet.json` is off by one.** A ring of `C` slots spans `(C−1) × blocktime`, so 900 slots cover 1798 s against an 1800 s window and the constructor **reverts**; 901 succeeds. Fails closed, and the deployed pools are at 5000/2000/5000, so it is not currently triggered — it would bite the next asset listing. | CONFIRMED (test) |
@@ -1121,6 +1149,13 @@ runs 9 suites / 30 tests, all passing.
 ```bash
 cd contracts && forge test --match-path "test/audit/Audit*.t.sol" -vv
 ```
+
+**Remediation-era additions (post-`v0.3.0-audit`, same directory).** Later fixes added their own
+regression suites under `contracts/test/audit/`, referenced per-finding above:
+`AuditProposalThresholdFloor.t.sol`, `AuditSafeTransferBounded.t.sol`,
+`AuditFeeEngineReentrancy.t.sol`, `AuditUsdcLegEscrow.t.sol`, and — Phase 2 —
+`AuditRootVaultsOnly.t.sol` (2 tests, C-1: one reproduces the funded-child capture with sub-vaults
+enabled, one proves it unreachable under the launch "root vaults only" gate).
 
 ### 4.5 `SLITHER-TRIAGE.md` — incorrect dispositions
 

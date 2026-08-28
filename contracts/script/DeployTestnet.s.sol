@@ -83,7 +83,12 @@ contract DeployTestnet is Script {
             IGovernance(address(governance)),
             IFeeEngine(address(feeEngine)),
             address(subReg),
-            IVaultDeployer(address(vaultDeployer))
+            IVaultDeployer(address(vaultDeployer)),
+            // C-1: TESTNET deliberately enables sub-vaults so the retained (in-audit-scope)
+            // sub-vault code and the SV-* soak drills can be exercised. MAINNET launches root-only
+            // (Deploy.s.sol passes false). Re-enabling on mainnet requires the parent-casts-child-vote
+            // mechanism to have shipped and been audited — see VaultFactory.allowSubVaults.
+            true
         );
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));

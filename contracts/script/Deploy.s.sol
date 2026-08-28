@@ -57,7 +57,8 @@ contract Deploy is Script {
             IGovernance(address(governance)),
             IFeeEngine(address(feeEngine)),
             address(subReg),
-            IVaultDeployer(address(vaultDeployer))
+            IVaultDeployer(address(vaultDeployer)),
+            false // C-1: root vaults only at launch (sub-vaults disabled; see VaultFactory.allowSubVaults)
         );
 
         // One-shot wiring — irreversible after this transaction.

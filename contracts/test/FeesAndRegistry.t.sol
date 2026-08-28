@@ -44,7 +44,8 @@ contract FeesAndRegistryTest is Test {
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
             address(0),
-            IVaultDeployer(address(new VaultDeployer()))
+            IVaultDeployer(address(new VaultDeployer())),
+            false // root-only; this suite never touches sub-vaults
         );
         registry.wire(address(factory), address(fees));
 

@@ -52,7 +52,8 @@ contract SubVaultsTest is Test {
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
             address(subReg),
-            IVaultDeployer(address(new VaultDeployer()))
+            IVaultDeployer(address(new VaultDeployer())),
+            true // this suite is the sub-vault feature test
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

@@ -12,9 +12,12 @@ window, exit in-kind (pro-rata slices of every basket asset) under a two-mode se
 that closes the exit-before-rebalance free option, and pay a 10% performance fee on realized
 profit netted against a cross-vault per-(member, operator) loss carryforward. Pricing is a
 multi-source median oracle with a staleness circuit breaker that — deliberately — freezes
-everything, including exits, when tripped. Vaults can allocate into child vaults (depth ≤ 3)
-with recursive look-through NAV. The off-chain layer (x402-metered API, indexer, web) never
-custodies funds and is out of scope.
+everything, including exits, when tripped. The protocol *supports* child vaults (depth ≤ 3) with
+recursive look-through NAV, but **sub-vaults are DISABLED at launch** (`VaultFactory` deployed with
+`allowSubVaults = false`) as the Critical **C-1** remediation ("root vaults only") — the sub-vault
+code is present and in scope, but no deployed vault can create or fund a child, so review it as
+dormant-at-launch. The off-chain layer (x402-metered API, indexer, web) never custodies funds and
+is out of scope.
 
 ## 1. Reading order (estimated ~1 hour to productive)
 
