@@ -53,7 +53,8 @@ contract SubVaultsTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true // this suite is the sub-vault feature test
+            true, // this suite is the sub-vault feature test
+            new address[](0) // C-6: no oracle allowlist (permissive)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

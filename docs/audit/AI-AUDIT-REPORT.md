@@ -671,6 +671,21 @@ sites in `Governance`.**
 > products). Accepted tradeoffs, documented: single-provider dependency (feed freeze fails the asset
 > closed, no fallback), assets without a Chainlink feed cannot be listed, and the deviation-band NAV
 > arb (bounded; vault-side defence is M-15).
+>
+> **FACTORY GATE IMPLEMENTED (2026-08-28): `VaultFactory` oracle allowlist.** The "next step" above
+> is done. `VaultFactory` gains an immutable `allowedOracles_` set: a **non-empty** allowlist sets
+> `oracleAllowlistEnforced` and `createVault`/`createChildVault` **reject any oracle not on it**
+> (`OracleNotAllowed`); an empty allowlist disables enforcement (local/tests / a deliberately
+> permissionless post-audit deployment). This is what actually CLOSES C-6 as a class for a launch:
+> a permissionless creator can otherwise supply a weak custom `OracleAggregator` OR a
+> `ChainlinkOracle` over a creator-controlled FAKE `AggregatorV3` — both pass their own constructor
+> checks, and the factory cannot tell a genuine feed from a fake on-chain, so **curation is the only
+> sound defence**. At launch the factory is deployed with the blessed `ChainlinkOracle` instance(s)
+> (over verified genuine Chainlink feeds); the custom aggregator is thereby non-selectable. Same
+> shape as `allowSubVaults` (C-1). Regression: `AuditOracleAllowlist.t.sol`. **Remaining to clear
+> gate 0: the mainnet deploy config must POPULATE the allowlist with real blessed-oracle addresses
+> (an empty allowlist ships enforcement OFF — `Deploy.s.sol` carries a loud warning), and the
+> external audit must sign off.**
 
 ---
 

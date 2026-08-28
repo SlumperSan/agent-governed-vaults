@@ -88,7 +88,8 @@ contract DeployTestnet is Script {
             // sub-vault code and the SV-* soak drills can be exercised. MAINNET launches root-only
             // (Deploy.s.sol passes false). Re-enabling on mainnet requires the parent-casts-child-vote
             // mechanism to have shipped and been audited — see VaultFactory.allowSubVaults.
-            true
+            true,
+            new address[](0) // C-6: testnet permissive (no oracle allowlist); mainnet passes blessed oracles
         );
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));

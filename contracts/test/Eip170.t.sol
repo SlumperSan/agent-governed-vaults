@@ -65,7 +65,8 @@ contract Eip170Test is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(vaultDeployer)),
-            true // asserts subVaultRegistry wiring propagates through the factory
+            true, // asserts subVaultRegistry wiring propagates through the factory
+            new address[](0) // C-6: no oracle allowlist (permissive)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

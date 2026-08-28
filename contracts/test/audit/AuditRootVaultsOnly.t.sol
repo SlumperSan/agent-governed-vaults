@@ -74,7 +74,8 @@ contract AuditRootVaultsOnlyTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            allowSubVaults
+            allowSubVaults,
+            new address[](0) // C-6: no oracle allowlist (permissive) for this suite
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));

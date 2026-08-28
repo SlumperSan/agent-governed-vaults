@@ -58,7 +58,13 @@ contract Deploy is Script {
             IFeeEngine(address(feeEngine)),
             address(subReg),
             IVaultDeployer(address(vaultDeployer)),
-            false // C-1: root vaults only at launch (sub-vaults disabled; see VaultFactory.allowSubVaults)
+            false, // C-1: root vaults only at launch (sub-vaults disabled; see VaultFactory.allowSubVaults)
+            // C-6: MAINNET LAUNCH MUST populate this with the blessed ChainlinkOracle instance(s)
+            // (deployed over verified genuine Chainlink Data Feeds) — an EMPTY allowlist leaves the
+            // C-6 curated-oracle gate DISABLED (any creator-supplied oracle accepted). Empty here
+            // until the blessed oracle addresses are resolved (see base-mainnet.json / #41-class
+            // config work). Do not launch mainnet with this empty. See VaultFactory.oracleAllowlistEnforced.
+            new address[](0)
         );
 
         // One-shot wiring — irreversible after this transaction.

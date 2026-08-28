@@ -64,7 +64,8 @@ contract Sprint6FixesTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true // exercises sub-vaults (createChildVault)
+            true, // exercises sub-vaults (createChildVault)
+            new address[](0) // C-6: no oracle allowlist (permissive)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));
