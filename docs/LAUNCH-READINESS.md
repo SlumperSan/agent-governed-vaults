@@ -1,14 +1,23 @@
 # Launch readiness — mainnet go/no-go
 
-**VERDICT: NO-GO — remediation landed for 12 findings, but C-1 remains open by design decision, four Highs remain open, and no external audit has happened.**
+**VERDICT: NO-GO — remediation landed for 18 findings, but C-1 remains open by design decision, four Highs remain open, and no external audit has happened.**
 
 An AI pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9
 High, 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A
 remediation pass on 2026-08-27 closed **twelve** of them.
 
-**Closed:** C-2, C-3, C-5 (Critical); H-1, H-2, H-3, H-4 (High); M-1, M-4 (Medium); L-1, L-2,
-L-3 (Low). Each has `test_remediated_*` coverage, and the exploit each replaced is preserved in
-git history.
+**Closed:** C-2, C-3, C-5 (Critical); H-1, H-2, H-3, H-4 (High); M-1, M-2, M-3, M-4, M-6, M-11,
+M-12 (Medium); L-1, L-2, L-3, L-4 (Low). Each has `test_remediated_*` coverage, and the exploit
+each replaced is preserved in git history.
+
+**One defect closed that the audit did not find:** `proposalCooldown` was not validated at all
+and is a `uint32`, so a creator could set ~136 years and make a vault unable to ever open a
+second proposal. That is C-2's exact shape — an unbounded duration parameter that permanently
+disables governance — on a field C-2 did not cover. Found while fixing M-6, now capped at 30 days.
+
+**And one that changed the budget:** M-11's fix made `VaultCore` *smaller* by 336 bytes (the
+bounded-assembly path is cheaper than the `abi.decode` path it replaced, and these helpers inline
+at every call site). That headroom is what made M-2 affordable at all — see §5.
 
 **C-4 is closed by root cause, not by a bespoke guard.** The report states that fixing C-3,
 H-1, H-2 and M-1 removes its trigger; all four are now fixed. The mint-time NAV bound it
@@ -16,8 +25,10 @@ suggested as defence-in-depth was **not** shipped — it needs VaultCore bytes t
 available (1,182 B of EIP-170 headroom remain) and it touches the deposit path, which is not a
 place to add unreviewed logic. Stated as a deliberate omission, not an oversight.
 
-**Still open: C-1 (#33), H-5, H-6, H-8, H-9, and most of the Medium/Low tier.** C-1 is open
-because its own suggested fix is wrong — see §6.
+**Still open: C-1 (#33), H-5, H-6, H-8, H-9, and the remaining Medium/Low tier** (M-5, M-7,
+M-8, M-9, M-10, M-13, M-14, M-15; L-5, L-6, L-7; the informational tier). C-1 is open because
+its own suggested fix is wrong — see §6. M-7 is *partially* mitigated: the new
+`proposalCooldown` floor rate-limits its propose-defeat-propose cycle without removing it.
 
 **Read this before anything else in the document.** Two separate warnings, and the second is
 now the more important one.
@@ -162,7 +173,7 @@ Every gate below was executed in this session; none is quoted from a previous ru
 | --- | --- | --- |
 | `forge fmt --check` | **pass** (exit 0) | local |
 | `forge build --sizes` (EIP-170) | **pass** (exit 0) | local |
-| `forge test` | **237 tests / 29 suites — 237 pass, 0 fail, 0 skip** | local |
+| `forge test` | **252 tests / 32 suites — 252 pass, 0 fail, 0 skip** | local |
 | `forge snapshot --check --nmt testFuzz` (gas gate) | **pass** (exit 0), against a **regenerated** baseline | local |
 | `npm run test:backend` | **553 tests — 551 pass, 0 fail, 2 skip** | local |
 | CI | pending on the PR | GitHub Actions |
@@ -171,16 +182,21 @@ Every gate below was executed in this session; none is quoted from a previous ru
 
 | Contract | Runtime | Margin |
 | --- | --- | --- |
-| `VaultCore` | 23,394 | **1,182** |
-| `Governance` | 11,854 | 12,722 |
+| `VaultCore` | 23,562 | **1,014** |
+| `Governance` | 12,051 | 12,525 |
 | `UniswapV3TwapSource` | 5,169 | 19,407 |
 | `VaultFactory` | 2,818 | 21,758 |
 | `OracleAggregator` | 1,215 | 23,361 |
 
-`VaultCore` started this session with 1,560 B of margin and ends with 1,182 B. H-4 cost 375 of
-that; M-4 cost 3. **This is why H-5, H-6, H-9, M-2 and M-15 are not fixed** — they all land in
-`VaultCore`, and several would not fit even alone. Governance *shrank* (12,121 → 11,854),
-because C-5's fix replaced four inline weight reads with one helper.
+`VaultCore` started this session with 1,560 B of margin and ends with **1,014**. The path there
+is worth recording, because it is not monotonic: H-4 cost 375 and M-4 cost 3, leaving 1,182;
+then **M-11 returned 336** (bounded assembly is smaller than `abi.decode`, and these helpers
+inline at every call site), reaching 1,518; then M-2 spent 504 on the escrow routing. **M-2 was
+affordable only because M-11 came first.**
+
+**H-5, H-6, H-9 and M-15 remain unfixed for this reason** — they all land in `VaultCore`, and
+several would not fit even alone. `Governance` net *shrank* across the session despite gaining
+M-6's bounds, because C-5's fix replaced four inline weight reads with one helper.
 
 **The gas snapshot was regenerated wholesale**, not reviewed line by line: six contracts changed
 bytecode, so every entry moved. The gate is re-baselined, which means it will catch the *next*
