@@ -52,10 +52,10 @@
 
   "twapDefaults": {
     "windowSeconds": 1800,
-    "minCardinality": 900,
+    "minCardinality": 901,
     "maxObservationAgeSeconds": 3600,
     "maxObservationAgeBlockingNote": "REJECTED BY THE CURRENT CONTRACTS (H-2). 3600 against a 1800s window meant the newest observation could be TWICE the window old while guard 3 still passed — and the newest-observation age IS the live tick's weight in the reported mean (min(A,W)/W), so this permitted a reported '30-minute TWAP' composed entirely of a single live tick, stamped zero seconds old. The constructor now requires maxObservationAge <= window / 20; at window 1800 the loosest legal value is 90.",
-    "minCardinalityNote_L4": "L-4: 900 is off by one. A ring of C slots spans (C-1) x blocktime, so 900 slots cover 1798s against an 1800s window and the constructor reverts; 901 succeeds. Fails closed, and the deployed pools are at 5000/2000/5000 so it is not currently triggered — but it would bite the next asset listing, and it must be corrected as part of the rebuild.",
+    "minCardinalityNote_L4": "L-4 FIXED: this was 900, which is off by one. A ring of C slots spans (C-1) x blocktime, so 900 slots cover 1798s against an 1800s window and the constructor reverts; 901 succeeds. It failed closed and was never triggered by the live pools (5000/2000/5000), but it would have bitten the next asset listing. If the window lengthens during the #41 rebuild, recompute: minCardinality = windowSeconds/blocktime + 1.",
     "cardinalityNote": "A V3 pool writes at most ONE observation per block, only on a swap. Base targets 2-second blocks, so covering a 1800-second window in the worst case (a swap every block) needs 1800/2 = 900 slots. `increaseObservationCardinalityNext` is permissionless but the growth is paid per slot (roughly 20k gas each; ~18M gas to go from 1 to 900, so it is done incrementally over several transactions). Check each pool's current `observationCardinality` via slot0() BEFORE deploying: UniswapV3TwapSource's constructor rejects a pool that cannot already serve the window, which is the intended failure — grow the cardinality first, then deploy.",
     "windowNote": "30 minutes. Bounds are [300, 86400] (MIN_WINDOW/MAX_WINDOW). Longer resists manipulation better and tracks a moving market worse; this is the SF-1 knob, and it is immutable per source."
   },
