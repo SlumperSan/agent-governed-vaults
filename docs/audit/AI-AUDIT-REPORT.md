@@ -79,6 +79,39 @@ failure as a finding; (3) commission the human audit against the corrected tree;
 sources against real Uniswap and Pyth contracts on a fork and on testnet — which has never been
 done (§6).
 
+### Phase-2 remediation disposition (2026-08-28) — read this before the per-finding text
+
+The remediation reached the point where **launch was re-scoped to root vaults only** (C-1). That
+single decision — `VaultFactory.allowSubVaults = false`, enforced — makes an entire class of
+findings **dormant at launch**: they require a funded child vault, which cannot exist. They are not
+fixed in code; they are deferred *with the sub-vault feature*, to be resolved (with the
+parent-casts-child-vote mechanism) before sub-vaults are ever enabled. Disposition of every finding
+for the **root-only launch configuration**:
+
+| Finding | Launch disposition |
+|---|---|
+| **C-1** | **Closed at launch** — sub-vaults disabled (root vaults only). No internal fix exists; deferred mechanism. |
+| **C-2, C-3, C-5** | **Fixed** (earlier remediation) with regression tests. |
+| **C-4** | **Exploitable path closed** by root cause (C-3/H-1/H-2/M-1); defence-in-depth deferred, now partially subsumed by M-15. |
+| **H-1, H-2, H-3, H-4** | **Fixed** (earlier remediation). |
+| **H-5, H-6, H-7, H-9** | **Dormant at launch** — all require a funded child. Deferred with sub-vaults. |
+| **H-8** | **Partially fixed** (dust-lockout + zero-stake-sybil closed in `Governance.finalize`) **+ config-mitigated** (regime-flip: meaningful `minDepositUsdc`). |
+| **M-1..M-4, M-6, M-11, M-12** | **Fixed** (earlier remediation; M-6 partial + config, M-7 not mitigated). |
+| **M-15** | **Partially fixed** — deposit-side `minSharesOut` overload; exit-side deferred (byte budget). |
+| **M-5** | **Dormant at launch** — the 12M-gas fan-out needs sub-vaults; at launch `navWad` loops the basket only (≤10). |
+| **M-7** | **NOT mitigated** — the cooldown floor is per-proposer and sidesteppable; serial-proposal exit freeze stands. Accepted residual, documented; bounded by the ≥1h commit phase. |
+| **M-8** | **Accepted design tradeoff** — the opaque `actionHash` is deliberate front-running (MEV) protection: revealing the swap target at propose time would let anyone front-run the rebalance. The lapsed-`deadline` sub-part is bounded by H-4's 2% oracle slippage cap on execution. Documented, not changed. |
+| **M-9** | **Accepted** — settlement-timing option over the exit performance fee, bounded at `gain/10` and by permissionless-crank market timing. Removing it needs a mechanism change with its own tradeoffs. Documented. |
+| **M-10** | **Accepted (VO-7 residual)** — commit-reveal binds an address, not an actor; a whale splitting stake gets an informed last-mover choice at the cost of the forfeited half. Inherent to per-address commit-reveal; documented. |
+| **M-13** | **Deploy tooling** — no script consumes `base-mainnet.json`; not a contract defect. Blocking for a real mainnet deploy (tracked with #41, which already rebuilds that config), not for the contract security posture. |
+| **M-14** | **View-only, no funds at risk** — the report itself refutes every state-changing path (a starved-source deposit needs >block-gas-limit). Affects integrators/keepers/front-ends that gas-cap `view` calls; documented as an integration constraint (do not gas-cap NAV reads). |
+| **L-1, L-2, L-3, L-4** | **Fixed** (earlier remediation). |
+| **L-5** | **Accepted (creator-disclosed)** — rebasing / double-entrypoint basket tokens break accounting; a per-vault creator choice, disclosed by inspection. Listing constraint, documented. |
+| **L-6** | **Dormant at launch** — SV-6 child quorum-floor re-check needs children. Deferred with sub-vaults. |
+| **L-7** | **Accepted asymmetry** — `clearStandingDefault` is revocable mid-reveal while `setDelegate` is locked; but the standing default is the WEAKER, tally-only instrument (never counts toward quorum), so a member opting out of their own absentee vote is defensible. Forcing a lock trades a minor asymmetry for reduced member agency; documented, not changed. |
+
+The net launch-blocking set after Phase 2 is: **external audit (gate 1)** and any residual the re-verification pass surfaces. Every Critical and every root-affecting High is fixed, config-mitigated, or (for C-4) has its exploitable path closed. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)) — quote the "N passing tests" figure only with that qualifier.
+
 ---
 
 ## 2. Scope
