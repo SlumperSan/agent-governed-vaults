@@ -73,6 +73,16 @@ contract OracleAggregator is IOracleAggregator {
             // NOTE the deliberate consequence: at m == 3 this forces quorum == 3, i.e. any one
             // source failing trips the breaker. Fault tolerance and median integrity cannot both
             // be had at m == 3 — the resolution is m >= 5, not a lower quorum.
+            // ⚠ C-6 (BYZANTINE floor, NOT enforced here — it cannot be): this checks the
+            // FAULT-TOLERANCE floor (m >= 5, quorum a strict majority of CONFIGURED sources), which
+            // is sound only against BENIGN withholdings. It is SILENT on adversarial sources. With
+            // the lower-median selection below, an actor controlling `a` sources owns the reported
+            // price once the FRESH count k falls to <= 2a (k can fall to the quorum via withholding,
+            // and one honest leg withholding — e.g. a quiet TWAP — suffices at m=5). Safety against
+            // `a` adversarial sources needs quorum >= 2a+1, and to also tolerate `f` benign
+            // withholdings, m >= 2a+f+1 — which m=5 cannot satisfy for a>=2. The code cannot see
+            // `a`, so this is a LISTING requirement (genuinely independent sources; see C-6 in the
+            // audit report and THREAT-MODEL SF-1), not a constructor check.
             require(quorum_[i] >= MIN_MEDIAN && quorum_[i] > m / 2 && quorum_[i] <= m, BadOracleConfig());
             // Finding 2: bound staleness both sides — nonzero and below the ceiling.
             require(maxStaleness_[i] > 0 && maxStaleness_[i] <= MAX_STALENESS_CEILING, BadOracleConfig());
@@ -127,7 +137,11 @@ contract OracleAggregator is IOracleAggregator {
             fresh[j] = key;
         }
         // Lower median: no averaging (no even-k swing, no sum overflow-freeze). Majority-fresh
-        // quorum AND k >= 3 together guarantee the middle element is bounded by the honest set.
+        // quorum AND k >= 3 bound the middle element by the honest set ONLY when the honest sources
+        // are a majority of the FRESH set — i.e. fewer than k/2 sources are adversarial. With `a`
+        // adversarial sources the lower median fresh[(k-1)/2] is honest iff k > 2a; at k = 2a (even)
+        // it lands INSIDE the adversarial minority and returns their quote. See C-6: this is a
+        // listing requirement (quorum >= 2a+1), not something enforced here.
         return fresh[(k - 1) / 2];
     }
 
