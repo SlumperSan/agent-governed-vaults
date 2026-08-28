@@ -14,7 +14,7 @@ The entire oracle-finding class — C-3, C-4, C-6, H-1, H-2, H-3, M-1, M-14 — 
 
 **Standard Chainlink Data Feeds are FREE to consume on-chain** (gas only; Data Streams / VRF / CCIP are the metered products), so cost is not an objection.
 
-**Recommendation / NEXT step in progress:** adopt Chainlink-direct as the **launch default** and make the custom [[oracleaggregator]] **non-deployable** via a factory-level oracle-gate — leaving the aggregator user-selectable re-imports C-6 for any vault that picks it. The factory gate is the next step, an owner decision. The mechanism choice (Chainlink-direct vs. curated custom aggregator with `quorum ≥ 2a+1`) is ultimately for the owner + external auditor.
+**Recommendation:** adopt Chainlink-direct as the **launch default**. The complementary factory oracle-gate — making the custom [[oracleaggregator]] non-deployable, since leaving it user-selectable re-imports C-6 for any vault that picks it — is now **DONE (PR #50)**: [[vaultfactory]] carries an immutable `allowedOracles_` allowlist that, when non-empty, reverts `OracleNotAllowed` for any non-blessed oracle in `createVault`/`createChildVault`. The C-6 remediation mechanism is therefore complete in code (safe oracle #49 + factory gate #50); what remains is populating the allowlist with real blessed-oracle addresses in the mainnet deploy config, plus the external audit. The mechanism choice (Chainlink-direct vs. curated custom aggregator with `quorum ≥ 2a+1`) is ultimately for the owner + external auditor.
 
 Accepted tradeoffs, documented: single-provider dependency (a feed freeze fails that asset closed, no fallback), assets without a Chainlink feed cannot be listed, and the deviation-band NAV arb (bounded; the vault-side defence is M-15).
 

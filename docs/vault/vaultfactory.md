@@ -14,8 +14,8 @@ an entire class of criticals.
 
 ## Key state
 
-- Immutables: `registry`, `governance`, `feeEngine`, `subVaultRegistry`, `vaultDeployer`, and the
-  **`allowSubVaults`** switch.
+- Immutables: `registry`, `governance`, `feeEngine`, `subVaultRegistry`, `vaultDeployer`, the
+  **`allowSubVaults`** switch, and the **`allowedOracles_`** oracle allowlist (see below).
 - `allVaults[]` — every vault ever deployed here.
 
 ## Entry points
@@ -53,6 +53,19 @@ that blob exceeds EIP-170). A failing VaultCore constructor bubbles its own reve
   parent's only race in C-1. Low standalone, load-bearing in composition. (Dormant at launch behind
   the same gate, but retained.)
 
+- [[c6-oracle-byzantine]] — **the `allowedOracles_` oracle-gate (PR #50).** The bespoke
+  [[oracleaggregator]] cannot be secured against an adversarial source set (`quorum ≥ 2a+1` is a
+  listing requirement the constructor cannot see), so leaving it user-selectable re-imported C-6 for
+  any vault that picked it. The factory now takes an **immutable oracle allowlist** at construction:
+  a **non-empty** `allowedOracles_` sets `oracleAllowlistEnforced`, and both `createVault` and
+  `createChildVault` revert **`OracleNotAllowed`** for any `oracle_` not on the list; an **empty**
+  list is permissive (enforcement off). This is the contract-level lever that makes the custom
+  aggregator non-deployable and pins vaults to the blessed [[chainlinkoracle]] — the second half of
+  the C-6 remediation, alongside the safe oracle (#49). See [[chainlink-direct-pivot]]. Regression:
+  `AuditOracleAllowlist.t.sol`. (Gate 0 stays NO-GO until the mainnet deploy config populates the
+  allowlist with real blessed-oracle addresses and the external audit clears — the *mechanism* is now
+  complete.)
+
 The child path also enforces same-USDC and basket-subset-of-parent, so in-kind child redemptions
 always map into parent accounting and look-through pricing (SV-7) is always possible.
 
@@ -70,7 +83,8 @@ it embedded VaultCore's creation code inline — the reason [[vaultdeployer]] ex
 ## Links
 
 - [[contracts-index]] · [[vaultdeployer]] · [[vaultcore]] · [[operatorregistry]] ·
-  [[subvaultregistry]] · [[governance]]
-- Architecture: [[sub-vaults]] · [[nav-and-shares]]
-- Findings: [[c1-empty-electorate]] · [[highs]]
-- Decision: [[root-vaults-only]] · [[threat-model-commitments]] · [[launch-readiness-gates]]
+  [[subvaultregistry]] · [[governance]] · [[oracleaggregator]] · [[chainlinkoracle]]
+- Architecture: [[sub-vaults]] · [[nav-and-shares]] · [[oracle-layer]]
+- Findings: [[c1-empty-electorate]] · [[c6-oracle-byzantine]] · [[highs]]
+- Decision: [[root-vaults-only]] · [[chainlink-direct-pivot]] · [[threat-model-commitments]] ·
+  [[launch-readiness-gates]]

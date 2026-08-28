@@ -16,6 +16,8 @@ In [[continuous-autonomous-mode]] with [[auto-merge]], the PR list *is* the chan
 | **#46** | `security/sprint20-dispositions` | disposition remaining findings; correct SLITHER-TRIAGE | Medium/Low tier |
 | **#47** | `security/oracle-reverification-c6` | `AuditC4EndToEnd.t.sol`; C-4 re-verification | surfaced C-6 ([[c6-oracle-byzantine]]) |
 | **#49** | `security/chainlink-oracle` | additive `ChainlinkOracle.sol` (Chainlink Data Feeds direct) | C-6 resolution ([[chainlink-direct-pivot]]) |
+| **#50** | `security/c6-factory-oracle-gate` | [[vaultfactory]] immutable `allowedOracles_` allowlist; `createVault`/`createChildVault` revert `OracleNotAllowed` when enforced; `AuditOracleAllowlist.t.sol` | C-6 factory oracle-gate — completes the mechanism ([[c6-oracle-byzantine]]) |
+| **#51** | `security/c6-vault` | the vault itself | C-6 ([[chainlink-direct-pivot]]) |
 
 Earlier (Phase 1): **#39** (`security/critical-remediation`) closed the twelve findings; **#38** was the Sprint-15 battery refresh; **#42** the medium-tier pass. See [[remediation-history]].
 
@@ -25,7 +27,7 @@ Earlier (Phase 1): **#39** (`security/critical-remediation`) closed the twelve f
 | --- | --- |
 | **#40** | VaultCore-headroom sprint — the EIP-170 budget that blocks H-5/H-6/H-9 and M-15 exit-side |
 | **#41** | Rebuild `base-mainnet.json` — 5 sources/asset at quorum 3, `maxObservationAge ≤ window/20`; human-supplied addresses |
-| **#48** | C-6 tracking — the oracle-curation / mechanism decision; **gate 0 does not clear while open** |
+| **#48** | C-6 tracking — remediation **mechanism now complete in code** (safe oracle #49 + factory gate #50); stays OPEN only until the mainnet deploy config populates `allowedOracles_` with real blessed-oracle addresses and the external audit clears; **gate 0 does not clear while open** |
 
 Referenced audit issues from the pre-audit engagement: #31–#35 (the Critical filings), #32 (C-4 DiD), #33 (C-1), #34 (C-5), #24 (evidence-based launch readiness).
 
