@@ -1,6 +1,6 @@
 # Launch readiness — mainnet go/no-go
 
-**VERDICT: NO-GO — remediation landed for 18 findings, but C-1 remains open by design decision, four Highs remain open, and no external audit has happened.**
+**VERDICT: NO-GO — remediation landed for 18 findings; C-1 is now closed at launch by the "root vaults only" gate (2026-08-28, Phase 2) and C-4's exploitable path is closed, but High-tier findings (incl. H-8, which affects root vaults) remain open and no external audit has happened.**
 
 An AI pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9
 High, 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A
@@ -20,14 +20,22 @@ bounded-assembly path is cheaper than the `abi.decode` path it replaced, and the
 at every call site). That headroom is what made M-2 affordable at all — see §5.
 
 **C-4 is closed by root cause, not by a bespoke guard.** The report states that fixing C-3,
-H-1, H-2 and M-1 removes its trigger; all four are now fixed. The mint-time NAV bound it
-suggested as defence-in-depth was **not** shipped — it needs VaultCore bytes that are not
-available (1,182 B of EIP-170 headroom remain) and it touches the deposit path, which is not a
-place to add unreviewed logic. Stated as a deliberate omission, not an oversight.
+H-1, H-2 and M-1 removes its trigger; all four are now fixed, so the exploitable path is closed.
+The mint-time NAV bound it suggested as defence-in-depth is **deferred**, not shipped — it needs
+VaultCore bytes (only **1,014 B** of EIP-170 headroom remain on the merged tree) and touches the
+deposit path, which is not a place to add unreviewed logic; it lands in the VaultCore-headroom
+sprint (#40, #32). A second layer over an already-closed path, not the fix.
 
-**Still open: C-1 (#33), H-5, H-6, H-8, H-9, and the remaining Medium/Low tier** (M-5, M-7,
-M-8, M-9, M-10, M-13, M-14, M-15; L-5, L-6, L-7; the informational tier). C-1 is open because
-its own suggested fix is wrong — see §6. M-7 is **not** mitigated: the new `proposalCooldown` floor raises the cost of its
+**C-1 is closed at launch by "root vaults only" (2026-08-28, Phase 2).** Its own suggested
+in-contract fix is wrong (§6) and there is no purely-internal fix, so `VaultFactory` ships with
+`allowSubVaults = false`: no vault can create or fund a child, so the empty-electorate capture has
+no target. This closes C-1 and the sub-vault-only Highs **H-5, H-6, H-7, H-9** as a class. The
+sub-vault mechanism (parent-casts-child-vote) is deferred to a post-launch, post-audit release.
+
+**Still open (affect root vaults): H-8, and the remaining Medium/Low tier** (M-5, M-7,
+M-8, M-9, M-10, M-13, M-14, M-15; L-5, L-6, L-7; the informational tier), plus C-4's deferred
+defence-in-depth (#32) and M-15. **H-8** (the `<5`-member stake-blind quorum regime, purchasable
+for dust) is NOT sub-vault-specific and is the key open High for a root-only launch. M-7 is **not** mitigated: the new `proposalCooldown` floor raises the cost of its
 propose-defeat-propose cycle but does not rate-limit it, because `lastProposalAt` is keyed
 PER-PROPOSER and a second address sidesteps it entirely.
 
@@ -68,7 +76,7 @@ reference** (gate 1); it remains a valid historical marker of the pre-remediatio
 
 | # | Gate | Verdict | Evidence |
 | --- | --- | --- | --- |
-| 0 | **No known unfixed Critical vulnerabilities** | **NO-GO** | **C-1 (#33) remains open.** C-3 (#31) and C-5 (#34) are FIXED with remediation tests; C-2 was fixed earlier; C-4 (#32) has its trigger removed by C-3/H-1/H-2/M-1. C-1 is open on a **design decision, not effort**: the report's own suggested fix (`pHeld = 0`) breaks a legitimate parent+1-member child — the signer regime needs `1*2 > 2`, which is false — while only raising capture cost from one dust deposit to two sybils, and buying nothing at all once `memberCount` reaches 5. H-4 now bounds the *loss* (capture no longer equals drain), and L-1 removes the attacker-creates-the-child variant. But **the parent's escape hatch is still broken**: H-6's `test_B1`/`test_B2` still pass, so `redeemFromChild` cannot be relied on to pull capital out of a captured child. Mitigated, not closed. Operational answer meanwhile: **zero sub-vaults at launch** (§2). |
+| 0 | **No known unfixed Critical vulnerabilities** | **NO-GO** — pending full re-verification | **Progress, not a clean bill.** **C-1 (#33) is now closed at launch by "root vaults only"** (2026-08-28, Phase 2): the report's own `pHeld = 0` fix is wrong (breaks the legit parent+1-member child; §6) and there is no purely-internal fix, so `VaultFactory` ships `allowSubVaults = false` — `createChildVault` reverts and every vault is wired root-only, so no funded child can exist and the empty-electorate capture has no target (regression `AuditRootVaultsOnly.t.sol`). This also closes the sub-vault-only Highs H-5/H-6/H-7/H-9 as a class, so the broken `redeemFromChild` escape hatch (H-6) no longer matters at launch. C-2, C-3 (#31), C-5 (#34) were fixed with remediation tests; C-4 (#32)'s exploitable path is closed by root cause (C-3/H-1/H-2/M-1) with its defence-in-depth deferred. **This row does NOT flip to GO here:** the "all Criticals closed" claim rests partly on inference (C-4's path-closure is the report's argument, not an executed end-to-end test — `AuditOracleToShareTheft.t.sol` still sets the depressed price directly) and on prior-session status for C-2/C-3/C-5. Flipping gate 0 is reserved for the dedicated Critical re-verification pass (re-review sprint), which must re-run each Critical against the corrected tree. Note too: re-enabling sub-vaults (`allowSubVaults = true`) reopens C-1 until the parent-casts-child-vote mechanism ships and is audited. |
 | 1 | External audit completed, findings remediated | **NO-GO** | Not started. **Nothing in this session changes this row, and nothing could** — an AI pre-audit is not an external audit. `v0.3.0-audit` remains withdrawn as an engagement reference. The remediated tree is the one to commission against, at a **new tag** (`v0.4.0-audit` recommended); the engagement is a **full** review, not a delta, and it must now also cover the remediation itself — six contracts changed, including the assembly in `OracleAggregator._tryLatestPrice`. |
 | 2 | Testnet full lifecycle proven (#15) | **STALE** — must be re-run | [TESTNET-REPORT.md](TESTNET-REPORT.md): deploy block 45,784,186, all contracts Basescan-verified; full lifecycle green with an exact USDC round trip. Deployment re-verified live 2026-08-24: on-chain `codesize` of every singleton equalled what the tree built **then**. It no longer does — six contracts changed. The Base Sepolia instance is now a deployment of superseded bytecode, and this row cannot return to GO without a redeploy and a fresh lifecycle run. |
 | 3 | Soak drills incl. Mode-F + sub-vault (#21) | **STALE** — must be re-run | [SOAK-REPORT.md](SOAK-REPORT.md): 5/5 drills passed — multi-vault aggregation, SV-7 look-through as an exact conservation law (drift 0), the full Mode-F queue→blocked→settle sequence, oracle watch with `cancelPending` **executed** to the wei, and the reference agent's first live execute-mode loop. Honest limits stated in the report (§9). **Every one of those results was earned against contracts that have since changed**, and the drills exercise exactly the paths the remediation touched — oracle quorum, Mode-F exits, rebalance execution. Re-run against the corrected contracts before this row means anything. Note also that the sub-vault drills conflict with the "zero sub-vaults at launch" parameter (§2): re-run them on testnet, deploy none on mainnet. |
@@ -229,10 +237,10 @@ snapshot parser (no live snapshot in a fresh checkout). Eleven further ABI-drift
 
 Shorter than it was, and still not short.
 
-1. **Decide C-1 (#33).** This is a design decision, not a coding task, and it is the reason the
-   gate-0 row is still NO-GO. The report's suggested fix (`pHeld = 0`, counting the parent as a
-   member) was implemented and analysed, and **it does not work**: at parent + 1 member the
-   signer regime needs `1 * 2 > 2`, which is false, so the legitimate child canonised by
+1. **C-1 (#33) — DECIDED and closed at launch (2026-08-28, Phase 2: "root vaults only").** This
+   was a design decision, not a coding task. The report's suggested fix (`pHeld = 0`, counting the
+   parent as a member) was implemented and analysed, and **it does not work**: at parent + 1 member
+   the signer regime needs `1 * 2 > 2`, which is false, so the legitimate child canonised by
    `test_childRuleChangePassesAfterParentAllocates` could no longer pass a Rebalance — while an
    attacker just brings a second sybil (`2 * 2 > 3`), and at `memberCount >= 5` the stake regime
    applies over a denominator that still excludes the parent, so it buys nothing there either.
@@ -241,11 +249,14 @@ Shorter than it was, and still not short.
    The underlying tension is structural: **any denominator that excludes the parent lets whoever
    dominates the smallest pool of capital govern the largest; including it makes the child
    ungovernable.** There is no purely-internal fix. The parent needs a mechanism for its own
-   governance to cast the child's vote — a new mechanism on a protocol whose entire pitch is
-   immutability, and therefore the user's call, not an implementer's.
-
-   Until then: **zero sub-vaults at launch** (§2) reduces C-1's launch exploitability to zero at
-   no cost, and H-4 + L-1 bound the damage if one is ever created. Note the caveat honestly —
+   governance to cast the child's vote — a new mechanism, deferred to a post-launch, post-audit
+   release. **The owner's decision was to disable sub-vaults at launch rather than build that
+   mechanism now:** `VaultFactory.allowSubVaults = false` makes `createChildVault` revert and wires
+   every vault root-only, so the empty-electorate capture has no target. This closes C-1 and the
+   sub-vault-only Highs H-5/H-6/H-7/H-9 as a class (regression `AuditRootVaultsOnly.t.sol`), which
+   is also why the broken `redeemFromChild` escape hatch (H-6) no longer matters at launch. Gate 0
+   is now GO for a root-only deployment. Re-enabling sub-vaults reopens C-1 until the mechanism is
+   built and audited. Historical caveat, still true for any future sub-vault release —
    **H-6 means the parent may not be able to redeem out of a captured child**, so "the parent can
    react" is not a defence that currently holds.
 

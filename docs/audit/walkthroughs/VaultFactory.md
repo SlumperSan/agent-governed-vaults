@@ -29,9 +29,10 @@ binds to this identity) and its attested operator.
 
 | Function | Notes |
 | --- | --- |
-| `createVault(params)` | `_deploy` → `registry.attestVault(vault, msg.sender)` → record in `allVaults` |
+| `createVault(params)` | `_deploy` → `registry.attestVault(vault, msg.sender)` → record in `allVaults`. `_deploy` wires each vault's `subVaultRegistry` to the real registry **only when `allowSubVaults`**; otherwise `address(0)` (root-only, C-1) |
+| `allowSubVaults` | **Immutable, C-1 launch switch.** False at launch → `createChildVault` reverts `SubVaultsDisabled` and every deployed vault is wired root-only (`subVaultRegistry = address(0)`, so `allocateToChild` reverts and `parentVault()` is `address(0)`). A funded child would otherwise have an empty electorate capturable by one dust deposit (C-1), and there is no purely-internal fix; sub-vaults are deferred to a post-launch, post-audit release. Set true only once the parent-casts-child-vote mechanism ships |
 | `vaultDeployer` | Immutable. The factory's ONLY vault construction path (#10). Named `vaultDeployer`, not `deployer`, because the singletons already use `deployer` for the account that deployed them (`registry.deployer()`) |
-| `createChildVault(params, parent)` | Additionally: **child USDC must equal parent USDC** and **child basket ⊆ parent basket** (`assetUnit != 0` check per asset) — the property that makes in-kind child redemptions always map into parent accounting and look-through pricing always resolvable (SV-7). Then `subVaultRegistry.registerChild(parent, vault, exitFeeMaxBps)` (depth + fee-stack checks live there) + attestation |
+| `createChildVault(params, parent)` | **Reverts `SubVaultsDisabled` unless `allowSubVaults`** (C-1, see above). When enabled: `msg.sender == parent.creator()` (L-1), **child USDC must equal parent USDC** and **child basket ⊆ parent basket** (`assetUnit != 0` check per asset) — the property that makes in-kind child redemptions always map into parent accounting and look-through pricing always resolvable (SV-7). Then `subVaultRegistry.registerChild(parent, vault, exitFeeMaxBps)` (depth + fee-stack checks live there) + attestation |
 | `vaultCount` / `allVaults` | Enumeration for the indexer |
 
 ## Two-step bring-up (documented UX, not a trust gap)

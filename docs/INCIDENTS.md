@@ -144,7 +144,16 @@ Fees claimed to an unexpected address, or module events that match no known caus
 An operator key signs bad proposals, or a member accumulates quorum and passes a hostile
 rebalance.
 
-> ### ⚠ Read first: for SUB-VAULTS these defences are stronger than they were, and still incomplete
+> ### ⚠ Read first: SUB-VAULTS ARE DISABLED AT LAUNCH (C-1 remediation, "root vaults only")
+>
+> **Update 2026-08-28 (Phase 2):** the operational rule at the bottom of this box — "do not create
+> sub-vaults, do not allocate parent capital into a child" — is now an **enforced contract
+> invariant**, not an operator instruction. `VaultFactory` ships with `allowSubVaults = false`:
+> `createChildVault` reverts `SubVaultsDisabled` and every deployed vault is wired root-only, so no
+> funded child can exist and the C-1 capture below has no target. C-1 is thereby **closed as a
+> class at launch** (together with the sub-vault-only Highs H-5/H-6/H-7/H-9). The rest of this box
+> describes the sub-vault risk that applies **only** to a future release that re-enables sub-vaults
+> with the parent-casts-child-vote mechanism; on a launch (root-only) deployment it is dormant.
 >
 > This section was written against the *intended* design. The 2026-08-27 remediation closed two
 > of the three holes below. **C-5 is FIXED** — voting weight no longer survives an exit, so

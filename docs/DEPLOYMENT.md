@@ -140,13 +140,18 @@ Then the creator registers governance config in a second tx:
 Child vaults use `createChildVault(params, parent)` — basket must be a subset of the parent's
 (same USDC), depth ≤ 3, stacked exit-fee ≤ 2.5%.
 
-> **Do not create a child vault anywhere real capital is at risk.** Critical **C-1**
-> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is open: a child funded
-> only by its parent has an **empty electorate**, so one minimum deposit buys sole governance
-> control — and capture equals drain, because `minAmountOut` is proposer-supplied. `createChildVault`
-> is also unauthorized on `parent` (L-1), so *anyone* can attach one. Root vaults only until #33 is
-> remediated and re-reviewed — see [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and
-> [INCIDENTS.md](INCIDENTS.md) §8. The protocol is **NO-GO for mainnet** in any case.
+> **Sub-vaults are DISABLED at launch (Critical C-1 remediation, "root vaults only").** The former
+> manual warning here is now an enforced contract invariant: `VaultFactory` is deployed with
+> `allowSubVaults = false`, so `createChildVault` reverts `SubVaultsDisabled` and every deployed
+> vault is wired `subVaultRegistry = address(0)` — intrinsically root-only. This closes C-1
+> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) and the sub-vault-only
+> Highs (H-5/H-6/H-7/H-9) as a class. **Why disabled rather than patched:** a child funded only by
+> its parent has an empty electorate (the parent is excluded by GA-1), and there is no
+> purely-internal fix — the correct mechanism (parent casts the child's vote) is a post-launch,
+> post-audit feature. To enable sub-vaults you must deploy a factory with `allowSubVaults = true`,
+> which is only appropriate once that mechanism has shipped and been audited. See
+> [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The protocol is
+> **NO-GO for mainnet** until the full remediation + external audit completes, in any case.
 >
 > **This is not a ban on testnet sub-vault drills** — the Base Sepolia drills already run
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the

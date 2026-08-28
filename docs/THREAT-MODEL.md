@@ -69,6 +69,14 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 
 ## SV — Sub-vaults
 
+> **DISABLED AT LAUNCH (Critical C-1 remediation, 2026-08-28).** `VaultFactory` ships with
+> `allowSubVaults = false`, so no vault can create or fund a child and none of the SV rows below
+> are reachable in the launch configuration. A funded child has an empty electorate (the parent is
+> excluded by GA-1), capturable by one dust deposit (C-1), and there is no purely-internal fix —
+> the correct mechanism (parent casts the child's vote) is deferred to a post-launch, post-audit
+> release. The rows below remain the threat model for that future release. See
+> [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §6 and audit report C-1.
+
 | ID | Mechanic | Attack vector | Sev | Mitigation / status |
 | --- | --- | --- | --- | --- |
 | SV-1 | Parent allocates, child self-governs | Child governance rebalances into assets that violate parent mandate — parent capital exposed to unbargained risk | M | Deferred(S5): parent allocation is a member position in the child — parent gets stake-weighted vote in child governance; mandate enforcement is governance, not code. Accepted residual: code cannot read mandates |

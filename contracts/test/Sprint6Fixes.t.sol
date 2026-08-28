@@ -63,7 +63,8 @@ contract Sprint6FixesTest is Test {
             IGovernance(address(gov)),
             IFeeEngine(address(fees)),
             address(subReg),
-            IVaultDeployer(address(new VaultDeployer()))
+            IVaultDeployer(address(new VaultDeployer())),
+            true // exercises sub-vaults (createChildVault)
         );
         registry.wire(address(factory), address(fees));
         subReg.wire(address(factory));
