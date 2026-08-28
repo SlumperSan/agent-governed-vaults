@@ -92,7 +92,8 @@ for the **root-only launch configuration**:
 |---|---|
 | **C-1** | **Closed at launch** — sub-vaults disabled (root vaults only). No internal fix exists; deferred mechanism. |
 | **C-2, C-3, C-5** | **Fixed** (earlier remediation) with regression tests. |
-| **C-4** | **Exploitable path closed** by root cause (C-3/H-1/H-2/M-1); defence-in-depth deferred, now partially subsumed by M-15. |
+| **C-4** | **Closed at `a ≤ 1`, RE-OPENED at `a ≥ 2`** — Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) found the "root cause closed" claim held only under a curation assumption the code cannot enforce. See **C-6**. DiD deferred, partially subsumed by M-15. |
+| **C-6** | **OPEN (new, Phase-2)** — the oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor (`quorum ≥ 2a+1`); two adversarial sources + one withholding leg re-open C-4's theft. Config/curation requirement + corrected prescription; **gate 0 does not clear while open**. |
 | **H-1, H-2, H-3, H-4** | **Fixed** (earlier remediation). |
 | **H-5, H-6, H-7, H-9** | **Dormant at launch** — all require a funded child. Deferred with sub-vaults. |
 | **H-8** | **Partially fixed** (dust-lockout + zero-stake-sybil closed in `Governance.finalize`) **+ config-mitigated** (regime-flip: meaningful `minDepositUsdc`). |
@@ -110,7 +111,7 @@ for the **root-only launch configuration**:
 | **L-6** | **Dormant at launch** — SV-6 child quorum-floor re-check needs children. Deferred with sub-vaults. |
 | **L-7** | **Accepted asymmetry** — `clearStandingDefault` is revocable mid-reveal while `setDelegate` is locked; but the standing default is the WEAKER, tally-only instrument (never counts toward quorum), so a member opting out of their own absentee vote is defensible. Forcing a lock trades a minor asymmetry for reduced member agency; documented, not changed. |
 
-The net launch-blocking set after Phase 2 is: **external audit (gate 1)** and any residual the re-verification pass surfaces. Every Critical and every root-affecting High is fixed, config-mitigated, or (for C-4) has its exploitable path closed. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)) — quote the "N passing tests" figure only with that qualifier.
+The net launch-blocking set after Phase 2 is: **external audit (gate 1)**, plus **C-6** — the new Critical the re-verification pass surfaced (C-4 re-opens at `a ≥ 2` adversarial oracle sources; a config/curation requirement with no clean code fix at m=5). C-1/C-2/C-3/C-5 are closed with executed evidence; **C-4/C-6 keep gate 0 NO-GO** until the oracle-curation requirement (`quorum ≥ 2a+1`, independent sources) is settled and the external audit signs off. The re-verification did its job: it converted an *inferred* C-4 closure into an *executed* refutation. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)) — quote the "N passing tests" figure only with that qualifier.
 
 ---
 
@@ -508,9 +509,22 @@ freshness" option the threat model identifies under **E7/EE-5** and explicitly d
 raises the cost of that omission considerably. **Requires redeploy + re-review of `VaultCore`'s
 deposit path.**
 
-> **REMEDIATION STATUS — root cause CLOSED; defence-in-depth DEFERRED (2026-08-28, Phase 2).** The
-> trigger is gone: **C-3, H-1, H-2 and M-1 are all merged**, so no wrong or attacker-chosen price
-> reaches `_mintShares` through real code, and the measured exploit's precondition no longer holds.
+> **REMEDIATION STATUS — CLOSED at `a ≤ 1`; RE-OPENED at `a ≥ 2` by C-6 (2026-08-28, Phase-2
+> re-verification).** The original claim here — "root cause closed by C-3/H-1/H-2/M-1" — was
+> **inference, and the Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) falsified it at
+> `a ≥ 2`.** Against a *correctly-curated* oracle (≥ 5 genuinely-independent sources, no single actor
+> controlling more than one), the trigger IS gone: a single adversarial source can never move the
+> lower median, verified at every fresh count down to quorum. BUT two adversarial sources (cheapest
+> case: a malicious vault creator listing two sources they control — passes every constructor check)
+> seize the reported price the moment one honest leg withholds, re-opening C-4's measured 88.9%
+> theft through the real aggregator. This is **finding C-6** (the quorum prescription is a
+> fault-tolerance floor, silent on the Byzantine floor `quorum ≥ 2a+1`). C-4's VaultCore half is
+> unchanged; its closure is now conditional on the C-6 curation requirement. Below is the original
+> (now-superseded) inference, retained for the record:
+>
+> The trigger is gone [AT a ≤ 1]: **C-3, H-1, H-2 and M-1 are all merged**, so no wrong or
+> attacker-chosen price reaches `_mintShares` through real code [when at most one source is
+> adversarial], and the measured exploit's precondition no longer holds [under that assumption].
 > What remains is the *defence-in-depth* mint-time NAV-deviation bound only. It lands in
 > `VaultCore`, which currently has **1,014 B of EIP-170 headroom** — too tight to add it safely
 > alongside the other in-VaultCore fixes — so it is **deferred to the VaultCore-headroom sprint**
@@ -597,6 +611,49 @@ uint256 weight = w < cur ? w : cur;   // exiting forfeits voice on the in-flight
 
 applied at `:269`, `:299`, `:326` and `:393`. **Requires redeploy + re-review of all four weight-read
 sites in `Governance`.**
+
+---
+
+### C-6 — The oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor: two adversarial sources seize the reported price and re-open C-4
+
+| | |
+|---|---|
+| **Severity** | **CRITICAL** (re-opens C-4's measured theft under a config that passes every check; tier is config/curation-conditional, so an auditor may re-rate to High) |
+| **Status** | **CONFIRMED — executed end-to-end** (`AuditC4EndToEnd.t.sol`, 7 tests), Phase-2 re-verification |
+| **Files** | `OracleAggregator.sol:73-76` (the prescription), `:117`, `:131` (lower-median selection) |
+
+**Discovery.** This finding was surfaced by the Phase-2 re-verification of C-4 — the pass that replaced the report's *inference* ("fixing C-3/H-1/H-2/M-1 removes C-4's trigger") with an executed end-to-end test driving a **real** `OracleAggregator` (not a directly-set `MockOracle`) into a `VaultCore` deposit.
+
+**The gap.** The H-1 remediation and the shipped NatSpec (`OracleAggregator.sol:73-75`) prescribe **"m ≥ 5, quorum ≥ 3"** and assert the lower median is "bounded by the honest set" (`:129-131`). That is the **fault-tolerance** floor — correct against *benign* withholdings (with `a = 0` controlled sources, `k` can fall to 3 and the median stays honest). It is **silent on the Byzantine floor.** With lower-median selection `fresh[(k-1)/2]` (`:131`, deliberately un-averaged to avoid even-`k` swing), an actor controlling `a` sources owns the reported price once the fresh count `k ≤ 2a`. Because `k` falls to the quorum via ordinary withholding, **at m=5 / quorum 3 a single honest leg withholding drops `k` to 4, and two adversarial sources then own `fresh[1]`.**
+
+**Why the withholding is routine, not hypothetical.** The k-reducing leg is supplied by shipped code and documented steady state: the honest TWAP source going quiet **fails closed by the H-2 fix's own logic** (a pool quiet past `window/20` withholds), and `base-mainnet.json` records the cbETH Pyth leg observed live at **2549 s** stale. *Fail-closed at the source becomes fail-open at the aggregator.*
+
+**Measured** (`AuditC4EndToEnd.t.sol`, real aggregator → deposit): with two creator-controlled sources depressed to 4% and the honest TWAP quiet, the aggregator itself reports the depression; attacker turns 1,000,000 USDC into a **2,777,762 USD** claim; victim value **1,000,000 → 111,124 USD (−88.9%)**; in-kind exit realises **733.33 wETH + 916,668 USDC = 2,749,985 USD**. Identical to C-4's table — because it IS C-4, now driven through the real oracle.
+
+**Cheapest instantiation: the vault creator.** The creator chooses the source list. Two sources they control pass **every** constructor check — `test_hostileConfigPassesEveryConstructorCheck` proves 5 distinct code-bearing addresses at quorum 3 satisfy `MIN_SOURCES`, `MIN_MEDIAN`, the strict-majority rule and M-1's distinctness loop. A member reading "5 sources, quorum 3" cannot tell it assumes ≤ 1 hostile.
+
+**The boundary, derived and asserted.** An actor controlling `a` of the fresh `k` owns the lower median iff `k ≤ 2a`. Safety therefore requires **`quorum ≥ 2a + 1`** (Byzantine floor); to also tolerate `f` benign withholdings, **`m ≥ 2a + f + 1`**. At quorum 3 the config tolerates **exactly `a = 1`**. Executed evidence for both directions: `test_safe_oneControlledSource_medianHoldsAsHonestLegsWithhold` (a=1 holds at k=5,4,3) and `test_residual_twoControlledSources_oneHonestWithholds_k4_setsDepressedPrice` / `_k3_` (a=2 seizes the price).
+
+**No clean code fix at m=5.** The two floors pull against each other: tolerating `a=2` needs `quorum ≥ 5`, which at `m=5` is **zero** fault tolerance; genuine `a=2`-with-fault-tolerance needs `m ≥ 7`. So the code cannot both tolerate two adversarial sources and survive one benign withholding at five sources. A true (averaged) median would soften but not close it (two lows still halve the price) and re-introduces the even-`k` swing H-1's lower-median chose to avoid.
+
+**Remediation.** This is a **listing/curation requirement**, the same shape as C-1 (root-only) and H-8 (meaningful minDeposit): the code cannot see `a`. (1) **Corrected prescription** — `quorum ≥ 2a + 1` and `m ≥ 2a + f + 1` for the threat model's assumed adversarial-source count `a`; the shipped "m≥5/quorum≥3" is `a=1, f=2` only. Recorded in the `OracleAggregator` NatSpec (`:73-76`, `:129-131`), THREAT-MODEL SF-1 (now quantitative), `base-mainnet.json` `rebuildChecklist`, and this report. (2) **Curation** — sources must be genuinely independent (SF-1) *and* no single actor may control ≥ 2 of them; a permissionless creator listing their own sources is the adversary in the cheapest case, so a launch must either curate/attest oracle configs or raise `m`/quorum for the assumed `a`. (3) **Disclosure** — flag to the external auditor as a **new** finding and the mechanism decision they should settle. **Launch-blocking: gate 0 does not clear while this is open.**
+
+> **Strongest candidate resolution — use Chainlink Data Feeds directly instead of the custom
+> aggregator (owner direction, 2026-08-28).** The entire oracle-finding class — C-3, C-4, C-6, H-1,
+> H-2, H-3, M-1, M-14 — lives in the *custom* multi-source median aggregation (`OracleAggregator` +
+> the TWAP/Pyth source adapters this protocol wrote). A Chainlink Data Feed is itself a
+> decentralized aggregation of many independent, reputation-staked node operators with published
+> deviation-threshold + heartbeat guarantees and years of mainnet Byzantine-fault tolerance — i.e.
+> it already solves, at the network layer, the very `quorum ≥ 2a+1` problem C-6 is about, far beyond
+> what a per-vault 5-source median can. Consuming a Chainlink feed directly (with a thin staleness +
+> L2-sequencer-uptime check) would **delete the custom-aggregation attack surface and most of the
+> oracle findings with it**, at the cost of a single-provider dependency and the constraint that the
+> asset must have a Chainlink feed (a reasonable listing bound for a spot index of majors). This is
+> the recommended direction over hardening the bespoke aggregator; the mechanism decision (Chainlink-
+> direct vs. curated custom aggregator with `quorum ≥ 2a+1`) is for the owner + external auditor.
+> This also reflects a standing owner principle: **prefer mature, audited external infrastructure
+> over bespoke re-implementations** — a bespoke oracle aggregator competing with Chainlink's
+> node-operator network is exactly the kind of surface to outsource rather than harden.
 
 ---
 
@@ -1214,7 +1271,16 @@ regression suites under `contracts/test/audit/`, referenced per-finding above:
 `AuditProposalThresholdFloor.t.sol`, `AuditSafeTransferBounded.t.sol`,
 `AuditFeeEngineReentrancy.t.sol`, `AuditUsdcLegEscrow.t.sol`, and — Phase 2 —
 `AuditRootVaultsOnly.t.sol` (2 tests, C-1: one reproduces the funded-child capture with sub-vaults
-enabled, one proves it unreachable under the launch "root vaults only" gate).
+enabled, one proves it unreachable under the launch "root vaults only" gate),
+`AuditQuorumRegimeDust.t.sol` (3 tests, H-8), `AuditDepositSlippage.t.sol` (2 tests, M-15), and the
+Phase-2 **re-verification** suites: `AuditC4EndToEnd.t.sol` (7 tests — drives the REAL
+`OracleAggregator` into a deposit; `test_safe_*` establish the a≤1 safe boundary, `test_residual_*`
++ `test_c4EndToEnd_*` demonstrate C-6's a≥2 theft) and `AuditTwapFaithfulMock.t.sol` (8 tests +
+`FaithfulUniV3Pool.sol`, an independent v3-core `Oracle.sol` port confirming the H-2 fix holds
+against faithful observation-ring semantics, closing H-3's test-blindness for the reachable
+dimensions). The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit now
+span three buckets — unreachable-at-launch-by-config (sub-vaults off), config-mitigated residual
+(H-8a), and **live open finding (C-6)** — so quote any "N passing" figure only with that qualifier.
 
 ### 4.5 `SLITHER-TRIAGE.md` — incorrect dispositions
 
