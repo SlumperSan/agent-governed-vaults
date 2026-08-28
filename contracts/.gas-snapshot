@@ -11,8 +11,6 @@ AuditAggregatorLowerMedianTest:test_remediated_constructorRejectsThreeCopiesOfOn
 AuditAggregatorLowerMedianTest:test_remediated_droppingOneLegNoLongerHandsOverThePrice() (gas: 92974)
 AuditAggregatorLowerMedianTest:test_remediated_revertingSourceCostsHeadroomNotThePrice() (gas: 96106)
 AuditAggregatorLowerMedianTest:test_remediated_theCostIsRealAtThreeSourcesOneFailureFreezes() (gas: 1080683)
-AuditC4EndToEndTest:test_c4EndToEnd_attackerRealisesStolenValueInKind() (gas: 2752176)
-AuditC4EndToEndTest:test_c4EndToEnd_realAggregatorDepressionMintsExcessSharesAndDrainsMembers() (gas: 2784612)
 AuditC4EndToEndTest:test_hostileConfigPassesEveryConstructorCheck() (gas: 25434)
 AuditC4EndToEndTest:test_residual_twoControlledSources_k3_setsDepressedPrice() (gas: 110055)
 AuditC4EndToEndTest:test_residual_twoControlledSources_oneHonestWithholds_k4_setsDepressedPrice() (gas: 131795)

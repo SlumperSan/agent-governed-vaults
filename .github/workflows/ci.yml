@@ -32,8 +32,14 @@ jobs:
       # Do not reach for `--tolerance`: it silences the fuzz entries but then
       # falsely flags all 15 invariant entries, which record runs/calls/reverts
       # rather than a gas number.
+      # `c4EndToEnd` is also excluded: the two C-6/C-4 end-to-end tests run the full
+      # deposit->depress->exit flow through `stdStorage` probing, whose trial SSTORE/SLOAD
+      # gas differs by a few units between Windows and Linux (a ~6-gas non-determinism,
+      # same class as fuzz). They are audit exploit DEMONSTRATIONS, not protocol hot paths,
+      # so gating their gas measures platform noise. The rest of AuditC4EndToEnd (the
+      # view-only median-boundary cases) stays in the gate.
       - name: Gas snapshot (no regressions)
-        run: forge snapshot --check --nmt "testFuzz"
+        run: forge snapshot --check --nmt "testFuzz|c4EndToEnd"
       # Stays last. It used to fail here on VaultFactory vs the EIP-170 cap (issue
       # #10) — a real undeployability defect, kept red on purpose rather than
       # suppressed. Ordering it last meant the suite and the gas gate still ran.
