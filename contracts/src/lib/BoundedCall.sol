@@ -20,6 +20,12 @@ library BoundedCall {
                 let ptr := mload(0x40)
                 let copy := retSize
                 if gt(copy, 0x20) { copy := 0x20 }
+                // L-3: zero the scratch word first. For 1-31 bytes of returndata the copy
+                // filled only the high bytes and the remainder was whatever happened to be
+                // at the free-memory pointer, so `word` carried uninitialised memory. Two
+                // of the five call sites gate on `retSize >= 32`; VaultCore's perfFee read
+                // did not.
+                mstore(ptr, 0)
                 returndatacopy(ptr, 0, copy)
                 word := mload(ptr)
             }
@@ -38,6 +44,7 @@ library BoundedCall {
                 let ptr := mload(0x40)
                 let copy := retSize
                 if gt(copy, 0x20) { copy := 0x20 }
+                mstore(ptr, 0) // L-3, as above
                 returndatacopy(ptr, 0, copy)
                 word := mload(ptr)
             }

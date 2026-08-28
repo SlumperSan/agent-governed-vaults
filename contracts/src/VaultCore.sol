@@ -235,6 +235,19 @@ contract VaultCore {
         uint8 dec = IERC20Metadata(usdc_).decimals();
         require(dec <= 18, BadConfig());
         usdcScalar = 10 ** (18 - dec);
+        // M-4/L-2: `shortfallWad` is the sub-unit truncation residual, uniform in
+        // [0, usdcScalar - 1], and `_settleExit` requires it to be <= SHORTFALL_DUST_WAD.
+        // So `dec >= 6` was REQUIRED and never enforced: at 5 decimals ~90% of exits
+        // revert, and at 2 (e.g. GUSD, a real USD stablecoin) ~99.99% do - from a vault
+        // with no children at all, reporting `ExitNeedsChildSettlement`, which is a
+        // thoroughly misleading error for a pure rounding artifact.
+        //
+        // This also pins L-2: at the canonical 6 decimals the old bound held with exactly
+        // ONE unit of slack (usdcScalar - 1 = 1e12 - 1 against a <= 1e12 bound). Correct,
+        // but by coincidence and undocumented. The relationship is now a constructor
+        // invariant, so any future change to the residual derivation fails loudly here
+        // instead of silently bricking redemptions.
+        require(usdcScalar <= SHORTFALL_DUST_WAD, BadConfig());
 
         creator = creator_;
         operatorRegistry = operatorRegistry_;

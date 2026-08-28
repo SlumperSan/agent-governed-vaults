@@ -491,4 +491,91 @@ contract VaultCoreTest is Test {
         uint256 cur = vault.assetBalance(asset);
         stdstore.target(address(vault)).sig("assetBalance(address)").with_key(asset).checked_write(cur + amt);
     }
+
+    /// @notice M-4 REMEDIATED, and L-2 with it. `shortfallWad` is the sub-unit truncation
+    /// residual, uniform in [0, usdcScalar - 1], and `_settleExit` requires it to be at most
+    /// SHORTFALL_DUST_WAD (1e12). So a settlement token needed >= 6 decimals and nothing
+    /// enforced it: at 5 decimals roughly 90% of exits reverted, and at 2 - GUSD is a real
+    /// USD stablecoin with 2 decimals - about 99.99% did, from a vault with NO CHILDREN,
+    /// reporting `ExitNeedsChildSettlement`. A creator had to choose such a token, but
+    /// constructor validation is explicitly load-bearing against a hostile creator.
+    function test_remediated_settlementTokenBelowSixDecimalsIsRejected() public {
+        address[] memory basket = new address[](0);
+
+        // 2 decimals: the GUSD shape.
+        MockERC20 gusd = new MockERC20("GUSD", 2);
+        vm.expectRevert(VaultCore.BadConfig.selector);
+        new VaultCore(
+            address(gusd),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            10_000_000,
+            10,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+
+        // 5 decimals: one short, still rejected. This is the boundary L-2 flagged as having
+        // exactly one unit of slack at 6.
+        MockERC20 five = new MockERC20("FIVE", 5);
+        vm.expectRevert(VaultCore.BadConfig.selector);
+        new VaultCore(
+            address(five),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            10_000_000,
+            10,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+
+        // 6 decimals - the canonical USDC shape - is accepted, and 18 still is too.
+        MockERC20 six = new MockERC20("USDC6", 6);
+        VaultCore ok = new VaultCore(
+            address(six),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            10_000_000,
+            10,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+        assertEq(ok.usdcScalar(), 1e12, "6 decimals sits exactly on the bound");
+
+        MockERC20 eighteen = new MockERC20("DAI", 18);
+        VaultCore ok18 = new VaultCore(
+            address(eighteen),
+            basket,
+            creator,
+            registry,
+            gov,
+            fees,
+            oracle,
+            10_000_000,
+            10,
+            100,
+            30 days,
+            new address[](0),
+            address(0)
+        );
+        assertEq(ok18.usdcScalar(), 1, "18 decimals is comfortably inside it");
+    }
 }
