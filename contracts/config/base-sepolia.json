@@ -37,6 +37,7 @@
   "smoke": {
     "capacityCapUsdc": "1000000000",
     "minDepositUsdc": "1000000",
+    "minDepositNote": "1 USDC is a TESTNET SMOKE value, kept small so the smoke lifecycle stays cheap; the deployed Base Sepolia smoke vault already uses it. A PRODUCTION vault must set minDepositUsdc to an economically meaningful value (see base-mainnet.json minDepositNote and AI-AUDIT-REPORT.md H-8): the <5-member signer quorum regime is stake-blind, so a 1-USDC seat lets an attacker buy the regime flip or grief a small vault into ungovernability. Documented listing constraint, not a contract floor (M-6 shape).",
     "depositUsdc": "5000000",
     "exitFeeMaxBps": 50,
     "exitFeeDecayPeriod": 604800,
