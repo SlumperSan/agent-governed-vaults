@@ -388,7 +388,14 @@ contract VaultCore {
         require(p.amountUsdc > 0, NoPending());
         delete pendingDeposit[msg.sender];
         totalPendingUsdc -= p.amountUsdc;
-        usdc.safeTransfer(msg.sender, p.amountUsdc);
+        // M-2: this was the WORST of the three, being unconditional - a member blacklisted
+        // AFTER depositing had their pending escrow permanently stranded, with no other path
+        // out. `cancelPending` is also the one guaranteed action during an oracle freeze (K-4),
+        // so a revert here removed the only lever the incident playbook can promise.
+        if (!usdc.tryTransfer(msg.sender, p.amountUsdc, MODULE_CALL_GAS)) {
+            claimable[msg.sender][usdc] += p.amountUsdc;
+            emit SliceEscrowed(msg.sender, usdc, p.amountUsdc);
+        }
         emit PendingCancelled(msg.sender, p.amountUsdc);
     }
 
@@ -636,10 +643,22 @@ contract VaultCore {
         uint256 usdcFee = usdcPay * feeFracWad / WAD;
         usdcPay -= usdcFee;
         if (usdcFee > 0) {
-            usdc.safeTransfer(address(feeEngine), usdcFee);
-            (bool collectOk,,) = address(feeEngine)
-                .boundedCall(abi.encodeCall(IFeeEngine.onFeeCollected, (member, usdcFee)), MODULE_CALL_GAS);
-            if (!collectOk) emit ModuleCallFailed("feeEngine.onFeeCollected", member);
+            // M-2: the USDC legs had NO EE-6 escrow isolation, unlike every basket asset. This
+            // one is the systemic case: `feeEngine` is a factory-wired singleton shared by every
+            // vault, and it is exactly the address class a stablecoin issuer blacklists. Once
+            // listed, a reverting `safeTransfer` here made EVERY exit carrying a positive
+            // performance fee, in EVERY vault, revert permanently. Now it degrades to escrow,
+            // exactly as an in-kind fee slice already did.
+            if (usdc.tryTransfer(address(feeEngine), usdcFee, MODULE_CALL_GAS)) {
+                (bool collectOk,,) = address(feeEngine)
+                    .boundedCall(
+                        abi.encodeCall(IFeeEngine.onFeeCollected, (member, usdcFee)), MODULE_CALL_GAS
+                    );
+                if (!collectOk) emit ModuleCallFailed("feeEngine.onFeeCollected", member);
+            } else {
+                claimable[address(feeEngine)][usdc] += usdcFee;
+                emit SliceEscrowed(address(feeEngine), usdc, usdcFee);
+            }
         }
 
         for (uint256 i; i < slices.length; ++i) {
@@ -667,7 +686,13 @@ contract VaultCore {
                 }
             }
         }
-        if (usdcPay > 0) usdc.safeTransfer(member, usdcPay);
+        if (usdcPay > 0 && !usdc.tryTransfer(member, usdcPay, MODULE_CALL_GAS)) {
+            // M-2: a blacklisted member could not exit AT ALL and lost their in-kind legs with
+            // it - the precise outcome EE-6 exists to prevent, and the falsification of PX-1's
+            // claim that in-kind redemption "keeps non-USDC basket assets exitable".
+            claimable[member][usdc] += usdcPay;
+            emit SliceEscrowed(member, usdc, usdcPay);
+        }
 
         emit ExitSettled(member, burnShares, usdcPay, feeBps, perfFee);
     }

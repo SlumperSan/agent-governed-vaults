@@ -15,6 +15,11 @@ contract MockERC20 {
 
     bool public transfersBlocked; // EE-6: simulate blacklist/revert on outbound transfer
 
+    /// @dev M-2: a PER-RECIPIENT blacklist, which is the shape real USDC has. The global flag
+    /// above blocks every transfer at once and so cannot express "this one address is listed
+    /// while the vault keeps operating" - which is exactly the M-2 scenario.
+    mapping(address => bool) public blacklisted;
+
     constructor(string memory name_, uint8 decimals_) {
         name = name_;
         decimals = decimals_;
@@ -22,6 +27,10 @@ contract MockERC20 {
 
     function setTransfersBlocked(bool blocked) external {
         transfersBlocked = blocked;
+    }
+
+    function setBlacklisted(address who, bool listed) external {
+        blacklisted[who] = listed;
     }
 
     function mint(address to, uint256 amount) external {
@@ -36,6 +45,7 @@ contract MockERC20 {
 
     function transfer(address to, uint256 amount) external returns (bool) {
         require(!transfersBlocked, "blocked");
+        require(!blacklisted[to], "blacklisted");
         require(balanceOf[msg.sender] >= amount, "bal");
         balanceOf[msg.sender] -= amount;
         balanceOf[to] += amount;
