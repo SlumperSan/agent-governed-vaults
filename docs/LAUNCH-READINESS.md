@@ -5,21 +5,28 @@
 This is not the "audit hasn't happened yet" NO-GO this document originally carried. An AI
 pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9 High,
 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35), with **33
-executing exploit tests** committed under `contracts/test/audit/`. C-2 is fixed; **C-1, C-3, C-4
-and C-5 are open.** Two of them lose member funds outright.
+executing exploit tests**, of which **30 are committed** under `contracts/test/audit/` — the three
+C-2 cases were removed once C-2 was fixed, for the reason recorded in §5. C-2 is fixed; **C-1,
+C-3, C-4 and C-5 are open.** Two of them lose member funds outright.
 
 **Read this before anything else in the document:** every "GO" row below was earned by evidence
 of *correct operation* — deployment, lifecycle, soak, settlement. None of it is evidence of
 *security*, and the two are not substitutes. The clearest demonstration is that the protocol's
-own 189 tests and all 33 exploit tests pass **simultaneously**: the suite was never structured
-to catch this class. A green board and an exploitable protocol are entirely compatible, and both
-are true here.
+own 190 tests and all 30 committed exploit artifacts pass **simultaneously** — and 17 of those
+30 are `test_finding_*` cases that pass *because the exploit works*. The suite was never
+structured to catch this class. A green board and an exploitable protocol are entirely
+compatible, and both are true here.
 
 Evidence-based per issue [#24](https://github.com/SlumperSan/agent-governed-vaults/issues/24):
 every row names a verifiable artifact — a report, a tag, a transaction, a CI run — and anything
-unverifiable is marked NO-GO or CONDITIONAL, never assumed. Assessed 2026-08-25 at
-`protocol/main` = `ad9396d7`. **The `v0.3.0-audit` tag is withdrawn as an engagement reference**
-(gate 1); it remains a valid historical marker of the pre-remediation tree.
+unverifiable is marked NO-GO or CONDITIONAL, never assumed. First assessed 2026-08-25 at
+`protocol/main` = `ad9396d7`; **battery re-run and re-recorded 2026-08-27 at `protocol/main` =
+`e7dadf34`** (§5) — the tip of `protocol/main` at the time of measurement. That re-run was not a
+formality:
+`Governance.sol` changed and the exploit suite landed between the two refs (PRs #36, #37, #30),
+so the original record described a tree that is no longer the tree. The verdict is unchanged.
+**The `v0.3.0-audit` tag is withdrawn as an engagement reference** (gate 1); it remains a valid
+historical marker of the pre-remediation tree.
 
 ## 1. Go/no-go checklist
 
@@ -33,7 +40,7 @@ unverifiable is marked NO-GO or CONDITIONAL, never assumed. Assessed 2026-08-25 
 | 5 | Mainnet oracle stack: 3 mechanism-diverse classes, config verified on mainnet RPC | **GO** | Contracts: Sprint 11 (PR #25, 189 forge tests, TWAP math re-derived independently at review). Config: `contracts/config/base-mainnet.json` is **VERIFIED-ON-CHAIN — 22/22 checks at Base mainnet block 50,412,867** (`scripts/verify-mainnet-config.mjs`; re-run it before deploying, it is read-only). |
 | 6 | Canary operational | **GO** | Ran throughout the soak; every transition it ever recorded reconciles to a specific drill action, including dynamically discovering two new vaults on its own (SOAK-REPORT §6). |
 | 7 | Ops runbook exercised — a restore actually performed | **CONDITIONAL** | Sprint 13 shipped the backup ring + `verify` subcommands with tests, and the soak restarted services freely — but **a deliberate restore-from-backup drill has not been recorded**. ~30 minutes, read-only, no keys. Until performed, "restore works" is a test-suite claim, not an operational one. |
-| 8 | All CI gates green at the candidate ref | **GO** (at the current ref) | CI run `32848131465` on `ad9396d7`: backend, contracts (forge fmt/build/sizes/test/gas-gate), slither — all green. Local battery on this branch: backend **504 tests, 503 pass, 1 skip** (the Windows-only SIGTERM test that executes on Linux CI). The `v1.0.0-launch-candidate` tag is deliberately **not cut** — #24 permits it only when every row is GO. |
+| 8 | All CI gates green at the candidate ref | **GO** (at the current ref) — but read what "green" means | CI run [`33112648340`](https://github.com/SlumperSan/agent-governed-vaults/actions/runs/33112648340) on `e7dadf34`, **conclusion `success`**: backend, contracts (forge fmt/build/sizes/test/gas-gate), slither. Local re-run at the same ref agrees (§5). **The board is green and 17 exploits work** — `forge test` counts a `test_finding_*` case as passing when it successfully steals the funds it was written to steal. This row therefore certifies that the gates ran, not that the protocol is safe; gate 0 is the row that speaks to safety. The `v1.0.0-launch-candidate` tag is deliberately **not cut** — #24 permits it only when every row is GO. |
 
 Also folded into this branch: the facilitator's server-side price re-check now **fails closed**
 when no challenge is posted (`no-challenge`) — the PR #27 review finding that made the open-relay
@@ -74,6 +81,15 @@ TWAP source quantizes at $1e-6, a listing constraint below ~$0.01/token (filed a
 asset outside the verified config, no low-priced assets, until a second verification pass and a
 deliberate listing decision.
 
+**Topology: root vaults only — zero sub-vaults at launch.** This is a launch *parameter*, not
+just an incident note, and it is the cheapest risk reduction available anywhere in this document.
+C-1 ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) makes a funded child a
+one-minimum-deposit capture whose capture equals drain; the whole class disappears if no child is
+ever created, and a single-level launch needs none. It costs nothing to honour and it does not
+wait on a redeploy. Reinstate sub-vaults only after #33 is remediated **and** the SV-* drills are
+re-run against the corrected contracts (see §6). Note this also removes residual-risk row 9
+(EE-6/E5 child-escrow asymmetry) from the launch surface entirely.
+
 ## 3. Key & role map at launch
 
 | Key | Holder | Power | Blast radius if compromised | Rotation |
@@ -105,12 +121,48 @@ language, for a reader who is not an auditor.
 
 ## 5. Battery record at this ref
 
-| Gate | Result | Where |
+Re-run in full on **2026-08-27** against `e7dadf34` (the merge of PR #30), from a clean checkout
+of that exact commit. **These results carry forward to whatever commit this document lands at**,
+because every change since `e7dadf34` is confined to `docs/` — no source, test, or snapshot file
+is touched, so no gate can move. Re-run the battery for real the moment that stops being true.
+The earlier record in this section was taken at `ad9396d7` and is superseded: `Governance.sol`, `.gas-snapshot`, `Governance.t.sol`, nine
+`contracts/test/audit/` suites and ~500 lines of soak tests all landed after it, so its
+"contracts untouched by this branch" note had stopped being true.
+
+| Gate | Result at `e7dadf34` | Where |
 | --- | --- | --- |
-| backend (`npm run test:backend`) | **504 tests, 503 pass, 0 fail, 1 skip** (Windows-only SIGTERM; executes on Linux CI) | local, this branch |
-| forge fmt / build --sizes / test / gas gate | **green — 189 tests** | CI run `32848131465` at `ad9396d7` (contracts untouched by this branch) |
-| slither | green | same run |
-| mainnet config | 22/22 at block 50,412,867 | `scripts/verify-mainnet-config.mjs` |
+| `forge fmt --check` | **pass** (exit 0) | local + CI |
+| `forge build --sizes` (EIP-170) | **pass** (exit 0) | local + CI |
+| `forge test` | **220 tests / 29 suites — 220 pass, 0 fail, 0 skip** | local + CI |
+| `forge snapshot --check --nmt testFuzz` (gas gate) | **pass** (exit 0; 208 tests in scope) | local + CI |
+| slither (advisory, `continue-on-error`) | green | CI |
+| `npm run test:backend` | **553 tests — 551 pass, 0 fail, 2 skip** | local |
+| backend (Linux) | green | CI |
+| mainnet config | 22/22 at Base mainnet block 50,412,867 | `scripts/verify-mainnet-config.mjs` (read-only; re-run before any deploy) |
+
+**CI:** run [`33112648340`](https://github.com/SlumperSan/agent-governed-vaults/actions/runs/33112648340),
+head `e7dadf34`, conclusion **`success`** across all three jobs (backend, contracts, slither).
+
+**The two local backend skips**, named so neither is mistaken for coverage: the API SIGTERM drain
+test (`kill()` is `TerminateProcess` on Windows — it *executes* on Linux CI), and the live-indexer
+snapshot parser test (no live snapshot in a fresh checkout). Eleven further tests skip if
+`contracts/out` is absent — they are the ABI-drift guards, and the numbers above are from a run
+**after** `forge build`, matching CI's ordering. Run backend tests before building the contracts
+and you get a quieter, weaker suite.
+
+**What the 220 forge tests contain**, because the total flatters the tree: **190 protocol tests**
+plus **30 audit artifacts** under `contracts/test/audit/` — of which **17 are `test_finding_*`
+cases that pass by successfully executing an exploit**, 4 are `test_remediated_*` (C-2), and 9 are
+controls, refutations, or fuzz. A green `forge test` at this ref is therefore *also* a
+reproduction of the four open Criticals. Do not quote "220 passing" without that sentence.
+
+**On the report's "33 exploit tests" vs the 30 here** — the difference is accounted for, not lost.
+[AI-AUDIT-REPORT.md §4.4](audit/AI-AUDIT-REPORT.md) tallies 33 against the pre-remediation tree;
+three C-2 cases in `AuditExecutionWindowFreeze.t.sol` were removed when the C-2 hard caps landed
+(PR #36), because they asserted the *unfixed* behaviour and a permanently-red suite is noise, not
+evidence. The removal and its reasoning are recorded in that file's own header, the exploits
+survive in git history, and the fix is pinned by
+`Governance.t.sol::test_phaseDurationHardCapsEnforced`.
 
 ## 6. The path to GO
 

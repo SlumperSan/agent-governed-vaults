@@ -32,6 +32,16 @@ pressure.
 only says what is being investigated. Every claim carries a tx hash or a `cast` command the
 reader can run. Never state a recovery time you cannot evidence.
 
+> **Pre-remediation caveat — this playbook describes the intended posture, and the tree does not
+> currently meet it.** Four Critical findings are open
+> ([#31](https://github.com/SlumperSan/agent-governed-vaults/issues/31),
+> [#32](https://github.com/SlumperSan/agent-governed-vaults/issues/32),
+> [#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33),
+> [#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34)) and the protocol is
+> **NO-GO for mainnet** ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) gate 0). §8 in particular
+> promises defences that C-1 and C-5 defeat, and carries its own warning. Read that warning
+> before relying on any "the contract's own defences are the response" line in this document.
+
 ---
 
 ## 1. Oracle staleness / the K-4 capital freeze
@@ -133,6 +143,44 @@ Fees claimed to an unexpected address, or module events that match no known caus
 
 An operator key signs bad proposals, or a member accumulates quorum and passes a hostile
 rebalance.
+
+> ### ⚠ Read first: the defences below do NOT hold for sub-vaults today
+>
+> This section was written against the *intended* design. Two open Criticals falsify it, and an
+> operator trusting it during an incident would be reassured by something that is not true:
+>
+> - **C-1 ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) — a funded
+>   sub-vault has an empty electorate.** The paragraph below assumes an attacker must *accumulate
+>   quorum*. In a child whose only capital is its parent's allocation, `_snapshot` excludes the
+>   parent (GA-1), leaving `pastHolderCount == 0`. One minimum deposit makes an attacker the sole
+>   eligible voter and every gate passes trivially. There is nothing to accumulate.
+> - **Allow-listed adapters do not bound the loss.** `executeRebalance` checks
+>   `received >= o.minAmountOut`, and `minAmountOut` is **proposer-supplied** (1 wei clears the
+>   adapter), with `routeData` passed verbatim. No oracle-derived bound exists on that path
+>   (H-4). So for a captured vault, **capture equals drain** — the sentence "executes only
+>   through allow-listed adapters against the vault's own basket" is true and provides no
+>   protection whatsoever.
+> - **C-5 ([#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34)) — voting weight
+>   survives a full exit**, so "the creator stake gate keeps the creator exposed" and the
+>   commit-reveal anti-sniping story both weaken: weight can be held across one block boundary
+>   and then withdrawn.
+> - **The "Act" step below presupposes an electorate.** Publishing analysis during the reveal
+>   window lets members "reveal AGAINST" — in the C-1 case the attacker is the *only* eligible
+>   voter, so there is nobody to reach and the window is not a defence.
+>
+> **Until C-1 and C-5 are remediated, a captured sub-vault has no on-chain response at all.** The
+> honest incident posture reduces to levers 1 and 4 in §0 — communicate with evidence, and
+> de-list from the front door. Nothing stops the drain.
+>
+> **Operational consequence, stated as an instruction:** do not create sub-vaults, and do not
+> allocate parent capital into a child, on any live deployment until
+> [#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33) and
+> [#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34) are closed and re-reviewed.
+> This is cheap to honour — a single-level launch needs no children — and it removes the entire
+> C-1 attack surface without waiting on anything else.
+>
+> The rest of this section is retained because it describes the posture the protocol should have
+> **after** remediation, and it is accurate for a **root** vault with a real electorate.
 
 - **The contract's own defenses are the response:** proposals bind exact payloads
   (voters approve *those bytes*), adapters are allow-listed at creation, the commit-reveal
