@@ -6,8 +6,8 @@ An AI pre-audit run against the frozen contracts on 2026-08-25 found **41 issues
 High, 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A
 remediation pass on 2026-08-27 closed **twelve** of them.
 
-**Closed:** C-2, C-3, C-5 (Critical); H-1, H-2, H-3, H-4 (High); M-1, M-2, M-3, M-4, M-6, M-11,
-M-12 (Medium); L-1, L-2, L-3, L-4 (Low). Each has `test_remediated_*` coverage, and the exploit
+**Closed:** C-2, C-3, C-5 (Critical); H-1, H-2, H-3, H-4 (High); M-1, M-2, M-3, M-4, M-11, M-12
+(Medium); L-1, L-2, L-3, L-4 (Low). **M-6 is PARTIALLY closed** - see below. Each has `test_remediated_*` coverage, and the exploit
 each replaced is preserved in git history.
 
 **One defect closed that the audit did not find:** `proposalCooldown` was not validated at all
@@ -27,8 +27,19 @@ place to add unreviewed logic. Stated as a deliberate omission, not an oversight
 
 **Still open: C-1 (#33), H-5, H-6, H-8, H-9, and the remaining Medium/Low tier** (M-5, M-7,
 M-8, M-9, M-10, M-13, M-14, M-15; L-5, L-6, L-7; the informational tier). C-1 is open because
-its own suggested fix is wrong — see §6. M-7 is *partially* mitigated: the new
-`proposalCooldown` floor rate-limits its propose-defeat-propose cycle without removing it.
+its own suggested fix is wrong — see §6. M-7 is **not** mitigated: the new `proposalCooldown` floor raises the cost of its
+propose-defeat-propose cycle but does not rate-limit it, because `lastProposalAt` is keyed
+PER-PROPOSER and a second address sidesteps it entirely.
+
+**M-6 is partially closed, and the missing half is a decision, not an omission.** Its concentration
+ceiling and `proposalCooldown` bounds shipped. A floor on `proposalThresholdBps` was implemented,
+measured, and **reverted**: the threshold is a fraction of live stake distribution, which a
+constructor cannot see, so in a vault of 101 roughly-equal members nobody holds 1%, no member can
+open any proposal, and the RuleChange that would lower it is itself a proposal. That is C-2 shape,
+introduced by a remediation - in the same commit that removed C-2 shape from `proposalCooldown`.
+The freeze is pinned as a passing test in `AuditProposalThresholdFloor.t.sol` so the idea is not
+re-attempted blind. M-6 real defect - the shipped configs disabling their own defences - is fixed
+where it lives, in the configs.
 
 **Read this before anything else in the document.** Two separate warnings, and the second is
 now the more important one.

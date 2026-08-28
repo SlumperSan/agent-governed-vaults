@@ -575,14 +575,9 @@ contract GovernanceTest is Test {
     /// base-sepolia.json. A defence that ships disabled in the reference config is not a
     /// defence, and the creator choosing these values is explicitly untrusted.
     function test_remediated_govDefencesCannotBeDisabled() public {
-        // Threshold at 0: anyone holding one unit could open proposals. Refused.
+        // NOTE: there is deliberately NO floor on proposalThresholdBps - see
+        // test/audit/AuditProposalThresholdFloor.t.sol for the freeze that one would cause.
         Governance.GovConfig memory c = _cfg();
-        c.proposalThresholdBps = 0;
-        _expectBadConfig(c);
-
-        // One bp under the floor is still refused; exactly on it is accepted.
-        c.proposalThresholdBps = gov.PROPOSAL_THRESHOLD_FLOOR_BPS() - 1;
-        _expectBadConfig(c);
 
         // Concentration cap at 100%: one delegate carries all snapshot stake, so a single live
         // participant plus a permissionless cranker manufactures full quorum from offline

@@ -264,8 +264,14 @@ for (const a of assets) {
           const obs = tryCall(pool, 'observations(uint256)(uint32,int56,uint160,bool)', String(index));
           if (!obs.ok) return { pass: false, detail: `observations(${index}) reverted: ${obs.err}` };
           const newestTs = Number(String(obs.lines[0]).trim());
-          const now = Math.floor(Date.now() / 1000);
-          const age = now - newestTs;
+          // Read the CHAIN clock, not this machine's. Comparing an on-chain observation
+          // timestamp against `Date.now()` would measure local clock drift as pool staleness -
+          // the same species of "licenses more than it establishes" that M-12 is about.
+          const chainNow = Number(String(cast(['block', 'latest', '--field', 'timestamp'])).trim());
+          if (!Number.isFinite(chainNow) || chainNow === 0) {
+            return { pass: false, detail: 'could not read the chain timestamp' };
+          }
+          const age = chainNow - newestTs;
           return age <= maxAge
             ? { pass: true, detail: `newest observation ${age}s old, bound ${maxAge}s (live-tick weight <= ${(age / window * 100).toFixed(2)}%)` }
             : { pass: false, detail: `newest observation ${age}s old > maxObservationAge ${maxAge}s — this pool is too quiet and the source will WITHHOLD` };
