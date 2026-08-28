@@ -140,8 +140,8 @@ contract GovernanceInvariantTest is Test {
                 executionWindow: 2 days,
                 quorumBps: 2_500,
                 proposalThresholdBps: 100,
-                concentrationCapBps: 10_000,
-                proposalCooldown: 0
+                concentrationCapBps: 5_000, // M-6 ceiling (50%)
+                proposalCooldown: 1 hours // M-6 floor
             })
         );
 

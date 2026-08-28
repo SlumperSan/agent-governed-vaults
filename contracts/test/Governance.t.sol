@@ -566,4 +566,104 @@ contract GovernanceTest is Test {
         vm.expectRevert(Governance.BadGovConfig.selector);
         gov.registerVault(address(v2), bad);
     }
+
+    // ── M-6: the named governance defences are no longer optional ────────────────────────
+
+    /// @notice M-6 REMEDIATED. Every named CM-6/VO-5 defence used to be optional, and the
+    /// repo's only worked configuration disabled all three at once — `proposalThresholdBps: 0`,
+    /// `concentrationCapBps: 10000`, `proposalCooldown: 0`, in BOTH base-mainnet.json and
+    /// base-sepolia.json. A defence that ships disabled in the reference config is not a
+    /// defence, and the creator choosing these values is explicitly untrusted.
+    function test_remediated_govDefencesCannotBeDisabled() public {
+        // Threshold at 0: anyone holding one unit could open proposals. Refused.
+        Governance.GovConfig memory c = _cfg();
+        c.proposalThresholdBps = 0;
+        _expectBadConfig(c);
+
+        // One bp under the floor is still refused; exactly on it is accepted.
+        c.proposalThresholdBps = gov.PROPOSAL_THRESHOLD_FLOOR_BPS() - 1;
+        _expectBadConfig(c);
+
+        // Concentration cap at 100%: one delegate carries all snapshot stake, so a single live
+        // participant plus a permissionless cranker manufactures full quorum from offline
+        // delegators. Refused.
+        c = _cfg();
+        c.concentrationCapBps = 10_000;
+        _expectBadConfig(c);
+        c.concentrationCapBps = gov.CONCENTRATION_CAP_CEILING_BPS() + 1;
+        _expectBadConfig(c);
+
+        // Cooldown at 0: the propose -> wait -> finalize(Defeated) -> propose cycle that holds
+        // exits in Mode F on a duty cycle (M-7). Refused.
+        c = _cfg();
+        c.proposalCooldown = 0;
+        _expectBadConfig(c);
+    }
+
+    /// @notice The bound nothing had at all: `proposalCooldown` was never validated, and it is
+    /// a uint32. A creator could set ~136 years and make the vault unable to ever open a second
+    /// proposal — C-2's exact shape on a field C-2 did not cover.
+    function test_remediated_unboundedProposalCooldownIsRejected() public {
+        Governance.GovConfig memory c = _cfg();
+        c.proposalCooldown = type(uint32).max;
+        _expectBadConfig(c);
+
+        c.proposalCooldown = gov.PROPOSAL_COOLDOWN_CAP() + 1;
+        _expectBadConfig(c);
+
+        // Exactly on the cap is fine.
+        c.proposalCooldown = gov.PROPOSAL_COOLDOWN_CAP();
+        address v = _freshVault();
+        vm.prank(creator);
+        gov.registerVault(v, c);
+    }
+
+    /// @notice And the shipped reference values are accepted — a floor that rejected the
+    /// project's own launch config would be a different kind of bug.
+    function test_remediated_shippedReferenceGovConfigIsAccepted() public {
+        Governance.GovConfig memory c = _cfg();
+        c.proposalThresholdBps = 500; // base-mainnet.json
+        c.concentrationCapBps = 4_000;
+        c.proposalCooldown = 21_600;
+        address v = _freshVault();
+        vm.prank(creator);
+        gov.registerVault(v, c);
+
+        c.proposalThresholdBps = 100; // base-sepolia.json, at the floors
+        c.concentrationCapBps = 5_000;
+        c.proposalCooldown = 3_600;
+        address v2 = _freshVault();
+        vm.prank(creator);
+        gov.registerVault(v2, c);
+    }
+
+    /// @dev A fresh, unregistered vault. registerVault succeeds once per vault, so the accept
+    /// cases each need their own.
+    function _freshVault() internal returns (address) {
+        MockERC20 u = new MockERC20("USDC", 6);
+        return address(
+            new VaultCore(
+                address(u),
+                new address[](0),
+                creator,
+                registry,
+                gov,
+                fees,
+                oracle,
+                1e15,
+                10 * USDC_1,
+                100,
+                30 days,
+                new address[](0),
+                address(0)
+            )
+        );
+    }
+
+    function _expectBadConfig(Governance.GovConfig memory c) internal {
+        address v = _freshVault();
+        vm.prank(creator);
+        vm.expectRevert(Governance.BadGovConfig.selector);
+        gov.registerVault(v, c);
+    }
 }

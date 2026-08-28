@@ -127,9 +127,9 @@ contract AuditDosExitLivenessTest is Test {
             timelockDuration: 0,
             executionWindow: 1 hours,
             quorumBps: 2_500,
-            proposalThresholdBps: 0,
-            concentrationCapBps: 10_000,
-            proposalCooldown: 0
+            proposalThresholdBps: 100, // M-6 floor (1%)
+            concentrationCapBps: 5_000, // M-6 ceiling (50%)
+            proposalCooldown: 1 hours // M-6 floor
         });
         vm.prank(operator);
         // REMEDIATED (C-2): the phase-duration hard caps now reject this config outright,
@@ -199,9 +199,9 @@ contract AuditDosExitLivenessTest is Test {
             timelockDuration: 0,
             executionWindow: type(uint32).max, // ~136 years
             quorumBps: 2_500,
-            proposalThresholdBps: 0,
-            concentrationCapBps: 10_000,
-            proposalCooldown: 0
+            proposalThresholdBps: 100, // M-6 floor (1%)
+            concentrationCapBps: 5_000, // M-6 ceiling (50%)
+            proposalCooldown: 1 hours // M-6 floor
         });
         vm.prank(operator);
         // REMEDIATED (C-2): rejected by EXECUTION_WINDOW_HARD_CAP; the freeze below is
@@ -311,9 +311,9 @@ contract AuditDosExitLivenessTest is Test {
             timelockDuration: 0,
             executionWindow: 1 hours,
             quorumBps: 2_500,
-            proposalThresholdBps: 0,
-            concentrationCapBps: 10_000,
-            proposalCooldown: 0
+            proposalThresholdBps: 100, // M-6 floor (1%)
+            concentrationCapBps: 5_000, // M-6 ceiling (50%)
+            proposalCooldown: 1 hours // M-6 floor
         });
         vm.prank(operator);
         // REMEDIATED (C-2): the phase-duration hard caps now reject this config outright,

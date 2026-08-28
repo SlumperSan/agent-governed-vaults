@@ -46,9 +46,11 @@
       "timelockDuration": 0,
       "executionWindow": 86400,
       "quorumBps": 2500,
-      "proposalThresholdBps": 0,
-      "concentrationCapBps": 10000,
-      "proposalCooldown": 0
-    }
+      "proposalThresholdBps": 100,
+      "concentrationCapBps": 5000,
+      "proposalCooldown": 3600
+    },
+      "govDefencesNote": "M-6: these three were 0 / 10000 / 0 — i.e. the reference configuration shipped with every named CM-6/VO-5 defence DISABLED. proposalThresholdBps 0 let anyone holding one unit open proposals (the precondition M-7 and C-1 both rely on); concentrationCapBps 10000 let a single delegate carry 100% of snapshot stake, so one live participant plus a permissionless cranker manufactured full quorum from offline delegators, defeating VO-2 outright; proposalCooldown was not validated by the contract AT ALL. Governance._validateConfig now enforces a 100 bps threshold floor, a 5000 bps concentration ceiling, and a proposalCooldown in [1 hour, 30 days] — the upper bound because an unvalidated uint32 cooldown is C-2's shape on a field C-2 did not cover.",
+      "govTestnetNote": "Set AT the contract floors here, unlike base-mainnet.json which sits deliberately above them. A testnet smoke run wants the least friction that is still legal; mainnet capital wants margin."
   }
 }
