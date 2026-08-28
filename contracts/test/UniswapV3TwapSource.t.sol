@@ -24,7 +24,7 @@ contract UniswapV3TwapSourceTest is Test {
 
     uint32 constant WINDOW = 1800; // 30 minutes
     uint16 constant MIN_CARD = 100;
-    uint32 constant MAX_OBS_AGE = 3600;
+    uint32 constant MAX_OBS_AGE = 90; // H-2: <= WINDOW / MAX_LIVE_TICK_WEIGHT_DIVISOR (1800/20)
 
     function setUp() public {
         vm.warp(1_700_000_000);
@@ -116,7 +116,13 @@ contract UniswapV3TwapSourceTest is Test {
         UniswapV3TwapSource src = _oneHop(address(weth), pool);
         (uint256 p, uint256 t) = src.latestPrice();
         assertEq(p, 3000104290000000000000, "WETH price at tick 196256"); // $3000.10429
-        assertEq(t, block.timestamp, "TWAP is computed at read time");
+        // H-2: this used to assert `t == block.timestamp` — "a TWAP is computed at read time".
+        // That convention is what made a source computing over a stale tick stamp itself ZERO
+        // SECONDS OLD, so the aggregator's staleness bound could never reject it. The source
+        // now reports the newest observation actually backing the quote.
+        // _healthyPool stamps its newest observation 30s ago.
+        assertEq(t, block.timestamp - 30, "updatedAt is the age of the DATA, not of the read");
+        assertLt(t, block.timestamp, "and it is strictly older than now on any quiet block");
         assertFalse(src.assetIsToken0A(), "asset must be detected as token1");
     }
 

@@ -36,14 +36,35 @@ contract MockV3Pool {
     int56 public rawNewest;
     bool public observeReverts;
 
+    /// @dev H-3: the tick that PREVAILED over stored history, as distinct from `tick`, which is
+    /// slot0's LIVE tick. The old mock had no such distinction — it generated cumulatives from
+    /// the live tick alone (`cumulative(t) = tick * t`), so any window averaged to exactly
+    /// `tick` and a correct historical TWAP was numerically identical to a live-tick
+    /// extrapolation. The mock's behaviour WAS the H-2 bug, which is why the entire Sprint-11
+    /// oracle suite could not fail for that class.
+    int24 public histTick;
+    uint32 internal _newestTs;
+    uint32 internal _oldestTs;
+    bool internal _ringSet;
+
     constructor(address token0_, address token1_, uint24 fee_) {
         token0 = token0_;
         token1 = token1_;
         fee = fee_;
     }
 
-    /// @notice Set the tick the linear cumulative model averages to.
+    /// @notice Set BOTH the live tick and the historical tick, so a window averages to exactly
+    /// `tick_` — the old mock's semantics, preserved verbatim for every existing test.
     function setTick(int24 tick_) external {
+        tick = tick_;
+        histTick = tick_;
+    }
+
+    /// @notice Move ONLY slot0's live tick, leaving stored history at `histTick`. This is the
+    /// axis the old mock could not express, and the one H-2 lives on: with the newest
+    /// observation `A` seconds old, the live tick's weight in the reported mean is exactly
+    /// `min(A, W) / W`.
+    function setLiveTick(int24 tick_) external {
         tick = tick_;
     }
 
@@ -52,9 +73,18 @@ contract MockV3Pool {
     function setRing(uint16 cardinality, uint16 index, uint32 oldestTs, uint32 newestTs) external {
         observationCardinality = cardinality;
         observationIndex = index;
-        _obs[index] = Obs(newestTs, 0, 0, true);
+        histTick = tick; // history prevailed at the current tick unless setLiveTick moves it
+        _newestTs = newestTs;
+        _oldestTs = oldestTs;
+        _ringSet = true;
+        _obs[index] = Obs(newestTs, _cumAt(newestTs), 0, true);
         uint256 oldestIndex = (uint256(index) + 1) % cardinality;
-        _obs[oldestIndex] = Obs(oldestTs, 0, 0, true);
+        _obs[oldestIndex] = Obs(oldestTs, _cumAt(oldestTs), 0, true);
+    }
+
+    /// @dev Historical cumulative at `ts`, i.e. the integral of `histTick` up to `ts`.
+    function _cumAt(uint32 ts) internal view returns (int56) {
+        return int56(histTick) * int56(uint56(ts));
     }
 
     /// @notice Un-initialize the ring's nominal oldest slot, forcing the source down its
@@ -98,9 +128,24 @@ contract MockV3Pool {
             tc[1] = rawNewest;
             return (tc, sl);
         }
-        // Linear model: cumulative(t) = tick * t, so any window averages to exactly `tick`.
         for (uint256 i; i < secondsAgos.length; ++i) {
-            tc[i] = int56(tick) * int56(uint56(uint32(block.timestamp) - secondsAgos[i]));
+            uint32 target = uint32(block.timestamp) - secondsAgos[i];
+            if (!_ringSet) {
+                // No ring configured: fall back to the old linear model so fixtures that never
+                // call setRing keep their exact previous behaviour.
+                tc[i] = int56(tick) * int56(uint56(target));
+                continue;
+            }
+            require(target >= _oldestTs, "OLD"); // v3 reverts when the window predates the ring
+            if (target >= _newestTs) {
+                // v3-core `observeSingle`: when the target is at or after the newest stored
+                // observation, the endpoint is SYNTHESIZED from it using the CURRENT tick. This
+                // is the whole of H-2 — the live tick leaks into a "historical" mean with
+                // weight (target - newestTs) / window.
+                tc[i] = _cumAt(_newestTs) + int56(tick) * int56(uint56(target - _newestTs));
+            } else {
+                tc[i] = _cumAt(target);
+            }
         }
         return (tc, sl);
     }

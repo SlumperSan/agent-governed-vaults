@@ -156,7 +156,9 @@ contract FaithfulV3Pool {
 /// tick.
 contract AuditTwapSpotDegenerationTest is Test {
     uint32 constant WINDOW = 1800; // base-mainnet.json twapDefaults.windowSeconds
-    uint32 constant MAX_OBS_AGE = 3600; // base-mainnet.json twapDefaults.maxObservationAgeSeconds
+    // H-2: bound to window / MAX_LIVE_TICK_WEIGHT_DIVISOR (1800/20). The old value, 3600,
+    // was the shipped base-mainnet.json figure and is no longer constructible.
+    uint32 constant MAX_OBS_AGE = 90;
     uint16 constant MIN_CARD = 30;
 
     int24 constant HISTORICAL_TICK = -198000; // ~ $2500/ETH with asset = token0
@@ -207,7 +209,9 @@ contract AuditTwapSpotDegenerationTest is Test {
     /// false, and this test pins that.
     function test_refuted_atomicSwapCannotMoveTheTwapInTheSameBlock() public {
         UniswapV3TwapSource src = _deploySource();
-        vm.warp(block.timestamp + 2000); // pool quiet longer than `window`
+        // Quiet, but inside the 5% ceiling so the source still prices. The refutation is
+        // about the SWAP being non-atomic, and is unaffected by how quiet the pool was.
+        vm.warp(block.timestamp + 60);
         uint256 honest = src.computePriceWad();
 
         pool.swap(MANIPULATED_TICK); // a real swap, this block
@@ -226,57 +230,63 @@ contract AuditTwapSpotDegenerationTest is Test {
     /// holds an off-market tick on a live pool for `window` seconds against arbitrage; or
     /// (c) an honest pool simply goes quiet, in which case the value returned is a STALE spot
     /// tick — up to `maxObservationAge` old — reported as fresh.
-    function test_finding_quietPool_twapCollapsesToHeldLiveTick() public {
+    /// @notice H-2 FIXED. Everything above the ceiling is now refused outright, so the
+    /// collapse this test used to demonstrate is unreachable: the source withholds rather
+    /// than reporting a live tick as a 30-minute average. The reachability analysis in the
+    /// old comment still stands as the reason the fix had to bound the FRACTION rather than
+    /// merely compare against the window.
+    function test_remediated_quietPoolWithholdsInsteadOfCollapsingToTheLiveTick() public {
         UniswapV3TwapSource src = _deploySource();
-        uint256 honestPrice = src.computePriceWad();
+        assertGt(src.computePriceWad(), 0, "healthy pool prices");
 
-        // Pool goes quiet for 2000s: older than window (1800) but younger than the
-        // maxObservationAge bound (3600). Both guards still pass.
+        // Pool goes quiet for 2000s - the state that used to yield a 100%-live-tick "TWAP",
+        // reported as zero seconds old.
         vm.warp(block.timestamp + 2000);
 
-        // Guards pass: the source still reports a price, and reports it as FRESH.
         (uint256 pQuiet, uint256 updatedAt) = src.latestPrice();
-        assertGt(pQuiet, 0, "guards still pass while the pool is quiet");
-        assertEq(updatedAt, block.timestamp, "source reports itself fresh");
-        assertApproxEqRel(pQuiet, honestPrice, 1e15, "still ~the honest price before manipulation");
+        assertEq(pQuiet, 0, "withholds rather than reporting a live tick as an average");
+        assertEq(updatedAt, 0, "and casts no vote at the aggregator");
 
-        // Now a single-block tick manipulation (flash-loanable) against the quiet pool.
+        // Manipulating the live tick changes nothing, because nothing is being reported.
         pool.setLiveTick(MANIPULATED_TICK);
+        (uint256 pManipulated,) = src.latestPrice();
+        assertEq(pManipulated, 0, "still withheld; the collapse is unreachable");
 
-        (uint256 pManipulated, uint256 updatedAt2) = src.latestPrice();
-        assertEq(updatedAt2, block.timestamp, "still reported FRESH after manipulation");
-
-        // The "30-minute TWAP" moved instantly and fully with the live tick.
-        assertLt(pManipulated, honestPrice / 10, "TWAP collapsed to the manipulated live tick");
-
-        emit log_named_uint("honest 30-min TWAP (WAD)", honestPrice);
-        emit log_named_uint("post-manipulation 'TWAP' (WAD)", pManipulated);
+        vm.expectRevert(UniswapV3TwapSource.TwapPoolNotUsable.selector);
+        src.computePriceWad();
     }
 
-    /// @notice Confirms the mean tick equals the live tick EXACTLY on a quiet pool — i.e. the
-    /// window contributes nothing at all, for any tick the attacker chooses.
-    function testFuzz_quietPool_meanTickEqualsLiveTickExactly(int24 liveTick) public {
+    /// @notice H-2 FIXED, as a property over every tick an attacker could choose. This used
+    /// to assert that a quiet pool reported EXACTLY the live tick - the window contributing
+    /// nothing whatsoever. It now asserts the complement: for any tick, a pool quiet past the
+    /// ceiling reports nothing at all.
+    function testFuzz_quietPool_withholdsForEveryLiveTick(int24 liveTick) public {
         liveTick = int24(bound(int256(liveTick), -600000, 600000));
 
         UniswapV3TwapSource src = _deploySource();
-        vm.warp(block.timestamp + 2000); // quiet longer than `window`
+        vm.warp(block.timestamp + 2000); // quiet past the 5% ceiling
 
         pool.setLiveTick(liveTick);
-        uint256 viaSource = src.computePriceWad();
+        (uint256 pr, uint256 ts) = src.latestPrice();
+        assertEq(pr, 0, "no price is offered, whatever the live tick");
+        assertEq(ts, 0, "and no timestamp");
+    }
 
-        // Reference: a pool actively trading AT that same tick, i.e. a genuine TWAP of it.
-        FaithfulV3Pool ref = new FaithfulV3Pool(address(asset), address(usdc));
-        ref.seedHistory(liveTick, uint32(block.timestamp - 7200), uint32(block.timestamp), 60);
-        UniswapV3TwapSource refSrc = new UniswapV3TwapSource(
-            address(asset),
-            address(usdc),
-            IUniswapV3PoolMinimal(address(ref)),
-            IUniswapV3PoolMinimal(address(0)),
-            WINDOW,
-            MIN_CARD,
-            MAX_OBS_AGE
-        );
+    /// @notice The complementary bound: INSIDE the ceiling the source still prices, and the
+    /// live tick contributes at most 5%. A fix that simply withheld everywhere would pass the
+    /// test above and be useless, so the useful half is asserted too.
+    function test_remediated_insideTheCeilingTheSourceStillPricesWithBoundedInfluence() public {
+        UniswapV3TwapSource src = _deploySource();
+        uint256 honest = src.computePriceWad();
 
-        assertEq(viaSource, refSrc.computePriceWad(), "quiet-pool TWAP == pure live-tick price");
+        vm.warp(block.timestamp + 90); // exactly the ceiling
+        pool.setLiveTick(MANIPULATED_TICK);
+        uint256 reported = src.computePriceWad();
+
+        assertGt(reported, 0, "still prices inside the ceiling");
+        // The manipulated tick is far below the honest one, so bounded influence means the
+        // reported price stays within a few percent of honest rather than collapsing.
+        assertGt(reported, honest * 80 / 100, "live tick moved the price by a bounded amount");
+        assertLt(reported, honest, "but it did move it - the 5% is real, not zero");
     }
 }

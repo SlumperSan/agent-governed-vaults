@@ -5,7 +5,12 @@ import {Test} from "forge-std/Test.sol";
 import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../../src/oracle/UniswapV3TwapSource.sol";
 import {TokenStub, FaithfulV3Pool} from "./AuditTwapSpotDegeneration.t.sol";
 
-/// @notice AUDIT ARTIFACT — not a protocol test.
+/// @notice AUDIT ARTIFACT — not a protocol test. **H-2 IS REMEDIATED.**
+///
+/// The three `test_finding_*` cases here proved the contamination law below and are preserved
+/// as `test_remediated_*`: the same quiet-time scenarios now make the source WITHHOLD rather
+/// than report a blended price as fresh. The exploits are in git history and in
+/// docs/audit/AI-AUDIT-REPORT.md H-2.
 ///
 /// Extends `AuditTwapSpotDegeneration` with the PARTIAL case, which is the one that determines
 /// how the finding must actually be remediated.
@@ -28,7 +33,10 @@ import {TokenStub, FaithfulV3Pool} from "./AuditTwapSpotDegeneration.t.sol";
 ///     to a small fraction of the window is what bounds the contamination.
 contract AuditTwapPartialQuietTest is Test {
     uint32 constant WINDOW = 1800; // base-mainnet.json twapDefaults.windowSeconds
-    uint32 constant MAX_OBS_AGE = 3600; // base-mainnet.json twapDefaults.maxObservationAgeSeconds
+    // H-2: maxObservationAge is no longer an independent knob — it may not exceed
+    // window / MAX_LIVE_TICK_WEIGHT_DIVISOR, so 1800/20 = 90 is the loosest legal value here.
+    uint32 constant MAX_OBS_AGE = 90;
+    uint32 constant MAX_QUIET = 90; // == the live tick's 5% weight ceiling
     uint16 constant MIN_CARD = 30;
 
     int24 constant HISTORICAL_TICK = -198000; // ~ $2500/ETH with asset = token0
@@ -66,78 +74,76 @@ contract AuditTwapPartialQuietTest is Test {
         return _deploySourceOver(ref).computePriceWad();
     }
 
-    /// @notice THE POINT: at HALF the window of quiet, the reported "30-minute TWAP" is the
-    /// arithmetic mean of the honest tick and the attacker's live tick, weighted 50/50 — exactly
-    /// the blended tick, to the wei. Both freshness guards pass and the source reports FRESH.
-    function test_finding_halfWindowQuiet_livesTickGetsHalfWeight() public {
+    /// @notice H-2 FIXED. At half the window of quiet the source used to report a price
+    /// half-composed of the live, single-block-movable tick — and stamp it FRESH. It now
+    /// withholds, because 900s of quiet is 50% live-tick weight and the ceiling is 5%.
+    function test_remediated_halfWindowQuietNowWithholdsInsteadOfBlending() public {
         UniswapV3TwapSource src = _deploySourceOver(pool);
-        uint256 honest = src.computePriceWad();
+        assertGt(src.computePriceWad(), 0, "healthy pool prices normally");
 
-        // Quiet for exactly half the window — far inside maxObservationAge, and BELOW `window`,
-        // so the remediation "newest observation younger than window" would still permit this.
         vm.warp(block.timestamp + 900);
         pool.setLiveTick(MANIPULATED_TICK);
 
         (uint256 reported, uint256 updatedAt) = src.latestPrice();
-        assertEq(updatedAt, block.timestamp, "still reported FRESH");
+        assertEq(reported, 0, "withholds instead of reporting a 50/50 blend");
+        assertEq(updatedAt, 0, "and does not vote");
 
-        // Predicted mean tick = (hist*900 + live*900)/1800 = the midpoint tick.
-        int24 blended = (HISTORICAL_TICK + MANIPULATED_TICK) / 2;
-        assertEq(reported, _honestTwapOf(blended), "reported price == TWAP of the blended tick");
-
-        // And that is a very large move for a source advertised as a 30-minute average.
-        assertLt(reported, honest / 2, "half-window quiet already halves the reported price");
-
-        emit log_named_uint("honest TWAP (WAD)", honest);
-        emit log_named_uint("after 900s quiet + 1-block manipulation (WAD)", reported);
+        vm.expectRevert(UniswapV3TwapSource.TwapPoolNotUsable.selector);
+        src.computePriceWad();
     }
 
-    /// @notice The live-tick weight is (now - newestTs)/window, continuous from the first second
-    /// of quiet. Demonstrated at 1/6, 1/3, 1/2, 2/3 of the window: the reported price is strictly
-    /// monotone in quiet time and always equals the TWAP of the correspondingly blended tick.
-    function test_finding_contaminationIsContinuousInQuietTime() public {
-        uint32[4] memory quiets = [uint32(300), 600, 900, 1200];
-        uint256 previous = type(uint256).max;
-
-        for (uint256 i; i < quiets.length; ++i) {
-            uint256 snap = vm.snapshotState();
-
-            UniswapV3TwapSource src = _deploySourceOver(pool);
-            vm.warp(block.timestamp + quiets[i]);
-            pool.setLiveTick(MANIPULATED_TICK);
-            uint256 reported = src.computePriceWad();
-
-            int24 blended = int24(
-                (int256(HISTORICAL_TICK)
-                        * int256(uint256(WINDOW - quiets[i]))
-                        + int256(MANIPULATED_TICK)
-                        * int256(uint256(quiets[i]))) / int256(uint256(WINDOW))
-            );
-            // 1e15 = 0.1%: `blended` is computed with integer tick division, so it can differ
-            // from the exact weighted tick by up to one tick (=1bp) before pricing.
-            assertApproxEqRel(reported, _honestTwapOf(blended), 1e15, "weight is quiet/window");
-            assertLt(reported, previous, "more quiet => more contamination, monotone");
-            previous = reported;
-
-            vm.revertToState(snap);
-        }
-    }
-
-    /// @notice Therefore the naive remediation is INSUFFICIENT. Even under a hypothetical guard
-    /// `block.timestamp - newestTs < window`, a pool one second under that bound reports a price
-    /// almost entirely composed of the live tick.
-    function test_finding_newestYoungerThanWindowGuardWouldStillLeak() public {
+    /// @notice The contamination law itself is unchanged — it is a property of v3-core, not of
+    /// this contract. What changed is that the reachable range is now bounded to 5%. At exactly
+    /// the ceiling the source still prices, and the blend is exactly 5% live tick; one second
+    /// past it, it withholds. This is the boundary the fix is built on, asserted rather than
+    /// assumed.
+    function test_remediated_contaminationIsBoundedToFivePercentOfTheWindow() public {
         UniswapV3TwapSource src = _deploySourceOver(pool);
-        uint256 honest = src.computePriceWad();
 
-        vm.warp(block.timestamp + (WINDOW - 1)); // would PASS a `newest younger than window` guard
+        uint256 snap = vm.snapshotState();
+        vm.warp(block.timestamp + MAX_QUIET);
+        pool.setLiveTick(MANIPULATED_TICK);
+        uint256 reported = src.computePriceWad();
+
+        int24 blended = int24(
+            (int256(HISTORICAL_TICK)
+                    * int256(uint256(WINDOW - MAX_QUIET))
+                    + int256(MANIPULATED_TICK)
+                    * int256(uint256(MAX_QUIET))) / int256(uint256(WINDOW))
+        );
+        assertApproxEqRel(reported, _honestTwapOf(blended), 1e15, "exactly 5% live-tick weight");
+        vm.revertToState(snap);
+
+        // One second past the ceiling: withheld.
+        vm.warp(block.timestamp + MAX_QUIET + 1);
+        pool.setLiveTick(MANIPULATED_TICK);
+        vm.expectRevert(UniswapV3TwapSource.TwapPoolNotUsable.selector);
+        src.computePriceWad();
+    }
+
+    /// @notice The naive remediation the audit tested and rejected — `newestTs younger than
+    /// window` — would have passed a pool one second under the window while reporting a price
+    /// almost entirely composed of the live tick. The shipped guard is a FRACTION of the window
+    /// for exactly this reason, and it refuses that pool.
+    function test_remediated_theNaiveWindowGuardWouldHaveLeakedButThisOneDoesNot() public {
+        UniswapV3TwapSource src = _deploySourceOver(pool);
+
+        vm.warp(block.timestamp + (WINDOW - 1)); // would PASS a "newest younger than window" guard
         pool.setLiveTick(MANIPULATED_TICK);
 
-        uint256 reported = src.computePriceWad();
-        uint256 fullySpot = _honestTwapOf(MANIPULATED_TICK);
+        vm.expectRevert(UniswapV3TwapSource.TwapPoolNotUsable.selector);
+        src.computePriceWad();
+    }
 
-        // Within a hair of the pure spot price, despite the hypothetical guard passing.
-        assertApproxEqRel(reported, fullySpot, 5e15, "price is ~the manipulated spot price");
-        assertLt(reported, honest / 10, "guard would still permit a >90% error");
+    /// @notice H-2's other half: a stale tick used to be stamped `block.timestamp`, so the
+    /// aggregator's staleness bound could never reject it. `updatedAt` is now the age of the
+    /// DATA — which is what makes the aggregator's bound apply to a TWAP leg at all.
+    function test_remediated_updatedAtIsTheDataAgeNotTheReadTime() public {
+        UniswapV3TwapSource src = _deploySourceOver(pool);
+        vm.warp(block.timestamp + 60); // inside the 5% ceiling, so it still votes
+        (uint256 p2, uint256 updatedAt) = src.latestPrice();
+        assertGt(p2, 0, "still fresh enough to vote");
+        assertEq(updatedAt, block.timestamp - 60, "reports the newest observation, not now");
+        assertLt(updatedAt, block.timestamp, "strictly older than the read");
     }
 }

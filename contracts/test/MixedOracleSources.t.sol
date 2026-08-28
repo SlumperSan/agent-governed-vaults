@@ -34,7 +34,7 @@ import {MockERC20} from "./mocks/Mocks.sol";
 contract MixedOracleSourcesTest is Test {
     uint32 constant WINDOW = 1800;
     uint16 constant MIN_CARD = 100;
-    uint32 constant MAX_OBS_AGE = 3600;
+    uint32 constant MAX_OBS_AGE = 90; // H-2: <= WINDOW / MAX_LIVE_TICK_WEIGHT_DIVISOR (1800/20)
     uint32 constant MAX_STALENESS = 1 hours;
 
     bytes32 constant ETH_USD =
