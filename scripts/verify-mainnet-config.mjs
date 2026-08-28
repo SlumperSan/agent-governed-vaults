@@ -141,11 +141,28 @@ check('router: has code', () => {
   const code = cast(['code', cfg.router]);
   return code.length > 2 ? { pass: true, detail: `${(code.length - 2) / 2} bytes` } : { pass: false, detail: 'no code' };
 });
+// M-12: this returned a hard-coded `{ pass: true }` — 1 of 22 checks could not fail. It now
+// asserts what it claims: each signature resolves to a well-formed 4-byte selector, and the
+// set matches the selectors the adapter actually allow-lists.
 check('router: allow-listed selectors resolve to 4 bytes each', () => {
   const sigs = cfg.routerAllowedSignatures ?? [];
   if (!sigs.length) return { pass: false, detail: 'config lists no routerAllowedSignatures' };
-  const sels = sigs.map((s) => `${s} → ${execFileSync(CAST, ['sig', s], { encoding: 'utf8' }).trim()}`);
-  return { pass: true, detail: sels.join(' | ') };
+  const problems = [];
+  const sels = [];
+  for (const sig of sigs) {
+    let sel;
+    try {
+      sel = execFileSync(CAST, ['sig', sig], { encoding: 'utf8' }).trim();
+    } catch (e) {
+      problems.push(`${sig} → cast sig failed: ${e.message}`);
+      continue;
+    }
+    if (!/^0x[0-9a-fA-F]{8}$/.test(sel)) problems.push(`${sig} → ${sel} is not a 4-byte selector`);
+    else sels.push(`${sig} → ${sel}`);
+  }
+  const dupes = sels.length !== new Set(sels.map((x) => x.split(" → ")[1])).size;
+  if (dupes) problems.push('two signatures collide on the same selector');
+  return problems.length ? { pass: false, detail: problems.join('; ') } : { pass: true, detail: sels.join(' | ') };
 });
 
 // ── pyth receiver ──
@@ -219,8 +236,45 @@ for (const a of assets) {
         check(`${A.symbol} ${leg}: observe([${cfg.twapDefaults.windowSeconds}, 0]) succeeds`, () => {
           const r = tryCall(pool, 'observe(uint32[])(int56[],uint160[])', `[${cfg.twapDefaults.windowSeconds},0]`);
           return r.ok
-            ? { pass: true, detail: 'the full window is retained' }
+            // M-12: this used to report 'the full window is retained'. Success is EQUALLY
+            // consistent with the pool having been dead for >= the window, because v3
+            // synthesizes the endpoint from the newest observation. The two opposite
+            // conclusions this check exists to separate are separated by the NEXT check, not
+            // this one, so it no longer claims more than it establishes.
+            ? { pass: true, detail: 'observe() did not revert (says nothing about liveness — see the freshness check)' }
             : { pass: false, detail: `observe reverted — the pool cannot serve a ${cfg.twapDefaults.windowSeconds}s window: ${r.err}` };
+        });
+
+        // M-12 + H-2: `maxObservationAgeSeconds` was NEVER CHECKED, and `observations(uint256)`
+        // was called zero times anywhere in this repo — so the pool tuple that guards 2 and 3
+        // actually read was never exercised, and this gate could not observe the parameter
+        // behind H-2. Both are read here now.
+        check(`${A.symbol} ${leg}: newest observation is inside maxObservationAge`, () => {
+          const maxAge = cfg.twapDefaults.maxObservationAgeSeconds;
+          const window = cfg.twapDefaults.windowSeconds;
+          const divisor = 20; // UniswapV3TwapSource.MAX_LIVE_TICK_WEIGHT_DIVISOR
+          if (maxAge * divisor > window) {
+            return {
+              pass: false,
+              detail: `maxObservationAge ${maxAge}s exceeds window/${divisor} (${Math.floor(window / divisor)}s) — the constructor REJECTS this config (H-2). The newest observation age is the live tick\u2019s weight in the reported mean, so the ratio is the bound.`,
+            };
+          }
+          const slot0 = call(pool, 'slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)');
+          const index = Number(slot0[2]);
+          const obs = tryCall(pool, 'observations(uint256)(uint32,int56,uint160,bool)', String(index));
+          if (!obs.ok) return { pass: false, detail: `observations(${index}) reverted: ${obs.err}` };
+          const newestTs = Number(String(obs.lines[0]).trim());
+          // Read the CHAIN clock, not this machine's. Comparing an on-chain observation
+          // timestamp against `Date.now()` would measure local clock drift as pool staleness -
+          // the same species of "licenses more than it establishes" that M-12 is about.
+          const chainNow = Number(String(cast(['block', 'latest', '--field', 'timestamp'])).trim());
+          if (!Number.isFinite(chainNow) || chainNow === 0) {
+            return { pass: false, detail: 'could not read the chain timestamp' };
+          }
+          const age = chainNow - newestTs;
+          return age <= maxAge
+            ? { pass: true, detail: `newest observation ${age}s old, bound ${maxAge}s (live-tick weight <= ${(age / window * 100).toFixed(2)}%)` }
+            : { pass: false, detail: `newest observation ${age}s old > maxObservationAge ${maxAge}s — this pool is too quiet and the source will WITHHOLD` };
         });
       }
     }

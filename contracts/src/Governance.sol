@@ -210,6 +210,19 @@ contract Governance is IGovernance {
         }
     }
 
+    /// @dev M-6 bounds. Every named CM-6/VO-5 defence used to be OPTIONAL, and the repo's only
+    /// worked configuration disabled all three at once: `proposalThresholdBps = 0`,
+    /// `concentrationCapBps = 10000`, `proposalCooldown = 0` — in both base-mainnet.json and
+    /// base-sepolia.json. A defence that ships disabled in the reference config is not a
+    /// defence, and the creator who chooses these values is explicitly untrusted.
+    uint16 public constant CONCENTRATION_CAP_CEILING_BPS = 5_000; // a delegate may not carry >50%
+    uint32 public constant PROPOSAL_COOLDOWN_FLOOR = 1 hours;
+    /// @dev And an upper bound, which nothing had. `proposalCooldown` was not validated AT ALL,
+    /// and it is a `uint32` — so a creator could set ~136 years and make the vault unable to
+    /// ever open a second proposal. That is C-2's shape (an unbounded duration parameter that
+    /// permanently disables governance) on a field C-2 did not cover.
+    uint32 public constant PROPOSAL_COOLDOWN_CAP = 30 days;
+
     function _validateConfig(GovConfig memory cfg) internal pure {
         require(cfg.commitDuration >= 1 hours && cfg.commitDuration <= COMMIT_HARD_CAP, BadGovConfig());
         require(cfg.revealDuration >= 1 hours && cfg.revealDuration <= REVEAL_HARD_CAP, BadGovConfig());
@@ -218,8 +231,32 @@ contract Governance is IGovernance {
             cfg.executionWindow >= 1 hours && cfg.executionWindow <= EXECUTION_WINDOW_HARD_CAP, BadGovConfig()
         );
         require(cfg.quorumBps >= QUORUM_FLOOR_BPS && cfg.quorumBps <= BPS, BadGovConfig());
+        // M-6: NO FLOOR on proposalThresholdBps, deliberately. A floor was implemented,
+        // measured, and reverted - see test/audit/AuditProposalThresholdFloor.t.sol. The
+        // threshold is a fraction of LIVE STAKE DISTRIBUTION, which a constructor cannot see:
+        // in a vault of 101 roughly-equal members nobody holds 1%, so no member could open any
+        // proposal, and the RuleChange that would lower the threshold is itself a proposal.
+        // Self-locking, and governance is the only route to executeRebalance - i.e. C-2's
+        // exact shape, which this same validator exists to prevent.
+        //
+        // M-6's real defect was that the SHIPPED CONFIGS disabled their own defences. That is
+        // fixed where it lives, in base-mainnet.json and base-sepolia.json.
         require(cfg.proposalThresholdBps <= BPS, BadGovConfig());
-        require(cfg.concentrationCapBps > 0 && cfg.concentrationCapBps <= BPS, BadGovConfig());
+        // M-6: at 10000 one delegate could carry 100% of snapshot stake, so a single live
+        // participant plus a permissionless cranker manufactured full quorum out of offline
+        // delegators — defeating VO-2's "quorum measured against live participation" rationale.
+        require(
+            cfg.concentrationCapBps > 0 && cfg.concentrationCapBps <= CONCENTRATION_CAP_CEILING_BPS,
+            BadGovConfig()
+        );
+        // M-6 / M-7: bounded on BOTH sides. The cap stops a creator freezing proposals forever
+        // with an unbounded uint32 (C-2 shape). The floor raises the cost of M-7 serial-proposal
+        // cycling, but STATED HONESTLY it does not rate-limit it: lastProposalAt is keyed
+        // PER-PROPOSER, so a second address sidesteps the cooldown entirely. M-7 stays open.
+        require(
+            cfg.proposalCooldown >= PROPOSAL_COOLDOWN_FLOOR && cfg.proposalCooldown <= PROPOSAL_COOLDOWN_CAP,
+            BadGovConfig()
+        );
     }
 
     // ───────────────────────────── proposals ──────────────────────────────────
