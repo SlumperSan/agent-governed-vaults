@@ -1,5 +1,29 @@
 # Audit Handoff Package
 
+> ## ⚠ THIS PACKAGE DESCRIBES A SUPERSEDED TREE — READ FIRST
+>
+> An AI pre-audit on **2026-08-25** found **41 issues: 5 Critical, 9 High, 15 Medium, 7 Low**
+> ([audit/AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A remediation pass on
+> **2026-08-27** then closed twelve of them, changing **six contracts**: `VaultCore`,
+> `Governance`, `OracleAggregator`, `UniswapV3TwapSource`, `VaultFactory` and `lib/BoundedCall`.
+>
+> **`v0.3.0-audit` is WITHDRAWN as an engagement reference.** It contains all five Criticals.
+> Do not commission against it. The corrected tree should be tagged (`v0.4.0-audit`
+> recommended) and the engagement is a **full review, not a delta** — it must also cover the
+> remediation itself, including the hand-written assembly in `OracleAggregator._tryLatestPrice`.
+>
+> **Still open and in scope:** **C-1** (#33 — a funded sub-vault has an empty electorate; the
+> report's own suggested fix was implemented, measured, and found to break legitimate children
+> while barely raising attacker cost — see the issue), **H-5**, **H-6** (#40), **H-8**, **H-9**,
+> and most of the Medium/Low tier. `VaultCore` has **1,182 bytes** of EIP-170 margin, which is
+> the binding constraint on the remainder.
+>
+> The scope table, invariants and residuals below remain broadly accurate about the
+> *architecture*. Treat every specific line number, test count and "Accepted" disposition as
+> pre-remediation. In particular the "Known residuals" table below predates the pre-audit and
+> does not list it — [LAUNCH-READINESS.md](LAUNCH-READINESS.md) is the current status of record.
+
+
 Everything an external auditor needs to scope the engagement. Current as of the **Sprint-10
 audit freeze**. The protocol is immutable (no proxies, no admin upgrade path), so whatever ships
 is the audit surface permanently — there is no "we'll patch it later."
