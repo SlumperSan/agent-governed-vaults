@@ -57,6 +57,22 @@ contract VaultFactory {
     /// holds no authority of its own — attestation stays factory-gated in OperatorRegistry.
     IVaultDeployer public immutable vaultDeployer;
 
+    /// @dev C-6 launch remediation (audit finding C-6, "curated oracle"). A vault's oracle is
+    /// creator-supplied, and oracle safety CANNOT be enforced permissionlessly: the custom
+    /// {OracleAggregator} lets two adversarial sources seize an asset's price (C-6), and even a
+    /// {ChainlinkOracle} pointed at a creator-controlled FAKE `AggregatorV3` prices whatever the
+    /// creator wants — both pass every per-oracle constructor check. There is no on-chain way for
+    /// the factory to tell a genuine Chainlink feed from a fake, so the launch resolution is
+    /// CURATION: the protocol blesses a fixed set of oracle instances (ChainlinkOracle over
+    /// verified genuine Chainlink Data Feeds — see docs/audit/AI-AUDIT-REPORT.md C-6) and vaults may
+    /// only be created against one of them. When the allowlist is NON-EMPTY at construction,
+    /// `oracleAllowlistEnforced` is true and `createVault`/`createChildVault` require the vault's
+    /// oracle to be allowlisted; an EMPTY allowlist disables enforcement (local/tests, or a
+    /// deliberately-permissionless post-audit deployment). This bounds the launch asset universe to
+    /// the blessed feeds — the same "curate what the code cannot verify" shape as `allowSubVaults`.
+    bool public immutable oracleAllowlistEnforced;
+    mapping(address => bool) public isAllowedOracle;
+
     address[] public allVaults;
 
     event VaultCreated(address indexed vault, address indexed creator, address usdc, uint256 capacityCapUsdc);
@@ -69,13 +85,18 @@ contract VaultFactory {
     /// @param vaultDeployer_ the VaultDeployer holding VaultCore's creation code (deploy it first)
     /// @param allowSubVaults_ C-1 launch switch. Pass FALSE for mainnet launch (root vaults only);
     /// pass true only once the parent-casts-child-vote mechanism has shipped and been audited.
+    /// @param allowedOracles_ C-6 curated-oracle allowlist. Pass the blessed oracle instances
+    /// (ChainlinkOracle over verified genuine Chainlink feeds) for a mainnet launch; a NON-EMPTY
+    /// list enforces that every vault use one of them. Pass EMPTY to disable enforcement
+    /// (local/tests, or a deliberately-permissionless post-audit deployment).
     constructor(
         IOperatorRegistry registry_,
         IGovernance governance_,
         IFeeEngine feeEngine_,
         address subVaultRegistry_,
         IVaultDeployer vaultDeployer_,
-        bool allowSubVaults_
+        bool allowSubVaults_,
+        address[] memory allowedOracles_
     ) {
         registry = registry_;
         governance = governance_;
@@ -83,6 +104,11 @@ contract VaultFactory {
         subVaultRegistry = subVaultRegistry_;
         vaultDeployer = vaultDeployer_;
         allowSubVaults = allowSubVaults_;
+        oracleAllowlistEnforced = allowedOracles_.length > 0;
+        for (uint256 i; i < allowedOracles_.length; ++i) {
+            require(allowedOracles_[i] != address(0), OracleNotAllowed());
+            isAllowedOracle[allowedOracles_[i]] = true;
+        }
     }
 
     error BasketNotSubsetOfParent();
@@ -90,6 +116,15 @@ contract VaultFactory {
     error NotParentCreator();
     /// @dev C-1: sub-vault creation is disabled at launch (root vaults only).
     error SubVaultsDisabled();
+    /// @dev C-6: the vault's oracle is not on the factory's curated allowlist.
+    error OracleNotAllowed();
+
+    /// @dev C-6 gate: when the allowlist is enforced, a vault's oracle must be blessed. Verifying a
+    /// genuine oracle on-chain is impossible (a fake AggregatorV3 or a weak custom aggregator both
+    /// pass their own constructor checks), so curation is the only sound launch defence.
+    function _requireAllowedOracle(address oracle) internal view {
+        if (oracleAllowlistEnforced) require(isAllowedOracle[oracle], OracleNotAllowed());
+    }
 
     struct VaultParams {
         address usdc;
@@ -107,6 +142,7 @@ contract VaultFactory {
     /// @param p the creator's immutable vault configuration
     /// @return vault the deployed VaultCore address
     function createVault(VaultParams calldata p) external returns (address vault) {
+        _requireAllowedOracle(address(p.oracle)); // C-6: only a curated (blessed) oracle at launch
         vault = _deploy(p);
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
         allVaults.push(vault);
@@ -126,6 +162,7 @@ contract VaultFactory {
         // refusing creation here means no parent/child edge can ever exist, no vault can be funded
         // as a child, and the empty-electorate capture is unreachable. See `allowSubVaults`.
         require(allowSubVaults, SubVaultsDisabled());
+        _requireAllowedOracle(address(p.oracle)); // C-6: only a curated (blessed) oracle
         // L-1: this performed NO authorization on `parent`. Anyone could permanently attach an
         // arbitrary child under any vault — `registerChild` is creation-time-only with no
         // removal path — and, being the child's own creator, register its GovConfig with

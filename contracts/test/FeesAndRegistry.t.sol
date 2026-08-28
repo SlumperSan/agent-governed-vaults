@@ -45,7 +45,8 @@ contract FeesAndRegistryTest is Test {
             IFeeEngine(address(fees)),
             address(0),
             IVaultDeployer(address(new VaultDeployer())),
-            false // root-only; this suite never touches sub-vaults
+            false, // root-only; this suite never touches sub-vaults
+            new address[](0) // C-6: no oracle allowlist (permissive)
         );
         registry.wire(address(factory), address(fees));
 
