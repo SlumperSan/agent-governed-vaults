@@ -13,6 +13,7 @@ interface IVaultExecution {
 interface IVaultSnapshots {
     function creator() external view returns (address);
     function pastVotingEligibleShares(address member, uint64 ts) external view returns (uint256);
+    function votingEligibleShares(address member) external view returns (uint256);
     function pastTotalVotingEligibleShares(uint64 ts) external view returns (uint256);
     function pastHolderCount(uint64 ts) external view returns (uint256);
 }
@@ -272,6 +273,36 @@ contract Governance is IGovernance {
 
     // ─────────────────────────── commit-reveal ────────────────────────────────
 
+    /// @dev C-5 remediation — **exiting forfeits voice on an in-flight proposal.**
+    ///
+    /// Every weight read is `pastVotingEligibleShares(voter, createdAt - 1)`, and
+    /// `Checkpoints.getAt` returns the last checkpoint at or before that timestamp. The
+    /// checkpoint written when a member EXITS is stamped at the current block — strictly after
+    /// `createdAt - 1` — so it was invisible to a proposal already in flight. Worse, the exit
+    /// settled instantly and in full: `hasPendingExecution` is false for the entire commit
+    /// phase, so `requestExit` took the Mode-I branch and paid out immediately.
+    ///
+    /// An attacker could therefore deposit a dominant position, propose one block later, exit
+    /// completely, and then reveal FOR with the full snapshot weight on stake they no longer
+    /// owned. Not free — they carry round-trip price risk across a couple of blocks — but it
+    /// reduced the skin-in-the-game requirement from DAYS (reveal + timelock + execution
+    /// window, up to 30 days of timelock alone) to seconds. That alignment is the entire reason
+    /// the timelock exists.
+    ///
+    /// Taking the MINIMUM of snapshot and current weight preserves VO-9 in the direction it
+    /// already handled (stake acquired after creation still carries zero weight, because the
+    /// snapshot term is zero) and closes the withdrawal direction, which was the profitable one.
+    /// It also finally makes EE-10's claim true — Mode-F-locked shares now do lose eligibility
+    /// on the proposal that motivated the queue, not merely on future ones.
+    /// @param p the proposal being voted on
+    /// @param member the voter or delegator whose weight is being measured
+    /// @return the lesser of snapshot weight and current voting-eligible weight
+    function _boundedWeight(Proposal storage p, address member) internal view returns (uint256) {
+        uint256 snap = IVaultSnapshots(p.vault).pastVotingEligibleShares(member, p.createdAt - 1);
+        uint256 cur = IVaultSnapshots(p.vault).votingEligibleShares(member);
+        return snap < cur ? snap : cur;
+    }
+
     /// @notice Commit `keccak256(abi.encode(pid, voter, support, salt))` during the commit phase.
     /// @param pid the proposal id
     /// @param commitment the vote commitment hash (binds pid + voter — no cross-proposal replay)
@@ -279,9 +310,7 @@ contract Governance is IGovernance {
         Proposal storage p = proposals[pid];
         require(p.status == Status.Active && block.timestamp < p.commitDeadline, WrongPhase());
         require(commitOf[pid][msg.sender] == bytes32(0), AlreadyCommitted());
-        require(
-            IVaultSnapshots(p.vault).pastVotingEligibleShares(msg.sender, p.createdAt - 1) > 0, NoWeight()
-        );
+        require(_boundedWeight(p, msg.sender) > 0, NoWeight());
         commitOf[pid][msg.sender] = commitment;
         emit Committed(pid, msg.sender);
     }
@@ -310,7 +339,7 @@ contract Governance is IGovernance {
         // F1 (S6): a member's OWN weight is never concentration-capped — only weight RECEIVED
         // via delegation is (architecture §8). Self-accrual here made any holder above the cap
         // unable to reveal, bricking sole/dominant-holder vaults and RuleChange consensus.
-        uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(msg.sender, p.createdAt - 1);
+        uint256 weight = _boundedWeight(p, msg.sender);
 
         if (support) p.forWeight += weight;
         else p.againstWeight += weight;
@@ -337,7 +366,7 @@ contract Governance is IGovernance {
         require(revealedOf[pid][del], DelegateNotRevealed());
         bool support = revealedSupportOf[pid][del];
 
-        uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(delegator, p.createdAt - 1);
+        uint256 weight = _boundedWeight(p, delegator);
         require(weight > 0, NoWeight());
         defaultApplied[pid][delegator] = true;
         _accrueDelegate(pid, del, weight, p);
@@ -404,7 +433,7 @@ contract Governance is IGovernance {
             d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable()
         );
 
-        uint256 weight = IVaultSnapshots(p.vault).pastVotingEligibleShares(member, p.createdAt - 1);
+        uint256 weight = _boundedWeight(p, member);
         require(weight > 0, NoWeight());
         defaultApplied[pid][member] = true;
 

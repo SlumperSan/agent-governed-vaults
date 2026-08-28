@@ -99,7 +99,7 @@ contract DirectPoolAdapterTest is Test {
         uint32[] memory stale = new uint32[](1);
         stale[0] = 1 hours;
         uint8[] memory q = new uint8[](1);
-        q[0] = 2;
+        q[0] = 3; // H-1: MIN_MEDIAN
         oracle = new OracleAggregator(assets, srcs, stale, q);
 
         // Pool: 1000 wETH / 4,000,000 USDC ($4000/wETH), deep enough for low slippage.

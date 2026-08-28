@@ -94,6 +94,10 @@ contract Sprint6FixesTest is Test {
     // ── Finding 1: recursive look-through captures grandchild value ──────────
 
     function test_finding1_grandchildValueInRootNav() public {
+        // L-1: children may only be attached by the PARENT's creator, so the parent is
+        // created by `operator` here too. Previously the parent was created by the test
+        // contract and the child by `operator` - a shape the factory now rejects.
+        vm.prank(operator);
         VaultCore parent = VaultCore(factory.createVault(_params(_wethBasket())));
         vm.prank(operator);
         VaultCore child = VaultCore(factory.createChildVault(_params(_wethBasket()), address(parent)));
@@ -136,6 +140,10 @@ contract Sprint6FixesTest is Test {
 
     function test_finding4_pendingChildDoesNotBlockWhenIdleCovers() public {
         // idle alone covers the exit → child never touched, no revert regardless of child state.
+        // L-1: children may only be attached by the PARENT's creator, so the parent is
+        // created by `operator` here too. Previously the parent was created by the test
+        // contract and the child by `operator` - a shape the factory now rejects.
+        vm.prank(operator);
         VaultCore parent = VaultCore(factory.createVault(_params(_wethBasket())));
         vm.prank(operator);
         VaultCore child = VaultCore(factory.createChildVault(_params(_wethBasket()), address(parent)));
@@ -183,6 +191,14 @@ contract Sprint6FixesTest is Test {
         q1[0] = 1;
         vm.expectRevert(OracleAggregator.BadOracleConfig.selector);
         new OracleAggregator(a3, s3, st3, q1);
+
+        // H-1: 3 sources with quorum 2 is a STRICT MAJORITY and still rejected, because at
+        // two fresh sources the lower median is the minimum. This is the shape the shipped
+        // base-mainnet.json carried, so it is pinned here as a constructor property.
+        uint8[] memory q2 = new uint8[](1);
+        q2[0] = 2;
+        vm.expectRevert(OracleAggregator.BadOracleConfig.selector);
+        new OracleAggregator(a3, s3, st3, q2);
     }
 
     function test_finding2_saturatingNoUnderflowPanic() public {
@@ -210,7 +226,7 @@ contract Sprint6FixesTest is Test {
         stale = new uint32[](1);
         stale[0] = staleness;
         q = new uint8[](1);
-        q[0] = 2;
+        q[0] = 3; // H-1: quorum must reach MIN_MEDIAN; at m == 3 that means all three
     }
 
     function _seed(VaultCore v, address who, uint256 amt) internal {

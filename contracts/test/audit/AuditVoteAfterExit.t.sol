@@ -6,7 +6,15 @@ import {VaultCore} from "../../src/VaultCore.sol";
 import {Governance} from "../../src/Governance.sol";
 import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks.sol";
 
-/// @notice AUDIT ARTIFACT — not a protocol test.
+/// @notice AUDIT ARTIFACT — not a protocol test. **C-5 IS REMEDIATED.**
+///
+/// The finding below is preserved as a `test_remediated_*` case: the exploit sequence is run
+/// verbatim, and the vote is now REFUSED at `commitVote` with `NoWeight()`. Governance takes
+/// `min(snapshot, current)` weight at all four read sites (`Governance._boundedWeight`), so a
+/// member who has exited carries zero weight on the proposal already in flight. The original
+/// exploit assertions are in git history.
+///
+/// What the defect was:
 ///
 /// Governance reads every weight at `p.createdAt - 1`
 /// (`src/Governance.sol:269, 299, 326, 393`), and `Checkpoints.getAt` returns the last
@@ -106,7 +114,17 @@ contract AuditVoteAfterExitTest is Test {
 
     /// @notice THE FINDING: stake held for ONE block boundary votes with full weight after being
     /// fully withdrawn, and the withdrawal is instant and complete.
-    function test_finding_fullExitRetainsFullVotingWeightOnTheInFlightProposal() public {
+    /// @notice C-5 FIXED. The full exploit sequence still runs — deposit a dominant position,
+    /// cross one block boundary, propose, take every dollar back inside the commit phase — and
+    /// the vote is then refused outright. What the attacker escaped was price exposure across
+    /// the reveal phase, the timelock and the execution window (up to ~31 days at the hard
+    /// caps); what they now get is `NoWeight()`.
+    ///
+    /// This also makes EE-10's documented claim true for the first time. It said "Mode-F-locked
+    /// shares lose voting eligibility at queue time", but `requestExit` snapshotted at the
+    /// CURRENT timestamp while Governance read `createdAt - 1`, so the lock only ever removed
+    /// eligibility from FUTURE proposals — never from the one that motivated the queue.
+    function test_remediated_fullExitForfeitsVotingWeightOnTheInFlightProposal() public {
         // 1. Acquire a dominant position. skipWindow() is permissionless and unconditional, so
         //    the observation window is bypassed and the deposit mints immediately.
         vm.startPrank(attacker);
@@ -135,22 +153,50 @@ contract AuditVoteAfterExitTest is Test {
         assertEq(vault.queuedExitShares(attacker), 0, "not queued either - fully settled");
         assertGe(usdc.balanceOf(attacker), balanceAfterDeposit, "capital returned in full");
 
-        // 4. Vote anyway, with the stake they no longer own.
+        // 4. Try to vote with the stake they no longer own. REFUSED: min(snapshot, current)
+        //    is zero, because current voting-eligible weight is zero.
+        vm.prank(attacker);
+        vm.expectRevert(Governance.NoWeight.selector);
+        gov.commitVote(pid, keccak256(abi.encode(pid, attacker, true, SALT)));
+
+        // 5. The proposal therefore cannot pass on withdrawn stake. With no reveals at all it
+        //    fails quorum and finalizes Defeated.
+        skip(12 hours);
+        gov.finalize(pid);
+        assertEq(_forWeight(pid), 0, "no weight from an exited member");
+        assertEq(uint256(_status(pid)), uint256(Governance.Status.Defeated), "cannot pass on withdrawn stake");
+    }
+
+    /// @notice The other half of the property, so the fix is not simply "exiting breaks voting":
+    /// a member who KEEPS their stake votes normally, and a PARTIAL exit is capped at what
+    /// remains rather than being zeroed. min() is a bound, not a veto.
+    function test_remediated_holdingStakeStillVotesAndPartialExitIsCappedNotZeroed() public {
+        vm.startPrank(attacker);
+        usdc.approve(address(vault), type(uint256).max);
+        vault.skipWindow();
+        vault.deposit(9_000 * USDC_1);
+        vm.stopPrank();
+
+        uint256 shares = vault.sharesOf(attacker);
+        skip(1);
+
+        vm.prank(attacker);
+        uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(""));
+
+        // Exit HALF: current weight is now ~half the snapshot, so that is what counts.
+        vm.prank(attacker);
+        vault.requestExit(shares / 2);
+        uint256 remaining = vault.votingEligibleShares(attacker);
+        assertGt(remaining, 0, "still holds stake");
+
         vm.prank(attacker);
         gov.commitVote(pid, keccak256(abi.encode(pid, attacker, true, SALT)));
         skip(6 hours);
         vm.prank(attacker);
-        gov.revealVote(pid, true, SALT); // does NOT revert despite zero current balance
+        gov.revealVote(pid, true, SALT);
 
-        skip(6 hours);
-        gov.finalize(pid);
-
-        assertGt(_forWeight(pid), 0, "an exited member's weight counted toward the tally");
-        // memberCount >= 5 at snapshot, so the STAKE regime applies and the attacker's ~86.5%
-        // clears the 25% quorum alone.
-
-        // 5. And it passes.
-        assertEq(uint256(_status(pid)), uint256(Governance.Status.Passed), "PASSED on withdrawn stake");
+        assertEq(_forWeight(pid), remaining, "weight is the CURRENT holding, not the snapshot");
+        assertLt(_forWeight(pid), shares, "and strictly less than what was held at snapshot");
     }
 
     /// @notice CONTROL — VO-9 is correctly implemented in the direction it claims: stake acquired

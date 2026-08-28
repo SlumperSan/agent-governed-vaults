@@ -68,7 +68,7 @@ contract DeployTestnetTest is Test {
         for (uint256 i; i < assets.length; ++i) {
             (address[] memory sources, uint32 maxStaleness, uint8 quorum) = aggregator.assetConfig(assets[i]);
             assertEq(sources.length, 3, "3 sources");
-            assertEq(quorum, 2, "majority quorum");
+            assertEq(quorum, 3, "H-1: quorum reaches MIN_MEDIAN (3-of-3 on this testnet)");
             assertEq(maxStaleness, 1 days, "staleness at the 1-day ceiling");
             for (uint256 j; j < sources.length; ++j) {
                 assertTrue(sources[j].code.length > 0, "source adapter deployed");

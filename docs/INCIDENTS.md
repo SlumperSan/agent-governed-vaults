@@ -33,14 +33,14 @@ only says what is being investigated. Every claim carries a tx hash or a `cast` 
 reader can run. Never state a recovery time you cannot evidence.
 
 > **Pre-remediation caveat — this playbook describes the intended posture, and the tree does not
-> currently meet it.** Four Critical findings are open
-> ([#31](https://github.com/SlumperSan/agent-governed-vaults/issues/31),
-> [#32](https://github.com/SlumperSan/agent-governed-vaults/issues/32),
-> [#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33),
-> [#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34)) and the protocol is
-> **NO-GO for mainnet** ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) gate 0). §8 in particular
-> promises defences that C-1 and C-5 defeat, and carries its own warning. Read that warning
-> before relying on any "the contract's own defences are the response" line in this document.
+> yet fully meet it.** A remediation pass on 2026-08-27 closed twelve findings, including
+> **C-3 (#31) and C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
+> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is still open**, as are
+> four Highs, and no external audit has happened — so the protocol remains **NO-GO for mainnet**
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) gates 0 and 1).
+>
+> §8 still carries its own warning: its defences are now materially stronger, but not complete.
+> Read it before relying on any "the contract's own defences are the response" line here.
 
 ---
 
@@ -144,38 +144,47 @@ Fees claimed to an unexpected address, or module events that match no known caus
 An operator key signs bad proposals, or a member accumulates quorum and passes a hostile
 rebalance.
 
-> ### ⚠ Read first: the defences below do NOT hold for sub-vaults today
+> ### ⚠ Read first: for SUB-VAULTS these defences are stronger than they were, and still incomplete
 >
-> This section was written against the *intended* design. Two open Criticals falsify it, and an
-> operator trusting it during an incident would be reassured by something that is not true:
+> This section was written against the *intended* design. The 2026-08-27 remediation closed two
+> of the three holes below. **C-5 is FIXED** — voting weight no longer survives an exit, so
+> "the creator stake gate keeps the creator exposed" and the commit-reveal anti-sniping story
+> now hold as written. **The unbounded-loss hole is FIXED** — `executeRebalance` bounds every
+> leg against the vault's own oracle at 2% (H-4), so an allow-listed adapter can no longer be
+> driven to an arbitrary fill. And **L-1 is FIXED** — only the parent's creator may attach a
+> child, so an attacker can no longer create the child, own its GovConfig, and set
+> `timelockDuration = 0`.
 >
-> - **C-1 ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) — a funded
->   sub-vault has an empty electorate.** The paragraph below assumes an attacker must *accumulate
->   quorum*. In a child whose only capital is its parent's allocation, `_snapshot` excludes the
->   parent (GA-1), leaving `pastHolderCount == 0`. One minimum deposit makes an attacker the sole
->   eligible voter and every gate passes trivially. There is nothing to accumulate.
-> - **Allow-listed adapters do not bound the loss.** `executeRebalance` checks
->   `received >= o.minAmountOut`, and `minAmountOut` is **proposer-supplied** (1 wei clears the
->   adapter), with `routeData` passed verbatim. No oracle-derived bound exists on that path
->   (H-4). So for a captured vault, **capture equals drain** — the sentence "executes only
->   through allow-listed adapters against the vault's own basket" is true and provides no
->   protection whatsoever.
-> - **C-5 ([#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34)) — voting weight
->   survives a full exit**, so "the creator stake gate keeps the creator exposed" and the
->   commit-reveal anti-sniping story both weaken: weight can be held across one block boundary
->   and then withdrawn.
-> - **The "Act" step below presupposes an electorate.** Publishing analysis during the reveal
->   window lets members "reveal AGAINST" — in the C-1 case the attacker is the *only* eligible
->   voter, so there is nobody to reach and the window is not a defence.
+> What remains true, and what an operator must not be reassured out of:
 >
-> **Until C-1 and C-5 are remediated, a captured sub-vault has no on-chain response at all.** The
-> honest incident posture reduces to levers 1 and 4 in §0 — communicate with evidence, and
-> de-list from the front door. Nothing stops the drain.
+> - **C-1 ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is STILL OPEN —
+>   a funded sub-vault has an empty electorate.** The paragraph below assumes an attacker must
+>   *accumulate quorum*. In a child whose only capital is its parent's allocation, `_snapshot`
+>   excludes the parent (GA-1), leaving `pastHolderCount == 0`. One minimum deposit makes an
+>   attacker the sole eligible voter. There is nothing to accumulate. The report's suggested fix
+>   was implemented and **found to be wrong** (it breaks legitimate parent+1-member children
+>   while barely raising attacker cost — see LAUNCH-READINESS §6), so this is open on a design
+>   decision rather than on effort.
+> - **The "Act" step below still presupposes an electorate.** Publishing analysis during the
+>   reveal window lets members "reveal AGAINST" — in the C-1 case the attacker is the *only*
+>   eligible voter, so there is nobody to reach and the window is not a defence.
+> - **The parent's escape hatch is NOT reliable.** The natural response — the parent's own
+>   governance calls `redeemFromChild` to pull capital out — is broken independently by **H-6**,
+>   whose exploit tests still pass: the shortfall loop sizes its request GROSS and the child
+>   repays NET, so a residual always survives and `ExitNeedsChildSettlement` reverts. Do not plan
+>   an incident response around withdrawing from a captured child.
 >
-> **Operational consequence, stated as an instruction:** do not create sub-vaults, and do not
-> allocate parent capital into a child, on any live deployment until
-> [#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33) and
-> [#34](https://github.com/SlumperSan/agent-governed-vaults/issues/34) are closed and re-reviewed.
+> **Net position for a captured sub-vault: the bleed is now BOUNDED but not stopped, and the
+> exit may not work.** H-4 caps each rebalance leg at 2% against the oracle, and one proposal at
+> a time with a commit phase of at least an hour bounds the rate — so this is a slow bleed at
+> governance cadence rather than an instant drain. That is a large improvement and it is not a
+> fix. Levers 1 and 4 in §0 remain the response: communicate with evidence, de-list from the
+> front door, and — because the rate is now bounded — there is genuinely time to do both.
+>
+> **Operational consequence, unchanged and still the cheapest thing in this document:** do not
+> create sub-vaults, and do not allocate parent capital into a child, on any live deployment
+> until [#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33) and H-6 are closed
+> and re-reviewed.
 > This is cheap to honour — a single-level launch needs no children — and it removes the entire
 > C-1 attack surface without waiting on anything else.
 >

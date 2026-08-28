@@ -118,6 +118,24 @@ contract UniswapV3TwapSource is IPriceSource {
     /// own staleness ceiling.
     uint32 public constant MAX_OBSERVATION_AGE_CEILING = 1 days;
 
+    /// @notice H-2: the maximum share of the reported mean that may come from the LIVE tick,
+    /// as a divisor of `window` (20 => 5%).
+    ///
+    /// `observe([window, 0])` asks v3-core for an endpoint at `block.timestamp`. When the
+    /// newest stored observation is older than that target — i.e. always, on any pool not
+    /// traded in this very block — `observeSingle` SYNTHESIZES the endpoint from the newest
+    /// observation using the CURRENT tick. With `A = now - newestObservation` the live tick's
+    /// weight in the "historical" mean is exactly `min(A, W) / W`, reaching 1.0 once the pool
+    /// has been quiet for a full window. The old guards bounded `A` against `maxObservationAge`
+    /// and the OLDEST observation against `window`, but nothing ever compared the NEWEST
+    /// observation to the window, and the constructor validated the two independently — so the
+    /// shipped 1800/3600 config permitted A = 2x the window, and the ceilings permitted 288x.
+    ///
+    /// The naive `require(now - newestTs < window)` was tested by the audit and is NOT enough:
+    /// it caps live weight just below 1.0, still permitting a >90% error. Contamination equals
+    /// the fraction, so the fraction is what must be small.
+    uint32 public constant MAX_LIVE_TICK_WEIGHT_DIVISOR = 20; // <= 5% of the window
+
     /// @notice The asset being priced.
     address public immutable asset;
     /// @notice The USDC-like token pinned to $1.00 — the quote leg of the final hop.
@@ -175,6 +193,12 @@ contract UniswapV3TwapSource is IPriceSource {
         require(window_ >= MIN_WINDOW && window_ <= MAX_WINDOW, BadTwapConfig());
         require(minCardinality_ >= MIN_CARDINALITY_FLOOR, BadTwapConfig());
         require(maxObservationAge_ > 0 && maxObservationAge_ <= MAX_OBSERVATION_AGE_CEILING, BadTwapConfig());
+        // H-2: `maxObservationAge` is no longer an INDEPENDENT knob. It was validated in
+        // isolation from `window`, which is how a config could allow the newest observation to
+        // be twice the window old. It may now never exceed the live-tick weight bound.
+        require(
+            uint256(maxObservationAge_) * MAX_LIVE_TICK_WEIGHT_DIVISOR <= uint256(window_), BadTwapConfig()
+        );
         require(address(poolA_).code.length > 0, BadTwapConfig());
 
         uint8 assetDecimals = IERC20Decimals(asset_).decimals();
@@ -252,10 +276,38 @@ contract UniswapV3TwapSource is IPriceSource {
     function latestPrice() external view returns (uint256, uint256) {
         try this.computePriceWad() returns (uint256 p) {
             if (p == 0) return (0, 0);
-            return (p, block.timestamp);
+            // H-2, second half: this used to hardcode `block.timestamp`, so a source computing
+            // over a stale tick stamped itself ZERO SECONDS OLD and the aggregator's staleness
+            // bound — even a 60-second one — was STRUCTURALLY incapable of rejecting it. The
+            // contract's own notice claimed the guards were "what make the
+            // `updatedAt = block.timestamp` convention honest"; they were not. Reporting the
+            // newest observation actually backing the quote makes the aggregator's bound apply
+            // to this class exactly as it applies to a push feed.
+            return (p, _newestObservationTs());
         } catch {
             return (0, 0);
         }
+    }
+
+    /// @dev The oldest of the hops' newest-observation timestamps — the real age of the data
+    /// backing a quote. Only reached after `computePriceWad` has succeeded, so the same pool
+    /// reads have already been made without reverting.
+    /// @return ts unix timestamp of the newest observation backing the quote
+    function _newestObservationTs() internal view returns (uint256 ts) {
+        ts = _newestTsOf(poolA);
+        if (address(poolB) != address(0)) {
+            uint256 b = _newestTsOf(poolB);
+            if (b < ts) ts = b;
+        }
+    }
+
+    /// @dev Newest observation timestamp of a single pool.
+    /// @param pool the pool to read
+    /// @return the newest stored observation's timestamp
+    function _newestTsOf(IUniswapV3PoolMinimal pool) internal view returns (uint256) {
+        (,, uint16 observationIndex,,,,) = pool.slot0();
+        (uint32 newestTs,,,) = pool.observations(observationIndex);
+        return newestTs;
     }
 
     /// @notice The unguarded price computation — reverts instead of degrading, so that
@@ -287,7 +339,14 @@ contract UniswapV3TwapSource is IPriceSource {
         unchecked {
             // uint32 subtraction wraps correctly across the 2106 rollover, as Uniswap's own
             // observation arithmetic does.
-            if (uint32(block.timestamp) - newestTs > maxObservationAge) revert TwapPoolNotUsable();
+            uint32 age = uint32(block.timestamp) - newestTs;
+            if (age > maxObservationAge) revert TwapPoolNotUsable();
+            // H-2: and independently, the live tick may contribute at most 1/DIVISOR of the
+            // reported mean. This is the bound that actually limits contamination; the
+            // maxObservationAge bound above is now a subset of it by construction.
+            if (uint256(age) * MAX_LIVE_TICK_WEIGHT_DIVISOR > uint256(window)) {
+                revert TwapPoolNotUsable();
+            }
         }
 
         // Guard 2: the oldest retained observation must predate the window, so `observe()`
