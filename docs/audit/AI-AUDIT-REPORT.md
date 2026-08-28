@@ -654,6 +654,23 @@ sites in `Governance`.**
 > This also reflects a standing owner principle: **prefer mature, audited external infrastructure
 > over bespoke re-implementations** — a bespoke oracle aggregator competing with Chainlink's
 > node-operator network is exactly the kind of surface to outsource rather than harden.
+>
+> **IMPLEMENTED (2026-08-28): `contracts/src/oracle/ChainlinkOracle.sol`.** An additive
+> `IOracleAggregator` (a VaultCore can be deployed with it in the `oracle_` slot, no VaultCore
+> change) that prices each asset from ONE Chainlink Data Feed — no median, no quorum, no per-vault
+> source set — so C-6's median-gaming has **no surface to exist**. Fail-closed on every bad read
+> (revert/zero/negative/unset/future/stale), a per-asset **sane-price band** (the depeg-clamp
+> defence, since Chainlink deprecated on-aggregator min/maxAnswer), the **Base L2 sequencer-uptime
+> guard** (down/grace), decimals→WAD normalization, and a USDC pin; construction decode-proves every
+> feed. 32 tests (`ChainlinkOracle.t.sol`), 1,532 B. Two adversarial reviews (via workflow) confirm
+> the logic is correct and it eliminates the finding class **by deletion** — the strongest form. The
+> reviewers' recommendation: adopt Chainlink-direct as the **launch default** and make the custom
+> `OracleAggregator` **non-deployable** (leaving it user-selectable re-imports C-6 for any vault that
+> picks it — a factory-level oracle gate is the next step, an owner decision). Standard Chainlink
+> Data Feeds are **free to consume on-chain** (gas only; Data Streams/VRF/CCIP are the metered
+> products). Accepted tradeoffs, documented: single-provider dependency (feed freeze fails the asset
+> closed, no fallback), assets without a Chainlink feed cannot be listed, and the deviation-band NAV
+> arb (bounded; vault-side defence is M-15).
 
 ---
 
