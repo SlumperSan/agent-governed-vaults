@@ -133,6 +133,16 @@ factory.createVault(VaultFactory.VaultParams({
 }));
 ```
 
+> **`minDepositUsdc` is a governance-security parameter, not just dust control (H-8).** The
+> `<5`-member signer quorum regime counts any address with shares > 0, so a cheap minimum deposit
+> lets an attacker buy the regime flip (`minDepositUsdc` to reach 5 members and pass a plurality
+> alone) or park dust seats to grief a small vault into ungovernability. There is no safe
+> contract-level floor (a fraction-of-stake floor repeats M-6's liveness cliff). **Set
+> `minDepositUsdc` to an economically meaningful value relative to `capacityCapUsdc`** so that
+> manufacturing ~4 dust members costs a materially non-trivial sum. 1 USDC (the testnet smoke value)
+> is NOT acceptable for a real vault; the mainnet reference template uses 100 USDC. See
+> AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.
+
 Then the creator registers governance config in a second tx:
 `governance.registerVault(vault, GovConfig{...})` (quorum ≥ 25% floor; a child's quorum must be
 ≥ its parent's — SV-6). Until this second tx lands, no proposals exist and exits settle Mode I.

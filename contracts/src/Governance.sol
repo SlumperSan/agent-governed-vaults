@@ -513,8 +513,27 @@ contract Governance is IGovernance {
             // Standing defaults never contribute (they are routine-rebalance-only anyway).
             quorumOk = p.revealedWeight == p.snapshotTotal && p.forWeight >= p.snapshotTotal;
         } else if (p.memberCount < SIGNER_REGIME_BELOW) {
-            // Absolute signer counts (CM-7): strict majority of members-at-creation revealed.
-            quorumOk = p.revealedVoterCount * 2 > p.memberCount;
+            // H-8 (CM-7): the `<5`-member signer regime was a pure head count, stake-blind and
+            // dust-gameable in two opposite directions. It is now the OR of two branches:
+            //   1. a strict majority of members-at-creation revealed, AND the FOR side clears the
+            //      stake quorum. The stake gate blocks near-zero-stake sybils from passing an
+            //      arbitrary rebalance via `k*2 > memberCount` against a silent incumbent.
+            //   2. an outright FOR stake majority (>50% of eligible), REGARDLESS of head count —
+            //      so dust holders can no longer inflate the denominator to lock a dominant-stake
+            //      member out of governing their own vault.
+            // Branch 2 is purely additive (it only ever widens the passing set), so no membership
+            // distribution can be permanently locked out — this is NOT the M-6 floor, which made
+            // passing IMPOSSIBLE for a flat membership. `forWeight` (never `revealedWeight`) is the
+            // numerator so an AGAINST-voting attacker cannot manufacture a majority; `snapshotTotal`
+            // already excludes queued-exit and parent stake.
+            // What stays UNfixed here BY DESIGN: buying the 5th seat to reach the stake regime
+            // (H-8(a)). Distinguishing a real member from a sybil costs exactly `minDepositUsdc`,
+            // so this is mitigated at the config layer (a meaningful minimum deposit) and documented
+            // under H-8/CM-7 — the same resolution as M-6, and for the same reason.
+            bool headMajorityWithStake = p.revealedVoterCount * 2 > p.memberCount
+                && p.forWeight * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;
+            bool forStakeMajority = p.forWeight * 2 > p.snapshotTotal;
+            quorumOk = headMajorityWithStake || forStakeMajority;
         } else {
             // Stake quorum: revealed (live) weight only — defaults never count (VO-2).
             quorumOk = p.revealedWeight * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;

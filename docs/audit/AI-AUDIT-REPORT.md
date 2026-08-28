@@ -918,6 +918,30 @@ required real deposit is one dollar.
 minimum-stake threshold for `holderCount` membership; and give the signer regime a stake floor as
 well. **Requires redeploy + re-review of the quorum regime and holder accounting.**
 
+> **REMEDIATION STATUS — partially fixed in code; the regime-flip is config-mitigated (2026-08-28,
+> Phase 2). Status was PLAUSIBLE → now CONFIRMED by test.** Reproduced end-to-end in
+> `contracts/test/audit/AuditQuorumRegimeDust.t.sol` (three directions), then addressed as follows.
+> The `<5`-member signer regime in `Governance.finalize` is no longer a pure head count. It now
+> passes on **either** (1) a member-count majority AND the FOR side clearing the stake quorum, or
+> (2) an outright FOR **stake** majority (`forWeight * 2 > snapshotTotal`) regardless of head count.
+> Branch (1)'s added stake gate kills the near-zero-stake **sybil** attack (3 dust addresses passing
+> an arbitrary rebalance via `3*2 > 4` against a silent incumbent — attack (c)). Branch (2) kills
+> the **dust-griefing lockout** — a >50% member now governs regardless of how many dust holders
+> inflate the denominator (attack (b)). Branch (2) is purely additive, so it introduces **no** M-6
+> liveness cliff (the naive "minimum-stake threshold for holderCount membership" the recommendation
+> above suggests is exactly M-6's shape and was NOT taken). `forWeight` (never `revealedWeight`) is
+> the numerator, and `snapshotTotal` is the same denominator the stake regime already uses. All 260
+> forge tests pass; the 23 existing Governance tests are unchanged.
+>
+> **The regime-flip (attack (a)) has no safe contract fix** and is **mitigated at the config layer.**
+> Crossing the `memberCount < 5` boundary costs exactly one `minDepositUsdc`; distinguishing a real
+> member from a sybil at that boundary is impossible without either that same number (useless) or a
+> fraction of live distribution (M-6's cliff). So the resolution is a **documented listing
+> constraint**: `minDepositUsdc` must be economically meaningful relative to capacity. Reference
+> configs corrected (`base-mainnet.json` smoke minimum raised 1 → 100 USDC; the constraint recorded
+> in both configs' `minDepositNote` and the mainnet `rebuildChecklist`). **H-8 is therefore marked
+> PARTIALLY FIXED (attacks b, c) + config-mitigated (attack a), not Fixed outright.**
+
 ---
 
 ### H-9 — Read-only cross-contract reentrancy: a parent's look-through NAV is readable mid-mutation
@@ -1071,7 +1095,7 @@ All 45 coded rows reviewed. **Eight documented mitigations do not hold as writte
 | Row | Verdict |
 |---|---|
 | **EX-2** | **NOT IMPLEMENTED** — H-4. |
-| **CM-7** | **DOES NOT HOLD** — H-8; the snapshot binds the wrong side of proposal creation. |
+| **CM-7** | **DOES NOT HOLD** — H-8; the snapshot binds the wrong side of proposal creation. **PARTIALLY REMEDIATED (Phase 2):** the signer regime now also requires FOR-stake quorum (kills zero-stake sybils) and passes on an outright FOR-stake majority (kills dust-griefing lockout); the regime-flip residual is config-mitigated (meaningful `minDepositUsdc`). See H-8 remediation status. |
 | **EE-10** | **DOES NOT HOLD**, on three independent counts — **C-2** (no bounded deadline), **C-5** (exited *and* Mode-F-queued shares both retain full weight on the in-flight proposal), **M-7** (~31-day repeatable lock even at a fully compliant config). |
 | **VO-7** | **RESIDUAL MATERIALLY LARGER** — M-10; direction-binding is per address, not per actor. |
 | **MO-1** | **SCOPE CLAIM FALSIFIED** — C-2; the Mode-I fallback covers a *broken* module, not a correct governance answering `true` forever. |
