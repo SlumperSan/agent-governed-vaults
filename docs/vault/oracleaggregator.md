@@ -41,7 +41,10 @@ consuming vaults, including exits (K-4, by design).
   tolerate `f` benign withholdings, `m >= 2a+f+1` — which `m = 5` cannot satisfy for `a >= 2`. **The
   constructor cannot see `a`,** so this is a **listing requirement** (genuinely independent
   sources), not a code check. This is why [[chainlinkoracle]] exists — see
-  [[chainlink-direct-pivot]].
+  [[chainlink-direct-pivot]]. Because the listing requirement is uncheckable in this contract, the
+  complementary lever lives one level up: [[vaultfactory]]'s `allowedOracles_` allowlist (**DONE, PR
+  #50**) can make this aggregator **non-deployable**, reverting `OracleNotAllowed` for any vault that
+  tries to select it, once the allowlist is populated with blessed oracles.
 - **H-1** — the constructor now requires `quorum >= MIN_MEDIAN` and `quorum > m/2`. Previously
   quorum 2-of-3 was allowed, so the lower median `fresh[(k-1)/2]` at `k = 2` was `fresh[0]` — the
   **minimum**, biased one-directionally downward, the exploitable direction for share issuance
@@ -76,7 +79,7 @@ Runtime ~1,215 B; margin ~23,361 B. Not size-constrained.
 
 ## Links
 
-- [[contracts-index]] · [[chainlinkoracle]] · [[oracle-sources]] · [[vaultcore]]
+- [[contracts-index]] · [[chainlinkoracle]] · [[oracle-sources]] · [[vaultcore]] · [[vaultfactory]]
 - Architecture: [[oracle-layer]] · [[nav-and-shares]]
 - Findings: [[c6-oracle-byzantine]] · [[c3-oracle-brick]] · [[c4-depressed-price-theft]] · [[highs]]
 - Decision: [[chainlink-direct-pivot]] · [[threat-model-commitments]] · [[launch-readiness-gates]]
