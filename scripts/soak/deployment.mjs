@@ -65,14 +65,18 @@ export function parseDeployment(raw, opts = {}) {
   const assetsIn = oracle.assets ?? {};
   const assets = Object.entries(assetsIn).map(([symbol, a]) => {
     const cfg = /** @type {any} */ (a);
-    const sources = Array.isArray(cfg.sources) ? cfg.sources : [];
-    if (sources.length === 0) throw new Error(`deployment: asset ${symbol} lists no oracle sources`);
+    // C-6 launch model (ChainlinkOracle): ONE genuine Chainlink feed per asset. Accept a single
+    // `feed` as a one-element source set; still accept the legacy `sources` array (the retired
+    // custom OracleAggregator) so old address books keep parsing.
+    const sources =
+      Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : cfg.feed ? [cfg.feed] : [];
+    if (sources.length === 0) throw new Error(`deployment: asset ${symbol} lists no oracle feed/sources`);
     return {
       symbol,
       token: need(`asset ${symbol} token`, cfg.token),
-      quorum: Number(cfg.quorum),
+      quorum: Number(cfg.quorum ?? 1), // ChainlinkOracle is single-feed => quorum 1
       sources: sources.map((x, i) => need(`asset ${symbol} source ${i}`, x)),
-      underlyingFeed: need(`asset ${symbol} underlyingFeed`, cfg.underlyingFeed),
+      underlyingFeed: need(`asset ${symbol} underlyingFeed`, cfg.underlyingFeed ?? cfg.feed),
     };
   });
   if (assets.length === 0) throw new Error('deployment: oracle lists no assets');
@@ -90,7 +94,9 @@ export function parseDeployment(raw, opts = {}) {
     governance: need('Governance', s.Governance),
     vaultDeployer: need('VaultDeployer', s.VaultDeployer),
     factory: need('VaultFactory', s.VaultFactory),
-    aggregator: need('OracleAggregator', oracle.OracleAggregator),
+    // C-6: launch oracle is ChainlinkOracle; accept the legacy OracleAggregator key too. Kept under
+    // the field name `aggregator` (ChainlinkOracle is an IOracleAggregator) so drills are unchanged.
+    aggregator: need('oracle (ChainlinkOracle/OracleAggregator)', oracle.ChainlinkOracle ?? oracle.OracleAggregator),
     adapter: need('AggregationRouterAdapter', (d.execution ?? {}).AggregationRouterAdapter),
     usdc: need('usdc', (d.infrastructure ?? {}).usdc),
     maxStalenessSeconds: Number(oracle.maxStalenessSeconds ?? 0),

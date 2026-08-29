@@ -141,7 +141,10 @@ function loadDeployment() {
     feeEngine: one('FeeEngine'),
     governance: one('Governance'),
     factory: one('VaultFactory'),
-    aggregator: one('OracleAggregator'),
+    // C-6: the launch oracle is ChainlinkOracle (the custom OracleAggregator bring-up is retired in
+    // DeployTestnet.s.sol). Kept under the field name `aggregator` so every downstream reference is
+    // unchanged — ChainlinkOracle is an IOracleAggregator (same priceWad(address) surface).
+    aggregator: one('ChainlinkOracle'),
     adapter: one('AggregationRouterAdapter'),
   };
 }
