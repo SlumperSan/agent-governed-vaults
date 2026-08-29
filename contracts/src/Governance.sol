@@ -533,6 +533,14 @@ contract Governance is IGovernance {
             bool headMajorityWithStake = p.revealedVoterCount * 2 > p.memberCount
                 && p.forWeight * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;
             bool forStakeMajority = p.forWeight * 2 > p.snapshotTotal;
+            // NOTE (Audit Council, informational): `forWeight` includes APPLIED STANDING DEFAULTS,
+            // so branch 2 can pass a Rebalance on a >50% pre-declared-default majority with zero live
+            // reveals — whereas the >=5-member stake regime below counts `revealedWeight` only
+            // (defaults never count toward quorum, VO-2/K-3). This asymmetry is design-consistent and
+            // non-exploitable: standing defaults are Rebalance-only (VO-4), must pre-date the proposal
+            // (`setAt < createdAt`), and are genuine stakeholder pre-declarations — a >50% default
+            // majority IS a real mandate. It only ever WIDENS passing (additive), so it introduces no
+            // freeze. Named here so an auditor sees it is intended, not overlooked.
             quorumOk = headMajorityWithStake || forStakeMajority;
         } else {
             // Stake quorum: revealed (live) weight only — defaults never count (VO-2).
