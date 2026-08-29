@@ -104,4 +104,4 @@ jobs:
       # by hand against a live chain. Parse them so a syntax error can't reach a
       # 6-hour smoke run or a production boot.
       - name: Syntax-check entrypoints and operational scripts
-        run: node --check scripts/smoke-test.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs && node --check packages/oplog/src/ops-check.mjs
+        run: node --check scripts/smoke-test.mjs && node --check scripts/verify-chainlink-oracle.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs && node --check packages/oplog/src/ops-check.mjs
