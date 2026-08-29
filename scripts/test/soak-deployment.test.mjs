@@ -129,11 +129,15 @@ test('the committed base-sepolia address book parses and is chain-84532', () => 
   assert.equal(d.chainId, 84532);
   assert.equal(d.maxStalenessSeconds, 86400);
   assert.equal(d.assets.length, 2);
-  // The documented testnet compromise: 3 sources per asset over ONE underlying feed.
+  // C-6 pivot: the committed book is now the Chainlink-direct stack — ONE genuine Chainlink feed
+  // per asset (no multi-source median), so a single-element source set and quorum 1.
   for (const a of d.assets) {
-    assert.equal(a.sources.length, 3, `${a.symbol} should list 3 adapter sources`);
-    assert.equal(a.quorum, 2, `${a.symbol} should run 2-of-3 quorum`);
+    assert.equal(a.sources.length, 1, `${a.symbol} should list its single Chainlink feed`);
+    assert.equal(a.quorum, 1, `${a.symbol} is single-feed => quorum 1`);
+    assert.equal(a.sources[0], a.underlyingFeed, `${a.symbol} source === underlying feed`);
   }
+  // The oracle resolves to the deployed ChainlinkOracle in the factory allowlist.
+  assert.equal(d.aggregator, '0x6371E14C0682882e75E8382caf0216545B1f43C6');
 });
 
 // ── freeze-safety classifier (drill 4) ────────────────────────────────────────
