@@ -122,12 +122,42 @@ contract VaultFactory {
     error SubVaultsDisabled();
     /// @dev C-6: the vault's oracle is not on the factory's curated allowlist.
     error OracleNotAllowed();
+    /// @dev The vault's oracle cannot price one of its basket assets — the vault would be a brick.
+    error OracleMissingAsset(address asset);
 
     /// @dev C-6 gate: when the allowlist is enforced, a vault's oracle must be blessed. Verifying a
     /// genuine oracle on-chain is impossible (a fake AggregatorV3 or a weak custom aggregator both
     /// pass their own constructor checks), so curation is the only sound launch defence.
     function _requireAllowedOracle(address oracle) internal view {
         if (oracleAllowlistEnforced) require(isAllowedOracle[oracle], OracleNotAllowed());
+    }
+
+    /// @dev Prove at CREATION that the oracle prices every basket asset. Without this, blessing the
+    /// oracle *instance* says nothing about whether it covers *this* basket: a creator could pair a
+    /// fully-blessed oracle with an asset it does not list, deposit USDC fine (NAV skips zero
+    /// balances), and then PERMANENTLY BRICK the vault on the first rebalance into that asset —
+    /// every navWad/deposit/exit reverts StaleOracle forever, with the funds locked in an immutable
+    /// contract. Fail-closed pricing turns a config mistake into an unrecoverable one, so the only
+    /// safe place to catch it is before the vault exists.
+    ///
+    /// The probe is `priceWad(asset)` itself, so coverage is proven by the exact call NAV will make.
+    /// A revert here means "this oracle cannot price this basket" — reject rather than deploy a
+    /// vault that is one rebalance away from being frozen forever. Note this is a LIVENESS check at
+    /// creation, not a guarantee for all time: a feed that later goes stale or gets deprecated still
+    /// freezes the vault (the accepted single-provider tradeoff, K-4/SF-2). It closes the
+    /// misconfiguration hole, not the oracle-outage one.
+    function _requireOracleCoversBasket(IOracleAggregator oracle, address[] calldata basketAssets)
+        internal
+        view
+    {
+        for (uint256 i; i < basketAssets.length; ++i) {
+            address asset = basketAssets[i];
+            try oracle.priceWad(asset) returns (uint256 p) {
+                require(p > 0, OracleMissingAsset(asset));
+            } catch {
+                revert OracleMissingAsset(asset);
+            }
+        }
     }
 
     struct VaultParams {
@@ -148,6 +178,11 @@ contract VaultFactory {
     function createVault(VaultParams calldata p) external returns (address vault) {
         _requireAllowedOracle(address(p.oracle)); // C-6: only a curated (blessed) oracle at launch
         vault = _deploy(p);
+        // AFTER _deploy on purpose: VaultCore's constructor owns basket validity (cap, duplicates,
+        // decimals -> BadConfig), so it must diagnose a malformed basket first; this check is the
+        // last word and answers a different question — can this oracle actually price it. The vault
+        // reverts out of existence either way, so nothing is deployed on failure.
+        _requireOracleCoversBasket(p.oracle, p.basketAssets);
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
         allVaults.push(vault);
         emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
@@ -179,6 +214,10 @@ contract VaultFactory {
             require(IVaultBasket(parent).assetUnit(p.basketAssets[i]) != 0, BasketNotSubsetOfParent());
         }
         vault = _deploy(p);
+        // The child's OWN oracle must price the child's basket (see createVault; after _deploy for
+        // the same reason). Basket-subset-of-parent does not imply it: look-through prices child
+        // assets through the PARENT's oracle, so the child's oracle is never exercised by that rule.
+        _requireOracleCoversBasket(p.oracle, p.basketAssets);
         ISubRegistryChild(subVaultRegistry).registerChild(parent, vault, p.exitFeeMaxBps);
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
         allVaults.push(vault);
