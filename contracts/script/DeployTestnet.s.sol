@@ -9,38 +9,49 @@ import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
-import {OracleAggregator, ChainlinkSourceAdapter, IAggregatorV3} from "../src/OracleAggregator.sol";
+import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
+import {IAggregatorV3} from "../src/OracleAggregator.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 
-/// @title DeployTestnet — parameterized testnet bring-up (singletons + per-vault infra)
-/// @notice One-command deployment for a testnet: the five protocol singletons with their
-/// one-shot wiring (identical to Deploy.s.sol — the canonical order lives there and is
-/// mirrored here verbatim), PLUS the per-vault infrastructure a smoke test needs:
+/// @title DeployTestnet — parameterized testnet bring-up (singletons + per-vault infra), PIVOTED to
+/// the C-6 launch oracle.
+/// @notice One-command deployment for a testnet: the five protocol singletons with their one-shot
+/// wiring (identical to Deploy.s.sol — the canonical order lives there and is mirrored here
+/// verbatim), PLUS the per-vault infrastructure a smoke/soak needs, now on the LAUNCH oracle model:
 ///
-///   - one ChainlinkSourceAdapter per configured feed entry, per asset;
-///   - one OracleAggregator over those adapters (>=3 sources, majority quorum,
-///     maxStaleness <= 1 day — all enforced by its constructor);
+///   - one {ChainlinkOracle} pricing each configured asset from ONE genuine Chainlink Data Feed
+///     (the C-6 resolution — no custom multi-source median/quorum; see AI-AUDIT-REPORT C-6). Its
+///     config is the COMMITTED `chainlinkOracle` block of the JSON, on-chain-verified by
+///     scripts/verify-chainlink-oracle.mjs before deploying;
+///   - the factory's oracle ALLOWLIST is seeded with exactly that oracle, so the testnet run
+///     exercises the C-6 curation gate (mainnet does the same via Deploy.s.sol + BLESSED_ORACLES),
+///     rather than the old permissive `new address[](0)`;
 ///   - one AggregationRouterAdapter pinned to the chain's aggregation router with only the
 ///     configured swap selectors allow-listed (EX-1..EX-3).
 ///
+/// The pre-C-6 custom `OracleAggregator` bring-up this script used to perform is RETIRED (C-6); its
+/// legacy config survives in the JSON's top-level `assets` block (marked deprecated) and in git.
+///
 /// Everything chain-specific comes from a COMMITTED JSON config (default
-/// `config/base-sepolia.json`, override with DEPLOY_CONFIG) — no hardcoded addresses in code
-/// and never a key: the signer is supplied on the CLI (`--account` / `--ledger`).
+/// `config/base-sepolia.json`, override with DEPLOY_CONFIG) — no hardcoded addresses in code and
+/// never a key: the signer is supplied on the CLI (`--account` / `--ledger`).
 ///
 ///   forge script script/DeployTestnet.s.sol:DeployTestnet \
 ///     --rpc-url "$BASE_SEPOLIA_RPC" --account deployer --broadcast --verify
 ///
-/// The config's chainId is asserted against the live RPC so a wrong `--rpc-url` fails before
-/// a single transaction is sent (chainid 31337 is exempt so the deploy test can run locally).
+/// The config's chainId is asserted against the live RPC so a wrong `--rpc-url` fails before a
+/// single transaction is sent (chainid 31337 is exempt so the deploy test can run locally).
 contract DeployTestnet is Script {
     struct AssetPlan {
         string symbol;
-        address token;
-        uint8 quorum;
-        address[] feeds;
+        address asset;
+        address feed;
+        uint32 heartbeat;
+        uint256 minPriceWad;
+        uint256 maxPriceWad;
     }
 
     error NoAssetsConfigured();
@@ -55,7 +66,7 @@ contract DeployTestnet is Script {
             Governance governance,
             VaultDeployer vaultDeployer,
             VaultFactory factory,
-            OracleAggregator aggregator,
+            ChainlinkOracle oracle,
             AggregationRouterAdapter routerAdapter
         )
     {
@@ -65,12 +76,19 @@ contract DeployTestnet is Script {
         uint256 cfgChain = vm.parseJsonUint(json, ".chainId");
         require(block.chainid == cfgChain || block.chainid == 31337, ChainIdMismatch(cfgChain, block.chainid));
 
-        uint32 maxStaleness = uint32(vm.parseJsonUint(json, ".maxStalenessSeconds"));
         address router = vm.parseJsonAddress(json, ".router");
         string[] memory routerSigs = vm.parseJsonStringArray(json, ".routerAllowedSignatures");
-        AssetPlan[] memory plan = _readAssets(json);
+        address usdcPin = vm.parseJsonAddress(json, ".usdc");
+        address sequencer = _readSequencer(json);
+        AssetPlan[] memory plan = _readChainlinkAssets(json);
 
         vm.startBroadcast();
+
+        // ── The curated launch oracle FIRST, so it can seed the factory allowlist ──
+        oracle = _deployOracle(plan, usdcPin, sequencer);
+
+        address[] memory blessed = new address[](1);
+        blessed[0] = address(oracle);
 
         // ── Singletons + one-shot wiring, in the ONLY valid order (see Deploy.s.sol) ──
         registry = new OperatorRegistry();
@@ -84,35 +102,20 @@ contract DeployTestnet is Script {
             IFeeEngine(address(feeEngine)),
             address(subReg),
             IVaultDeployer(address(vaultDeployer)),
-            // C-1: TESTNET deliberately enables sub-vaults so the retained (in-audit-scope)
-            // sub-vault code and the SV-* soak drills can be exercised. MAINNET launches root-only
-            // (Deploy.s.sol passes false). Re-enabling on mainnet requires the parent-casts-child-vote
-            // mechanism to have shipped and been audited — see VaultFactory.allowSubVaults.
+            // C-1: TESTNET deliberately enables sub-vaults so the retained (in-audit-scope) sub-vault
+            // code and the SV-* soak drills can be exercised. MAINNET launches root-only (Deploy.s.sol
+            // passes false). Re-enabling on mainnet requires the parent-casts-child-vote mechanism to
+            // have shipped and been audited — see VaultFactory.allowSubVaults.
             true,
-            new address[](0) // C-6: testnet permissive (no oracle allowlist); mainnet passes blessed oracles
+            // C-6: seed the oracle allowlist with the curated ChainlinkOracle so the testnet run
+            // exercises the curation gate (the old bring-up passed an empty, permissive list).
+            blessed
         );
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));
         governance.wireSubVaultRegistry(address(subReg));
 
-        // ── Per-vault infra: source adapters → aggregator → execution adapter ──
-        uint256 n = plan.length;
-        address[] memory assets = new address[](n);
-        address[][] memory sources = new address[][](n);
-        uint32[] memory staleness = new uint32[](n);
-        uint8[] memory quorums = new uint8[](n);
-        for (uint256 i; i < n; ++i) {
-            assets[i] = plan[i].token;
-            staleness[i] = maxStaleness;
-            quorums[i] = plan[i].quorum;
-            address[] memory srcs = new address[](plan[i].feeds.length);
-            for (uint256 j; j < srcs.length; ++j) {
-                srcs[j] = address(new ChainlinkSourceAdapter(IAggregatorV3(plan[i].feeds[j])));
-            }
-            sources[i] = srcs;
-        }
-        aggregator = new OracleAggregator(assets, sources, staleness, quorums);
-
+        // ── Execution adapter: aggregation router with only the configured selectors ──
         bytes4[] memory selectors = new bytes4[](routerSigs.length);
         for (uint256 i; i < selectors.length; ++i) {
             selectors[i] = bytes4(keccak256(bytes(routerSigs[i])));
@@ -127,11 +130,11 @@ contract DeployTestnet is Script {
         require(subReg.factory() == address(factory), "wire: subReg.factory");
         require(governance.subVaultRegistry() == address(subReg), "wire: gov.subReg");
         require(routerAdapter.router() == router, "adapter: router");
+        require(factory.isAllowedOracle(address(oracle)), "allowlist: oracle blessed");
+        uint256 n = plan.length;
         for (uint256 i; i < n; ++i) {
-            (address[] memory s, uint32 st, uint8 q) = aggregator.assetConfig(assets[i]);
-            require(
-                s.length == plan[i].feeds.length && st == maxStaleness && q == plan[i].quorum, "oracle cfg"
-            );
+            (IAggregatorV3 feed,,,,) = oracle.feedOf(plan[i].asset);
+            require(address(feed) == plan[i].feed, "oracle: feed wired");
         }
 
         console2.log("config          ", cfgPath);
@@ -141,41 +144,74 @@ contract DeployTestnet is Script {
         console2.log("FeeEngine       ", address(feeEngine));
         console2.log("Governance      ", address(governance));
         console2.log("VaultFactory    ", address(factory));
-        console2.log("OracleAggregator", address(aggregator));
+        console2.log("ChainlinkOracle ", address(oracle));
         console2.log("RouterAdapter   ", address(routerAdapter));
+        console2.log("sequencer feed  ", sequencer);
         for (uint256 i; i < n; ++i) {
             console2.log(
                 string.concat(
                     "asset ",
                     plan[i].symbol,
-                    ": sources=",
-                    vm.toString(plan[i].feeds.length),
-                    " quorum=",
-                    vm.toString(plan[i].quorum),
-                    " maxStaleness=",
-                    vm.toString(maxStaleness)
+                    ": feed=",
+                    vm.toString(plan[i].feed),
+                    " heartbeat=",
+                    vm.toString(plan[i].heartbeat)
                 )
             );
         }
     }
 
-    /// @dev Reads `.assets[i]` until the index no longer exists. Explicit lists only — the
-    /// config states exactly which feed backs each source slot (a repeated feed address is a
-    /// deliberate, documented testnet compromise, never something this script invents).
-    function _readAssets(string memory json) internal view returns (AssetPlan[] memory plan) {
+    /// @dev Flatten the plan into the ChainlinkOracle constructor's parallel arrays and deploy it.
+    /// Extracted from run() so the deploy body stays under the via-IR stack limit; the CREATE still
+    /// happens under the caller's active broadcast.
+    function _deployOracle(AssetPlan[] memory plan, address usdc, address sequencer)
+        internal
+        returns (ChainlinkOracle)
+    {
+        uint256 n = plan.length;
+        address[] memory assets = new address[](n);
+        address[] memory feeds = new address[](n);
+        uint32[] memory heartbeats = new uint32[](n);
+        uint256[] memory minWad = new uint256[](n);
+        uint256[] memory maxWad = new uint256[](n);
+        for (uint256 i; i < n; ++i) {
+            assets[i] = plan[i].asset;
+            feeds[i] = plan[i].feed;
+            heartbeats[i] = plan[i].heartbeat;
+            minWad[i] = plan[i].minPriceWad;
+            maxWad[i] = plan[i].maxPriceWad;
+        }
+        return new ChainlinkOracle(assets, feeds, heartbeats, minWad, maxWad, usdc, sequencer);
+    }
+
+    /// @dev The Base L2 sequencer uptime feed. On this testnet the config leaves it EMPTY (the guard
+    /// is skipped off a configured sequencer chain — it is mock-tested in ChainlinkOracle.t.sol);
+    /// mainnet carries the real, mandatory feed. An empty string decodes to address(0).
+    function _readSequencer(string memory json) internal view returns (address) {
+        string memory s = vm.parseJsonString(json, ".chainlinkOracle.sequencerUptimeFeed");
+        if (bytes(s).length == 0) return address(0);
+        return vm.parseAddress(s);
+    }
+
+    /// @dev Reads `.chainlinkOracle.assets[i]` until the index no longer exists. Explicit lists only.
+    /// The WAD price bounds are quoted strings in the config (they exceed JSON's safe integer range),
+    /// so they are read as strings and parsed, not read as JSON numbers.
+    function _readChainlinkAssets(string memory json) internal view returns (AssetPlan[] memory plan) {
         uint256 n;
-        while (vm.keyExistsJson(json, string.concat(".assets[", vm.toString(n), "].token"))) {
+        while (vm.keyExistsJson(json, string.concat(".chainlinkOracle.assets[", vm.toString(n), "].asset"))) {
             ++n;
         }
         require(n > 0, NoAssetsConfigured());
         plan = new AssetPlan[](n);
         for (uint256 i; i < n; ++i) {
-            string memory base = string.concat(".assets[", vm.toString(i), "]");
+            string memory base = string.concat(".chainlinkOracle.assets[", vm.toString(i), "]");
             plan[i] = AssetPlan({
                 symbol: vm.parseJsonString(json, string.concat(base, ".symbol")),
-                token: vm.parseJsonAddress(json, string.concat(base, ".token")),
-                quorum: uint8(vm.parseJsonUint(json, string.concat(base, ".quorum"))),
-                feeds: vm.parseJsonAddressArray(json, string.concat(base, ".feeds"))
+                asset: vm.parseJsonAddress(json, string.concat(base, ".asset")),
+                feed: vm.parseJsonAddress(json, string.concat(base, ".feed")),
+                heartbeat: uint32(vm.parseJsonUint(json, string.concat(base, ".heartbeatSeconds"))),
+                minPriceWad: vm.parseUint(vm.parseJsonString(json, string.concat(base, ".minPriceWad"))),
+                maxPriceWad: vm.parseUint(vm.parseJsonString(json, string.concat(base, ".maxPriceWad")))
             });
         }
     }

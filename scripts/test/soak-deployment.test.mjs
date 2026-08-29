@@ -91,7 +91,25 @@ test('parseDeployment rejects a malformed address rather than passing it to cast
 test('parseDeployment rejects an asset with no oracle sources', () => {
   const raw = good();
   raw.oracle.assets.WETH.sources = [];
-  assert.throws(() => parseDeployment(raw), /asset WETH lists no oracle sources/);
+  assert.throws(() => parseDeployment(raw), /asset WETH lists no oracle feed\/sources/);
+});
+
+test('parseDeployment accepts the C-6 ChainlinkOracle shape (single feed per asset)', () => {
+  // The launch model: oracle.ChainlinkOracle + one `feed` per asset (no `sources`/`quorum`/
+  // `underlyingFeed`). Exercises every fallback: aggregator key, sources=[feed], quorum=1,
+  // underlyingFeed<-feed. Legacy books (above) must keep parsing too.
+  const raw = good();
+  delete raw.oracle.OracleAggregator;
+  raw.oracle.ChainlinkOracle = '0xEc1976579Af27b3dF5fd103390acAb22E4b566F4';
+  raw.oracle.assets.WETH = {
+    token: '0x4200000000000000000000000000000000000006',
+    feed: '0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1',
+  };
+  const d = parseDeployment(raw);
+  assert.equal(d.aggregator, '0xEc1976579Af27b3dF5fd103390acAb22E4b566F4');
+  assert.equal(d.assets[0].quorum, 1, 'single feed => quorum 1');
+  assert.deepEqual(d.assets[0].sources, ['0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1']);
+  assert.equal(d.assets[0].underlyingFeed, '0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1', 'underlyingFeed <- feed');
 });
 
 test('wiringExpectations covers every edge Sprint-9 verified', () => {

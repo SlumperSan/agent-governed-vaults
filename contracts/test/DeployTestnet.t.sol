@@ -9,16 +9,18 @@ import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
-import {OracleAggregator} from "../src/OracleAggregator.sol";
+import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
+import {IAggregatorV3} from "../src/OracleAggregator.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 
 /// Proves the parameterized testnet deploy script wires the FULL stack the committed
-/// `config/base-sepolia.json` describes: singletons + locked one-shot wiring (as Deploy.t.sol
-/// proves for Deploy.s.sol) PLUS the per-vault infra — ChainlinkSourceAdapters per configured
-/// feed, an OracleAggregator that medians through them, and a selector-allowlisted
+/// `config/base-sepolia.json` describes, on the C-6 LAUNCH oracle model: singletons + locked
+/// one-shot wiring (as Deploy.t.sol proves for Deploy.s.sol) PLUS the per-vault infra — a
+/// {ChainlinkOracle} pricing each configured asset from ONE Chainlink feed, SEEDED INTO THE
+/// FACTORY'S ORACLE ALLOWLIST (the C-6 curation gate), and a selector-allowlisted
 /// AggregationRouterAdapter. The real Base Sepolia feed addresses are mocked locally.
 contract DeployTestnetTest is Test {
-    // Canonical Base Sepolia addresses — must match config/base-sepolia.json.
+    // Canonical Base Sepolia addresses — must match config/base-sepolia.json (chainlinkOracle block).
     address constant WETH = 0x4200000000000000000000000000000000000006;
     address constant LINK = 0xE4aB69C077896252FAFBD49EFD26B5D171A32410;
     address constant ETH_USD_FEED = 0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1;
@@ -36,8 +38,9 @@ contract DeployTestnetTest is Test {
     }
 
     function test_testnetDeployWiresFullStack() public {
-        _mockFeed(ETH_USD_FEED, 1917e8);
-        _mockFeed(LINK_USD_FEED, 975e6);
+        // Answers inside the config's sane-price bands (WETH $100..$100k, LINK $1..$1k).
+        _mockFeed(ETH_USD_FEED, 1917e8); // $1,917
+        _mockFeed(LINK_USD_FEED, 975e6); // $9.75
 
         DeployTestnet d = new DeployTestnet();
         (
@@ -47,7 +50,7 @@ contract DeployTestnetTest is Test {
             Governance gov,
             VaultDeployer vaultDeployer,
             VaultFactory factory,
-            OracleAggregator aggregator,
+            ChainlinkOracle oracle,
             AggregationRouterAdapter routerAdapter
         ) = d.run();
 
@@ -62,22 +65,26 @@ contract DeployTestnetTest is Test {
         registry.wire(address(1), address(2));
         vm.stopPrank();
 
-        // Oracle stack: each config asset listed with 3 adapter sources, 2-of-3 quorum,
-        // 1-day staleness — the constructor-enforced floor (>=3, strict majority, <=1 day).
-        address[2] memory assets = [WETH, LINK];
-        for (uint256 i; i < assets.length; ++i) {
-            (address[] memory sources, uint32 maxStaleness, uint8 quorum) = aggregator.assetConfig(assets[i]);
-            assertEq(sources.length, 3, "3 sources");
-            assertEq(quorum, 3, "H-1: quorum reaches MIN_MEDIAN (3-of-3 on this testnet)");
-            assertEq(maxStaleness, 1 days, "staleness at the 1-day ceiling");
-            for (uint256 j; j < sources.length; ++j) {
-                assertTrue(sources[j].code.length > 0, "source adapter deployed");
-            }
-        }
+        // C-6 curation gate: the deployed ChainlinkOracle is the ONE blessed oracle, and enforcement
+        // is on (a non-empty allowlist). A stray address is not allowed.
+        assertTrue(factory.oracleAllowlistEnforced(), "allowlist enforced");
+        assertTrue(factory.isAllowedOracle(address(oracle)), "the deployed oracle is blessed");
+        assertFalse(factory.isAllowedOracle(address(0xdead)), "a stray oracle is not blessed");
 
-        // Prices flow feed → ChainlinkSourceAdapter (8→18 dec) → median.
-        assertEq(aggregator.priceWad(WETH), 1917e18, "WETH median WAD");
-        assertEq(aggregator.priceWad(LINK), 9.75e18, "LINK median WAD");
+        // Oracle: each config asset maps to its single Chainlink feed with the config's heartbeat and
+        // sane-price band; no custom multi-source median (C-6).
+        (IAggregatorV3 ethFeed, uint32 ethHb,, uint128 ethMin, uint128 ethMax) = oracle.feedOf(WETH);
+        assertEq(address(ethFeed), ETH_USD_FEED, "WETH -> ETH/USD feed");
+        assertEq(ethHb, 86400, "WETH heartbeat (testnet-generous 24h)");
+        assertEq(ethMin, 100e18, "WETH band floor $100");
+        assertEq(ethMax, 100_000e18, "WETH band ceiling $100k");
+        (IAggregatorV3 linkFeed,,,,) = oracle.feedOf(LINK);
+        assertEq(address(linkFeed), LINK_USD_FEED, "LINK -> LINK/USD feed");
+
+        // Prices flow feed (8 dec) → WAD (scale 1e10). No median: one genuine feed per asset.
+        assertEq(oracle.priceWad(WETH), 1917e18, "WETH priceWad");
+        assertEq(oracle.priceWad(LINK), 9.75e18, "LINK priceWad");
+        assertEq(oracle.priceWad(0x036CbD53842c5426634e7929541eC2318f3dCF7e), 1e18, "USDC pinned to $1");
 
         // Execution adapter pinned to the configured router, swap selectors allow-listed.
         assertEq(routerAdapter.router(), ROUTER, "router pinned");
