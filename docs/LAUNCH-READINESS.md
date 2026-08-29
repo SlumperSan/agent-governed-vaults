@@ -1,6 +1,12 @@
 # Launch readiness — mainnet go/no-go
 
-**VERDICT: NO-GO — C-1 is closed at launch by the "root vaults only" gate and the launch-blocking High (H-8) is fixed + config-mitigated, BUT the Phase-2 Critical re-verification surfaced a NEW open Critical (C-6): C-4 re-opens once two oracle sources are adversarial, because the custom aggregator's quorum prescription is a fault-tolerance floor silent on the Byzantine floor `quorum ≥ 2a+1`. Gate 0 stays NO-GO on C-6; gate 1 (external audit) also NO-GO. Leading resolution under evaluation: consume Chainlink Data Feeds directly rather than hardening the bespoke aggregator (deletes most of the oracle-finding class).**
+**VERDICT: NO-GO — but the Phase-2 remediation is CODE-COMPLETE and independently reviewed; the two remaining gates are EXTERNAL.** (Current tree `protocol/main` @ `9fd27547`, verified green 2026-08-28: forge **319/319**, backend 551 pass / 2 skip, fmt / sizes / gas snapshot all pass.)
+>
+> Every launch-blocking Critical/High is resolved in code: **C-1** closed at launch (root vaults only), **C-2/C-3/C-5** + **H-1..H-4** fixed, **H-8** fixed + config-mitigated, and **C-4 → new Critical C-6** (found by an executed re-verification) resolved by **replacing the oracle**: Chainlink-direct `ChainlinkOracle` (one genuine feed per asset, no median/quorum) curated via a `VaultFactory` allowlist so the vulnerable custom aggregator is non-selectable. Sub-vault-only Highs (H-5/H-6/H-7/H-9) are dormant at launch; Mediums/Lows dispositioned.
+>
+> **Independent Audit Council review (adversarial, this session): ALL ACCEPT** — C-6 remediation **8.1/10**, and H-8/C-1/M-15 **9.8/10** overall, no Critical/High/Medium defects; the handful of Lows/Info surfaced were fixed. Full C-6 deploy scaffolding shipped (ChainlinkOracle + factory allowlist + `DeployChainlinkOracle.s.sol` + `verify-chainlink-oracle.mjs` + `chainlinkOracle` config block + a mainnet deploy-guard that refuses an empty allowlist + the DEPLOYMENT runbook).
+>
+> **The two gates that remain are NOT code:** (1) **gate 0 residual** — the mainnet deploy config must supply **real, on-chain-verified Base Chainlink feed addresses** (placeholders today; `verify-chainlink-oracle.mjs` gates them); (2) **gate 1** — the **external audit**, to commission at a fresh tag (`v0.4.0-audit`) of this tree.**
 
 An AI pre-audit run against the frozen contracts on 2026-08-25 found **41 issues: 5 Critical, 9
 High, 15 Medium, 7 Low** ([AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A
