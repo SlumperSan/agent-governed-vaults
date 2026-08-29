@@ -27,22 +27,48 @@ unwired registry cannot be fixed after the fact).
   wallet via `--ledger`. This repo's scripts read `--account`/`--private-key` from the CLI, never
   from a file.
 - The canonical USDC address for the chain (Base Sepolia: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`).
-- Per-asset oracle **source** addresses (≥3 independent, mechanism-diverse — SF-1) for every
-  basket asset a vault will list. On mainnet that means **three mechanism classes**, not three
-  addresses — see §2.
-- For a mainnet oracle stack, also: the Chainlink feed proxies, the Uniswap V3 pools you will
-  TWAP (**and their current `observationCardinality`** — see §2), and the Pyth contract plus
-  price ids. [`contracts/config/base-mainnet.json`](../contracts/config/base-mainnet.json)
-  drafts all of these for Base. It is marked **UNVERIFIED-ON-CHAIN**: run the `verification`
-  checklist inside it against a Base RPC before using any address from it.
+- **Launch oracle (C-6): one genuine Chainlink Data Feed per basket asset**, plus the Base L2
+  sequencer uptime feed. These go in `base-mainnet.json`'s `chainlinkOracle` block and are deployed
+  as a curated `ChainlinkOracle` in **§1** (the launch model — not the per-vault multi-source
+  aggregator, which C-6 retired). Verify every address on-chain (`verify-chainlink-oracle.mjs`)
+  before deploying — the oracle is immutable.
+- *(Deferred / non-launch only)* the pre-C-6 multi-source stack (Chainlink feed proxies + Uniswap V3
+  pools with their `observationCardinality` + Pyth contract & price ids) is drafted in
+  [`base-mainnet.json`](../contracts/config/base-mainnet.json) and described in §3; **UNVERIFIED-ON-CHAIN**
+  and not for a mainnet launch.
 
-## 1. Deploy the singletons
+## 1. Deploy and verify the curated oracle FIRST (C-6)
+
+**Read this before §2's oracle subsection — it supersedes it for launch.** Audit finding **C-6**
+showed the bespoke multi-source median (`OracleAggregator`) is not Byzantine-safe: two adversarial
+sources seize an asset's price once one honest source withholds, and a permissionless creator can
+supply exactly that (or a `ChainlinkOracle` over a fake feed). The launch resolution is a **curated
+Chainlink-direct oracle** — one genuine Chainlink Data Feed per asset — blessed by the factory
+allowlist. So the oracle is deployed **before** the factory:
+
+1. **Populate the oracle config** — fill the placeholders in
+   [`base-mainnet.json`](../contracts/config/base-mainnet.json)'s `chainlinkOracle` block with
+   **real, on-chain-verified** Base feed addresses (do NOT invent them), the Base L2 sequencer
+   uptime feed, per-asset heartbeats and sane-price bounds.
+2. **Deploy the ChainlinkOracle** via
+   [`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) with the
+   `ORACLE_*` env vars from that config.
+3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
+   exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
+   present and answering).
+4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
+   (deploy the factory) reads it into the factory's oracle allowlist.
+
+> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive).
+
+## 2. Deploy the singletons + factory (with the oracle allowlist)
 
 The six protocol singletons + their one-shot wiring deploy in one transaction via
-[`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol):
+[`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). Set `BLESSED_ORACLES` from §1:
 
 ```bash
 cd contracts
+BLESSED_ORACLES="$CHAINLINK_ORACLE_ADDR" \
 forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$BASE_SEPOLIA_RPC" \
   --account deployer \
@@ -60,12 +86,20 @@ no authority (see [audit/walkthroughs/VaultDeployer.md](audit/walkthroughs/Vault
 
 Record the six addresses printed by the script.
 
-## 2. Deploy per-vault infrastructure (not singletons)
+## 3. Execution adapters (per-vault) — and the DEFERRED custom oracle
 
-Oracles and execution adapters are **per-vault choices**, not protocol singletons (C-2/SF-1):
+Execution adapters are per-vault choices. The custom multi-source oracle below is **SUPERSEDED for
+launch by §1** (the curated Chainlink-direct oracle) — audit finding **C-6**. Keep the custom
+`OracleAggregator` path only for a post-audit release that re-enables permissionless oracle choice
+with the `quorum ≥ 2a+1` Byzantine floor; do NOT use it for a mainnet launch (and the factory
+allowlist makes it non-selectable there anyway).
 
-1. **The oracle stack — three mechanism classes, quorum 2-of-3.** Deploy the source adapters
-   first, then the aggregator over them.
+**DEFERRED — the custom multi-source oracle (pre-C-6), do not use for launch:**
+
+1. **The oracle stack — three mechanism classes.** ⚠ **Quorum 2-of-3 is UNSAFE (H-1/C-6):** it lets
+   the lower median degenerate to `min()`, and two adversarial sources seize the price. If this path
+   is ever revived, it needs ≥5 independent sources and `quorum ≥ 2a+1` — see AI-AUDIT-REPORT.md C-6.
+   Deploy the source adapters first, then the aggregator over them.
 
    `OracleAggregator`'s constructor counts *addresses*; SF-1's listing criterion counts
    *mechanisms*. Three `ChainlinkSourceAdapter`s over three Chainlink feeds satisfy the former
@@ -123,7 +157,7 @@ Oracles and execution adapters are **per-vault choices**, not protocol singleton
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
 
-## 3. Create a vault
+## 4. Create a vault
 
 ```solidity
 factory.createVault(VaultFactory.VaultParams({
@@ -169,7 +203,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
 > holding members' money.
 
-## 4. Post-deploy verification (before any real capital)
+## 5. Post-deploy verification (before any real capital)
 
 Run each check against the live addresses:
 
@@ -191,14 +225,14 @@ Run each check against the live addresses:
       no-op rebalance; confirm a Mode-F exit during reveal settles at post-execution NAV.
 - [ ] Exit path: instant Mode-I exit pays pro-rata; exit fee accrues to remainers, never the operator.
 
-## 5. Indexer + API
+## 6. Indexer + API
 
 - Point `packages/indexer/src/chain.mjs` at the RPC and the deployed factory/registry addresses;
   run the poller from block = deploy block.
 - Deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on Base).
   Set the price spec (asset = USDC, payTo = your treasury, network).
 
-## 6. Canary monitoring (post-launch)
+## 7. Canary monitoring (post-launch)
 
 Watch continuously; page on any breach. Every row below is implemented in `packages/canary` and runs
 as a service — see **[CANARY.md](CANARY.md)** for thresholds, tuning, and the response to each:
@@ -219,7 +253,7 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 | Fee routing | any USDC leaving a vault to an operator address outside the FeeEngine claim flow |
 | Module-call failures | `ModuleCallFailed` and `SliceEscrowed` events (a creator-chosen module or a basket token misbehaving) |
 
-## 7. Mainnet gate
+## 8. Mainnet gate
 
 Do **not** deploy to mainnet before: (a) an external audit consuming
 [AUDIT-HANDOFF.md](AUDIT-HANDOFF.md), (b) audit findings remediated + re-reviewed, (c) a
