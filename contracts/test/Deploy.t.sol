@@ -53,4 +53,16 @@ contract DeployTest is Test {
         vm.expectRevert(OperatorRegistry.OnlyDeployer.selector);
         registry.wire(address(1), address(2));
     }
+
+    /// @notice C-6 deploy guard: on Base mainnet (chainid 8453) the deploy REFUSES to run with an
+    /// empty BLESSED_ORACLES allowlist — enforcement-off on mainnet would re-open C-6. This turns
+    /// the "do not launch with this empty" comment into a deploy-time invariant. (BLESSED_ORACLES is
+    /// unset in CI, so the allowlist is empty here.) On the default local chainid the guard is a
+    /// no-op, which is why `test_deployWiresAndLocks` above runs fine.
+    function test_baseMainnetDeployRefusesEmptyOracleAllowlist() public {
+        vm.chainId(8453); // pretend we are deploying to Base mainnet
+        Deploy d = new Deploy();
+        vm.expectRevert(bytes("C-6: Base-mainnet deploy requires a non-empty BLESSED_ORACLES allowlist"));
+        d.run();
+    }
 }
