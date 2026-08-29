@@ -54,6 +54,8 @@ contract DeployTestnet is Script {
         uint256 maxPriceWad;
     }
 
+    uint256 constant BASE_MAINNET_CHAIN_ID = 8453; // this script enables sub-vaults (C-1) — never mainnet
+
     error NoAssetsConfigured();
     error ChainIdMismatch(uint256 configured, uint256 actual);
 
@@ -70,6 +72,17 @@ contract DeployTestnet is Script {
             AggregationRouterAdapter routerAdapter
         )
     {
+        // Review hardening (2026-08-29): this script hardcodes allowSubVaults=true (the SV soak drills
+        // need it) — the exact C-1 topology mainnet must NOT ship. base-mainnet.json declares chainId
+        // 8453 and parses cleanly here, so `DEPLOY_CONFIG=config/base-mainnet.json ... --rpc-url
+        // <base-mainnet>` would otherwise pass the config-vs-RPC check below (8453==8453) and stand up
+        // an IMMUTABLE mainnet factory with sub-vaults enabled. Refuse Base mainnet outright, before
+        // anything else — the mainnet path is Deploy.s.sol (root-only).
+        require(
+            block.chainid != BASE_MAINNET_CHAIN_ID,
+            "DeployTestnet refuses Base mainnet: it enables sub-vaults (C-1) - use Deploy.s.sol"
+        );
+
         string memory cfgPath = vm.envOr("DEPLOY_CONFIG", string("config/base-sepolia.json"));
         string memory json = vm.readFile(cfgPath);
 
@@ -205,11 +218,17 @@ contract DeployTestnet is Script {
         plan = new AssetPlan[](n);
         for (uint256 i; i < n; ++i) {
             string memory base = string.concat(".chainlinkOracle.assets[", vm.toString(i), "]");
+            // Bound heartbeatSeconds BEFORE the uint32 downcast: a silent uint32() truncation of a
+            // >=2^32 config value would ship an oracle with a staleness window nobody configured, and
+            // ChainlinkOracle's constructor only sees the already-narrowed uint32 (it cannot catch it,
+            // unlike the WAD bands it bounds itself). Parity with those bands — review, 2026-08-29.
+            uint256 hb = vm.parseJsonUint(json, string.concat(base, ".heartbeatSeconds"));
+            require(hb > 0 && hb <= type(uint32).max, "heartbeatSeconds out of uint32 range");
             plan[i] = AssetPlan({
                 symbol: vm.parseJsonString(json, string.concat(base, ".symbol")),
                 asset: vm.parseJsonAddress(json, string.concat(base, ".asset")),
                 feed: vm.parseJsonAddress(json, string.concat(base, ".feed")),
-                heartbeat: uint32(vm.parseJsonUint(json, string.concat(base, ".heartbeatSeconds"))),
+                heartbeat: uint32(hb),
                 minPriceWad: vm.parseUint(vm.parseJsonString(json, string.concat(base, ".minPriceWad"))),
                 maxPriceWad: vm.parseUint(vm.parseJsonString(json, string.concat(base, ".maxPriceWad")))
             });

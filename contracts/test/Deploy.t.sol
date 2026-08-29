@@ -57,12 +57,31 @@ contract DeployTest is Test {
     /// @notice C-6 deploy guard: on Base mainnet (chainid 8453) the deploy REFUSES to run with an
     /// empty BLESSED_ORACLES allowlist — enforcement-off on mainnet would re-open C-6. This turns
     /// the "do not launch with this empty" comment into a deploy-time invariant. (BLESSED_ORACLES is
-    /// unset in CI, so the allowlist is empty here.) On the default local chainid the guard is a
+    /// unset in CI, so the allowlist is empty here.) On the local test chainid (31337) the guard is a
     /// no-op, which is why `test_deployWiresAndLocks` above runs fine.
     function test_baseMainnetDeployRefusesEmptyOracleAllowlist() public {
         vm.chainId(8453); // pretend we are deploying to Base mainnet
         Deploy d = new Deploy();
-        vm.expectRevert(bytes("C-6: Base-mainnet deploy requires a non-empty BLESSED_ORACLES allowlist"));
+        vm.expectRevert(
+            bytes(
+                "C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)"
+            )
+        );
+        d.run();
+    }
+
+    /// @notice The guard is L2-GENERIC, not Base-specific: an empty allowlist on ANY real chain (here
+    /// a stand-in chainid that is neither Base mainnet nor local 31337 — e.g. a mis-pointed RPC or
+    /// another L2) is refused, so a wrong-RPC deploy can never silently ship the C-6 gate disabled.
+    /// (Previously the guard only fired on chainid 8453, leaving every other chain permissive.)
+    function test_anyRealChainDeployRefusesEmptyOracleAllowlist() public {
+        vm.chainId(10); // any non-8453, non-31337 chain (stand-in for a wrong RPC / other L2)
+        Deploy d = new Deploy();
+        vm.expectRevert(
+            bytes(
+                "C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)"
+            )
+        );
         d.run();
     }
 }
