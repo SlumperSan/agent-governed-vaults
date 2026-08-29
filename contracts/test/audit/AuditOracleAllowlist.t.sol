@@ -108,6 +108,30 @@ contract AuditOracleAllowlistTest is Test {
         assertEq(address(VaultCore(vault).oracle()), address(blessed), "vault wired to the blessed oracle");
     }
 
+    // ── a codeless allowlist entry (a typo'd BLESSED_ORACLES address) is rejected ─
+    function test_constructor_rejectsCodelessAllowlistEntry() public {
+        // Build the deps first (non-reverting), then wrap ONLY the factory ctor in expectRevert.
+        OperatorRegistry r = new OperatorRegistry();
+        SubVaultRegistry sr = new SubVaultRegistry();
+        FeeEngine fe = new FeeEngine(IRegistryView(address(r)));
+        Governance g = new Governance();
+        VaultDeployer vd = new VaultDeployer();
+        address[] memory allow = new address[](1);
+        allow[0] = address(0xDEAD); // no code — a deploy typo
+        // Rejected (mirrors ChainlinkOracle's codeless-feed reject); without the check it would flip
+        // enforcement on and bless an address that can never price a vault.
+        vm.expectRevert(VaultFactory.OracleNotAllowed.selector);
+        new VaultFactory(
+            IOperatorRegistry(address(r)),
+            IGovernance(address(g)),
+            IFeeEngine(address(fe)),
+            address(sr),
+            IVaultDeployer(address(vd)),
+            false,
+            allow
+        );
+    }
+
     // ── enforcement OFF: an empty allowlist is permissive (tests / post-audit) ─
     function test_emptyAllowlistDisablesEnforcement() public {
         VaultFactory factory = _factory(new address[](0));

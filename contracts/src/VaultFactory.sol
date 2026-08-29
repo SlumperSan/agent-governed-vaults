@@ -106,7 +106,11 @@ contract VaultFactory {
         allowSubVaults = allowSubVaults_;
         oracleAllowlistEnforced = allowedOracles_.length > 0;
         for (uint256 i; i < allowedOracles_.length; ++i) {
-            require(allowedOracles_[i] != address(0), OracleNotAllowed());
+            // Reject a zero OR codeless entry (a typo'd BLESSED_ORACLES address). Without the
+            // code check a typo would still pass Deploy.s.sol's non-empty guard, flip enforcement
+            // on, and "bless" an address that can never price a vault — mirrors ChainlinkOracle's
+            // own codeless-feed reject. (Audit Council follow-up.)
+            require(allowedOracles_[i].code.length > 0, OracleNotAllowed());
             isAllowedOracle[allowedOracles_[i]] = true;
         }
     }
