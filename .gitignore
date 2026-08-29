@@ -16,3 +16,12 @@ scripts/.smoke-state.json
 # Sprint-12 soak: per-drill resumable state (run records, not source)
 scripts/.soak-state-*.json
 scripts/soak/.state-*.json
+
+# Agent-skill installer artifacts (`npx skills add`): third-party agent tooling, not
+# protocol source. `.claude/skills/*` are symlinks INTO `.agents/skills/`. Ignored so a
+# concurrent session's `git add` can never sweep vendored agent skills into a protocol PR.
+.agents/
+.claude/skills/
+skills-lock.json
+# Local, per-machine Claude Code settings (never shared).
+.claude/settings.local.json
