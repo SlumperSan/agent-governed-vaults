@@ -34,6 +34,8 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 /// their own at createVault time (venue/source choice is a per-vault decision, C-2/SF-1), so
 /// this script deploys none.
 contract Deploy is Script {
+    uint256 constant BASE_MAINNET_CHAIN_ID = 8453; // C-6: the chain the oracle-allowlist guard binds
+
     function run()
         external
         returns (
@@ -52,6 +54,20 @@ contract Deploy is Script {
         feeEngine = new FeeEngine(IRegistryView(address(registry)));
         governance = new Governance();
         vaultDeployer = new VaultDeployer();
+
+        // C-6: blessed oracle allowlist. Supply the curated ChainlinkOracle instance(s) — deployed
+        // over verified genuine Chainlink Data Feeds (see DeployChainlinkOracle.s.sol) — via the
+        // BLESSED_ORACLES env var (comma-separated addresses). A Base-mainnet deploy REFUSES to run
+        // with an empty allowlist: enforcement-off on mainnet would re-open C-6 (any creator-supplied
+        // oracle, including a weak custom aggregator or a fake-feed oracle, would be accepted).
+        // Testnet / local may run empty (permissive). This turns the C-6 gate from a documented
+        // warning into a deploy-time invariant.
+        address[] memory blessedOracles = vm.envOr("BLESSED_ORACLES", ",", new address[](0));
+        require(
+            block.chainid != BASE_MAINNET_CHAIN_ID || blessedOracles.length > 0,
+            "C-6: Base-mainnet deploy requires a non-empty BLESSED_ORACLES allowlist"
+        );
+
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
             IGovernance(address(governance)),
@@ -59,12 +75,7 @@ contract Deploy is Script {
             address(subReg),
             IVaultDeployer(address(vaultDeployer)),
             false, // C-1: root vaults only at launch (sub-vaults disabled; see VaultFactory.allowSubVaults)
-            // C-6: MAINNET LAUNCH MUST populate this with the blessed ChainlinkOracle instance(s)
-            // (deployed over verified genuine Chainlink Data Feeds) — an EMPTY allowlist leaves the
-            // C-6 curated-oracle gate DISABLED (any creator-supplied oracle accepted). Empty here
-            // until the blessed oracle addresses are resolved (see base-mainnet.json / #41-class
-            // config work). Do not launch mainnet with this empty. See VaultFactory.oracleAllowlistEnforced.
-            new address[](0)
+            blessedOracles // C-6: curated oracle allowlist (see the guard above)
         );
 
         // One-shot wiring — irreversible after this transaction.
