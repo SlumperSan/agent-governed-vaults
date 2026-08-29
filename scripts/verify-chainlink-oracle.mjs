@@ -116,10 +116,16 @@ function main() {
     const hb = BigInt(a.heartbeatSeconds ?? 0);
     const age = nowSec > rd.updatedAt ? nowSec - rd.updatedAt : 0n;
     check(`${label}: fresh within heartbeat`, hb > 0n && age <= hb, `age=${age}s heartbeat=${hb}s`);
-    // sane-price band well-formed (0/0 disabled, else min <= max)
+    // sane-price band: a MAINNET blessed oracle MUST set one (the depeg-clamp defence — Chainlink
+    // deprecated its on-aggregator min/maxAnswer, so a clamp value can read "fresh"). Require a
+    // non-zero, well-ordered band. (Audit Council follow-up: the band was off in every fixture.)
     const mn = BigInt(a.minPriceWad ?? '0');
     const mx = BigInt(a.maxPriceWad ?? '0');
-    check(`${label}: sane-price band well-formed`, mx === 0n ? mn === 0n : mn <= mx, `min=${mn} max=${mx}`);
+    check(
+      `${label}: sane-price band set (depeg defence)`,
+      mx > 0n && mn > 0n && mn <= mx,
+      mx === 0n || mn === 0n ? `min=${mn} max=${mx} — BAND DISABLED; set a real min/max for a mainnet feed` : `min=${mn} max=${mx}`,
+    );
   }
 
   finish();

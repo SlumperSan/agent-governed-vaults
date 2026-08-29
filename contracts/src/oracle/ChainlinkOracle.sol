@@ -183,6 +183,12 @@ contract ChainlinkOracle is IOracleAggregator {
         IAggregatorV3 seq = sequencerUptimeFeed;
         if (address(seq) == address(0)) return; // non-sequencer chain
 
+        // The uptime feed's own `updatedAt` (4th field) is intentionally NOT staleness-checked: it
+        // is event-driven (it only writes on an up<->down transition), so a long-unchanged
+        // `updatedAt` is its healthy steady state, not staleness — checking it would freeze pricing
+        // during normal uptime. `answer` + `startedAt` are the authoritative signals. (Audit Council
+        // note: accepted residual — a genuinely frozen uptime feed reads "up", the same posture
+        // standard Chainlink L2 consumers take.)
         try seq.latestRoundData() returns (uint80, int256 answer, uint256 startedAt, uint256, uint80) {
             // answer == 0 => up, 1 => down.
             if (answer != 0) revert StaleOracle(asset);

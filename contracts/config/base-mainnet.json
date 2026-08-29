@@ -179,6 +179,7 @@
     ],
     "verification": [
       "For each asset feed: code.length > 0; decimals() <= 18; latestRoundData() answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "For each asset: a sane-price band MUST be set — minPriceWad > 0 and maxPriceWad >= minPriceWad (the depeg-clamp defence; 0/0 is rejected by the verifier for mainnet).",
       "sequencerUptimeFeed: code.length > 0 and latestRoundData() answers.",
       "USDC not also present in assets[].",
       "Run: node scripts/verify-chainlink-oracle.mjs (exit 0 => may deploy)."
