@@ -60,11 +60,17 @@ function callUint(addr, sig) {
   }
 }
 function latestRoundData(addr) {
-  // (roundId, answer, startedAt, updatedAt, answeredInRound)
+  // (roundId, answer, startedAt, updatedAt, answeredInRound). `cast` prints one value per line and
+  // annotates large ints with a scientific-notation suffix, e.g. "244049270000 [2.44e11]" — take
+  // the leading integer token of each line and ignore the annotation.
   try {
     const out = cast(['call', addr, 'latestRoundData()(uint80,int256,uint256,uint256,uint80)', '--rpc-url', RPC]);
-    const parts = out.split(/\s+/).filter(Boolean);
-    return { answer: BigInt(parts[1]), updatedAt: BigInt(parts[3]) };
+    const nums = out
+      .split('\n')
+      .map((l) => l.trim().split(/\s+/)[0])
+      .filter((x) => /^-?\d+$/.test(x));
+    if (nums.length < 5) return null;
+    return { answer: BigInt(nums[1]), startedAt: BigInt(nums[2]), updatedAt: BigInt(nums[3]) };
   } catch {
     return null;
   }
