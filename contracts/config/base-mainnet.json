@@ -149,6 +149,42 @@
     ]
   },
 
+  "chainlinkOracle": {
+    "status": "NOT-POPULATED — requires real, on-chain-verified Chainlink Base feed addresses (human input)",
+    "purpose": "The C-6 launch resolution (see AI-AUDIT-REPORT.md C-6): replace the bespoke multi-source median with a ChainlinkOracle that prices each asset from ONE genuine Chainlink Data Feed. Deploy it with DeployChainlinkOracle.s.sol, verify with scripts/verify-chainlink-oracle.mjs, then set BLESSED_ORACLES to its address for Deploy.s.sol (which refuses a Base-mainnet deploy with an empty allowlist).",
+    "doNotInvent": "Every address below is a PLACEHOLDER. Do not fill with a guessed/copy-pasted address — a wrong or fake feed prices every vault against it wrong, permanently (immutable). Resolve each from Chainlink's official Base mainnet Data Feeds page and verify on-chain.",
+    "sequencerUptimeFeed": "0x0000000000000000000000000000000000000000",
+    "sequencerUptimeFeedNote": "Base mainnet Chainlink L2 Sequencer Uptime Feed. MANDATORY on Base — ChainlinkOracle reverts every price without it. Resolve from Chainlink's 'L2 Sequencer Uptime Feeds' docs for Base and verify code.length > 0.",
+    "usdcPin": true,
+    "usdcPinNote": "USDC pinned to 1e18 in ChainlinkOracle (usdc = the config `usdc` above). Do NOT also list USDC in `assets` (the ChainlinkOracle constructor rejects that). A sustained USDC depeg is mispriced by the pin; list a USDC/USD feed instead if that risk must be measured.",
+    "assets": [
+      {
+        "symbol": "WETH",
+        "asset": "<REAL Base WETH token address>",
+        "feed": "<REAL Chainlink ETH/USD Data Feed proxy on Base>",
+        "heartbeatSeconds": 1200,
+        "minPriceWad": "0",
+        "maxPriceWad": "0",
+        "note": "Set heartbeatSeconds to the feed's OWN heartbeat from Chainlink's Base feed page (+ a small buffer). Set minPriceWad/maxPriceWad to a sane band (0/0 = disabled) before listing volatile/depeg-prone collateral — the band is the deprecated-min/maxAnswer-clamp defence."
+      },
+      {
+        "symbol": "cbETH",
+        "asset": "<REAL Base cbETH token address>",
+        "feed": "<REAL Chainlink cbETH/USD Data Feed proxy on Base>",
+        "heartbeatSeconds": 86400,
+        "minPriceWad": "0",
+        "maxPriceWad": "0",
+        "note": "Same verification as WETH. cbETH heartbeat is typically longer; confirm on the feed page."
+      }
+    ],
+    "verification": [
+      "For each asset feed: code.length > 0; decimals() <= 18; latestRoundData() answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "sequencerUptimeFeed: code.length > 0 and latestRoundData() answers.",
+      "USDC not also present in assets[].",
+      "Run: node scripts/verify-chainlink-oracle.mjs (exit 0 => may deploy)."
+    ]
+  },
+
   "smoke": {
     "capacityCapUsdc": "1000000000",
     "minDepositUsdc": "100000000",
