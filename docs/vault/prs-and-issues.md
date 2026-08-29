@@ -18,6 +18,11 @@ In [[continuous-autonomous-mode]] with [[auto-merge]], the PR list *is* the chan
 | **#49** | `security/chainlink-oracle` | additive `ChainlinkOracle.sol` (Chainlink Data Feeds direct) | C-6 resolution ([[chainlink-direct-pivot]]) |
 | **#50** | `security/c6-factory-oracle-gate` | [[vaultfactory]] immutable `allowedOracles_` allowlist; `createVault`/`createChildVault` revert `OracleNotAllowed` when enforced; `AuditOracleAllowlist.t.sol` | C-6 factory oracle-gate — completes the mechanism ([[c6-oracle-byzantine]]) |
 | **#51** | `security/c6-vault` | the vault itself | C-6 ([[chainlink-direct-pivot]]) |
+| **#53** | `security/deploy-guard` | `Deploy.s.sol` guard reverts if `BLESSED_ORACLES` allowlist empty on Base-mainnet | Deploy-time safety for C-6 oracle gate ([[vaultfactory]]) |
+| **#54** | `security/c6-integration-tests` | `ChainlinkOracle` × `VaultCore` integration test suite | C-6 end-to-end ([[chainlinkoracle]]) |
+| **#55** | `security/chainlink-config` | `base-mainnet.json` `chainlinkOracle` config block with feed placeholders; `scripts/verify-chainlink-oracle.mjs` on-chain verifier | C-6 deploy config ([[chainlinkoracle]]) |
+| **#56** | `security/chainlink-fuzz` | `ChainlinkOracle` fuzz suite | C-6 property-based safety ([[chainlinkoracle]]) |
+| **#57** | `docs/deployment-restructure` | `DEPLOYMENT.md` restructured: §1 deploy+verify `ChainlinkOracle` first → §2 factory with `BLESSED_ORACLES` → §3 custom oracle marked **DEFERRED** | C-6 deploy sequence ([[go-to-market-plan]]) |
 
 Earlier (Phase 1): **#39** (`security/critical-remediation`) closed the twelve findings; **#38** was the Sprint-15 battery refresh; **#42** the medium-tier pass. See [[remediation-history]].
 

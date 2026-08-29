@@ -16,6 +16,17 @@ Because the protocol is immutable per vault, go-to-market is expressed almost en
 - **Governance config:** `3600/3600/0/86400`, quorum 2,500 bps root floor — the values the soak ran through five full rounds. Zero timelock is defensible *because* Mode-F exits exist.
 - **Oracle staleness:** 3,600 s/asset (not tighter — a tight bound drops the pull-based Pyth leg on most reads); `maxObservationAge ≤ window/20` is a hard constraint (90 s ceiling at the 1,800 s window).
 
+## Mainnet deploy sequence (Phase 3)
+
+The C-6 oracle-gate is fully scaffolded ([#53–57]); the safe bring-up order is:
+1. **Populate `base-mainnet.json`** — fill [[chainlinkoracle]] `feedOf[asset]` config placeholders with real Base Chainlink feed addresses.
+2. **`DeployChainlinkOracle.s.sol`** — deploy and test the oracle contract with verified addresses.
+3. **`scripts/verify-chainlink-oracle.mjs`** — on-chain verifier confirms feeds are live and responding.
+4. **Set `BLESSED_ORACLES`** — populate the factory's immutable allowlist with the verified oracle address (the gate that enables `createVault`).
+5. **`Deploy.s.sol`** — mainnet deployment now succeeds (guard reverts if allowlist is empty).
+
+Defer the bespoke [[oracleaggregator]] to a second-generation vault post-audit, pending the parent-casts-child-vote mechanism.
+
 ## Scaling path
 
 Raise capacity by **deploying a second vault (≥250k)** only after **≥30 incident-free days** with the canary clean. Do not launch an uncapped vault. Reinstate sub-vaults only after C-1's parent-casts-child-vote mechanism is built and audited **and** the SV-* drills are re-run against corrected contracts.
