@@ -22,8 +22,13 @@
  *          deployed oracle address added to BLESSED_ORACLES (Deploy.s.sol).
  * Exit 1 = at least one check failed; do NOT deploy the oracle.
  *
- * Env: BASE_MAINNET_RPC (default https://mainnet.base.org), CAST (default `cast`).
- * Run:  node scripts/verify-chainlink-oracle.mjs [--json]
+ * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
+ *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
+ *        chainId — Base mainnet 8453 or Base Sepolia 84532), CAST (default `cast`).
+ *        The L2 sequencer feed is REQUIRED only on Base mainnet; off-mainnet an empty one is accepted
+ *        (the guard is skipped there and mock-tested in ChainlinkOracle.t.sol).
+ * Run:  node scripts/verify-chainlink-oracle.mjs [--json]                 # mainnet (default)
+ *       CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs   # testnet
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -31,7 +36,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const RPC = process.env.BASE_MAINNET_RPC ?? 'https://mainnet.base.org';
+// Which config to verify: env CONFIG, or a *.json path argument, else the mainnet config (back-compat).
+const CFG_PATH_REL =
+  process.env.CONFIG ?? process.argv.find((a) => a.endsWith('.json')) ?? 'contracts/config/base-mainnet.json';
+const CFG_PATH = path.isAbsolute(CFG_PATH_REL) ? CFG_PATH_REL : path.join(ROOT, CFG_PATH_REL);
+const CFG = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
+// RPC: explicit env wins; otherwise pick the public Base RPC for the config's chain.
+const RPC =
+  process.env.BASE_MAINNET_RPC ??
+  process.env.BASE_RPC ??
+  (CFG.chainId === 84532 ? 'https://sepolia.base.org' : 'https://mainnet.base.org');
+// Mainnet is the only chain where the L2 sequencer uptime feed is mandatory (ChainlinkOracle reverts
+// every price without it). Off-mainnet (testnet/local) an empty sequencer means the guard is skipped.
+const IS_MAINNET = CFG.chainId === 8453;
 const CAST = process.env.CAST ?? 'cast';
 const JSON_OUT = process.argv.includes('--json');
 const ZERO = '0x0000000000000000000000000000000000000000';
@@ -77,8 +94,7 @@ function latestRoundData(addr) {
 }
 
 function main() {
-  const cfgPath = path.join(ROOT, 'contracts/config/base-mainnet.json');
-  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  const cfg = CFG;
   const co = cfg.chainlinkOracle;
   if (!co) {
     check('chainlinkOracle block present', false, 'no `chainlinkOracle` key in base-mainnet.json');
@@ -88,7 +104,13 @@ function main() {
   // 1. Sequencer uptime feed — mandatory on Base.
   const seq = co.sequencerUptimeFeed;
   if (!seq || seq === ZERO) {
-    check('sequencer uptime feed set', false, 'sequencerUptimeFeed is empty/zero — REQUIRED on Base mainnet');
+    check(
+      'sequencer uptime feed',
+      !IS_MAINNET,
+      IS_MAINNET
+        ? 'empty/zero — REQUIRED on Base mainnet (ChainlinkOracle reverts every price without it)'
+        : 'empty/zero — guard intentionally skipped off-mainnet (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
+    );
   } else {
     const hasCode = code(seq).length > 2;
     check('sequencer uptime feed has code', hasCode, `${seq} code.length ${hasCode ? '> 0' : '== 0'}`);
