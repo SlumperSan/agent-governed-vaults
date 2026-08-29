@@ -1,6 +1,6 @@
 # Current State
 
-What is true right now. The live branch is `protocol/main` (@ `a265b9dd`); the launch verdict is **NO-GO**. Snapshot as of the Phase-2 remediation and the C-6 / ChainlinkOracle pivot plus the factory oracle-gate (2026-08-28).
+What is true right now. The live branch is `protocol/main` (@ `78ea1f87`); the launch verdict is **NO-GO**. Snapshot as of Phase-2 remediation, C-6 / ChainlinkOracle pivot, factory oracle-gate, and C-6 deploy scaffolding (2026-08-28).
 
 ## Why it matters
 
@@ -10,13 +10,13 @@ This protocol is immutable at deployment, so "ship" is a one-way door. This note
 
 Two gates keep it there ([[launch-readiness-gates]]):
 
-- **Gate 0 — no known unfixed Critical: NO-GO, on C-6.** Four of five original Criticals are closed with **executed** evidence: C-1 ([[root-vaults-only]]), C-2, C-3, C-5. C-4/C-6 keep the row NO-GO — the Phase-2 re-verification (`AuditC4EndToEnd.t.sol`) falsified the inferred "C-4 path closed" claim and surfaced **C-6** ([[c6-oracle-byzantine]]): at `a ≥ 2` adversarial oracle sources the theft re-opens. C-6 has no clean code fix at m=5; the resolution is the [[chainlink-direct-pivot]]. The C-6 **remediation mechanism is now complete in code** — the safe [[chainlinkoracle]] (#49) plus [[vaultfactory]]'s `allowedOracles_` factory oracle-gate (**DONE, PR #50**). Gate 0 stays NO-GO only until the mainnet deploy config populates the allowlist with real blessed-oracle addresses and the external audit clears; issue #48 tracks that residual.
+- **Gate 0 — no known unfixed Critical: NO-GO, on C-6.** Four of five original Criticals are closed with **executed** evidence: C-1 ([[root-vaults-only]]), C-2, C-3, C-5. C-4/C-6 keep the row NO-GO — the Phase-2 re-verification (`AuditC4EndToEnd.t.sol`) falsified the inferred "C-4 path closed" claim and surfaced **C-6** ([[c6-oracle-byzantine]]): at `a ≥ 2` adversarial oracle sources the theft re-opens. C-6 has no clean code fix at m=5; the resolution is the [[chainlink-direct-pivot]]. The C-6 **remediation mechanism and deploy scaffolding are now complete in code** — the safe [[chainlinkoracle]] (#49), [[vaultfactory]]'s `allowedOracles_` factory oracle-gate (#50), `DeployChainlinkOracle.s.sol` + `scripts/verify-chainlink-oracle.mjs` (#55), and `Deploy.s.sol` guard (#53). The **only missing piece is populating the config with real Base Chainlink feed addresses** (fill placeholders → verify → set `BLESSED_ORACLES` → deploy). Gate 0 stays NO-GO until then and the external audit clears; issue #48 tracks that residual.
 - **Gate 1 — external audit: NO-GO.** Not started, and nothing in these sessions could change it — an AI pre-audit is not an external audit. Commission a **full** review of the corrected tree at a new tag (`v0.4.0-audit` recommended); it must also cover the remediation itself.
 
 ## Branch and evidence state
 
 - **Live branch:** `protocol/main` @ `a265b9dd`. Remediation lands via [[auto-merge]] per-finding PRs.
-- **Merged (Phase 2):** #43 (C-1 root-vaults-only), #44 (H-8), #45 (M-15), #46 (dispositions), #47 (C-6 re-verification), #49 (ChainlinkOracle), #50 (C-6 factory oracle-gate), #51 (vault). See [[prs-and-issues]].
+- **Merged (Phase 2):** #43 (C-1 root-vaults-only), #44 (H-8), #45 (M-15), #46 (dispositions), #47 (C-6 re-verification), #49 (ChainlinkOracle), #50 (C-6 factory oracle-gate), #51 (vault), #53 (deploy guard), #54–57 (C-6 scaffolding: tests, config, fuzz, docs). See [[prs-and-issues]].
 - **Open issues:** #40 (VaultCore-headroom sprint), #41 (rebuild `base-mainnet.json`), #48 (C-6 tracking).
 - **CI (gate 8): GO.** Full battery green — `forge fmt --check`, `forge build --sizes`, `forge test`, `forge snapshot --check`, and the backend suite all pass. (The last recorded `forge test` count was 252 pass / 0 fail / 0 skip on the 2026-08-27 remediation branch; later PRs added tests, so treat the count as indicative, not a live `protocol/main` figure — forge was not re-run here.) Green certifies the gates *ran*, not that the protocol is safe.
 - **Evidence STALE:** the remediation changed six contracts, so gates 2 (testnet lifecycle), 3 (soak), and 6 (canary) are re-marked STALE — their reports describe superseded bytecode. Gate 4 (live x402 settlement) is the one operational gate that survives intact. See [[audit-reverification]].

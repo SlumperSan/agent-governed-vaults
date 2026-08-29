@@ -14,6 +14,15 @@ entirely**: it trusts Chainlink's own decentralized OCR aggregation per asset. T
 no quorum, and no per-vault source list to misconfigure — so the whole C-6 / H-1 / M-1 attack
 surface disappears. This is the [[chainlink-direct-pivot]] decision made concrete.
 
+## Deploy scaffolding (Phase 3)
+
+Fully merged and ready for operator handoff:
+- **`DeployChainlinkOracle.s.sol`** — deployment script; populates `base-mainnet.json` feed config at runtime.
+- **`scripts/verify-chainlink-oracle.mjs`** — on-chain verifier confirms each feed is live and responsive before go-live.
+- **Integration test** (`AuditC6Integration.t.sol`) — ChainlinkOracle × VaultCore end-to-end flow.
+- **Fuzz suite** — property-based safety of price staleness, bounds-checking, sequencer uptime, and feed failure paths.
+- See [[go-to-market-plan]] for the safe deploy sequence.
+
 ## Key state
 
 - `feedOf[asset]` — `FeedConfig { IAggregatorV3 feed; uint32 heartbeat; uint64 scale; uint128

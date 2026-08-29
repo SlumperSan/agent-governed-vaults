@@ -62,9 +62,10 @@ that blob exceeds EIP-170). A failing VaultCore constructor bubbles its own reve
   list is permissive (enforcement off). This is the contract-level lever that makes the custom
   aggregator non-deployable and pins vaults to the blessed [[chainlinkoracle]] — the second half of
   the C-6 remediation, alongside the safe oracle (#49). See [[chainlink-direct-pivot]]. Regression:
-  `AuditOracleAllowlist.t.sol`. (Gate 0 stays NO-GO until the mainnet deploy config populates the
-  allowlist with real blessed-oracle addresses and the external audit clears — the *mechanism* is now
-  complete.)
+  `AuditOracleAllowlist.t.sol`. Mainnet deployment is guarded by `Deploy.s.sol` (PR #53) which
+  **reverts if the `BLESSED_ORACLES` allowlist is empty**, preventing accidental unsafe deploys. Gate 0
+  stays NO-GO until the config is populated with real addresses and the external audit clears — the
+  *mechanism* is now complete.
 
 The child path also enforces same-USDC and basket-subset-of-parent, so in-kind child redemptions
 always map into parent accounting and look-through pricing (SV-7) is always possible.
