@@ -84,6 +84,27 @@ function call(to, sig, ...args) {
 }
 const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
+/** Synchronous sleep — used only by readUntilEq's retry loop, so the (non-async) step functions
+ * need no async plumbing. Atomics.wait blocks this thread for `ms`. */
+const sleepSync = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+/** Read a value a just-mined tx should have set, retrying to defend against a LOAD-BALANCED public
+ * RPC serving the read from a replica that has not yet applied the block — a read-after-write race
+ * (sepolia.base.org does this routinely). This is a client/RPC-consistency defence, NOT a protocol
+ * check: the `send()` above already asserted the tx succeeded (status 0x1), so the state IS set;
+ * we are only waiting for the node we read from to catch up. */
+function readUntilEq(want, label, to, sig, ...args) {
+  let last;
+  for (let i = 0; i < 20; i++) {
+    last = call(to, sig, ...args)[0];
+    if (last === want) return;
+    sleepSync(1500);
+  }
+  fail(`${label} (after ~30s of RPC retries; last read '${last}', wanted '${want}')`);
+}
+
 /** State-changing call via the human's signer. Returns the receipt (asserts success). */
 function send(label, to, sig, ...args) {
   log(`tx: ${label}`);
@@ -94,6 +115,13 @@ function send(label, to, sig, ...args) {
   const receipt = JSON.parse(out.slice(out.indexOf('{')));
   assert(receipt.status === '0x1' || receipt.status === 1, `${label}: transaction reverted (${receipt.transactionHash})`);
   log(`   mined ${receipt.transactionHash} (block ${Number(receipt.blockNumber)})`);
+  // Best-effort read-your-writes against a LOAD-BALANCED RPC: wait until the endpoint reports a
+  // height >= our tx's block before the caller's follow-up reads, so they are less likely to hit a
+  // replica that has not applied the block yet. (readUntilEq is the belt-and-braces on criticals.)
+  for (let i = 0; i < 20; i++) {
+    if (Number(cast(['block', 'latest', '-f', 'number', '--rpc-url', RPC])) >= Number(receipt.blockNumber)) break;
+    sleepSync(1000);
+  }
   return receipt;
 }
 
@@ -234,11 +262,20 @@ function stepCreateVault() {
 }
 
 function stepRegisterGov() {
+  // Idempotent resume: the register tx can land on-chain even if the run then trips a post-write
+  // read (registerVault reverts AlreadyRegistered on a second call). If the vault already reads
+  // registered, record it and move on rather than re-sending and reverting.
+  if (call(dep.governance, 'vaultRegistered(address)(bool)', state.vault)[0] === 'true') {
+    log('vault already registered on-chain - skipping registerVault (idempotent resume)');
+    state.steps.registerGov = { done: true, tx: state.steps.registerGov?.tx ?? 'preexisting' };
+    save();
+    return;
+  }
   const g = smoke.gov;
   const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
   const r = send('governance.registerVault', dep.governance,
     'registerVault(address,(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32))', state.vault, tuple);
-  assert(call(dep.governance, 'vaultRegistered(address)(bool)', state.vault)[0] === 'true', 'vault not registered');
+  readUntilEq('true', 'vault not registered', dep.governance, 'vaultRegistered(address)(bool)', state.vault);
   state.steps.registerGov = { done: true, tx: r.transactionHash };
   save();
 }
@@ -247,8 +284,8 @@ function stepDeposit() {
   const amt = smoke.depositUsdc;
   send('usdc.approve', USDC, 'approve(address,uint256)', state.vault, amt);
   const r = send(`vault.deposit(${amt})`, state.vault, 'deposit(uint256)', amt);
-  const [pending, availableAt] = call(state.vault, 'pendingDeposit(address)(uint256,uint64)', state.signer);
-  assert(BigInt(pending) === BigInt(amt), `pending deposit ${pending} != ${amt}`);
+  readUntilEq(String(amt), `pending deposit != ${amt}`, state.vault, 'pendingDeposit(address)(uint256,uint64)', state.signer);
+  const [, availableAt] = call(state.vault, 'pendingDeposit(address)(uint256,uint64)', state.signer);
   state.availableAt = Number(availableAt);
   log(`deposit escrowed; observation window ends at chain time ${state.availableAt} (~4h)`);
   // EE-1: pending capital is excluded from NAV until activation.
@@ -329,14 +366,14 @@ async function stepFinalize() {
 
 function stepExecute() {
   // Mode-F sanity: between finalize and execute, exits must queue (hasPendingExecution).
-  assert(call(dep.governance, 'hasPendingExecution(address)(bool)', state.vault)[0] === 'true',
-    'hasPendingExecution should be true for a passed-but-unexecuted proposal');
+  readUntilEq('true', 'hasPendingExecution should be true for a passed-but-unexecuted proposal',
+    dep.governance, 'hasPendingExecution(address)(bool)', state.vault);
   const r = send('governance.execute(no-op rebalance)', dep.governance,
     'execute(uint256,bytes)', state.pid, state.payload);
   const reb = r.logs.find((l) => l.topics?.[0] === T_REBALANCE_EXECUTED && eq(l.address, state.vault));
   assert(reb, 'RebalanceExecuted event not emitted by the vault');
-  assert(call(dep.governance, 'hasPendingExecution(address)(bool)', state.vault)[0] === 'false',
-    'hasPendingExecution should clear after execution');
+  readUntilEq('false', 'hasPendingExecution should clear after execution',
+    dep.governance, 'hasPendingExecution(address)(bool)', state.vault);
   state.steps.execute = { done: true, tx: r.transactionHash };
   save();
 }
