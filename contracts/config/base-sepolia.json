@@ -9,6 +9,47 @@
     "exactInput((bytes,address,uint256,uint256))"
   ],
   "maxStalenessSeconds": 86400,
+  "chainlinkOracle": {
+    "status": "VERIFIED-ON-CHAIN 2026-08-29 - Base Sepolia (chainId 84532), RPC https://sepolia.base.org",
+    "purpose": "Testnet mirror of the C-6 launch oracle (see base-mainnet.json.chainlinkOracle). Lets the Chainlink-direct pivot run a full lifecycle/soak/canary on Base Sepolia BEFORE mainnet - the first time the pivot touches a chain. Deploy with DeployChainlinkOracle.s.sol, verify with scripts/verify-chainlink-oracle.mjs (CONFIG=contracts/config/base-sepolia.json), then set BLESSED_ORACLES for Deploy.s.sol.",
+    "verifiedOnChain": "Read from Base Sepolia 2026-08-29 and matched: ETH/USD proxy 0x4aDC..7cb1 decimals()==8, description()=='ETH / USD', latestRoundData answer ~$2,433 fresh (307s); LINK/USD proxy 0xb113..5A61 decimals()==8, description()=='LINK / USD', answer ~$11.30 fresh (1055s). Both proxies carry code (19144 B). Re-run the verifier before deploying (read-only, no key).",
+    "sequencerUptimeFeed": "",
+    "sequencerUptimeFeedNote": "Intentionally EMPTY (address(0)) on this testnet: ChainlinkOracle skips the sequencer guard off a configured sequencer chain, and the guard itself is exercised by ChainlinkOracle.t.sol with a mock (down / within-grace / up) - a stronger test than a live testnet feed. The testnet exercise targets the vault lifecycle + real-feed pricing, not the L2 uptime gate. The mainnet block (base-mainnet.json) carries the REAL verified Base sequencer feed, which is MANDATORY there. This is a deliberate testnet/mainnet asymmetry, not a missing address.",
+    "usdcPin": true,
+    "usdcPinNote": "USDC (0x036C..CF7e = config `usdc`) pinned to 1e18 in ChainlinkOracle. Do NOT also list USDC in assets (the constructor rejects that).",
+    "assets": [
+      {
+        "symbol": "WETH",
+        "asset": "0x4200000000000000000000000000000000000006",
+        "feed": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+        "feedDescription": "Chainlink ETH / USD (8 decimals)",
+        "heartbeatSeconds": 86400,
+        "heartbeatNote": "24h staleness bound (== maxStalenessSeconds). DELIBERATELY generous vs mainnet's 3600: Base Sepolia feeds update irregularly with no economic SLA, so a tight bound would false-freeze a multi-hour soak on testnet-feed flakiness rather than a protocol bug. Mainnet WETH uses 3600.",
+        "minPriceWad": "100000000000000000000",
+        "maxPriceWad": "100000000000000000000000",
+        "bandNote": "sane-price band $100 .. $100,000 (WAD), same as mainnet WETH. Testnet ETH/USD ~ $2,433 at verification - comfortably inside."
+      },
+      {
+        "symbol": "LINK",
+        "asset": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
+        "feed": "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61",
+        "feedDescription": "Chainlink LINK / USD (8 decimals)",
+        "heartbeatSeconds": 86400,
+        "heartbeatNote": "24h staleness bound (testnet-generous, see WETH). LINK stands in for the second mainnet asset (cbBTC) - Base Sepolia has no cbBTC feed, but LINK/USD is a live 8-decimal Chainlink feed, which is all the pivot exercise needs.",
+        "minPriceWad": "1000000000000000000",
+        "maxPriceWad": "1000000000000000000000",
+        "bandNote": "sane-price band $1 .. $1,000 (WAD). Testnet LINK/USD ~ $11.30 at verification - inside."
+      }
+    ],
+    "legacyAssetsNote": "The top-level `assets` block below is the DEPRECATED custom-OracleAggregator shape (quorum + 3 adapters over one feed - the `testnetCompromise`). C-6 replaced that whole path with this chainlinkOracle block. `assets` is retained only for the legacy deploy path / historical reference; the launch path is chainlinkOracle.",
+    "verification": [
+      "For each asset feed: code.length > 0; decimals() <= 18; latestRoundData answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "Sane-price band set (minPriceWad > 0, maxPriceWad >= minPriceWad).",
+      "sequencerUptimeFeed empty on this testnet (guard skipped) - acceptable for the testnet exercise ONLY; mainnet requires it.",
+      "USDC not also present in assets[].",
+      "Run: CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs"
+    ]
+  },
   "assets": [
     {
       "symbol": "WETH",
