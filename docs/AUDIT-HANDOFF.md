@@ -1,27 +1,40 @@
 # Audit Handoff Package
 
-> ## ⚠ THIS PACKAGE DESCRIBES A SUPERSEDED TREE — READ FIRST
+> ## ⚠ READ FIRST — this package predates the Phase-2 remediation (current tree: `protocol/main` @ `fea091ab`, 2026-08-28)
 >
 > An AI pre-audit on **2026-08-25** found **41 issues: 5 Critical, 9 High, 15 Medium, 7 Low**
-> ([audit/AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). A remediation pass on
-> **2026-08-27** then closed twelve of them, changing **six contracts**: `VaultCore`,
-> `Governance`, `OracleAggregator`, `UniswapV3TwapSource`, `VaultFactory` and `lib/BoundedCall`.
+> ([audit/AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md), issues #31–#35). Two remediation phases
+> followed. **The authoritative current status is [AI-AUDIT-REPORT.md](audit/AI-AUDIT-REPORT.md)
+> §1 "Phase-2 remediation disposition" and [LAUNCH-READINESS.md](LAUNCH-READINESS.md)** — not the
+> scope/residuals tables below, which are pre-remediation.
 >
-> **`v0.3.0-audit` is WITHDRAWN as an engagement reference.** It contains all five Criticals.
-> Do not commission against it. The corrected tree should be tagged (`v0.4.0-audit`
-> recommended) and the engagement is a **full review, not a delta** — it must also cover the
-> remediation itself, including the hand-written assembly in `OracleAggregator._tryLatestPrice`.
+> **`v0.3.0-audit` is WITHDRAWN** (contains all five Criticals). Tag the corrected tree
+> (`v0.4.0-audit` recommended) at the current `protocol/main` and commission a **full review, not
+> a delta**.
 >
-> **Still open and in scope:** **C-1** (#33 — a funded sub-vault has an empty electorate; the
-> report's own suggested fix was implemented, measured, and found to break legitimate children
-> while barely raising attacker cost — see the issue), **H-5**, **H-6** (#40), **H-8**, **H-9**,
-> and most of the Medium/Low tier. `VaultCore` has **1,182 bytes** of EIP-170 margin, which is
-> the binding constraint on the remainder.
+> **Phase-2 outcome (for a root-only launch):**
+> - **C-1** (empty-electorate sub-vault capture): FIXED at launch — `VaultFactory.allowSubVaults = false`
+>   ("root vaults only"); no internal fix exists, so sub-vaults are disabled and the sub-vault-only
+>   Highs **H-5/H-6/H-7/H-9** are DORMANT (deferred with the feature).
+> - **C-2, C-3, C-5**: FIXED. **H-1..H-4**: FIXED. **H-8**: partially fixed + config-mitigated.
+> - **C-4 → new Critical C-6.** A Phase-2 *re-verification* replaced the inferred C-4 closure with an
+>   executed end-to-end test and found **C-6**: the bespoke `OracleAggregator`'s quorum is a
+>   fault-tolerance floor, silent on the Byzantine floor (`quorum ≥ 2a+1`) — two adversarial sources
+>   seize an asset's price, re-opening C-4's 88.9% theft. **Resolution = the ORACLE CHANGED.** The
+>   launch oracle is now **Chainlink-direct**: `contracts/src/oracle/ChainlinkOracle.sol` (one genuine
+>   Chainlink Data Feed per asset, no median/quorum), curated via a `VaultFactory` **oracle allowlist**
+>   so the vulnerable custom aggregator is non-selectable. An independent adversarial review accepted
+>   it (8.1/10, no Critical/High). **This is the single most important delta for the audit.**
+> - Remaining Mediums/Lows: dispositioned (accepted design-tradeoffs / off-chain / dormant) in the
+>   report's §1 table.
 >
-> The scope table, invariants and residuals below remain broadly accurate about the
-> *architecture*. Treat every specific line number, test count and "Accepted" disposition as
-> pre-remediation. In particular the "Known residuals" table below predates the pre-audit and
-> does not list it — [LAUNCH-READINESS.md](LAUNCH-READINESS.md) is the current status of record.
+> **Launch is NO-GO on two external gates:** (1) the mainnet deploy config must supply
+> **real, on-chain-verified Base Chainlink feed addresses** (the `chainlinkOracle` block in
+> `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
+> refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
+>
+> Treat every specific line number, size (VaultCore now ~283 B of EIP-170 margin, not 1,182),
+> test count and "Accepted" disposition below as pre-remediation — verify against the current tree.
 
 
 Everything an external auditor needs to scope the engagement. Current as of the **Sprint-10
