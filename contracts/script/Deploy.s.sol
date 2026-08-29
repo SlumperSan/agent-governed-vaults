@@ -34,7 +34,7 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 /// their own at createVault time (venue/source choice is a per-vault decision, C-2/SF-1), so
 /// this script deploys none.
 contract Deploy is Script {
-    uint256 constant BASE_MAINNET_CHAIN_ID = 8453; // C-6: the chain the oracle-allowlist guard binds
+    uint256 constant LOCAL_CHAIN_ID = 31337; // anvil / forge test — the ONLY chain an empty oracle allowlist is allowed on
 
     function run()
         external
@@ -57,15 +57,17 @@ contract Deploy is Script {
 
         // C-6: blessed oracle allowlist. Supply the curated ChainlinkOracle instance(s) — deployed
         // over verified genuine Chainlink Data Feeds (see DeployChainlinkOracle.s.sol) — via the
-        // BLESSED_ORACLES env var (comma-separated addresses). A Base-mainnet deploy REFUSES to run
-        // with an empty allowlist: enforcement-off on mainnet would re-open C-6 (any creator-supplied
-        // oracle, including a weak custom aggregator or a fake-feed oracle, would be accepted).
-        // Testnet / local may run empty (permissive). This turns the C-6 gate from a documented
-        // warning into a deploy-time invariant.
+        // BLESSED_ORACLES env var (comma-separated addresses). An empty allowlist ships the C-6 gate
+        // DISABLED (any creator-supplied oracle accepted, including a weak custom aggregator or a
+        // fake-feed oracle), which is only ever acceptable on the LOCAL test chain (anvil/forge =
+        // 31337). On ANY real chain — Base mainnet, any other L2, or a wrong-RPC chainid — refuse an
+        // empty allowlist rather than silently deploying enforcement-off. (This guard was previously a
+        // denylist of just chainid 8453, which left every OTHER chain permissive — an empty allowlist
+        // on a mis-pointed RPC would have shipped the gate off; hardened 2026-08-29 after review.)
         address[] memory blessedOracles = vm.envOr("BLESSED_ORACLES", ",", new address[](0));
         require(
-            block.chainid != BASE_MAINNET_CHAIN_ID || blessedOracles.length > 0,
-            "C-6: Base-mainnet deploy requires a non-empty BLESSED_ORACLES allowlist"
+            block.chainid == LOCAL_CHAIN_ID || blessedOracles.length > 0,
+            "C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)"
         );
 
         factory = new VaultFactory(

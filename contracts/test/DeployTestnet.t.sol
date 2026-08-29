@@ -108,9 +108,22 @@ contract DeployTestnetTest is Test {
     function test_testnetDeployRevertsOnWrongChain() public {
         _mockFeed(ETH_USD_FEED, 1917e8);
         _mockFeed(LINK_USD_FEED, 975e6);
-        vm.chainId(8453); // Base MAINNET against a base-sepolia config must fail hard
+        vm.chainId(999); // a non-mainnet chain whose id does not match the base-sepolia config (84532)
         DeployTestnet d = new DeployTestnet();
-        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 84532, 8453));
+        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 84532, 999));
+        d.run();
+    }
+
+    /// @notice This testnet script hardcodes allowSubVaults=true; on Base MAINNET that is the C-1
+    /// topology (mainnet launches root-only via Deploy.s.sol). The guard refuses chainid 8453 up
+    /// front, regardless of config — so no operator can stand up an immutable mainnet factory with
+    /// sub-vaults enabled by pointing this script at a mainnet RPC.
+    function test_refusesBaseMainnet() public {
+        vm.chainId(8453); // Base mainnet
+        DeployTestnet d = new DeployTestnet();
+        vm.expectRevert(
+            bytes("DeployTestnet refuses Base mainnet: it enables sub-vaults (C-1) - use Deploy.s.sol")
+        );
         d.run();
     }
 }
