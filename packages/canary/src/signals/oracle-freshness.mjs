@@ -239,12 +239,22 @@ async function checkAsset({ reader, vault, oracle, asset, model, nowSec, minHead
     return alert({
       ...id,
       message: `oracle breaker TRIPPED for ${shortAddr(asset)} on vault ${shortAddr(vault)}: priceWad reverts StaleOracle — NAV and exits are frozen for this vault. Cause: ${measured.tripCause}`,
-      measured: `StaleOracle (${measured.tripCause})`, threshold: 'priceWad returns a price',
+      // `measured` rides in the one-line transition suffix "(measured X, threshold Y)", so it stays
+      // SHORT: the cause is a sentence and already lives in the message and in detail.tripCause.
+      measured: 'StaleOracle', threshold: 'priceWad returns a price',
       detail: { ...detail, revertName: 'StaleOracle', tripCause: measured.tripCause },
     });
   }
 
   // ── 2. priced fine. How much heartbeat is left before it is not?
+  //
+  // `gateFailing` can still be set here: the sequencer read and this price read are separate
+  // eth_calls within one sweep (this signal pins no block), so a sequencer that recovered — or a
+  // grace window that elapsed — between them yields an ALERTing sequencer key beside a priced
+  // asset. Both are true as measured; carrying the reason into `detail` is what lets a webhook
+  // consumer reconcile the pair instead of reading them as a contradiction.
+  if (gateFailing) detail.gateFailing = gateFailing.reason;
+
   if (!model.chainlink) {
     return ok({
       ...id,

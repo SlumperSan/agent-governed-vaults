@@ -202,6 +202,19 @@ test('an UNRECOGNIZED priceWad revert still ALERTS — there is no assume-health
   assert.equal(r.detail.revertName, null);
 });
 
+test('the tripped-breaker `measured` stays short — the cause belongs in the message, not the suffix', async () => {
+  // Transition lines append "(measured X, threshold Y)". A sentence-long `measured` would wrap the
+  // one-line alert format this package exists to produce.
+  const reader = readerWith({
+    [ORACLE]: chainlinkOracle({ price: () => ({ revert: STALE_ORACLE }) }),
+    [FEED]: round(ANSWER, agoSec(90_000)),
+  });
+  const r = byKey(await run(reader), ASSET);
+  assert.equal(r.measured, 'StaleOracle');
+  assert.ok(r.measured.length < 40);
+  assert.ok(r.detail.tripCause.length > 40, 'the long form is carried in detail instead');
+});
+
 // ── the L2 sequencer gate ────────────────────────────────────────────────────
 
 test('a DOWN sequencer pages ONCE for the vault, and the assets defer to it', async () => {
@@ -322,4 +335,18 @@ test('fans out one result per asset so one stale asset cannot flap the whole vau
   assert.equal(byKey(results, ASSET).status, 'ok');
   assert.equal(byKey(results, OTHER).status, 'alert');
   assert.equal(new Set(results.map((r) => r.id)).size, 3, 'distinct transition keys');
+});
+
+test('a sequencer that recovers mid-sweep leaves the two results reconcilable', async () => {
+  // The sequencer read and the price read are separate eth_calls in one sweep, so an ALERTing
+  // sequencer key beside a priced asset is reachable, not a fixture artifact. Both are true as
+  // measured; the asset must carry the gate reason so a consumer can pair them.
+  const reader = readerWith({
+    [ORACLE]: chainlinkOracle({ sequencer: SEQ_FEED }), // priceWad succeeds
+    [SEQ_FEED]: round(1n, agoSec(10)),                  // ...while the gate reads DOWN
+  });
+  const results = await run(reader);
+  assert.equal(byKey(results, SEQUENCER_KEY).status, 'alert');
+  assert.equal(byKey(results, ASSET).status, 'ok');
+  assert.equal(byKey(results, ASSET).detail.gateFailing, 'sequencer-down');
 });
