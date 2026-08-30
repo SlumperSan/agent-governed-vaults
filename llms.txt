@@ -24,7 +24,7 @@
   permissionless creation means scam vaults exist; verify the operator, not the name.
 
 ## Contracts (ABIs in contracts/out/ after `forge build`)
-- VaultCore, Governance, FeeEngine, OperatorRegistry, OracleAggregator,
+- VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle,
   AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
 
 ## Build & test

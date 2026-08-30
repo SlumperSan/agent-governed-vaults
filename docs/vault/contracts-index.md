@@ -7,7 +7,7 @@ here and follow the `[[wikilinks]]` into each module.
 ## Why it matters
 
 Everything the protocol promises — permissionless USDC index vaults, AI-agent governance by
-commit-reveal vote, in-kind two-mode exits, a multi-source price oracle — is enforced here or
+commit-reveal vote, in-kind two-mode exits, a fail-closed Chainlink price oracle — is enforced here or
 nowhere. The design is deliberately **admin-free**: there are no upgrade proxies, no owner
 setters, no pause guardian. Every trust-relevant choice is fixed at construction and immutable
 after, because the vault creator is treated as **untrusted by explicit design**. That posture is
@@ -18,12 +18,13 @@ what makes constructor validation load-bearing and what shapes nearly every secu
 - [[vaultcore]] — holds ALL funds; shares, NAV, deposits, redemptions, rebalancing, sub-vault
   flows. EIP-170-constrained (the binding size limit of the whole package).
 - [[governance]] — commit-reveal proposals, quorum, standing defaults, delegation, timelock.
-- [[oracleaggregator]] — the bespoke per-vault multi-source **median** oracle (finding
-  [[c6-oracle-byzantine]] lives here).
-- [[chainlinkoracle]] — the **NEW additive** Chainlink-direct oracle ([[chainlink-direct-pivot]])
-  that **resolves** C-6 by removing the median entirely.
-- [[oracle-sources]] — the `IPriceSource` implementations feeding OracleAggregator (Chainlink
-  adapter, Uniswap V3 TWAP, Pyth), i.e. SF-1 mechanism diversity.
+- [[chainlinkoracle]] — **the launch oracle**: one genuine Chainlink Data Feed per asset, no
+  median and no quorum, fail-closed ([[chainlink-direct-pivot]]). It **resolves** C-6.
+- [[oracleaggregator]] — **RETIRED**, moved to `contracts/test/retired/`: the bespoke per-vault
+  multi-source **median** oracle that finding [[c6-oracle-byzantine]] killed. Design record only.
+- [[oracle-sources]] — **RETIRED**, moved to `contracts/test/retired/`: the `IPriceSource`
+  implementations that fed OracleAggregator (Chainlink adapter, Uniswap V3 TWAP, Pyth), i.e. the
+  SF-1 mechanism-diversity argument. There is no `IPriceSource` layer on the launch path.
 - [[vaultfactory]] — permissionless canonical deployment + attestation; carries the C-1
   `allowSubVaults=false` launch gate ([[root-vaults-only]]).
 - [[vaultdeployer]] — the factory's one construction path; exists solely because VaultCore's
@@ -61,10 +62,16 @@ remediation. Current margins (post-M-15; see [[vaultcore]] for the reconciliatio
 | Contract | Runtime | Margin |
 | --- | --- | --- |
 | VaultCore | ~24,293 B | **~283 B** |
+| ChainlinkOracle | ~1,532 B | ~23,044 B |
 | Governance | ~12,051 B | ~12,525 B |
-| UniswapV3TwapSource | ~5,169 B | ~19,407 B |
-| VaultFactory | ~2,818 B | ~21,758 B |
-| OracleAggregator | ~1,215 B | ~23,361 B |
+| VaultFactory | ~3,572 B | ~21,004 B |
+
+> **Only `VaultCore` is size-constrained.** Prior sessions treated `VaultFactory` and
+> `ChainlinkOracle` as tight; the 2026-08-30 measurement says otherwise — 21,004 B and 23,044 B
+> spare respectively. *(Figures as recorded on 2026-08-30, not re-measured here:
+> `forge build --sizes` cannot run while the tree does not build.)* `VaultCore`'s ~283 B, by contrast, means anything `VaultCore`-shaped is now
+> effectively closed. `UniswapV3TwapSource` and `OracleAggregator` are no longer in the deployable
+> set (retired to `contracts/test/retired/`), so their sizes are dropped from this table.
 
 ## Links
 

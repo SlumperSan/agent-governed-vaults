@@ -1,8 +1,15 @@
 # OracleAggregator
 
+> **⚠ RETIRED — not the launch oracle, and no longer in `contracts/src/`.** Finding
+> [[c6-oracle-byzantine]] proved this design could not be secured by curation, so it was
+> **replaced** by [[chainlinkoracle]] rather than patched ([[chainlink-direct-pivot]]). The source
+> now lives at **`contracts/test/retired/OracleAggregator.sol`**, kept only as the C-4/C-6 exploit
+> evidence; the `VaultFactory` oracle allowlist makes it non-selectable on the launch path. This
+> note is the design record. Read it as history.
+
 The bespoke per-vault price oracle: a **multi-source median** with a per-asset staleness circuit
-breaker. Config is immutable after construction — no admin can swap sources, retune staleness, or
-lower the quorum. `contracts/src/OracleAggregator.sol`.
+breaker. Config was immutable after construction — no admin could swap sources, retune staleness, or
+lower the quorum. `contracts/test/retired/OracleAggregator.sol` (was `contracts/src/`).
 
 ## Why it matters
 
@@ -10,7 +17,7 @@ NAV is priced through this contract, so it decides what a share is worth on ever
 redemption, and rebalance. A wrong or manipulable price here is a direct theft vector (mint cheap
 shares, redeem rich). It is also the contract that **could not be fully secured** against an
 adversarial source set — finding [[c6-oracle-byzantine]] is fundamental to the median design, which
-is exactly why [[chainlinkoracle]] was added as an alternative that removes the median.
+is exactly why [[chainlinkoracle]] replaced it. Nothing here prices a launch vault.
 
 ## Key state and constants
 

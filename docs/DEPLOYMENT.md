@@ -94,6 +94,13 @@ launch by §1** (the curated Chainlink-direct oracle) — audit finding **C-6**.
 with the `quorum ≥ 2a+1` Byzantine floor; do NOT use it for a mainnet launch (and the factory
 allowlist makes it non-selectable there anyway).
 
+> **⚠ These contracts are no longer in `contracts/src/`.** `OracleAggregator.sol`,
+> `PythSource.sol`, `UniswapV3TwapSource.sol` and their vendored `FullMath`/`TickMath` were moved
+> to **`contracts/test/retired/`**, where they are kept only as the C-4/C-6 exploit evidence. They
+> are not part of the deployable set, and the constructor calls below will not resolve against a
+> current checkout without moving them back. Read this subsection as the record of a retired
+> design, not as a runbook you can execute.
+
 **DEFERRED — the custom multi-source oracle (pre-C-6), do not use for launch:**
 
 1. **The oracle stack — three mechanism classes.** ⚠ **Quorum 2-of-3 is UNSAFE (H-1/C-6):** it lets
@@ -211,16 +218,26 @@ Run each check against the live addresses:
       all resolve; re-wiring reverts.
 - [ ] `factory.createVault` from a fresh EOA attests it: `registry.operatorOf(vault) != 0`.
 - [ ] A test deposit → 4h window → `activate` mints shares; `navWad()` excludes the pending amount.
-- [ ] `oracle.priceWad(asset)` returns a sane median; disabling one source keeps quorum;
-      disabling to below quorum reverts `StaleOracle` (breaker works).
-- [ ] Each source class **individually** returns a sane price and a plausible `updatedAt`:
-      `chainlinkSource.latestPrice()`, `twapSource.latestPrice()`, `pythSource.latestPrice()`.
-      All three should agree within single-digit bps in a calm market — a large gap means a
-      wrong pool, feed or price id, not a market inefficiency.
-- [ ] No source returns `(0, 0)` on a healthy chain. A permanently-silent source is invisible
-      inside a 2-of-3 quorum until the day one of the other two fails. For the TWAP source,
-      `computePriceWad()` reverts with the specific reason where `latestPrice()` merely
-      withholds — use it to diagnose.
+- [ ] `oracle.priceWad(asset)` returns a sane price for **every** basket asset, and reverts
+      `StaleOracle(asset)` for an asset the oracle does not list (the breaker's own verdict).
+- [ ] Re-run `node scripts/verify-chainlink-oracle.mjs` against the **deployed** oracle
+      (read-only, no key): every feed carries code, `decimals() <= 18`, `answer > 0`, is fresh
+      within its configured heartbeat, and its `description()` is an ASSET/**USD** pair — not
+      ASSET/ETH. Base publishes a `CBETH / ETH` feed and no cbETH/USD one; wiring it would read an
+      ETH-denominated number as USD, permanently.
+- [ ] `oracle.feedOf(asset)` matches the config for each asset: right feed address, right
+      heartbeat, and a sane-price band that brackets the current price with room for a real move
+      but not for a deprecated min/maxAnswer clamp value.
+- [ ] `oracle.sequencerUptimeFeed()` is the **Base L2 sequencer uptime feed**, not `address(0)`.
+      A mainnet deploy without it has no sequencer guard at all. Confirm `latestRoundData()`
+      answers `0` (up) and that `block.timestamp - startedAt > 3600` (outside the grace period),
+      or `priceWad` will revert for every asset.
+- [ ] `factory.isAllowedOracle(<oracle>)` is true and `factory.oracleAllowlistEnforced()` is true
+      — the C-6 curation gate. An unenforced allowlist on mainnet ships the finding.
+- [ ] **Know what has no check:** there is exactly one feed per asset, so there is nothing to
+      cross-check the price against. The heartbeat, the band and the sequencer gate are the only
+      defences, and a feed deprecation fails that asset closed with no fallback and no rotation
+      lever. That is gate 5's named residual, accepted deliberately.
 - [ ] A full governance dry-run on testnet: propose → commit → reveal → finalize → execute a
       no-op rebalance; confirm a Mode-F exit during reveal settles at post-execution NAV.
 - [ ] Exit path: instant Mode-I exit pays pro-rata; exit fee accrues to remainers, never the operator.

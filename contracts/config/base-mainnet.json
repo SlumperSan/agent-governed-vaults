@@ -194,6 +194,7 @@
       "For each asset: a sane-price band MUST be set — minPriceWad > 0 and maxPriceWad >= minPriceWad (the depeg-clamp defence; 0/0 is rejected by the verifier for mainnet).",
       "sequencerUptimeFeed: code.length > 0 and latestRoundData() answers.",
       "USDC not also present in assets[].",
+      "Heartbeat and band are BOUNDED ON-CHAIN by the ChainlinkOracle constructor: heartbeatSeconds in [600, 86400]; an enabled band needs minPriceWad > 0, maxPriceWad > minPriceWad, maxPriceWad <= 1000 * minPriceWad, and it must contain the feed's current answer. Off-chain verification is no longer the only thing standing between a typo and a permanently mis-parameterised immutable oracle.",
       "Run: node scripts/verify-chainlink-oracle.mjs (exit 0 => may deploy)."
     ]
   },

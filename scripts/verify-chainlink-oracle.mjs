@@ -17,7 +17,10 @@
  *   - a feed with unexpected `decimals()` (the WAD scale is cached at construction from it);
  *   - a stale feed whose last answer is already older than its own heartbeat;
  *   - a non-positive answer (a broken/deprecated feed);
- *   - a missing L2 Sequencer Uptime Feed (mandatory on Base — the ChainlinkOracle reverts without it).
+ *   - a heartbeat or sane-price band outside the bounds the ChainlinkOracle constructor enforces
+ *     (a heartbeat so long the staleness guard can never fire, or a band so wide it admits anything).
+ *   - a missing L2 Sequencer Uptime Feed (mandatory on every chain except the exempt ids below — the
+ *     ChainlinkOracle would otherwise serve prices computed while the sequencer was down).
  * Each check below fails the config rather than letting the deploy proceed.
  *
  * Exit 0 = every listed feed passed; the `chainlinkOracle` block may be flipped to VERIFIED and the
@@ -26,9 +29,12 @@
  *
  * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
  *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
- *        chainId — Base mainnet 8453 or Base Sepolia 84532), CAST (default `cast`).
- *        The L2 sequencer feed is REQUIRED only on Base mainnet; off-mainnet an empty one is accepted
- *        (the guard is skipped there and mock-tested in ChainlinkOracle.t.sol).
+ *        chainId — Base mainnet 8453 or Base Sepolia 84532; any other chainId must supply BASE_RPC
+ *        explicitly), CAST (default `cast`).
+ *        The L2 sequencer feed is REQUIRED on every chain except local 31337 and Base Sepolia 84532,
+ *        whose config leaves it empty by design (the guard is skipped there and mock-tested in
+ *        ChainlinkOracle.t.sol). Same allowlist, same fail-closed default, as the on-chain rule in
+ *        DeployChainlinkOracle.s.sol — keep the two in sync.
  * Run:  node scripts/verify-chainlink-oracle.mjs [--json]                 # mainnet (default)
  *       CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs   # testnet
  */
@@ -43,17 +49,35 @@ const CFG_PATH_REL =
   process.env.CONFIG ?? process.argv.find((a) => a.endsWith('.json')) ?? 'contracts/config/base-mainnet.json';
 const CFG_PATH = path.isAbsolute(CFG_PATH_REL) ? CFG_PATH_REL : path.join(ROOT, CFG_PATH_REL);
 const CFG = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
-// RPC: explicit env wins; otherwise pick the public Base RPC for the config's chain.
-const RPC =
-  process.env.BASE_MAINNET_RPC ??
-  process.env.BASE_RPC ??
-  (CFG.chainId === 84532 ? 'https://sepolia.base.org' : 'https://mainnet.base.org');
-// Mainnet is the only chain where the L2 sequencer uptime feed is mandatory (ChainlinkOracle reverts
-// every price without it). Off-mainnet (testnet/local) an empty sequencer means the guard is skipped.
-const IS_MAINNET = CFG.chainId === 8453;
+// RPC: explicit env wins; otherwise the public Base RPC for the config's chain. Only the two chains
+// this repo has configs for get a default: an UNRECOGNIZED chainId used to fall through to Base
+// mainnet, which would have read feed addresses off the wrong chain and reported the result as a
+// verification. Demand an explicit RPC instead (same fail-closed default as the sequencer rule below).
+const DEFAULT_RPC = {8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org'}[CFG.chainId];
+const RPC = process.env.BASE_MAINNET_RPC ?? process.env.BASE_RPC ?? DEFAULT_RPC;
+if (!RPC) {
+  console.error(
+    `verify-chainlink-oracle: no default RPC for chainId ${CFG.chainId} (${CFG_PATH_REL}). ` +
+      'Set BASE_RPC to an RPC for THAT chain — guessing one would verify feeds against the wrong chain.',
+  );
+  process.exit(1);
+}
+// Which chains may ship WITHOUT an L2 sequencer uptime feed: an ALLOWLIST of the ids known to have
+// none (local anvil; Base Sepolia, whose config leaves it empty by design), fail-closed for every
+// other id — this mirrors DeployChainlinkOracle.requiresSequencerUptimeFeed, which is the guard that
+// actually blocks the deploy. Previously this was `chainId === 8453`, so a config for any OTHER L2
+// passed verification with an empty sequencer feed, matching the deploy-script hole (fixed 2026-08-29).
+const SEQUENCER_EXEMPT_CHAIN_IDS = new Set([31337, 84532]);
+const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);
 const CAST = process.env.CAST ?? 'cast';
 const JSON_OUT = process.argv.includes('--json');
 const ZERO = '0x0000000000000000000000000000000000000000';
+// Mirrors of the bounds ChainlinkOracle's constructor now enforces (MIN_HEARTBEAT / MAX_HEARTBEAT /
+// MAX_BAND_RATIO). Duplicated here on purpose: catching a bad config BEFORE `--broadcast` costs a
+// read-only run, and catching it after costs a redeploy of an immutable contract.
+const MIN_HEARTBEAT = 600n;
+const MAX_HEARTBEAT = 86400n;
+const MAX_BAND_RATIO = 1000n;
 
 /** @type {{name:string, ok:boolean, detail:string}[]} */
 const results = [];
@@ -124,15 +148,15 @@ function main() {
     return finish();
   }
 
-  // 1. Sequencer uptime feed — mandatory on Base.
+  // 1. Sequencer uptime feed — mandatory on every chain outside the exempt allowlist.
   const seq = co.sequencerUptimeFeed;
   if (!seq || seq === ZERO) {
     check(
       'sequencer uptime feed',
-      !IS_MAINNET,
-      IS_MAINNET
-        ? 'empty/zero — REQUIRED on Base mainnet (ChainlinkOracle reverts every price without it)'
-        : 'empty/zero — guard intentionally skipped off-mainnet (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
+      !SEQUENCER_REQUIRED,
+      SEQUENCER_REQUIRED
+        ? `empty/zero — REQUIRED on chain ${CFG.chainId} (the deploy script refuses it; without the feed the oracle would price through a sequencer outage)`
+        : 'empty/zero — guard intentionally skipped on an exempt chain (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
     );
   } else {
     const hasCode = code(seq).length > 2;
@@ -190,6 +214,11 @@ function main() {
     const hb = BigInt(a.heartbeatSeconds ?? 0);
     const age = nowSec > rd.updatedAt ? nowSec - rd.updatedAt : 0n;
     check(`${label}: fresh within heartbeat`, hb > 0n && age <= hb, `age=${age}s heartbeat=${hb}s`);
+    check(
+      `${label}: heartbeat within on-chain bounds`,
+      hb >= MIN_HEARTBEAT && hb <= MAX_HEARTBEAT,
+      `heartbeat=${hb}s (constructor accepts ${MIN_HEARTBEAT}..${MAX_HEARTBEAT}s; below the floor freezes a healthy feed, above the ceiling the staleness guard can never fire)`,
+    );
     // sane-price band: a MAINNET blessed oracle MUST set one (the depeg-clamp defence — Chainlink
     // deprecated its on-aggregator min/maxAnswer, so a clamp value can read "fresh"). Require a
     // non-zero, well-ordered band. (Audit Council follow-up: the band was off in every fixture.)
@@ -197,9 +226,21 @@ function main() {
     const mx = BigInt(a.maxPriceWad ?? '0');
     check(
       `${label}: sane-price band set (depeg defence)`,
-      mx > 0n && mn > 0n && mn <= mx,
+      mx > 0n && mn > 0n && mn < mx,
       mx === 0n || mn === 0n ? `min=${mn} max=${mx} — BAND DISABLED; set a real min/max for a mainnet feed` : `min=${mn} max=${mx}`,
     );
+    // Width and containment, mirroring the constructor. A band wider than MAX_BAND_RATIO admits a
+    // >99.9% collapse as "sane"; a band that already excludes the live answer reverts on first read.
+    if (mn > 0n && mx > mn) {
+      check(`${label}: band width within on-chain bound`, mx <= mn * MAX_BAND_RATIO, `ratio=${mx / mn}x (max ${MAX_BAND_RATIO}x)`);
+      const scale = dec !== null && BigInt(dec) <= 18n ? 10n ** (18n - BigInt(dec)) : null;
+      const spotWad = scale !== null && rd.answer > 0n ? rd.answer * scale : null;
+      check(
+        `${label}: live price inside the band`,
+        spotWad !== null && spotWad >= mn && spotWad <= mx,
+        spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
+      );
+    }
   }
 
   finish();

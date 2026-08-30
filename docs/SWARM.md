@@ -49,6 +49,82 @@ The shorthand for this is **"update ob"**.
 
 ---
 
+## 0.5 Route the model to the task
+
+Every agent runs on a model and an effort level, and both are choices. Running the strongest model
+at the highest effort on mechanical work is not "being careful" — it is slower and more expensive
+for an identical result. Running a cheap model on a permanent, irreversible decision is the opposite
+mistake, and far worse. Route deliberately.
+
+| Tier | Use it for | Effort |
+|---|---|---|
+| **Haiku** | Mechanical and verifiable: sweeps, greps, collation, renames, link fixes, formatting, scaffolding from a template, gathering data for someone else to judge. | low |
+| **Sonnet** | Implementation against a clear spec where tests are the oracle: components, docs, straightforward refactors, test writing. | medium |
+| **Fable** | Writing- and judgement-heavy work with no single correct answer: charters, strategy, market and partner analysis, comms, positioning. | medium–high |
+| **Opus** | Anything where a wrong answer is permanent or expensive: security review, contract changes, adversarial verification, merge conflicts in security code, architecture decisions, launch-parameter calls. | high–max |
+
+**The one rule that is not a preference: never route security-critical judgment below the top tier.**
+These contracts are immutable. A cheap wrong answer about `VaultCore` cannot be patched later, and
+the saving is measured in cents against funds that cannot be recovered.
+
+Two heuristics that settle most cases:
+
+- **Ask what a wrong answer costs.** Cheap and instantly visible (a broken link, a failed build)
+  routes down. Permanent, silent, or financial routes up.
+- **Ask whether the task has a checkable oracle.** If tests, a compiler, or a schema will catch a
+  mistake, a smaller model is safe because the mistake cannot survive. If the only check is
+  judgement, pay for judgement.
+
+Within one workflow, mix tiers rather than picking one for the whole run: a Haiku pass to gather
+and normalize, Sonnet to implement, Opus to adversarially review. The review stage is the last place
+to economize — it exists precisely to catch what the implementer got wrong.
+
+---
+
+## 0.7 Departments collaborate — check before you produce
+
+Departments are not silos. Two failures come from treating them as such: **double work** (two
+departments independently write the same analysis) and **information leakage** (one department
+ships a claim another department already knows is false).
+
+The second is the dangerous one. Marketing writing "zero capital cost to the operator" is not a
+copy error — Finance has the number, Development knows the contract enforces it, and Legal knows
+that claim is exactly the kind that attracts a regulator. A claim is only as good as the department
+best placed to check it.
+
+### Before you produce, read what already exists
+
+The Obsidian vault's `Business/` tree is the shared surface, and `npm run cc` lists every
+department's notes with how recently each changed. Read the neighbouring departments' output before
+writing yours. If another department has already answered your question, cite it — do not
+re-derive it, and do not quietly contradict it. If you believe they are wrong, say so explicitly
+and name the note, so the disagreement is visible rather than buried in two conflicting documents.
+
+### Who checks what
+
+Route an artifact through the departments that can actually falsify it:
+
+| Artifact | Must be checked by | For what |
+|---|---|---|
+| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim needing counsel sign-off |
+| Anything claiming a capability | **Development** | does the feature exist, on which network, and is it in the launch scope |
+| Anything with a number in it | **Finance** | is the number derived from the code, or asserted |
+| Anything promising a response | **Operations** | can a one-to-two person rotation actually honour it |
+| Anything naming a counterparty | **BD** | is the relationship real, and is the claim about them defensible |
+| Anything a user will read in-product | **Design** | is it legible under stress, and accessible |
+
+This is the same idea as the review pattern in section 3, applied across departments instead of
+within one: the producer does not get to be the only judge.
+
+### Say what you need, do not invent it
+
+When your work needs something another department owns — a number, a legal position, a statement
+about what the code does — **ask for it in your report rather than assuming it.** An assumed number
+that turns out wrong propagates into every document that cites it. Explicitly listing what you took
+from where makes the dependency visible and cheap to correct.
+
+---
+
 ## 1. The unit of work
 
 **One agent owns one module.** Not one feature spanning six files — one file, or one tightly-bounded

@@ -27,7 +27,7 @@ The remediation is itself the strongest evidence for the top residual risk — *
 
 ## Byte budget — why it decided what could be fixed
 
-`VaultCore` began the session with 1,560 B of EIP-170 margin and ended with **1,014 B**. The path was non-monotonic: H-4 cost 375 and M-4 cost 3 (→1,182); **M-11 returned 336** (→1,518); M-2 spent 504 on escrow routing. M-2 was affordable **only because M-11 came first**. H-5/H-6/H-9 and M-15's exit-side remain unfixed because they land in `VaultCore` and do not fit — which is also why the [[delegatecall-split-rejected]] was considered, then dropped once sub-vaults were disabled.
+`VaultCore` began the session with 1,560 B of EIP-170 margin and ended with **1,014 B** (a dated record — the live figure is **~283 B** since M-15's deposit overload spent 731 B; see [[vaultcore]]). The path was non-monotonic: H-4 cost 375 and M-4 cost 3 (→1,182); **M-11 returned 336** (→1,518); M-2 spent 504 on escrow routing. M-2 was affordable **only because M-11 came first**. H-5/H-6/H-9 and M-15's exit-side remain unfixed because they land in `VaultCore` and do not fit — which is also why the [[delegatecall-split-rejected]] was considered, then dropped once sub-vaults were disabled.
 
 ## Links
 
