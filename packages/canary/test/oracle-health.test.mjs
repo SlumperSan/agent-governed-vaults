@@ -130,6 +130,74 @@ test('the early-warning bar is OFF by default, and alerts once enabled', async (
   assert.equal(warned.detail.warnAtSec, 3240);
 });
 
+// ── the derived early-warning bar (make the threshold derived, not assumed) ──────────────────
+
+test('with no cadence configured, the default-off case NAMES why, instead of a silent absence', async () => {
+  const r = forAsset(await run(readerFor({ ageSec: 3599, heartbeat: 3600 })));
+  assert.equal(r.status, 'ok');
+  assert.equal(r.detail.warnBarSource, 'off');
+  assert.match(r.detail.warnDisabledReason, /cadence unknown/);
+  assert.equal(r.detail.warnAtSec, undefined, 'no bar means no threshold to report');
+});
+
+test('the bar is DERIVED from the feed cadence, pinned to the real mainnet launch numbers (heartbeat 3600s, cadence 1200s)', async () => {
+  const cadenceByAsset = { [ASSET]: 1200 };
+  // 2x the feed's own cadence = 2400s, well above the ~1200s worst-case healthy age and still
+  // 1200s of runway before the 3600s freeze.
+  const belowBar = forAsset(await run(readerFor({ ageSec: 2399, heartbeat: 3600 }), { cadenceByAsset }));
+  assert.equal(belowBar.status, 'ok');
+  assert.equal(belowBar.detail.warnBarSource, 'derived');
+  assert.equal(belowBar.detail.warnAtSec, 2400);
+  assert.equal(belowBar.detail.stalenessWarnPct, 66.7);
+
+  const atBar = forAsset(await run(readerFor({ ageSec: 2400, heartbeat: 3600 }), { cadenceByAsset }));
+  assert.equal(atBar.status, 'alert');
+  assert.match(atBar.message, /AGEING/);
+  assert.match(atBar.message, /derived from a 1200s feed cadence/);
+  assert.equal(atBar.detail.warnAtSec, 2400);
+  assert.equal(atBar.detail.warnBarSource, 'derived');
+});
+
+test('the derived bar DISABLES itself, never tightens, when the heartbeat is not comfortably wider than the cadence', async () => {
+  // This is the regression #89 shipped the whole feature off by default to avoid: heartbeat ==
+  // cadence means a healthy feed's age can sit arbitrarily close to the heartbeat right before an
+  // ordinary scheduled publish. A naive percentage bar would page on that every time. Even at
+  // ageSec one second short of the freeze, the derived bar must stay silent, not fire.
+  const cadenceByAsset = { [ASSET]: 1200 };
+  const r = forAsset(await run(readerFor({ ageSec: 1199, heartbeat: 1200 }), { cadenceByAsset }));
+  assert.equal(r.status, 'ok', 'must NOT page on correct behaviour when the ratio is unsafe');
+  assert.equal(r.detail.warnBarSource, 'off');
+  assert.match(r.detail.warnDisabledReason, /not comfortably wider/);
+  assert.equal(r.detail.warnAtSec, undefined);
+});
+
+test('a manual ORACLE_STALENESS_WARN_PCT of 0 forces the warning off even when the derivation would enable it', async () => {
+  // The manual override must win outright, in both directions — an operator who explicitly muted
+  // the bar must not be silently re-enabled by the derived default the moment cadence is wired up.
+  const cadenceByAsset = { [ASSET]: 1200 };
+  const r = forAsset(await run(readerFor({ ageSec: 3500, heartbeat: 3600 }), {
+    stalenessWarnPct: 0, cadenceByAsset,
+  }));
+  assert.equal(r.status, 'ok', 'explicit 0 must override an otherwise-firing derived bar');
+  assert.equal(r.detail.warnBarSource, 'manual');
+  assert.equal(r.detail.stalenessWarnPct, 0);
+  assert.equal(r.detail.warnAtSec, undefined);
+});
+
+test('a manual ORACLE_STALENESS_WARN_PCT still wins over the derivation when both are supplied', async () => {
+  // Positive-override case, mirrored against the 0-override case above. The manual bar (50% of
+  // 3600s = 1800s) fires EARLIER than the derived one (2 x 1200s cadence = 2400s) would. Firing at
+  // ageSec 2000 — above the manual bar, below the derived one — proves the manual value drove the
+  // verdict, not the derivation quietly winning anyway.
+  const cadenceByAsset = { [ASSET]: 1200 };
+  const r = forAsset(await run(readerFor({ ageSec: 2000, heartbeat: 3600 }), {
+    stalenessWarnPct: 50, cadenceByAsset,
+  }));
+  assert.equal(r.status, 'alert');
+  assert.equal(r.detail.warnBarSource, 'manual');
+  assert.equal(r.detail.warnAtSec, 1800);
+});
+
 // ── the other four freeze causes ─────────────────────────────────────────────
 
 test('a price outside the configured SANE-PRICE BAND alerts, and the band gates on max alone', async () => {

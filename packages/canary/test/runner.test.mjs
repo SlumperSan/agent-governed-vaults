@@ -385,3 +385,57 @@ test('config: the ChainlinkOracle early-warning bar is off by default and is its
   assert.equal(cfg.oracleStalenessWarnPct, 80);
   assert.equal(cfg.oracleMinMargin, 0, 'the retired knob is untouched');
 });
+
+test('config: "unset" and "explicitly 0" are distinguishable, which is what lets the derived bar apply by default', () => {
+  // The derived default in signals/oracle-health.mjs must only fire when nothing was set — an
+  // operator who explicitly wrote ORACLE_STALENESS_WARN_PCT=0 chose to force it off, and that must
+  // not look identical to never having set it at all.
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).oracleStalenessWarnPctSet, false);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_STALENESS_WARN_PCT: '0' }).oracleStalenessWarnPctSet, true);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_STALENESS_WARN_PCT: '80' }).oracleStalenessWarnPctSet, true);
+});
+
+test('config: ORACLE_FEED_CADENCE_SECONDS parses address:seconds pairs, lowercased, for the derived bar', () => {
+  const cfg = resolveCanaryConfig({
+    RPC_URL: 'http://x',
+    ORACLE_FEED_CADENCE_SECONDS: `${ASSET}:1200, 0x${'cd'.repeat(20)}:600`,
+  });
+  assert.deepEqual(cfg.oracleFeedCadenceSeconds, {
+    [ASSET.toLowerCase()]: 1200,
+    [`0x${'cd'.repeat(20)}`]: 600,
+  });
+});
+
+test('config: ORACLE_FEED_CADENCE_SECONDS rejects a malformed address instead of silently mis-mapping it', () => {
+  assert.throws(
+    () => resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_FEED_CADENCE_SECONDS: 'not-an-address:1200' }),
+    /ORACLE_FEED_CADENCE_SECONDS contains a non-address entry/,
+  );
+});
+
+test('config: ORACLE_FEED_CADENCE_SECONDS rejects a non-positive or missing cadence', () => {
+  assert.throws(
+    () => resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_FEED_CADENCE_SECONDS: `${ASSET}:0` }),
+    /non-positive\/invalid cadence/,
+  );
+  assert.throws(
+    () => resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_FEED_CADENCE_SECONDS: `${ASSET}` }),
+    /non-positive\/invalid cadence/,
+  );
+});
+
+test('a full sweep derives the early-warning bar from ORACLE_FEED_CADENCE_SECONDS with no manual override set', async () => {
+  const cfg = resolveCanaryConfig({
+    RPC_URL: 'http://x', OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+    ORACLE_FEED_CADENCE_SECONDS: `${ASSET}:1200`,
+  });
+  const results = await collectSignals({
+    reader: mockReader({ contracts: pivotedFixture({ ageSec: 2500, heartbeat: 3600 }), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg, window: WINDOW,
+  });
+  const r = results.find((x) => x.signal === 'oracle-freshness' && x.key === ASSET);
+  assert.equal(r.status, 'alert', 'ageSec 2500 is past the derived 2400s bar (2x the 1200s cadence)');
+  assert.match(r.message, /AGEING/);
+  assert.equal(r.detail.warnBarSource, 'derived');
+  assert.equal(r.detail.warnAtSec, 2400);
+});
