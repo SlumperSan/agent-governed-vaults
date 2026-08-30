@@ -36,6 +36,10 @@ const oracleAbiPath = join(OUT, 'ChainlinkOracle.sol/ChainlinkOracle.json');
 const oracleBuilt = existsSync(oracleAbiPath);
 const oracleAbi = oracleBuilt ? JSON.parse(readFileSync(oracleAbiPath, 'utf8')).abi ?? [] : [];
 
+const feedAbiPath = join(OUT, 'IAggregatorV3.sol/IAggregatorV3.json');
+const feedBuilt = existsSync(feedAbiPath);
+const feedAbi = feedBuilt ? JSON.parse(readFileSync(feedAbiPath, 'utf8')).abi ?? [] : [];
+
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
 const EXPECTED = {
   'requestExit(uint256)': REQUEST_EXIT_SELECTOR,
@@ -172,4 +176,31 @@ test('StaleOracle is an error ChainlinkOracle can actually throw — the freeze 
   const errors = new Set(oracleAbi.filter((i) => i.type === 'error').map(canonical));
   assert.ok(errors.has('StaleOracle(address)'), 'ChainlinkOracle no longer declares StaleOracle(address)');
   assert.equal(viem.toFunctionSelector('StaleOracle(address)'), Object.keys(EXIT_FROZEN_SELECTORS)[0]);
+});
+
+/**
+ * The same guard, one layer out. `AGGREGATOR_V3_VIEWS` is where `latestRoundData`'s five-field
+ * tuple ORDER lives, and the oracle signal consumes different fields of that tuple for different
+ * purposes: `updatedAt` (4th) is an asset feed's staleness, while the sequencer gate reads `answer`
+ * (2nd) and `startedAt` (3rd) and must ignore `updatedAt` entirely. Confusing the 3rd and 4th
+ * fields produces a detector that reads healthy straight through a grace period — a silent failure
+ * during the exact hour member confusion peaks. Pin the shape against the compiled interface rather
+ * than against this file's own opinion of it.
+ */
+test('the Chainlink feed tuple matches the compiled IAggregatorV3 — field ORDER is load-bearing', { skip: !feedBuilt && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(feedAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of AGGREGATOR_V3_VIEWS) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `IAggregatorV3 has no ${sig} — the oracle signal would read a reverting selector`);
+    assert.equal(onChain.stateMutability, 'view');
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted`,
+    );
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.name), frag.outputs.map((o) => o.name),
+      `${sig} field NAMES drifted — startedAt and updatedAt are adjacent uint256s and are not interchangeable`,
+    );
+  }
 });
