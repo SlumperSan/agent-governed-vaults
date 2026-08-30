@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {Test, console2} from "forge-std/Test.sol";
 import {ChainlinkOracle} from "../../src/oracle/ChainlinkOracle.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
-import {IAggregatorV3} from "../../src/OracleAggregator.sol";
+import {IAggregatorV3} from "../../src/interfaces/IAggregatorV3.sol";
 
 /// @dev The two AggregatorV3 methods this file needs that {IAggregatorV3} (deliberately minimal)
 /// does not carry. `getRoundData` is what lets the history test below prove — against the REAL

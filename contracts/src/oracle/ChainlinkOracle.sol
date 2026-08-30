@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IOracleAggregator} from "../interfaces/IOracleAggregator.sol";
-import {IAggregatorV3} from "../OracleAggregator.sol";
+import {IAggregatorV3} from "../interfaces/IAggregatorV3.sol";
 
 /// @notice The `description()` half of Chainlink's full `AggregatorV3Interface`, declared HERE
 /// rather than added to the shared {IAggregatorV3}. {IAggregatorV3} is the minimal read surface the
