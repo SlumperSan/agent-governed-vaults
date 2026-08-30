@@ -191,11 +191,21 @@ contract ChainlinkOracle is IOracleAggregator {
             // is caught by try/catch in `priceWad`. (A short/malformed return that fails ABI-decode
             // of the try-returns tuple could still surface as a Panic rather than StaleOracle — the
             // real mitigation is this construction-time proof plus immutability, not the catch.)
-            // decimals() ASSUMPTION: Chainlink upgrades the underlying aggregator behind the proxy
-            // over time but holds `decimals()` constant by convention; `scale` is cached on that
-            // assumption. A decimals change on an upgrade would silently mis-scale — an accepted,
-            // documented, convention-backed risk (reading decimals() live each call would close it
-            // at a gas cost on every NAV read).
+            // decimals() ASSUMPTION -- the ACCEPTED residual behind the cached `scale`. Chainlink
+            // swaps the aggregator behind an EACAggregatorProxy as routine operation (`phaseId`
+            // counts the swaps) and holds `decimals()` constant across them by convention, not by
+            // enforcement. A change would silently mis-scale every price by a power of ten.
+            // Rejected fix: re-read decimals() in `priceWad` and revert on mismatch. It is cheap
+            // (+1,350 gas per priced asset, measured) -- but it turns a benign upstream operation
+            // into a PERMANENT vault-wide freeze that nothing on-chain can lift (`VaultCore.oracle`
+            // is immutable; there is no rotation lever). Under drift a member still exits whole,
+            // because `_settleExit` sizes the payout pro-rata and only VALUES it through the oracle;
+            // under a false freeze nobody exits, ever. The sane-price band below fail-closes on
+            // every drift with a Chainlink precedent, leaving a +/-1-decimal change as the residual
+            // -- zero occurrences in 25 surveyed aggregator swaps, and no convention that produces
+            // 7 or 9. Detection lives off-chain in scripts/verify-chainlink-oracle.mjs, where a
+            // false alarm costs nothing. Argued in docs/LAUNCH-READINESS.md section 4 row 14;
+            // proven in test/audit/AuditAggregatorSwapDrift.t.sol.
             (, int256 answer,,,) = IAggregatorV3(feed).latestRoundData();
 
             uint64 scale = uint64(10 ** (18 - d));
@@ -204,6 +214,17 @@ contract ChainlinkOracle is IOracleAggregator {
             // also catches a band written in feed decimals instead of WAD, or copied from another
             // asset. Freshness is deliberately NOT checked: a deploy must not fail for a transient
             // reason, and scripts/verify-chainlink-oracle.mjs is the layer that sees liveness.
+            //
+            // Together with MAX_BAND_RATIO this is also what bounds the decimals residual above.
+            // A +2-decimal drift multiplies the reported price by 100 and a -2-decimal drift
+            // divides it by 100, so the band catches the up direction iff `spot > hi/100` and the
+            // down direction iff `spot < 100*lo`. Both hold simultaneously iff `hi/100 < spot <
+            // 100*lo`, an interval that is non-empty iff `hi < 10000*lo` -- guaranteed here, since
+            // MAX_BAND_RATIO caps `hi` at `1000*lo`. So NO legal band can let a 2-decimal drift
+            // escape in both directions at once. What it cannot guarantee is that the live price
+            // sits inside that window rather than near an edge; that is a property of the price,
+            // not of the config, so it is checked off-chain and continuously by the verifier's
+            // `band bounds a 2-decimal drift`.
             if (hi != 0) {
                 require(answer > 0, BadOracleConfig());
                 uint256 spotWad = uint256(answer) * scale;
