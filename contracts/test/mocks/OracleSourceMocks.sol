@@ -184,10 +184,24 @@ contract MockAggregatorV3 is IAggregatorV3 {
     uint256 internal _updatedAt;
     bool public reverts;
 
+    /// @dev The pair description, the way a real Chainlink proxy reports it ("ETH / USD"). Defaults
+    /// to a USD-quoted string so every pre-existing fixture keeps passing {ChainlinkOracle}'s
+    /// construction-time denomination check unchanged; `setDescription` is how a test builds the
+    /// misconfigured feeds that check exists for (e.g. "CBETH / ETH").
+    string internal _description = "MOCK / USD";
+
     constructor(uint8 decimals_, int256 answer_, uint256 updatedAt_) {
         _decimals = decimals_;
         _answer = answer_;
         _updatedAt = updatedAt_;
+    }
+
+    function setDescription(string memory description_) external {
+        _description = description_;
+    }
+
+    function description() external view returns (string memory) {
+        return _description;
     }
 
     function set(int256 answer_, uint256 updatedAt_) external {
