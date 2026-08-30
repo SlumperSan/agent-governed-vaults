@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
-  VAULT_VIEWS, ORACLE_VIEWS, VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
+  VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS,
+  VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   signatureOf,
 } from '../src/abis.mjs';
 
@@ -30,6 +31,10 @@ const vaultAbiPath = join(OUT, 'VaultCore.sol/VaultCore.json');
 const built = existsSync(vaultAbiPath);
 const vaultAbi = built ? JSON.parse(readFileSync(vaultAbiPath, 'utf8')).abi ?? [] : [];
 const canonical = (item) => `${item.name}(${item.inputs.map((i) => i.type).join(',')})`;
+
+const oracleAbiPath = join(OUT, 'ChainlinkOracle.sol/ChainlinkOracle.json');
+const oracleBuilt = existsSync(oracleAbiPath);
+const oracleAbi = oracleBuilt ? JSON.parse(readFileSync(oracleAbiPath, 'utf8')).abi ?? [] : [];
 
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
 const EXPECTED = {
@@ -72,7 +77,7 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS]) {
+  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS]) {
     assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
   }
 });
@@ -126,4 +131,45 @@ test('the views the signals read exist on the compiled VaultCore', { skip: !buil
 test('requestExit(uint256) is a real VaultCore function — the sentinel probes a live selector', { skip: !built && 'contracts/out absent' }, () => {
   const fns = vaultAbi.filter((i) => i.type === 'function').map(canonical);
   assert.ok(fns.includes('requestExit(uint256)'));
+});
+
+/**
+ * THE GUARD THAT WAS MISSING.
+ *
+ * `VAULT_VIEWS` has been cross-checked against the compiled `VaultCore` since this file existed,
+ * but the oracle table was only ever checked for `stateMutability === 'view'` — against itself,
+ * never against a contract. That is precisely how the C-6 pivot left the oracle signal calling
+ * `assetConfig`/`latestPrice` on a `ChainlinkOracle` that has neither: nothing in CI could tell.
+ *
+ * A signal reading a function the deployed contract does not have degrades once and then goes
+ * silent forever, which is the worst failure a monitor has. This closes the compile-time half of
+ * that; `signal.mjs`'s `detectorBroken()` and the transition tracker's escalation close the
+ * runtime half.
+ */
+test('every ChainlinkOracle view the live oracle signal reads exists on the compiled contract', { skip: !oracleBuilt && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(oracleAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of CHAINLINK_ORACLE_VIEWS) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `ChainlinkOracle has no ${sig} — the oracle signal would read a reverting selector and go blind`);
+    assert.equal(onChain.stateMutability, 'view', `${sig} is not a view on the compiled contract`);
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted — the signal would mis-decode the feed config`,
+    );
+  }
+});
+
+test('the retired aggregator views are NOT on ChainlinkOracle — the flavor split is real, not cosmetic', { skip: !oracleBuilt && 'contracts/out absent' }, () => {
+  const fns = new Set(oracleAbi.filter((i) => i.type === 'function').map((i) => i.name));
+  // If either of these ever appears, the flavor probe in oracle-health.mjs needs rethinking:
+  // it distinguishes the two oracles by exactly this absence.
+  assert.ok(!fns.has('assetConfig'), 'ChainlinkOracle now has assetConfig — the oracle flavor probe is no longer sound');
+  assert.ok(!fns.has('sourcesFor'), 'ChainlinkOracle now has sourcesFor — the oracle flavor probe is no longer sound');
+});
+
+test('StaleOracle is an error ChainlinkOracle can actually throw — the freeze classification is live', { skip: (!oracleBuilt || !viem) && 'needs contracts/out and viem' }, () => {
+  const errors = new Set(oracleAbi.filter((i) => i.type === 'error').map(canonical));
+  assert.ok(errors.has('StaleOracle(address)'), 'ChainlinkOracle no longer declares StaleOracle(address)');
+  assert.equal(viem.toFunctionSelector('StaleOracle(address)'), Object.keys(EXIT_FROZEN_SELECTORS)[0]);
 });

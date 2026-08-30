@@ -53,7 +53,12 @@ export const VAULT_VIEWS = Object.freeze([
   view('totalPendingUsdc', [], ['uint256']),
 ]);
 
-/** OracleAggregator: the immutable per-asset source config the freshness margin is measured against. */
+/**
+ * OracleAggregator — RETIRED by the C-6 pivot (the contract now lives in contracts/test/retired/).
+ * Kept because a pre-pivot deployment is still readable with it, and because `priceWad(address)` is
+ * the one fragment BOTH oracle flavors share — nav-backing prices every asset through it.
+ * `assetConfig`/`assets` exist on the retired aggregator ONLY; ChainlinkOracle has neither.
+ */
 export const ORACLE_VIEWS = Object.freeze([
   view('priceWad', ['address'], ['uint256']),
   view('assetConfig', ['address'], [
@@ -62,6 +67,47 @@ export const ORACLE_VIEWS = Object.freeze([
     { name: 'quorum', type: 'uint8' },
   ]),
   view('assets', ['uint256'], ['address']),
+]);
+
+/**
+ * ChainlinkOracle — the LIVE oracle since the C-6 pivot. Single Chainlink feed per asset, no
+ * quorum, no source set. `feedOf` is a public mapping-to-struct getter, so viem flattens it to the
+ * five struct fields in declaration order.
+ *
+ * `priceWad` is deliberately listed FIRST and read on every sweep: it is the contract's own verdict
+ * on whether the asset is priceable, and a revert IS the freeze. The other fields exist to
+ * ATTRIBUTE that revert to a cause (heartbeat, band, sequencer, dead feed), not to second-guess it.
+ */
+export const CHAINLINK_ORACLE_VIEWS = Object.freeze([
+  view('priceWad', ['address'], ['uint256']),
+  view('feedOf', ['address'], [
+    { name: 'feed', type: 'address' },
+    { name: 'heartbeat', type: 'uint32' },
+    { name: 'scale', type: 'uint64' },
+    { name: 'minPriceWad', type: 'uint128' },
+    { name: 'maxPriceWad', type: 'uint128' },
+  ]),
+  view('usdc', [], ['address']),
+  view('sequencerUptimeFeed', [], ['address']),
+  view('GRACE_PERIOD', [], ['uint256']),
+]);
+
+/**
+ * Chainlink AggregatorV3 — the per-asset price feeds AND the L2 sequencer uptime feed.
+ *
+ * The two consume DIFFERENT fields of the same tuple and mixing them is the bug this comment
+ * exists to prevent: an asset feed's staleness is `updatedAt` (4th), while the sequencer gate is
+ * `answer` + `startedAt` (2nd + 3rd) and ignores `updatedAt` entirely, because the uptime feed is
+ * event-driven and only writes on an up<->down transition. See ChainlinkOracle._requireSequencerUp.
+ */
+export const AGGREGATOR_V3_VIEWS = Object.freeze([
+  view('latestRoundData', [], [
+    { name: 'roundId', type: 'uint80' },
+    { name: 'answer', type: 'int256' },
+    { name: 'startedAt', type: 'uint256' },
+    { name: 'updatedAt', type: 'uint256' },
+    { name: 'answeredInRound', type: 'uint80' },
+  ]),
 ]);
 
 /** IPriceSource — polled per source to count how many are fresh right now. */
