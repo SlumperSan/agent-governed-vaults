@@ -249,7 +249,9 @@ inline at every call site), reaching 1,518; then M-2 spent 504 on the escrow rou
 affordable only because M-11 came first.**
 
 > **⚠ CORRECTION, 2026-08-30 — the table above is a dated record, not the current tree.**
-> `VaultCore`'s live EIP-170 margin is **283 B**, not the 1,014 B recorded here (nor the 1,182 B
+> `VaultCore`'s live EIP-170 margin is **283 B** (measured 2026-08-30 and recorded in the
+> knowledge vault; not re-measured in this edit, since `forge build --sizes` cannot run while the
+> tree does not build — see PR #82), not the 1,014 B recorded here (nor the 1,182 B
 > quoted in the H-5/H-6 notes, which was an intermediate value mid-session). M-15's
 > `deposit(uint256,uint256)` overload landed after this battery ran and spent **731 B**. The record
 > above is left intact deliberately — it is what the battery measured at this ref — but any

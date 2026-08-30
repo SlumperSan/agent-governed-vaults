@@ -67,8 +67,9 @@ remediation. Current margins (post-M-15; see [[vaultcore]] for the reconciliatio
 | VaultFactory | ~3,572 B | ~21,004 B |
 
 > **Only `VaultCore` is size-constrained.** Prior sessions treated `VaultFactory` and
-> `ChainlinkOracle` as tight; measurement on 2026-08-30 says otherwise — 21,004 B and 23,044 B
-> spare respectively. `VaultCore`'s ~283 B, by contrast, means anything `VaultCore`-shaped is now
+> `ChainlinkOracle` as tight; the 2026-08-30 measurement says otherwise — 21,004 B and 23,044 B
+> spare respectively. *(Figures as recorded on 2026-08-30, not re-measured here:
+> `forge build --sizes` cannot run while the tree does not build.)* `VaultCore`'s ~283 B, by contrast, means anything `VaultCore`-shaped is now
 > effectively closed. `UniswapV3TwapSource` and `OracleAggregator` are no longer in the deployable
 > set (retired to `contracts/test/retired/`), so their sizes are dropped from this table.
 
