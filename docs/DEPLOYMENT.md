@@ -266,8 +266,8 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 > ABI; `ChainlinkOracle` exposes `feedOf(asset)` and has no quorum at all. Against a vault priced by
 > the C-6 pivot every asset therefore comes back **`skipped`**, not `ok` — visible as an OK→SKIPPED
 > transition by design, never a silent pass, but it means the row below is currently **unmanned on
-> the launch oracle**. Porting the signal is tracked as its own task; until then the recurring check
-> immediately below is the oracle's only continuous monitoring.
+> the launch oracle**. **Being fixed in #89 / #85 — delete this warning when one of them lands.**
+> Until then the recurring check immediately below is the oracle's only continuous monitoring.
 
 ### 7a. Recurring feed check — run this on a cadence, not only before deploying
 
