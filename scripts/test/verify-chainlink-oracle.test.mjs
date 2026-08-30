@@ -8,7 +8,7 @@ import { bandBoundsTwoDecimalDrift, compareAggregatorPin, isUsdQuoted } from '..
 // The configured feed addresses are Chainlink `EACAggregatorProxy` instances, and Chainlink swaps
 // the aggregator behind them as routine operation. `ChainlinkOracle` reads `decimals()` ONCE, in
 // its constructor, and caches `scale = 10**(18 - decimals)` forever. Nothing on-chain re-checks —
-// that is the decision recorded in docs/LAUNCH-READINESS.md §4 row 13, argued there against an
+// that is the decision recorded in docs/LAUNCH-READINESS.md §4 row 14, argued there against an
 // on-chain re-check because a re-check turns a benign upstream swap into an unrecoverable
 // vault-wide freeze (the vault's oracle is immutable and there is no rotation lever).
 //
@@ -116,7 +116,7 @@ test('isUsdQuoted rejects non-strings and short strings without throwing', () =>
   for (const d of [null, undefined, 42, '', 'USD']) assert.equal(isUsdQuoted(d), false, String(d));
 });
 
-// --- band width: the check that makes residual row 13 TRUE, not merely asserted ---
+// --- band width: the check that makes residual row 14 TRUE, not merely asserted ---
 // Row 13 accepts the cached-`scale` risk because the sane-price band already fail-closes on every
 // drift of >= 2 decimals. That argument holds only while the band is tight relative to the live
 // price -- and the pre-existing verifier check only asked whether a band EXISTS. A band of
@@ -136,7 +136,7 @@ test('a band that is merely SET but far too wide fails — the gap this check ex
   const r = bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, 10n ** 16n, 10n ** 30n);
   assert.equal(r.ok, false);
   assert.match(r.detail, /BAND TOO WIDE/);
-  assert.match(r.detail, /row 13/, 'the message must name the acceptance it invalidates');
+  assert.match(r.detail, /row 14/, 'the message must name the acceptance it invalidates');
 });
 
 test('the ceiling alone can fail it, and the message says which side', () => {

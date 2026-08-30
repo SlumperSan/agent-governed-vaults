@@ -251,7 +251,7 @@ export function compareAggregatorPin(pin, observed) {
 /**
  * Is the sane-price band tight enough that a 2-DECIMAL aggregator-swap drift leaves it?
  *
- * This is the check that makes residual row 13 true rather than merely asserted. `ChainlinkOracle`
+ * This is the check that makes residual row 14 true rather than merely asserted. `ChainlinkOracle`
  * caches `scale` from a one-time `decimals()` read, and the argument for accepting that -- instead
  * of re-checking on every read and risking a permanent freeze -- is that the band already catches
  * every drift with a Chainlink precedent: 18 decimals, and any shift of >= 2. But `priceWad` trips
@@ -290,8 +290,8 @@ export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
       `BAND TOO WIDE to bound a 2-decimal aggregator-swap drift: price $${usd(priceWad)}, band $${usd(min)}..$${usd(max)}. ` +
       `${!upOk ? `x100 = $${usd(priceWad * 100n)} is still <= the ceiling. ` : ''}` +
       `${!downOk ? `/100 = $${usd(priceWad / 100n)} is still >= the floor. ` : ''}` +
-      'Residual-register row 13 accepts the cached-scale risk BECAUSE the band catches every drift of >= 2 decimals; ' +
-      'a band this wide voids that argument. Tighten it, or re-open row 13.',
+      'Residual-register row 14 accepts the cached-scale risk BECAUSE the band catches every drift of >= 2 decimals; ' +
+      'a band this wide voids that argument. Tighten it, or re-open row 14.',
   };
 }
 
@@ -408,14 +408,14 @@ function main() {
         spotWad !== null && spotWad >= mn && spotWad <= mx,
         spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
       );
-      // BAND WIDTH, not just band presence. "A band is set" is not the property residual row 13
+      // BAND WIDTH, not just band presence. "A band is set" is not the property residual row 14
       // depends on -- it depends on the band being tight enough that a 2-decimal aggregator-swap
       // drift leaves it. Checked against the live answer, because that is what the band is compared
       // against at runtime. Sized in WAD from the feed's own decimals so it stays correct if the
       // 8-decimal pin is ever relaxed.
       if (spotWad !== null) {
         const width = bandBoundsTwoDecimalDrift(spotWad, mn, mx);
-        check(`${label}: band bounds a 2-decimal drift (residual row 13)`, width.ok, width.detail);
+        check(`${label}: band bounds a 2-decimal drift (residual row 14)`, width.ok, width.detail);
       }
     }
   }
