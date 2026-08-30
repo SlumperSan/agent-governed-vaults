@@ -28,7 +28,13 @@
  *                              POLL_INTERVAL_MS because docker-compose feeds both services one
  *                              .env file, and a canary sweep is far heavier than an indexer poll.
  *   NAV_DIVERGENCE_BPS (50)    composition-divergence bar, 50 = 0.5%
- *   ORACLE_MIN_MARGIN (0)      alert when fresh-sources minus quorum <= this
+ *   ORACLE_MIN_MARGIN (0)      RETIRED-ORACLE deployments only: alert when fresh-sources minus
+ *                              quorum <= this. Inert against a ChainlinkOracle, which has no quorum.
+ *   ORACLE_STALENESS_WARN_PCT (0 = off)  ChainlinkOracle deployments only: also alert once a feed's
+ *                              answer has aged past this percentage of its heartbeat, BEFORE the
+ *                              breaker trips. Off by default on purpose: a feed that updates only
+ *                              on its heartbeat sits near 100% just before every scheduled publish,
+ *                              so a low bar pages on healthy behaviour and gets the canary muted.
  *   LOG_LOOKBACK_BLOCKS (0)    on a cold start, how far back to scan for events
  *   MAX_LOG_SPAN_BLOCKS (2000) cap on one poll's getLogs range
  *   HEARTBEAT_MS (0)           if set, periodically print a one-line "still watching" summary
@@ -47,8 +53,8 @@ import { createChainReader } from './reader.mjs';
 import { createTransitionTracker } from './transitions.mjs';
 import { createConsoleSink, createWebhookSink, emitAll } from './sinks.mjs';
 import { VAULT_VIEWS } from './abis.mjs';
-import { skipped, shortAddr } from './signal.mjs';
-import { checkOracleFreshness } from './signals/oracle-freshness.mjs';
+import { skipped, detectorBroken, shortAddr } from './signal.mjs';
+import { checkOracleSignals } from './signals/oracle-health.mjs';
 import { checkNavBacking } from './signals/nav-backing.mjs';
 import { checkShareConservation } from './signals/share-conservation.mjs';
 import { checkExitLiveness } from './signals/exit-liveness.mjs';
@@ -101,6 +107,7 @@ export function resolveCanaryConfig(env) {
     pollIntervalMs,
     navDivergenceBps: num('NAV_DIVERGENCE_BPS', 50),
     oracleMinMargin: num('ORACLE_MIN_MARGIN', 0),
+    oracleStalenessWarnPct: num('ORACLE_STALENESS_WARN_PCT', 0),
     logLookbackBlocks: num('LOG_LOOKBACK_BLOCKS', 0),
     maxLogSpanBlocks: num('MAX_LOG_SPAN_BLOCKS', 2000),
     heartbeatMs: num('HEARTBEAT_MS', 0),
@@ -112,8 +119,9 @@ export function resolveCanaryConfig(env) {
  *
  * Pure over its inputs in the way that matters: it touches the chain only through the injected
  * `reader`, and reads the indexer projection only through the `state` object handed to it. A
- * signal that throws is converted into a `skipped` result rather than aborting the sweep — one
- * broken vault must not blind the operator to the other nine.
+ * signal that throws is converted into a DETECTOR BROKEN result rather than aborting the sweep —
+ * one broken vault must not blind the operator to the other nine, and a check that threw must not
+ * go quiet after a single line.
  *
  * @param {Object} ctx
  * @param {any} ctx.reader
@@ -131,14 +139,22 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
     const projected = state?.vaults?.get(vault) ?? null;
     const shareBook = state?.shares?.get(vault) ?? null;
 
-    /** Run one signal, converting a thrown error into a DEGRADED result instead of losing the sweep. */
+    /**
+     * Run one signal, converting a thrown error into a result instead of losing the sweep.
+     *
+     * A check that THREW is a broken detector, not a degraded observation: nothing was measured and
+     * nobody knows what is being missed. It is therefore marked `detectorBroken`, which the
+     * transition tracker re-asserts on a backoff rather than reporting once and going quiet. That
+     * quiet-after-one-line behaviour is precisely how the pre-C-6 oracle signal stayed dead through
+     * an entire pivot.
+     */
     const run = async (name, fn) => {
       try {
         out.push(...(await fn()));
       } catch (err) {
-        out.push(skipped({
+        out.push(detectorBroken({
           signal: name, vault,
-          message: `${name} check errored on vault ${shortAddr(vault)}: ${err?.message ?? err}`,
+          message: `${name} check ERRORED on vault ${shortAddr(vault)} and measured nothing: ${err?.message ?? err} — this vault is unmonitored for that signal, not healthy`,
           detail: { vault, error: String(err?.message ?? err) },
         }));
       }
@@ -159,16 +175,19 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
       }
       meta = { oracle, usdc, creator, assets };
     } catch (err) {
-      out.push(skipped({
+      out.push(detectorBroken({
         signal: 'vault-config', vault,
-        message: `vault ${shortAddr(vault)} is unreadable at ${cfg.rpcUrl ? 'the configured RPC' : 'the injected client'}: ${err?.message ?? err} — every signal for this vault is suspended`,
+        message: `vault ${shortAddr(vault)} is unreadable at ${cfg.rpcUrl ? 'the configured RPC' : 'the injected client'}: ${err?.message ?? err} — EVERY signal for this vault is suspended, so it is entirely unmonitored`,
         detail: { vault, error: String(err?.message ?? err) },
       }));
       continue;
     }
 
-    await run('oracle-freshness', () => checkOracleFreshness({
-      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec, minMargin: cfg.oracleMinMargin,
+    // Flavor-dispatched: ChainlinkOracle (the live post-C-6 stack) or the retired OracleAggregator.
+    // An oracle that answers neither returns a DETECTOR BROKEN result rather than a silent skip.
+    await run('oracle-freshness', () => checkOracleSignals({
+      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec,
+      minMargin: cfg.oracleMinMargin, stalenessWarnPct: cfg.oracleStalenessWarnPct,
     }));
 
     await run('nav-backing', () => checkNavBacking({

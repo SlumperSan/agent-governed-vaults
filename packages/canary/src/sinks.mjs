@@ -37,6 +37,9 @@ export function createWebhookSink({ url, fetchImpl = globalThis.fetch, timeoutMs
         text: t.line,
         status: t.to,
         previousStatus: t.from,
+        // >0 on a broken-detector re-assertion: how many consecutive sweeps the check has been
+        // blind. A receiver can escalate on it without parsing the human line.
+        repeat: t.repeat ?? 0,
         signal: t.signal,
         vault: t.vault,
         key: t.key ?? null,

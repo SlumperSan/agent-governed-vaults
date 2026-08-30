@@ -31,10 +31,11 @@ its own `CANARY_STATE_PATH`.
 | `src/canary-runner.mjs` | entrypoint: env config, the sweep, the poll loop |
 | `src/reader.mjs` | the only file that talks to an RPC; lazy/optional viem, same pattern as the indexer's `rpc.mjs` |
 | `src/abis.mjs` | views, watched events, and the embedded revert selectors — kept separate from the indexer's table on purpose (see the file header) |
-| `src/signal.mjs` | the `ok` / `alert` / `skipped` result vocabulary and integer bps math |
-| `src/transitions.mjs` | pure transition detection — the piece that makes the canary quiet |
+| `src/signal.mjs` | the `ok` / `alert` / `skipped` result vocabulary, the `detectorBroken` marker, and integer bps math |
+| `src/transitions.mjs` | pure transition detection — the piece that makes the canary quiet, and the one rule that keeps a blind detector loud |
 | `src/sinks.mjs` | console + optional webhook; a sink failure never propagates |
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
+| `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 
 ## Design notes
 
@@ -46,6 +47,13 @@ five methods documented at the top of `src/reader.mjs`.
 exit-liveness sentinel with no member to probe with, or a NAV check behind a tripped oracle breaker,
 reports DEGRADED — never a false OK.
 
+**A blind detector is not a degraded check.** `skipped` results carrying `detail.detectorBroken`
+render as DETECTOR BROKEN and are re-asserted on a doubling backoff instead of being reported once.
+Report-once is right for a problem in the system; for a problem in the monitor it manufactures
+confidence, which is how the pre-pivot oracle signal stayed dead for a whole deployment after one
+startup line. Only three things set the flag: an oracle answering neither known ABI, an unreadable
+vault, and a signal that threw.
+
 **One root cause, one page.** A tripped oracle breaker makes `navWad()` and `requestExit` revert too.
 Those two attribute their `StaleOracle` reverts to the oracle signal and go DEGRADED, so the operator
 gets one alert instead of three.
@@ -56,6 +64,6 @@ gets one alert instead of three.
 node --test packages/canary/test/*.test.mjs
 ```
 
-113 tests, all mocked. `test/helpers.mjs` carries the shared fixture: `healthyVault()` is healthy on
-every signal, so each test perturbs exactly one thing and proves the signal reacts to that and
-nothing else.
+175 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
+so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

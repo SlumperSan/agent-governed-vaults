@@ -16,8 +16,8 @@ import { resolveCanaryConfig, collectSignals, buildCanary } from '../src/canary-
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
-  mockReader, healthyVault, healthyState, log,
-  VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3,
+  mockReader, healthyVault, healthyState, chainlinkVault, log,
+  VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3, SEQ_FEED,
 } from './helpers.mjs';
 
 const NOW = 1_700_000_000;
@@ -291,4 +291,97 @@ test('a backlog larger than one window reports the unscanned gap instead of skip
     assert.match(err[0], /blocks 996-1984/);
     assert.match(err[0], /MAX_LOG_SPAN_BLOCKS=10/);
   });
+});
+
+// ── the pivoted (ChainlinkOracle) deployment, end to end ─────────────────────
+//
+// Everything above prices through the RETIRED aggregator, because that is what the original
+// fixture models. These sweep the oracle the protocol actually launches on. The bug being guarded
+// here is not subtle and it shipped: against a ChainlinkOracle the old signal read a function that
+// does not exist, degraded once, and then reported nothing for the life of the deployment.
+
+/** The same healthy vault, priced by a ChainlinkOracle with a live sequencer uptime feed. */
+const pivotedFixture = (opts = {}) => chainlinkVault({ nowSec: NOW, sequencerUptimeFeed: SEQ_FEED, ...opts });
+
+test('a healthy PIVOTED deployment produces zero alerts, and the oracle signal really ran', async () => {
+  const results = await collectSignals({
+    reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  assert.deepEqual(results.filter((r) => r.status !== 'ok').map((r) => r.message), []);
+  const oracle = results.filter((r) => r.signal === 'oracle-freshness');
+  assert.equal(oracle.length, 2, 'one sequencer result plus one per basket asset');
+  assert.ok(oracle.some((r) => r.detail.heartbeatSec === 3600), 'the ChainlinkOracle path ran, not the quorum one');
+});
+
+test('a frozen PIVOTED oracle pages once and DEGRADES the dependent signals, exactly as the retired one did', async () => {
+  const results = await collectSignals({
+    reader: mockReader({
+      contracts: pivotedFixture({
+        ageSec: 90_000, heartbeat: 3600, priceWadReverts: true,
+        overrides: { [VAULT]: { ...healthyVault()[VAULT], navWad: { revert: '0xa2671f4b' } } },
+      }),
+      nowSec: NOW,
+    }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  const alerts = results.filter((r) => r.status === 'alert');
+  assert.equal(alerts.length, 1, 'exactly one page for one root cause');
+  assert.equal(alerts[0].signal, 'oracle-freshness');
+  assert.match(alerts[0].message, /past its 3600s heartbeat/);
+  // The attribution nav-backing has always claimed is finally true again: something DOES page.
+  const nav = results.find((r) => r.signal === 'nav-backing');
+  assert.equal(nav.status, 'skipped');
+  assert.equal(nav.detail.attributedTo, 'oracle-freshness');
+});
+
+test('an oracle the canary cannot introspect is a BROKEN DETECTOR in a full sweep, not a quiet skip', async () => {
+  const contracts = pivotedFixture();
+  // Strip the whole oracle surface: exactly the post-pivot shape, where the signal called a
+  // function the deployed contract does not have.
+  contracts[ORACLE.toLowerCase()] = { priceWad: () => 3_000000000000000000n };
+  const results = await collectSignals({
+    reader: mockReader({ contracts, nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  const r = results.find((x) => x.signal === 'oracle-freshness');
+  assert.equal(r.status, 'skipped');
+  assert.equal(r.detail.detectorBroken, true, 'the tracker escalates on this flag');
+});
+
+test('a signal that THROWS is a broken detector, not a one-line skip that goes quiet', async () => {
+  // collectSignals catches per-signal exceptions so one bad vault cannot lose the sweep. That
+  // catch used to produce an ordinary `skipped`, which transitions report once and never again.
+  const reader = mockReader({ contracts: pivotedFixture(), nowSec: NOW });
+  const realGetLogs = reader.getLogs;
+  reader.getLogs = async () => { throw new Error('RPC exploded'); };
+  const results = await collectSignals({
+    reader, state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  reader.getLogs = realGetLogs;
+  const broken = results.filter((r) => r.detail?.detectorBroken === true);
+  assert.ok(broken.length > 0, 'a check that threw measured nothing and must say so, repeatedly');
+  assert.match(broken[0].message, /ERRORED/);
+  assert.match(broken[0].message, /unmonitored for that signal, not healthy/);
+});
+
+test('an unreadable vault is a BROKEN DETECTOR — it is the only case where NOTHING is covered', async () => {
+  const OTHER = '0x' + '9'.repeat(40);
+  const results = await collectSignals({
+    reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [OTHER], cfg: baseCfg, window: WINDOW,
+  });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].signal, 'vault-config');
+  assert.equal(results[0].detail.detectorBroken, true);
+});
+
+test('config: the ChainlinkOracle early-warning bar is off by default and is its own env var', async () => {
+  // ORACLE_MIN_MARGIN belongs to the retired quorum regime and keeps its meaning; the new knob
+  // must not capture it, or a pre-pivot deployment's calibration would silently change.
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).oracleStalenessWarnPct, 0);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_MIN_MARGIN: '1' }).oracleStalenessWarnPct, 0);
+  const cfg = resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_STALENESS_WARN_PCT: '80' });
+  assert.equal(cfg.oracleStalenessWarnPct, 80);
+  assert.equal(cfg.oracleMinMargin, 0, 'the retired knob is untouched');
 });
