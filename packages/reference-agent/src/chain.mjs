@@ -22,7 +22,7 @@
  *                                     detected from chain state, never from local storage, so a
  *                                     restarted agent rediscovers every vote it owes (S-4)
  *   OperatorRegistry.operatorOf(vault)      attestation verified at the registry, not from the
- *                                       API's branding metadata (AGENT-QUICKSTART §4)
+ *                                       API's branding metadata (AGENT-QUICKSTART § Protocol semantics)
  *
  * **Oracle-freeze detection is a proxy, and it is a warning only in the loosest sense.**
  * `navPerShareWad()` reverts with `StaleOracle` when any basket asset's price is stale
@@ -59,7 +59,7 @@ export const VAULT_READ_ABI = Object.freeze([
   fn('sharesOf', [A()], [U()]),
   // Voting weight is NOT sharesOf: pending deposits and Mode-F-locked shares hold no vote, and a
   // proposal measures stake at its snapshot timestamp — the same measure quorum uses
-  // (AGENT-QUICKSTART §3). Committing on sharesOf would cast votes that can never count.
+  // (AGENT-QUICKSTART § Protocol semantics). Committing on sharesOf would cast votes that can never count.
   fn('votingEligibleShares', [A('member')], [U()]),
   fn('pastVotingEligibleShares', [A('member'), { name: 'ts', type: 'uint64' }], [U()]),
   fn('queuedExitShares', [A()], [U()]),
@@ -98,7 +98,7 @@ export const GOVERNANCE_READ_ABI = Object.freeze([
 export const OPERATOR_REGISTRY_READ_ABI = Object.freeze([fn('operatorOf', [A('vault')], [U()])]);
 
 /** Sub-vaults STACK fees up the parent chain — the headline 10% is a floor, not the number the
- *  agent pays (AGENT-QUICKSTART §4). Read the stacked figures, never assume the base. */
+ *  agent pays (AGENT-QUICKSTART § Protocol semantics). Read the stacked figures, never assume the base. */
 export const SUBVAULT_REGISTRY_READ_ABI = Object.freeze([
   fn('stackedPerfFeeBps', [A('vault')], [U()]),
   fn('stackedExitFeeCapBps', [A('vault')], [U()]),

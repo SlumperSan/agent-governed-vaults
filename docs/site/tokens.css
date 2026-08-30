@@ -1,0 +1,99 @@
+/*
+ * Design tokens — the ONE file to replace when a shared design system lands.
+ *
+ * Provenance: lifted verbatim from `docs/design/style-tile.html`, which is the rendered artifact of
+ * `docs/design/VISUAL-DESIGN-SYSTEM.md`. Nothing here is invented for the docs site. A second,
+ * divergent palette is exactly the failure the design system exists to prevent, so the site
+ * consumes the existing one rather than forking it.
+ *
+ * If a `design/system-foundation` branch later publishes tokens, swapping this file is the whole
+ * migration: `site.css` references tokens only, never literal colours.
+ *
+ * Three-state theme, per the design system §2.2:
+ *   bare :root                 → light (the default)
+ *   prefers-color-scheme: dark → dark, guarded so an explicit light choice still wins
+ *   [data-theme="dark"]        → dark, chosen explicitly
+ */
+
+:root {
+  --ground: #f2f2f7;
+  --surface: #ffffff;
+  --surface-2: #eaeaf1;
+  --line: #dbdbe6;
+  --line-soft: #e8e8f0;
+  --ink: #17171f;
+  --muted: #5f5f72;
+  --faint: #9494a8;
+  --accent: #5a4ce0;
+  --accent-soft: #ece9fd;
+  --accent-ink: #ffffff;
+  --good: #178a4c;
+  --good-soft: #e4f2ea;
+  --warn: #a56a09;
+  --warn-soft: #f6ecd7;
+  --crit: #c23b3b;
+  --crit-soft: #f7e2e2;
+  --frozen: #1c8aa6;
+  --frozen-soft: #dcf0f4;
+  --shadow-1: 0 1px 2px rgba(24, 24, 40, .05), 0 1px 3px rgba(24, 24, 40, .04);
+  --shadow-2: 0 4px 16px rgba(24, 24, 40, .08), 0 1px 3px rgba(24, 24, 40, .05);
+
+  --display: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0e0e16;
+    --surface: #17171f;
+    --surface-2: #20202c;
+    --line: #2b2b3a;
+    --line-soft: #22222e;
+    --ink: #eaeaf3;
+    --muted: #9393ab;
+    --faint: #616178;
+    --accent: #8a7cf6;
+    --accent-soft: #211d3a;
+    --accent-ink: #14121f;
+    --good: #45c883;
+    --good-soft: #123020;
+    --warn: #f0b429;
+    --warn-soft: #312608;
+    --crit: #f2726a;
+    --crit-soft: #331a17;
+    --frozen: #5fc9de;
+    --frozen-soft: #0f2f39;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-2: 0 6px 24px rgba(0, 0, 0, .5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #0e0e16;
+  --surface: #17171f;
+  --surface-2: #20202c;
+  --line: #2b2b3a;
+  --line-soft: #22222e;
+  --ink: #eaeaf3;
+  --muted: #9393ab;
+  --faint: #616178;
+  --accent: #8a7cf6;
+  --accent-soft: #211d3a;
+  --accent-ink: #14121f;
+  --good: #45c883;
+  --good-soft: #123020;
+  --warn: #f0b429;
+  --warn-soft: #312608;
+  --crit: #f2726a;
+  --crit-soft: #331a17;
+  --frozen: #5fc9de;
+  --frozen-soft: #0f2f39;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, .5);
+}

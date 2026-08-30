@@ -53,7 +53,7 @@ export function demoEvents() {
     ev('VaultAttested', DEMO_VAULTS.helios, { vault: DEMO_VAULTS.helios, opId: DEMO_OPERATORS.helios.opId }),
 
     // DRIFTER is created but NEVER attested — operatorId stays 0, which is the signal an agent
-    // must treat as scam-quarantine (AGENT-QUICKSTART §4).
+    // must treat as scam-quarantine (AGENT-QUICKSTART § Protocol semantics).
     ev('VaultCreated', DEMO_VAULTS.drifter, {
       vault: DEMO_VAULTS.drifter,
       creator: '0x' + 'ba'.repeat(20),

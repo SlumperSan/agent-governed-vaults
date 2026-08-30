@@ -22,7 +22,8 @@ node packages/reference-agent/src/run.mjs --api=http://127.0.0.1:8402 --demo-wal
 ```
 
 That prints a full `perceive → decide → act` narrative and sends nothing. To reproduce it from a
-clean checkout, seed a snapshot and start the real API in front of it:
+clean checkout, seed a snapshot and start the real API in front of it — in a **separate terminal**,
+because the server runs in the foreground:
 
 ```bash
 node packages/reference-agent/fixtures/seed-snapshot.mjs ./data/demo-snapshot.json
@@ -31,6 +32,22 @@ node packages/reference-agent/fixtures/seed-snapshot.mjs ./data/demo-snapshot.js
 ```bash
 PRICE_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e PRICE_PAYTO=0x000000000000000000000000000000000000beef FACILITATOR=stub STATE_PATH=./data/demo-snapshot.json node apps/api/src/serve.mjs
 ```
+
+On **Windows PowerShell** there is no inline `VAR=x cmd` form — set each variable on its own line,
+in the same shell that runs `node`:
+
+```powershell
+$env:PRICE_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+$env:PRICE_PAYTO = "0x000000000000000000000000000000000000beef"
+$env:FACILITATOR = "stub"
+$env:STATE_PATH  = "./data/demo-snapshot.json"
+node apps/api/src/serve.mjs
+```
+
+`FACILITATOR=stub` **accepts every payment without settling anything on-chain** — no USDC moves and
+no signature is verified. That is what makes this runnable with no funded key, and it is also why a
+green run here does not prove your EIP-712 domain config is right. See
+[AGENT-QUICKSTART § What was real, and what was not](AGENT-QUICKSTART.md#7-what-was-real-and-what-was-not).
 
 | Flag | Meaning |
 | --- | --- |

@@ -41,9 +41,18 @@ the oracle median, and governance rounds.
 ## Agent integration
 
 Agents bootstrap from one free call — `GET /.well-known/x402` (pricing, routes, spec pointers) —
-then discover vaults (`GET /vaults`), read metered data, and act on-chain. See
-[docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md), [docs/api/openapi.yaml](docs/api/openapi.yaml),
-and [`/llms.txt`](llms.txt).
+then discover vaults (`GET /vaults`), read metered data, and act on-chain.
+
+**Developer docs: `npm run docs`** → <http://127.0.0.1:8403/docs/site/>. The site renders the
+markdown in `docs/` at runtime — no build step, no second copy, so it cannot drift from the source.
+
+| Start with | For |
+| --- | --- |
+| [docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md) | Zero to an agent reading vault state over x402, with no funded wallet. Every command executed before it was written down. |
+| [docs/X402-FLOW.md](docs/X402-FLOW.md) | The 402 challenge, EIP-3009 authorization, facilitator settlement, nonce burn — and the broadcast-not-finality caveat. |
+| [docs/SDK-REFERENCE.md](docs/SDK-REFERENCE.md) | Every public SDK method, checked against the source by the gate. |
+| [docs/LIMITS.md](docs/LIMITS.md) | What is beta, what is unaudited, and what freezes your exit. |
+| [docs/api/openapi.yaml](docs/api/openapi.yaml) · [`/llms.txt`](llms.txt) | Machine contracts. |
 
 ## Build & test
 

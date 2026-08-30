@@ -1,0 +1,193 @@
+/*
+ * Docs-site layout and prose styling. References tokens only — never a literal colour — so
+ * `tokens.css` stays the single swap point for a shared design system.
+ *
+ * Type roles follow VISUAL-DESIGN-SYSTEM §3: Newsreader for structure, Plex Sans for language,
+ * Plex Mono for anything numeric or addressable. Fonts come from Google Fonts with a real fallback
+ * stack, so the page is legible before (or without) the webfont.
+ */
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--accent); color: var(--accent-ink);
+  padding: 10px 16px; border-radius: 0 0 var(--r-sm) 0; font-family: var(--mono); font-size: 13px;
+}
+.skip-link:focus { left: 0; }
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+
+.shell { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: 100vh; }
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  padding: 22px 0 60px;
+  position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+}
+
+.brand { padding: 0 22px 18px; border-bottom: 1px solid var(--line-soft); margin-bottom: 14px; }
+.brand a { color: var(--ink); display: block; }
+.brand .mark { font-family: var(--display); font-weight: 500; font-size: 19px; line-height: 1.2; letter-spacing: -.01em; }
+.brand .sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-top: 5px; }
+
+nav.toc { padding: 0 12px; }
+nav.toc .section {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); padding: 16px 10px 6px;
+}
+nav.toc a.nav-item {
+  display: block; padding: 6px 10px; border-radius: var(--r-sm);
+  color: var(--muted); font-size: 14px; line-height: 1.4;
+}
+nav.toc a.nav-item:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+nav.toc a.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+
+.sidebar-foot { padding: 22px 22px 0; margin-top: 20px; border-top: 1px solid var(--line-soft); }
+.sidebar-foot a { display: block; font-size: 13px; color: var(--muted); padding: 4px 0; }
+.sidebar-foot a:hover { color: var(--accent); }
+
+/* ── main ──────────────────────────────────────────────────────────────── */
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 40px; border-bottom: 1px solid var(--line); background: var(--surface);
+  position: sticky; top: 0; z-index: 20;
+}
+.crumb { font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; color: var(--faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-actions { display: flex; gap: 8px; flex: none; }
+.btn {
+  background: var(--surface); border: 1px solid var(--line); color: var(--muted);
+  font-family: var(--mono); font-size: 11.5px; border-radius: var(--r-pill);
+  padding: 6px 13px; cursor: pointer; line-height: 1.4;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+.content { padding: 40px; max-width: 940px; width: 100%; }
+
+/* ── prose ─────────────────────────────────────────────────────────────── */
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  font-family: var(--display); font-weight: 500; color: var(--ink);
+  letter-spacing: -.01em; scroll-margin-top: 76px;
+}
+.prose h1 { font-size: 34px; line-height: 1.15; margin: 0 0 20px; }
+.prose h2 { font-size: 26px; line-height: 1.22; margin: 46px 0 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.prose h3 { font-size: 20px; line-height: 1.28; margin: 32px 0 10px; }
+.prose h4 { font-size: 16px; line-height: 1.35; font-weight: 600; margin: 24px 0 8px; }
+.prose h5, .prose h6 { font-size: 15px; font-weight: 600; margin: 20px 0 6px; }
+
+.prose .anchor { color: var(--faint); opacity: 0; margin-left: .4em; font-family: var(--mono); font-size: .6em; vertical-align: middle; }
+.prose h1:hover .anchor, .prose h2:hover .anchor, .prose h3:hover .anchor,
+.prose h4:hover .anchor, .prose .anchor:focus { opacity: 1; text-decoration: none; }
+
+.prose p { margin: 0 0 15px; max-width: 78ch; }
+.prose ul, .prose ol { margin: 0 0 15px; padding-left: 24px; max-width: 78ch; }
+.prose li { margin: 4px 0; }
+.prose li > ul, .prose li > ol { margin: 4px 0 6px; }
+
+.prose strong { font-weight: 600; color: var(--ink); }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 34px 0; }
+
+.prose blockquote {
+  margin: 18px 0; padding: 2px 18px; border-left: 3px solid var(--accent);
+  background: var(--surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.prose blockquote p { margin: 12px 0; color: var(--muted); }
+
+.prose code {
+  font-family: var(--mono); font-size: .875em;
+  background: var(--surface-2); color: var(--ink);
+  padding: .12em .38em; border-radius: 5px;
+  font-variant-ligatures: none;
+}
+
+.prose pre {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 15px 17px; margin: 0 0 18px;
+  overflow-x: auto; position: relative;
+}
+.prose pre code { background: none; padding: 0; font-size: 13px; line-height: 1.6; display: block; }
+
+/* A shell block gets its language on the shoulder — a reader must know whether a snippet is
+   PowerShell or bash BEFORE pasting it, because on Windows the wrong one fails silently-ish. */
+.prose pre[data-lang]:not([data-lang="text"])::before {
+  content: attr(data-lang);
+  position: absolute; top: 0; right: 0;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); background: var(--surface); border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); border-radius: 0 var(--r-md) 0 var(--r-sm);
+  padding: 3px 9px;
+}
+
+.prose .table-scroll { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--line); border-radius: var(--r-md); }
+.prose table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.prose th, .prose td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.prose th {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint); font-weight: 500; background: var(--surface-2); white-space: nowrap;
+}
+.prose tbody tr:last-child td { border-bottom: 0; }
+.prose td code { white-space: nowrap; }
+
+/* ── landing page cards ────────────────────────────────────────────────── */
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 14px; margin: 0 0 22px; }
+.card {
+  display: block; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 16px 17px; box-shadow: var(--shadow-1); color: var(--ink);
+}
+.card:hover { border-color: var(--accent); box-shadow: var(--shadow-2); text-decoration: none; }
+.card .card-title { font-family: var(--display); font-size: 17px; font-weight: 500; margin-bottom: 5px; }
+.card .card-blurb { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.card .card-kicker { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+
+/* ── status callouts ───────────────────────────────────────────────────── */
+
+.note { border-radius: var(--r-md); padding: 13px 16px; margin: 0 0 18px; font-size: 14px; border: 1px solid; }
+.note :first-child { margin-top: 0; }
+.note :last-child { margin-bottom: 0; }
+.note-warn { background: var(--warn-soft); border-color: var(--warn); color: var(--ink); }
+.note-frozen { background: var(--frozen-soft); border-color: var(--frozen); color: var(--ink); }
+
+.loading, .error { font-family: var(--mono); font-size: 13px; color: var(--faint); padding: 40px 0; }
+.error { color: var(--crit); }
+
+/* ── responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+  nav.toc { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 10px; }
+  .topbar { padding: 12px 20px; }
+  .content { padding: 24px 20px 60px; }
+  .prose h1 { font-size: 27px; }
+  .prose h2 { font-size: 22px; }
+}
+
+@media print {
+  .sidebar, .topbar { display: none; }
+  .shell { display: block; }
+  .content { max-width: none; padding: 0; }
+}

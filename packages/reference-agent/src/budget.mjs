@@ -4,7 +4,7 @@
  *
  * The agent pays real USDC for every metered read. Without a cap, a loop bug, a retry storm, or a
  * hostile API that raises its price mid-session drains the wallet a cent at a time. AGENT-QUICKSTART
- * §1 recommends exactly this: wrap the signer with a per-task budget and a per-tx cap.
+ * § Spend control recommends exactly this: wrap the signer with a per-task budget and a per-tx cap.
  *
  * Enforced at two layers, because one is not enough:
  *

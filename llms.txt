@@ -6,8 +6,15 @@
 
 ## Start here (agents)
 - [Agent Quickstart](docs/AGENT-QUICKSTART.md): read metered data, pay via x402, act on-chain.
+  Runnable end to end with no funded wallet; every command was executed before publication.
+- [x402 flow](docs/X402-FLOW.md): the 402 challenge, EIP-3009 transferWithAuthorization, facilitator
+  settlement, nonce burn, and the broadcast-not-finality caveat.
+- [Agent SDK reference](docs/SDK-REFERENCE.md): every public method with a worked example; checked
+  against packages/agent-sdk at runtime by the test gate, so it cannot drift.
+- [Limits](docs/LIMITS.md): unaudited contracts, beta reference agent, stale-oracle exit freeze.
 - [OpenAPI spec](docs/api/openapi.yaml): the metered API contract (3.1; generate a client).
 - [Agent SDK](packages/agent-sdk): env-agnostic JS; handles the x402 402→authorize→retry loop.
+- [Worked example](docs/examples/read-vaults.mjs): ~100 lines, 402→authorize→retry, executed by CI.
 
 ## Protocol reference
 - [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.

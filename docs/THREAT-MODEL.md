@@ -159,8 +159,8 @@ Confirmed findings and their fixes (regression suite `contracts/test/Sprint6Fixe
 
 Brief bullets → rows: execution (4/4), core mechanics (8/8), voting (9/9), entry/exit (11/11),
 sub-vaults (7/7), safety (5/5), payments/creation (4/4 — PX-4 added in Sprint 7 for the
-EIP-170-forced factory→deployer split, #10), agent-side (3, extra-scope). **45 rows
-+ 3 agent-side.** Zero brief bullets without a row. Rows marked "None found" or "Accepted" are
+EIP-170-forced factory→deployer split, #10), agent-side (3, extra-scope).
+**45 rows + 3 agent-side.** Zero brief bullets without a row. Rows marked "None found" or "Accepted" are
 standing challenges for the Sprint 6 adversarial pass.
 
 Sharpest known seams (Sprint 6 priority order): VO-8 (timelock × forward-pricing interplay),

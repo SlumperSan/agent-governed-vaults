@@ -61,7 +61,7 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
 
   // ── attested operator ──────────────────────────────────────────────────────
   // Operator identity is the REGISTRY key, not the API's display metadata — a spoofed vault can
-  // claim any branding it likes (AGENT-QUICKSTART §4). When a registry read is available it wins;
+  // claim any branding it likes (AGENT-QUICKSTART § Protocol semantics). When a registry read is available it wins;
   // a disagreement between the two is itself disqualifying.
   const apiOpId = Number(vault?.operatorId ?? 0);
   const opId = registryOperatorId ?? apiOpId;
