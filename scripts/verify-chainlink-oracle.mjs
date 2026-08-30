@@ -12,6 +12,8 @@
  * ChainlinkOracle is IMMUTABLE and prices every vault that uses it. A wrong or fake feed address
  * looks exactly like a correct one until it prices a vault wrong, permanently. The specific traps:
  *   - a *plausible* wrong feed (right pair, wrong deployment / a copy-paste from another chain);
+ *   - a feed quoted in the WRONG DENOMINATION — Base has `CBETH / ETH` and no cbETH/USD feed, so an
+ *     ETH-denominated price would be read as dollars by NAV, deposits, exits and rebalances alike;
  *   - a feed with unexpected `decimals()` (the WAD scale is cached at construction from it);
  *   - a stale feed whose last answer is already older than its own heartbeat;
  *   - a non-positive answer (a broken/deprecated feed);
@@ -66,6 +68,27 @@ function code(addr) {
   } catch {
     return '0x';
   }
+}
+function callString(addr, sig) {
+  // returns the string, or null on revert / no code. `cast` prints a string return wrapped in
+  // double quotes ("ETH / USD"); strip them.
+  try {
+    const out = cast(['call', addr, sig, '--rpc-url', RPC]);
+    return out.replace(/^"(.*)"$/s, '$1');
+  } catch {
+    return null;
+  }
+}
+/**
+ * Mirrors `ChainlinkOracle._requireUsdQuote` byte for byte: the feed's own description must end in
+ * `USD` as a WHOLE WORD — last three chars `USD`, preceded by a pair separator (' ' or '/'). The
+ * separator is what rejects "ETH / PYUSD" (a USD-ish token, not USD) on a bare suffix match.
+ */
+function isUsdQuoted(description) {
+  if (typeof description !== 'string' || description.length < 4) return false;
+  if (description.slice(-3) !== 'USD') return false;
+  const sep = description[description.length - 4];
+  return sep === ' ' || sep === '/';
 }
 function callUint(addr, sig) {
   // returns a decimal string, or null on revert / no code
@@ -131,9 +154,32 @@ function main() {
     }
     // code
     check(`${label}: feed has code`, code(feed).length > 2, feed);
-    // decimals <= 18
+
+    // DENOMINATION. The oracle returns a USD price to every consumer (NAV, deposits, exits,
+    // rebalances) and nothing downstream can tell a USD number from an ETH-denominated one. Base
+    // ships a `CBETH / ETH` feed and NO cbETH/USD feed, so the wrong-denomination wire-up is one
+    // copy-paste away and is silent forever once deployed. ChainlinkOracle's constructor enforces
+    // this on-chain; the two checks here are the fast, pre-deploy half:
+    //   1. the feed's OWN description must be USD-quoted (the same predicate the constructor uses);
+    //   2. it must EQUAL the `feedDescriptionOnChain` the config commits to — which is what catches
+    //      the "plausible wrong feed" (right pair, wrong deployment / a copy-paste from another
+    //      chain) that check 1 alone cannot see.
+    const desc = callString(feed, 'description()(string)');
+    check(`${label}: feed description is USD-quoted`, isUsdQuoted(desc), `description=${JSON.stringify(desc)}`);
+    const expectedDesc = a.feedDescriptionOnChain;
+    check(
+      `${label}: description matches config feedDescriptionOnChain`,
+      typeof expectedDesc === 'string' && expectedDesc.length > 0 && desc === expectedDesc,
+      typeof expectedDesc === 'string' && expectedDesc.length > 0
+        ? `on-chain=${JSON.stringify(desc)} config=${JSON.stringify(expectedDesc)}`
+        : 'config has no `feedDescriptionOnChain` — add the EXACT on-chain description string so a swapped feed is detectable',
+    );
+
+    // decimals == 8: Chainlink's USD-feed convention (ETH-denominated feeds are 18). The oracle
+    // caches `scale` from this and its constructor pins it to 8, so anything else is both a
+    // denomination smell and an un-deployable config.
     const dec = callUint(feed, 'decimals()(uint8)');
-    check(`${label}: feed decimals <= 18`, dec !== null && BigInt(dec) <= 18n, `decimals=${dec}`);
+    check(`${label}: feed decimals == 8 (USD convention)`, dec !== null && BigInt(dec) === 8n, `decimals=${dec}`);
     // latestRoundData: positive answer, fresh within heartbeat
     const rd = latestRoundData(feed);
     if (!rd) {
