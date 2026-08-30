@@ -261,14 +261,6 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
-> ⚠ **The canary does NOT yet watch the launch oracle.** Its `oracle-freshness` signal reads
-> `assetConfig(asset)` → `(sources, maxStaleness, quorum)`, which is the retired `OracleAggregator`
-> ABI; `ChainlinkOracle` exposes `feedOf(asset)` and has no quorum at all. Against a vault priced by
-> the C-6 pivot every asset therefore comes back **`skipped`**, not `ok` — visible as an OK→SKIPPED
-> transition by design, never a silent pass, but it means the row below is currently **unmanned on
-> the launch oracle**. **Being fixed in #89 / #85 — delete this warning when one of them lands.**
-> Until then the recurring check immediately below is the oracle's only continuous monitoring.
-
 ### 7a. Recurring feed check — run this on a cadence, not only before deploying
 
 ```bash
