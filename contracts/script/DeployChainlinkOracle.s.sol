@@ -70,7 +70,25 @@ contract DeployChainlinkOracle is Script {
         for (uint256 i; i < n; ++i) {
             string memory where =
                 string.concat("asset ", vm.toString(assets[i]), " feed ", vm.toString(feeds[i]));
-            string memory desc = IFeedMeta(feeds[i]).description();
+            // Order matters, and a TYPED call would defeat the point. A codeless address (the
+            // single most likely typo) returns empty data, and `IFeedMeta(x).description()` would
+            // then blow up on ABI-decode as a bare Panic — the opaque failure this loop exists to
+            // replace. Prove there is code, then read `description()` by staticcall so "this is not
+            // an AggregatorV3" is reported as itself.
+            require(
+                feeds[i].code.length > 0,
+                string.concat("DeployChainlinkOracle: feed address has no code: ", where)
+            );
+            (bool ok, bytes memory ret) =
+                feeds[i].staticcall(abi.encodeWithSelector(IFeedMeta.description.selector));
+            require(
+                ok && ret.length >= 96, // (offset, length, >=1 word of data)
+                string.concat(
+                    "DeployChainlinkOracle: feed has no description() - cannot prove USD denomination: ",
+                    where
+                )
+            );
+            string memory desc = abi.decode(ret, (string));
             require(
                 _isUsdQuoted(desc),
                 string.concat("DeployChainlinkOracle: NOT a USD feed: ", where, " = ", desc)
