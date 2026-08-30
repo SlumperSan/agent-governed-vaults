@@ -49,6 +49,38 @@ The shorthand for this is **"update ob"**.
 
 ---
 
+## 0.5 Route the model to the task
+
+Every agent runs on a model and an effort level, and both are choices. Running the strongest model
+at the highest effort on mechanical work is not "being careful" — it is slower and more expensive
+for an identical result. Running a cheap model on a permanent, irreversible decision is the opposite
+mistake, and far worse. Route deliberately.
+
+| Tier | Use it for | Effort |
+|---|---|---|
+| **Haiku** | Mechanical and verifiable: sweeps, greps, collation, renames, link fixes, formatting, scaffolding from a template, gathering data for someone else to judge. | low |
+| **Sonnet** | Implementation against a clear spec where tests are the oracle: components, docs, straightforward refactors, test writing. | medium |
+| **Fable** | Writing- and judgement-heavy work with no single correct answer: charters, strategy, market and partner analysis, comms, positioning. | medium–high |
+| **Opus** | Anything where a wrong answer is permanent or expensive: security review, contract changes, adversarial verification, merge conflicts in security code, architecture decisions, launch-parameter calls. | high–max |
+
+**The one rule that is not a preference: never route security-critical judgment below the top tier.**
+These contracts are immutable. A cheap wrong answer about `VaultCore` cannot be patched later, and
+the saving is measured in cents against funds that cannot be recovered.
+
+Two heuristics that settle most cases:
+
+- **Ask what a wrong answer costs.** Cheap and instantly visible (a broken link, a failed build)
+  routes down. Permanent, silent, or financial routes up.
+- **Ask whether the task has a checkable oracle.** If tests, a compiler, or a schema will catch a
+  mistake, a smaller model is safe because the mistake cannot survive. If the only check is
+  judgement, pay for judgement.
+
+Within one workflow, mix tiers rather than picking one for the whole run: a Haiku pass to gather
+and normalize, Sonnet to implement, Opus to adversarially review. The review stage is the last place
+to economize — it exists precisely to catch what the implementer got wrong.
+
+---
+
 ## 1. The unit of work
 
 **One agent owns one module.** Not one feature spanning six files — one file, or one tightly-bounded
