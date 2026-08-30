@@ -17,21 +17,17 @@ import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
   mockReader, healthyVault, healthyState, log,
-  VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3,
+  VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, FEED,
 } from './helpers.mjs';
 
 const NOW = 1_700_000_000;
-const FRESH = { latestPrice: [3_000000000000000000n, BigInt(NOW - 10)] };
-
-/** A healthy fixture with a 5-source oracle, so the freshness margin clears the default bar. */
+/**
+ * The healthy fixture IS the shared one: `healthyVault` already models the deployed
+ * {ChainlinkOracle} (one feed per asset, 86,400 s heartbeat, USDC pinned, no sequencer feed), so a
+ * sweep here runs against the same oracle the launch tree deploys.
+ */
 function healthyFixture(overrides = {}) {
-  const SRC4 = '0x' + 'd'.repeat(40);
-  const SRC5 = '0x' + 'e'.repeat(40);
-  return healthyVault({
-    [ORACLE]: { priceWad: () => 3_000000000000000000n, assetConfig: () => [[SRC1, SRC2, SRC3, SRC4, SRC5], 3600, 2] },
-    [SRC1]: FRESH, [SRC2]: FRESH, [SRC3]: FRESH, [SRC4]: FRESH, [SRC5]: FRESH,
-    ...overrides,
-  });
+  return healthyVault(overrides);
 }
 
 const baseCfg = resolveCanaryConfig({ RPC_URL: 'http://localhost:8545', OPERATOR_REGISTRY_ADDRESS: REGISTRY });
@@ -49,7 +45,7 @@ test('config: defaults are the documented ones', () => {
   assert.equal(cfg.confirmations, 5);
   assert.equal(cfg.pollIntervalMs, 30_000);
   assert.equal(cfg.navDivergenceBps, 50);
-  assert.equal(cfg.oracleMinMargin, 0);
+  assert.equal(cfg.oracleMinHeadroomBps, 2500);
   assert.equal(cfg.statePath, './data/indexer-state.json');
   assert.equal(cfg.canaryStatePath, './data/canary-state.json');
   assert.notEqual(cfg.canaryStatePath, cfg.statePath, 'the canary must never write to the indexer snapshot');
@@ -67,6 +63,20 @@ test('config: rejects malformed addresses instead of silently watching nothing',
   assert.throws(() => resolveCanaryConfig({ RPC_URL: 'http://x', VAULTS: 'not-an-address' }), /non-address entry/);
   assert.throws(() => resolveCanaryConfig({ RPC_URL: 'http://x', OPERATOR_REGISTRY_ADDRESS: '0xabc' }), /not a 20-byte address/);
   assert.throws(() => resolveCanaryConfig({ RPC_URL: 'http://x', EXTRA_OPERATOR_ADDRESSES: `${OPERATOR},oops` }), /non-address entry/);
+});
+
+test('config: the RETIRED ORACLE_MIN_MARGIN is refused, not silently ignored', () => {
+  // An operator who tuned the old source-count margin must be told it no longer means anything,
+  // rather than have the canary quietly watch something else. See docs/CANARY.md §3(a).
+  assert.throws(
+    () => resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_MIN_MARGIN: '1' }),
+    /ORACLE_MIN_MARGIN is no longer used/,
+  );
+  assert.throws(
+    () => resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_MIN_HEADROOM_BPS: '10001' }),
+    /must be an integer in 0\.\.10000 bps/,
+  );
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', ORACLE_MIN_HEADROOM_BPS: '500' }).oracleMinHeadroomBps, 500);
 });
 
 test('config: lowercases addresses so they key the projection consistently', () => {
@@ -94,8 +104,10 @@ test('a healthy deployment produces ZERO alerts across every signal', async () =
 
 test('a tripped oracle alerts on freshness and DEGRADES the dependent signals, without double-paging NAV', async () => {
   const contracts = healthyFixture({
-    [ORACLE]: { priceWad: () => ({ revert: '0xa2671f4b' }), assetConfig: () => [[SRC1, SRC2, SRC3], 3600, 3] },
-    [SRC1]: FRESH, [SRC2]: FRESH, [SRC3]: { latestPrice: [3n, 1n] },
+    // The feed went silent past its heartbeat, so ChainlinkOracle.priceWad reverts StaleOracle and
+    // navWad reverts with it — one root cause, and it must produce exactly one page.
+    [ORACLE]: { priceWad: () => ({ revert: '0xa2671f4b' }) },
+    [FEED]: { latestRoundData: () => [1n, 300_000_000n, BigInt(NOW - 90_000), BigInt(NOW - 90_000), 1n] },
     [VAULT]: { ...healthyVault()[VAULT], navWad: { revert: '0xa2671f4b' } },
   });
   const results = await collectSignals({
@@ -103,7 +115,11 @@ test('a tripped oracle alerts on freshness and DEGRADES the dependent signals, w
     vaults: [VAULT], cfg: baseCfg, window: WINDOW,
   });
   const by = (s) => results.filter((r) => r.signal === s);
-  assert.equal(by('oracle-freshness')[0].status, 'alert');
+  // The oracle signal fans out per asset PLUS one key for the L2 sequencer gate, so select the
+  // basket asset's result rather than assuming an order.
+  const freshness = by('oracle-freshness').find((r) => r.key === ASSET);
+  assert.equal(freshness.status, 'alert');
+  assert.match(freshness.detail.tripCause, /STALE/, 'the page must name why the breaker tripped');
   assert.equal(by('nav-backing')[0].status, 'skipped', 'NAV must not double-page for the oracle');
   assert.equal(by('nav-backing')[0].detail.attributedTo, 'oracle-freshness');
   assert.equal(results.filter((r) => r.status === 'alert').length, 1, 'exactly one page for one root cause');

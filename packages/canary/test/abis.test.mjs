@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
-  VAULT_VIEWS, ORACLE_VIEWS, VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
+  VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, CHAINLINK_FEED_VIEWS,
+  VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   signatureOf,
 } from '../src/abis.mjs';
 
@@ -28,7 +29,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, '../../../contracts/out');
 const vaultAbiPath = join(OUT, 'VaultCore.sol/VaultCore.json');
 const built = existsSync(vaultAbiPath);
-const vaultAbi = built ? JSON.parse(readFileSync(vaultAbiPath, 'utf8')).abi ?? [] : [];
+const abiOf = (rel) => {
+  const path = join(OUT, rel);
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).abi ?? [] : [];
+};
+const vaultAbi = built ? abiOf('VaultCore.sol/VaultCore.json') : [];
+const oracleAbi = abiOf('ChainlinkOracle.sol/ChainlinkOracle.json');
+const feedAbi = abiOf('IAggregatorV3.sol/IAggregatorV3.json');
 const canonical = (item) => `${item.name}(${item.inputs.map((i) => i.type).join(',')})`;
 
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
@@ -72,8 +79,8 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS]) {
-    assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
+  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...CHAINLINK_FEED_VIEWS]) {
+    assert.ok(['view', 'pure'].includes(frag.stateMutability), `${frag.name} is not a view/pure function`);
   }
 });
 
@@ -126,4 +133,43 @@ test('the views the signals read exist on the compiled VaultCore', { skip: !buil
 test('requestExit(uint256) is a real VaultCore function — the sentinel probes a live selector', { skip: !built && 'contracts/out absent' }, () => {
   const fns = vaultAbi.filter((i) => i.type === 'function').map(canonical);
   assert.ok(fns.includes('requestExit(uint256)'));
+});
+
+/**
+ * THE GUARD THAT WOULD HAVE CAUGHT THE BLIND SIGNAL. The freshness signal read `assetConfig`,
+ * which the C-6 pivot's {ChainlinkOracle} does not implement, and nothing in the suite compared the
+ * canary's oracle table against a compiled oracle — so the unit tests stayed green while the live
+ * signal reverted on every poll (docs/RESTORE-DRILL.md §5). Comparing against the ARTIFACT, not
+ * against another hand-written fixture, is what makes that failure impossible to repeat silently.
+ */
+test('the oracle views the freshness signal reads exist on the compiled ChainlinkOracle', { skip: !oracleAbi.length && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(oracleAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of [...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS]) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `ChainlinkOracle has no ${sig} — the canary would read a reverting selector, exactly the defect this test exists to prevent`);
+    assert.equal(onChain.stateMutability, frag.stateMutability, `${sig} mutability drifted from the compiled contract`);
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted from the compiled contract`,
+    );
+  }
+});
+
+test('the retired aggregator views are GONE from the canary table', { skip: !oracleAbi.length && 'contracts/out absent' }, () => {
+  // Keeping a fragment for a contract the launch tree does not deploy is how the blind signal
+  // comes back. `assetConfig`/`assets` belonged to the retired OracleAggregator.
+  const declared = [...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS].map((f) => f.name);
+  for (const gone of ['assetConfig', 'assets', 'latestPrice']) {
+    assert.ok(!declared.includes(gone), `${gone} is not on the deployed oracle — it must not be in the canary's table`);
+  }
+});
+
+test('the Chainlink feed views match the compiled IAggregatorV3', { skip: !feedAbi.length && 'contracts/out absent' }, () => {
+  const fns = new Map(feedAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of CHAINLINK_FEED_VIEWS) {
+    const sig = signatureOf(frag);
+    assert.ok(fns.get(sig), `IAggregatorV3 has no ${sig}`);
+    assert.deepEqual(fns.get(sig).outputs.map((o) => o.type), frag.outputs.map((o) => o.type));
+  }
 });

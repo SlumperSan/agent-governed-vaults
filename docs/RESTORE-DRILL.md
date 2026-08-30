@@ -300,6 +300,11 @@ poll, for every asset, on every vault, and parks permanently in `skipped`.
 "silence means healthy" is not true for oracle freshness — it is silent because it is blind. This
 should be an issue in its own right; it is out of scope for this PR, which changes no code.
 
+> **Resolved after this drill** (see the gate 6 row in [LAUNCH-READINESS.md](LAUNCH-READINESS.md)):
+> the signal was reworked for the deployed `ChainlinkOracle` — freeze detection now rides on
+> `priceWad`, which every oracle model implements, and the canary's oracle ABI table is checked
+> against the compiled artifact in CI. The drill record above is left as it was observed.
+
 ## 6. Limits of this drill — what it did NOT prove
 
 Stated without softening.

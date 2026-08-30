@@ -29,7 +29,7 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS` — compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
-| `ORACLE_MIN_MARGIN` | | `0` | alert when `freshSources - quorum <= this` |
+| `ORACLE_MIN_HEADROOM_BPS` | | `2500` | alert when a feed has this share or less of its heartbeat left (2500 = 25%) |
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
 | `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback |
 | `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line, so silence is provably alive |
@@ -64,29 +64,74 @@ A standing problem is reported **once**, not every poll, and the state survives 
 
 ## 3. The signals
 
-### (a) `oracle-freshness` — margin to the staleness breaker
+### (a) `oracle-freshness` — headroom to the staleness breaker
 
-**What it measures.** Per basket asset: `margin = freshSources - quorum`, where a source is fresh iff
-`latestPrice()` returns `priceWad > 0` and `updatedAt >= chainNow - maxStaleness`. This reproduces
-`OracleAggregator.priceWad` exactly, including that a *reverting* source is simply not fresh. The
-clock is chain time, never the monitoring host's.
+**What it watches.** The oracle each vault is pinned to, which since the C-6 pivot is
+[`ChainlinkOracle`](../contracts/src/oracle/ChainlinkOracle.sol): **one genuine Chainlink Data Feed
+per asset**, no median, no quorum, no per-vault source list. It fans out one result per basket
+asset, plus one for the L2 sequencer gate.
 
-**Threshold.** ALERT when `margin <= 0` (`ORACLE_MIN_MARGIN`).
+> **This signal was blind until 2026-08-30.** It read `assetConfig(address)`, which exists only on
+> the *retired* `OracleAggregator`, so against the deployed stack it reverted on every poll, for
+> every asset, on every vault, and parked permanently in DEGRADED — silent about oracle freshness
+> because it could not see it (found during the gate-7 restore drill,
+> [RESTORE-DRILL.md §5](RESTORE-DRILL.md)). Two things now make that class of failure loud: the
+> ALERT path depends only on `priceWad`, which every oracle model implements, and
+> `packages/canary/test/abis.test.mjs` compares the canary's oracle table against the **compiled**
+> `ChainlinkOracle` artifact, so the next divergence fails in CI instead of on a live deployment.
 
-- `margin < 0` — the breaker is **already tripped**; `priceWad` reverts and every NAV path in the
-  vault, **including exits**, is frozen.
-- `margin == 0` — any single further source failure freezes the vault.
+**What it measures**, per basket asset:
 
-> The bar is `<= 0` on purpose. A vault on the protocol floor (3 sources, `quorum` 2) sits at
-> margin 1 when perfectly healthy — it takes *two* failures to trip. Paging on margin 1 would page
-> forever and get the canary muted. Set `ORACLE_MIN_MARGIN=1` if you want the earlier warning.
+| | |
+|---|---|
+| **The breaker** | `priceWad(asset)`. It never returns 0 and never returns a stale price — it reverts `StaleOracle`. A revert is a **live capital freeze**: every NAV path in the vault reverts with it, exits included. |
+| **The headroom** | `heartbeat - (chainNow - feed.updatedAt)` — how much silence the asset's feed has left before the oracle rejects it. Reported in **bps of the heartbeat**, so one bar works across mainnet's 3,600 s bound and testnet's 86,400 s one. |
 
-**When it fires.** Identify which sources went stale from `detail.staleSources`, then chase the feed
-operator. **There is no contract-side remedy** — the breaker is immutable and has no hatch by
+**Threshold.** ALERT when headroom `<=` `ORACLE_MIN_HEADROOM_BPS` (default 2500 = 25% of the
+heartbeat), or when `priceWad` reverts at all.
+
+> The bar is 25% on purpose. A Chainlink feed publishes on a deviation threshold *or* its heartbeat,
+> and the configured heartbeat sits at or above the feed's own, so a healthy feed is nowhere near
+> the bound: Base Sepolia's ETH/USD was 307 s into an 86,400 s heartbeat at address-book
+> verification (99.6% headroom), and Base mainnet ETH/USD publishes at least every 1,200 s against a
+> 3,600 s bound (≥66%). 25% never fires in steady state and still gives 15 minutes of warning on
+> mainnet. Raising it much further would page forever and get the canary muted — the same mistake as
+> being blind, in the other direction.
+
+**`ORACLE_MIN_MARGIN` is gone.** It set a *source-count* margin (`freshSources - quorum`) against an
+oracle model the launch tree no longer deploys, so it could not be ported. The canary **refuses to
+start** if it is still set, rather than ignoring a value an operator deliberately tuned.
+
+**When the breaker trips, the alert names the cause** — walking `priceWad`'s own reject order, so
+"chase the feed operator" is not the reflex response to something else: the feed is *stale past its
+heartbeat*; the answer is *non-positive*; the asset is *not listed*; the feed itself *reverts*; or
+the price is *outside the oracle's sane-price band* (the depeg / deprecated-clamp defence, where the
+feed reads perfectly fresh and chasing it would waste the outage).
+
+**The L2 sequencer gate** (`sequencer` key). `ChainlinkOracle` runs `_requireSequencerUp` **before**
+any price is read, so a down — or just-restarted — Base sequencer freezes *every* asset on *every*
+vault priced by that oracle. It therefore gets **one** result for the vault, and while it is failing
+the per-asset results are DEGRADED and attributed to it: one root cause, one page. Three notes on
+polarity, each of which would otherwise manufacture a permanently-red or permanently-blind signal:
+
+- an **unset** feed (`address(0)`, the deliberate Base Sepolia configuration) means the contract
+  skips the gate, so the canary reports it **healthy and stays silent**;
+- the uptime feed's own `updatedAt` is **not** staleness-checked, matching the contract — it writes
+  only on an up↔down transition, so an ancient timestamp is its healthy steady state;
+- `GRACE_PERIOD` is **read from the deployed oracle**, never copied into JS.
+
+**When it fires. There is no contract-side remedy** — the breaker is immutable and has no hatch by
 design ([SF-2 / K-4](THREAT-MODEL.md)); any exit-during-staleness escape *is* the stale-price exit
-the breaker exists to prevent. Restoring quorum on the sources is the only fix. Meanwhile: pending
+the breaker exists to prevent. Restoring the feed is the only fix, which is exactly why the headroom
+warning matters: after the heartbeat elapses there is nothing left to do. Meanwhile, pending
 (observation-window) capital is **not** trapped — `cancelPending` reads no oracle — so tell members
-with un-activated deposits they can still reclaim them.
+with un-activated deposits they can still reclaim them. A sequencer-grace alert needs no action at
+all: capital unfreezes when the window elapses, and the alert says when.
+
+**Coverage limit, stated rather than hidden.** Against an oracle that is *not* a `ChainlinkOracle`,
+the headroom and sequencer checks cannot run. The signal then emits **one** DEGRADED line per vault
+(`oracle-model`) saying so, and keeps paging per asset for freezes via `priceWad`. A narrowed check
+that announces itself — never a silent one.
 
 Threat-model rows: [SF-1](THREAT-MODEL.md) (source independence), [SF-2](THREAT-MODEL.md) (the
 accepted freeze).

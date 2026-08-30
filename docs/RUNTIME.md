@@ -242,7 +242,7 @@ when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `ST
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence; named apart from the indexer's `POLL_INTERVAL_MS` |
 | `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
-| `ORACLE_MIN_MARGIN` | | `0` | alert when fresh sources minus quorum <= this |
+| `ORACLE_MIN_HEADROOM_BPS` | | `2500` | oracle-freshness bar: alert when a basket asset's Chainlink feed has this share or less of its staleness heartbeat left (2500 = 25%). The retired `ORACLE_MIN_MARGIN` is now a startup error, not a silently ignored value |
 | `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2) |
 | `SNAPSHOT_BACKUPS` / `SNAPSHOT_BACKUP_INTERVAL_MS` | | `3` / `300000` | backup ring for the canary state file too (§8.3) |
 | `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `canary.heartbeat.json` is written (§8.2) |

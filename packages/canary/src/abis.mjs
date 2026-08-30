@@ -22,10 +22,10 @@
 const ev = (name, inputs) => ({ type: 'event', name, anonymous: false, inputs });
 const addr = (name, indexed = false) => ({ name, type: 'address', indexed });
 const u256 = (name, indexed = false) => ({ name, type: 'uint256', indexed });
-const view = (name, inputs, outputs) => ({
+const view = (name, inputs, outputs, stateMutability = 'view') => ({
   type: 'function',
   name,
-  stateMutability: 'view',
+  stateMutability,
   inputs: inputs.map((t, i) => (typeof t === 'string' ? { name: `a${i}`, type: t } : t)),
   outputs: outputs.map((t, i) => (typeof t === 'string' ? { name: `o${i}`, type: t } : t)),
 });
@@ -53,22 +53,63 @@ export const VAULT_VIEWS = Object.freeze([
   view('totalPendingUsdc', [], ['uint256']),
 ]);
 
-/** OracleAggregator: the immutable per-asset source config the freshness margin is measured against. */
+/**
+ * IOracleAggregator — the ONE view every oracle model implements, and the only oracle read the
+ * canary is allowed to depend on unconditionally.
+ *
+ * `priceWad` IS the breaker: it never returns 0 and never returns a stale price, it reverts
+ * `StaleOracle(asset)`. So a successful call proves the vault's NAV paths (deposits, exits,
+ * rebalances) can price that asset RIGHT NOW, and a revert proves they cannot — on
+ * {ChainlinkOracle} and on the retired {OracleAggregator} alike.
+ *
+ * This table used to also carry `assetConfig` and `assets(uint256)`, which exist ONLY on the
+ * retired custom aggregator. The C-6 pivot deployed {ChainlinkOracle}, which has neither, so the
+ * freshness signal reverted on every poll against the launch stack and parked permanently in
+ * `skipped` — silent because it was blind, which is the one failure mode this package exists to
+ * prevent (found in the gate-7 restore drill, docs/RESTORE-DRILL.md §5). They are deleted rather
+ * than kept "just in case": a fragment for a contract the launch tree does not deploy is how that
+ * bug gets reintroduced, and test/abis.test.mjs now checks every fragment below against the
+ * COMPILED oracle so the next divergence fails in CI instead of on a live deployment.
+ */
 export const ORACLE_VIEWS = Object.freeze([
   view('priceWad', ['address'], ['uint256']),
-  view('assetConfig', ['address'], [
-    { name: 'sources', type: 'address[]' },
-    { name: 'maxStaleness', type: 'uint32' },
-    { name: 'quorum', type: 'uint8' },
-  ]),
-  view('assets', ['uint256'], ['address']),
 ]);
 
-/** IPriceSource — polled per source to count how many are fresh right now. */
-export const PRICE_SOURCE_VIEWS = Object.freeze([
-  view('latestPrice', [], [
-    { name: 'priceWad', type: 'uint256' },
+/**
+ * {ChainlinkOracle} — the C-6 launch oracle (one Chainlink Data Feed per asset, no median, no
+ * quorum). These are the extra reads the FORWARD-LOOKING half of the freshness signal needs:
+ * `feedOf` gives the asset's feed and the heartbeat its staleness is measured against, `usdc`
+ * identifies the pinned quote leg (pinned to 1e18, no feed, so it cannot go stale), and the
+ * sequencer pair reproduces the L2 uptime gate that runs BEFORE any price is trusted.
+ *
+ * `GRACE_PERIOD` is READ, not hardcoded: a JS copy of a Solidity constant is exactly the drift
+ * class that made this signal blind in the first place.
+ */
+export const CHAINLINK_ORACLE_VIEWS = Object.freeze([
+  view('feedOf', ['address'], [
+    { name: 'feed', type: 'address' },
+    { name: 'heartbeat', type: 'uint32' },
+    { name: 'scale', type: 'uint64' },
+    { name: 'minPriceWad', type: 'uint128' },
+    { name: 'maxPriceWad', type: 'uint128' },
+  ]),
+  view('usdc', [], ['address']),
+  view('sequencerUptimeFeed', [], ['address']),
+  view('GRACE_PERIOD', [], ['uint256']),
+]);
+
+/**
+ * Chainlink `AggregatorV3` (the asset feeds AND the L2 sequencer uptime feed). Polled DIRECTLY,
+ * not through the oracle, because the whole point of the signal is to see the breaker coming:
+ * `priceWad` only tells you fresh-or-frozen, `updatedAt` tells you how much heartbeat is left.
+ */
+export const CHAINLINK_FEED_VIEWS = Object.freeze([
+  view('latestRoundData', [], [
+    { name: 'roundId', type: 'uint80' },
+    { name: 'answer', type: 'int256' },
+    { name: 'startedAt', type: 'uint256' },
     { name: 'updatedAt', type: 'uint256' },
+    { name: 'answeredInRound', type: 'uint80' },
   ]),
 ]);
 

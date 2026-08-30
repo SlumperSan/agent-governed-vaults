@@ -22,9 +22,10 @@ export const CREATOR = A('5');
 export const MEMBER = A('6');
 export const OPERATOR = A('7');
 export const FEE_ENGINE = A('8');
-export const SRC1 = A('a');
-export const SRC2 = A('b');
-export const SRC3 = A('c');
+/** The asset's single Chainlink Data Feed, and the L2 sequencer uptime feed (see ChainlinkOracle). */
+export const FEED = A('a');
+export const SEQ_FEED = A('b');
+export const ZERO_ADDR = `0x${'0'.repeat(40)}`;
 
 const lc = (x) => (typeof x === 'string' ? x.toLowerCase() : x);
 
@@ -106,10 +107,20 @@ export function log(address, eventName, blockNumber, args, { logIndex = 0, trans
  *   idleUsdc 1_000_000 (1 USDC, 6dp) * usdcScalar 1e12                       = 1e18
  *   assetBalance[ASSET] 2e18 * priceWad 3e18 / assetUnit 1e18                = 6e18
  *   navWad                                                                   = 7e18
+ *
+ * THE ORACLE IS THE DEPLOYED ONE. It answers the {ChainlinkOracle} surface — `feedOf`, `usdc`,
+ * `sequencerUptimeFeed`, `GRACE_PERIOD` — with the shape the C-6 pivot actually put on Base Sepolia:
+ * one Chainlink feed per asset, an 86,400 s heartbeat, USDC pinned, and NO sequencer uptime feed
+ * (address(0), deliberate off Base mainnet). The freshness signal used to be fixtured against the
+ * RETIRED aggregator's `assetConfig`, which is why its tests passed while the live signal was blind.
+ * A fixture that models a contract the launch tree does not deploy proves nothing.
+ *
+ * Feed arithmetic: answer 3e8 (8 decimals, $3.00) * scale 1e10 = priceWad 3e18, matching the NAV
+ * above; last update 1,000 s into the 86,400 s heartbeat, i.e. ~98.8% headroom.
  */
 export function healthyVault(overrides = {}) {
-  const oracleSources = [SRC1, SRC2, SRC3];
-  const fresh = { latestPrice: [3_000000000000000000n, BigInt(1_699_999_000)] };
+  const FEED_UPDATED_AT = 1_699_999_000n; // 1,000 s before the tests' NOW
+  const feedRound = { latestRoundData: () => [1n, 300_000_000n, FEED_UPDATED_AT, FEED_UPDATED_AT, 1n] };
 
   const contracts = {
     [VAULT]: {
@@ -133,11 +144,16 @@ export function healthyVault(overrides = {}) {
     },
     [ORACLE]: {
       priceWad: () => 3_000000000000000000n,
-      assetConfig: () => [oracleSources, 3600, 2],
+      // (feed, heartbeat, scale, minPriceWad, maxPriceWad) — the public `feedOf` mapping getter.
+      // Sane-price band $1..$100 (WAD); the fixture's $3.00 sits inside it.
+      feedOf: (a) => (lc(a) === lc(ASSET)
+        ? [FEED, 86_400, 10_000_000_000n, 1_000000000000000000n, 100_000000000000000000n]
+        : [ZERO_ADDR, 0, 0n, 0n, 0n]),
+      usdc: () => USDC,
+      sequencerUptimeFeed: () => ZERO_ADDR, // off a sequencer L2: ChainlinkOracle skips the gate
+      GRACE_PERIOD: () => 3600n,
     },
-    [SRC1]: fresh,
-    [SRC2]: fresh,
-    [SRC3]: fresh,
+    [FEED]: feedRound,
     [USDC]: { balanceOf: () => 1_000_000n },
     [ASSET]: { balanceOf: () => 2_000000000000000000n },
     [REGISTRY]: {

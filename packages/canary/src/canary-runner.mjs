@@ -28,7 +28,10 @@
  *                              POLL_INTERVAL_MS because docker-compose feeds both services one
  *                              .env file, and a canary sweep is far heavier than an indexer poll.
  *   NAV_DIVERGENCE_BPS (50)    composition-divergence bar, 50 = 0.5%
- *   ORACLE_MIN_MARGIN (0)      alert when fresh-sources minus quorum <= this
+ *   ORACLE_MIN_HEADROOM_BPS (2500)  alert when a basket asset's Chainlink feed has this share or
+ *                              less of its staleness heartbeat left, in bps of the heartbeat
+ *                              (2500 = 25%). Replaces the retired ORACLE_MIN_MARGIN, which counted
+ *                              fresh sources against a quorum the launch oracle does not have.
  *   LOG_LOOKBACK_BLOCKS (0)    on a cold start, how far back to scan for events
  *   MAX_LOG_SPAN_BLOCKS (2000) cap on one poll's getLogs range
  *   HEARTBEAT_MS (0)           if set, periodically print a one-line "still watching" summary
@@ -80,6 +83,17 @@ export function resolveCanaryConfig(env) {
     throw new Error(`canary: OPERATOR_REGISTRY_ADDRESS is not a 20-byte address: ${operatorRegistry}`);
   }
 
+  // The C-6 pivot retired the multi-source oracle, and with it the source-count margin this knob
+  // used to set. Refusing to start is deliberate: silently ignoring a tuning value an operator
+  // deliberately set is how a canary ends up watching something other than what its operator thinks.
+  if (env.ORACLE_MIN_MARGIN != null && env.ORACLE_MIN_MARGIN !== '') {
+    throw new Error('canary: ORACLE_MIN_MARGIN is no longer used — the launch oracle (ChainlinkOracle, C-6) has one feed per asset, no sources and no quorum. Set ORACLE_MIN_HEADROOM_BPS instead (remaining heartbeat, in bps; default 2500 = 25%). See docs/CANARY.md §3(a)');
+  }
+  const oracleMinHeadroomBps = num('ORACLE_MIN_HEADROOM_BPS', 2500);
+  if (!Number.isInteger(oracleMinHeadroomBps) || oracleMinHeadroomBps < 0 || oracleMinHeadroomBps > 10_000) {
+    throw new Error(`canary: ORACLE_MIN_HEADROOM_BPS must be an integer in 0..10000 bps, got ${env.ORACLE_MIN_HEADROOM_BPS}`);
+  }
+
   const statePath = env.STATE_PATH || './data/indexer-state.json';
   const pollIntervalMs = num('CANARY_POLL_INTERVAL_MS', 30_000);
   return {
@@ -100,7 +114,7 @@ export function resolveCanaryConfig(env) {
     confirmations: num('CONFIRMATIONS', 5),
     pollIntervalMs,
     navDivergenceBps: num('NAV_DIVERGENCE_BPS', 50),
-    oracleMinMargin: num('ORACLE_MIN_MARGIN', 0),
+    oracleMinHeadroomBps,
     logLookbackBlocks: num('LOG_LOOKBACK_BLOCKS', 0),
     maxLogSpanBlocks: num('MAX_LOG_SPAN_BLOCKS', 2000),
     heartbeatMs: num('HEARTBEAT_MS', 0),
@@ -168,7 +182,8 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
     }
 
     await run('oracle-freshness', () => checkOracleFreshness({
-      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec, minMargin: cfg.oracleMinMargin,
+      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec,
+      minHeadroomBps: cfg.oracleMinHeadroomBps,
     }));
 
     await run('nav-backing', () => checkNavBacking({
