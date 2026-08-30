@@ -13,11 +13,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
-  readSeries, summarize, findGaps, summarizeFreezeSafety, oracleCanaryRows, verdictOf,
+  readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
+  oracleCanaryRows, verdictOf, isAssetSubject, isBreachSample,
 } from '../soak/series-analysis.mjs';
+import { sequencerState, attributeAsset, classifyCallError } from '../soak/oracle-sampler.mjs';
 import { resolveAgentRunConfig, policyFor, EXECUTE_ENV_VAR } from '../soak/agent-policy.mjs';
 
 // ───────────────────────────── fixtures ─────────────────────────────
+
+/** Real Base Sepolia basket assets, so a "subject is an address" test uses address-shaped data. */
+const WETH = '0x4200000000000000000000000000000000000006';
+const LINK = '0xE4aB69C077896252FAFBD49EFD26B5D171A32410';
 
 const sample = (t, chainNow, over = {}) => ({
   t, chainNow,
@@ -162,15 +168,314 @@ test('no breach → NO_EVENT verdict naming the closest approach', () => {
 
 test('breach with an all-ok canary is reported as NOT tracked — the canary missed it', () => {
   const byAsset = summarize([sample('t1', 1, { asset: { margin: -2 } })]);
-  const r = verdictOf(byAsset, [{ status: 'ok' }, { status: 'ok' }]);
+  const r = verdictOf(byAsset, [{ subject: WETH, status: 'ok' }, { subject: LINK, status: 'ok' }]);
   assert.equal(r.verdict, 'STALENESS_EVENT_OBSERVED');
   assert.equal(r.canaryTracked, false, 'this is the case that must fail the drill');
 });
 
 test('breach with a canary row off ok is reported as tracked', () => {
   const byAsset = summarize([sample('t1', 1, { asset: { priceReverts: true } })]);
-  const r = verdictOf(byAsset, [{ status: 'ok' }, { status: 'alert' }]);
+  const r = verdictOf(byAsset, [{ subject: WETH, status: 'ok' }, { subject: LINK, status: 'alert' }]);
   assert.equal(r.canaryTracked, true);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// C-6 PIVOT: the sampler now models ChainlinkOracle, not the retired OracleAggregator.
+//
+// The bug these tests exist to keep dead: the old sampler polled per-source `latestPrice()`, which
+// REVERTS on a Chainlink proxy, swallowed the revert into `fresh: false`, and so recorded
+// `margin = -1` on every sample of a perfectly healthy oracle — a fabricated permanent breach that
+// drove drill 4 to report a staleness event that never happened.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const ZERO = '0x0000000000000000000000000000000000000000';
+const SEQ_FEED = '0xBCF85224fc0756B9Fa45aA7892530B47e10b6433';
+/** Base Sepolia WETH leg, read on-chain 2026-08-30: heartbeat 86400s, scale 1e10, band $100..$100k. */
+const cfgWeth = (over = {}) => ({
+  feed: '0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1',
+  heartbeat: 86_400, scale: 10_000_000_000n,
+  minPriceWad: 100_000_000_000_000_000_000n, maxPriceWad: 100_000_000_000_000_000_000_000n,
+  ...over,
+});
+const round = (over = {}) => ({ ok: true, answer: '245833847163', updatedAt: 1_788_056_290, startedAt: 1_788_056_290, ...over });
+const NO_SEQ_CAUSE = { causeKey: null, cause: null };
+
+// ───────────────────── call-error classification ─────────────────────
+
+test('a revert is a contract verdict and a transport failure is not — they must never be conflated', () => {
+  // The whole "missing evidence" discipline rests on this split: a rate-limited RPC recorded as a
+  // freeze is exactly the defect verify-chainlink-oracle.mjs once found in itself.
+  assert.equal(classifyCallError('server returned an error response: error code 3: execution reverted'), 'revert');
+  assert.equal(classifyCallError('Error: (code: 3, message: execution reverted, data: "0xa2671f4b")'), 'revert');
+  assert.equal(classifyCallError('error sending request: operation timed out'), 'transport');
+  assert.equal(classifyCallError('server returned an error response: error code 429: rate limit exceeded'), 'transport');
+  assert.equal(classifyCallError('ECONNRESET'), 'transport');
+  // Anything we cannot positively identify as a revert is missing evidence, not a finding.
+  assert.equal(classifyCallError('something nobody has seen before'), 'transport');
+});
+
+// ───────────────────────── the sequencer gate ─────────────────────────
+
+test('an unconfigured sequencer feed is neither a fault nor health — it is an unexercised path', () => {
+  const s = sequencerState({ feed: ZERO, round: null, chainNow: 1000, grace: 3600 });
+  assert.equal(s.configured, false);
+  assert.equal(s.state, 'not-configured');
+  assert.equal(s.causeKey, null, 'address(0) must not be reported as a freeze cause');
+  assert.equal(s.unreadable, false);
+});
+
+test('the grace window publishes the EXACT second pricing resumes: startedAt + GRACE_PERIOD + 1', () => {
+  // The contract reverts while `block.timestamp - startedAt <= GRACE_PERIOD`, so the first second
+  // that prices again is one PAST the window. That number is the only honest ETA we can publish.
+  const s = sequencerState({ feed: SEQ_FEED, round: { ok: true, answer: '0', startedAt: 1000 }, chainNow: 1000 + 3600, grace: 3600 });
+  assert.equal(s.state, 'grace');
+  assert.equal(s.causeKey, 'sequencer-grace');
+  assert.equal(s.resumesAtSec, 4601);
+  // One second later the window has fully elapsed and the gate opens.
+  const after = sequencerState({ feed: SEQ_FEED, round: { ok: true, answer: '0', startedAt: 1000 }, chainNow: 1000 + 3601, grace: 3600 });
+  assert.equal(after.state, 'up');
+  assert.equal(after.causeKey, null);
+});
+
+test('a down sequencer, an unusable round and a future startedAt are all freeze causes', () => {
+  assert.equal(sequencerState({ feed: SEQ_FEED, round: { ok: true, answer: '1', startedAt: 1 }, chainNow: 10_000, grace: 3600 }).causeKey, 'sequencer-down');
+  assert.equal(sequencerState({ feed: SEQ_FEED, round: { ok: true, answer: '0', startedAt: 0 }, chainNow: 10_000, grace: 3600 }).causeKey, 'sequencer-unusable-round');
+  assert.equal(sequencerState({ feed: SEQ_FEED, round: { ok: true, answer: '0', startedAt: 99_999 }, chainNow: 10_000, grace: 3600 }).causeKey, 'sequencer-unusable-round');
+});
+
+test('an uptime feed that REVERTS is a live freeze; one that is unreachable is missing evidence', () => {
+  const reverts = sequencerState({ feed: SEQ_FEED, round: { ok: false, err: 'execution reverted', kind: 'revert' }, chainNow: 1, grace: 3600 });
+  assert.equal(reverts.causeKey, 'sequencer-feed-reverts', 'the contract try/catches this and reverts StaleOracle vault-wide');
+  assert.equal(reverts.unreadable, false);
+
+  const blip = sequencerState({ feed: SEQ_FEED, round: { ok: false, err: 'operation timed out', kind: 'transport' }, chainNow: 1, grace: 3600 });
+  assert.equal(blip.unreadable, true);
+  assert.equal(blip.causeKey, null, 'an RPC blip must never be attributed as a sequencer freeze');
+});
+
+// ───────────────────── per-asset attribution (mirrors priceWad) ─────────────────────
+
+test('a healthy ChainlinkOracle asset attributes NO cause and reports the real age', () => {
+  const a = attributeAsset({ cfg: cfgWeth(), round: round(), chainNow: 1_788_056_572, pinned: false, sequencer: NO_SEQ_CAUSE });
+  assert.equal(a.causeKey, null, 'a healthy live oracle must produce no finding at all');
+  assert.equal(a.ageSec, 282);
+  assert.equal(a.detail.inBand, true);
+  assert.equal(a.unreadable, false);
+});
+
+test('staleness trips at age STRICTLY GREATER than the heartbeat — equal is still fresh', () => {
+  // The contract's bound is `updatedAt < now - heartbeat`. Off by one here pages a poll early on
+  // every heartbeat-cadence feed, which is how a correct canary gets muted.
+  const at = (age) => attributeAsset({
+    cfg: cfgWeth({ heartbeat: 3600 }), round: round({ updatedAt: 1_000_000 }),
+    chainNow: 1_000_000 + age, pinned: false, sequencer: NO_SEQ_CAUSE,
+  }).causeKey;
+  assert.equal(at(3599), null);
+  assert.equal(at(3600), null, 'age EXACTLY equal to the heartbeat is fresh');
+  assert.equal(at(3601), 'heartbeat-exceeded');
+});
+
+test('the SEQUENCER cause wins over a stale feed, because priceWad checks it first', () => {
+  // Not a corner case: the Base outages on record ran 2,760s / 9,432s / 3,612s, so a 3600s-heartbeat
+  // feed is stale by the end of any of them. "Outage + stale feed" IS the shape of the grace hour,
+  // and naming the heartbeat there sends a responder after the wrong thing.
+  const a = attributeAsset({
+    cfg: cfgWeth({ heartbeat: 3600 }), round: round({ updatedAt: 1_000_000 }), chainNow: 1_010_000,
+    pinned: false, sequencer: { causeKey: 'sequencer-grace', cause: 'the sequencer is inside its post-restart grace period' },
+  });
+  assert.equal(a.causeKey, 'sequencer-grace', 'the contract reverts on the sequencer before it ever reads the feed');
+  assert.match(a.cause, /grace/);
+});
+
+test('the sane-price band is enabled by maxPriceWad ALONE, exactly as the contract gates it', () => {
+  const low = round({ answer: '1' }); // 1e-8 USD scaled to WAD = 1e10, far below the $100 floor
+  assert.equal(attributeAsset({ cfg: cfgWeth(), round: low, chainNow: 1_788_056_290, pinned: false, sequencer: NO_SEQ_CAUSE }).causeKey, 'band-trip');
+  // max == 0 is the only "disabled" spelling; a stray floor must not re-enable the band.
+  const disabled = cfgWeth({ maxPriceWad: 0n, minPriceWad: 100_000_000_000_000_000_000n });
+  assert.equal(attributeAsset({ cfg: disabled, round: low, chainNow: 1_788_056_290, pinned: false, sequencer: NO_SEQ_CAUSE }).causeKey, null);
+});
+
+test('unlisted, non-positive, unset and future-stamped rounds each name their own cause', () => {
+  const go = (over, cfgOver) => attributeAsset({
+    cfg: cfgWeth(cfgOver), round: round(over), chainNow: 1_788_056_572, pinned: false, sequencer: NO_SEQ_CAUSE,
+  }).causeKey;
+  assert.equal(attributeAsset({ cfg: cfgWeth({ feed: ZERO }), round: round(), chainNow: 1, pinned: false, sequencer: NO_SEQ_CAUSE }).causeKey, 'unlisted');
+  assert.equal(go({ answer: '0' }), 'non-positive-answer');
+  assert.equal(go({ answer: '-1' }), 'non-positive-answer');
+  assert.equal(go({ updatedAt: 0 }), 'unset-round');
+  assert.equal(go({ updatedAt: 1_999_999_999 }), 'future-timestamp');
+});
+
+test('a feed that REVERTS is a dead-feed freeze; a feed we could not reach is missing evidence', () => {
+  const dead = attributeAsset({
+    cfg: cfgWeth(), round: { ok: false, err: 'execution reverted', kind: 'revert' },
+    chainNow: 1, pinned: false, sequencer: NO_SEQ_CAUSE,
+  });
+  assert.equal(dead.causeKey, 'feed-reverts');
+  assert.equal(dead.unreadable, false);
+
+  const blip = attributeAsset({
+    cfg: cfgWeth(), round: { ok: false, err: 'operation timed out', kind: 'transport' },
+    chainNow: 1, pinned: false, sequencer: NO_SEQ_CAUSE,
+  });
+  assert.equal(blip.unreadable, true, 'an RPC timeout is not a deprecated feed');
+  assert.equal(blip.causeKey, null);
+});
+
+test('a pinned USDC leg is answered before any feed is read, and only the sequencer can freeze it', () => {
+  const pinned = attributeAsset({ cfg: cfgWeth({ feed: ZERO }), round: round(), chainNow: 1, pinned: true, sequencer: NO_SEQ_CAUSE });
+  assert.equal(pinned.causeKey, null, 'the pin returns 1e18 without touching a feed, so "unlisted" would be wrong');
+  const frozen = attributeAsset({
+    cfg: cfgWeth({ feed: ZERO }), round: round(), chainNow: 1, pinned: true,
+    sequencer: { causeKey: 'sequencer-down', cause: 'the L2 sequencer is reporting DOWN' },
+  });
+  assert.equal(frozen.causeKey, 'sequencer-down');
+});
+
+// ───────────────── summarize, post-pivot (the regression that matters) ─────────────────
+
+/** A ChainlinkOracle-shaped sample: no `margin`, no `quorum`, no `freshSources`. */
+const liveSample = (t, chainNow, over = {}) => ({
+  t, chainNow,
+  sequencer: { configured: false, state: 'not-configured', causeKey: null, unreadable: false, ...(over.sequencer ?? {}) },
+  assets: [{
+    symbol: 'WETH', asset: WETH, unreadable: false, ageUnreadable: false, listed: true,
+    staleBoundSec: 86_400, staleBoundSource: 'feedOf.heartbeat',
+    configMaxStalenessSeconds: 86_400, boundDrift: false,
+    feedUpdatedAt: chainNow - 282, ageSec: 282, ageFractionOfBound: 282 / 86_400,
+    priceWad: '2458338471630000000000', priceReverts: false, frozenCauseKey: null, attributionGap: false,
+    ...(over.asset ?? {}),
+  }],
+  freezeSafety: over.freezeSafety ?? [],
+});
+
+test('a HEALTHY ChainlinkOracle series records zero breaches — the fabricated-margin bug, dead', () => {
+  // This is the exact regression: pre-pivot this series scored a breach on every sample because
+  // `latestPrice()` reverts on a Chainlink proxy and the revert was folded into `margin = -1`.
+  const s = summarize([liveSample('t1', 1_000_000), liveSample('t2', 1_000_120)]);
+  assert.equal(s.WETH.breachSamples, 0, 'a healthy live oracle must produce no breach at all');
+  assert.equal(s.WETH.readableSamples, 2);
+  assert.equal(s.WETH.minMargin, null, 'a post-pivot sample carries no margin; inventing one is the bug');
+  assert.equal(s.WETH.quorum, null, 'there is no quorum on a single-feed oracle');
+  assert.equal(s.WETH.priceRevertSamples, 0);
+});
+
+test('the staleness bound is read from the ORACLE, and a disagreeing address book is flagged', () => {
+  // The contract's config is immutable and the JSON is editable, so the JSON is what can drift.
+  const s = summarize([
+    liveSample('t1', 1, { asset: { staleBoundSec: 3600, configMaxStalenessSeconds: 86_400, boundDrift: true } }),
+    liveSample('t2', 2, { asset: { staleBoundSec: 3600, configMaxStalenessSeconds: 86_400, boundDrift: true } }),
+  ]);
+  assert.equal(s.WETH.staleBoundSec, 3600);
+  assert.equal(s.WETH.staleBoundSource, 'feedOf.heartbeat');
+  assert.equal(s.WETH.boundDriftSamples, 2);
+});
+
+test('an UNREADABLE sample is scored as neither a breach nor health', () => {
+  const s = summarize([
+    liveSample('t1', 1),
+    liveSample('t2', 2, { asset: { unreadable: true, unreadableReason: 'priceWad unreadable (timed out)', ageSec: null, ageFractionOfBound: null, priceReverts: null } }),
+  ]);
+  assert.equal(s.WETH.samples, 2);
+  assert.equal(s.WETH.readableSamples, 1);
+  assert.equal(s.WETH.unreadableSamples, 1);
+  assert.equal(s.WETH.breachSamples, 0, 'missing evidence must never manufacture a finding');
+  assert.equal(s.WETH.ageSamples, 1, 'and it must not contribute an age either');
+  assert.equal(isBreachSample({ unreadable: true, priceReverts: true }), false, 'not even if a stale verdict rides along');
+});
+
+test('freeze causes are counted per key, and an unattributable freeze is flagged rather than hidden', () => {
+  const s = summarize([
+    liveSample('t1', 1, { asset: { priceReverts: true, frozenCauseKey: 'heartbeat-exceeded', ageSec: 90_000 } }),
+    liveSample('t2', 2, { asset: { priceReverts: true, frozenCauseKey: 'heartbeat-exceeded', ageSec: 90_100 } }),
+    liveSample('t3', 3, { asset: { priceReverts: true, frozenCauseKey: null, attributionGap: true } }),
+  ]);
+  assert.equal(s.WETH.breachSamples, 3);
+  assert.deepEqual(s.WETH.causes, { 'heartbeat-exceeded': 2 });
+  assert.equal(s.WETH.attributionGapSamples, 1, 'a freeze the model cannot explain is still a freeze');
+});
+
+// ───────────── the false green: a per-vault meta row is not asset coverage ─────────────
+
+test('isAssetSubject accepts an address and rejects every per-vault meta key', () => {
+  assert.equal(isAssetSubject(WETH), true);
+  assert.equal(isAssetSubject('sequencer'), false);
+  assert.equal(isAssetSubject('flavor'), false);
+  assert.equal(isAssetSubject(undefined), false);
+});
+
+test('a permanently-skipped `sequencer` row does NOT count as the canary tracking a freeze', () => {
+  // PR #89 added a per-vault `sequencer` row under the `oracle-freshness` signal name. On Base
+  // Sepolia sequencerUptimeFeed is address(0), so that row is permanently `skipped` — under the old
+  // `rows.some(r => r.status !== 'ok')` it satisfied the assertion by itself, whether or not any
+  // asset row ever left OK. That is a drill certifying nothing while exiting 0.
+  const byAsset = summarize([liveSample('t1', 1, { asset: { priceReverts: true, frozenCauseKey: 'heartbeat-exceeded' } })]);
+  const rows = oracleCanaryRows({
+    transitions: {
+      [`oracle-freshness|0xvault|${WETH}`]: { status: 'ok', since: 1 },
+      'oracle-freshness|0xvault|sequencer': { status: 'skipped', since: 1 },
+    },
+  });
+  const r = verdictOf(byAsset, rows);
+  assert.equal(r.verdict, 'STALENESS_EVENT_OBSERVED');
+  assert.equal(r.canaryTracked, false, 'the freeze went untracked; the drill must fail');
+  assert.equal(r.canaryAssetRows, 1);
+});
+
+test('a DETECTOR BROKEN `flavor` row does not count either — a blind detector tracks nothing', () => {
+  // Strictly worse than the sequencer case: this row exists precisely because the canary cannot see
+  // the oracle at all, so counting it would certify coverage from a confirmed blind spot.
+  const byAsset = summarize([liveSample('t1', 1, { asset: { priceReverts: true } })]);
+  const rows = oracleCanaryRows({ transitions: { 'oracle-freshness|0xvault|flavor': { status: 'skipped', since: 1 } } });
+  assert.equal(rows[0].isAsset, false);
+  const r = verdictOf(byAsset, rows);
+  assert.equal(r.canaryTracked, false);
+  assert.equal(r.canaryAssetRows, 0, 'zero asset rows is no coverage, not silent coverage');
+});
+
+test('an asset row that left ok DOES count, so the fix does not simply disable the check', () => {
+  const byAsset = summarize([liveSample('t1', 1, { asset: { priceReverts: true } })]);
+  const rows = oracleCanaryRows({
+    transitions: {
+      [`oracle-freshness|0xvault|${WETH}`]: { status: 'alert', since: 9 },
+      'oracle-freshness|0xvault|sequencer': { status: 'skipped', since: 1 },
+    },
+  });
+  assert.equal(verdictOf(byAsset, rows).canaryTracked, true);
+});
+
+// ───────────────── insufficient evidence is not "no event" ─────────────────
+
+test('a series with no readable asset observation is INSUFFICIENT_EVIDENCE, never NO_EVENT', () => {
+  // NO_EVENT prints as "the expected outcome on a live feed and is NOT a failed drill". Reporting
+  // an unmeasured window that way is the same class of false green as the sequencer row.
+  const s = summarize([liveSample('t1', 1, { asset: { unreadable: true, ageSec: null, priceReverts: null } })]);
+  const r = verdictOf(s, []);
+  assert.equal(r.verdict, 'INSUFFICIENT_EVIDENCE');
+  assert.equal(r.unreadableSamples, 1);
+  assert.equal(verdictOf({}, []).verdict, 'INSUFFICIENT_EVIDENCE', 'an empty reduction certifies nothing either');
+});
+
+// ───────────────────────── the sequencer leg over a window ─────────────────────────
+
+test('an unconfigured sequencer leg reports exercised:false — an unexecuted path, not a pass', () => {
+  const q = summarizeSequencer([liveSample('t1', 1), liveSample('t2', 2)]);
+  assert.deepEqual(q.states, { 'not-configured': 2 });
+  assert.equal(q.exercised, false, 'Base Sepolia never runs this code; the first execution is mainnet');
+  assert.equal(q.configuredSamples, 0);
+});
+
+test('a real grace window is counted and carries the earliest computed resume second', () => {
+  const grace = { configured: true, state: 'grace', causeKey: 'sequencer-grace', resumesAtSec: 4601, unreadable: false };
+  const q = summarizeSequencer([
+    liveSample('t1', 1, { sequencer: grace }),
+    liveSample('t2', 2, { sequencer: { ...grace, resumesAtSec: 4602 } }),
+    liveSample('t3', 3, { sequencer: { configured: true, state: 'up', causeKey: null, unreadable: false } }),
+  ]);
+  assert.equal(q.exercised, true);
+  assert.equal(q.notUpSamples, 2);
+  assert.equal(q.earliestResumesAtSec, 4601);
+  assert.equal(q.states.up, 1);
 });
 
 // ───────────────────────── drill 5 guards ─────────────────────────
