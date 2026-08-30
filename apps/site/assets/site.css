@@ -90,6 +90,18 @@ code, .mono, .num {
   margin: 0;
 }
 
+/* The standing "this is source, not deployed bytecode" qualifier that follows a lede.
+   Subordinated deliberately: it qualifies the claim above it and must not compete with it. */
+.lede-note {
+  font-size: .9375rem;
+  line-height: 1.55;
+  color: var(--faint);
+  max-width: 62ch;
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
 .tight { max-width: 62ch; }
 
 /* Skip link: visually hidden until focused, then a solid block at the top. */

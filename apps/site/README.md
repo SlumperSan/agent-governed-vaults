@@ -71,22 +71,55 @@ has no compiler; that file is the compiler. It asserts, across all six pages:
 
 - **Absence** of banned claim phrases — word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
+  The same list is applied to this README and to both stylesheets, not only to the six pages.
 - **Presence** of the two exact pre-launch banner strings and the two exact footer strings, exactly
   one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
   ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
   checks against `fonts.googleapis.com` and `fonts.gstatic.com`.
-- No raw hex colour in `site.css`, and the full token set present in `tokens.css`.
+- No raw hex colour in `site.css`, and the full token set present in `tokens.css`. `site.css` may not
+  set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch`.
 - Every internal `.html` link resolves to a file on disk.
 - The operator page states `2,500 USDC` and `5%`, names both distinct 5% mechanisms, and never
   claims the operator's capital cost is nil.
 
-One deliberate exception is built into the test: the footer sentence
-`Source-available under BUSL-1.1 — not open source.` is the single permitted place the phrase "open
-source" appears, because there it is negated. The same applies to the no-token footer sentence. Both
-exact sentences are stripped before the absence checks run, and the presence checks run against the
-unstripped source. If you change either sentence, change it in the test in the same commit.
+### The site is pinned to the repository, not to itself
+
+`contracts/config/base-mainnet.json` is read by the test, and every row of the reference-configuration
+table on `how-it-works.html` is compared to it: the commit and reveal durations, the timelock, the
+execution window, the quorum, the proposal threshold, the concentration cap, the cooldown, the
+minimum deposit, the exit-fee maximum and decay period, the staleness bound, and both price bands.
+The figures the copy *derives* from that config are pinned too — the length of the Mode-F exit
+window (timelock plus execution window) and the cost of flipping the small-member quorum regime
+(four seats at the minimum deposit) — because arithmetic on a config value is the number that goes
+stale most quietly. An edit to that config now turns the gate red instead of silently
+desynchronizing the site. Every failure message in that block says the SITE is stale — the config is
+the source of truth.
+
+Three checks that used to be page-scoped are now scoped to the sentence or block they belong to,
+because a page-scoped check is satisfied by a disclaimer thousands of characters away:
+
+- every occurrence of `deployed` must sit inside a sentence that negates it;
+- the `no public report` qualifier must sit in the same paragraph or list item as the phrase
+  `external security review`, wherever that phrase appears;
+- the risks page's stated count of unmitigated risks is derived from the page itself — the number of
+  `What is done` cells whose text begins with `Nothing` — and `who-its-for.html` must state the same
+  number. Change one and the gate names the other.
+
+### The negation exceptions
+
+A few banned words have exactly one legitimate use here, and it is always inside a negation: the
+geofencing clause that appears in every footer, the hero's no-outcome sentence, the two statements
+of the invariant/parameter split, the two places the site denies having anything to join, and the
+two standing-fact footer sentences. Those exact clauses — never bare words — are enumerated in
+`PERMITTED` and in `FOOTER_SENTENCE_COUNTS` in the test, stripped before the
+absence checks run, and the presence checks run against the unstripped source. Two rules keep that
+from becoming a loophole: every entry in `PERMITTED` is itself asserted to be in use, and the two
+footer sentences are counted rather than blanket-stripped — one occurrence per page, except
+`faq.html`, which deliberately repeats both in its body because those two answers are the ones
+people quote. If you change any of those sentences, or repeat one somewhere new, change the test in
+the same commit.
 
 Run it alone while editing copy:
 

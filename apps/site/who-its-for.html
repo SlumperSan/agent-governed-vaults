@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Who it is for — Agent-Governed Vaults</title>
-<meta name="description" content="Who these vaults are built for, what governing one demands of you every week, and the four groups this is explicitly not for at launch.">
+<meta name="description" content="The assumptions this design makes about whoever uses it, what governing a vault demands every week, and the four groups this is explicitly not for at launch.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 </head>
@@ -39,9 +39,9 @@
 
   <div class="hero hero--plain">
     <div class="wrap">
-      <p class="eyebrow">Fit</p>
-      <h1>For people who already assume the custodian is the risk.</h1>
-      <p class="lede">This is built for self-custodying, sovereignty-first people on Base who have been rugged, paused, or frozen out of their own position before, and who now weigh "nobody can pause, upgrade or seize this" above almost everything else. If that describes you, the trade-offs on this site will read as reasonable. If it does not, they will read as unacceptable — and you would be right.</p>
+      <p class="eyebrow">Assumptions</p>
+      <h1>What this design assumes about the people who use it.</h1>
+      <p class="lede">It assumes self-custody on Base, by someone who has been rugged, paused or frozen out of a position before and now weighs "nobody can pause, upgrade or seize this" above almost everything else. Every trade-off on this site follows from that assumption. It is written down here so it can be checked against those trade-offs. It is not a test anyone passes.</p>
     </div>
   </div>
 
@@ -50,7 +50,7 @@
       <p class="eyebrow">The deal</p>
       <h2>Governance participation is not a feature. It is the product.</h2>
       <!-- COUNSEL: the "you govern, we do not manage your money" framing. Depositors govern their own vault; no party exercises discretion over another member's capital. This section is the site's clearest statement of that and is load-bearing for the collective-investment-scheme analysis. -->
-      <p class="tight">Nobody is running this for you. The operator proposes; you decide. That means the work does not stop at the deposit, and the protocol will not chase you for it.</p>
+      <p class="tight">The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. That means the work does not stop at the deposit, and the protocol will not chase anyone for it.</p>
       <dl class="rows">
         <div>
           <dt>You have to show up</dt>
@@ -62,11 +62,11 @@
         </div>
         <div>
           <dt>You have to accept being outvoted</dt>
-          <dd>If a rebalance you dislike passes, your exit queues and settles after the swap executes. You carry the execution you voted against. That is the cost of closing the free option of leaving at pre-vote prices while already knowing the result.</dd>
+          <dd>From the moment the reveal phase opens on any live proposal — not from the moment one passes — your exit queues and settles after the swap executes. You carry the execution you voted against, and a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is the cost of closing the free option of leaving at pre-vote prices while already knowing the result.</dd>
         </div>
         <div>
           <dt>You have to accept a frozen door</dt>
-          <dd>If a price feed goes stale, everything that reads NAV reverts — including your exit. There is no escape hatch, and adding one would recreate the exact stale-price exit the breaker exists to prevent. Only capital still inside an un-activated observation window stays reclaimable.</dd>
+          <dd>If a price feed goes stale, everything that reads NAV reverts — including your exit. There is no escape hatch, and adding one would recreate the exact stale-price exit the breaker exists to prevent. Only capital still inside an un-activated observation window stays reclaimable. If the feed is deprecated or retired rather than merely late, the freeze does not end: a vault's oracle address is fixed at construction and cannot be replaced by anyone. That is <a href="risks.html#r15">risk 15</a>.</dd>
         </div>
       </dl>
     </div>
@@ -79,7 +79,7 @@
       <div class="grid">
         <div>
           <h3>DAO treasuries and larger allocators</h3>
-          <p>The first vault's capacity cap is 50,000 USDC and a capacity cap is immutable per vault. That cannot absorb a treasury, and it will not be raised — raising it would mean deploying a different vault.</p>
+          <p>The first vault's planned capacity cap is 50,000 USDC, and a capacity cap is immutable per vault. That cannot absorb a treasury, and the cap on <em>this</em> vault will not be raised. The recorded plan is a second, larger vault of at least 250,000 USDC after at least 30 incident-free days. That is a different deployment on a later date, and it is a plan, not a commitment.</p>
         </div>
         <div>
           <h3>Anyone who wants set-and-forget</h3>
@@ -102,8 +102,8 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">The cap</p>
-      <h2>50,000 USDC is a blast radius, not a queue.</h2>
-      <p class="tight">A small first vault is not scarcity and it is not a signal to hurry. It is the largest amount this team is willing to have permanently trapped by a bug that survived review, at a point where nothing can be patched and nothing can be paused. If the code is wrong, the cap is the ceiling on how wrong it can be for anyone.</p>
+      <h2>A planned 50,000 USDC is a blast radius, not a queue.</h2>
+      <p class="tight">A small first vault is not scarcity and it is not a signal to hurry. The reason that matters to a depositor is blast radius: it is the largest amount this team is willing to have permanently trapped by a bug that survived review, at a point where nothing can be patched and nothing can be paused. If the code is wrong, the cap is the ceiling on how wrong it can be for anyone. Other reasons are on record; that is the one to weigh.</p>
       <div class="note note--flat">
         <span class="label">What that means in practice</span>
         <p>There is no allocation to claim, no queue to join, no priority to earn, and nothing on this site to sign up for. If a vault is full, it is full; the answer is a different vault, later, not a place in line.</p>
@@ -115,9 +115,9 @@
     <div class="wrap">
       <p class="eyebrow">Before you decide</p>
       <h2>Read the risks page in full, then decide.</h2>
-      <p class="tight">Fourteen named risks, each with its worst case and what is actually done about it — including the four where the honest answer is that nothing is done and the risk is simply accepted. That page is the most useful thing on this site.</p>
+      <p class="tight">Fifteen named risks, each with its worst case and what is actually done about it — including the seven where the honest answer is that nothing is done and the risk is simply accepted. That page is the most useful thing on this site.</p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">The fourteen risks</a>
+        <a class="btn btn--primary" href="risks.html">The fifteen risks</a>
         <a class="btn" href="faq.html">The awkward questions</a>
         <a class="btn" href="how-it-works.html">The mechanism in detail</a>
       </div>
@@ -144,7 +144,9 @@
         <ul>
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
-        <p class="small">The repository is the authority. Where this site and the code disagree, the code is right and this site is wrong.</p>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">The repository is not public yet. Publishing it is a prerequisite for this site going public — until then, the links above resolve only for people who already have access.</p>
+        <!-- COUNSEL: the private-repository note — the repository this site tells readers to check is not public, so every source link on the page currently resolves only for people who already have access. Stated beside the link rather than left as a dead end. -->
       </div>
       <div>
         <h2>Standing facts</h2>

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>No admin key, no pause, no upgrade — Agent-Governed Vaults</title>
-<meta name="description" content="A protocol for member-governed index vaults on Base. No proxies, no admin key, no pause, no seize function — and no way to patch a bug once it ships. Not deployed.">
+<title>Immutable member-governed vaults, not deployed — Agent-Governed Vaults</title>
+<meta name="description" content="A protocol for member-governed index vaults on Base. As written, the contracts contain no proxy, no admin key, no pause and no seize function — and no way to patch a bug once it ships. Not deployed.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 </head>
@@ -41,8 +41,9 @@
     <div class="wrap">
       <p class="eyebrow">Member-governed index vaults on Base</p>
       <h1>No admin key. No pause. No upgrade. No undo.</h1>
-      <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. Nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds — and for the same reason, nobody can patch a bug after it ships.</p>
-      <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract mechanism, and is immediately paired with the irreversibility cost. Confirm this reads as a description of code, not a promise of security or performance. -->
+      <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds — and for the same reason, nobody can patch a bug after it ships.</p>
+      <p class="lede-note">This describes source code that has not been deployed. There is no deployed bytecode against which any of it can be independently verified today.</p>
+      <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract SOURCE, is immediately paired with the irreversibility cost, and carries the standing qualifier that nothing has been deployed and none of it can be verified against bytecode today. -->
       <div class="actions">
         <a class="btn btn--primary" href="risks.html">Read the risks first</a>
         <a class="btn" href="how-it-works.html">How it works</a>
@@ -59,7 +60,7 @@
       <dl class="rows">
         <div>
           <dt>Who decides</dt>
-          <dd>The members do. An operator can propose a rebalance and vote on it with whatever weight their own stake carries. It cannot execute one the members did not pass. There is no discretionary mandate and no one is acting on your behalf.</dd>
+          <dd>The members do. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote.</dd>
         </div>
         <div>
           <dt>What it holds</dt>
@@ -75,8 +76,8 @@
         </div>
         <div>
           <dt>What we hold</dt>
-          <dd>Nothing. The contracts are non-custodial. An operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares.</dd>
-          <!-- COUNSEL: the non-custodial claim — no party, including the operator or the deploying team, can move another member's funds. Verify against the final deployed bytecode before this sentence goes public. -->
+          <dd>Nothing. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares.</dd>
+          <!-- COUNSEL: the non-custodial claim, recast as a statement about source — no party, including the operator or the deploying team, can move another member's funds. Nothing has been deployed, so there is no bytecode to check it against; re-verify against the launch tree before publication and against bytecode if anything is ever deployed. -->
         </div>
       </dl>
     </div>
@@ -85,21 +86,21 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Immutability</p>
-      <h2>Four things the contracts cannot do.</h2>
-      <!-- COUNSEL: the "cannot pause / upgrade / seize" claim set. Each item below is an assertion about deployed code with no escape hatch; all four must be re-verified against the launch tree before publication. -->
+      <h2>Four things the contracts, as written, cannot do.</h2>
+      <!-- COUNSEL: the "cannot pause / upgrade / seize" claim set, recast as statements about SOURCE. Each item is an assertion about code that has not been deployed; all four must be re-verified against the launch tree before publication, and against bytecode if anything is ever deployed. -->
       <div class="grid">
         <div>
           <h3>Cannot be paused or upgraded</h3>
-          <p>No proxies. No upgrade path. No pause function. No admin key. Whatever gets deployed is what runs, for as long as Base runs.</p>
+          <p>As written, the contracts contain no proxy, no upgrade path, no pause function and no admin key. Whatever ships is what runs, for as long as Base runs.</p>
         </div>
         <div>
           <h3>Cannot take your funds</h3>
           <p>There is no seize function and no privileged withdrawal. The operator's powers are the powers of any member holding the same stake: propose and vote.</p>
         </div>
         <div>
-          <h3>Cannot pay the exit fee to the operator</h3>
-          <p>The exit fee is capped at 1% by the protocol, decays to zero with tenure, and is waived entirely for the last member out. It is retained in the vault and accrues to the members who stayed. It is never routed to the operator.</p>
-          <!-- COUNSEL: exit-fee description — protocol cap of 100 bps, tenure decay, retained in-vault for remaining members, never paid to the operator, waived for the final redeemer. -->
+          <h3>Cannot route the exit fee to the operator</h3>
+          <p>The exit fee is capped at 1% by the protocol, decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — but the operator is also a member, and its shares carry the fee up like anyone else's.</p>
+          <!-- COUNSEL: exit-fee description — protocol cap of 100 bps, tenure decay, retained in-vault, waived for the final redeemer, and the correction that "never routed to the operator" is a statement about routing rather than about who benefits. -->
         </div>
         <div>
           <h3>Cannot change the rules behind you</h3>
@@ -110,6 +111,7 @@
       <div class="note note--warn">
         <span class="label">The same fact, read the other way</span>
         <p>Every line above is also a limitation. A unanimity requirement means one permanently offline member freezes the rules forever. No pause means no circuit breaker if something is wrong. No upgrade means a critical bug that survived review is permanent, and funds may be unrecoverable. We are not going to pretend those are features.</p>
+        <p>All four describe source. None of it has been deployed, so none of it can be checked against bytecode today.</p>
       </div>
     </div>
   </section>
@@ -122,11 +124,11 @@
       <dl class="rows">
         <div>
           <dt>A permanent bug</dt>
-          <dd>Nothing can be patched. An external security review and four internal adversarial rounds are not proof of correctness — an AI pre-audit of a tree that had already passed internal review still found five Critical issues, and every fix required a full redeploy because nothing can be edited in place.</dd>
+          <dd>Nothing can be patched. An external security review whose report is held privately, with no public report to check it against, and four internal adversarial rounds are not proof of correctness — an AI pre-audit of a tree that had already passed internal review still found five Critical issues, and every fix required a full redeploy because nothing can be edited in place.</dd>
         </div>
         <div>
           <dt>An oracle freeze</dt>
-          <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault until the feed recovers.</dd>
+          <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault for as long as the feed is stale — and if the feed is retired rather than merely late, that is permanent, because a vault's oracle cannot be replaced.</dd>
         </div>
         <div>
           <dt>A USDC depeg</dt>
@@ -135,7 +137,7 @@
       </dl>
       <p class="tight">Spot crypto assets fall. Nobody in this system makes anyone whole, and there is no insurance fund, no backstop and no guarantee of any outcome. Do not deposit anything you cannot afford to lose entirely.</p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">All fourteen named risks</a>
+        <a class="btn btn--primary" href="risks.html">All fifteen named risks</a>
       </div>
     </div>
   </section>
@@ -143,29 +145,33 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Status</p>
-      <h2>Where this actually stands, today.</h2>
+      <h2>Where this stands as at 2026-08-29.</h2>
+      <p class="tight">Recorded at <code>protocol/main</code> as of 2026-08-29. Check the repository for anything later.</p>
       <div class="grid">
         <div>
           <span class="stat">NO-GO</span>
-          <p>The current launch verdict. It is recorded that way in the repository, not softened for this page.</p>
+          <p>The launch verdict on that date. It is recorded that way in the repository, not softened for this page.</p>
         </div>
         <div>
-          <span class="stat">0 chains</span>
+          <h3>No chains, as at 2026-08-29</h3>
           <p>No mainnet deployment. No current testnet deployment either — an earlier Base Sepolia deployment exists in the project's history, but six contracts have changed since, so that bytecode is superseded and its lifecycle, soak and canary evidence are marked stale pending a re-run.</p>
         </div>
         <div>
-          <span class="stat">0 addresses</span>
+          <h3>No addresses, as at 2026-08-29</h3>
           <p>There is nothing to verify on a block explorer, so this site publishes no addresses. When there are addresses, they will come from the repository, not from here.</p>
         </div>
       </div>
 
       <div class="note note--flat">
         <span class="label">What is blocking launch</span>
-        <p>Operational work and legal review. The remaining engineering items are a testnet lifecycle re-run, a soak, a canary re-run and a recorded restore drill. Every security gate the team defined is cleared; none of the open blockers is a known security defect.</p>
+        <p>Operational work and legal review. The remaining engineering items are a testnet lifecycle re-run, a soak, a canary re-run and a recorded restore drill.</p>
+        <p>No deposit, vote, rebalance and redeem cycle has ever been run end to end on this exact code. The lifecycle, soak and canary evidence all describe superseded bytecode and must be re-earned.</p>
+        <p>Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. A High-severity pre-audit finding remains open at the launch configuration and is not classified as a launch blocker.</p>
+        <!-- COUNSEL: the launch-status block — the gate-clearance statement now carries the repository's own countervailing sentence, and the open High-severity finding is named rather than folded into "no known security defect". -->
       </div>
 
       <h3>On the security review</h3>
-      <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical, all of which are now resolved or closed by launch configuration.</p>
+      <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the stake-blind quorum regime below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
       <!-- COUNSEL: the security-review attestation sentence. The owner's attestation and the absence of any public report must always travel together; this paragraph may not be shortened, excerpted or paraphrased in any channel. -->
       <p class="tight small">Read that as it is written. An attestation you cannot check is weaker evidence than a report you can, and we are not going to describe the code with a word that implies you can check it.</p>
     </div>
@@ -205,7 +211,9 @@
         <ul>
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
-        <p class="small">The repository is the authority. Where this site and the code disagree, the code is right and this site is wrong.</p>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">The repository is not public yet. Publishing it is a prerequisite for this site going public — until then, the links above resolve only for people who already have access.</p>
+        <!-- COUNSEL: the private-repository note — the repository this site tells readers to check is not public, so every source link on the page currently resolves only for people who already have access. Stated beside the link rather than left as a dead end. -->
       </div>
       <div>
         <h2>Standing facts</h2>

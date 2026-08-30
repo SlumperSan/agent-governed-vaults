@@ -41,16 +41,18 @@
     <div class="wrap">
       <p class="eyebrow">Operators</p>
       <h1>Low capital cost. Not no capital cost.</h1>
-      <p class="lede">An operator is the agent identity that proposes rebalances. It is the smallest set of powers that still lets an agent be useful: propose, and vote its own weight. Everything else — pausing, upgrading, repricing, touching another member's funds — is not a power any address in this system has.</p>
-      <!-- COUNSEL: the operator capital obligation headline. "Low capital cost" is used deliberately in place of any claim of zero cost, and the quantified obligation follows immediately below. -->
+      <p class="lede">An operator is the agent identity that proposes rebalances. It is the smallest set of powers that still lets an agent be useful: propose, and vote its own weight. As written, everything else — pausing, upgrading, repricing, touching another member's funds — is not a power any address in this system has.</p>
+      <p class="lede-note">This describes source code that has not been deployed. There is no deployed bytecode against which any of it can be independently verified today.</p>
+      <!-- COUNSEL: the operator capital obligation headline, and the operator-powers claim recast as a statement about source. "Low capital cost" is used deliberately in place of any claim of zero cost, and the quantified obligation follows immediately below. -->
     </div>
   </div>
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">The number</p>
-      <h2>At a 50,000 USDC vault, your 5% is 2,500 USDC.</h2>
-      <p class="tight">That capital is locked while other members remain, and it must be topped up if passive dilution takes your share below the line. Anyone telling you an agent can operate one of these vaults without putting capital at risk is describing a different protocol.</p>
+      <p class="eyebrow">The obligation</p>
+      <h2>The creator withdrawal gate is 5% of the vault's share supply.</h2>
+      <p class="tight">In a vault holding 50,000 USDC that is 2,500 USDC — the figure moves with the vault's actual size, so in a half-subscribed vault it is 1,250 USDC. The 50,000 cap is a planned first-vault parameter that has not been deployed, and the 5% proposal threshold is still an open launch decision.</p>
+      <p class="tight">That capital is locked while other members remain. Being diluted below 5% is permitted and breaches nothing — but your redemptions revert until you are back above it, so dilution quietly converts a locked minimum into a locked whole position. Anyone telling you an agent can operate one of these vaults without putting capital at risk is describing a different protocol.</p>
 
       <div class="note note--crit">
         <span class="label">Two separate mechanisms, both 5%</span>
@@ -102,7 +104,7 @@
         </div>
         <div>
           <dt>Cannot</dt>
-          <dd>Execute a rebalance the members did not pass. Pause the vault. Upgrade the contracts. Reprice shares. Move, freeze or seize another member's funds. Skip the timelock. Take the exit fee, which is retained in the vault for the members who remain and is never routed to the operator.</dd>
+          <dd>Execute a rebalance the members did not pass. Pause the vault. Upgrade the contracts. Reprice shares. Move, freeze or seize another member's funds. Skip the timelock. Receive the exit fee as a payment — the fee fraction stays in the vault and is never routed to the operator identity, though it reaches the operator's own shares like every other holder's. The economics section below sets that out.</dd>
         </div>
         <div>
           <dt>Is</dt>
@@ -126,15 +128,17 @@
       <dl class="rows">
         <div>
           <dt>What is earned</dt>
-          <dd>10% of realized profit, crystallized when a member redeems — never accrued on paper gains. A high-water mark is kept per member and per operator, and it follows your operator identity across vaults instead of resetting with each new one. If a member realized a loss under you, you earn no performance fee from that member until they are made whole.</dd>
+          <dd>10% of realized profit, crystallized when a member redeems — never accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults instead of resetting with each new one. If a member realized a loss under you, you earn no performance fee from that member unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard — the enforcement here is reputation, not code.</dd>
+          <!-- COUNSEL: the high-water-mark disclosure — registering a new operator identity is permissionless and resets the mark, so the loss carryforward is enforced by reputation rather than by contract. Recorded as a deferred High finding (CM-4). -->
         </div>
         <div>
-          <dt>What is not earned</dt>
-          <dd>No management fee. No deposit fee. No share of the exit fee. No spread. Nothing accrues while a member simply holds.</dd>
+          <dt>What is not routed to you</dt>
+          <dd>No management fee. No deposit fee. No spread. Nothing accrues while a member simply holds. The exit fee is never routed to the operator identity — but you are also a member, and the fee stays in the vault where it raises the value of every share, so an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</dd>
+          <!-- COUNSEL: the exit-fee correction — the prohibition is on routing to the operator identity, and the operator's mandatory 5% membership means it collects at least that share of every exit fee through share value. Recorded in the threat model (EE-9) so it is not misread as a violation. -->
         </div>
         <div>
           <dt>What that adds up to</dt>
-          <dd>10% of realized profit on a 50,000 USDC vault is not a salary, and this page is not going to model it, illustrate it, or put a number on it. If you are here for the fee, the arithmetic will disappoint you before the code does.</dd>
+          <dd>10% of realized profit on a vault at the planned 50,000 USDC cap is not a salary, and this page is not going to model it, illustrate it, or put a number on it. If you are here for the fee, the arithmetic will disappoint you before the code does.</dd>
         </div>
         <div>
           <dt>What is actually on offer</dt>
@@ -177,7 +181,9 @@
         <ul>
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
-        <p class="small">The repository is the authority. Where this site and the code disagree, the code is right and this site is wrong.</p>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">The repository is not public yet. Publishing it is a prerequisite for this site going public — until then, the links above resolve only for people who already have access.</p>
+        <!-- COUNSEL: the private-repository note — the repository this site tells readers to check is not public, so every source link on the page currently resolves only for people who already have access. Stated beside the link rather than left as a dead end. -->
       </div>
       <div>
         <h2>Standing facts</h2>
