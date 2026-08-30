@@ -30,7 +30,8 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
 | `ORACLE_MIN_MARGIN` | | `0` | **retired-oracle deployments only** — alert when `freshSources - quorum <= this`. Inert against a `ChainlinkOracle`, which has no quorum |
-| `ORACLE_STALENESS_WARN_PCT` | | `0` (off) | **`ChainlinkOracle` deployments only** — also alert once a feed's answer has aged past this % of its heartbeat, *before* the breaker trips. Off by default: see §3(a) |
+| `ORACLE_FEED_CADENCE_SECONDS` | | — | **`ChainlinkOracle` deployments only** — `addr:seconds` pairs giving each feed's own publish cadence, sourced from `contracts/config/*.json`'s `feedCadenceSeconds`. Drives the derived early-warning bar below; see §3(a) |
+| `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | **`ChainlinkOracle` deployments only** — MANUAL override of the early-warning bar (% of heartbeat), which otherwise alerts once a feed's answer has aged past it, *before* the breaker trips. Unset = DERIVED per asset from `ORACLE_FEED_CADENCE_SECONDS`; see §3(a) |
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
 | `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback |
 | `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line, so silence is provably alive |
@@ -119,13 +120,42 @@ steady state. Staleness-checking it would report a permanent outage on a perfect
 and `_requireSequencerUp` ignores it for exactly that reason. It gets its own transition key
 (`sequencer`), because when it trips it freezes every vault on the oracle at once.
 
-**Threshold.** `priceWad` returns. Optionally also `ORACLE_STALENESS_WARN_PCT`, which alerts while
-the vault is still priceable, once the answer has aged past that percentage of its heartbeat.
-**It is off by default and that is a calibration decision, not an oversight:** a Chainlink feed
-publishes on its heartbeat *or* a deviation move, so a quiet market puts a healthy feed near 100% of
-its heartbeat just before every scheduled publish. A low bar there pages on correct behaviour and
-gets the canary muted — the same trap `ORACLE_MIN_MARGIN` was calibrated against. Turn it on for
-feeds whose deviation threshold makes heartbeat-cadence updates rare.
+**Threshold.** `priceWad` returns. There is also a pre-trip early-warning bar that alerts while the
+vault is still priceable, once the answer has aged past it — and unlike the first cut of this
+signal, **that bar is on by default wherever it can be set safely**, not off everywhere.
+
+**The bar is DERIVED per asset, never a flat assumed percentage.** A single number cannot be
+calibrated once for every feed: it has to clear the worst age a *healthy* feed ever reaches — which
+is close to the feed's own publish cadence, not the wider staleness bound `feedOf` reports — and
+still leave real runway before the freeze. No oracle exposes its own cadence on-chain (it is
+Chainlink's off-chain publishing config, not contract state), so it has to be **told**, via
+`ORACLE_FEED_CADENCE_SECONDS` (address:seconds pairs, sourced from
+`contracts/config/*.json`'s `chainlinkOracle.assets[].feedCadenceSeconds`). Given that, the canary
+computes the bar as **2× the feed's own cadence** — comfortably above the ~1× worst healthy age —
+and **disables it, rather than tightening it**, once that would land past 90% of the configured
+heartbeat: past that point the bound is not meaningfully wider than the feed's own cadence, and any
+bar at all would page on ordinary heartbeat-cadence updates. That single condition is the answer to
+the failure mode the first cut of this bar shipped off by default to avoid.
+
+For the actual launch config — mainnet WETH and cbBTC, cadence 1200s against a 3600s bound (ratio
+3) — the derived bar is 2,400s (66.7% of the heartbeat), giving 1,200s of runway before the freeze
+and 2× margin over the worst healthy age. Base Sepolia's feeds have "no economic SLA" (see
+`heartbeatNote` in the config), so no cadence is configured there and the bar correctly stays off —
+there is nothing to derive it from safely, not a gap to fill in.
+
+**`ORACLE_STALENESS_WARN_PCT` still works exactly as a manual override**, and wins outright over the
+derivation in both directions: set it to force a specific bar (as a % of heartbeat, as before), or
+set it explicitly to `0` to force the warning off even where the derivation would otherwise enable
+it — an operator's explicit choice is never silently re-enabled by the derived default. Only an
+*unset* env var lets the derivation apply. A healthy result's `detail` always names which mode is
+active (`warnBarSource`: `'manual' | 'derived' | 'off'`) and, when off, why
+(`warnDisabledReason`) — "no early warning is running for this asset" is a fact the signal states,
+not a silence someone has to infer.
+
+Credit where due: the calibration argument that a Chainlink feed's real cadence sits well inside its
+configured bound — which is what makes an early-warning bar safe at all — is
+[#85](https://github.com/SlumperSan/agent-governed-vaults/pull/85)'s. This sprint derives the bar
+from that ratio per feed, rather than assuming one flat percentage is safe for every deployment.
 
 **When it fires.** There is **no contract-side remedy** and, unlike the retired design, no second
 source to fail over to: the heartbeat, the band, the feed and the vault's oracle are all immutable
