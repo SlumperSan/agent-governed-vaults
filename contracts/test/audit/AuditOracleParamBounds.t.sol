@@ -133,12 +133,13 @@ contract AuditOracleParamBoundsTest is Test {
 
     // --- band: too loose --------------------------------------------------
 
-    /// @notice A band spanning the whole `uint128` range is the band-side version of the finding:
-    /// present, and unable to reject anything.
+    /// @notice A band spanning to the top of `uint128` is the band-side version of the finding:
+    /// present, and unable to reject anything. The floor is $1 so the feed's $2,500 sits INSIDE the
+    /// band — the width bound is the only one that can fire here, which is the point of the case.
     function test_bandSpanningEverythingIsRejected() public {
         address feed = _feed();
         _expectBadConfig();
-        _build(feed, 3600, 1, type(uint128).max);
+        _build(feed, 3600, 1e18, type(uint128).max);
     }
 
     function test_bandOneStepWiderThanTheRatioCeilingIsRejected() public {
