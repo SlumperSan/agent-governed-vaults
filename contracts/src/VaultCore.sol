@@ -284,7 +284,7 @@ contract VaultCore {
         for (uint256 i; i < n; ++i) {
             address a = basketAssets[i];
             uint256 bal = assetBalance[a];
-            if (bal != 0) nav += bal * oracle.priceWad(a) / assetUnit[a];
+            if (bal != 0) nav += _assetValueWad(a, bal);
         }
         for (uint256 i; i < childVaults.length; ++i) {
             nav += _childValueWad(childVaults[i]);
@@ -297,12 +297,17 @@ contract VaultCore {
     /// (factory-enforced), so every child asset is priceable here; an unpriceable asset
     /// fails safe via StaleOracle.
     function _childValueWad(address child) internal view returns (uint256) {
-        VaultCore c = VaultCore(child);
-        uint256 myShares = c.sharesOf(address(this));
-        if (myShares == 0) return 0;
-        // Finding 1 (S6): value the WHOLE child NAV including ITS children, then take our
-        // fraction. Non-recursive valuation silently dropped grandchild value from the root.
-        return _fullNavWad(c, 1) * myShares / c.totalShares();
+        return _holdingValueWad(VaultCore(child), address(this), 1);
+    }
+
+    /// @dev Value of `holder`'s position in vault `v`, WAD. Finding 1 (S6): value the WHOLE
+    /// child NAV including ITS children, then take the holder's fraction — non-recursive
+    /// valuation silently dropped grandchild value from the root. Shared by the parent's own
+    /// child mark and by every look-through level beneath it.
+    function _holdingValueWad(VaultCore v, address holder, uint256 depth) internal view returns (uint256) {
+        uint256 sh = v.sharesOf(holder);
+        if (sh == 0) return 0;
+        return _fullNavWad(v, depth) * sh / v.totalShares();
     }
 
     /// @dev Full NAV of `v` priced through THIS vault's oracle, recursing into descendants.
@@ -315,14 +320,12 @@ contract VaultCore {
         for (uint256 i; i < n; ++i) {
             address a = v.basketAssets(i);
             uint256 bal = v.assetBalance(a);
-            if (bal != 0) nav += bal * oracle.priceWad(a) / assetUnit[a];
+            if (bal != 0) nav += _assetValueWad(a, bal);
         }
         if (depth < MAX_LOOKTHROUGH_DEPTH) {
             uint256 cc = v.childVaultCount();
             for (uint256 i; i < cc; ++i) {
-                VaultCore g = VaultCore(v.childVaults(i));
-                uint256 vShares = g.sharesOf(address(v));
-                if (vShares != 0) nav += _fullNavWad(g, depth + 1) * vShares / g.totalShares();
+                nav += _holdingValueWad(VaultCore(v.childVaults(i)), address(v), depth + 1);
             }
         }
     }
@@ -373,9 +376,9 @@ contract VaultCore {
         }
 
         // Measure actual receipt — internal accounting never trusts the request amount.
-        uint256 balBefore = IERC20Metadata(usdc).balanceOf(address(this));
+        uint256 balBefore = _bal(usdc);
         usdc.safeTransferFrom(msg.sender, address(this), amountUsdc);
-        uint256 received = IERC20Metadata(usdc).balanceOf(address(this)) - balBefore;
+        uint256 received = _bal(usdc) - balBefore;
         require(received >= minDepositUsdc, BelowMinDeposit());
 
         if (windowCleared[msg.sender] || sharesOf[msg.sender] > 0) {
@@ -411,10 +414,7 @@ contract VaultCore {
         // AFTER depositing had their pending escrow permanently stranded, with no other path
         // out. `cancelPending` is also the one guaranteed action during an oracle freeze (K-4),
         // so a revert here removed the only lever the incident playbook can promise.
-        if (!usdc.tryTransfer(msg.sender, p.amountUsdc, MODULE_CALL_GAS)) {
-            claimable[msg.sender][usdc] += p.amountUsdc;
-            emit SliceEscrowed(msg.sender, usdc, p.amountUsdc);
-        }
+        _payOrEscrow(usdc, msg.sender, p.amountUsdc);
         emit PendingCancelled(msg.sender, p.amountUsdc);
     }
 
@@ -476,12 +476,19 @@ contract VaultCore {
         address pv = parentVault();
         if (pv != address(0) && _cachedParentVault == address(0)) _cachedParentVault = pv;
 
-        uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
         uint256 pHeld = (pv != address(0) && sharesOf[pv] > 0) ? 1 : 0;
 
         _eligibleHist[member].push(member == pv ? 0 : sharesOf[member] - queuedExitShares[member]);
-        _totalEligibleHist.push(totalShares - totalQueuedShares - pElig);
+        _totalEligibleHist.push(_totalEligibleShares(pv));
         _holderCountHist.push(holderCount - pHeld);
+    }
+
+    /// @dev Supply minus Mode-F-locked shares minus the parent vault's non-voting position.
+    /// Shared by the snapshot writer and the live view so the two can never diverge.
+    /// @param pv the resolved parent vault, or address(0) for a root vault
+    function _totalEligibleShares(address pv) internal view returns (uint256) {
+        uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
+        return totalShares - totalQueuedShares - pElig;
     }
 
     // ───────────────────────────── redemptions ────────────────────────────────
@@ -519,10 +526,15 @@ contract VaultCore {
     /// (VO-8 leak accepted in that already-broken state); permanent exit lockup is never on
     /// the table. Deliberate, documented liveness decision.
     function _pendingExecution() internal view returns (bool) {
-        (bool ok, uint256 word, uint256 retSize) = address(governance)
-            .boundedStaticCall(
-                abi.encodeCall(IGovernance.hasPendingExecution, (address(this))), MODULE_CALL_GAS
-            );
+        return _hasPendingExecution(address(governance), address(this));
+    }
+
+    /// @dev The bounded read both pending-execution callers share: `gov`'s opinion of whether
+    /// `vault` has a passed-but-unexecuted rebalance. Any failure — revert, OOG, short return —
+    /// reads as false, which is the liveness-preserving answer for both callers (H-1).
+    function _hasPendingExecution(address gov, address vault) internal view returns (bool) {
+        (bool ok, uint256 word, uint256 retSize) =
+            gov.boundedStaticCall(abi.encodeCall(IGovernance.hasPendingExecution, (vault)), MODULE_CALL_GAS);
         return ok && retSize >= 32 && word != 0;
     }
 
@@ -598,7 +610,7 @@ contract VaultCore {
             if (slice == 0) continue;
             assetBalance[a] -= slice;
             slices[i] = slice;
-            payoutValueWad += slice * oracle.priceWad(a) / assetUnit[a];
+            payoutValueWad += _assetValueWad(a, slice);
         }
 
         // SV-5 shortfall: unwind children by value until the cash target is covered. The
@@ -621,7 +633,7 @@ contract VaultCore {
             for (uint256 j; j < childDeltas.length; ++j) {
                 if (childDeltas[j] == 0) continue;
                 slices[j] += childDeltas[j];
-                receivedWad += childDeltas[j] * oracle.priceWad(basketAssets[j]) / assetUnit[basketAssets[j]];
+                receivedWad += _assetValueWad(basketAssets[j], childDeltas[j]);
             }
             payoutValueWad += receivedWad;
             // Finding 5 (S6): reduce the shortfall by what ACTUALLY arrived, never the intended
@@ -673,15 +685,12 @@ contract VaultCore {
             // listed, a reverting `safeTransfer` here made EVERY exit carrying a positive
             // performance fee, in EVERY vault, revert permanently. Now it degrades to escrow,
             // exactly as an in-kind fee slice already did.
-            if (usdc.tryTransfer(address(feeEngine), usdcFee, MODULE_CALL_GAS)) {
+            if (_payOrEscrow(usdc, address(feeEngine), usdcFee)) {
                 (bool collectOk,,) = address(feeEngine)
                     .boundedCall(
                         abi.encodeCall(IFeeEngine.onFeeCollected, (member, usdcFee)), MODULE_CALL_GAS
                     );
                 if (!collectOk) emit ModuleCallFailed("feeEngine.onFeeCollected", member);
-            } else {
-                claimable[address(feeEngine)][usdc] += usdcFee;
-                emit SliceEscrowed(address(feeEngine), usdc, usdcFee);
             }
         }
 
@@ -692,31 +701,22 @@ contract VaultCore {
             uint256 feePart = slice * feeFracWad / WAD;
             uint256 memberPart = slice - feePart;
             // EE-6/H-2: bounded tryTransfer — a bad asset degrades to escrow, never a revert.
-            if (!a.tryTransfer(member, memberPart, MODULE_CALL_GAS)) {
-                claimable[member][a] += memberPart;
-                emit SliceEscrowed(member, a, memberPart);
-            }
+            _payOrEscrow(a, member, memberPart);
             if (feePart > 0) {
-                if (a.tryTransfer(address(feeEngine), feePart, MODULE_CALL_GAS)) {
+                if (_payOrEscrow(a, address(feeEngine), feePart)) {
                     (bool assetOk,,) = address(feeEngine)
                         .boundedCall(
                             abi.encodeCall(IFeeEngine.onFeeCollectedAsset, (member, a, feePart)),
                             MODULE_CALL_GAS
                         );
                     if (!assetOk) emit ModuleCallFailed("feeEngine.onFeeCollectedAsset", member);
-                } else {
-                    claimable[address(feeEngine)][a] += feePart;
-                    emit SliceEscrowed(address(feeEngine), a, feePart);
                 }
             }
         }
-        if (usdcPay > 0 && !usdc.tryTransfer(member, usdcPay, MODULE_CALL_GAS)) {
-            // M-2: a blacklisted member could not exit AT ALL and lost their in-kind legs with
-            // it - the precise outcome EE-6 exists to prevent, and the falsification of PX-1's
-            // claim that in-kind redemption "keeps non-USDC basket assets exitable".
-            claimable[member][usdc] += usdcPay;
-            emit SliceEscrowed(member, usdc, usdcPay);
-        }
+        // M-2: a blacklisted member could not exit AT ALL and lost their in-kind legs with it -
+        // the precise outcome EE-6 exists to prevent, and the falsification of PX-1's claim that
+        // in-kind redemption "keeps non-USDC basket assets exitable".
+        if (usdcPay > 0) _payOrEscrow(usdc, member, usdcPay);
 
         emit ExitSettled(member, burnShares, usdcPay, feeBps, perfFee);
     }
@@ -773,21 +773,21 @@ contract VaultCore {
         internal
         returns (uint256 usdcDelta, uint256[] memory assetDeltas)
     {
-        uint256 usdcBefore = IERC20Metadata(usdc).balanceOf(address(this));
+        uint256 usdcBefore = _bal(usdc);
         uint256 n = basketAssets.length;
         assetDeltas = new uint256[](n);
         uint256[] memory before = new uint256[](n);
         for (uint256 i; i < n; ++i) {
-            before[i] = IERC20Metadata(basketAssets[i]).balanceOf(address(this));
+            before[i] = _bal(basketAssets[i]);
         }
 
         VaultCore(child).requestExit(shares);
         require(VaultCore(child).queuedExitShares(address(this)) == 0, ChildSettlementPending());
 
-        usdcDelta = IERC20Metadata(usdc).balanceOf(address(this)) - usdcBefore;
+        usdcDelta = _bal(usdc) - usdcBefore;
         if (credit) idleUsdc += usdcDelta;
         for (uint256 i; i < n; ++i) {
-            uint256 delta = IERC20Metadata(basketAssets[i]).balanceOf(address(this)) - before[i];
+            uint256 delta = _bal(basketAssets[i]) - before[i];
             assetDeltas[i] = delta;
             if (delta > 0 && credit) assetBalance[basketAssets[i]] += delta;
         }
@@ -797,11 +797,7 @@ contract VaultCore {
     /// failure returns false — a child whose governance is broken settles Mode I anyway (its
     /// own _pendingExecution falls back to false), so attempting the redeem is safe.
     function _childPendingExecution(address child) internal view returns (bool) {
-        address childGov = address(VaultCore(child).governance());
-        (bool ok, uint256 word, uint256 retSize) = childGov.boundedStaticCall(
-            abi.encodeCall(IGovernance.hasPendingExecution, (child)), MODULE_CALL_GAS
-        );
-        return ok && retSize >= 32 && word != 0;
+        return _hasPendingExecution(address(VaultCore(child).governance()), child);
     }
 
     /// @notice Crank: pull a slice the child escrowed for this vault (child EE-6 path) and
@@ -811,9 +807,9 @@ contract VaultCore {
     function pullChildEscrow(address child, address asset) external nonReentrant {
         require(isChildVault[child], NotRegisteredChild());
         require(assetUnit[asset] != 0 || asset == usdc, BadSwapToken());
-        uint256 before = IERC20Metadata(asset).balanceOf(address(this));
+        uint256 before = _bal(asset);
         VaultCore(child).claimEscrowed(asset);
-        uint256 delta = IERC20Metadata(asset).balanceOf(address(this)) - before;
+        uint256 delta = _bal(asset) - before;
         if (asset == usdc) idleUsdc += delta;
         else assetBalance[asset] += delta;
     }
@@ -861,10 +857,10 @@ contract VaultCore {
             }
 
             o.tokenIn.safeApprove(adapter, o.amountIn);
-            uint256 outBefore = IERC20Metadata(o.tokenOut).balanceOf(address(this));
-            uint256 inBefore = IERC20Metadata(o.tokenIn).balanceOf(address(this));
+            uint256 outBefore = _bal(o.tokenOut);
+            uint256 inBefore = _bal(o.tokenIn);
             IExecutionAdapter(adapter).executeSwap(o);
-            uint256 received = IERC20Metadata(o.tokenOut).balanceOf(address(this)) - outBefore;
+            uint256 received = _bal(o.tokenOut) - outBefore;
             require(received >= o.minAmountOut, SwapSlippage());
             o.tokenIn.safeApprove(adapter, 0);
 
@@ -875,7 +871,7 @@ contract VaultCore {
             // Finding 3 (S6): refund UNSPENT input measured from this swap's own balance delta,
             // never from a whole-vault balance-vs-accounting comparison — the latter absorbed
             // EE-6 escrow and donations. spent = inBefore - inAfter ≤ amountIn (approval-bounded).
-            uint256 inAfter = IERC20Metadata(o.tokenIn).balanceOf(address(this));
+            uint256 inAfter = _bal(o.tokenIn);
             uint256 spent = inBefore - inAfter;
             if (o.amountIn > spent) {
                 uint256 refund = o.amountIn - spent;
@@ -886,6 +882,26 @@ contract VaultCore {
         emit RebalanceExecuted(adapter, orders.length);
     }
 
+    /// @dev EE-6 payout primitive: attempt a bounded transfer and, on ANY failure, escrow the
+    /// amount for later `claimEscrowed`. This is the shape all five payout legs share — member
+    /// slice, member USDC, both fee legs, and the cancelled-deposit refund — so it is emitted
+    /// once rather than five times.
+    /// @return ok true when the transfer landed; false means the amount is now escrowed.
+    function _payOrEscrow(address asset, address to, uint256 amount) internal returns (bool ok) {
+        ok = asset.tryTransfer(to, amount, MODULE_CALL_GAS);
+        if (!ok) {
+            claimable[to][asset] += amount;
+            emit SliceEscrowed(to, asset, amount);
+        }
+    }
+
+    /// @dev This vault's own balance of `token`. Every measured-delta site in the contract
+    /// funnels through here, so the external-call sequence is emitted once rather than twelve
+    /// times.
+    function _bal(address token) internal view returns (uint256) {
+        return IERC20Metadata(token).balanceOf(address(this));
+    }
+
     /// @dev USD value of `amount` units of `token`, WAD. USDC is the settlement unit and is
     /// valued at par, exactly as every other NAV path values it (`:251`, `:282`).
     /// @param token USDC or a basket asset
@@ -893,7 +909,16 @@ contract VaultCore {
     /// @return WAD-scaled USD value
     function _valueWad(address token, uint256 amount) internal view returns (uint256) {
         if (token == usdc) return amount * usdcScalar;
-        return amount * oracle.priceWad(token) / assetUnit[token];
+        return _assetValueWad(token, amount);
+    }
+
+    /// @dev USD value of `amount` units of a BASKET asset, WAD. The oracle read plus the
+    /// unit-scaling division is the single most repeated expression in the contract (five
+    /// sites: both NAV walks, both payout legs, and `_valueWad`); emitting it once is worth
+    /// real EIP-170 headroom. Multiplication precedes division exactly as at every former
+    /// site, so every rounding result is bit-identical.
+    function _assetValueWad(address asset, uint256 amount) internal view returns (uint256) {
+        return amount * oracle.priceWad(asset) / assetUnit[asset];
     }
 
     /// @dev H-1: best-effort mark recording — a reverting registry loses the mark (event-logged),
@@ -940,9 +965,7 @@ contract VaultCore {
     /// @notice Total voting-eligible stake: supply minus Mode-F-locked shares minus the parent
     /// vault's non-voting position.
     function totalVotingEligibleShares() external view returns (uint256) {
-        address pv = parentVault();
-        uint256 pElig = pv == address(0) ? 0 : sharesOf[pv] - queuedExitShares[pv];
-        return totalShares - totalQueuedShares - pElig;
+        return _totalEligibleShares(parentVault());
     }
 
     /// @notice Voting-eligible stake of `member` as of timestamp `ts` (proposal snapshots).
