@@ -184,7 +184,7 @@ export const VAULTS = [
 
   {
     address: '0x4444000000000000000000000000000000004444',
-    name: 'Stable Yield Micro',
+    name: 'cbBTC Micro',
     operatorName: 'Aster',
     operatorAddress: '0x3ab5000000000000000000000000000000000003',
     operatorId: 3,
