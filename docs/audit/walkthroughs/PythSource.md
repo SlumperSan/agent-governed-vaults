@@ -1,7 +1,13 @@
 # Walkthrough — PythSource.sol
 
 **Risk: Medium-High (feeds the contract that prices everything).** ~60 non-comment LoC.
-`contracts/src/oracle/PythSource.sol`.
+`contracts/test/retired/PythSource.sol` (was `contracts/src/oracle/`).
+
+> **⚠ RETIRED — NOT THE LAUNCH ORACLE (marked 2026-08-30).** Critical **C-6** replaced this design
+> with `contracts/src/oracle/ChainlinkOracle.sol` (one genuine Chainlink Data Feed per asset, no
+> median, no quorum). The source now lives under **`contracts/test/retired/`** and is
+> non-selectable through the `VaultFactory` oracle allowlist. This walkthrough is kept as the
+> C-4/C-6 evidence record — scope it only if you are reviewing that finding.
 
 > **NEW IN SPRINT 11 — POST-FREEZE.** Not part of `v0.2.0-audit`. Additive: implements the
 > existing `IPriceSource`, modifies nothing in the frozen tree. **Zero** internal adversarial

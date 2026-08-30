@@ -8,11 +8,24 @@ Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. Th
 
 ## Launch-blocking
 
-1. **C-6 — settle the oracle mechanism.** [[c6-oracle-byzantine]] keeps gate 0 NO-GO. `ChainlinkOracle` is shipped ([[chainlink-direct-pivot]]); the **NEXT step in progress** is a factory-level oracle-gate to adopt Chainlink-direct as launch default and make the custom [[oracleaggregator]] **non-deployable** (leaving it selectable re-imports C-6). Final mechanism choice is an owner + external-auditor decision. Tracked by issue #48.
-2. **External audit (gate 1).** Not started. Full review of the corrected tree at a new tag (`v0.4.0-audit`); must cover the remediation itself (six contracts changed, including the `OracleAggregator._tryLatestPrice` assembly).
-3. **Rebuild `base-mainnet.json` (issue #41).** Currently **NOT-DEPLOYABLE**: needs 5 sources/asset at quorum 3 and `maxObservationAge ≤ window/20`; two further source addresses per asset are a human input. (Chainlink-direct simplifies this if adopted.)
+> **⚠ Items 1–3 are CLOSED** (corrected 2026-08-30). They are kept here because the reasoning is
+> still worth reading; the live list is items 4–6 plus [docs/NOW.md](../NOW.md).
+
+1. ~~**C-6 — settle the oracle mechanism.**~~ **DONE.** `ChainlinkOracle` shipped
+   ([[chainlink-direct-pivot]]) *and* the factory oracle-gate landed (#50), so the retired
+   [[oracleaggregator]] is non-selectable — it has since been moved out of `contracts/src/`
+   entirely, to `contracts/test/retired/`. Gate 0 is **GO (root-only)**.
+2. ~~**External audit (gate 1).**~~ **DONE, with a qualifier.** Commissioned at `v0.4.0-audit`; the
+   owner has read the report and attests **no major issues**. The report is held privately, and the
+   scope list plus the Low/Informational findings have not been published — so this is an *owner
+   attestation*, not independent verification. Do not say "audited" unqualified.
+3. ~~**Rebuild `base-mainnet.json` (issue #41).**~~ **DONE.** The `chainlinkOracle` block is
+   populated with real Base feed addresses and verified on-chain **12/12**
+   (`scripts/verify-chainlink-oracle.mjs`). The "5 sources/asset at quorum 3" requirement described
+   the retired aggregator and no longer applies. The file is at `contracts/config/base-mainnet.json`
+   — note the path: only `base-sepolia.json` lives under `config/deployments/`.
 4. **Re-run testnet lifecycle + soak + canary (gates 2, 3, 6).** STALE — earned against superseded bytecode. Redeploy testnet, re-run drills against the corrected contracts. See [[audit-reverification]].
-5. **VaultCore-headroom sprint (issue #40).** H-5/H-6/H-9 and M-15's exit-side need `VaultCore` bytes that do not exist (1,014 B margin). Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
+5. **VaultCore-headroom sprint (issue #40).** H-5/H-6/H-9 and M-15's exit-side need `VaultCore` bytes that do not exist (**~283 B** of margin — corrected 2026-08-30; the 1,014 B previously recorded predates M-15's deposit overload, which spent 731 B, so this is *tighter* than the note claimed, not looser). Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
 6. **One recorded restore drill (gate 7).** ~30 min, no keys, doable anytime — CONDITIONAL until performed.
 
 ## Open Highs / not-mitigated
@@ -24,7 +37,7 @@ Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. Th
 
 - **Dormant-at-launch (need a funded child):** H-5, H-6, H-7, H-9, M-5, L-6 — deferred **with** the sub-vault feature via [[root-vaults-only]].
 - **Accepted design tradeoffs:** M-8 (opaque `actionHash` = MEV protection), M-9 (settlement-timing option, bounded `gain/10`), M-10 (per-address commit-reveal), L-5 (rebasing tokens, creator-disclosed), L-7 (standing-default asymmetry).
-- **Residual-risk register:** immutability, oracle-freeze-beats-mispricing, USDC-depeg on the TWAP leg, shared WETH/USDC pool, Pyth pull-based keeper, x402 broadcast-not-finality — all documented as ship-anyway with mitigations.
+- **Residual-risk register:** immutability, oracle-freeze-beats-mispricing, **single-provider Chainlink dependency** (row 13) and **curation immobility — no oracle rotation path** (row 12), USDC depeg, x402 broadcast-not-finality — all documented in [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) §4 as ship-anyway with mitigations. The old TWAP-leg and Pyth-keeper rows went away with the retired aggregator.
 
 ## Links
 

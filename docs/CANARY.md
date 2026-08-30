@@ -66,6 +66,18 @@ A standing problem is reported **once**, not every poll, and the state survives 
 
 ### (a) `oracle-freshness` — margin to the staleness breaker
 
+> **⚠ THIS SIGNAL TARGETS THE RETIRED ORACLE AND DOES NOT WORK ON A LAUNCH VAULT.** Everything in
+> this subsection describes `packages/canary/src/signals/oracle-freshness.mjs` accurately — and that
+> code still models the pre-C-6 multi-source aggregator. It reads `assetConfig(asset) → (sources,
+> maxStaleness, quorum)`, which `ChainlinkOracle` does not implement (its surface is
+> `feedOf(asset)`, `sequencerUptimeFeed`, `GRACE_PERIOD`). Against a launch vault the read fails and
+> the signal emits **`skipped`** for every asset on every poll — it never alerts, which is a silent
+> monitoring blind spot rather than a visible failure. **Launch gate 6 (canary) cannot be certified
+> until this signal is ported.** A ported signal has no margin to report: with one feed per asset the
+> only states are healthy or frozen, and the things to watch are `updatedAt` age against the feed's
+> heartbeat, the price against the configured band, and the sequencer feed's `startedAt` grace.
+> Reported, not fixed — this is a documentation change.
+
 **What it measures.** Per basket asset: `margin = freshSources - quorum`, where a source is fresh iff
 `latestPrice()` returns `priceWad > 0` and `updatedAt >= chainNow - maxStaleness`. This reproduces
 `OracleAggregator.priceWad` exactly, including that a *reverting* source is simply not fresh. The

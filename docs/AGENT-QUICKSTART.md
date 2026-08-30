@@ -72,8 +72,14 @@ The metered API is read-only. State changes go directly to the contracts (ABIs i
   it; use `skipWindow()` only if you accept immediate entry.
 - **Forward pricing:** exiting between a vote passing and its execution settles at the *post*-
   rebalance price — you carry the rebalance outcome. Check `Governance.hasPendingExecution(vault)`.
-- **Oracle breaker:** if the multi-source median goes stale, **everything freezes, including
-  exits** — by design. Don't strand funds in a vault whose oracle sources you don't trust.
+- **Oracle breaker:** the vault prices its basket from **one genuine Chainlink Data Feed per
+  asset** (`ChainlinkOracle`; WETH via ETH/USD, cbBTC via BTC/USD, USDC pinned). If that feed
+  breaches its heartbeat or the sane-price band, or the Base sequencer is down or inside its
+  post-recovery grace period, `priceWad` reverts and **everything freezes, including exits** — by
+  design, and with **no fallback source**. The oracle is immutable per vault, so check
+  `VaultCore.oracle()` against the blessed set before you deposit and don't strand funds in a vault
+  whose feeds you don't trust. Un-activated (observation-window) deposits stay reclaimable during a
+  freeze via `cancelPending`, which reads no oracle.
 - **Fees:** 10% of realized profit (per-member high-water mark that follows *operator identity*
   across vaults) + an exit fee ≤1% decaying with tenure, paid to remaining members. Sub-vaults
   stack fees — read `SubVaultRegistry.stackedPerfFeeBps(vault)` / `stackedExitFeeCapBps(vault)`.

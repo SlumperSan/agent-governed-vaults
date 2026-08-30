@@ -13,8 +13,8 @@ drill into the atomic notes it links. Source of truth: `docs/ARCHITECTURE.md` (S
 ```
    VaultFactory → VaultDeployer          permissionless deploy; deployer holds NO authority (PX-4)
         │ creates
-   Governance ⇄ VaultCore ⇄ OracleAggregator (or ChainlinkOracle)
-   commit-reveal   shares/NAV/deposits    multi-source median + staleness breaker
+   Governance ⇄ VaultCore ⇄ ChainlinkOracle
+   commit-reveal   shares/NAV/deposits    one Chainlink feed per asset, fail-closed
         │          redemptions/capacity
         ▼               │        │
    SubVaultRegistry  IExecutionAdapter  OperatorRegistry
@@ -59,7 +59,7 @@ The repo overloads `C-n`. Always qualify which:
 - [[governance-commit-reveal]] — proposals, commit-reveal, quorum, delegation, timelock
 - [[two-mode-exits]] — instant vs forward-priced redemption, in-kind payout, exit fee
 - [[sub-vaults]] — parent/child mandate (DORMANT-AT-LAUNCH)
-- [[oracle-layer]] — multi-source median, circuit breaker, the Chainlink pivot
+- [[oracle-layer]] — one Chainlink feed per asset, the fail-closed breaker, and the retired median
 - [[fees-and-carry]] — 10% perf fee, cross-vault HWM carryforward, operator registry
 - [[x402-metering]] — off-chain metered read API, zero contract coupling
 - [[off-chain-stack]] — indexer, agent SDK, API, canary, web

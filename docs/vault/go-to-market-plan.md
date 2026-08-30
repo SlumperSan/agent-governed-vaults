@@ -9,17 +9,17 @@ Because the protocol is immutable per vault, go-to-market is expressed almost en
 ## Launch configuration (argued, not asserted)
 
 - **Topology: root vaults only, zero sub-vaults.** The cheapest risk reduction anywhere — costs nothing, waits on no redeploy. See [[root-vaults-only]].
-- **Oracle: Chainlink-direct as the intended launch default** ([[chainlink-direct-pivot]]), with the custom aggregator made non-deployable via the factory oracle-gate (NEXT step). Contingent on C-6 being settled.
+- **Oracle: Chainlink-direct — shipped, and the launch default** ([[chainlink-direct-pivot]]). The custom aggregator is non-selectable via the factory oracle-gate and has been moved out of `contracts/src/` to `contracts/test/retired/`. C-6 is settled.
 - **First `capacityCapUsdc`: 50,000 USDC.** Large enough that a 10% performance fee on plausible returns pays for operations; small enough that a total-loss event — the honest worst case for a fresh immutable protocol — is survivable and compensable.
-- **First baskets: WETH + cbETH — majors only.** The TWAP source quantizes at $1e-6, a listing constraint below ~$0.01/token; no low-priced assets until a second verification pass. (Chainlink-direct requires each asset to have a Chainlink feed — a reasonable bound for a spot index of majors.)
+- **First baskets: WETH + cbBTC — majors only.** Chainlink-direct requires each asset to have a genuine Chainlink **ASSET/USD** feed on Base, which is a reasonable bound for a spot index of majors and is what sets the universe. **cbETH was dropped**: Base publishes only `CBETH / ETH`, and the oracle constructor now rejects a non-USD denomination. The old `$1e-6` TWAP quantization constraint no longer applies — that was a property of the retired source.
 - **Exit fee:** `exitFeeMaxBps = 50`, decay 302,400 s (3.5 days) — the value exercised end-to-end in the soak.
 - **Governance config:** `3600/3600/0/86400`, quorum 2,500 bps root floor — the values the soak ran through five full rounds. Zero timelock is defensible *because* Mode-F exits exist.
-- **Oracle staleness:** 3,600 s/asset (not tighter — a tight bound drops the pull-based Pyth leg on most reads); `maxObservationAge ≤ window/20` is a hard constraint (90 s ceiling at the 1,800 s window).
+- **Oracle freshness:** a per-feed **heartbeat** sized to the Chainlink feed's own publishing cadence, plus a per-asset **sane-price band**, plus the L2 sequencer gate with its 3,600 s grace period. The old `maxObservationAge ≤ window/20` constraint was a TWAP property and no longer applies.
 
 ## Mainnet deploy sequence (Phase 3)
 
 The C-6 oracle-gate is fully scaffolded ([#53–57]); the safe bring-up order is:
-1. **Populate `base-mainnet.json`** — fill [[chainlinkoracle]] `feedOf[asset]` config placeholders with real Base Chainlink feed addresses.
+1. ~~**Populate `base-mainnet.json`**~~ — **DONE** (2026-08-29): [[chainlinkoracle]] `feedOf[asset]` is filled with real Base Chainlink feed addresses (WETH←ETH/USD, cbBTC←BTC/USD) and verified on-chain 12/12. The file is `contracts/config/base-mainnet.json`.
 2. **`DeployChainlinkOracle.s.sol`** — deploy and test the oracle contract with verified addresses.
 3. **`scripts/verify-chainlink-oracle.mjs`** — on-chain verifier confirms feeds are live and responding.
 4. **Set `BLESSED_ORACLES`** — populate the factory's immutable allowlist with the verified oracle address (the gate that enables `createVault`).
