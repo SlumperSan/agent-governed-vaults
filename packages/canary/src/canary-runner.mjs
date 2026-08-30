@@ -28,7 +28,27 @@
  *                              POLL_INTERVAL_MS because docker-compose feeds both services one
  *                              .env file, and a canary sweep is far heavier than an indexer poll.
  *   NAV_DIVERGENCE_BPS (50)    composition-divergence bar, 50 = 0.5%
- *   ORACLE_MIN_MARGIN (0)      alert when fresh-sources minus quorum <= this
+ *   ORACLE_MIN_MARGIN (0)      RETIRED-ORACLE deployments only: alert when fresh-sources minus
+ *                              quorum <= this. Inert against a ChainlinkOracle, which has no quorum.
+ *   ORACLE_FEED_CADENCE_SECONDS (none)  ChainlinkOracle deployments only: comma-separated
+ *                              address:seconds pairs giving each feed's OWN publish cadence — e.g.
+ *                              0x4200…0006:1200,0xcbB7…33Bf:1200. No oracle exposes this on-chain
+ *                              (it is Chainlink's off-chain publishing config, not contract state),
+ *                              so it must be told; copy it from contracts/config/*.json's
+ *                              chainlinkOracle.assets[].feedCadenceSeconds. Drives the early-warning
+ *                              bar below — an asset left out of this map gets no derived warning.
+ *   ORACLE_STALENESS_WARN_PCT (unset = derived)  ChainlinkOracle deployments only: MANUAL override
+ *                              of the early-warning bar (% of heartbeat), which otherwise alerts
+ *                              once a feed's answer has aged past the bar, BEFORE the breaker trips.
+ *                              Left unset, the bar is DERIVED per asset from
+ *                              ORACLE_FEED_CADENCE_SECONDS — on by default wherever the configured
+ *                              heartbeat is comfortably wider than the feed's own cadence, off
+ *                              (named why, in `detail.warnDisabledReason`) where it is not or where
+ *                              no cadence is configured. A flat bar cannot be calibrated once for
+ *                              every feed: a feed that updates only on its heartbeat sits near 100%
+ *                              of it just before every scheduled publish, so a low flat bar pages on
+ *                              healthy behaviour and gets the canary muted. Set this to override the
+ *                              derivation either way, including `0` to force the warning off.
  *   LOG_LOOKBACK_BLOCKS (0)    on a cold start, how far back to scan for events
  *   MAX_LOG_SPAN_BLOCKS (2000) cap on one poll's getLogs range
  *   HEARTBEAT_MS (0)           if set, periodically print a one-line "still watching" summary
@@ -47,8 +67,8 @@ import { createChainReader } from './reader.mjs';
 import { createTransitionTracker } from './transitions.mjs';
 import { createConsoleSink, createWebhookSink, emitAll } from './sinks.mjs';
 import { VAULT_VIEWS } from './abis.mjs';
-import { skipped, shortAddr } from './signal.mjs';
-import { checkOracleFreshness } from './signals/oracle-freshness.mjs';
+import { skipped, detectorBroken, shortAddr } from './signal.mjs';
+import { checkOracleSignals } from './signals/oracle-health.mjs';
 import { checkNavBacking } from './signals/nav-backing.mjs';
 import { checkShareConservation } from './signals/share-conservation.mjs';
 import { checkExitLiveness } from './signals/exit-liveness.mjs';
@@ -80,6 +100,22 @@ export function resolveCanaryConfig(env) {
     throw new Error(`canary: OPERATOR_REGISTRY_ADDRESS is not a 20-byte address: ${operatorRegistry}`);
   }
 
+  // address:seconds pairs — the one fact no oracle exposes on-chain, so the derived early-warning
+  // bar in signals/oracle-health.mjs has to be told it. An asset left out simply gets no derived
+  // bar (reported, not silent — see `warnDisabledReason` on that signal).
+  const oracleFeedCadenceSeconds = {};
+  for (const entry of list(env.ORACLE_FEED_CADENCE_SECONDS)) {
+    const [rawAddr, rawSec] = entry.split(':');
+    if (!rawAddr || !ADDRESS_RE.test(rawAddr)) {
+      throw new Error(`canary: ORACLE_FEED_CADENCE_SECONDS contains a non-address entry: ${entry}`);
+    }
+    const sec = Number(rawSec);
+    if (!Number.isFinite(sec) || sec <= 0) {
+      throw new Error(`canary: ORACLE_FEED_CADENCE_SECONDS has a non-positive/invalid cadence for ${rawAddr}: ${rawSec ?? ''}`);
+    }
+    oracleFeedCadenceSeconds[lc(rawAddr)] = sec;
+  }
+
   const statePath = env.STATE_PATH || './data/indexer-state.json';
   const pollIntervalMs = num('CANARY_POLL_INTERVAL_MS', 30_000);
   return {
@@ -101,6 +137,12 @@ export function resolveCanaryConfig(env) {
     pollIntervalMs,
     navDivergenceBps: num('NAV_DIVERGENCE_BPS', 50),
     oracleMinMargin: num('ORACLE_MIN_MARGIN', 0),
+    oracleStalenessWarnPct: num('ORACLE_STALENESS_WARN_PCT', 0),
+    // Distinguishes "unset" from "explicitly 0" without changing oracleStalenessWarnPct's type —
+    // the derived default must apply when nothing was set, and must NOT apply (even to 0) when an
+    // operator explicitly chose a value, including choosing to force it off.
+    oracleStalenessWarnPctSet: env.ORACLE_STALENESS_WARN_PCT != null && env.ORACLE_STALENESS_WARN_PCT !== '',
+    oracleFeedCadenceSeconds,
     logLookbackBlocks: num('LOG_LOOKBACK_BLOCKS', 0),
     maxLogSpanBlocks: num('MAX_LOG_SPAN_BLOCKS', 2000),
     heartbeatMs: num('HEARTBEAT_MS', 0),
@@ -112,8 +154,9 @@ export function resolveCanaryConfig(env) {
  *
  * Pure over its inputs in the way that matters: it touches the chain only through the injected
  * `reader`, and reads the indexer projection only through the `state` object handed to it. A
- * signal that throws is converted into a `skipped` result rather than aborting the sweep — one
- * broken vault must not blind the operator to the other nine.
+ * signal that throws is converted into a DETECTOR BROKEN result rather than aborting the sweep —
+ * one broken vault must not blind the operator to the other nine, and a check that threw must not
+ * go quiet after a single line.
  *
  * @param {Object} ctx
  * @param {any} ctx.reader
@@ -131,14 +174,22 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
     const projected = state?.vaults?.get(vault) ?? null;
     const shareBook = state?.shares?.get(vault) ?? null;
 
-    /** Run one signal, converting a thrown error into a DEGRADED result instead of losing the sweep. */
+    /**
+     * Run one signal, converting a thrown error into a result instead of losing the sweep.
+     *
+     * A check that THREW is a broken detector, not a degraded observation: nothing was measured and
+     * nobody knows what is being missed. It is therefore marked `detectorBroken`, which the
+     * transition tracker re-asserts on a backoff rather than reporting once and going quiet. That
+     * quiet-after-one-line behaviour is precisely how the pre-C-6 oracle signal stayed dead through
+     * an entire pivot.
+     */
     const run = async (name, fn) => {
       try {
         out.push(...(await fn()));
       } catch (err) {
-        out.push(skipped({
+        out.push(detectorBroken({
           signal: name, vault,
-          message: `${name} check errored on vault ${shortAddr(vault)}: ${err?.message ?? err}`,
+          message: `${name} check ERRORED on vault ${shortAddr(vault)} and measured nothing: ${err?.message ?? err} — this vault is unmonitored for that signal, not healthy`,
           detail: { vault, error: String(err?.message ?? err) },
         }));
       }
@@ -159,16 +210,24 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
       }
       meta = { oracle, usdc, creator, assets };
     } catch (err) {
-      out.push(skipped({
+      out.push(detectorBroken({
         signal: 'vault-config', vault,
-        message: `vault ${shortAddr(vault)} is unreadable at ${cfg.rpcUrl ? 'the configured RPC' : 'the injected client'}: ${err?.message ?? err} — every signal for this vault is suspended`,
+        message: `vault ${shortAddr(vault)} is unreadable at ${cfg.rpcUrl ? 'the configured RPC' : 'the injected client'}: ${err?.message ?? err} — EVERY signal for this vault is suspended, so it is entirely unmonitored`,
         detail: { vault, error: String(err?.message ?? err) },
       }));
       continue;
     }
 
-    await run('oracle-freshness', () => checkOracleFreshness({
-      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec, minMargin: cfg.oracleMinMargin,
+    // Flavor-dispatched: ChainlinkOracle (the live post-C-6 stack) or the retired OracleAggregator.
+    // An oracle that answers neither returns a DETECTOR BROKEN result rather than a silent skip.
+    await run('oracle-freshness', () => checkOracleSignals({
+      reader, vault, oracle: meta.oracle, assets: meta.assets, nowSec,
+      minMargin: cfg.oracleMinMargin,
+      // undefined (not cfg.oracleStalenessWarnPct's always-a-number default) when the operator
+      // never set ORACLE_STALENESS_WARN_PCT, so the signal's derived default can apply — see
+      // resolveWarnBar in signals/oracle-health.mjs.
+      stalenessWarnPct: cfg.oracleStalenessWarnPctSet ? cfg.oracleStalenessWarnPct : undefined,
+      cadenceByAsset: cfg.oracleFeedCadenceSeconds,
     }));
 
     await run('nav-backing', () => checkNavBacking({

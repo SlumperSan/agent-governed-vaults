@@ -85,10 +85,11 @@ wrong price.
   no action from us is possible or needed on-chain."
 - **Cannot do:** unfreeze, override the price, retune the heartbeat or band, or repoint the feed.
   All of it is immutable per deployment.
-- **Canary caveat:** the `oracle-freshness` signal has **not** been ported to this oracle — it
-  still reads the retired aggregator's `assetConfig`, so on a launch vault it emits `skipped`
-  rather than alerting. Do not treat a quiet canary as evidence the oracle is healthy. See
-  [CANARY.md](CANARY.md) §3(a).
+- **Canary:** the `oracle-freshness` signal measures this oracle directly — it calls
+  `priceWad(asset)` and treats the revert as the incident, then attributes it to the sequencer,
+  the heartbeat, the band, an unlisted asset or a dead feed. A sequencer grace tail carries
+  `detail.resumesAtSec`, the exact second pricing resumes. A freeze it cannot attribute is still
+  paged, with the gap named. See [CANARY.md](CANARY.md) §3(a).
 
 ## 2. `nav-backing` divergence (composition or custody)
 
