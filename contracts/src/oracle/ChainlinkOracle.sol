@@ -4,6 +4,15 @@ pragma solidity 0.8.26;
 import {IOracleAggregator} from "../interfaces/IOracleAggregator.sol";
 import {IAggregatorV3} from "../interfaces/IAggregatorV3.sol";
 
+/// @notice The `description()` half of Chainlink's full `AggregatorV3Interface`, declared HERE
+/// rather than added to the shared {IAggregatorV3}. {IAggregatorV3} is the minimal read surface the
+/// hot path needs and is implemented by {ChainlinkSourceAdapter} and every test mock; widening it
+/// would force `description()` on implementers that have no business answering it. Every genuine
+/// Chainlink `EACAggregatorProxy` implements this (it forwards to the underlying aggregator).
+interface IAggregatorV3Description {
+    function description() external view returns (string memory);
+}
+
 /// @title ChainlinkOracle — single-feed-per-asset IOracleAggregator over Chainlink Data Feeds
 /// @notice An ADDITIVE alternative to {OracleAggregator} that a VaultCore can be deployed with
 /// INSTEAD of the bespoke per-vault median. It resolves audit finding C-6 by trusting Chainlink's
@@ -41,7 +50,10 @@ contract ChainlinkOracle is IOracleAggregator {
     struct FeedConfig {
         IAggregatorV3 feed; // 160
         uint32 heartbeat; // 32; the feed's own configured max silence (heartbeat, not deviation)
-        uint64 scale; // 64; 10**(18 - feedDecimals), <= 1e18
+        uint64 scale; // 64; 10**(18 - feedDecimals). Currently always 1e10 — the constructor pins
+        // feedDecimals to 8 (the USD-feed convention) as the denomination cross-check. The
+        // general form is retained so relaxing that pin is a one-line change, and dropping the
+        // field would repack the struct for no gain.
         uint128 minPriceWad; // sane-price band floor (WAD); 0 with maxPriceWad 0 => band disabled
         uint128 maxPriceWad; // sane-price band ceiling (WAD); 0 => band disabled for this asset
     }
@@ -70,12 +82,17 @@ contract ChainlinkOracle is IOracleAggregator {
     /// @notice Fix the full per-asset feed configuration forever (parallel arrays, matching
     /// {OracleAggregator}'s style).
     /// @param assets_ the priceable assets (no zero address, no duplicates, and not `usdc_`)
-    /// @param feeds_ per-asset Chainlink AggregatorV3 PROXY addresses (codeless / decimals > 18 rejected)
+    /// @param feeds_ per-asset Chainlink AggregatorV3 PROXY addresses. Each must be codeless-free,
+    /// must describe itself as USD-quoted (`description()` ending in `/ USD` — see
+    /// `_requireUsdQuote`), and must report exactly 8 decimals (the USD-feed convention).
     /// @param heartbeats_ per-asset staleness bound in seconds (the feed's own heartbeat; > 0)
     /// @param minPriceWad_ per-asset sane-price floor (WAD), or 0 to disable the band with max 0
     /// @param maxPriceWad_ per-asset sane-price ceiling (WAD), or 0 to disable the band
     /// @param usdc_ USDC-like token to pin at 1e18, or address(0) to disable the pin
-    /// @param sequencerUptimeFeed_ L2 sequencer uptime feed, or address(0) off a sequencer L2
+    /// @param sequencerUptimeFeed_ L2 sequencer uptime feed, or address(0) off a sequencer L2.
+    /// DELIBERATELY EXEMPT from the USD-quote and 8-decimals checks: it is a status feed, not a
+    /// price feed (Base's reports 0 decimals and describes itself as an uptime status), so applying
+    /// a price-feed denomination rule to it would reject every correct mainnet deployment.
     constructor(
         address[] memory assets_,
         address[] memory feeds_,
@@ -109,8 +126,25 @@ contract ChainlinkOracle is IOracleAggregator {
             require(hi <= type(uint128).max && lo <= type(uint128).max, BadOracleConfig());
             require(hi == 0 ? lo == 0 : lo <= hi, BadOracleConfig());
 
+            // DENOMINATION. Everything downstream (NAV, deposit, exit, rebalance) reads `priceWad`
+            // as USD. Nothing used to check that the wired feed actually quotes in USD, and the
+            // mistake is silent: Base HAS a `CBETH / ETH` feed but no cbETH/USD one, so a deployer
+            // reaching for cbETH wires the ETH-denominated feed and every vault prices cbETH at
+            // ~1.04 "dollars" forever. Prove the quote leg is USD from the feed's own
+            // `description()`, once, at construction — where the mistake is still fixable.
+            _requireUsdQuote(feed);
+
+            // DECIMALS CROSS-CHECK, corroborating the denomination above. Chainlink's convention is
+            // 8 decimals for USD feeds and 18 for ETH-denominated ones, so a feed that claims a USD
+            // quote while reporting anything but 8 is not the feed the deployer thinks it is (a
+            // spoofed `description()`, or a genuine feed whose aggregator was upgraded out from
+            // under the cached `scale`). Fail closed: a false REJECT halts a deploy loudly and is
+            // fixable, a false ACCEPT is permanent silent mispricing.
+            // Cost, stated: a legitimate 18-decimal USD feed (Chainlink has a handful, e.g.
+            // AMPL/USD on L1 — none on Base, none in the launch basket) cannot be listed without a
+            // contract change and a re-audit. Accepted.
             uint8 d = IAggregatorV3(feed).decimals(); // also proves the feed answers AggregatorV3
-            require(d <= 18, BadOracleConfig());
+            require(d == 8, BadOracleConfig());
             // Prove the feed decodes latestRoundData at construction, where a mistake is fixable.
             // The per-call raw-staticcall decode guard {OracleAggregator} needs (C-3) is not
             // repeated: config is immutable and every feed is proven to speak the ABI here, so no
@@ -141,6 +175,42 @@ contract ChainlinkOracle is IOracleAggregator {
         }
         sequencerUptimeFeed = IAggregatorV3(sequencerUptimeFeed_);
         usdc = usdc_;
+    }
+
+    /// @dev Reverts `BadOracleConfig` unless `feed` describes itself as quoting in USD.
+    ///
+    /// Chainlink names a Data Feed after its pair, quote leg last: "ETH / USD", "BTC / USD",
+    /// "LINK / USD" — versus "CBETH / ETH" for the exchange-rate feeds. The predicate is therefore
+    /// "the description ends in USD, as a whole word": the last three bytes are `USD` and the byte
+    /// before them is a pair separator (`' '` or `'/'`, covering both the spaced and unspaced
+    /// spellings Chainlink has used). The separator requirement is what stops a hypothetical
+    /// `"ETH / PYUSD"` — an ETH price quoted in a USD-ISH TOKEN, not in USD — from passing on a
+    /// bare suffix match.
+    ///
+    /// WHY THIS IS SAFE TO DEPEND ON ON-CHAIN, given `description()` returns a string:
+    ///  - it runs ONCE, in the constructor, so it is initcode-only and costs the hot path nothing —
+    ///    `priceWad` is byte-for-byte unchanged;
+    ///  - config is immutable, so there is no later drift to re-check. Chainlink editing a
+    ///    description string on a future aggregator upgrade cannot retroactively fail an already
+    ///    deployed oracle (a per-read check WOULD have that failure mode);
+    ///  - a false REJECT surfaces as a failed deployment, before any funds exist.
+    ///
+    /// WHAT IT IS NOT: this is a MISCONFIGURATION guard, not an authenticity guard. A hostile fake
+    /// `AggregatorV3` can return "ETH / USD" and 8 decimals while pricing whatever it likes — that
+    /// is C-6's territory, answered by {VaultFactory}'s blessed-oracle allowlist. This check closes
+    /// the honest-deployer hole the allowlist cannot see: an oracle blessed on the assumption that
+    /// its feeds are USD feeds, when one of them is not.
+    function _requireUsdQuote(address feed) private view {
+        (bool ok, bytes memory ret) =
+            feed.staticcall(abi.encodeWithSelector(IAggregatorV3Description.description.selector));
+        // A genuine proxy returns (offset, length, data) — at least three words. Anything shorter is
+        // a contract that does not implement `description()`; reject rather than guess.
+        require(ok && ret.length >= 96, BadOracleConfig());
+        bytes memory desc = bytes(abi.decode(ret, (string)));
+        uint256 n = desc.length;
+        require(n >= 4, BadOracleConfig()); // "X/USD" is the shortest real shape; n-4 must be in range
+        require(desc[n - 3] == "U" && desc[n - 2] == "S" && desc[n - 1] == "D", BadOracleConfig());
+        require(desc[n - 4] == " " || desc[n - 4] == "/", BadOracleConfig());
     }
 
     /// @inheritdoc IOracleAggregator
