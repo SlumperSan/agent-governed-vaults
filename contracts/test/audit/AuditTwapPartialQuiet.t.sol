@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../../src/oracle/UniswapV3TwapSource.sol";
+import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../retired/UniswapV3TwapSource.sol";
 import {TokenStub, FaithfulV3Pool} from "./AuditTwapSpotDegeneration.t.sol";
 
 /// @notice AUDIT ARTIFACT — not a protocol test. **H-2 IS REMEDIATED.**

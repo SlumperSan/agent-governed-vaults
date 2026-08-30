@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-import {IPriceSource} from "../OracleAggregator.sol";
+// RETIRED (C-6), formerly src/oracle/UniswapV3TwapSource.sol. The bespoke median-aggregator stack is
+// superseded by src/oracle/ChainlinkOracle.sol and is no longer production source.
+// It lives under test/ rather than being deleted because the audit tests for
+// C-3/C-4/C-6 and H-1/H-2/M-1 drive the REAL contract, not a mock, and that evidence
+// must keep building (SWARM §6). Citations to the old path resolve in git history.
+
+import {IPriceSource} from "./OracleAggregator.sol";
 import {TickMath} from "./vendor/TickMath.sol";
 import {FullMath} from "./vendor/FullMath.sol";
 

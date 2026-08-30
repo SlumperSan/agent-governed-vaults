@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-import {IPyth} from "../../src/oracle/PythSource.sol";
-import {IAggregatorV3} from "../../src/OracleAggregator.sol";
+import {IPyth} from "../retired/PythSource.sol";
+import {IAggregatorV3} from "../../src/interfaces/IAggregatorV3.sol";
 
 /// @notice Uniswap V3 pool stub for the Sprint-11 TWAP source. Exposes the whole observation
 /// ring as writable state so a test can construct the pathological pools the guards exist for:

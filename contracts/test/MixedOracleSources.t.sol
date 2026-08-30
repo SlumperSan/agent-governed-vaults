@@ -2,10 +2,11 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {OracleAggregator, ChainlinkSourceAdapter, IAggregatorV3} from "../src/OracleAggregator.sol";
+import {OracleAggregator, ChainlinkSourceAdapter} from "./retired/OracleAggregator.sol";
+import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
-import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../src/oracle/UniswapV3TwapSource.sol";
-import {PythSource, IPyth} from "../src/oracle/PythSource.sol";
+import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "./retired/UniswapV3TwapSource.sol";
+import {PythSource, IPyth} from "./retired/PythSource.sol";
 import {MockV3Pool, MockPyth, MockAggregatorV3} from "./mocks/OracleSourceMocks.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
 

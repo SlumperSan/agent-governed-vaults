@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IOracleAggregator} from "../interfaces/IOracleAggregator.sol";
-import {IAggregatorV3} from "../OracleAggregator.sol";
+import {IAggregatorV3} from "../interfaces/IAggregatorV3.sol";
 
 /// @title ChainlinkOracle — single-feed-per-asset IOracleAggregator over Chainlink Data Feeds
 /// @notice An ADDITIVE alternative to {OracleAggregator} that a VaultCore can be deployed with
