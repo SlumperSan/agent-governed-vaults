@@ -59,8 +59,18 @@ contract AuditAggregatorSwapDriftTest is Test {
     address constant CBBTC = address(0xCBB7);
     uint32 constant HEARTBEAT = 3600;
 
+<<<<<<< HEAD
     // The REAL launch bands and prices from `contracts/config/base-mainnet.json.chainlinkOracle`,
     // copied verbatim so this suite fails if that config is retuned without revisiting row 14.
+=======
+    // A SNAPSHOT of the real launch bands and prices from
+    // `contracts/config/base-mainnet.json.chainlinkOracle` (read on-chain 2026-08-29). These are
+    // literals: retuning that config does NOT fail this suite, so do not read these tests as a
+    // binding on it. The binding lives in `scripts/verify-chainlink-oracle.mjs`, whose
+    // `band bounds a 2-decimal drift` check hard-fails a config whose band is too wide to catch the
+    // drift these tests describe. What this suite pins is the ARITHMETIC at these values -- which
+    // drifts the band catches and which it does not.
+>>>>>>> 1ffa45dd (verifier: enforce that the sane-price band actually bounds a 2-decimal drift)
     uint256 constant WETH_MIN_WAD = 100000000000000000000; // 1e20  = $100
     uint256 constant WETH_MAX_WAD = 100000000000000000000000; // 1e23 = $100,000
     uint256 constant WETH_SPOT_USD = 2440; // ~$2,440 at the 2026-08-29 on-chain verification

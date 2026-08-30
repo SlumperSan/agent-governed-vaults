@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compareAggregatorPin, isUsdQuoted } from '../verify-chainlink-oracle.mjs';
+import { bandBoundsTwoDecimalDrift, compareAggregatorPin, isUsdQuoted } from '../verify-chainlink-oracle.mjs';
 
 // ---------------------------------------------------------------------------
 // AGGREGATOR-SWAP DRIFT — the off-chain half of the accepted residual.
@@ -114,4 +114,61 @@ test('isUsdQuoted rejects a USD-ish TOKEN quote leg — the separator is what do
 
 test('isUsdQuoted rejects non-strings and short strings without throwing', () => {
   for (const d of [null, undefined, 42, '', 'USD']) assert.equal(isUsdQuoted(d), false, String(d));
+});
+
+// --- band width: the check that makes residual row 14 TRUE, not merely asserted ---
+// Row 13 accepts the cached-`scale` risk because the sane-price band already fail-closes on every
+// drift of >= 2 decimals. That argument holds only while the band is tight relative to the live
+// price -- and the pre-existing verifier check only asked whether a band EXISTS. A band of
+// $0.01..$1e12 satisfies "set" and catches nothing, silently voiding the acceptance. Live values
+// below read from Base mainnet / Base Sepolia 2026-08-30.
+
+const wad = (answer8) => BigInt(answer8) * 10n ** 10n;
+
+test('the real launch bands DO bound a 2-decimal drift at live prices', () => {
+  // WETH $2,459.11 in $100..$100k; cbBTC $78,123 in $1k..$1M; Sepolia LINK $11.39 in $1..$1k.
+  assert.equal(bandBoundsTwoDecimalDrift(wad(245911590522), 10n ** 20n, 10n ** 23n).ok, true, 'WETH');
+  assert.equal(bandBoundsTwoDecimalDrift(wad(7812300000000), 10n ** 21n, 10n ** 24n).ok, true, 'cbBTC');
+  assert.equal(bandBoundsTwoDecimalDrift(wad(1139339364), 10n ** 18n, 10n ** 21n).ok, true, 'LINK/Sepolia');
+});
+
+test('a band that is merely SET but far too wide fails — the gap this check exists to close', () => {
+  const r = bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, 10n ** 16n, 10n ** 30n);
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /BAND TOO WIDE/);
+  assert.match(r.detail, /row 14/, 'the message must name the acceptance it invalidates');
+});
+
+test('the ceiling alone can fail it, and the message says which side', () => {
+  // x100 = $244,000 vs a $1,000,000 ceiling: does not leave the band. Floor side is fine.
+  const r = bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, 10n ** 20n, 10n ** 24n);
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /x100 .* is still <= the ceiling/);
+  assert.doesNotMatch(r.detail, /is still >= the floor/);
+});
+
+test('the floor alone can fail it', () => {
+  // /100 = $24.40 vs a $1 floor: does not leave the band. Ceiling side is fine.
+  const r = bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, 10n ** 18n, 10n ** 23n);
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /\/100 .* is still >= the floor/);
+  assert.doesNotMatch(r.detail, /<= the ceiling/);
+});
+
+test('it is a function of the LIVE PRICE, not of the band alone', () => {
+  const band = [10n ** 20n, 10n ** 23n]; // the real WETH band, unchanged
+  assert.equal(bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, ...band).ok, true, 'at $2,440 the band bounds the drift');
+  // A 5x crash to $488 leaves the config untouched and the residual genuinely wider: a +2-decimal
+  // drift now reads $48,800, inside a $100,000 ceiling, and nothing would trip.
+  assert.equal(bandBoundsTwoDecimalDrift(488n * 10n ** 18n, ...band).ok, false, 'at $488 the same band no longer does');
+});
+
+test('a disabled or malformed band fails rather than dividing by nothing', () => {
+  for (const [mn, mx] of [[0n, 0n], [10n ** 20n, 0n], [0n, 10n ** 23n], [10n ** 23n, 10n ** 20n]]) {
+    assert.equal(bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, mn, mx).ok, false, `${mn}/${mx}`);
+  }
+});
+
+test('no live price means the band cannot be sized — fail, never silently pass', () => {
+  assert.equal(bandBoundsTwoDecimalDrift(0n, 10n ** 20n, 10n ** 23n).ok, false);
 });

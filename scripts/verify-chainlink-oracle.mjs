@@ -248,6 +248,53 @@ export function compareAggregatorPin(pin, observed) {
   };
 }
 
+/**
+ * Is the sane-price band tight enough that a 2-DECIMAL aggregator-swap drift leaves it?
+ *
+ * This is the check that makes residual row 14 true rather than merely asserted. `ChainlinkOracle`
+ * caches `scale` from a one-time `decimals()` read, and the argument for accepting that -- instead
+ * of re-checking on every read and risking a permanent freeze -- is that the band already catches
+ * every drift with a Chainlink precedent: 18 decimals, and any shift of >= 2. But `priceWad` trips
+ * only on `p < min || p > max`, so THAT argument holds only while the band is tight relative to the
+ * live price. A band of $0.01..$1e12 satisfies "a band is set" and catches nothing.
+ *
+ * The predicate is exactly the drift arithmetic. A +2-decimal swap multiplies the reported price by
+ * 100 and a -2-decimal swap divides it by 100, so the band bounds both iff
+ *   priceWad * 100 > maxPriceWad   and   priceWad / 100 < minPriceWad.
+ *
+ * It is deliberately a FUNCTION OF THE LIVE PRICE, not of the band alone: if the asset falls far
+ * enough, a fixed band stops bounding the drift even though nothing about the config changed. That
+ * is a true statement about the residual widening, and the deployer should see it. Hard-failing is
+ * safe here in a way it is not on-chain -- a false reject costs a re-run, not a frozen vault.
+ *
+ * @param {bigint} priceWad live price, WAD  @param {bigint} min  @param {bigint} max
+ * @returns {{ok:boolean, detail:string}}
+ */
+export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
+  if (max === 0n || min === 0n || min > max) {
+    return { ok: false, detail: `band disabled or malformed (min=${min} max=${max})` };
+  }
+  if (priceWad <= 0n) return { ok: false, detail: `no live price to size the band against (priceWad=${priceWad})` };
+  const upOk = priceWad * 100n > max;
+  const downOk = priceWad / 100n < min;
+  const usd = (v) => (v / 10n ** 16n).toString().replace(/(\d+)(\d\d)$/, '$1.$2');
+  if (upOk && downOk) {
+    return {
+      ok: true,
+      detail: `price $${usd(priceWad)} in $${usd(min)}..$${usd(max)}; a +/-2-decimal drift (x100 / /100) leaves it`,
+    };
+  }
+  return {
+    ok: false,
+    detail:
+      `BAND TOO WIDE to bound a 2-decimal aggregator-swap drift: price $${usd(priceWad)}, band $${usd(min)}..$${usd(max)}. ` +
+      `${!upOk ? `x100 = $${usd(priceWad * 100n)} is still <= the ceiling. ` : ''}` +
+      `${!downOk ? `/100 = $${usd(priceWad / 100n)} is still >= the floor. ` : ''}` +
+      'Residual-register row 14 accepts the cached-scale risk BECAUSE the band catches every drift of >= 2 decimals; ' +
+      'a band this wide voids that argument. Tighten it, or re-open row 14.',
+  };
+}
+
 function main() {
   const cfg = CFG;
   const co = cfg.chainlinkOracle;
@@ -361,6 +408,17 @@ function main() {
         spotWad !== null && spotWad >= mn && spotWad <= mx,
         spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
       );
+      // A THIRD, strictly stronger property, and the one residual row 14 depends on: not that the
+      // band contains the price, but that it is tight enough AROUND the price to catch a 2-decimal
+      // aggregator-swap drift in BOTH directions. MAX_BAND_RATIO already guarantees such a window
+      // EXISTS (both directions are caught iff `hi/100 < spot < 100*lo`, non-empty iff
+      // `hi < 10000*lo`, and the ratio cap is 1000). It cannot guarantee the live price sits inside
+      // that window rather than near an edge -- that is a property of the price, not the config,
+      // so only a live check can see it, and it can change with no config edit at all.
+      if (spotWad !== null) {
+        const width = bandBoundsTwoDecimalDrift(spotWad, mn, mx);
+        check(`${label}: band bounds a 2-decimal drift (residual row 14)`, width.ok, width.detail);
+      }
     }
   }
 
