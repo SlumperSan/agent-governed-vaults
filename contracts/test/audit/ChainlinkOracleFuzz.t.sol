@@ -69,13 +69,22 @@ contract ChainlinkOracleFuzzTest is Test {
 
     /// Sane-price band: an 8-decimal feed with band [lo,hi]. In-band prices exactly; out-of-band
     /// (either side) fails closed. Never returns an out-of-band value.
+    /// @dev The band is now shape-checked at construction (strict ordering, width <= 1000x, and it
+    /// must contain the feed's CURRENT answer), so the fuzzed width is bounded to the admissible
+    /// range and the oracle is built at an in-band price. The fuzzed answer is applied afterwards
+    /// — which is the property under test: what `priceWad` does once the feed MOVES.
     function testFuzz_saneBandEnforced(uint256 answer8, uint256 lo, uint256 hi) public {
-        lo = bound(lo, 1e18, 1_000_000e18);
-        hi = bound(hi, lo, 10_000_000e18);
+        // Draw the floor in 8-decimal units so it is exactly representable by the feed, then the
+        // ceiling anywhere in the admissible (lo, lo*1000] width. Domain is the original $1..$1m.
+        uint256 lo8 = bound(lo, 1e8, 1_000_000e8);
+        lo = lo8 * 1e10;
+        hi = bound(hi, lo + 1, lo * 1000);
         answer8 = bound(answer8, 1, 100_000_000e8); // up to $100m/token in 8-dec units
         uint256 priceWad = answer8 * 1e10;
-        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(answer8), block.timestamp);
+        // Construct at exactly the band floor — in band for every (lo, hi) above — then move.
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(lo8), block.timestamp);
         ChainlinkOracle oracle = _oracle(feed, lo, hi);
+        feed.set(int256(answer8), block.timestamp);
         if (priceWad >= lo && priceWad <= hi) {
             assertEq(oracle.priceWad(ASSET), priceWad, "in-band prices exactly");
         } else {

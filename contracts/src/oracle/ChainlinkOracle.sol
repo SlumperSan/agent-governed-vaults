@@ -65,15 +65,50 @@ contract ChainlinkOracle is IOracleAggregator {
     /// first hour after recovery are not yet trustworthy (queued-during-outage txs still drain).
     uint256 public constant GRACE_PERIOD = 3600;
 
+    /// @dev Bounds on the per-asset staleness parameter. They exist because config is immutable:
+    /// a heartbeat above the ceiling leaves the staleness guard present but unable to ever fire,
+    /// and one below the floor freezes the asset against a HEALTHY feed. Neither is fixable after
+    /// deployment.
+    ///
+    /// Ceiling 24h: the slowest heartbeat tier Chainlink publishes for Data Feeds, and the age past
+    /// which a price cannot bound the NAV-vs-market arb a vault mints and redeems shares against.
+    /// Base Sepolia's deliberately generous 86_400 bound sits exactly here, so the check is
+    /// inclusive (contracts/config/base-sepolia.json); mainnet's 3_600 is well inside.
+    ///
+    /// Floor 10min: measured against the four feeds in the two shipped configs on 2026-08-29 — more
+    /// than half of their observed inter-update intervals exceed 600s (medians 914-1232s), so a
+    /// bound at or under it false-trips a healthy feed. This bounds something the constructor
+    /// cannot read (a feed exposes no heartbeat), which is only defensible because a wrong
+    /// rejection here is a deploy-time revert the deployer fixes by WIDENING the bound — erring
+    /// safe — rather than a post-deploy freeze.
+    uint32 private constant MIN_HEARTBEAT = 600;
+    uint32 private constant MAX_HEARTBEAT = 86_400;
+
+    /// @dev Widest sane-price band accepted, as a ceiling/floor ratio. Every band in both shipped
+    /// configs is exactly 1000x; wider than that the band admits a >99.9% collapse as "sane", which
+    /// is the one reading it exists to reject.
+    ///
+    /// There is deliberately NO minimum width. A band's correct width is a function of the asset's
+    /// volatility class, which the constructor cannot observe: a floor sized for ETH would forbid
+    /// the correct ~1.2x band for the USDC/USD feed this contract explicitly offers as an
+    /// alternative to the pin, and a band too tight freezes the vault permanently once price moves
+    /// — the AuditProposalThresholdFloor shape. The observable substitute is below: the feed's own
+    /// current answer must fall inside the band.
+    uint256 private constant MAX_BAND_RATIO = 1000;
+
     error BadOracleConfig();
 
     /// @notice Fix the full per-asset feed configuration forever (parallel arrays, matching
     /// {OracleAggregator}'s style).
     /// @param assets_ the priceable assets (no zero address, no duplicates, and not `usdc_`)
     /// @param feeds_ per-asset Chainlink AggregatorV3 PROXY addresses (codeless / decimals > 18 rejected)
-    /// @param heartbeats_ per-asset staleness bound in seconds (the feed's own heartbeat; > 0)
+    /// @param heartbeats_ per-asset staleness bound in seconds (the feed's own heartbeat), which
+    /// must fall in [MIN_HEARTBEAT, MAX_HEARTBEAT] so the guard can neither be disabled nor
+    /// self-freeze
     /// @param minPriceWad_ per-asset sane-price floor (WAD), or 0 to disable the band with max 0
-    /// @param maxPriceWad_ per-asset sane-price ceiling (WAD), or 0 to disable the band
+    /// @param maxPriceWad_ per-asset sane-price ceiling (WAD), or 0 to disable the band. An enabled
+    /// band needs a non-zero floor, a strict ordering, a width within MAX_BAND_RATIO, and must
+    /// contain the feed's current answer
     /// @param usdc_ USDC-like token to pin at 1e18, or address(0) to disable the pin
     /// @param sequencerUptimeFeed_ L2 sequencer uptime feed, or address(0) off a sequencer L2
     constructor(
@@ -96,18 +131,20 @@ contract ChainlinkOracle is IOracleAggregator {
             address feed = feeds_[i];
             require(asset != address(0) && feed != address(0), BadOracleConfig());
             require(asset != usdc_, BadOracleConfig()); // a pinned USDC must not ALSO carry a feed
-            require(heartbeats_[i] > 0, BadOracleConfig());
+            require(heartbeats_[i] >= MIN_HEARTBEAT && heartbeats_[i] <= MAX_HEARTBEAT, BadOracleConfig());
             // A codeless feed (one deploy typo) returns empty data forever; reject it here, where it
             // is still fixable, rather than bricking the asset at the first read.
             require(feed.code.length > 0, BadOracleConfig());
             require(address(feedOf[asset].feed) == address(0), BadOracleConfig()); // no duplicate asset
 
-            // Sane-price band: either disabled (both 0) or a well-ordered non-zero ceiling. The band
-            // is the defence against a feed reporting a deprecated min/maxAnswer clamp as "fresh".
+            // Sane-price band: either disabled (both 0) or a usable band. The band is the defence
+            // against a feed reporting a deprecated min/maxAnswer clamp as "fresh". A zero floor
+            // beside a non-zero ceiling was previously accepted; it is a ceiling-only band, which
+            // guards the wrong side — a deprecated `minAnswer` clamp is a LOW value.
             uint256 lo = minPriceWad_[i];
             uint256 hi = maxPriceWad_[i];
             require(hi <= type(uint128).max && lo <= type(uint128).max, BadOracleConfig());
-            require(hi == 0 ? lo == 0 : lo <= hi, BadOracleConfig());
+            require(hi == 0 ? lo == 0 : (lo > 0 && lo < hi && hi <= lo * MAX_BAND_RATIO), BadOracleConfig());
 
             uint8 d = IAggregatorV3(feed).decimals(); // also proves the feed answers AggregatorV3
             require(d <= 18, BadOracleConfig());
@@ -124,12 +161,24 @@ contract ChainlinkOracle is IOracleAggregator {
             // assumption. A decimals change on an upgrade would silently mis-scale — an accepted,
             // documented, convention-backed risk (reading decimals() live each call would close it
             // at a gas cost on every NAV read).
-            IAggregatorV3(feed).latestRoundData();
+            (, int256 answer,,,) = IAggregatorV3(feed).latestRoundData();
+
+            uint64 scale = uint64(10 ** (18 - d));
+            // The band must contain the price this feed reports right now. It is the only "too
+            // tight" test the constructor can make without a view on the asset's volatility, and it
+            // also catches a band written in feed decimals instead of WAD, or copied from another
+            // asset. Freshness is deliberately NOT checked: a deploy must not fail for a transient
+            // reason, and scripts/verify-chainlink-oracle.mjs is the layer that sees liveness.
+            if (hi != 0) {
+                require(answer > 0, BadOracleConfig());
+                uint256 spotWad = uint256(answer) * scale;
+                require(spotWad >= lo && spotWad <= hi, BadOracleConfig());
+            }
 
             feedOf[asset] = FeedConfig({
                 feed: IAggregatorV3(feed),
                 heartbeat: heartbeats_[i],
-                scale: uint64(10 ** (18 - d)),
+                scale: scale,
                 minPriceWad: uint128(lo),
                 maxPriceWad: uint128(hi)
             });

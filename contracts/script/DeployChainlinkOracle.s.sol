@@ -15,9 +15,12 @@ import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
 /// Required env (all parallel by asset; comma-delimited):
 ///   ORACLE_ASSETS      address[]  — the priceable basket assets (no duplicates, not USDC)
 ///   ORACLE_FEEDS       address[]  — the Chainlink AggregatorV3 PROXY per asset (verify each on-chain!)
-///   ORACLE_HEARTBEATS  uint[]     — per-asset staleness bound = the feed's OWN heartbeat (seconds)
+///   ORACLE_HEARTBEATS  uint[]     — per-asset staleness bound = the feed's OWN heartbeat (seconds);
+///                                   the ChainlinkOracle constructor bounds it to [600, 86400]
 ///   ORACLE_MIN_WAD     uint[]     — per-asset sane-price floor (WAD), 0 to disable the band with max 0
-///   ORACLE_MAX_WAD     uint[]     — per-asset sane-price ceiling (WAD), 0 to disable the band
+///   ORACLE_MAX_WAD     uint[]     — per-asset sane-price ceiling (WAD), 0 to disable the band. An
+///                                   enabled band must be at most 1000x wide and must contain the
+///                                   feed's current answer; on Base mainnet a band is MANDATORY.
 /// Optional:
 ///   ORACLE_USDC        address    — USDC-like token pinned to 1e18 (default 0 = no pin)
 ///   ORACLE_SEQUENCER   address    — L2 sequencer uptime feed (default 0; REQUIRED on Base mainnet)
@@ -50,6 +53,15 @@ contract DeployChainlinkOracle is Script {
         for (uint256 i; i < n; ++i) {
             require(hbU[i] > 0 && hbU[i] <= type(uint32).max, "DeployChainlinkOracle: bad heartbeat");
             heartbeats[i] = uint32(hbU[i]);
+            // Chain POLICY, not a shape invariant, so it belongs here rather than in the
+            // constructor: local, testnet and the test suite deploy bandless by design, but a
+            // BLESSED mainnet oracle without the depeg/clamp defence is precisely what
+            // scripts/verify-chainlink-oracle.mjs already refuses to pass. The constructor bounds
+            // the band's SHAPE; this requires its PRESENCE where it is mandatory.
+            require(
+                block.chainid != 8453 || (minWad[i] > 0 && maxWad[i] > 0),
+                "DeployChainlinkOracle: Base mainnet requires a sane-price band per asset"
+            );
         }
 
         vm.startBroadcast();

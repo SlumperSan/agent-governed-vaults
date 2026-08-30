@@ -15,6 +15,8 @@
  *   - a feed with unexpected `decimals()` (the WAD scale is cached at construction from it);
  *   - a stale feed whose last answer is already older than its own heartbeat;
  *   - a non-positive answer (a broken/deprecated feed);
+ *   - a heartbeat or sane-price band outside the bounds the ChainlinkOracle constructor enforces
+ *     (a heartbeat so long the staleness guard can never fire, or a band so wide it admits anything).
  *   - a missing L2 Sequencer Uptime Feed (mandatory on Base — the ChainlinkOracle reverts without it).
  * Each check below fails the config rather than letting the deploy proceed.
  *
@@ -52,6 +54,12 @@ const IS_MAINNET = CFG.chainId === 8453;
 const CAST = process.env.CAST ?? 'cast';
 const JSON_OUT = process.argv.includes('--json');
 const ZERO = '0x0000000000000000000000000000000000000000';
+// Mirrors of the bounds ChainlinkOracle's constructor now enforces (MIN_HEARTBEAT / MAX_HEARTBEAT /
+// MAX_BAND_RATIO). Duplicated here on purpose: catching a bad config BEFORE `--broadcast` costs a
+// read-only run, and catching it after costs a redeploy of an immutable contract.
+const MIN_HEARTBEAT = 600n;
+const MAX_HEARTBEAT = 86400n;
+const MAX_BAND_RATIO = 1000n;
 
 /** @type {{name:string, ok:boolean, detail:string}[]} */
 const results = [];
@@ -144,6 +152,11 @@ function main() {
     const hb = BigInt(a.heartbeatSeconds ?? 0);
     const age = nowSec > rd.updatedAt ? nowSec - rd.updatedAt : 0n;
     check(`${label}: fresh within heartbeat`, hb > 0n && age <= hb, `age=${age}s heartbeat=${hb}s`);
+    check(
+      `${label}: heartbeat within on-chain bounds`,
+      hb >= MIN_HEARTBEAT && hb <= MAX_HEARTBEAT,
+      `heartbeat=${hb}s (constructor accepts ${MIN_HEARTBEAT}..${MAX_HEARTBEAT}s; below the floor freezes a healthy feed, above the ceiling the staleness guard can never fire)`,
+    );
     // sane-price band: a MAINNET blessed oracle MUST set one (the depeg-clamp defence — Chainlink
     // deprecated its on-aggregator min/maxAnswer, so a clamp value can read "fresh"). Require a
     // non-zero, well-ordered band. (Audit Council follow-up: the band was off in every fixture.)
@@ -151,9 +164,21 @@ function main() {
     const mx = BigInt(a.maxPriceWad ?? '0');
     check(
       `${label}: sane-price band set (depeg defence)`,
-      mx > 0n && mn > 0n && mn <= mx,
+      mx > 0n && mn > 0n && mn < mx,
       mx === 0n || mn === 0n ? `min=${mn} max=${mx} — BAND DISABLED; set a real min/max for a mainnet feed` : `min=${mn} max=${mx}`,
     );
+    // Width and containment, mirroring the constructor. A band wider than MAX_BAND_RATIO admits a
+    // >99.9% collapse as "sane"; a band that already excludes the live answer reverts on first read.
+    if (mn > 0n && mx > mn) {
+      check(`${label}: band width within on-chain bound`, mx <= mn * MAX_BAND_RATIO, `ratio=${mx / mn}x (max ${MAX_BAND_RATIO}x)`);
+      const scale = dec !== null && BigInt(dec) <= 18n ? 10n ** (18n - BigInt(dec)) : null;
+      const spotWad = scale !== null && rd.answer > 0n ? rd.answer * scale : null;
+      check(
+        `${label}: live price inside the band`,
+        spotWad !== null && spotWad >= mn && spotWad <= mx,
+        spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
+      );
+    }
   }
 
   finish();
