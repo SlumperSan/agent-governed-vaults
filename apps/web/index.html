@@ -737,8 +737,10 @@ function renderOracle(x) {
   return `${head}<div class="feeds">
     ${o.assets.map((a) => `<div class="feed">
       <span>${esc(a.symbol)}</span>
-      <span style="color:var(--muted);font-size:12px">${a.ageSec === null ? 'age unknown' : `updated ${esc(duration(a.ageSec))} ago · bound ${esc(duration(a.boundSec))}`}</span>
-      <span class="st" data-s="${esc(a.state)}">${a.state === 'stale' ? `stale by ${esc(duration(a.overBySec))}` : esc(a.state)}</span>
+      <span style="color:var(--muted);font-size:12px">${a.state === 'unheld'
+      ? 'balance is zero, so navWad never prices it'
+      : a.ageSec === null ? 'age unknown' : `updated ${esc(duration(a.ageSec))} ago · bound ${esc(duration(a.boundSec))}`}</span>
+      <span class="st" data-s="${esc(a.state)}">${a.state === 'stale' ? `stale by ${esc(duration(a.overBySec))}` : a.state === 'unheld' ? 'not held' : esc(a.state)}</span>
     </div>`).join('')}
   </div>
   <p style="font-size:12.5px;color:var(--muted);margin-top:10px">Every asset must be priceable for the
@@ -1036,7 +1038,11 @@ function renderExit(x) {
 
       <div class="seclabel"><h2>What you actually receive</h2></div>
       ${pv.ok ? `<div class="panel">
-        <div class="row"><div>USDC<small>Your slice of the vault’s idle stables${feeRange ? ', less the performance fee below' : ''}.</small></div>
+        <div class="row"><div>USDC<small>Your slice of the vault’s idle stables${feeRange
+      ? ', less the performance fee below'
+      : pv.perfFee === null
+        ? '. The 10% performance fee is withheld from this leg and from every slice below, and could not be bounded from the data here — so these are pre-fee figures, not receipts'
+        : ''}.</small></div>
           <div class="v">${esc(leg(pv.usdcPayMin, pv.usdcPay, usdcExact))}</div></div>
         ${pv.slices.map((sl) => `<div class="row"><div>${esc(sl.symbol)}<small>Paid in the token itself, not sold for you — you carry your own execution cost, and nobody remaining is diluted by your exit.</small></div>
           <div class="v">${esc(leg(sl.amountMin, sl.amount, (n) => tokenAmount(n, sl.decimals, 8)))} ${esc(sl.symbol)}${sl.valueWad !== null ? `<br><span style="color:var(--faint);font-size:11px">${esc(usdcShort(sl.valueWad / USDC_SCALAR))} before the fee</span>` : '<br><span style="color:var(--faint);font-size:11px">unpriced</span>'}</div></div>`).join('')}
@@ -1223,9 +1229,10 @@ function openDialog({ title, sub, body, acts, step = '' }) {
       <div class="acts">${acts}</div>
     </div></div>`;
 
-  // aria-modal alone does not stop a screen reader walking the page behind the dialog.
-  $('#view').setAttribute('inert', '');
-  $('#view').setAttribute('aria-hidden', 'true');
+  // aria-modal alone does not stop a screen reader walking the page behind the dialog. `#modal`
+  // is outside `.wrap`, so inerting the wrapper covers the header and nav too, not just <main>.
+  $('.wrap').setAttribute('inert', '');
+  $('.wrap').setAttribute('aria-hidden', 'true');
 
   // Re-renders happen on every keystroke; keep the caret where the user left it, not at the end —
   // otherwise editing 1000 into 10000 from the front is impossible.
@@ -1250,8 +1257,8 @@ let lastAnnouncedStep = '';
 function closeDialog() {
   if (!$('#modal').innerHTML) return;
   $('#modal').innerHTML = '';
-  $('#view').removeAttribute('inert');
-  $('#view').removeAttribute('aria-hidden');
+  $('.wrap').removeAttribute('inert');
+  $('.wrap').removeAttribute('aria-hidden');
   state.dialogAddr = null;
   lastAnnouncedStep = '';
   if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
@@ -1268,6 +1275,10 @@ document.addEventListener('keydown', (e) => {
   const items = [...modal.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
   if (!items.length) return;
   const first = items[0], last = items[items.length - 1];
+  if (!modal.contains(document.activeElement) || document.activeElement === modal) {
+    e.preventDefault();
+    return (e.shiftKey ? last : first).focus();
+  }
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
