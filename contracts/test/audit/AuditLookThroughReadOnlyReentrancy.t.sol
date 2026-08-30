@@ -164,6 +164,17 @@ contract AuditLookThroughReadOnlyReentrancyTest is Test {
 
         assertFalse(mal.navReadOk(), "parent NAV was readable while the child was mid-swap");
         assertFalse(mal.depositOk(), "attacker minted parent shares against a mid-swap child");
+        // The reason matters as much as the outcome: a bare assertFalse cannot distinguish
+        // "the guard fired" from "reverted for some unrelated reason", and a regression test
+        // that passes for the wrong reason is worse than none.
+        assertEq(
+            mal.navRevert(), VaultCore.Reentrancy.selector, "NAV read failed, but not on the reentrancy guard"
+        );
+        assertEq(
+            mal.depositRevert(),
+            VaultCore.Reentrancy.selector,
+            "deposit failed, but not on the reentrancy guard"
+        );
         assertEq(parent.sharesOf(address(mal)), sharesBefore, "attacker gained shares");
 
         // The rebalance itself still completed: the guard rejects the re-entrant read, not the
@@ -222,6 +233,11 @@ contract ReentrantAdapter is IExecutionAdapter {
     bool public depositOk;
     bool public sawChildLocked;
     uint256 public navSeen;
+    /// Revert selectors, captured so the assertions can tell the guard firing from any other
+    /// revert. `assertFalse(navReadOk())` alone would pass if `navWad()` failed for an
+    /// unrelated reason, and this test is the sole evidence the defect is closed.
+    bytes4 public navRevert;
+    bytes4 public depositRevert;
 
     constructor(address usdc_, address weth_) {
         tokenInERC = MockERC20(usdc_);
@@ -245,14 +261,16 @@ contract ReentrantAdapter is IExecutionAdapter {
         try parent.navWad() returns (uint256 n) {
             navReadOk = true;
             navSeen = n;
-        } catch {
+        } catch (bytes memory err) {
             navReadOk = false;
+            navRevert = err.length >= 4 ? bytes4(err) : bytes4(0);
         }
         if (armedAmount > 0) {
             try parent.deposit(armedAmount, 0) {
                 depositOk = true;
-            } catch {
+            } catch (bytes memory err) {
                 depositOk = false;
+                depositRevert = err.length >= 4 ? bytes4(err) : bytes4(0);
             }
         }
 

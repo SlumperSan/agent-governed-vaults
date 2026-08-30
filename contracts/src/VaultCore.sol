@@ -759,9 +759,13 @@ contract VaultCore {
             VaultCore(child).skipWindow();
         }
 
-        // Slither reads the debit-after-`skipWindow()` order as CEI-violating. It is not: the
-        // debit books a transfer that has NOT happened yet, so accounting is truthful for the
-        // whole of `skipWindow()`. Hoisting it above the call would CREATE an understatement.
+        // Slither reads the debit-after-`skipWindow()` order as CEI-violating. It is not, but
+        // the ordering is the lesser of the two reasons: this vault holds its own reentrancy
+        // lock across the whole call, so `_fullNavWad` refuses to price it from outside no
+        // matter where the debit sits. The ordering still earns its place — the debit books a
+        // transfer that has NOT happened yet, so the accounting is truthful throughout
+        // `skipWindow()`, and hoisting it above the call would CREATE an understatement inside
+        // the lock rather than remove one. Reordering is safe; removing the lock is not.
         idleUsdc -= amountUsdc;
         usdc.safeApprove(child, amountUsdc);
         VaultCore(child).deposit(amountUsdc);
@@ -838,8 +842,17 @@ contract VaultCore {
 
     /// @notice Execute a passed rebalance: governance-only, allowlisted adapter, every leg's
     /// tokens constrained to USDC + basket, every output measured by the vault's OWN balance
-    /// delta (EX-3 — the adapter's word is never the accounting source). Internal accounting
-    /// is debited before and credited after each swap, so NAV stays truthful mid-rebalance.
+    /// delta (EX-3 — the adapter's word is never the accounting source).
+    /// @dev NAV IS UNDERSTATED MID-EXECUTION, and making that unobservable is what the
+    /// `nonReentrant` guard is for. Each leg debits its input before the swap and credits the
+    /// measured output after, so between those two writes this vault's accounting omits the
+    /// whole in-transit leg. The window cannot be closed: the output is not knowable until the
+    /// swap returns, and taking the adapter's claimed amount instead is precisely EX-3. So the
+    /// understatement is hidden rather than removed — `locked()` is true for the whole call and
+    /// `_fullNavWad` refuses to price a locked vault. DO NOT DELETE that `require(!v.locked())`
+    /// to reclaim bytes: a parent pricing a mid-swap child mints against the understated NAV,
+    /// demonstrated at 2,000e18 shares for 1,000 USDC in
+    /// test/audit/AuditLookThroughReadOnlyReentrancy.t.sol.
     /// @param adapter allowlisted execution adapter to route every leg through
     /// @param orders swap legs; tokenIn/tokenOut restricted to USDC + basket assets
     function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)
