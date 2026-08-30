@@ -81,6 +81,50 @@ to economize — it exists precisely to catch what the implementer got wrong.
 
 ---
 
+## 0.7 Departments collaborate — check before you produce
+
+Departments are not silos. Two failures come from treating them as such: **double work** (two
+departments independently write the same analysis) and **information leakage** (one department
+ships a claim another department already knows is false).
+
+The second is the dangerous one. Marketing writing "zero capital cost to the operator" is not a
+copy error — Finance has the number, Development knows the contract enforces it, and Legal knows
+that claim is exactly the kind that attracts a regulator. A claim is only as good as the department
+best placed to check it.
+
+### Before you produce, read what already exists
+
+The Obsidian vault's `Business/` tree is the shared surface, and `npm run cc` lists every
+department's notes with how recently each changed. Read the neighbouring departments' output before
+writing yours. If another department has already answered your question, cite it — do not
+re-derive it, and do not quietly contradict it. If you believe they are wrong, say so explicitly
+and name the note, so the disagreement is visible rather than buried in two conflicting documents.
+
+### Who checks what
+
+Route an artifact through the departments that can actually falsify it:
+
+| Artifact | Must be checked by | For what |
+|---|---|---|
+| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim needing counsel sign-off |
+| Anything claiming a capability | **Development** | does the feature exist, on which network, and is it in the launch scope |
+| Anything with a number in it | **Finance** | is the number derived from the code, or asserted |
+| Anything promising a response | **Operations** | can a one-to-two person rotation actually honour it |
+| Anything naming a counterparty | **BD** | is the relationship real, and is the claim about them defensible |
+| Anything a user will read in-product | **Design** | is it legible under stress, and accessible |
+
+This is the same idea as the review pattern in section 3, applied across departments instead of
+within one: the producer does not get to be the only judge.
+
+### Say what you need, do not invent it
+
+When your work needs something another department owns — a number, a legal position, a statement
+about what the code does — **ask for it in your report rather than assuming it.** An assumed number
+that turns out wrong propagates into every document that cites it. Explicitly listing what you took
+from where makes the dependency visible and cheap to correct.
+
+---
+
 ## 1. The unit of work
 
 **One agent owns one module.** Not one feature spanning six files — one file, or one tightly-bounded

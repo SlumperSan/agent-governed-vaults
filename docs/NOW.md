@@ -26,14 +26,14 @@ work it describes.
 - **CI is unavailable** — GitHub Actions minutes exhausted 2026-08-29, back around 2026-09-01.
   `npm run gate` is the substitute and mirrors `ci.yml` step for step. Do not trust a red CI in this
   window without reproducing it locally: PR #71's "backend fail" was minutes exhaustion, not code.
-- **⚠ `protocol/main` is RED at the tip — `npm run gate` fails on `build`, and has since the oracle
-  retirement landed.** `contracts/test/retired/` has three unresolvable imports: `PythSource.sol`
-  and `UniswapV3TwapSource.sol` both import `../OracleAggregator.sol` (now `./`, since
-  `OracleAggregator.sol` moved into that same directory), and `OracleAggregator.sol` imports
-  `./interfaces/IOracleAggregator.sol` (the interface stayed in `src/interfaces/`). `build`, `test`,
-  `snapshot` and `sizes` therefore all fail; `fmt`, `syntax`, `opscheck` and `backend` still pass.
-  **No agent can meet the definition of done until this is fixed**, and CI could not catch it
-  because minutes are exhausted. Found 2026-08-30 by the gate-7 drill, which changed no code.
+- **`protocol/main` was RED for about an hour on 2026-08-30 and is now GREEN again** (repaired at
+  `4fc6ffbc`, `npm run gate` passes all 9 steps). Recorded because the CAUSE is a live hazard, not
+  because the breakage stands: the oracle retirement moved five files out of `contracts/src/`, and
+  another sprint branched from the SHARED worktree after the move but before the import paths were
+  rewritten — so main received the moves without the fixes and stopped compiling. Nobody's change
+  was wrong on its own; an intermediate state was captured mid-flight. The lesson is the one in
+  `docs/SWARM.md` section 8: agents that write must work in their OWN worktree, or a half-finished
+  edit becomes somebody else's base commit.
 - **Batch related changes into one PR.** A CI round trip is 6–7 minutes, so three PRs for three
   related fixes costs 20 minutes of waiting for nothing.
 
