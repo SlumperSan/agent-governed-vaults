@@ -289,6 +289,18 @@ export const WALLET = {
       windowCleared: true,
       queuedExitShares: 0n,
     },
+    {
+      // A QUEUED Mode-F exit that is now settleable: 0x2222 is back in its commit phase, so
+      // hasPendingExecution is false and settleQueuedExit(member) would go through — except that
+      // nothing calls it as a side effect of anything. Without this the settle action, and the
+      // notice that explains why it is needed, are unreachable from the shipped dataset.
+      vault: '0x2222000000000000000000000000000000002222',
+      shares: wad(18_400),
+      costBasisUsdc: usdc(17_000),
+      lastDepositTime: NOW - 8 * DAY,
+      windowCleared: true,
+      queuedExitShares: wad(18_400),
+    },
   ],
   /** A deposit mid-observation-window: escrowed, zero shares, cancellable, 2h41m to go. */
   pending: [

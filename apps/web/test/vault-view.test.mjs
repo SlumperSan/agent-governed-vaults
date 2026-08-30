@@ -89,6 +89,17 @@ test('fixture: the frozen vault blocks everything except cancelling pending capi
   assert.equal(view.position.valueUsdc, null, 'the position is held, and its value is unknown, not stale-but-shown');
 });
 
+test('fixture: a settleable queued exit is reachable, and offers the call nobody makes for you', () => {
+  // settleQueuedExit(member) is an ordinary external call. A dataset in which no member ever has a
+  // queued exit ships the action, and the notice explaining why it is needed, unreachable.
+  const view = vaultView(vaultByAddress('0x2222000000000000000000000000000000002222'), WALLET, NOW);
+  assert.equal(view.facts.hasQueuedExit, true);
+  assert.equal(view.mode.mode, 'I', 'commit phase ⇒ no pending execution ⇒ it can settle now');
+  assert.equal(view.actions.settleQueuedExit.available, true);
+  assert.equal(view.actions.exit.available, false, 'one queued exit at a time');
+  assert.ok(view.actions.notices.some((n) => n.id === 'queued-exit'));
+});
+
 test('fixture: an uncapped vault reads as uncapped, never as full', () => {
   const view = vaultView(vaultByAddress('0x3333000000000000000000000000000000003333'), WALLET, NOW);
   assert.equal(view.capacity.capped, false);
