@@ -57,9 +57,12 @@ export const VAULTS = [
     exitFeeDecayPeriodSec: 90 * DAY,
     exitFeeMaxBpsByLevel: [50],
 
+    // Balances price to navWad exactly: idle 482,040.15 + WETH 2,024,400 + cbBTC 2,313,960.36.
+    // The exit preview totals idle plus basket, so a NAV that does not equal its parts puts a
+    // different number on the exit panel than on the position panel, on the same screen.
     basket: [
       { ...ASSETS.WETH, balance: 578_400_000_000_000_000_000n, priceWad: wad(3_500), weightBps: 4200, oracleUpdatedAt: NOW - 40, maxStalenessSec: 3600 },
-      { ...ASSETS.cbBTC, balance: 1_638_900_00n, priceWad: wad(99_800), weightBps: 3400, oracleUpdatedAt: NOW - 95, maxStalenessSec: 3600 },
+      { ...ASSETS.cbBTC, balance: 2_318_597_557n, priceWad: wad(99_800), weightBps: 4800, oracleUpdatedAt: NOW - 95, maxStalenessSec: 3600 },
     ],
 
     proposal: {
@@ -115,7 +118,7 @@ export const VAULTS = [
 
     basket: [
       { ...ASSETS.WETH, balance: 194_800_000_000_000_000_000n, priceWad: wad(3_500), weightBps: 5500, oracleUpdatedAt: NOW - 22, maxStalenessSec: 3600 },
-      { ...ASSETS.cbBTC, balance: 559_20_000n, priceWad: wad(99_800), weightBps: 4500, oracleUpdatedAt: NOW - 22, maxStalenessSec: 3600 },
+      { ...ASSETS.cbBTC, balance: 498_051_848n, priceWad: wad(99_800), weightBps: 4000, oracleUpdatedAt: NOW - 22, maxStalenessSec: 3600 },
     ],
 
     // Active but still in COMMIT — exits settle instantly, and will stop doing so at the deadline.
@@ -270,7 +273,9 @@ export const WALLET = {
     {
       vault: '0x1111000000000000000000000000000000001111',
       shares: wad(92_250),
-      costBasisUsdc: usdc(100_000),
+      // Ahead of basis on purpose: the 10% performance fee is charged on realised GAIN, so a
+      // position under water never shows the deduction the exit panel exists to disclose.
+      costBasisUsdc: usdc(88_000),
       // 46 days into a 90-day decay on a 0.50% max ⇒ 0.25% today.
       lastDepositTime: NOW - 46 * DAY,
       windowCleared: true,

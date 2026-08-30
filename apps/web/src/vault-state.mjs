@@ -102,8 +102,8 @@ export function actions(f) {
       tone: 'warn',
       title: 'Exit mode cannot be resolved from this data.',
       body:
-        'This vault has an active proposal, and whether an exit settles instantly or is queued ' +
-        'irrevocably depends on its commit deadline — which the metered API does not carry. ' +
+        'Whether an exit settles instantly or is queued irrevocably turns on a proposal’s commit ' +
+        'deadline, and that deadline is not in this data — Governance.Proposed carries no times. ' +
         'Treat an exit here as possibly irrevocable until your wallet resolves it on-chain.',
     });
   }

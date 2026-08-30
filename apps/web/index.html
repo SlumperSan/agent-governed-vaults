@@ -16,7 +16,7 @@
     --ground:#f2f2f7; --surface:#fff; --surface-2:#eaeaf1; --line:#c9c9d8; --line-soft:#e2e2ec;
     --ink:#17171f; --muted:#4e4e60; --faint:#63637a; --accent:#4b3dd4; --accent-soft:#ece9fd; --accent-ink:#fff;
     --good:#116b3b; --good-soft:#e2f1e9; --warn:#7d4f04; --warn-soft:#f8efd9;
-    --crit:#a92b2b; --crit-soft:#f9e3e3; --frozen:#125f73; --frozen-soft:#dcf0f4;
+    --crit:#a92b2b; --crit-soft:#f9e3e3; --crit-ink:#fff; --frozen:#125f73; --frozen-soft:#dcf0f4;
     --shadow-1:0 1px 2px rgba(24,24,40,.05),0 1px 3px rgba(24,24,40,.04);
     --shadow-2:0 4px 16px rgba(24,24,40,.10),0 1px 3px rgba(24,24,40,.06);
     --display:'Newsreader','Source Serif 4',Georgia,serif;
@@ -29,14 +29,14 @@
     --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c; --line:#39394b; --line-soft:#262633;
     --ink:#eaeaf3; --muted:#a8a8bd; --faint:#9090a6; --accent:#a094ff; --accent-soft:#211d3a; --accent-ink:#14121f;
     --good:#5fd89a; --good-soft:#123020; --warn:#f2c14e; --warn-soft:#312608;
-    --crit:#ff8b83; --crit-soft:#331a17; --frozen:#6fd4e8; --frozen-soft:#0f2f39;
+    --crit:#ff8b83; --crit-soft:#331a17; --crit-ink:#210b09; --frozen:#6fd4e8; --frozen-soft:#0f2f39;
     --shadow-1:0 1px 2px rgba(0,0,0,.4); --shadow-2:0 6px 24px rgba(0,0,0,.5);
   }}
   :root[data-theme="dark"]{
     --ground:#0e0e16; --surface:#17171f; --surface-2:#20202c; --line:#39394b; --line-soft:#262633;
     --ink:#eaeaf3; --muted:#a8a8bd; --faint:#9090a6; --accent:#a094ff; --accent-soft:#211d3a; --accent-ink:#14121f;
     --good:#5fd89a; --good-soft:#123020; --warn:#f2c14e; --warn-soft:#312608;
-    --crit:#ff8b83; --crit-soft:#331a17; --frozen:#6fd4e8; --frozen-soft:#0f2f39;
+    --crit:#ff8b83; --crit-soft:#331a17; --crit-ink:#210b09; --frozen:#6fd4e8; --frozen-soft:#0f2f39;
     --shadow-1:0 1px 2px rgba(0,0,0,.4); --shadow-2:0 6px 24px rgba(0,0,0,.5);
   }
 
@@ -82,8 +82,10 @@
   .btn.secondary:hover:not(:disabled){border-color:var(--accent)}
   .btn.ghost{background:transparent;color:var(--muted);border-color:transparent}
   .btn.ghost:hover:not(:disabled){color:var(--ink);background:var(--surface-2)}
-  .btn.danger{background:var(--crit);color:#fff;border-color:var(--crit)}
-  .btn:disabled{opacity:.55;cursor:not-allowed}
+  /* --crit-ink, not #fff: white on the dark theme's --crit (#ff8b83) is 2.26:1, and this is the
+     ink on "Queue irrevocable exit" and "Permanently skip and deposit". #210b09 is 8.30:1. */
+  .btn.danger{background:var(--crit);color:var(--crit-ink);border-color:var(--crit)}
+  .btn:disabled,.btn[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
   .btn-wrap{display:flex;flex-direction:column;gap:5px;min-width:0}
   .btn-reason{font-size:12.5px;color:var(--muted);max-width:44ch;line-height:1.45}
   .btn-reason[data-sev="blocked"]{color:var(--crit)}
@@ -198,6 +200,7 @@
   .feed .st[data-s="ageing"]{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
   .feed .st[data-s="stale"]{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
   .feed .st[data-s="unknown"]{color:var(--muted);border-color:var(--line)}
+  .feed .st[data-s="unheld"]{color:var(--faint);border-color:var(--line-soft)}
 
   /* timeline */
   ol.timeline{list-style:none;margin:14px 0 0;padding:0}
@@ -273,14 +276,14 @@
 <script type="module">
 import {
   usdcExact, usdcShort, usdcCompact, wadExact, bpsPct, shortAddress,
-  duration, clock, parseUnits, approx, toBig, USDC_SCALAR,
+  duration, clock, parseUnits, approx, toBig, USDC_SCALAR, scaleToWad, crossedThreshold,
 } from './src/format.mjs';
 import { previewDeposit } from './src/deposit-preview.mjs';
 import { previewExit, exitFeeBps, secondsUntilFeeBps } from './src/exit-preview.mjs';
-import { proposalPhase, PHASES, quorumReadout, proposalRight } from './src/governance.mjs';
+import { proposalPhase, PHASES, quorumReadout, proposalRight, PROPOSAL_UNKNOWN } from './src/governance.mjs';
 import { vaultView, SORTS } from './src/vault-view.mjs';
 import { classify, parseSnapshotAge, describeError, loading, empty, ready } from './src/freshness.mjs';
-import { VAULTS, LEADERBOARD, WALLET, NOW, vaultByAddress } from './src/fixtures.mjs';
+import { VAULTS, LEADERBOARD, WALLET, NOW } from './src/fixtures.mjs';
 import { mapVaultRecords, mapLeaderboard, MISSING_IN_LIVE } from './src/live-adapter.mjs';
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -298,6 +301,13 @@ const state = {
   missing: [],                  // fields live mode could not fill
   sort: 'capacity',
   query: '',
+  /** Set while a non-localhost ?api= origin is waiting on an explicit yes. */
+  consent: null,
+  apiConfirmed: false,
+  /** The vault the open dialog is about. NOT re-derived from location.hash: the exit dialog can
+   *  be opened from #/portfolio, where hash.split('/')[2] is undefined and every subsequent
+   *  interaction throws before rendering anything. */
+  dialogAddr: null,
   /** Fixture clock. `NOW` in fixture mode so states are stable and reproducible. */
   now: () => (state.mode === 'live' ? Math.floor(Date.now() / 1000) : NOW + Math.floor((Date.now() - bootMs) / 1000)),
 };
@@ -315,6 +325,55 @@ const noticeHtml = (n) => `<div class="notice" data-tone="${esc(n.tone)}">
   <div><span class="bt">${esc(n.title)}</span>${esc(n.body)}</div></div>`;
 
 const glyphFor = (tone) => ({ frozen: '❄', critical: '▲', warn: '!', info: 'i', muted: '·' }[tone] ?? '·');
+
+/** `frozen` is a TRI-STATE. `null` is not "not frozen" and must never take the healthy branch. */
+const isFrozen = (x) => x.frozen === true;
+const freezeUnknown = (x) => x.frozen === null || x.frozen === undefined;
+/** A figure derived from NAV is only showable when the vault is PROVABLY unfrozen. */
+const navReadable = (x) => x.frozen === false;
+
+/** A token amount in its own decimals, rendered in WAD. Guards decimals > 18 (B17). */
+const tokenAmount = (amount, decimals, maxFrac = 6) => {
+  const w = scaleToWad(amount, decimals);
+  return w === null ? '—' : wadExact(w, { maxFrac });
+};
+
+/** Look a vault record up in the ACTIVE dataset. Never the fixtures first — in live mode an
+ *  address collision would render fixture numbers over a live vault. */
+const recordFor = (addr) =>
+  (state.vaults.kind === 'ready' ? state.vaults.data : []).find(
+    (v) => String(v.address).toLowerCase() === String(addr ?? '').toLowerCase(),
+  ) ?? null;
+/** The exit-mode pill. Never a mode that contradicts the state sitting beside it: "Mode I —
+ *  settles now" is false while frozen, because nothing settles at all. */
+const modePill = (x) =>
+  isFrozen(x) ? pill('Exits halted', 'frozen', '❄')
+    : x.mode.mode === 'I' ? pill(x.mode.label, 'good', '→')
+      : x.mode.mode === 'F' ? pill(x.mode.label, 'warn', '⏳')
+        : pill(x.mode.label, 'critical', '?');
+
+/** `freshness.actionable`, consumed. A projection far enough behind the chain that a freeze or a
+ *  new proposal may not have reached it is not a basis for an irreversible action, and says so
+ *  rather than only tinting a chip in the header. */
+function stalenessNotice() {
+  if (state.mode !== 'live' || state.freshness.actionable) return '';
+  return noticeHtml({
+    tone: 'critical',
+    title: state.freshness.ageSec === null
+      ? 'This projection did not report its own age.'
+      : `This projection is ${duration(state.freshness.ageSec)} behind the chain.`,
+    body:
+      state.freshness.note +
+      ' Base produces a block roughly every two seconds, so a freeze, a new proposal, or a ' +
+      'capacity change could have landed since. Nothing below is a basis for a transaction until ' +
+      'it is re-read.',
+  });
+}
+
+const viewFor = (addr) => {
+  const rec = recordFor(addr);
+  return rec ? vaultView(rec, state.wallet, state.now()) : null;
+};
 
 const pill = (label, tone, glyph) =>
   `<span class="pill"${tone ? ` data-tone="${esc(tone)}"` : ''}>${glyph ? `<span aria-hidden="true">${esc(glyph)}</span>` : ''}${esc(label)}</span>`;
@@ -361,6 +420,7 @@ function renderDiscover() {
     commit a dollar.</p>
 
   ${state.mode === 'live' ? liveBanner() : fixtureBanner()}
+  ${stalenessNotice()}
 
   <div class="seclabel"><h2>Vaults</h2></div>
   <div class="toolbar">
@@ -395,17 +455,21 @@ function renderDiscover() {
 
 function vaultCard(x) {
   const v = x.vault;
-  const nav = x.frozen
+  const nav = isFrozen(x)
     ? `<div class="big" style="color:var(--frozen)">Unpriced</div>
        <div class="unit">NAV cannot be read while frozen</div>`
-    : v.navWad !== null
-      ? `<div class="big">${esc(approx(usdcCompact((toBig(v.navWad) ?? 0n) / USDC_SCALAR)))}</div>
-         <div class="unit">Vault NAV · ${esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR))} exact</div>`
-      : `<div class="big" style="color:var(--muted)">Not exposed</div>
-         <div class="unit">NAV needs a chain read</div>`;
+    : freezeUnknown(x)
+      ? `<div class="big" style="color:var(--warn)">Unverified</div>
+         <div class="unit">The freeze state is unreadable, so NAV may not be readable either</div>`
+      : v.navWad !== null
+        ? `<div class="big">${esc(approx(usdcCompact((toBig(v.navWad) ?? 0n) / USDC_SCALAR)))}</div>
+           <div class="unit">Vault NAV · ${esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR))}</div>`
+        : `<div class="big" style="color:var(--muted)">Not exposed</div>
+           <div class="unit">NAV needs a chain read</div>`;
 
   const cap = x.capacity;
-  const capTone = !cap.capped ? '' : cap.usedBps >= 9500 ? 'critical' : cap.usedBps >= 8000 ? 'warn' : '';
+  const capKnown = cap.capped && cap.usedBps !== null;
+  const capTone = !capKnown ? '' : cap.usedBps >= 9500 ? 'critical' : cap.usedBps >= 8000 ? 'warn' : '';
 
   return `<a class="card" href="#/vault/${esc(v.address)}"${x.status.tone !== 'good' ? ` data-tone="${esc(x.status.tone)}"` : ''}>
     <div>
@@ -420,10 +484,14 @@ function vaultCard(x) {
     ${nav}
     <div class="meta"><span>${Number(v.holderCount ?? 0)} member${Number(v.holderCount) === 1 ? '' : 's'}</span>
       <span>${esc(v.operatorName ?? 'self-declared')}</span></div>
-    ${cap.capped
-      ? `<div class="meter"${capTone ? ` data-tone="${capTone}"` : ''}><span style="width:${Math.min(100, (cap.usedBps ?? 0) / 100)}%"></span></div>
+    ${capKnown
+      ? `<div class="meter"${capTone ? ` data-tone="${capTone}"` : ''}><span style="width:${Math.min(100, cap.usedBps / 100)}%"></span></div>
          <div class="meta"><span>Capacity used</span><span class="num">${esc(bpsPct(cap.usedBps))}</span></div>`
-      : `<div class="meta"><span>Capacity</span><span class="num">Uncapped</span></div>`}
+      : cap.capped
+        // No meter at all: `used` needs live NAV plus everyone's escrow, and a bar drawn from two
+        // missing numbers reads as 0% used — a headroom promise made out of nothing.
+        ? `<div class="meta"><span>Capacity used</span><span class="num">Unreadable</span></div>`
+        : `<div class="meta"><span>Capacity</span><span class="num">Uncapped</span></div>`}
     <div class="meta"><span>Exit fee, max</span><span class="num">${v.exitFeeMaxBps === null ? 'Not exposed' : esc(bpsPct(v.exitFeeMaxBps))}</span></div>
   </a>`;
 }
@@ -446,7 +514,7 @@ function renderLeaderboard() {
       const neg = o.netRaw < 0n;
       return `<tr>
         <th scope="row"><span class="num" style="color:var(--faint)">${i + 1}</span> ${esc(o.name ?? shortAddress(o.operatorAddress))}</th>
-        <td class="n"><span class="sgn" data-s="${neg ? 'neg' : 'pos'}">${neg ? '−' : '+'}${esc(usdcShort(neg ? -o.netRaw : o.netRaw).slice(1))}</span></td>
+        <td class="n"><span class="sgn" data-s="${neg ? 'neg' : 'pos'}">${neg ? '−' : '+'}${esc(usdcShort(neg ? -o.netRaw : o.netRaw))}</span></td>
         <td class="n">${esc(usdcShort(o.gainRaw))}</td>
         <td class="n">${esc(usdcShort(o.lossRaw))}</td>
         <td class="n">${esc(usdcShort(o.feesRaw))}</td>
@@ -471,15 +539,17 @@ function renderVault(addr) {
   const v = x.vault;
   const now = state.now();
 
-  const navBlock = x.frozen
+  const navBlock = isFrozen(x)
     ? `<span class="unknown">NAV unavailable — frozen</span>`
-    : v.navPerShareWad !== null
+    : freezeUnknown(x)
+      ? `<span class="unknown" style="color:var(--warn)">NAV/share unverified — the freeze state cannot be read</span>`
+      : v.navPerShareWad !== null
       ? `<span class="big">${esc(wadExact(v.navPerShareWad, { maxFrac: 6 }))}</span><span class="subline">USDC per share</span>`
       : `<span class="unknown" style="color:var(--muted)">NAV/share not exposed by this API</span>`;
 
   return `
   <button class="backlink" type="button" data-act="discover">← All vaults</button>
-  <div class="detail"${x.frozen ? ' data-tone="frozen"' : ''}>
+  <div class="detail"${isFrozen(x) ? ' data-tone="frozen"' : ''}>
     <div class="dhead">
       <div>
         <h1>${esc(v.name)}</h1>
@@ -487,17 +557,14 @@ function renderVault(addr) {
         ${v.parent ? `<div class="addr">Child of <a href="#/vault/${esc(v.parent)}">${esc(v.parentName ?? shortAddress(v.parent))}</a></div>` : ''}
         <div class="pills" style="margin-top:10px">
           ${pill(x.status.label, x.status.tone, x.status.glyph)}
-          ${x.frozen
-      // "Mode I — settles now" is false while frozen: nothing settles at all. Never show a mode
-      // that contradicts the freeze sitting next to it.
-      ? pill('Exits halted', 'frozen', '❄')
-      : pill(x.mode.label, x.mode.mode === 'I' ? 'good' : x.mode.mode === 'F' ? 'warn' : 'critical', x.mode.mode === 'I' ? '→' : x.mode.mode === 'F' ? '⏳' : '?')}
+          ${modePill(x)}
           ${v.depth ? pill(`Level ${v.depth + 1} of 3`, 'accent') : pill('Root vault')}
           ${x.facts.attested ? pill(`Attested · operator #${v.operatorId}`, 'good', '✓') : pill('Unattested · operator #0', 'critical', '▲')}
         </div>
       </div>
     </div>
 
+    ${stalenessNotice()}
     ${x.actions.notices.map(noticeHtml).join('')}
 
     <div class="headline">${navBlock}</div>
@@ -505,9 +572,9 @@ function renderVault(addr) {
     ${renderPositionStrip(x)}
 
     <div class="statrow">
-      <div class="stat"><div class="k">Vault NAV</div><div class="v">${x.frozen ? '—' : v.navWad !== null ? esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR)) : '—'}</div></div>
+      <div class="stat"><div class="k">Vault NAV</div><div class="v">${navReadable(x) && v.navWad !== null ? esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR)) : '—'}</div></div>
       <div class="stat"><div class="k">Members</div><div class="v">${Number(v.holderCount ?? 0)}</div></div>
-      <div class="stat"><div class="k">Capacity used</div><div class="v">${x.capacity.capped ? esc(bpsPct(x.capacity.usedBps)) : 'Uncapped'}${x.capacity.capped ? `<small> of ${esc(usdcCompact(x.capacity.cap))}</small>` : ''}</div></div>
+      <div class="stat"><div class="k">Capacity used</div><div class="v">${x.capacity.usedBps !== null ? esc(bpsPct(x.capacity.usedBps)) : x.capacity.capped ? 'Unreadable' : 'Uncapped'}${x.capacity.capped ? `<small> · cap ${esc(approx(usdcCompact(x.capacity.cap)))}</small>` : ''}</div></div>
       <div class="stat"><div class="k">Escrowed pending</div><div class="v">${v.totalPendingUsdc !== null ? esc(usdcShort(v.totalPendingUsdc)) : '—'}<small> counts against the cap</small></div></div>
       <div class="stat"><div class="k">Idle USDC</div><div class="v">${v.idleUsdc !== null ? esc(usdcShort(v.idleUsdc)) : '—'}</div></div>
     </div>
@@ -527,15 +594,26 @@ function renderVault(addr) {
   </div>`;
 }
 
+/**
+ * A blocked action. `aria-disabled` rather than `disabled`, because `disabled` removes the button
+ * from the tab order, so a keyboard-only user never reaches it and never hears the reason it
+ * carries. The click handler refuses `aria-disabled` centrally.
+ */
+function actionButton(x, act, label, cls, verdict) {
+  const rid = `rsn-${act}-${x.vault.address}`;
+  return `<div class="btn-wrap">
+    <button class="btn ${cls}" type="button" data-act="${esc(act)}" data-addr="${esc(x.vault.address)}"${verdict.available ? '' : ' aria-disabled="true"'}${verdict.reason ? ` aria-describedby="${esc(rid)}"` : ''}>${esc(label)}</button>
+    ${verdict.reason ? `<span class="btn-reason" id="${esc(rid)}" data-sev="${esc(verdict.severity)}">${esc(verdict.reason)}</span>` : ''}</div>`;
+}
+
 function renderActionBar(x) {
   const a = x.actions;
-  const btn = (act, label, cls, verdict) => `<div class="btn-wrap">
-    <button class="btn ${cls}" type="button" data-act="${act}" data-addr="${esc(x.vault.address)}"${verdict.available ? '' : ' disabled'}>${label}</button>
-    ${verdict.reason ? `<span class="btn-reason" data-sev="${esc(verdict.severity)}">${esc(verdict.reason)}</span>` : ''}</div>`;
+  const btn = (act, label, cls, verdict) => actionButton(x, act, label, cls, verdict);
 
   return `<div class="actionbar">
     ${btn('deposit', 'Deposit USDC', 'primary', a.deposit)}
     ${x.facts.isMember || a.exit.reason ? btn('exit', 'Exit this vault', 'secondary', a.exit) : ''}
+    ${x.facts.hasQueuedExit ? btn('settle', 'Settle my queued exit', 'secondary', a.settleQueuedExit) : ''}
     ${x.facts.hasPendingDeposit ? btn('cancel', 'Cancel pending deposit', 'secondary', a.cancelPending) : ''}
     ${x.facts.hasPendingDeposit ? btn('activate', 'Activate deposit', 'secondary', a.activate) : ''}
   </div>`;
@@ -565,6 +643,17 @@ function renderPositionStrip(x) {
 function renderGovernance(x, now) {
   const p = x.vault.proposal;
   const head = '<div class="seclabel"><h2>Governance</h2></div>';
+  if (p === PROPOSAL_UNKNOWN) {
+    return head + noticeHtml({
+      tone: 'critical',
+      title: 'Whether a proposal is active here is not knowable from this data.',
+      body:
+        'Governance.Proposed emits (pid, vault, ptype, proposer, actionHash) and no deadlines, ' +
+        'and this data source carries no proposal state at all. This is not "no active proposal": ' +
+        'a proposal past its commit deadline forward-prices every exit into an irrevocable queue, ' +
+        'and that is exactly the case this page cannot rule out.',
+    });
+  }
   if (!p) {
     return head + noticeHtml({
       tone: 'muted',
@@ -574,15 +663,23 @@ function renderGovernance(x, now) {
   }
   const ph = proposalPhase(p, now);
   const q = quorumReadout({
-    revealedWeight: p.revealedWeight, snapshotTotal: p.snapshotTotal,
-    memberCount: p.memberCount, quorumFloorBps: p.quorumFloorBps, revealedVoterCount: p.revealedVoterCount,
+    ptype: p.ptype,
+    revealedWeight: p.revealedWeight, forWeight: p.forWeight, snapshotTotal: p.snapshotTotal,
+    memberCount: p.memberCount, quorumBps: x.vault.governanceConfig?.quorumBps,
+    revealedVoterCount: p.revealedVoterCount,
   });
   return `${head}
   <div style="font-weight:600;margin-bottom:2px">${esc(p.title)}</div>
   <div style="font-size:12.5px;color:var(--muted);margin-bottom:4px">
     Proposal #${Number(p.pid)} · ${esc(p.ptype)} · ${esc(q.text)}</div>
-  ${q.regime === 'stake' && q.met === false
-      ? `<div style="font-size:12.5px;color:var(--warn)">Short of quorum. Standing defaults move the tally but never count toward quorum, so a proposal can look like it is passing and still fail.</div>` : ''}
+  ${q.met === false
+      ? `<div style="font-size:12.5px;color:var(--warn)">Short of quorum. ${q.regime === 'consensus'
+        ? 'A RuleChange has no quorum percentage at all — every eligible share must reveal and vote FOR, so a single silent holder defeats it.'
+        : q.regime === 'signers'
+          ? 'Under five members this needs a member majority carrying quorum stake, or an outright FOR stake majority. Neither is there yet.'
+          : 'Standing defaults move the tally but never count toward quorum, so a proposal can look like it is passing and still fail.'}</div>` : ''}
+  ${q.met === null
+      ? `<div style="font-size:12.5px;color:var(--muted)">Whether this clears quorum cannot be determined from the data here.</div>` : ''}
   ${ph.deadline ? `<div style="margin:10px 0;font-size:13px">${esc(ph.deadlineLabel)} ${countdown(ph.deadline, { label: ph.deadlineLabel })}</div>` : ''}
   <ol class="timeline">${PHASES.map((phase, i) => `
     <li class="ph" data-s="${i < ph.index ? 'done' : i === ph.index ? 'active' : 'todo'}">
@@ -604,12 +701,17 @@ function renderBasket(x) {
   // Weights computed from balance × price ÷ NAV where every leg is priced; otherwise the vault's
   // declared target weights, labelled as such. Never a computed weight presented as a target.
   const navWad = toBig(x.vault.navWad);
-  const priced = b.every((a) => toBig(a.priceWad) !== null) && navWad !== null && navWad > 0n && !x.frozen;
+  const priced = b.every((a) => toBig(a.priceWad) !== null) && navWad !== null && navWad > 0n && navReadable(x);
+  // A dollar figure sourced from the exact price the breaker exists to reject is worse than no
+  // figure: the per-asset value is withheld unless THAT asset's feed is inside its own bound and
+  // the vault is provably unfrozen.
+  const usable = (i) => navReadable(x) && ['fresh', 'ageing'].includes(x.oracle.assets[i]?.state);
   return `${head}<div class="basket">
-    ${b.map((a) => {
+    ${b.map((a, i) => {
     const bal = toBig(a.balance) ?? 0n;
     const price = toBig(a.priceWad);
-    const valWad = price !== null ? (bal * price) / 10n ** BigInt(a.decimals) : null;
+    const rawValWad = price !== null ? (bal * price) / 10n ** BigInt(a.decimals) : null;
+    const valWad = usable(i) ? rawValWad : null;
     const wBps = priced && valWad !== null ? Number((valWad * 10_000n) / navWad) : Number(a.weightBps ?? 0);
     return `<div class="bk">
         <span>${esc(a.symbol)}</span>
@@ -618,7 +720,9 @@ function renderBasket(x) {
         <span class="sr">${esc(a.symbol)}: ${bpsPct(wBps)} of NAV</span>
       </div>
       <div class="bk" style="grid-template-columns:78px 1fr"><span></span>
-        <span class="amt" style="text-align:left">${esc(wadExact(bal * 10n ** BigInt(18 - a.decimals), { maxFrac: 6 }))} ${esc(a.symbol)}${valWad !== null ? ` · ${esc(usdcShort(valWad / USDC_SCALAR))}` : ' · unpriced'}</span></div>`;
+        <span class="amt" style="text-align:left">${esc(tokenAmount(bal, a.decimals))} ${esc(a.symbol)}${valWad !== null
+      ? ` · ${esc(usdcShort(valWad / USDC_SCALAR))}`
+      : rawValWad !== null ? ' · last price is past its staleness bound — not valued' : ' · unpriced'}</span></div>`;
   }).join('')}
     <div style="font-size:12px;color:var(--muted);margin-top:4px">
       ${priced ? 'Weights computed from live balances × oracle prices ÷ NAV.' : 'Weights are the vault’s declared targets — live prices are unavailable, so actual drift cannot be shown.'}
@@ -657,13 +761,18 @@ function renderFees(x) {
         <div class="v">${bpsPct(lvl)}</div></div>`).join('')}
     <div class="row total"><div>Effective across ${f.levels} level${f.levels > 1 ? 's' : ''}
       <small>${f.levels > 1 ? 'Performance fees compound on net-of-fee value, so it is 19% at depth 2 — not 20%. Exit-fee ceilings add.' : 'Single level, nothing stacks.'}</small></div>
-      <div class="v">${bpsPct(f.stackedPerfFeeBps)} perf<br>${bpsPct(f.stackedExitFeeCapBps)} exit</div></div>
+      <div class="v">${bpsPct(f.stackedPerfFeeBps)} perf<br>${f.exitFeeMaxBps === null ? 'not exposed' : `${bpsPct(f.stackedExitFeeCapBps)} exit`}</div></div>
   </div>
 
   <div class="seclabel"><h2>Your exit fee over time</h2></div>
-  ${maxBps === 0
-      ? noticeHtml({ tone: 'good', title: 'This vault charges no exit fee.', body: 'Leaving costs you gas and nothing else.' })
-      : `<div class="panel">
+  ${maxBps === null
+      // Not exposed is not zero: exitFeeMaxBps and its decay period are immutable VaultCore
+      // constructor arguments that no event carries, so a source without them cannot say leaving
+      // is free — which is what reading the missing value as 0 said.
+      ? noticeHtml({ tone: 'warn', title: 'This vault’s exit fee is not exposed by this data source.', body: 'exitFeeMaxBps and its decay period are immutable constructor arguments and no event carries them. The ceiling is somewhere between nothing and the protocol cap of 1.00%, and this app cannot narrow it further.' })
+      : maxBps === 0
+        ? noticeHtml({ tone: 'good', title: 'This vault charges no exit fee.', body: 'Leaving costs you gas and nothing else.' })
+        : `<div class="panel">
       ${p ? `<div class="row"><div>Today${p.isSoleHolder ? ' — waived, you are the only member' : ` · ${duration(p.tenureSec)} of tenure`}</div><div class="v">${bpsPct(p.feeBpsNow)}</div></div>` : ''}
       <div class="row"><div>A brand-new deposit</div><div class="v">${at(0)}</div></div>
       <div class="row"><div>After 30 days</div><div class="v">${at(30 * DAY)}</div></div>
@@ -684,8 +793,11 @@ function renderOperator(x) {
     ? state.leaderboard.data.find((o) => o.operatorId === v.operatorId) : null;
   const gc = v.governanceConfig;
   const stake = x.vault.operatorStakeShares ?? null;
-  const right = gc && stake !== null
-    ? proposalRight({ stake, eligibleTotal: v.totalShares, proposalThresholdBps: gc.proposalThresholdBps }) : null;
+  // pastTotalVotingEligibleShares (Governance.sol:288-291), NOT totalShares — it is net of
+  // queued-exit and parent stake, and the wider denominator under-reports the operator's standing.
+  const eligibleTotal = v.votingEligibleTotalShares ?? null;
+  const right = gc && stake !== null && eligibleTotal !== null
+    ? proposalRight({ stake, eligibleTotal, proposalThresholdBps: gc.proposalThresholdBps }) : null;
 
   return `<div class="seclabel"><h2>Operator</h2></div>
   <div class="panel">
@@ -707,6 +819,7 @@ function renderRisks(x) {
     ['A stale oracle freezes deposits and exits.', 'It is a safety mechanism, not an outage: it stops anyone entering or leaving at a price the vault cannot verify. There is no emergency withdrawal, deliberately. Capital still in the observation window stays reclaimable.'],
     ['Exits forward-price during a vote.', 'Once a proposal passes its commit deadline, an exit is queued and settles later at a price nobody can show you yet.'],
     ['The performance fee follows you, per operator.', 'A loss you realised under an operator offsets your future fees under that same operator, in any vault. Reputation is portable in both directions.'],
+    ['A USDC transfer that fails becomes an escrow credit, not a payment.', 'If USDC will not transfer to your address — a stablecoin issuer blacklist is the case this exists for — a cancelled deposit, an exit’s USDC leg and any basket slice are credited to you inside the vault instead of being sent. Nothing is lost, but nothing arrives in your wallet either: you claim it separately, and only once transfers to you work again.'],
   ];
   if (x.fees.levels > 1) {
     risks.push(['Fees stack through the chain.', `As a level-${x.fees.levels} vault, the effective performance fee is ${bpsPct(x.fees.stackedPerfFeeBps)} and exit-fee ceilings sum to ${bpsPct(x.fees.stackedExitFeeCapBps)}.`]);
@@ -722,8 +835,9 @@ function renderRisks(x) {
 const draft = { amount: '', skip: false, ackFreeze: false, ackWindow: false, typed: '', step: 1 };
 
 function openDeposit(addr) {
-  const x = vaultView(vaultByAddress(addr) ?? state.vaults.data.find((v) => v.address === addr), state.wallet, state.now());
-  if (!x.actions.deposit.available) return;
+  const x = viewFor(addr);
+  if (!x || !x.actions.deposit.available) return;
+  state.dialogAddr = x.vault.address;
   Object.assign(draft, { amount: '', skip: false, ackFreeze: false, ackWindow: false, typed: '', step: 1 });
   renderDeposit(x);
 }
@@ -741,7 +855,9 @@ function renderDeposit(x) {
     capacityCapUsdc: v.capacityCapUsdc ?? 0n,
     totalShares: v.totalShares,
     walletUsdc: state.wallet?.usdcBalance,
-    frozen: x.frozen,
+    // A tri-state on the way in, a boolean on the way out: an unreadable freeze is not proof the
+    // deposit will land, and the notices say so — but it is not the contract's StaleOracle either.
+    frozen: x.frozen === true,
     windowCleared: x.holding?.windowCleared,
     sharesHeld: pos?.shares ?? 0n,
     hasPendingDeposit: x.facts.hasPendingDeposit,
@@ -787,6 +903,8 @@ function renderDeposit(x) {
           <small>Cancelling reads no price, so it works even if the vault freezes mid-window. This is the one action a freeze can never take away from you.</small></div></div>
         <div class="row"><div><strong>Your share count is decided in 4 hours, not now.</strong>
           <small>Shares mint at the NAV at activation, so the estimate below can move. That is deliberate — it is what stops anyone minting against a valuation they read four hours earlier.</small></div></div>
+        ${pv.pathIsCertain ? '' : `<div class="row"><div><strong>Unless you have already skipped the window here.</strong>
+          <small>That opt-in is a flag on the vault, not an event, so this app cannot read it. If you burned it on an earlier deposit, this one mints immediately instead and there is no cancel period.</small></div></div>`}
       </div>
       <div class="panel" style="margin-top:12px">
         <div class="row"><div>Indicative shares<small>An estimate at today’s NAV. Not a promise.</small></div>
@@ -795,8 +913,8 @@ function renderDeposit(x) {
       : `<div class="panel">
         <div class="row"><div><strong>Shares mint immediately.</strong>
           <small>You have already cleared the observation window for this vault, so this deposit mints at the NAV of this transaction — no waiting, and no cancel window.</small></div></div>
-        <div class="row"><div>Shares you receive<small>At the NAV of the deposit transaction.</small></div>
-          <div class="v">${pv.shares !== null ? esc(wadExact(pv.shares, { maxFrac: 6 })) : 'Unknown'}</div></div>
+        <div class="row"><div>Indicative shares<small>Minting is forward-priced here too: your share count is set by the NAV of the block your transaction lands in, against a basket that moves between now and then. This is what today’s NAV would give you — not a promise.</small></div>
+          <div class="v">${pv.shares !== null ? esc(approx(wadExact(pv.shares, { maxFrac: 6 }))) : 'Unknown'}</div></div>
       </div>`}
 
       ${pv.consequences.filter((c) => c.code === 'TenureReset').map((c) => noticeHtml({
@@ -836,7 +954,8 @@ function renderDeposit(x) {
         <div class="row"><div>Vault</div><div class="v" style="font-family:var(--sans)">${esc(v.name)}</div></div>
         <div class="row"><div>Amount</div><div class="v">${esc(usdcExact(parsed.ok ? parsed.value : 0n))}</div></div>
         <div class="row"><div>Entry</div><div class="v" style="font-family:var(--sans)">${win ? '4-hour observation window' : 'Immediate mint'}</div></div>
-        <div class="row"><div>Shares</div><div class="v">${pv.shares === null ? 'Unknown' : win ? esc(approx(wadExact(pv.shares, { maxFrac: 6 })) + ' — set at activation') : esc(wadExact(pv.shares, { maxFrac: 6 }))}</div></div>
+        <div class="row"><div>Shares<small>Indicative on either path — the count is set by the NAV at ${win ? 'activation, four hours from now' : 'the block this lands in'}, not by the NAV on screen.</small></div>
+          <div class="v">${pv.shares === null ? 'Unknown' : esc(approx(wadExact(pv.shares, { maxFrac: 6 })) + (win ? ' — set at activation' : ' — set on landing'))}</div></div>
         <div class="row total"><div>Exit fee if you left immediately after</div><div class="v">${bpsPct(exitFeeBps({ exitFeeMaxBps: v.exitFeeMaxBps, exitFeeDecayPeriodSec: v.exitFeeDecayPeriodSec, tenureSec: 0 }))}</div></div>
       </div>
       ${needTyped ? `<div class="fld" style="margin-top:14px">
@@ -850,7 +969,13 @@ function renderDeposit(x) {
         ${needTyped ? 'Permanently skip and deposit' : win ? 'Deposit into the window' : 'Deposit'}</button>`;
   }
 
-  openDialog({ title: `Deposit into ${v.name}`, sub: 'Settled in USDC by an on-chain transaction. No metered read fee is charged on anything in this flow.', body, acts });
+  openDialog({
+    title: `Deposit into ${v.name}`,
+    sub: 'Settled in USDC by an on-chain transaction. No metered read fee is charged on anything in this flow.',
+    body,
+    acts,
+    step: `Step ${draft.step} of 3 — ${['amount', 'what happens', 'confirm'][draft.step - 1]}${draft.step === 3 && draft.skip ? '. You are permanently giving up the observation window for this vault.' : ''}`,
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -860,8 +985,9 @@ function renderDeposit(x) {
 const exitDraft = { shares: '', all: true, typed: '', step: 1 };
 
 function openExit(addr) {
-  const x = vaultView(vaultByAddress(addr) ?? state.vaults.data.find((v) => v.address === addr), state.wallet, state.now());
-  if (!x.actions.exit.available) return;
+  const x = viewFor(addr);
+  if (!x || !x.actions.exit.available) return;
+  state.dialogAddr = x.vault.address;
   Object.assign(exitDraft, { shares: '', all: true, typed: '', step: 1 });
   renderExit(x);
 }
@@ -869,17 +995,27 @@ function openExit(addr) {
 function renderExit(x) {
   const v = x.vault;
   const p = x.position;
-  const burn = exitDraft.all ? p.shares : (parseUnits(exitDraft.shares, 18).ok ? parseUnits(exitDraft.shares, 18).value : 0n);
+  const typedShares = exitDraft.all ? null : parseUnits(exitDraft.shares, 18, { unit: 'Share' });
+  const burn = exitDraft.all ? p.shares : (typedShares.ok ? typedShares.value : 0n);
+  // `burn` unchanged: previewing 1 wei on a garbage entry returns ok:true and leaves Continue
+  // armed on a share count nobody chose.
   const pv = previewExit({
-    burnShares: burn > 0n ? burn : 1n,
+    burnShares: burn,
     memberShares: p.shares,
     totalShares: v.totalShares,
     idleUsdc: v.idleUsdc ?? 0n,
     basket: v.basket ?? [],
+    costBasisUsdc: p.costBasisUsdc,
     exitFeeMaxBps: v.exitFeeMaxBps,
     exitFeeDecayPeriodSec: v.exitFeeDecayPeriodSec,
     tenureSec: p.tenureSec,
   });
+  // The input's own error, surfaced beside it — the same treatment #amt already gets.
+  const shrErr = exitDraft.all ? '' : (exitDraft.shares && !typedShares.ok ? typedShares.error : (!pv.ok ? pv.error : ''));
+  // The performance fee is a RANGE, so every leg it touches is rendered as one.
+  const feeRange = pv.ok && pv.perfFee !== null && pv.perfFee.maxUsdc > 0n;
+  const leg = (min, max, fmt) => (min === null || min === max ? fmt(max) : `${fmt(min)} to ${fmt(max)}`);
+
   const modeF = x.mode.mode === 'F';
   const modeUnknown = x.mode.mode === 'unknown';
   const hard = modeF || modeUnknown;
@@ -893,20 +1029,28 @@ function renderExit(x) {
       </div>
       <label class="chk"><input type="checkbox" id="allBox"${exitDraft.all ? ' checked' : ''}><span>Exit my whole position</span></label>
       ${exitDraft.all ? '' : `<div class="fld"><label for="shr">Shares to redeem</label>
-        <input id="shr" inputmode="decimal" autocomplete="off" value="${esc(exitDraft.shares)}" aria-describedby="shrHint">
-        <span class="hint" id="shrHint">18 decimal places. You hold ${esc(wadExact(p.shares, { maxFrac: 18 }))}.</span></div>`}
+        <input id="shr" inputmode="decimal" autocomplete="off" value="${esc(exitDraft.shares)}"
+          aria-describedby="shrHint${shrErr ? ' shrErr' : ''}"${shrErr ? ' aria-invalid="true"' : ''}>
+        <span class="hint" id="shrHint">18 decimal places. You hold ${esc(wadExact(p.shares, { maxFrac: 18 }))}.</span>
+        ${shrErr ? `<span class="err" id="shrErr">${esc(shrErr)}</span>` : ''}</div>`}
 
       <div class="seclabel"><h2>What you actually receive</h2></div>
       ${pv.ok ? `<div class="panel">
-        <div class="row"><div>USDC<small>Your slice of the vault’s idle stables.</small></div><div class="v">${esc(usdcExact(pv.usdcPay))}</div></div>
-        ${pv.slices.map((s) => `<div class="row"><div>${esc(s.symbol)}<small>Paid in the token itself, not sold for you — you carry your own execution cost, and nobody remaining is diluted by your exit.</small></div>
-          <div class="v">${esc(wadExact(s.amount * 10n ** BigInt(18 - s.decimals), { maxFrac: 8 }))} ${esc(s.symbol)}${s.valueWad !== null ? `<br><span style="color:var(--faint);font-size:11px">${esc(usdcShort(s.valueWad / USDC_SCALAR))}</span>` : '<br><span style="color:var(--faint);font-size:11px">unpriced</span>'}</div></div>`).join('')}
+        <div class="row"><div>USDC<small>Your slice of the vault’s idle stables${feeRange ? ', less the performance fee below' : ''}.</small></div>
+          <div class="v">${esc(leg(pv.usdcPayMin, pv.usdcPay, usdcExact))}</div></div>
+        ${pv.slices.map((sl) => `<div class="row"><div>${esc(sl.symbol)}<small>Paid in the token itself, not sold for you — you carry your own execution cost, and nobody remaining is diluted by your exit.</small></div>
+          <div class="v">${esc(leg(sl.amountMin, sl.amount, (n) => tokenAmount(n, sl.decimals, 8)))} ${esc(sl.symbol)}${sl.valueWad !== null ? `<br><span style="color:var(--faint);font-size:11px">${esc(usdcShort(sl.valueWad / USDC_SCALAR))} before the fee</span>` : '<br><span style="color:var(--faint);font-size:11px">unpriced</span>'}</div></div>`).join('')}
         <div class="row"><div>Exit fee ${bpsPct(pv.feeBps)}${pv.isSoleHolder ? ' — waived' : ''}
           <small>${pv.isSoleHolder ? 'You are the only member, and the fee accrues to remaining members — there are none.' : `${duration(p.tenureSec)} of tenure. This stays in the vault and raises NAV/share for the members who remain. It never goes to the operator.`}</small></div>
           <div class="v">${pv.feeValueWad !== null ? '−' + esc(usdcShort(pv.feeValueWad / USDC_SCALAR)) : bpsPct(pv.feeBps)}</div></div>
+        ${feeRange ? `<div class="row"><div>Performance fee — up to 10% of realised profit
+          <small>Withheld <strong>uniformly</strong> from the USDC leg and from every token slice above, which is why both are shown as ranges. The exact figure turns on the losses you have already realised under this operator — they carry forward against your high-water mark, and no projection exposes them. It is nothing if that carry still covers this gain.</small></div>
+          <div class="v">−${esc(usdcShort(0n))} to −${esc(usdcShort(pv.perfFee.maxUsdc))}</div></div>` : ''}
         <div class="row total"><div>Total value${pv.valueComplete ? '' : ' — cannot be totalled'}
-          <small>${pv.valueComplete ? 'At current oracle prices. Token amounts above are exact; this total moves with the market.' : 'One or more assets is unpriced, so the token amounts are shown and the total is withheld rather than guessed.'}</small></div>
-          <div class="v">${pv.payoutValueWad !== null ? esc(approx(usdcShort(pv.payoutValueWad / USDC_SCALAR))) : '—'}</div></div>
+          <small>${pv.valueComplete
+        ? `At current oracle prices, which move. ${feeRange ? 'The range is the performance fee: the low end assumes the full 10% of gain, the high end assumes your carried losses absorb it.' : 'Token amounts are exact at these share counts.'}`
+        : 'One or more assets is unpriced, so the token amounts are shown and the total is withheld rather than guessed.'}</small></div>
+          <div class="v">${pv.payoutValueWad !== null ? esc(leg(pv.payoutValueMinWad, pv.payoutValueWad, (n) => usdcShort(n / USDC_SCALAR))) : '—'}</div></div>
       </div>
       ${pv.coversFromChildren ? noticeHtml({ tone: 'warn', title: 'Part of this exit unwinds a child vault.', body: 'Idle stables do not cover your slice, so the vault redeems from a child to make up the difference. The amounts above are indicative for that portion, and the exit will revert if the child is mid-rebalance — retry once it settles.' }) : ''}`
       : `<div class="state" role="alert"><h3>${esc(pv.error)}</h3></div>`}
@@ -952,7 +1096,15 @@ function renderExit(x) {
         ${modeF ? 'Queue irrevocable exit' : modeUnknown ? 'Continue anyway' : 'Exit now'}</button>`;
   }
 
-  openDialog({ title: `Exit ${v.name}`, sub: `${x.mode.label}. Paid pro-rata in kind — basket tokens plus your share of idle USDC.`, body, acts });
+  openDialog({
+    title: `Exit ${v.name}`,
+    sub: `${x.mode.label}. Paid pro-rata in kind — basket tokens plus your share of idle USDC.`,
+    body,
+    acts,
+    step: exitDraft.step === 1
+      ? 'Step 1 of 2 — how much to redeem'
+      : `Step 2 of 2 — confirm.${modeF ? ' This exit would be queued, cannot be cancelled, and your shares stop voting the moment you queue.' : modeUnknown ? ' This app cannot tell you whether this exit settles now or queues irrevocably.' : ''}`,
+  });
 }
 
 /** This app never connects a wallet and never signs. Say so where a signature would happen. */
@@ -986,13 +1138,14 @@ function renderPortfolio() {
 
   const totalKnown = held.every((x) => x.position.valueUsdc !== null);
   const total = held.reduce((a, x) => a + (x.position.valueUsdc ?? 0n), 0n);
-  const frozenHeld = held.filter((x) => x.frozen);
+  const unvalued = held.filter((x) => x.position.valueUsdc === null);
 
   return `<p class="lede">Your positions across the protocol.</p>
+  ${stalenessNotice()}
   <div class="headline"><span class="big">${totalKnown ? esc(usdcExact(total)) : esc(approx(usdcExact(total)))}</span></div>
   <div class="subline">${totalKnown
       ? 'Total value at current NAV. Exact, not rounded.'
-      : `Partial — ${frozenHeld.length} frozen vault${frozenHeld.length === 1 ? '' : 's'} cannot be valued, so ${frozenHeld.map((x) => esc(x.vault.name)).join(', ')} is excluded from this figure rather than carried at a stale price.`}</div>
+      : `Partial — ${unvalued.length} vault${unvalued.length === 1 ? '' : 's'} cannot be valued, so ${unvalued.map((x) => esc(x.vault.name)).join(', ')} ${unvalued.length === 1 ? 'is' : 'are'} excluded from this figure rather than carried at a stale price.`}</div>
 
   ${pending.length ? `<div class="seclabel"><h2>In the observation window</h2></div>
     ${noticeHtml({
@@ -1012,14 +1165,12 @@ function pendingCard(x) {
   const matured = secs <= 0;
   return `<div class="card">
     <div><div class="ttl">${esc(x.vault.name)}</div><div class="addr">${esc(shortAddress(x.vault.address))}</div></div>
-    <div class="pills">${pill('Pending — 0 shares', 'info', '◷')}${x.frozen ? pill('Vault frozen', 'frozen', '❄') : ''}</div>
+    <div class="pills">${pill('Pending — 0 shares', 'info', '◷')}${isFrozen(x) ? pill('Vault frozen', 'frozen', '❄') : freezeUnknown(x) ? pill('Freeze state unknown', 'warn', '?') : ''}</div>
     <div class="big">${esc(usdcExact(p.amountUsdc))}</div>
     <div class="unit">${matured ? 'Ready to activate' : 'Activates in'} ${matured ? '' : countdown(p.availableAt, { label: `${x.vault.name} deposit activation` })}</div>
     <div class="actionbar" style="margin:4px 0 0">
-      <div class="btn-wrap"><button class="btn secondary" type="button" data-act="cancel" data-addr="${esc(x.vault.address)}">Cancel · full refund</button>
-        <span class="btn-reason">Always available, freeze or no freeze.</span></div>
-      <div class="btn-wrap"><button class="btn primary" type="button" data-act="activate" data-addr="${esc(x.vault.address)}"${x.actions.activate.available ? '' : ' disabled'}>Activate</button>
-        ${x.actions.activate.reason ? `<span class="btn-reason" data-sev="${esc(x.actions.activate.severity)}">${esc(x.actions.activate.reason)}</span>` : ''}</div>
+      ${actionButton(x, 'cancel', 'Cancel · full refund', 'secondary', { available: true, reason: 'Reads no price, so it works during a freeze too.', severity: 'ok' })}
+      ${actionButton(x, 'activate', 'Activate', 'primary', x.actions.activate)}
     </div></div>`;
 }
 
@@ -1027,19 +1178,21 @@ function positionCard(x) {
   const p = x.position;
   return `<div class="card"${x.status.tone !== 'good' ? ` data-tone="${esc(x.status.tone)}"` : ''}>
     <div><div class="ttl">${esc(x.vault.name)}</div><div class="addr">${esc(shortAddress(x.vault.address))}</div></div>
-    <div class="pills">${pill(x.status.label, x.status.tone, x.status.glyph)}${pill(x.mode.label, x.mode.mode === 'I' ? 'good' : 'warn')}</div>
+    <div class="pills">${pill(x.status.label, x.status.tone, x.status.glyph)}${modePill(x)}</div>
     <div class="big">${p.valueUsdc !== null ? esc(usdcExact(p.valueUsdc)) : 'Unpriced'}</div>
-    <div class="unit">${p.valueUsdc !== null ? 'Value at current NAV' : 'Frozen — value cannot be read'}</div>
+    <div class="unit">${p.valueUsdc !== null
+      ? 'Value at current NAV'
+      : isFrozen(x) ? 'Frozen — value cannot be read' : 'NAV is not readable here, so this is not valued'}</div>
     <div class="meta"><span class="num">${esc(wadExact(p.shares, { maxFrac: 4 }))} shares</span>
       <span>${esc(duration(p.tenureSec))} tenure</span></div>
     <div class="meta"><span>Exit fee today</span><span class="num">${esc(bpsPct(p.feeBpsNow))}</span></div>
     ${p.pnlUsdc !== null ? `<div class="meta"><span>Against cost basis</span>
-      <span class="sgn" data-s="${p.pnlUsdc >= 0n ? 'pos' : 'neg'}">${p.pnlUsdc >= 0n ? '+' : '−'}${esc(usdcShort(p.pnlUsdc >= 0n ? p.pnlUsdc : -p.pnlUsdc).slice(1))}</span></div>
+      <span class="sgn" data-s="${p.pnlUsdc >= 0n ? 'pos' : 'neg'}">${p.pnlUsdc >= 0n ? '+' : '−'}${esc(usdcShort(p.pnlUsdc >= 0n ? p.pnlUsdc : -p.pnlUsdc))}</span></div>
       <div style="font-size:11.5px;color:var(--faint)">Before the 10% performance fee, which is charged only on realised profit above your high-water mark with this operator.</div>` : ''}
     <div class="actionbar" style="margin:4px 0 0">
       <div class="btn-wrap"><a class="btn secondary" href="#/vault/${esc(x.vault.address)}" style="text-decoration:none">Inspect</a></div>
-      <div class="btn-wrap"><button class="btn secondary" type="button" data-act="exit" data-addr="${esc(x.vault.address)}"${x.actions.exit.available ? '' : ' disabled'}>Exit</button>
-        ${x.actions.exit.reason ? `<span class="btn-reason" data-sev="${esc(x.actions.exit.severity)}">${esc(x.actions.exit.reason)}</span>` : ''}</div>
+      ${actionButton(x, 'exit', 'Exit', 'secondary', x.actions.exit)}
+      ${x.facts.hasQueuedExit ? actionButton(x, 'settle', 'Settle queued exit', 'secondary', x.actions.settleQueuedExit) : ''}
     </div></div>`;
 }
 
@@ -1049,36 +1202,58 @@ function positionCard(x) {
 
 let lastFocused = null;
 
-function openDialog({ title, sub, body, acts }) {
+/**
+ * @param {{title:string, sub:string, body:string, acts:string, step?:string}} d
+ *   `step` names what this render IS ("Step 2 of 3 — what happens"). A live region that is handed
+ *   the identical string on every re-render announces it once and is silent afterwards, which is
+ *   how the irrevocability warnings on the Mode-F confirm went unread.
+ */
+function openDialog({ title, sub, body, acts, step = '' }) {
   const reopening = Boolean($('#modal .modal'));
   if (!reopening) lastFocused = document.activeElement;
   const active = document.activeElement?.id;
   const selStart = document.activeElement?.selectionStart;
+  const selEnd = document.activeElement?.selectionEnd;
 
   $('#modal').innerHTML = `<div class="scrim" data-act="scrim">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgSub">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgSub" tabindex="-1">
       <h2 id="dlgTitle">${esc(title)}</h2>
-      <p class="sub" id="dlgSub">${esc(sub)}</p>
+      <p class="sub" id="dlgSub">${esc(sub)}${step ? ` · ${esc(step)}` : ''}</p>
       ${body}
       <div class="acts">${acts}</div>
     </div></div>`;
 
-  // Re-renders happen on every keystroke; keep the caret where the user left it.
+  // aria-modal alone does not stop a screen reader walking the page behind the dialog.
+  $('#view').setAttribute('inert', '');
+  $('#view').setAttribute('aria-hidden', 'true');
+
+  // Re-renders happen on every keystroke; keep the caret where the user left it, not at the end —
+  // otherwise editing 1000 into 10000 from the front is impossible.
   const restore = active && $(`#${CSS.escape(active)}`);
   if (reopening && restore) {
     restore.focus();
-    if (selStart !== undefined && restore.setSelectionRange) {
-      try { restore.setSelectionRange(restore.value.length, restore.value.length); } catch { /* not a text input */ }
+    if (typeof selStart === 'number' && restore.setSelectionRange) {
+      try { restore.setSelectionRange(selStart, typeof selEnd === 'number' ? selEnd : selStart); } catch { /* not a text input */ }
     }
+    if (step && step !== lastAnnouncedStep) { lastAnnouncedStep = step; announce(step); }
   } else {
-    (($('#modal .modal input, #modal .modal button:not([disabled])')) ?? $('#modal .modal')).focus();
-    announce(`${title}. Dialog opened.`);
+    // The dialog itself, not its first input — on the Mode-F confirm the first input sits BELOW
+    // two "this cannot be cancelled" notices, and landing on it skips past both.
+    $('#modal .modal').focus();
+    lastAnnouncedStep = step;
+    announce(`${title}. ${step || 'Dialog opened.'}`);
   }
 }
+
+let lastAnnouncedStep = '';
 
 function closeDialog() {
   if (!$('#modal').innerHTML) return;
   $('#modal').innerHTML = '';
+  $('#view').removeAttribute('inert');
+  $('#view').removeAttribute('aria-hidden');
+  state.dialogAddr = null;
+  lastAnnouncedStep = '';
   if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
   lastFocused = null;
 }
@@ -1112,23 +1287,27 @@ function toast(msg) {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
   if (!t) return;
+  if (t.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
   const act = t.dataset.act;
   const addr = t.dataset.addr;
-  const curr = () => {
-    const a = addr ?? location.hash.split('/')[2];
-    return vaultView(state.vaults.data.find((v) => String(v.address).toLowerCase() === String(a).toLowerCase()), state.wallet, state.now());
-  };
+  const curr = () => dialogVault();
 
   if (act === 'scrim' && e.target === t) return closeDialog();
   if (act === 'close') return closeDialog();
   if (act === 'discover') return go('#/discover');
   if (act === 'reload') return boot();
+  if (act === 'api-allow') { state.apiConfirmed = true; return boot(); }
+  if (act === 'api-deny') { state.apiConfirmed = false; return bootFixtures(); }
   if (act === 'deposit') return openDeposit(addr);
   if (act === 'exit') return openExit(addr);
 
   if (act === 'cancel') {
     closeDialog();
-    return toast('This is where the cancelPending() transaction would be requested. Your full deposit returns to your wallet; no price is read, so it works even while the vault is frozen.');
+    return toast('This is where the cancelPending() transaction would be requested. It reads no price, so it works even while the vault is frozen. Your deposit returns to your wallet — unless USDC will not transfer to you, in which case the vault credits it to you as claimable escrow instead, and you claim it when transfers work again.');
+  }
+  if (act === 'settle') {
+    closeDialog();
+    return toast('This is where the settleQueuedExit() transaction would be requested. Nothing calls it for you — a queued exit sits locked and non-voting until somebody does, and anybody can.');
   }
   if (act === 'activate') {
     closeDialog();
@@ -1174,9 +1353,10 @@ document.addEventListener('change', (e) => {
   if (id === 'allBox') { exitDraft.all = e.target.checked; return renderExit(dialogVault()); }
 });
 
+/** The vault the OPEN DIALOG is about. The exit dialog is reachable from #/portfolio, where the
+ *  hash carries no vault address at all. */
 function dialogVault() {
-  const a = location.hash.split('/')[2];
-  return vaultView(state.vaults.data.find((v) => String(v.address).toLowerCase() === String(a).toLowerCase()), state.wallet, state.now());
+  return viewFor(state.dialogAddr);
 }
 
 function rerenderKeepingFocus() {
@@ -1212,8 +1392,8 @@ setInterval(() => {
     // WCAG 4.1.3: announce at meaningful thresholds only. Announcing every second would flood a
     // screen reader with noise and bury the one reading that matters.
     const key = el.dataset.deadline;
-    const crossed = THRESHOLDS.find((t) => left <= t);
-    if (crossed !== undefined && announcedAt.get(key) !== crossed) {
+    const crossed = crossedThreshold(left, THRESHOLDS);
+    if (crossed !== null && announcedAt.get(key) !== crossed) {
       announcedAt.set(key, crossed);
       const label = el.dataset.label || 'Countdown';
       announce(left > 0 ? `${label}: ${duration(left)} remaining.` : `${label}: the deadline has passed.`);
@@ -1254,7 +1434,8 @@ function render() {
   const parts = h.slice(2).split('/');
   const view = $('#view');
 
-  if (parts[0] === 'vault' && parts[1]) view.innerHTML = renderVault(parts[1]);
+  if (state.consent) view.innerHTML = renderApiConsent(state.consent);
+  else if (parts[0] === 'vault' && parts[1]) view.innerHTML = renderVault(parts[1]);
   else if (parts[0] === 'portfolio') view.innerHTML = renderPortfolio();
   else view.innerHTML = renderDiscover();
 
@@ -1281,19 +1462,71 @@ function render() {
     <code>apps/web/test/</code>.`;
 }
 
+/** localhost is the dev API this flag exists for; anything else is somebody else's server. */
+const isLocalOrigin = (o) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(o);
+
+/**
+ * `?api=` in a URL is attacker-controllable, and `boot()` does not merely READ the origin it names
+ * — it runs the x402 402 → authorize → retry handshake against it, unprompted, on page load. No
+ * funds are at risk (the envelope is all zeros and this app holds no key), but it is still an
+ * outbound request to a host somebody else chose, whose reply becomes every vault, operator and
+ * number on screen. So: say what will happen, and do nothing until the person says yes.
+ */
+function renderApiConsent(c) {
+  return `<p class="lede">This link is asking to read vault data from a server that is not part of this app.</p>
+  ${noticeHtml({
+    tone: 'critical',
+    title: `Nothing has been requested from ${c.origin} yet.`,
+    body:
+      'If you continue, every vault, operator name, member count and capacity figure on the next ' +
+      'screen is authored by whoever runs that host — this app cannot verify any of it against ' +
+      'a chain. The read is also metered, so the app will run an x402 payment handshake against ' +
+      'the same host. It signs nothing: this interface holds no key and the envelope it sends is ' +
+      'all zeros. Nothing about any position you hold on-chain is affected either way.',
+  })}
+  <div class="panel">
+    <div class="row"><div>Origin</div><div class="v">${esc(c.origin)}</div></div>
+    <div class="row"><div>Requests it would make<small>Three, on load, and nothing else.</small></div>
+      <div class="v" style="font-family:var(--sans)">GET /metrics<br>GET /vaults<br>GET /operators/leaderboard</div></div>
+    <div class="row"><div>What it would send<small>No wallet, no key, no signature, no personal data.</small></div>
+      <div class="v" style="font-family:var(--sans)">An x402 payment envelope with a zero signature</div></div>
+  </div>
+  <div class="actionbar">
+    <div class="btn-wrap"><button class="btn danger" type="button" data-act="api-allow">Read from ${esc(c.origin)}</button></div>
+    <div class="btn-wrap"><button class="btn secondary" type="button" data-act="api-deny">Stay on fixture data</button>
+      <span class="btn-reason">Nothing is requested from that host.</span></div>
+  </div>`;
+}
+
+function bootFixtures() {
+  state.mode = 'fixture';
+  state.consent = null;
+  state.vaults = ready(VAULTS, classify(null));
+  state.leaderboard = ready(mapLeaderboard(LEADERBOARD).map((o, i) => ({
+    ...o, ...withRaw(LEADERBOARD[i]), name: LEADERBOARD[i].name,
+  })), classify(null));
+  state.freshness = classify(null);
+  state.wallet = WALLET;
+  render();
+}
+
 async function boot() {
   const apiUrl = new URLSearchParams(location.search).get('api');
-  if (!apiUrl) {
-    state.mode = 'fixture';
-    state.vaults = ready(VAULTS, classify(null));
-    state.leaderboard = ready(mapLeaderboard(LEADERBOARD).map((o, i) => ({
-      ...o, ...withRaw(LEADERBOARD[i]), name: LEADERBOARD[i].name,
-    })), classify(null));
-    state.freshness = classify(null);
-    state.wallet = WALLET;
+  if (!apiUrl) return bootFixtures();
+
+  let origin;
+  try {
+    origin = new URL(apiUrl, location.href).origin;
+  } catch {
+    toast(`?api= is not a URL this app can read (${apiUrl}). Showing fixture data instead.`);
+    return bootFixtures();
+  }
+  if (!isLocalOrigin(origin) && !state.apiConfirmed) {
+    state.consent = { origin, url: apiUrl };
     render();
     return;
   }
+  state.consent = null;
 
   state.mode = 'live';
   state.wallet = null; // no per-member projection exists, and no wallet is ever connected

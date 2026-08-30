@@ -162,8 +162,9 @@ export function vaultView(vault, wallet, nowSec) {
       levels,
       stackedPerfFeeBps: stackedPerfFeeBps(levels),
       stackedExitFeeCapBps: stackedExitFeeCapBps((vault.exitFeeMaxBpsByLevel ?? []).slice(0, levels)),
-      exitFeeMaxBps: Number(vault.exitFeeMaxBps ?? 0),
-      exitFeeDecayPeriodSec: Number(vault.exitFeeDecayPeriodSec ?? 0),
+      // null, not 0: an unexposed exit-fee ceiling is not a vault that charges no exit fee.
+      exitFeeMaxBps: vault.exitFeeMaxBps === null || vault.exitFeeMaxBps === undefined ? null : Number(vault.exitFeeMaxBps),
+      exitFeeDecayPeriodSec: vault.exitFeeDecayPeriodSec === null || vault.exitFeeDecayPeriodSec === undefined ? null : Number(vault.exitFeeDecayPeriodSec),
     },
   };
 }
@@ -177,7 +178,8 @@ export const SORTS = {
   capacity: { label: 'Capacity used', fn: (a, b) => (b.capacity.usedBps ?? -1) - (a.capacity.usedBps ?? -1) },
   size: { label: 'Vault NAV', fn: (a, b) => cmpBig(toBig(b.vault.navWad) ?? 0n, toBig(a.vault.navWad) ?? 0n) },
   members: { label: 'Members', fn: (a, b) => Number(b.vault.holderCount ?? 0) - Number(a.vault.holderCount ?? 0) },
-  fee: { label: 'Lowest exit fee', fn: (a, b) => a.fees.exitFeeMaxBps - b.fees.exitFeeMaxBps },
+  // An unexposed ceiling sorts last rather than as free.
+  fee: { label: 'Lowest exit fee', fn: (a, b) => (a.fees.exitFeeMaxBps ?? Infinity) - (b.fees.exitFeeMaxBps ?? Infinity) },
 };
 
 function cmpBig(x, y) {

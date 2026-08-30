@@ -14,7 +14,7 @@ browser. Run them with `npm run test:backend` from the repo root.
 | Module | What it owns |
 | --- | --- |
 | `format.mjs` | Exact 6dp/18dp fixed-point from BigInt. Lossy renderings are opt-in and marked `≈`. |
-| `exit-preview.mjs` | `VaultCore._settleExit` / `_exitFeeBps`, mirrored term for term. |
+| `exit-preview.mjs` | `VaultCore._settleExit` / `_exitFeeBps`, mirrored term for term. The performance fee is a bound, not a number — see below. |
 | `deposit-preview.mjs` | `_deposit` / `_mintShares`: capacity, entry path, indicative shares, tenure reset. |
 | `governance.mjs` | Proposal phase, and a mirror of `Governance.hasPendingExecution`. |
 | `vault-state.mjs` | The one action-permission gate every button in the app reads. |
@@ -57,17 +57,41 @@ And one behaviour that is easy to miss and expensive: **`lastDepositTime` resets
 deposit**, so a top-up restores the full exit fee across the member's entire position. The deposit
 flow quantifies that before the confirm.
 
+## Three things this app refuses to state as a number
+
+1. **The performance fee is a range.** `_settleExit` withholds it uniformly across the USDC leg and
+   every token slice (VaultCore.sol:660-704), and `perfFee` is whatever `FeeEngine.onRealize`
+   returns, clamped to `gain / 10`. It depends on the per-`(member, operator)` high-water-mark loss
+   carry, which no projection exposes. Only the ceiling is computable, so every payout leg renders
+   as `min to max` and the panel says which end is which. There is no exact receipt to show, so
+   none is shown.
+2. **A share count is never a promise.** Both entry paths are forward-priced: the window path mints
+   at activation NAV four hours out, the immediate path at the NAV of the block the transaction
+   lands in. Both render through `approx()`.
+3. **Unknown is a value.** `null` already means *known-absent* to these modules — `proposal: null`
+   resolves to Mode I, `frozen: false` renders a green "Open" — so a source that simply has no
+   proposal or oracle data emits `PROPOSAL_UNKNOWN` and `frozen: null` instead. `frozen` is a
+   tri-state everywhere downstream, and `capacity()` reports `determinable: false` rather than
+   drawing a 0%-used meter out of two missing numbers.
+
+And one thing nothing invokes for you: **`settleQueuedExit(member)` is an ordinary external call.**
+A queued Mode-F exit does not settle as a side effect of execution or expiry — it becomes
+*settleable*, and somebody has to make the call. Anybody can, but until they do the shares stay
+locked and do not vote. The app says that, and offers the action.
+
 ## What the metered API does not expose
 
-`?api=<url>` reads the live indexer. It serves **event-derived projections only**, so live mode
+`?api=<url>` reads the live indexer. The URL is attacker-controllable and `boot()` runs an x402
+handshake against whatever it names, so a **non-localhost origin is not contacted at all** until the
+person has read what would be requested and said yes. It serves **event-derived projections only**, so live mode
 fills the rest with `null` and says which fields — it does not invent them. In priority order:
 
 | Missing | Why | Consequence |
 | --- | --- | --- |
 | **Proposal deadlines** | `Governance.Proposed` emits `(pid, vault, ptype, proposer, actionHash)` and no times. | **Exit mode is not derivable at all.** Mode I vs Mode F turns on `commitDeadline`. The app renders `unknown` and warns the exit may be irrevocable — it never assumes Mode I. This is the highest-value gap to close. |
 | NAV, NAV/share, basket composition | Events carry no post-swap balances or prices. | No valuation, no weights, no in-kind exit preview. |
-| Oracle freshness / frozen | `OracleAggregator` is read directly, never emitted. | The frozen state — the most important state in the product — cannot be detected. |
-| `exitFeeMaxBps`, `exitFeeDecayPeriodSec`, `minDepositUsdc` | Immutable `VaultCore` constructor args; no event carries them. | No exit-fee number, no decay readout. |
+| Oracle freshness / frozen | `OracleAggregator` is read directly, never emitted. | The frozen state — the most important state in the product — cannot be detected. `frozen: null`, and the card reads "Freeze state unknown", never "Open". |
+| `exitFeeMaxBps`, `exitFeeDecayPeriodSec`, `minDepositUsdc` | Immutable `VaultCore` constructor args; no event carries them. | No exit-fee number, no decay readout — and *not exposed* renders as such, never as a vault that charges nothing. |
 | Per-member pending deposit | **Indexable today.** `DepositPending(member, amountUsdc, availableAt)` is emitted and folded, but `projections.mjs` reduces it to an aggregate `pendingCount` and drops both the member and the activation time. | The observation-window countdown has no source. Cheapest gap to close — the data is already arriving. |
 | Mode-F queue state | `ExitQueued` is not in `HANDLED_EVENTS` at all. | A queued exit is invisible; a member could queue a second one from a UI that cannot see the first. |
 | Per-`(member, operator)` HWM carry | No projection. | Net-of-fee P&L is unanswerable; the app shows gross and states the rule. |
@@ -90,7 +114,22 @@ WCAG 2.2 AA, keyboard-operable throughout. Specifically: real `<button>`/`<a>` f
 `div` click handlers), a skip link, focus trapped in dialogs and restored on close, Escape to
 dismiss, `aria-labelledby`/`aria-describedby` on every dialog, `<th scope>` on every table header,
 status carried by text + glyph and never by colour alone, and countdowns announced through a single
-polite live region **at thresholds only** (1h / 15m / 5m / 1m / elapsed) rather than every second.
+polite live region **at thresholds only** (1h / 15m / 5m / 1m / elapsed) rather than every second —
+`crossedThreshold` in `format.mjs` picks the smallest threshold crossed, so each fires exactly once
+and *elapsed* is reachable at all.
+
+Three more, each a measured failure rather than a theoretical one:
+
+- **`--crit-ink`.** `.btn.danger` was `#fff` on `--crit`, which is `#ff8b83` in dark — **2.26:1**, on
+  "Queue irrevocable exit" and "Permanently skip and deposit". The token is `#fff` in light (6.85:1)
+  and `#210b09` in dark (8.31:1).
+- **Blocked buttons use `aria-disabled`, not `disabled`,** with `aria-describedby` pointing at their
+  reason. `disabled` removes a control from the tab order, so a keyboard-only user never reached it
+  and never heard why. In-dialog gates keep real `disabled`; the click handler refuses
+  `aria-disabled` centrally.
+- **`<main>` is `inert` and `aria-hidden` behind an open dialog,** focus lands on the dialog itself
+  rather than on the first input *below* the irrevocability warnings, and each step announces what
+  it is — a live region handed an identical string twice announces it once.
 
 Countdowns are protocol deadlines driven by `block.timestamp`, so they take WCAG 2.2's real-time
 exception to 2.2.1 — no extend or dismiss control is offered, because the protocol could not honour
