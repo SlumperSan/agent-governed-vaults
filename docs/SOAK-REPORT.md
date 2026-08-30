@@ -1,5 +1,16 @@
 # Testnet soak report — Sprint 12
 
+> [!warning] SUPERSEDED DEPLOYMENT (noted 2026-08-30). This report is a faithful record of a run
+> against the **pre-C-6 deployment** (`deployBlock` 45,784,186, the custom multi-source
+> `OracleAggregator`). That stack was retired and Base Sepolia was **redeployed on 2026-08-29**
+> around `ChainlinkOracle` (`deployBlock` 46,111,530). Drills 1, 2, 3 and 5 exercise contracts the
+> pivot did not change and their evidence stands. **Drill 4 does not:** its verdict is stated in
+> quorum-margin terms (`freshSources` never below 3, quorum 2, margin never below +1) that have no
+> meaning on a single-feed oracle, and its "testnet compromise" paragraph describes three
+> `ChainlinkSourceAdapter`s that are no longer deployed. The instrument was rewritten for the live
+> oracle on 2026-08-30; **launch gates 3 and 6 are re-earned by a re-run, not by this document.**
+> The re-run is blocked on a testnet key — see `docs/NOW.md` "Blocked on a human".
+
 **Date:** 2026-08-24 → 2026-08-25 · **Chain:** Base Sepolia (84532) · **Issue:** [#21](https://github.com/SlumperSan/agent-governed-vaults/issues/21)
 
 The Sprint-9 run proved the happy path once, with one member. This soak stress-ran the same
