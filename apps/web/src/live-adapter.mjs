@@ -69,3 +69,67 @@ export function mapVaults(list, board, lastBlock) {
     };
   });
 }
+
+/**
+ * /vaults rows → the record shape `vault-view.mjs` consumes.
+ *
+ * `mapVaults` above is left exactly as it was (live-adapter.test.mjs pins its output); this is an
+ * addition, not a replacement.
+ *
+ * WHAT IS NULL HERE IS NULL ON PURPOSE. The metered API serves only event-derived projections, so
+ * NAV, basket composition, the per-vault exit-fee parameters, oracle freshness and proposal
+ * deadlines have no source and are returned as `null` rather than as a plausible number. Every
+ * consumer treats null as "unknown" and says so on screen. The one field the projection *could*
+ * carry but does not is per-member pending state: `DepositPending(member, amountUsdc, availableAt)`
+ * is emitted and indexed, but `projections.mjs` folds it to an aggregate `pendingCount` and drops
+ * both the member and the activation time.
+ *
+ * @param {Array<object>} list  from /vaults
+ * @param {Array<object>} board from /operators/leaderboard
+ */
+export function mapVaultRecords(list, board) {
+  const opById = new Map((board ?? []).map((o) => [o.operatorId, o]));
+  return (list ?? []).map((v) => {
+    const attested = v.attested ?? (v.operatorId !== 0);
+    const op = opById.get(v.operatorId);
+    return {
+      address: v.vault,
+      name: `Vault ${shortAddr(v.vault)}`,
+      operatorName: attested ? (op ? shortAddr(op.operator) : `Operator #${v.operatorId}`) : null,
+      operatorAddress: op?.operator ?? null,
+      operatorId: v.operatorId,
+      attested,
+      depth: v.depth ?? 0,
+      parent: v.parent ?? null,
+
+      // Event-derived and real:
+      holderCount: v.memberCount ?? 0,
+      capacityCapUsdc: v.capacityCapUsdc ?? '0',
+
+      // Chain-read enrichment the API does not expose — unknown, not zero:
+      frozen: false,
+      chainRead: false,
+      totalShares: null,
+      navWad: null,
+      navPerShareWad: null,
+      idleUsdc: null,
+      totalPendingUsdc: null,
+      minDepositUsdc: null,
+      exitFeeMaxBps: null,
+      exitFeeDecayPeriodSec: null,
+      exitFeeMaxBpsByLevel: [],
+      basket: [],
+      proposal: null,
+      governanceConfig: null,
+    };
+  });
+}
+
+/** The fields `mapVaultRecords` cannot fill, and why — rendered verbatim in the live-mode banner. */
+export const MISSING_IN_LIVE = Object.freeze([
+  ['NAV, NAV/share, basket composition', 'events carry no post-swap balances or prices; needs a chain read'],
+  ['Oracle freshness / frozen state', 'OracleAggregator is read directly, never emitted'],
+  ['Proposal deadlines — so exit Mode I vs F', 'Governance.Proposed emits no commitDeadline; the mode turns on it'],
+  ['Exit-fee ceiling and decay period', 'immutable VaultCore constructor args, not in any event'],
+  ['Your position, pending deposit and queued exit', 'per-member projections do not exist; ExitQueued is not indexed at all'],
+]);
