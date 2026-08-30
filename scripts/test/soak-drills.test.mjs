@@ -16,7 +16,9 @@ import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
   oracleCanaryRows, verdictOf, isAssetSubject, isBreachSample,
 } from '../soak/series-analysis.mjs';
-import { sequencerState, attributeAsset, classifyCallError } from '../soak/oracle-sampler.mjs';
+import {
+  sequencerState, attributeAsset, classifyCallError, SEL_STALE_ORACLE, SEL_NO_PENDING,
+} from '../soak/oracle-sampler.mjs';
 import { resolveAgentRunConfig, policyFor, EXECUTE_ENV_VAR } from '../soak/agent-policy.mjs';
 
 // ───────────────────────────── fixtures ─────────────────────────────
@@ -24,6 +26,16 @@ import { resolveAgentRunConfig, policyFor, EXECUTE_ENV_VAR } from '../soak/agent
 /** Real Base Sepolia basket assets, so a "subject is an address" test uses address-shaped data. */
 const WETH = '0x4200000000000000000000000000000000000006';
 const LINK = '0xE4aB69C077896252FAFBD49EFD26B5D171A32410';
+
+/** For the selector drift guard: viem and the compiled ABIs, both optional in a bare checkout. */
+const viem = await import('viem').catch(() => null);
+const OUT = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', 'contracts', 'out');
+const abiOf = (rel) => {
+  const p = path.join(OUT, rel);
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).abi ?? [] : [];
+};
+const ORACLE_ABI = abiOf('ChainlinkOracle.sol/ChainlinkOracle.json');
+const VAULT_ABI = abiOf('VaultCore.sol/VaultCore.json');
 
 const sample = (t, chainNow, over = {}) => ({
   t, chainNow,
@@ -200,6 +212,27 @@ const cfgWeth = (over = {}) => ({
 const round = (over = {}) => ({ ok: true, answer: '245833847163', updatedAt: 1_788_056_290, startedAt: 1_788_056_290, ...over });
 const NO_SEQ_CAUSE = { causeKey: null, cause: null };
 
+// ───────────────────── the pinned revert selectors ─────────────────────
+
+test('the pinned revert selectors are recomputed from the COMPILED ABIs, not trusted', () => {
+  // PR #89's lesson, applied to this file: an ABI constant validated only against itself is not
+  // validated. `SEL_NO_PENDING` decides whether a `cancelPending` revert is a freeze-safety
+  // VIOLATION or a benign "nothing to cancel", and `SEL_STALE_ORACLE` labels which revert froze the
+  // vault. A signature moving out from under either would silently reclassify real evidence.
+  // Skips when viem or the artifacts are absent, matching packages/canary/test/abis.test.mjs.
+  if (!viem || !ORACLE_ABI.length || !VAULT_ABI.length) {
+    console.log('# skipped: needs viem and `forge build` artifacts');
+    return;
+  }
+  const selectorOf = (sig) => viem.keccak256(viem.toBytes(sig)).slice(0, 10);
+  const errorsIn = (abi) => abi.filter((e) => e.type === 'error').map((e) => `${e.name}(${e.inputs.map((i) => i.type).join(',')})`);
+
+  assert.ok(errorsIn(ORACLE_ABI).includes('StaleOracle(address)'), 'ChainlinkOracle must still declare StaleOracle(address)');
+  assert.equal(SEL_STALE_ORACLE, selectorOf('StaleOracle(address)'));
+  assert.ok(errorsIn(VAULT_ABI).includes('NoPending()'), 'VaultCore must still declare NoPending()');
+  assert.equal(SEL_NO_PENDING, selectorOf('NoPending()'));
+});
+
 // ───────────────────── call-error classification ─────────────────────
 
 test('a revert is a contract verdict and a transport failure is not — they must never be conflated', () => {
@@ -369,6 +402,19 @@ test('the staleness bound is read from the ORACLE, and a disagreeing address boo
   assert.equal(s.WETH.staleBoundSec, 3600);
   assert.equal(s.WETH.staleBoundSource, 'feedOf.heartbeat');
   assert.equal(s.WETH.boundDriftSamples, 2);
+});
+
+test('a bound-less sample (a pinned leg) must not overwrite a real heartbeat with 0', () => {
+  // A pinned USDC leg has no feed, so `feedOf` returns the zero struct. Emitting its `heartbeat: 0`
+  // would report permanent bound drift AND clobber a real bound in the reduction — the same
+  // "helpfully substitute a value for a missing one" defect this whole rewrite is about.
+  const s = summarize([
+    liveSample('t1', 1),
+    liveSample('t2', 2, { asset: { staleBoundSec: null, staleBoundSource: null, boundDrift: false, ageSec: null } }),
+  ]);
+  assert.equal(s.WETH.staleBoundSec, 86_400, 'the real heartbeat must survive a bound-less sample');
+  assert.equal(s.WETH.staleBoundSource, 'feedOf.heartbeat');
+  assert.equal(s.WETH.boundDriftSamples, 0);
 });
 
 test('an UNREADABLE sample is scored as neither a breach nor health', () => {
