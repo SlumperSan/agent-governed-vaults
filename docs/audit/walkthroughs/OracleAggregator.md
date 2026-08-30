@@ -1,6 +1,15 @@
 # Walkthrough — OracleAggregator.sol
 
-**Risk: Critical (prices everything).** ~140 LoC. `contracts/src/OracleAggregator.sol`.
+**RETIRED (C-6) — no longer production source.** Moved to `contracts/test/retired/OracleAggregator.sol`;
+it is still compiled and still driven by the C-3/C-4/C-6 audit tests, but it is not deployable as
+protocol code and is out of the production scope. Assets are priced by
+`contracts/src/oracle/ChainlinkOracle.sol`; `Deploy.s.sol` refuses a real-chain deploy unless
+VaultFactory is constructed with a non-empty blessed-oracle allowlist, so this contract cannot be
+bound to a vault in production.
+
+Read on for the historical design; the risk weight below is the pre-retirement one.
+
+**Risk: Critical (prices everything).** ~140 LoC. Formerly `contracts/src/OracleAggregator.sol`.
 
 ## Purpose
 

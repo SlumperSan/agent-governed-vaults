@@ -1,7 +1,10 @@
 # Walkthrough — PythSource.sol
 
 **Risk: Medium-High (feeds the contract that prices everything).** ~60 non-comment LoC.
-`contracts/src/oracle/PythSource.sol`.
+
+**RETIRED (C-6) — no longer production source**, moved to `contracts/test/retired/PythSource.sol`
+(formerly `contracts/src/oracle/PythSource.sol`). It fed the retired `OracleAggregator`; nothing on
+the production path constructs it.
 
 > **NEW IN SPRINT 11 — POST-FREEZE.** Not part of `v0.2.0-audit`. Additive: implements the
 > existing `IPriceSource`, modifies nothing in the frozen tree. **Zero** internal adversarial
