@@ -25,7 +25,8 @@
  *
  * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
  *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
- *        chainId — Base mainnet 8453 or Base Sepolia 84532), CAST (default `cast`).
+ *        chainId — Base mainnet 8453 or Base Sepolia 84532; any other chainId must supply BASE_RPC
+ *        explicitly), CAST (default `cast`).
  *        The L2 sequencer feed is REQUIRED on every chain except local 31337 and Base Sepolia 84532,
  *        whose config leaves it empty by design (the guard is skipped there and mock-tested in
  *        ChainlinkOracle.t.sol). Same allowlist, same fail-closed default, as the on-chain rule in
@@ -44,11 +45,19 @@ const CFG_PATH_REL =
   process.env.CONFIG ?? process.argv.find((a) => a.endsWith('.json')) ?? 'contracts/config/base-mainnet.json';
 const CFG_PATH = path.isAbsolute(CFG_PATH_REL) ? CFG_PATH_REL : path.join(ROOT, CFG_PATH_REL);
 const CFG = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
-// RPC: explicit env wins; otherwise pick the public Base RPC for the config's chain.
-const RPC =
-  process.env.BASE_MAINNET_RPC ??
-  process.env.BASE_RPC ??
-  (CFG.chainId === 84532 ? 'https://sepolia.base.org' : 'https://mainnet.base.org');
+// RPC: explicit env wins; otherwise the public Base RPC for the config's chain. Only the two chains
+// this repo has configs for get a default: an UNRECOGNIZED chainId used to fall through to Base
+// mainnet, which would have read feed addresses off the wrong chain and reported the result as a
+// verification. Demand an explicit RPC instead (same fail-closed default as the sequencer rule below).
+const DEFAULT_RPC = {8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org'}[CFG.chainId];
+const RPC = process.env.BASE_MAINNET_RPC ?? process.env.BASE_RPC ?? DEFAULT_RPC;
+if (!RPC) {
+  console.error(
+    `verify-chainlink-oracle: no default RPC for chainId ${CFG.chainId} (${CFG_PATH_REL}). ` +
+      'Set BASE_RPC to an RPC for THAT chain — guessing one would verify feeds against the wrong chain.',
+  );
+  process.exit(1);
+}
 // Which chains may ship WITHOUT an L2 sequencer uptime feed: an ALLOWLIST of the ids known to have
 // none (local anvil; Base Sepolia, whose config leaves it empty by design), fail-closed for every
 // other id — this mirrors DeployChainlinkOracle.requiresSequencerUptimeFeed, which is the guard that

@@ -30,6 +30,15 @@ contract DeployTestnetTest is Test {
     string constant REFUSED =
         "DeployTestnet: allowed only on local 31337 or Base Sepolia 84532 - it enables sub-vaults (C-1); use Deploy.s.sol on any other chain";
 
+    /// @dev Pin the env entrypoint's config so a stray DEPLOY_CONFIG in a developer's shell cannot
+    /// redirect `test_testnetDeployWiresFullStack`'s `d.run()`. This is the suite's ONLY env write and
+    /// no test diverges from it — forge runs a suite's tests in parallel against process-global env,
+    /// so a single writer is race-free where a per-test one is not (the wrong-config test below passes
+    /// its config as an argument instead).
+    function setUp() public {
+        vm.setEnv("DEPLOY_CONFIG", "config/base-sepolia.json");
+    }
+
     function _mockFeed(address feed, int256 answer8dec) internal {
         vm.etch(feed, hex"00"); // mockCall requires code at the address
         vm.mockCall(feed, abi.encodeWithSignature("decimals()"), abi.encode(uint8(8)));
