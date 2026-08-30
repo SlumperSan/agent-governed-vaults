@@ -54,13 +54,39 @@ contract DeployTestnet is Script {
         uint256 maxPriceWad;
     }
 
-    uint256 constant BASE_MAINNET_CHAIN_ID = 8453; // this script enables sub-vaults (C-1) — never mainnet
+    // This script enables sub-vaults (C-1), so it may only ever run on a chain where that topology is
+    // acceptable: the local test chain, or the committed testnet. Everything else — Base mainnet, any
+    // OTHER L2's mainnet, an unrecognized/mis-pointed RPC — is refused.
+    uint256 constant LOCAL_CHAIN_ID = 31337; // anvil / forge test
+    uint256 constant BASE_SEPOLIA_CHAIN_ID = 84532; // config/base-sepolia.json
 
     error NoAssetsConfigured();
     error ChainIdMismatch(uint256 configured, uint256 actual);
 
+    /// @notice Env entrypoint: the config comes from DEPLOY_CONFIG (default config/base-sepolia.json).
     function run()
         external
+        returns (
+            OperatorRegistry registry,
+            SubVaultRegistry subReg,
+            FeeEngine feeEngine,
+            Governance governance,
+            VaultDeployer vaultDeployer,
+            VaultFactory factory,
+            ChainlinkOracle oracle,
+            AggregationRouterAdapter routerAdapter
+        )
+    {
+        return runWithConfig(vm.envOr("DEPLOY_CONFIG", string("config/base-sepolia.json")));
+    }
+
+    /// @notice Same bring-up with the config path passed explicitly (`--sig "runWithConfig(string)"`).
+    /// Both guards live on THIS function, so neither entrypoint has an unguarded path. (The tests
+    /// drive this one: forge runs a suite's test functions in PARALLEL and env vars are process-global,
+    /// so a test exporting a different DEPLOY_CONFIG than its neighbours would be flaky by
+    /// construction.)
+    function runWithConfig(string memory cfgPath)
+        public
         returns (
             OperatorRegistry registry,
             SubVaultRegistry subReg,
@@ -76,18 +102,27 @@ contract DeployTestnet is Script {
         // need it) — the exact C-1 topology mainnet must NOT ship. base-mainnet.json declares chainId
         // 8453 and parses cleanly here, so `DEPLOY_CONFIG=config/base-mainnet.json ... --rpc-url
         // <base-mainnet>` would otherwise pass the config-vs-RPC check below (8453==8453) and stand up
-        // an IMMUTABLE mainnet factory with sub-vaults enabled. Refuse Base mainnet outright, before
-        // anything else — the mainnet path is Deploy.s.sol (root-only).
+        // an IMMUTABLE mainnet factory with sub-vaults enabled. So refuse, before anything else — the
+        // real-chain path is Deploy.s.sol (root-only).
+        //
+        // L2-GENERIC and FAIL-CLOSED (hardened 2026-08-29): this was a DENYLIST of one id
+        // (`block.chainid != 8453`), which left every OTHER real chain permitted — Optimism, Arbitrum
+        // or any future L2 mainnet would have accepted a sub-vault-enabled immutable factory just as
+        // silently as Base mainnet would have. It is now an ALLOWLIST, so an unrecognized chain id is
+        // refused by default. A new testnet is added here in a reviewed change; the config-vs-RPC
+        // check below still has to agree, so the allowlist widens the *chain*, never the config.
         require(
-            block.chainid != BASE_MAINNET_CHAIN_ID,
-            "DeployTestnet refuses Base mainnet: it enables sub-vaults (C-1) - use Deploy.s.sol"
+            block.chainid == LOCAL_CHAIN_ID || block.chainid == BASE_SEPOLIA_CHAIN_ID,
+            "DeployTestnet: allowed only on local 31337 or Base Sepolia 84532 - it enables sub-vaults (C-1); use Deploy.s.sol on any other chain"
         );
 
-        string memory cfgPath = vm.envOr("DEPLOY_CONFIG", string("config/base-sepolia.json"));
         string memory json = vm.readFile(cfgPath);
 
         uint256 cfgChain = vm.parseJsonUint(json, ".chainId");
-        require(block.chainid == cfgChain || block.chainid == 31337, ChainIdMismatch(cfgChain, block.chainid));
+        require(
+            block.chainid == cfgChain || block.chainid == LOCAL_CHAIN_ID,
+            ChainIdMismatch(cfgChain, block.chainid)
+        );
 
         address router = vm.parseJsonAddress(json, ".router");
         string[] memory routerSigs = vm.parseJsonStringArray(json, ".routerAllowedSignatures");
