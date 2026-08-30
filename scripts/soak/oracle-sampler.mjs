@@ -399,10 +399,13 @@ function sample(env) {
       listed: !/^0x0{40}$/i.test(cfg.feed),
       feed: cfg.feed,
       // The bound is the CONTRACT's heartbeat, read on-chain, not the address book's global.
-      staleBoundSec: cfg.heartbeat,
-      staleBoundSource: 'feedOf.heartbeat',
+      // A PINNED asset has no feed and therefore no bound: `feedOf` returns the zero struct, and
+      // emitting its `heartbeat: 0` would both report permanent bound drift and overwrite a real
+      // heartbeat in the reduction. Absent is the honest value, not zero.
+      staleBoundSec: pinned ? null : cfg.heartbeat,
+      staleBoundSource: pinned ? null : 'feedOf.heartbeat',
       configMaxStalenessSeconds: dep.maxStalenessSeconds,
-      boundDrift: dep.maxStalenessSeconds > 0 && dep.maxStalenessSeconds !== cfg.heartbeat,
+      boundDrift: !pinned && dep.maxStalenessSeconds > 0 && dep.maxStalenessSeconds !== cfg.heartbeat,
       feedUpdatedAt: at.detail.updatedAtSec ?? null,
       ageSec: at.ageSec,
       ageFractionOfBound: at.ageSec != null && cfg.heartbeat > 0 ? +(at.ageSec / cfg.heartbeat).toFixed(6) : null,
