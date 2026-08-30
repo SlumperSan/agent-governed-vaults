@@ -20,8 +20,9 @@ interface IERC20Metadata {
 }
 
 /// @title VaultCore — shares, NAV, deposits, redemptions, capacity (Sprint 1)
-/// @notice Agent-governed index vault. Settlement asset USDC; basket priced by a multi-source
-/// median oracle. NOT ERC-4626 (commitment C-1): in-kind redemption, forward pricing and swing
+/// @notice Agent-governed index vault. Settlement asset USDC; basket priced by an immutable
+/// {IOracleAggregator} — at launch {ChainlinkOracle}, one genuine Chainlink Data Feed per asset.
+/// NOT ERC-4626 (commitment C-1): in-kind redemption, forward pricing and swing
 /// pricing break preview round-trips; 4626-shaped views are indicative only.
 ///
 /// Sprint 1 scope: deposit with 4-hour observation window, two-mode redemption settlement
@@ -200,7 +201,8 @@ contract VaultCore {
     /// @param operatorRegistry_ canonical registry for (member, operator) marks (C-3)
     /// @param governance_ governance module consulted for the Mode-I/Mode-F exit switch
     /// @param feeEngine_ performance-fee module called at redemption settlement
-    /// @param oracle_ multi-source median price oracle (staleness breaker freezes NAV paths)
+    /// @param oracle_ price oracle, immutable for the vault's life; fail-closed, so a stale or
+    /// untrustworthy read reverts and freezes every NAV path
     /// @param capacityCapUsdc_ max NAV in USDC units; 0 opts out of the cap (SF-3)
     /// @param minDepositUsdc_ minimum deposit, must be nonzero (dust/rounding defense)
     /// @param exitFeeMaxBps_ tenure-decayed exit fee ceiling, ≤ EXIT_FEE_CAP_BPS (1%)

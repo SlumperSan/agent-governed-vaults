@@ -6,11 +6,11 @@ lifecycle. Everything chain-specific lives in the committed
 [`contracts/config/base-sepolia.json`](../contracts/config/base-sepolia.json). Once the addresses
 exist, [RUNTIME.md](RUNTIME.md) takes over: point the indexer and API at them and the stack is live.
 
-> ⛔ **Do not start yet (v0.1.0-rc1).** `VaultFactory` exceeds the EIP-170 runtime size cap
-> (27,241 / 24,576 bytes), so the deploy command in §3 reverts before any vault exists — you would
-> burn faucet funds for nothing. See
-> [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10); everything else in
-> this checklist is verified and stays valid once the factory fits.
+> ✅ **Cleared, and already run.** The `VaultFactory` EIP-170 blocker
+> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)) was fixed in
+> Sprint 7 — the factory now has roughly 21 kB of margin. This path has since been executed
+> against Base Sepolia: see [TESTNET-REPORT.md](TESTNET-REPORT.md) and the verified address book
+> at [`contracts/config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json).
 
 ## 1. What you need
 
@@ -58,10 +58,13 @@ This deploys, in one broadcast:
    `Governance`, `VaultDeployer`, `VaultFactory`) with their **irreversible** one-shot wiring —
    identical to `Deploy.s.sol`. `VaultDeployer` precedes the factory, which pins it immutably
    (#10); it takes no arguments and needs no wiring;
-2. three `ChainlinkSourceAdapter` instances per basket asset (WETH, LINK) over the verified
-   Chainlink feeds below;
-3. one `OracleAggregator` (3 sources per asset, 2-of-3 quorum, `maxStaleness = 1 day`);
-4. one `AggregationRouterAdapter` pinned to Uniswap SwapRouter02 with only
+2. one **`ChainlinkOracle`** — the C-6 launch oracle — built from the committed
+   `chainlinkOracle` block of
+   [`base-sepolia.json`](../contracts/config/base-sepolia.json): **one genuine Chainlink Data Feed
+   per basket asset** (WETH via ETH/USD, LINK via LINK/USD), USDC pinned to $1.00, plus per-feed
+   heartbeats and sane-price bounds. It is deployed **first**, so its address can seed the
+   factory's oracle allowlist — which means the run exercises the C-6 curation gate too;
+3. one `AggregationRouterAdapter` pinned to Uniswap SwapRouter02 with only
    `exactInputSingle`/`exactInput` selectors allow-listed.
 
 Addresses are printed at the end and recorded in
@@ -80,14 +83,16 @@ later (§5).
 | Chainlink LINK/USD | `0xb113F5A928BCfF189C998ab20d753a47F9dE5A61` | proxy, 8 decimals |
 | Uniswap SwapRouter02 | `0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4` | pinned router for the execution adapter |
 
-> **Testnet oracle compromise (deliberate, documented).** The `OracleAggregator` constructor
-> enforces ≥3 sources with a strict-majority quorum, but Base Sepolia has exactly **one**
-> Chainlink feed per pair. The config therefore lists the same feed three times, deploying
-> three distinct adapter instances over it (2-of-3 quorum). This exercises every code path but
-> is **not** SF-1 mechanism diversity — a mainnet config must list ≥3 genuinely independent
-> sources (Chainlink push + TWAP + pull-oracle class). Likewise `maxStaleness` sits at the
-> 1-day ceiling because testnet feeds only heartbeat on deviation or ~24h; mainnet wants
-> minutes (DEPLOYMENT.md §2).
+> **Two deliberate testnet asymmetries, both documented in the config itself.**
+> (1) **No sequencer uptime feed.** `chainlinkOracle.sequencerUptimeFeed` is intentionally empty
+> on Base Sepolia — `ChainlinkOracle` skips the sequencer guard when it is `address(0)`. The guard
+> is exercised instead by `ChainlinkOracle.t.sol` against a mock (down / within-grace / up) and by
+> `ChainlinkOracleSequencerFork.t.sol` against the **real Base mainnet uptime feed**. Mainnet
+> **must** set it. (2) **A generous 86,400 s heartbeat**, because testnet feeds only update on a
+> deviation or roughly daily; mainnet wants minutes (DEPLOYMENT.md §1). Both are recorded in
+> [`base-sepolia.json`](../contracts/config/base-sepolia.json), which was re-verified live on
+> 2026-08-29. Note what is **not** an asymmetry any more: there is no multi-source quorum to fake,
+> because the launch oracle reads one genuine feed per asset.
 
 ## 4. Smoke test (one command)
 
@@ -135,7 +140,7 @@ cd contracts && forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url 
 Manual fallback for a single contract (constructor args from the broadcast JSON):
 
 ```bash
-forge verify-contract --chain 84532 <address> src/OracleAggregator.sol:OracleAggregator --watch
+forge verify-contract --chain 84532 <address> src/oracle/ChainlinkOracle.sol:ChainlinkOracle --watch
 ```
 
 Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address shows a green
@@ -147,8 +152,9 @@ Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address
 - **RPC 503 / “no backend healthy”** — the default `sepolia.base.org` endpoint is flaky; use
   publicnode (§2) or a provider key. The smoke runner is resumable, so a mid-run RPC outage
   costs nothing: re-run the same command.
-- **`StaleOracle` warning in preflight** — a testnet feed idled past 24 h. The breaker is
-  working as designed (K-4). The no-op lifecycle never prices a non-zero basket balance, so
+- **`StaleOracle` warning in preflight** — the asset's single Chainlink feed idled past its
+  configured heartbeat (86,400 s on this testnet). The breaker is working as designed (K-4), and
+  with one feed per asset there is no second source to fall back to. The no-op lifecycle never prices a non-zero basket balance, so
   the run continues; the warning is still worth noting in the run record.
 - **`ChainIdMismatch` on deploy** — your `--rpc-url` points at the wrong chain. Nothing was
   sent.
@@ -163,6 +169,7 @@ Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address
   (DEPLOYMENT.md §5) and replay from the deploy block.
 - Keep `scripts/.smoke-state.json` (or its tx hashes) as the run record for the mainnet-gate
   paper trail (DEPLOYMENT.md §7).
-- The remaining §4 runbook checks that need >1 member — oracle breaker trip below quorum and a
-  Mode-F exit settling at post-execution NAV — require a second funded key against the same
+- The remaining §4 runbook checks that need >1 member — an oracle breaker trip (now: a feed past
+  its heartbeat, a price outside the sane band, or the sequencer guard — not a quorum shortfall)
+  and a Mode-F exit settling at post-execution NAV — require a second funded key against the same
   deployment.

@@ -16,10 +16,19 @@
  *  - `minConsecutive` (carried on a result's `detail`) requires N consecutive same-status
  *    observations before a transition is emitted. Used by share-conservation when it cannot pin
  *    its chain read to the indexer's height, where a one-poll mismatch is ordinary lag.
+ *  - `detectorBroken` (also on `detail`) is the ONE exception to "report a standing problem once".
+ *    A broken DETECTOR is re-asserted on a doubling backoff -- sweeps 1, 2, 4, 8, ... then every 64
+ *    -- with the consecutive-sweep count in the line, so it escalates instead of scrolling away.
+ *    See `detectorBroken()` in signal.mjs for why this one case earns the noise: report-once is
+ *    correct for a problem in the SYSTEM, because someone is already looking at it; it is exactly
+ *    wrong for a problem in the MONITOR, because a monitor nobody knows is dead manufactures
+ *    confidence. The pre-C-6 oracle signal degraded once at startup and then said nothing for the
+ *    rest of the deployment's life. This rule is what makes that impossible.
  */
 
 /**
- * @typedef {{status:'ok'|'alert'|'skipped', since:number, pendingStatus:string|null, pendingCount:number}} TrackedState
+ * @typedef {{status:'ok'|'alert'|'skipped', since:number, pendingStatus:string|null, pendingCount:number,
+ *            brokenPolls?:number, brokenNext?:number}} TrackedState
  * @typedef {Object} Transition
  * @property {string} id
  * @property {string} signal
@@ -28,6 +37,7 @@
  * @property {'ok'|'alert'|'skipped'} from
  * @property {'ok'|'alert'|'skipped'} to
  * @property {string} line       the operator-facing one-liner
+ * @property {number} [repeat]   consecutive sweeps a broken detector has been blind (re-assertions only)
  * @property {import('./signal.mjs').SignalResult} result
  */
 
@@ -35,14 +45,36 @@
 const MARK = { alert: 'ALERT', ok: 'RECOVERED', skipped: 'DEGRADED' };
 
 /**
+ * Re-assert a broken detector on a doubling backoff, then at a fixed cadence: sweeps 1, 2, 4, 8,
+ * 16, 32, 64, 128, 192, 256... Doubling keeps a transient RPC blip from producing a burst, and the
+ * cap stops the interval from growing until the reminder is useless -- at the default 30s cadence
+ * the steady state is one line every ~32 minutes, which is a reminder rather than a pager storm.
+ */
+const BROKEN_REPEAT_CAP = 64;
+const nextBrokenReport = (n) => (n >= BROKEN_REPEAT_CAP ? n + BROKEN_REPEAT_CAP : n * 2);
+
+/**
+ * A broken DETECTOR is marked differently from a DEGRADED check on purpose. "DEGRADED" reads as
+ * "this vault is in a state the check cannot measure"; "DETECTOR BROKEN" reads as "you are not
+ * being monitored", which is the thing an operator must never mistake for silence-means-healthy.
+ */
+function markFor(to, r, repeat) {
+  if (r?.detail?.detectorBroken) {
+    return repeat > 0 ? `DETECTOR BROKEN (still blind after ${repeat} consecutive sweeps)` : 'DETECTOR BROKEN';
+  }
+  return MARK[to] ?? to.toUpperCase();
+}
+
+/**
  * Format one transition line. Every alert line carries vault, signal, and measured-vs-threshold,
  * so it is actionable without opening a dashboard.
  * @param {'ok'|'alert'|'skipped'} to
  * @param {import('./signal.mjs').SignalResult} r
  * @param {string} [timestamp] ISO time; the runner supplies it so this stays clock-free
+ * @param {number} [repeat] consecutive sweeps a broken detector has been blind; 0 on a transition
  */
-export function formatLine(to, r, timestamp) {
-  const bits = [timestamp, MARK[to] ?? to.toUpperCase(), `[${r.signal}]`, r.message];
+export function formatLine(to, r, timestamp, repeat = 0) {
+  const bits = [timestamp, markFor(to, r, repeat), `[${r.signal}]`, r.message];
   const mt = r.measured != null && r.threshold != null ? `(measured ${r.measured}, threshold ${r.threshold})` : null;
   return [...bits.filter(Boolean), mt].filter(Boolean).join(' ');
 }
@@ -65,25 +97,46 @@ export function createTransitionTracker({ initial = {} } = {}) {
     /** @type {Transition[]} */
     const out = [];
 
+    /** Build one transition record. `repeat` > 0 marks a broken-detector re-assertion. */
+    const emit = (r, from, repeat = 0) => ({
+      id: r.id, signal: r.signal, vault: r.vault, key: r.key,
+      from, to: r.status, line: formatLine(r.status, r, timestamp, repeat), result: r,
+      ...(repeat > 0 ? { repeat } : {}),
+    });
+
     for (const r of results) {
       const need = Math.max(1, Number(r.detail?.minConsecutive ?? 1));
+      // A detector only counts as blind while it is also not-OK; a signal that recovers stops
+      // escalating even if the flag is somehow still set on the result.
+      const blind = r.detail?.detectorBroken === true && r.status !== 'ok';
       const prev = states.get(r.id);
 
       if (!prev) {
         // First sighting. Record it; announce only if it is already wrong.
-        states.set(r.id, { status: r.status, since: poll, pendingStatus: null, pendingCount: 0 });
-        if (r.status !== 'ok') {
-          out.push({
-            id: r.id, signal: r.signal, vault: r.vault, key: r.key,
-            from: 'ok', to: r.status, line: formatLine(r.status, r, timestamp), result: r,
-          });
-        }
+        states.set(r.id, {
+          status: r.status, since: poll, pendingStatus: null, pendingCount: 0,
+          brokenPolls: blind ? 1 : 0, brokenNext: blind ? 2 : 0,
+        });
+        if (r.status !== 'ok') out.push(emit(r, 'ok'));
         continue;
       }
 
       if (r.status === prev.status) {
         prev.pendingStatus = null;
         prev.pendingCount = 0;
+        if (!blind) {
+          prev.brokenPolls = 0;
+          prev.brokenNext = 0;
+          continue;
+        }
+        // Still blind. Count the sweep and re-assert when the backoff falls due. A state file
+        // written before these fields existed restores them as 0, so a restart re-asserts within
+        // two sweeps rather than inheriting silence.
+        prev.brokenPolls = (prev.brokenPolls ?? 0) + 1;
+        if (prev.brokenPolls >= (prev.brokenNext || 2)) {
+          prev.brokenNext = nextBrokenReport(prev.brokenPolls);
+          out.push(emit(r, prev.status, prev.brokenPolls));
+        }
         continue;
       }
 
@@ -97,10 +150,9 @@ export function createTransitionTracker({ initial = {} } = {}) {
       prev.since = poll;
       prev.pendingStatus = null;
       prev.pendingCount = 0;
-      out.push({
-        id: r.id, signal: r.signal, vault: r.vault, key: r.key,
-        from, to: r.status, line: formatLine(r.status, r, timestamp), result: r,
-      });
+      prev.brokenPolls = blind ? 1 : 0;
+      prev.brokenNext = blind ? 2 : 0;
+      out.push(emit(r, from));
     }
 
     return out;

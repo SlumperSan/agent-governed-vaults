@@ -29,11 +29,14 @@ trust.
 - **MO-2** — "malformed transfers degrade to escrow, never revert" — **partially falsified** (M-11;
   returndata bounding covers `tryTransfer` only, one of four call shapes).
 - **SF-1** — "multi-source median; no single source can move an asset" — **NOT UPHELD** (M-1
-  independence unenforced; H-1 median fails at the documented quorum). Now **quantified by C-6**: the
+  independence unenforced; H-1 median fails at the documented quorum). Then **quantified by C-6**: the
   "5 sources / quorum 3" prescription is a fault-tolerance floor, silent on the Byzantine floor
-  `quorum ≥ 2a+1`; the cheapest adversary is the creator listing two sources they control. Resolution
-  under evaluation: consume Chainlink Data Feeds directly (Byzantine-tolerant at the node-operator
-  layer).
+  `quorum ≥ 2a+1`; the cheapest adversary is the creator listing two sources they control.
+  **RESOLVED — the commitment was retired, not repaired.** Chainlink Data Feeds are now consumed
+  directly (Byzantine-tolerant at the node-operator layer), so there is no median and no quorum to
+  uphold; the multi-source aggregator lives at `contracts/test/retired/` and is non-selectable. The
+  commitment that replaces SF-1 is threat-model row **SF-6**, whose named residual is
+  single-provider dependency.
 - **PX-1** — "in-kind escrow keeps non-USDC assets exitable" — **partially false** (M-2; the reverting
   USDC leg takes the whole settlement down).
 

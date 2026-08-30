@@ -27,6 +27,18 @@ contract DeployTestnetTest is Test {
     address constant LINK_USD_FEED = 0xb113F5A928BCfF189C998ab20d753a47F9dE5A61;
     address constant ROUTER = 0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4;
 
+    string constant REFUSED =
+        "DeployTestnet: allowed only on local 31337 or Base Sepolia 84532 - it enables sub-vaults (C-1); use Deploy.s.sol on any other chain";
+
+    /// @dev Pin the env entrypoint's config so a stray DEPLOY_CONFIG in a developer's shell cannot
+    /// redirect `test_testnetDeployWiresFullStack`'s `d.run()`. This is the suite's ONLY env write and
+    /// no test diverges from it — forge runs a suite's tests in parallel against process-global env,
+    /// so a single writer is race-free where a per-test one is not (the wrong-config test below passes
+    /// its config as an argument instead).
+    function setUp() public {
+        vm.setEnv("DEPLOY_CONFIG", "config/base-sepolia.json");
+    }
+
     /// @param description_ the feed's own `description()`. ChainlinkOracle proves the quote leg is
     /// USD from this string at construction, so the mock must report exactly what the real Base
     /// Sepolia proxy reports — the strings recorded in config/base-sepolia.json
@@ -110,13 +122,19 @@ contract DeployTestnetTest is Test {
         );
     }
 
+    /// @notice The config-vs-RPC check still bites INSIDE the permitted chain set: an operator on Base
+    /// Sepolia who grabs the mainnet config clears the chain allowlist and is then stopped by the
+    /// chainId the config itself declares. (The config path is passed as an argument rather than
+    /// exported as DEPLOY_CONFIG: forge runs a suite's tests in parallel against process-global env,
+    /// so exporting a config only this test wants would flake the tests around it.)
     function test_testnetDeployRevertsOnWrongChain() public {
         _mockFeed(ETH_USD_FEED, 1917e8, "ETH / USD");
         _mockFeed(LINK_USD_FEED, 975e6, "LINK / USD");
-        vm.chainId(999); // a non-mainnet chain whose id does not match the base-sepolia config (84532)
+        vm.chainId(84532); // an ALLOWED chain, so the allowlist guard passes and the config
+        // mismatch below is what actually stops the deploy
         DeployTestnet d = new DeployTestnet();
-        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 84532, 999));
-        d.run();
+        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 8453, 84532));
+        d.runWithConfig("config/base-mainnet.json"); // the MAINNET config on the testnet chain
     }
 
     /// @notice This testnet script hardcodes allowSubVaults=true; on Base MAINNET that is the C-1
@@ -126,9 +144,26 @@ contract DeployTestnetTest is Test {
     function test_refusesBaseMainnet() public {
         vm.chainId(8453); // Base mainnet
         DeployTestnet d = new DeployTestnet();
-        vm.expectRevert(
-            bytes("DeployTestnet refuses Base mainnet: it enables sub-vaults (C-1) - use Deploy.s.sol")
-        );
+        vm.expectRevert(bytes(REFUSED));
+        d.run();
+    }
+
+    /// @notice L2-GENERIC: the guard is an ALLOWLIST (local 31337 / Base Sepolia 84532), not a
+    /// denylist of Base mainnet. Optimism mainnet — and every other L2 mainnet — is refused the same
+    /// way, so no other chain can take the sub-vault-enabled immutable factory Base mainnet cannot.
+    function test_refusesOtherL2Mainnet() public {
+        vm.chainId(10); // Optimism mainnet: not 8453, and previously waved straight through
+        DeployTestnet d = new DeployTestnet();
+        vm.expectRevert(bytes(REFUSED));
+        d.run();
+    }
+
+    /// @notice An unrecognized chain id (a mis-pointed RPC) fails closed rather than being permitted
+    /// by default. Under the old denylist this reached the config parse and could have proceeded.
+    function test_refusesUnknownChain() public {
+        vm.chainId(424_242);
+        DeployTestnet d = new DeployTestnet();
+        vm.expectRevert(bytes(REFUSED));
         d.run();
     }
 }

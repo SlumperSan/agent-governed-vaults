@@ -1,12 +1,14 @@
 # Walkthrough — UniswapV3TwapSource.sol
 
 **Risk: High (feeds the contract that prices everything).** ~200 LoC incl. NatSpec + two
-vendored math libraries.
+vendored math libraries. `contracts/test/retired/UniswapV3TwapSource.sol`,
+`contracts/test/retired/vendor/{TickMath,FullMath}.sol` (both were under `contracts/src/oracle/`).
 
-**RETIRED (C-6) — no longer production source**, moved to
-`contracts/test/retired/UniswapV3TwapSource.sol` and `contracts/test/retired/vendor/{TickMath,FullMath}.sol`
-(formerly `contracts/src/oracle/UniswapV3TwapSource.sol` and `contracts/src/oracle/vendor/`). It fed
-the retired `OracleAggregator`; nothing on the production path constructs it.
+> **⚠ RETIRED — NOT THE LAUNCH ORACLE (marked 2026-08-30).** Critical **C-6** replaced this design
+> with `contracts/src/oracle/ChainlinkOracle.sol` (one genuine Chainlink Data Feed per asset, no
+> median, no quorum). The source now lives under **`contracts/test/retired/`** and is
+> non-selectable through the `VaultFactory` oracle allowlist. This walkthrough is kept as the
+> C-4/C-6 evidence record — scope it only if you are reviewing that finding.
 
 > **NEW IN SPRINT 11 — POST-FREEZE.** This contract is **not** part of `v0.2.0-audit`. It is
 > additive: it implements the existing `IPriceSource` and modifies nothing inside the frozen

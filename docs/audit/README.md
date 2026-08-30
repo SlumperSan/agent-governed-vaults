@@ -1,5 +1,26 @@
 # External Audit Package — Reviewer Entry Point
 
+> ## ⚠ SCOPE HAS MOVED SINCE THIS PACKAGE WAS WRITTEN — read before you scope anything
+>
+> This package was assembled at the **Sprint-10 audit freeze**, before Critical **C-6**. It is kept
+> as the reviewer-facing evidence record and is deliberately **not** rewritten to match the current
+> tree. Two things it says are no longer true of what ships:
+>
+> 1. **The oracle was REPLACED, not patched.** The launch oracle is
+>    `contracts/src/oracle/ChainlinkOracle.sol` — **one genuine Chainlink Data Feed per asset**, no
+>    median, no quorum, no per-vault source set — curated by a `VaultFactory` oracle allowlist.
+>    C-6 showed the bespoke median could not be secured by curation. **This is the single most
+>    important delta for any reviewer.**
+> 2. **`OracleAggregator`, `PythSource`, `UniswapV3TwapSource` and the vendored
+>    `FullMath`/`TickMath` are no longer in `contracts/src/`.** They live under
+>    **`contracts/test/retired/`**, kept solely as the C-4/C-6 exploit evidence. They are not
+>    deployable and are non-selectable through the factory allowlist. Their walkthroughs below
+>    describe retired code.
+>
+> For current scope start at [../AUDIT-HANDOFF.md](../AUDIT-HANDOFF.md) and
+> [../LAUNCH-READINESS.md](../LAUNCH-READINESS.md); the finding itself is
+> [AI-AUDIT-REPORT.md](AI-AUDIT-REPORT.md) C-6.
+
 You are auditing an **immutable** protocol: no proxies, no upgrade path, no admin able to
 re-point anything after deployment. What ships is final; the audit surface is the deployed
 bytecode. This document gets a reviewer with zero context productive within an hour.
@@ -10,9 +31,12 @@ Permissionless vaults in which AI agents pool USDC into spot crypto index basket
 rebalances by stake-weighted commit-reveal vote. Members enter through a 4-hour observation
 window, exit in-kind (pro-rata slices of every basket asset) under a two-mode settlement rule
 that closes the exit-before-rebalance free option, and pay a 10% performance fee on realized
-profit netted against a cross-vault per-(member, operator) loss carryforward. Pricing is a
-multi-source median oracle with a staleness circuit breaker that — deliberately — freezes
-everything, including exits, when tripped. The protocol *supports* child vaults (depth ≤ 3) with
+profit netted against a cross-vault per-(member, operator) loss carryforward. Pricing is
+**one genuine Chainlink Data Feed per asset** (`ChainlinkOracle`, guarded by an L2 sequencer uptime
+gate, a per-feed heartbeat and a sane-price band) that fails **closed** — deliberately freezing
+everything, including exits, when it cannot produce a trustworthy price. *(This sentence originally
+read "a multi-source median oracle with a staleness circuit breaker"; see the banner — that design
+is retired.)* The protocol *supports* child vaults (depth ≤ 3) with
 recursive look-through NAV, but **sub-vaults are DISABLED at launch** (`VaultFactory` deployed with
 `allowSubVaults = false`) as the Critical **C-1** remediation ("root vaults only") — the sub-vault
 code is present and in scope, but no deployed vault can create or fund a child, so review it as
@@ -46,10 +70,10 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**;
   adversarially reviewed in Sprint 10 (see §6)
 
-**Outside the `v0.2.0-audit` freeze** — added in Sprint 11, additive `IPriceSource`
-implementations that modify nothing in the frozen tree, with **zero** internal review passes
-(see [../CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) §5). Audit them only if your
-engagement scope was extended past the tag:
+**RETIRED — do not scope these unless you are reviewing the C-4/C-6 evidence.** Added in Sprint 11
+as additive `IPriceSource` implementations, outside the `v0.2.0-audit` freeze and with **zero**
+internal review passes (see [../CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) §5). They now
+live under `contracts/test/retired/` and no deployed vault can use them:
 
 - [walkthroughs/UniswapV3TwapSource.md](walkthroughs/UniswapV3TwapSource.md) — spot-market TWAP
   source, plus two vendored Uniswap math libraries under their own licenses.

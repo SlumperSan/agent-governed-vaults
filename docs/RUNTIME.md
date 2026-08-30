@@ -242,7 +242,9 @@ when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `ST
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence; named apart from the indexer's `POLL_INTERVAL_MS` |
 | `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
-| `ORACLE_MIN_MARGIN` | | `0` | alert when fresh sources minus quorum <= this |
+| `ORACLE_MIN_MARGIN` | | `0` | retired-oracle deployments only — alert when fresh sources minus quorum <= this |
+| `ORACLE_FEED_CADENCE_SECONDS` | | — | `ChainlinkOracle` only — `addr:seconds` feed cadences that drive the derived early-warning bar (docs/CANARY.md §3a) |
+| `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | `ChainlinkOracle` only — manual override of that bar; unset lets it derive from the cadence above |
 | `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2) |
 | `SNAPSHOT_BACKUPS` / `SNAPSHOT_BACKUP_INTERVAL_MS` | | `3` / `300000` | backup ring for the canary state file too (§8.3) |
 | `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `canary.heartbeat.json` is written (§8.2) |

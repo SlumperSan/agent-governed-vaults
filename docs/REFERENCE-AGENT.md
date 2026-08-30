@@ -354,7 +354,7 @@ The contracts are not deployed — [issue #10](https://github.com/SlumperSan/age
 
 `navPerShareWad()` reverts with `StaleOracle` when a basket price is stale, so a failed NAV read
 means the vault is **already frozen** — at which point exits are frozen too (ARCHITECTURE §11) and
-`requestExit` will revert as well. `OracleAggregator` exposes no per-source timestamp, so a genuine
+`requestExit` will revert as well. The oracle exposes no per-asset freshness view, so a genuine
 early warning is not readable on-chain. The trigger is worth keeping — breakers can clear, and an
 agent that queues its exit the moment it notices is ahead of one that waits — but it is detection
 after the fact, not prevention. Do not read "oracle-freeze warning" as protection against being

@@ -1,8 +1,11 @@
 # ChainlinkOracle
 
-The **NEW additive** price oracle: one Chainlink AggregatorV3 feed per asset, `IOracleAggregator`,
-immutable config, fail-closed. A VaultCore can be deployed with this **instead of** the bespoke
-[[oracleaggregator]] median. `contracts/src/oracle/ChainlinkOracle.sol`.
+**THE launch price oracle**: one genuine Chainlink AggregatorV3 Data Feed per asset,
+`IOracleAggregator`, immutable config, fail-closed. It **replaced** the bespoke
+[[oracleaggregator]] median — which is retired to `contracts/test/retired/` and made
+non-selectable by the [[vaultfactory]] oracle allowlist. At launch: WETH via ETH/USD, cbBTC via
+BTC/USD, USDC pinned to $1.00, and **no cbETH** (Base publishes no cbETH/USD feed).
+`contracts/src/oracle/ChainlinkOracle.sol`.
 
 ## Why it matters
 

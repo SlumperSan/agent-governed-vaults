@@ -168,6 +168,8 @@
         "feedDescriptionOnChainNote": "The EXACT string the proxy returns from description(). Machine-compared by scripts/verify-chainlink-oracle.mjs (equality, not a substring) so a plausible-but-wrong feed - right pair, wrong deployment - fails before deploy. ChainlinkOracle enforces the weaker on-chain invariant that it ends in a USD quote leg.",
         "heartbeatSeconds": 3600,
         "heartbeatNote": "The feed's own heartbeat is 1200s; 3600 is the ChainlinkOracle staleness bound (heartbeat + generous L2 buffer, so a healthy 1200s feed never false-trips while a >1h-frozen feed fails closed).",
+        "feedCadenceSeconds": 1200,
+        "feedCadenceSecondsNote": "The MACHINE-READABLE form of the '1200s' figure in heartbeatNote above — not read by any contract (no oracle exposes its own cadence on-chain; it is Chainlink's off-chain publishing config). Copy this into the canary's ORACLE_FEED_CADENCE_SECONDS env var (docs/CANARY.md §3a) to drive its derived pre-trip early-warning bar; an asset left out of that env var simply gets no derived warning.",
         "minPriceWad": "100000000000000000000",
         "maxPriceWad": "100000000000000000000000",
         "bandNote": "sane-price band $100 .. $100,000 (WAD). ETH ~ $2,440 at verification — comfortably inside. The band is the depeg/clamp defence, not a tight collar."
@@ -180,6 +182,8 @@
         "feedDescriptionOnChain": "BTC / USD",
         "heartbeatSeconds": 3600,
         "heartbeatNote": "Feed heartbeat 1200s; 3600 staleness bound (heartbeat + L2 buffer).",
+        "feedCadenceSeconds": 1200,
+        "feedCadenceSecondsNote": "See WETH's feedCadenceSecondsNote — same mechanism, same 1200s cadence.",
         "minPriceWad": "1000000000000000000000",
         "maxPriceWad": "1000000000000000000000000",
         "bandNote": "sane-price band $1,000 .. $1,000,000 (WAD). BTC ~ $77,700 at verification — inside. Coinbase Wrapped BTC (cbBTC, 8 dp) on Base."
@@ -194,6 +198,7 @@
       "For each asset: a sane-price band MUST be set — minPriceWad > 0 and maxPriceWad >= minPriceWad (the depeg-clamp defence; 0/0 is rejected by the verifier for mainnet).",
       "sequencerUptimeFeed: code.length > 0 and latestRoundData() answers.",
       "USDC not also present in assets[].",
+      "Heartbeat and band are BOUNDED ON-CHAIN by the ChainlinkOracle constructor: heartbeatSeconds in [600, 86400]; an enabled band needs minPriceWad > 0, maxPriceWad > minPriceWad, maxPriceWad <= 1000 * minPriceWad, and it must contain the feed's current answer. Off-chain verification is no longer the only thing standing between a typo and a permanently mis-parameterised immutable oracle.",
       "Run: node scripts/verify-chainlink-oracle.mjs (exit 0 => may deploy)."
     ]
   },

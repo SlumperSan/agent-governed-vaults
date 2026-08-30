@@ -4,7 +4,7 @@ A proposed EIP-170 workaround — splitting `VaultCore` logic across a delegatec
 
 ## Why it matters
 
-`VaultCore` runs against the EIP-170 24,576-byte contract-size ceiling: at the end of the remediation session it had only **1,014 B** of margin. That budget governed *which findings could be fixed at all* — H-5, H-6, H-9 and M-15's exit-side remain unfixed precisely because they land in `VaultCore` and there is no room. A delegatecall split was the obvious way to buy headroom for that work.
+`VaultCore` runs against the EIP-170 24,576-byte contract-size ceiling: at the end of the remediation session it had only **1,014 B** of margin (and **~283 B today** — M-15's deposit overload spent 731 B since; see [[vaultcore]]). That budget governed *which findings could be fixed at all* — H-5, H-6, H-9 and M-15's exit-side remain unfixed precisely because they land in `VaultCore` and there is no room. A delegatecall split was the obvious way to buy headroom for that work.
 
 ## The decision and rationale
 

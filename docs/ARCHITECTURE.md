@@ -20,9 +20,9 @@ leaderboard, signal feeds) is paid via x402; **x402 never appears in the contrac
                     └──────────────────┬──────────────────────────┘
                                        │ creates
 ┌───────────────┐   auth    ┌──────────▼──────────┐    prices   ┌──────────────────┐
-│  Governance   │◄─────────►│      VaultCore      │◄────────────│ OracleAggregator │
-│ commit-reveal │  executes │ shares/NAV/deposits │   + breaker │  multi-source    │
-│ quorum/deleg. │  via      │ redemptions/capacity│             │  median          │
+│  Governance   │◄─────────►│      VaultCore      │◄────────────│ ChainlinkOracle  │
+│ commit-reveal │  executes │ shares/NAV/deposits │  fail-closed│  one Chainlink   │
+│ quorum/deleg. │  via      │ redemptions/capacity│             │  feed per asset  │
 └───────┬───────┘  timelock └──┬───────┬──────────┘             └──────────────────┘
         │                      │       │
         │              settles │       │ marks/identity
@@ -44,7 +44,7 @@ Sprint 1 implements **VaultCore** concretely; every other box is an interface wi
 | `Governance` | proposals, commit-reveal, quorum, standing defaults, delegation, timelock | Sprint 2 |
 | `FeeEngine` | 10% realized-profit fee, crystallization at redemption | Sprint 3 |
 | `OperatorRegistry` | operator identity, cross-vault `(member, operator)` marks, aggregate leaderboard | Sprint 3 |
-| `OracleAggregator` | multi-source median, staleness circuit breaker | Sprint 4 |
+| `ChainlinkOracle` | one Chainlink Data Feed per asset; sequencer gate, heartbeat, sane-price band | Sprint 4, replaced in the C-6 pivot |
 | `IExecutionAdapter` | venue-agnostic swap execution; Base DEX-aggregation adapter first | Sprint 4 |
 | `SubVaultRegistry` | parent/child links, depth cap 3, recursion block, fee-stack cap, quorum inheritance | Sprint 5 |
 
@@ -81,7 +81,8 @@ NAV        = Σ_i balance_i × price_i  +  idleUSDC          (USDC terms, WAD in
 NAVps      = NAV × WAD / totalSupply                        (WAD; first deposit: 1e18)
 ```
 
-`price_i` comes from `OracleAggregator` (multi-source median). Sequestered (pending) deposits
+`price_i` comes from the vault's immutable `IOracleAggregator` — at launch `ChainlinkOracle`, one
+genuine Chainlink Data Feed per asset. Sequestered (pending) deposits
 are **excluded** from NAV and from `idleUSDC` until activation (§5). If the oracle breaker is
 tripped, every function that reads NAV reverts — deposits, redemptions, proposal execution —
 by design (K-4).
@@ -239,11 +240,17 @@ special-case them.
 
 ## 11. Safety systems
 
-- **OracleAggregator:** median of ≥3 independent sources per asset; per-source staleness bound;
-  if fewer than a quorum of sources are fresh, the **circuit breaker trips and freezes
-  everything including exits** (K-4 — accepted: an attacker who can induce staleness can trap
-  capital; the multi-source median is the mitigation, and no escape hatch will be added, since
-  any escape hatch is exactly the stale-price exit the breaker exists to prevent).
+- **`ChainlinkOracle`:** exactly one genuine Chainlink Data Feed per asset — WETH via ETH/USD,
+  cbBTC via BTC/USD, USDC pinned to $1.00, and no cbETH because Base has no cbETH/USD feed. Three
+  guards, all fail-closed: an **L2 sequencer uptime gate** with a grace period after recovery, a
+  per-feed **heartbeat**, and a **sane-price band**. On any of them `priceWad` reverts, and the
+  breaker **freezes everything including exits** (K-4 — accepted: an attacker who can induce
+  staleness can trap capital, and no escape hatch will be added, since any escape hatch is exactly
+  the stale-price exit the breaker exists to prevent).
+  **Named residual — single-provider dependency:** those three guards are the only defences
+  against a wrong Chainlink answer, and a feed deprecation fails that asset **closed with no
+  fallback**. The oracle is immutable per vault, so there is no rotation lever. See
+  [LAUNCH-READINESS.md](LAUNCH-READINESS.md) gate 5 and residual 12.
 - **Capacity caps** per vault (§6).
 - **Pending capital is never frozen.** `cancelPending` reads no oracle, so a depositor can always
   reclaim an un-activated (observation-window) deposit even while the breaker is tripped — the
