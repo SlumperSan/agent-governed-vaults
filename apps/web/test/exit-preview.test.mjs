@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exitFeeBps, secondsUntilFeeBps, previewExit } from '../src/exit-preview.mjs';
+import { exitFeeBps, secondsUntilFeeBps, previewExit, SHORTFALL_DUST_WAD } from '../src/exit-preview.mjs';
 
 const WAD = 10n ** 18n;
 const DAY = 86_400n;
@@ -148,6 +148,85 @@ test('previewExit flags a payout that would unwind child vaults as not fully mod
   });
   assert.equal(r.coversFromChildren, true);
   assert.equal(r.usdcPay, 1_000_000n, 'capped at idle, as the contract caps it');
+});
+
+test('a RESIDUAL is not a child unwind — the dust bound is the contract’s own', () => {
+  // SHORTFALL_DUST_WAD is 1e12 and usdcScalar is ALSO 1e12 at USDC's 6 decimals, so
+  // `cashTargetWad - usdcPay * usdcScalar` is uniform in [0, 1e12) and ALWAYS below the bound:
+  // the contract's child-unwind loop never runs on it. Comparing against 0n instead flags
+  // essentially every exit, root vaults with no children included.
+  assert.equal(SHORTFALL_DUST_WAD, 1_000_000_000_000n);
+  const residual = previewExit({
+    burnShares: WAD,
+    memberShares: WAD,
+    totalShares: 3n * WAD, // 1/3 of an odd idle balance: does NOT divide evenly
+    idleUsdc: 1_000_000_001n,
+    basket: [],
+    exitFeeMaxBps: 0,
+    exitFeeDecayPeriodSec: 0n,
+    tenureSec: 0n,
+  });
+  assert.equal(residual.usdcPay, 333_333_333n);
+  assert.ok(residual.usdcPay * 1_000_000_000_000n < 1_000_000_001n * 1_000_000_000_000n / 3n,
+    'a real sub-scalar residual exists here');
+  assert.equal(residual.coversFromChildren, false, 'sub-dust residual is not a child unwind');
+
+  // A genuine child shortfall still trips it.
+  const child = previewExit({
+    burnShares: WAD, memberShares: WAD, totalShares: 2n * WAD,
+    idleUsdc: 1_000_000n, childValueWad: 1_000n * WAD, basket: [],
+    exitFeeMaxBps: 0, exitFeeDecayPeriodSec: 0n, tenureSec: 0n,
+  });
+  assert.equal(child.coversFromChildren, true);
+  assert.equal(child.feeValueWad, null, 'un-recovered child value is not an exit fee');
+});
+
+test('the 10% performance fee is modelled as a CEILING, on every leg', () => {
+  // VaultCore.sol:660-704 withholds perfFee UNIFORMLY across the USDC leg and every token slice
+  // AFTER the point the rest of this module stops. The exact fee needs the per-(member,operator)
+  // HWM loss carry, which no projection exposes — so only the bound `gain / 10` is modelled.
+  const r = previewExit({
+    burnShares: WAD,
+    memberShares: WAD,
+    totalShares: 2n * WAD,
+    idleUsdc: 200_000_000n, // 200 USDC idle; the exiter's half is 100
+    basket: [{ symbol: 'WETH', balance: 2n * WAD, decimals: 18, priceWad: 3_000n * WAD }],
+    costBasisUsdc: 1_000_000_000n, // $1,000 basis, all of it removed — this is a full exit
+    exitFeeMaxBps: 0,
+    exitFeeDecayPeriodSec: 0n,
+    tenureSec: 0n,
+  });
+  // payout = 100 USDC + 1 WETH @ $3,000 = $3,100. basisRemoved = costBasis * burn / memberShares
+  // = the whole $1,000. gain = 2,100.
+  assert.equal(r.payoutValueWad, 3_100n * WAD);
+  assert.equal(r.perfFee.gainUsdc, 2_100_000_000n);
+  assert.equal(r.perfFee.maxUsdc, 210_000_000n, 'the contract clamps at gain / 10');
+  // feeFracWad = perfFee * usdcScalar * WAD / payoutValueWad
+  const frac = (210_000_000n * 10n ** 12n * WAD) / (3_100n * WAD);
+  assert.equal(r.perfFee.maxFracWad, frac);
+  assert.equal(r.usdcPayMin, r.usdcPay - (r.usdcPay * frac) / WAD);
+  assert.equal(r.slices[0].amountMin, r.slices[0].amount - (r.slices[0].amount * frac) / WAD);
+  assert.ok(r.usdcPayMin < r.usdcPay, 'the USDC leg is reduced too, not only the token slices');
+  assert.ok(r.payoutValueMinWad < r.payoutValueWad);
+  // The bound is at most 10% of the payout, and reached only when the whole payout is gain.
+  assert.ok(frac <= WAD / 10n);
+});
+
+test('no cost basis, no unpriced leg, no child unwind ⇒ no fabricated fee bound', () => {
+  const noBasis = previewExit({
+    burnShares: WAD, memberShares: WAD, totalShares: 2n * WAD, idleUsdc: 200_000_000n,
+    basket: [], exitFeeMaxBps: 0, exitFeeDecayPeriodSec: 0n, tenureSec: 0n,
+  });
+  assert.equal(noBasis.perfFee, null, 'the HWM carry is not guessed at');
+  assert.equal(noBasis.usdcPayMin, null);
+
+  const atALoss = previewExit({
+    burnShares: WAD, memberShares: WAD, totalShares: 2n * WAD, idleUsdc: 200_000_000n,
+    costBasisUsdc: 10_000_000_000n, basket: [], exitFeeMaxBps: 0, exitFeeDecayPeriodSec: 0n, tenureSec: 0n,
+  });
+  assert.equal(atALoss.perfFee.gainUsdc, 0n, 'no gain, no performance fee');
+  assert.equal(atALoss.perfFee.maxUsdc, 0n);
+  assert.equal(atALoss.usdcPayMin, atALoss.usdcPay);
 });
 
 test('previewExit refuses rather than guesses on bad input', () => {

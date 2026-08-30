@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   toBig, formatUnits, usdcExact, usdcShort, usdcCompact, wadExact, bpsPct,
-  shortAddress, duration, clock, parseUnits, approx, USDC_SCALAR,
+  shortAddress, duration, clock, parseUnits, approx, USDC_SCALAR, scaleToWad, crossedThreshold,
 } from '../src/format.mjs';
 
 test('toBig distinguishes absent from zero', () => {
@@ -42,10 +42,56 @@ test('usdcExact always carries its unit and shows absent as absent', () => {
 });
 
 test('lossy renderings are opt-in and marked', () => {
-  assert.equal(usdcShort(4_820_400_123456n), '$4,820,400.12');
+  // usdcShort TRUNCATES to cents, so it marks itself whenever it drops anything. A caller cannot
+  // present $4,820,400.12 as the exact value of …123456 by forgetting to wrap it.
+  assert.equal(usdcShort(4_820_400_123456n), '≈ $4,820,400.12');
+  assert.equal(usdcShort(4_820_400_120000n), '$4,820,400.12', 'nothing dropped ⇒ nothing to mark');
+  assert.equal(usdcShort(0n), '$0.00');
+  assert.equal(usdcShort(-1_234_567n), '≈ $−1.23');
   assert.equal(usdcCompact(4_820_400_123456n), '$4.82M');
   assert.equal(approx(usdcCompact(4_820_400_123456n)), '≈ $4.82M');
   assert.equal(approx('—'), '—'); // nothing to approximate
+});
+
+test('scaleToWad survives a token claiming more than 18 decimals', () => {
+  // VaultCore rejects such an asset at construction, but the value arrives from data and
+  // `10n ** BigInt(18 - decimals)` throws RangeError rather than rendering anything.
+  assert.equal(scaleToWad(163_890_000n, 8), 1_638_900_000_000_000_000n); // cbBTC, 8dp
+  assert.equal(scaleToWad(5n * 10n ** 18n, 18), 5n * 10n ** 18n);
+  assert.equal(scaleToWad(10n ** 20n, 20), 10n ** 18n, 'scales down instead of throwing');
+  assert.equal(scaleToWad(1n, undefined), null);
+  assert.equal(scaleToWad(undefined, 18), null);
+});
+
+test('crossedThreshold announces at every threshold, expiry included', () => {
+  // `find(t => left <= t)` over a DESCENDING array returns 3600 for everything under an hour, so
+  // a countdown announced once at T-1h and never again — "the deadline has passed" unreachable.
+  const T = [3600, 900, 300, 60, 0];
+  assert.equal(crossedThreshold(3601, T), null);
+  assert.equal(crossedThreshold(3600, T), 3600);
+  assert.equal(crossedThreshold(3599, T), 3600);
+  assert.equal(crossedThreshold(900, T), 900);
+  assert.equal(crossedThreshold(301, T), 900);
+  assert.equal(crossedThreshold(300, T), 300);
+  assert.equal(crossedThreshold(60, T), 60);
+  assert.equal(crossedThreshold(1, T), 60);
+  assert.equal(crossedThreshold(0, T), 0);
+  assert.equal(crossedThreshold(-5, T), 0);
+  // Monotonically non-increasing, so a caller announcing on change fires once per threshold.
+  let prev = null;
+  const fired = [];
+  for (let left = 3700; left >= -5; left--) {
+    const c = crossedThreshold(left, T);
+    if (c !== null && c !== prev) fired.push(c);
+    prev = c;
+  }
+  assert.deepEqual(fired, [3600, 900, 300, 60, 0]);
+});
+
+test('parseUnits names the unit it is parsing, not always USDC', () => {
+  // index.html parses SHARE amounts at 18dp with this; "USDC has 18 decimals" is the wrong unit.
+  assert.match(parseUnits('1.1234567').error, /USDC amounts take 6 decimals/);
+  assert.match(parseUnits('1.' + '1'.repeat(19), 18, { unit: 'Share' }).error, /Share amounts take 18 decimals/);
 });
 
 test('wadExact renders 18dp share counts without loss', () => {

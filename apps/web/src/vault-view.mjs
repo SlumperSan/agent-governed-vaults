@@ -17,11 +17,21 @@ import { stackedPerfFeeBps, stackedExitFeeCapBps } from './fees.mjs';
  * whole basket, so a single stale feed freezes the entire vault. Showing which asset, and how far
  * past its bound, is what turns "frozen" from a scary opaque word into a legible mechanism.
  *
- * @param {Array<{symbol:string, oracleUpdatedAt:number|null, maxStalenessSec:number|null, priceWad:any}>} basket
+ * A ZERO balance is skipped entirely: `navWad` walks the basket under `if (bal != 0)`
+ * (VaultCore.sol:284-287), so it never prices an asset the vault does not hold, and a stale feed
+ * on one freezes nothing on-chain. Reporting it as a freeze would disable deposits, activation
+ * and exits on a vault the contract would happily serve. An UNKNOWN balance is not zero and is
+ * still assessed.
+ *
+ * @param {Array<{symbol:string, balance?:any, oracleUpdatedAt:number|null,
+ *                maxStalenessSec:number|null, priceWad:any}>} basket
  * @param {number} nowSec
  */
 export function oracleHealth(basket, nowSec) {
   const assets = (basket ?? []).map((a) => {
+    if ('balance' in a && toBig(a.balance) === 0n) {
+      return { symbol: a.symbol, state: /** @type {const} */ ('unheld'), ageSec: null, boundSec: null, overBySec: null };
+    }
     if (!Number.isFinite(a.oracleUpdatedAt) || !Number.isFinite(a.maxStalenessSec)) {
       return { symbol: a.symbol, state: /** @type {const} */ ('unknown'), ageSec: null, boundSec: null, overBySec: null };
     }
@@ -58,9 +68,10 @@ export function position(vault, holding, nowSec) {
   const navWad = toBig(vault.navWad);
   const basis = toBig(holding.costBasisUsdc);
 
-  // value = shares/totalShares × NAV, in USDC. Unknowable while frozen — NAV cannot be read.
+  // value = shares/totalShares × NAV, in USDC. Unknowable while frozen — NAV cannot be read —
+  // and equally unknowable when the freeze state itself is unknown (`frozen: null`).
   let valueUsdc = null;
-  if (!vault.frozen && navWad !== null && totalShares > 0n) {
+  if (vault.frozen === false && navWad !== null && totalShares > 0n) {
     valueUsdc = (navWad * shares) / totalShares / USDC_SCALAR;
   }
 
@@ -95,17 +106,29 @@ export function position(vault, holding, nowSec) {
 export function vaultView(vault, wallet, nowSec) {
   const holding = wallet?.positions?.find((p) => eqAddr(p.vault, vault.address)) ?? null;
   const pendingDeposit = wallet?.pending?.find((p) => eqAddr(p.vault, vault.address)) ?? null;
-  const pos = position(vault, holding, nowSec);
 
   const oracle = oracleHealth(vault.basket, nowSec);
-  // The record's own `frozen` flag and the feed ages must agree; if either says frozen, frozen.
-  const frozen = Boolean(vault.frozen) || oracle.frozen;
+  // TRI-STATE, not a boolean. `true` = a feed is provably past its bound; `false` = every held
+  // asset is provably within it; `null` = we cannot tell, which is neither. A source that carries
+  // no oracle data at all (the metered API sets `frozen: null`) must not render as "not frozen" —
+  // the freeze is the most consequential state in the product and a false negative on it is the
+  // one that traps capital.
+  const frozen = vault.frozen === true || oracle.frozen
+    ? true
+    : vault.frozen === null || vault.frozen === undefined || !oracle.determinable
+      ? null
+      : false;
 
+  const navWadRaw = toBig(vault.navWad);
   const cap = capacity({
-    navUsdc: (toBig(vault.navWad) ?? 0n) / USDC_SCALAR,
-    totalPendingUsdc: vault.totalPendingUsdc ?? 0n,
+    navUsdc: navWadRaw === null ? null : navWadRaw / USDC_SCALAR,
+    totalPendingUsdc: vault.totalPendingUsdc ?? null,
     capacityCapUsdc: vault.capacityCapUsdc ?? 0n,
   });
+
+  // The derived freeze state, not the record's own flag, decides whether the position can be
+  // valued — so a card and the detail page cannot disagree about it.
+  const pos = position({ ...vault, frozen }, holding, nowSec);
 
   const mode = resolveExitMode(vault.proposal ?? null, nowSec);
 
@@ -117,7 +140,8 @@ export function vaultView(vault, wallet, nowSec) {
     hasPendingDeposit: Boolean(pendingDeposit),
     pendingMatured: Boolean(pendingDeposit) && nowSec >= Number(pendingDeposit.availableAt),
     hasQueuedExit: (pos?.queuedExitShares ?? 0n) > 0n,
-    capacityFull: cap.capped && cap.headroom === 0n,
+    capacityFull: cap.capped && cap.determinable && cap.headroom === 0n,
+    capacityKnown: cap.determinable,
     walletConnected: Boolean(wallet),
   };
 

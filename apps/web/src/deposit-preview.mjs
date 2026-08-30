@@ -23,17 +23,28 @@ import { exitFeeBps } from './exit-preview.mjs';
 /**
  * Capacity as the contract measures it. `capacityCapUsdc === 0` means the vault opted out
  * (ARCHITECTURE §6 — the cap is optional), which is NOT the same as "full".
- * @param {{navUsdc:bigint|string, totalPendingUsdc:bigint|string, capacityCapUsdc:bigint|string}} v
- * @returns {{capped:boolean, used:bigint, cap:bigint, headroom:bigint|null, usedBps:number|null}}
+ *
+ * Utilisation needs BOTH live NAV and everyone's escrowed pending, and a source that carries
+ * neither (the metered API) would otherwise read as 0% used — a headroom promise drawn from two
+ * missing numbers. Pass `null` for an unknown input and `determinable` comes back false with
+ * `used`/`usedBps`/`headroom` all null.
+ *
+ * @param {{navUsdc:bigint|string|null, totalPendingUsdc:bigint|string|null,
+ *          capacityCapUsdc:bigint|string}} v
+ * @returns {{capped:boolean, determinable:boolean, used:bigint|null, cap:bigint,
+ *            headroom:bigint|null, usedBps:number|null}}
  */
 export function capacity({ navUsdc, totalPendingUsdc, capacityCapUsdc }) {
-  const nav = toBig(navUsdc) ?? 0n;
-  const pending = toBig(totalPendingUsdc) ?? 0n;
   const cap = toBig(capacityCapUsdc) ?? 0n;
+  const nav = navUsdc === null || navUsdc === undefined ? null : toBig(navUsdc);
+  const pending = totalPendingUsdc === null || totalPendingUsdc === undefined ? null : toBig(totalPendingUsdc);
+  if (nav === null || pending === null) {
+    return { capped: cap > 0n, determinable: false, used: null, cap, headroom: null, usedBps: null };
+  }
   const used = nav + pending;
-  if (cap === 0n) return { capped: false, used, cap: 0n, headroom: null, usedBps: null };
+  if (cap === 0n) return { capped: false, determinable: true, used, cap: 0n, headroom: null, usedBps: null };
   const headroom = cap > used ? cap - used : 0n;
-  return { capped: true, used, cap, headroom, usedBps: Number((used * 10_000n) / cap) };
+  return { capped: true, determinable: true, used, cap, headroom, usedBps: Number((used * 10_000n) / cap) };
 }
 
 /**
@@ -43,6 +54,17 @@ export function capacity({ navUsdc, totalPendingUsdc, capacityCapUsdc }) {
  */
 export function entryPath({ windowCleared = false, sharesHeld = 0n }) {
   return windowCleared || (toBig(sharesHeld) ?? 0n) > 0n ? 'immediate' : 'window';
+}
+
+/**
+ * Whether the entry path is a FACT or an inference. `windowCleared[member]` is a mapping on
+ * VaultCore, set by `skipWindow()` and never emitted per-member in a form the indexer folds, so a
+ * zero-share member who already burned their opt-in reads as `window` here while the chain will
+ * mint them immediately. Holding shares settles the branch on its own; otherwise the path is only
+ * certain when `windowCleared` was supplied as an explicit boolean.
+ */
+export function entryPathIsCertain({ windowCleared, sharesHeld = 0n }) {
+  return typeof windowCleared === 'boolean' || (toBig(sharesHeld) ?? 0n) > 0n;
 }
 
 /**
@@ -95,7 +117,11 @@ export function previewDeposit(p) {
   });
   const path = entryPath({ windowCleared: p.windowCleared, sharesHeld: p.sharesHeld });
 
-  // ── blockers, in the order VaultCore checks them ──
+  // ── blockers ──
+  // NOT in the contract's own check order: `_deposit` checks ZeroAmount and BelowMinDeposit
+  // BEFORE it reads navWad() for the capacity check (VaultCore.sol:363-369), so a frozen vault
+  // rejects a zero amount first. This list is ordered by what a user needs to read first, and
+  // every entry carries the contract's own error name so the on-chain failure reads the same.
   if (p.frozen) {
     blockers.push({
       code: 'StaleOracle',
@@ -121,7 +147,15 @@ export function previewDeposit(p) {
     if (wallet !== null && amount > wallet) {
       blockers.push({ code: 'InsufficientBalance', title: 'More than your USDC balance', detail: '', have: wallet });
     }
-    if (cap.capped && cap.used + amount > cap.cap) {
+    if (cap.capped && !cap.determinable) {
+      blockers.push({
+        code: 'CapacityUnknown',
+        title: 'This vault’s remaining capacity cannot be read',
+        detail:
+          'The cap check counts live NAV plus every escrowed pending deposit, and neither is ' +
+          'available from this data source. A deposit could revert CapacityExceeded.',
+      });
+    } else if (cap.capped && cap.used + amount > cap.cap) {
       blockers.push({
         code: 'CapacityExceeded',
         title: 'Over the vault’s capacity cap',
@@ -141,6 +175,7 @@ export function previewDeposit(p) {
   }
 
   // ── consequences of a deposit that WILL succeed ──
+  const pathCertain = entryPathIsCertain({ windowCleared: p.windowCleared, sharesHeld: p.sharesHeld });
   if (path === 'window') {
     consequences.push({
       code: 'ObservationWindow',
@@ -148,7 +183,11 @@ export function previewDeposit(p) {
       title: 'Escrowed for 4 hours, with 0 shares',
       detail:
         'Your USDC is held outside the vault’s NAV, mints no shares and carries no vote until ' +
-        'it activates. You can cancel for a full refund at any point in the window.',
+        'it activates. You can cancel for a full refund at any point in the window.' +
+        (pathCertain
+          ? ''
+          : ' One caveat: if you have already burned this vault’s one-time skip opt-in, the chain ' +
+            'mints you immediately instead, and this app cannot read that flag.'),
     });
     consequences.push({
       code: 'ForwardPricedEntry',
@@ -157,6 +196,16 @@ export function previewDeposit(p) {
       detail:
         'Shares mint at the NAV at activation, so the estimate below is indicative. This is why ' +
         'you cannot mint against a valuation you read four hours earlier.',
+    });
+  } else {
+    consequences.push({
+      code: 'ForwardPricedEntry',
+      severity: 'info',
+      title: 'Your share count is set by the block your transaction lands in',
+      detail:
+        'Shares mint at the NAV of that transaction, against a basket that moves between now and ' +
+        'then. The estimate below is indicative here too — the window path is the same mechanic ' +
+        'forward-priced by four more hours.',
     });
   }
 
@@ -191,10 +240,14 @@ export function previewDeposit(p) {
   return {
     ok: blockers.length === 0,
     path,
+    pathIsCertain: pathCertain,
     blockers,
     consequences,
     capacity: cap,
     shares,
-    sharesAreIndicative: path === 'window' || shares === null,
+    // ALWAYS indicative. Every mint in this protocol is forward-priced: the window path prices at
+    // activation NAV four hours out, and the immediate path prices at the NAV of a FUTURE block
+    // against a basket that moves. `shares` is what today's NAV would give you, not what you get.
+    sharesAreIndicative: true,
   };
 }

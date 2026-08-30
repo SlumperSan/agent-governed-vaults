@@ -79,9 +79,13 @@ export const VAULTS = [
       againstWeight: wad(267_000),
       revealedVoterCount: 11,
       memberCount: 23,
-      quorumFloorBps: 2500,
     },
-    governanceConfig: { proposalThresholdBps: 500, timelockDurationSec: 2 * DAY },
+    // `quorumBps` is the vault's OWN configured quorum (Governance.configOf), bounded only as
+    // >= 2500 and <= 10000. 50% here, deliberately above the protocol floor, because measuring
+    // against the floor rather than this number reports quorum met at half the required stake.
+    operatorStakeShares: wad(300_000),
+    votingEligibleTotalShares: wad(4_400_000),
+    governanceConfig: { proposalThresholdBps: 500, quorumBps: 5000, timelockDurationSec: 2 * DAY },
   },
 
   {
@@ -132,9 +136,12 @@ export const VAULTS = [
       againstWeight: 0n,
       revealedVoterCount: 0,
       memberCount: 9,
-      quorumFloorBps: 2500,
     },
-    governanceConfig: { proposalThresholdBps: 500, timelockDurationSec: 3 * DAY },
+    // A RuleChange: no stake quorum applies to it at all — Governance.finalize requires FULL
+    // CONSENSUS (revealedWeight == snapshotTotal && forWeight >= snapshotTotal).
+    operatorStakeShares: wad(40_000), // diluted below the 5% threshold — the right to propose is gone
+    votingEligibleTotalShares: wad(1_285_000),
+    governanceConfig: { proposalThresholdBps: 500, quorumBps: 2500, timelockDurationSec: 3 * DAY },
   },
 
   {
@@ -167,7 +174,9 @@ export const VAULTS = [
       { ...ASSETS.WETH, balance: 165_800_000_000_000_000_000n, priceWad: wad(3_500), weightBps: 10_000, oracleUpdatedAt: NOW - 60, maxStalenessSec: 3600 },
     ],
     proposal: null,
-    governanceConfig: { proposalThresholdBps: 500, timelockDurationSec: 2 * DAY },
+    operatorStakeShares: wad(20_000),
+    votingEligibleTotalShares: wad(300_000), // net of the parent's stake, which cannot vote here
+    governanceConfig: { proposalThresholdBps: 500, quorumBps: 3000, timelockDurationSec: 2 * DAY },
   },
 
   {
@@ -200,7 +209,9 @@ export const VAULTS = [
       { ...ASSETS.cbBTC, balance: 88_00_000n, priceWad: null, weightBps: 10_000, oracleUpdatedAt: NOW - 9 * HOUR, maxStalenessSec: 3600 },
     ],
     proposal: null,
-    governanceConfig: { proposalThresholdBps: 500, timelockDurationSec: 2 * DAY },
+    operatorStakeShares: wad(5_000),
+    votingEligibleTotalShares: wad(88_700),
+    governanceConfig: { proposalThresholdBps: 500, quorumBps: 2500, timelockDurationSec: 2 * DAY },
   },
 
   {
@@ -228,9 +239,12 @@ export const VAULTS = [
     exitFeeDecayPeriodSec: 365 * DAY,
     exitFeeMaxBpsByLevel: [100],
 
-    basket: [{ symbol: '???', decimals: 18, address: null, balance: 0n, priceWad: null, weightBps: 10_000, oracleUpdatedAt: null, maxStalenessSec: null }],
+    // It HOLDS something — a self-declared $2.1M NAV against $210k idle has to — but names no
+    // asset, no price and no feed. The freeze state of this vault is therefore genuinely
+    // unreadable, which is the honest reading of an unattested vault's self-reported basket.
+    basket: [{ symbol: '???', decimals: 18, address: null, balance: 1_890_000n * WAD, priceWad: null, weightBps: 10_000, oracleUpdatedAt: null, maxStalenessSec: null }],
     proposal: null,
-    governanceConfig: { proposalThresholdBps: 0, timelockDurationSec: 0 },
+    governanceConfig: { proposalThresholdBps: 0, quorumBps: 2500, timelockDurationSec: 0 },
   },
 ];
 
@@ -243,8 +257,11 @@ export const LEADERBOARD = [
 
 /**
  * The signed-in fixture wallet's positions. Deliberately covers four portfolio states at once:
- * a healthy position, a position in a Mode-F vault, a pending deposit mid-window, and a
- * position in the frozen vault.
+ * a position in a Mode-F vault, a position in the frozen vault, a pending deposit mid-window —
+ * and, by holding NOTHING in the uncapped sub-vault 0x3333, a vault whose deposit takes the
+ * OBSERVATION-WINDOW path. Without that last one every depositable vault takes the `immediate`
+ * branch of `_deposit`, and the window panel, the permanent skip opt-in and its typed SKIP gate
+ * are all unreachable from the shipped dataset.
  */
 export const WALLET = {
   address: '0xa1c0000000000000000000000000000000009f20',
@@ -256,14 +273,6 @@ export const WALLET = {
       costBasisUsdc: usdc(100_000),
       // 46 days into a 90-day decay on a 0.50% max ⇒ 0.25% today.
       lastDepositTime: NOW - 46 * DAY,
-      windowCleared: true,
-      queuedExitShares: 0n,
-    },
-    {
-      vault: '0x3333000000000000000000000000000000003333',
-      shares: wad(44_600),
-      costBasisUsdc: usdc(50_000),
-      lastDepositTime: NOW - 12 * DAY,
       windowCleared: true,
       queuedExitShares: 0n,
     },

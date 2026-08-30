@@ -26,6 +26,19 @@
 /** Governance.ProposalType */
 export const PROPOSAL_TYPES = ['Rebalance', 'RuleChange', 'ChildAllocation'];
 
+/**
+ * The sentinel for "we do not know whether this vault has an active proposal". `null` means
+ * KNOWN-ABSENT and resolves to Mode I; a source that carries no proposal field at all (the
+ * metered API's `/vaults`) must emit this instead, or the app asserts instant settlement on
+ * every vault it has never read a proposal for.
+ */
+export const PROPOSAL_UNKNOWN = 'unknown';
+
+/** Governance.QUORUM_FLOOR_BPS — the protocol floor a vault's `quorumBps` may not go below. */
+export const QUORUM_FLOOR_BPS = 2500;
+/** Governance.SIGNER_REGIME_BELOW — under this many members at creation, quorum is not a stake %. */
+export const SIGNER_REGIME_BELOW = 5;
+
 /** The phases in order, with what each one means for a holder. */
 export const PHASES = [
   { key: 'commit', label: 'Commit', blurb: 'Encrypted votes are being cast. The tally is hidden and exits still settle instantly.' },
@@ -85,11 +98,13 @@ function num(v) {
  * Mirror of `Governance.hasPendingExecution(vault)` — the ONLY thing that decides whether an exit
  * settles now or is queued irrevocably.
  *
- * @param {object|null} proposal  the vault's active proposal, or null for none
+ * @param {object|null|'unknown'} proposal  the vault's active proposal, `null` for KNOWN-ABSENT,
+ *   or `PROPOSAL_UNKNOWN` when the source carries no proposal information at all
  * @param {number} nowSec
  * @returns {true|false|null}  null = not derivable from the data we have (see module header)
  */
 export function hasPendingExecution(proposal, nowSec) {
+  if (proposal === PROPOSAL_UNKNOWN) return null; // no proposal data ≠ no proposal
   if (!proposal) return false; // no active proposal is knowable from `activeProposal: null`
   const st = proposal.status;
   if (st === 'Defeated' || st === 'Executed' || st === 'Expired') return false;
@@ -133,38 +148,116 @@ export function resolveExitMode(proposal, nowSec) {
     mode: 'unknown',
     label: 'Exit mode unresolved',
     detail:
-      'This vault has an active proposal, but the metered API does not carry proposal deadlines ' +
-      '(Governance.Proposed emits no commitDeadline), and the deadline is what decides the mode. ' +
-      'Your wallet will resolve it on-chain at signing time — it could be an irrevocable queued exit.',
+      proposal === PROPOSAL_UNKNOWN
+        ? 'This data source carries no proposal information at all, so this app cannot tell you ' +
+          'whether a proposal is active here, let alone whether it is past its commit deadline. ' +
+          'Treat an exit as possibly irrevocable — your wallet resolves it on-chain at signing time.'
+        : 'This vault has an active proposal, but the metered API does not carry proposal deadlines ' +
+          '(Governance.Proposed emits no commitDeadline), and the deadline is what decides the mode. ' +
+          'Your wallet will resolve it on-chain at signing time — it could be an irrevocable queued exit.',
   };
 }
 
 /**
- * Quorum readout. The numerator is REVEALED weight only — standing defaults count toward the
- * tally but never toward quorum (ARCHITECTURE §6, K-3), which is why a proposal can read as
- * passing while still short of quorum. Below 5 holders the vault switches to absolute signer
- * counts (`SIGNER_REGIME_BELOW`), so a percentage is the wrong unit and is not returned.
+ * Quorum readout, per `Governance.finalize` (Governance.sol:505-549). There are THREE regimes and
+ * they do not share a threshold:
+ *
+ *  1. `RuleChange` — FULL CONSENSUS, no stake percentage at all:
+ *     `revealedWeight == snapshotTotal && forWeight >= snapshotTotal`. Reporting a 25% floor
+ *     against a proposal that needs 100% is not a rounding error, it is the wrong answer.
+ *  2. `memberCount < SIGNER_REGIME_BELOW` — `headMajorityWithStake || forStakeMajority`, where
+ *     `headMajorityWithStake` is a strict majority of members-at-creation revealed AND
+ *     `forWeight * BPS >= quorumBps * snapshotTotal`, and `forStakeMajority` is
+ *     `forWeight * 2 > snapshotTotal`. Both branches count FOR weight, never revealed weight,
+ *     and it is not a bare signer count.
+ *  3. Otherwise — `revealedWeight * BPS >= quorumBps * snapshotTotal`, measured against the
+ *     VAULT's configured `quorumBps` (`configOf[vault].quorumBps`), which is bounded only as
+ *     `>= 2500 && <= 10000`. The 2500 protocol FLOOR is not the operative threshold: a vault
+ *     configured at 60% is not at quorum because it cleared 26%.
+ *
+ * In regime 3 the numerator is REVEALED weight only — standing defaults count toward the tally
+ * but never toward quorum (ARCHITECTURE §6, K-3), which is why a proposal can read as passing
+ * while still short of quorum.
+ *
+ * @param {{ptype?:string, revealedWeight?:any, forWeight?:any, snapshotTotal?:any,
+ *          memberCount?:any, quorumBps?:any, revealedVoterCount?:any}} p
+ *        `quorumBps` is the vault's configured quorum. Absent ⇒ the threshold is unknown and
+ *        `met` is null; it is never defaulted to the floor.
  */
-export function quorumReadout({ revealedWeight, snapshotTotal, memberCount, quorumFloorBps = 2500, revealedVoterCount }) {
+export function quorumReadout({ ptype, revealedWeight, forWeight, snapshotTotal, memberCount, quorumBps, revealedVoterCount }) {
   const total = big(snapshotTotal);
   const revealed = big(revealedWeight);
-  if (Number(memberCount) > 0 && Number(memberCount) < 5) {
+  const forW = big(forWeight);
+  const members = Number(memberCount);
+  const q = Number(quorumBps);
+  const hasQuorum = Number.isFinite(q) && q > 0;
+  const pct = (n, d) => `${(Number((n * 10_000n) / d) / 100).toFixed(2)}%`;
+
+  if (ptype === 'RuleChange') {
+    if (total === null || total === 0n || revealed === null || forW === null) {
+      return {
+        regime: /** @type {const} */ ('consensus'),
+        met: null,
+        text: 'RuleChange needs FULL CONSENSUS — every eligible share revealed and voting FOR. The stake snapshot is not exposed, so the shortfall cannot be measured.',
+      };
+    }
     return {
-      regime: /** @type {const} */ ('signers'),
-      met: null,
-      text: `${revealedVoterCount ?? '—'} of ${memberCount} members revealed — this vault is under 5 members, so quorum is counted in signers, not stake.`,
+      regime: /** @type {const} */ ('consensus'),
+      met: revealed === total && forW >= total,
+      revealedBps: Number((revealed * 10_000n) / total),
+      forBps: Number((forW * 10_000n) / total),
+      text: `RuleChange — full consensus required, not a quorum percentage: ${pct(revealed, total)} of eligible stake revealed and ${pct(forW, total)} voting FOR, against 100% needed for both.`,
     };
   }
+
+  if (Number.isFinite(members) && members > 0 && members < SIGNER_REGIME_BELOW) {
+    if (total === null || total === 0n || forW === null) {
+      return {
+        regime: /** @type {const} */ ('signers'),
+        met: null,
+        text: `Under ${SIGNER_REGIME_BELOW} members, so quorum is a member majority carrying quorum stake, OR an outright FOR stake majority. The stake snapshot is not exposed, so neither can be measured.`,
+      };
+    }
+    const headMajority = Number(revealedVoterCount) * 2 > members;
+    const forStakeMajority = forW * 2n > total;
+    // Branch 2 passes on its own. Branch 1 needs the head majority AND the vault's quorum stake,
+    // so without a head majority it is settled false, and with one but no configured quorum the
+    // answer is genuinely unknown rather than false.
+    const met = forStakeMajority ? true
+      : !headMajority ? false
+        : hasQuorum ? forW * 10_000n >= BigInt(q) * total
+          : null;
+    return {
+      regime: /** @type {const} */ ('signers'),
+      met,
+      forBps: Number((forW * 10_000n) / total),
+      quorumBps: hasQuorum ? q : null,
+      text:
+        `${revealedVoterCount ?? '—'} of ${members} members revealed, ${pct(forW, total)} of eligible stake voting FOR. ` +
+        `Under ${SIGNER_REGIME_BELOW} members this passes on a member majority carrying ` +
+        `${hasQuorum ? `${(q / 100).toFixed(0)}% ` : 'the vault’s '}quorum stake, or on a FOR stake majority alone.`,
+    };
+  }
+
   if (total === null || revealed === null || total === 0n) {
     return { regime: /** @type {const} */ ('stake'), met: null, text: 'Quorum unknown — the API does not expose the proposal stake snapshot.' };
   }
   const bps = Number((revealed * 10_000n) / total);
+  if (!hasQuorum) {
+    return {
+      regime: /** @type {const} */ ('stake'),
+      met: null,
+      bps,
+      quorumBps: null,
+      text: `${(bps / 100).toFixed(2)}% of eligible stake revealed. This vault’s configured quorum is not exposed, and it is anywhere from ${(QUORUM_FLOOR_BPS / 100).toFixed(0)}% to 100% — so whether that clears it is unknown.`,
+    };
+  }
   return {
     regime: /** @type {const} */ ('stake'),
-    met: bps >= quorumFloorBps,
+    met: revealed * 10_000n >= BigInt(q) * total,
     bps,
-    floorBps: quorumFloorBps,
-    text: `${(bps / 100).toFixed(2)}% of eligible stake revealed · ${(quorumFloorBps / 100).toFixed(0)}% floor`,
+    quorumBps: q,
+    text: `${(bps / 100).toFixed(2)}% of eligible stake revealed · ${(q / 100).toFixed(2)}% required by this vault`,
   };
 }
 
@@ -182,6 +275,10 @@ function big(v) {
  * An operator diluted below the proposal threshold permanently loses the right to propose —
  * including the RuleChange that would lower the threshold (docs/NOW.md, Governance.sol M-6).
  * Dilution is passive: other members deposit, totalShares grows, nothing re-checks.
+ *
+ * `eligibleTotal` is `pastTotalVotingEligibleShares` (Governance.sol:288-291) — NOT `totalShares`.
+ * It is net of queued-exit shares and of parent stake, so passing `totalShares` inflates the
+ * denominator and under-reports an operator's standing against the threshold.
  *
  * @returns {{ok:boolean, bps:number, thresholdBps:number, headroomBps:number}|null}
  */

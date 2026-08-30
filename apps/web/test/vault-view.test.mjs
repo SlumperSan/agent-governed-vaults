@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { oracleHealth, position, vaultView, SORTS } from '../src/vault-view.mjs';
 import { VAULTS, WALLET, NOW, vaultByAddress } from '../src/fixtures.mjs';
+import { mapVaultRecords } from '../src/live-adapter.mjs';
+import { PROPOSAL_UNKNOWN } from '../src/governance.mjs';
 
 const DAY = 86_400;
 const WAD = 10n ** 18n;
@@ -106,6 +108,58 @@ test('fixture: the unattested vault is quarantined from deposits', () => {
   assert.equal(view.facts.attested, false);
   assert.equal(view.status.key, 'unattested');
   assert.equal(view.actions.deposit.available, false);
+});
+
+test('a live-API record renders as UNKNOWN, never as a green open Mode-I vault', () => {
+  // The whole point of the sentinels: mapVaultRecords' output must not assert the two facts that
+  // decide whether an exit is reversible and whether capital is trapped.
+  const [rec] = mapVaultRecords(
+    [{ vault: '0x' + '7'.repeat(40), operatorId: 4, memberCount: 12, capacityCapUsdc: '6000000000000', attested: true }],
+    [{ operatorId: 4, operator: '0x' + 'b'.repeat(40) }],
+  );
+  assert.equal(rec.frozen, null);
+  assert.equal(rec.proposal, PROPOSAL_UNKNOWN);
+
+  const view = vaultView(rec, null, NOW);
+  assert.equal(view.frozen, null, 'unknown, not false');
+  assert.equal(view.mode.mode, 'unknown');
+  assert.notEqual(view.status.key, 'open');
+  assert.equal(view.status.tone, 'warn');
+  assert.equal(view.capacity.determinable, false, 'NAV and escrowed pending are both unreadable');
+  assert.equal(view.capacity.usedBps, null, 'so no 0.00% meter is drawn as fact');
+  assert.equal(view.facts.capacityFull, false, 'unknown is not full either');
+  const ids = view.actions.notices.map((n) => n.id);
+  assert.ok(ids.includes('freeze-unknown'));
+  assert.ok(ids.includes('mode-unknown'));
+});
+
+test('oracleHealth skips a ZERO-balance asset, as navWad does', () => {
+  // VaultCore.sol:284-287 — `if (bal != 0)`. A stale feed on an asset the vault does not hold
+  // freezes nothing on-chain, and must not disable deposit, activation and exit here.
+  const h = oracleHealth(
+    [
+      { symbol: 'WETH', balance: 10n ** 18n, oracleUpdatedAt: NOW - 30, maxStalenessSec: 3600 },
+      { symbol: 'cbBTC', balance: 0n, oracleUpdatedAt: NOW - 9 * 3600, maxStalenessSec: 3600 },
+    ],
+    NOW,
+  );
+  assert.equal(h.frozen, false);
+  assert.deepEqual(h.culprits, []);
+  assert.equal(h.assets[1].state, 'unheld');
+  assert.equal(h.determinable, true, 'an unpriceable asset the vault does not hold is not a gap');
+
+  // A held balance with the same stale feed still freezes.
+  const held = oracleHealth([{ symbol: 'cbBTC', balance: 1n, oracleUpdatedAt: NOW - 9 * 3600, maxStalenessSec: 3600 }], NOW);
+  assert.equal(held.frozen, true);
+});
+
+test('fixture: an unattested vault’s freeze state is unknown, and is consumed as unknown', () => {
+  // `determinable` was computed and unit-tested and then referenced nowhere, so a vault whose
+  // feed freshness cannot be read was treated as healthy and fully actionable.
+  const view = vaultView(vaultByAddress('0x5555000000000000000000000000000000005555'), WALLET, NOW);
+  assert.equal(view.oracle.determinable, false);
+  assert.equal(view.frozen, null);
+  assert.ok(view.actions.notices.some((n) => n.id === 'freeze-unknown'));
 });
 
 test('a card and a detail page cannot disagree — both read one vaultView', () => {

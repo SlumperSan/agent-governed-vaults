@@ -122,9 +122,42 @@ test('no tenure-reset notice when there is nothing to lose', () => {
   assert.equal(free.consequences.find((c) => c.code === 'TenureReset'), undefined);
 });
 
-test('an existing member gets a knowable share count, a new one does not', () => {
+test('EVERY mint is forward-priced — shares are indicative on the immediate path too', () => {
+  // The immediate path does not mint at the NAV on screen either: it mints at the NAV of a FUTURE
+  // block, against a basket that moves. The window path is the same mechanic priced four hours
+  // further out. Rendering "Shares you receive: 923.159805" as a fact on either path is the
+  // promise §3.1 forbids.
   const member = previewDeposit({ ...openVault, sharesHeld: WAD, windowCleared: true });
   assert.equal(member.path, 'immediate');
-  assert.equal(member.sharesAreIndicative, false);
+  assert.equal(member.sharesAreIndicative, true);
   assert.ok(member.shares > 0n);
+  assert.ok(member.consequences.some((c) => c.code === 'ForwardPricedEntry'));
+
+  const windowPath = previewDeposit(openVault);
+  assert.equal(windowPath.sharesAreIndicative, true);
+});
+
+test('capacity is unknown, not 0% used, when NAV and pending are unreadable', () => {
+  // The metered API carries neither, and `used = 0 + 0` would draw a full-headroom meter as fact.
+  const c = capacity({ navUsdc: null, totalPendingUsdc: null, capacityCapUsdc: usdc(1_000_000) });
+  assert.equal(c.determinable, false);
+  assert.equal(c.used, null);
+  assert.equal(c.usedBps, null);
+  assert.equal(c.headroom, null);
+  assert.equal(c.capped, true, 'the cap itself IS event-derived and known');
+
+  const r = previewDeposit({ ...openVault, navUsdc: null, navWad: null, totalPendingUsdc: null });
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes('CapacityUnknown'));
+  assert.equal(r.shares, null, 'no NAV ⇒ no share estimate, not a fabricated one');
+});
+
+test('the entry path is an inference when windowCleared cannot be read', () => {
+  // `windowCleared[member]` is a mapping, not an event: a zero-share member who already burned
+  // their skip opt-in reads as `window` here and mints immediately on-chain.
+  assert.equal(previewDeposit(openVault).pathIsCertain, false);
+  assert.equal(previewDeposit({ ...openVault, windowCleared: false }).pathIsCertain, true);
+  assert.equal(previewDeposit({ ...openVault, sharesHeld: WAD }).pathIsCertain, true);
+  const uncertain = previewDeposit(openVault).consequences.find((c) => c.code === 'ObservationWindow');
+  assert.match(uncertain.detail, /skip opt-in/i);
 });

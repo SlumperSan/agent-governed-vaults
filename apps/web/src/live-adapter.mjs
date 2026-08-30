@@ -9,6 +9,8 @@
  * inventing numbers. Pure functions, unit-tested; the browser hook lives in index.html.
  */
 
+import { PROPOSAL_UNKNOWN } from './governance.mjs';
+
 /** USDC base units (6dp) string → whole-dollar Number for display. */
 export function usdFromBase(s) {
   try { return Number(BigInt(s ?? '0')) / 1e6; } catch { return 0; }
@@ -84,6 +86,13 @@ export function mapVaults(list, board, lastBlock) {
  * is emitted and indexed, but `projections.mjs` folds it to an aggregate `pendingCount` and drops
  * both the member and the activation time.
  *
+ * TWO OF THOSE NULLS ARE NOT NULL — they are sentinels, because `null` already MEANS something
+ * to their consumers. `proposal: null` reads as "this vault has no active proposal", which
+ * resolves to Mode I and prints "exits settle in the same transaction"; and `frozen: false` reads
+ * as "provably not frozen", which prints a green "Open". `/vaults` (projections.mjs:305-316)
+ * carries neither field, so both are emitted as the explicit unknown their consumers understand:
+ * `PROPOSAL_UNKNOWN` and `frozen: null`.
+ *
  * @param {Array<object>} list  from /vaults
  * @param {Array<object>} board from /operators/leaderboard
  */
@@ -107,7 +116,7 @@ export function mapVaultRecords(list, board) {
       capacityCapUsdc: v.capacityCapUsdc ?? '0',
 
       // Chain-read enrichment the API does not expose — unknown, not zero:
-      frozen: false,
+      frozen: null,
       chainRead: false,
       totalShares: null,
       navWad: null,
@@ -119,7 +128,7 @@ export function mapVaultRecords(list, board) {
       exitFeeDecayPeriodSec: null,
       exitFeeMaxBpsByLevel: [],
       basket: [],
-      proposal: null,
+      proposal: PROPOSAL_UNKNOWN,
       governanceConfig: null,
     };
   });

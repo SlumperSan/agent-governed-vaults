@@ -5,7 +5,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { proposalPhase, hasPendingExecution, resolveExitMode, quorumReadout, proposalRight } from '../src/governance.mjs';
+import {
+  proposalPhase, hasPendingExecution, resolveExitMode, quorumReadout, proposalRight,
+  PROPOSAL_UNKNOWN, QUORUM_FLOOR_BPS,
+} from '../src/governance.mjs';
 
 const T = 1_800_000_000; // an arbitrary "now", in seconds
 const HOUR = 3600;
@@ -55,6 +58,19 @@ test('MISSING DEADLINES RESOLVE TO UNKNOWN, never to Mode I', () => {
   assert.equal(hasPendingExecution({ status: 'Passed' }, T), null, 'Passed without expiresAt is also unknown');
 });
 
+test('NO PROPOSAL DATA is a sentinel, and never reads as "no proposal"', () => {
+  // GET /vaults carries no proposal field at all. `null` means KNOWN-ABSENT and resolves to
+  // Mode I — "exits settle in the same transaction" — on every live vault, while the banner two
+  // inches above says the mode cannot be resolved. The source must say unknown instead.
+  assert.equal(hasPendingExecution(PROPOSAL_UNKNOWN, T), null);
+  assert.equal(hasPendingExecution(null, T), false, 'and a known-absent proposal still resolves');
+
+  const m = resolveExitMode(PROPOSAL_UNKNOWN, T);
+  assert.equal(m.mode, 'unknown');
+  assert.match(m.detail, /no proposal information/i);
+  assert.match(m.detail, /irrevocable/i);
+});
+
 test('proposalPhase walks commit → reveal → tally and marks the forfeit deadline', () => {
   const p = { status: 'Active', commitDeadline: T + HOUR, revealDeadline: T + 3 * HOUR };
   assert.equal(proposalPhase(p, T).phase, 'commit');
@@ -75,22 +91,75 @@ test('proposalPhase covers timelock, executable and terminal states', () => {
   assert.equal(proposalPhase({ status: 'Active' }, T).phase, 'unknown', 'no deadlines ⇒ unknown');
 });
 
-test('quorum counts REVEALED weight only — standing defaults never count toward it', () => {
-  // ARCHITECTURE §6 / K-3: defaults move the tally but not the quorum numerator, which is why a
-  // proposal can look like it is passing while still short of quorum.
-  const q = quorumReadout({ revealedWeight: 3000n, snapshotTotal: 10_000n, memberCount: 20 });
-  assert.equal(q.regime, 'stake');
-  assert.equal(q.bps, 3000);
-  assert.equal(q.met, true);
-  const short = quorumReadout({ revealedWeight: 1000n, snapshotTotal: 10_000n, memberCount: 20 });
-  assert.equal(short.met, false);
+test('quorum is measured against the VAULT’s quorumBps, not the 2500 protocol floor', () => {
+  // Governance.sol:547 — `revealedWeight * BPS >= configOf[vault].quorumBps * snapshotTotal`.
+  // QUORUM_FLOOR_BPS is only the lower BOUND on what a vault may configure; a vault set at 50%
+  // is not at quorum because it cleared 26%.
+  const shortOfIts60 = quorumReadout({ revealedWeight: 3000n, snapshotTotal: 10_000n, memberCount: 20, quorumBps: 6000 });
+  assert.equal(shortOfIts60.regime, 'stake');
+  assert.equal(shortOfIts60.bps, 3000);
+  assert.equal(shortOfIts60.met, false, '30% does not meet a vault configured at 60%');
+  assert.match(shortOfIts60.text, /60\.00% required by this vault/);
+
+  const atFloor = quorumReadout({ revealedWeight: 3000n, snapshotTotal: 10_000n, memberCount: 20, quorumBps: QUORUM_FLOOR_BPS });
+  assert.equal(atFloor.met, true);
+  assert.equal(quorumReadout({ revealedWeight: 1000n, snapshotTotal: 10_000n, memberCount: 20, quorumBps: 2500 }).met, false);
+
+  // ARCHITECTURE §6 / K-3: the numerator is revealed weight — standing defaults move the tally
+  // but never the quorum, which is why a proposal can read as passing and still fail.
+  assert.equal(quorumReadout({ revealedWeight: 0n, forWeight: 9000n, snapshotTotal: 10_000n, memberCount: 20, quorumBps: 2500 }).met, false);
 });
 
-test('under 5 members quorum is signers, so a percentage is the wrong unit', () => {
-  const q = quorumReadout({ revealedWeight: 1n, snapshotTotal: 10n, memberCount: 4, revealedVoterCount: 3 });
-  assert.equal(q.regime, 'signers');
+test('an unexposed quorumBps is unknown — never silently the floor', () => {
+  const q = quorumReadout({ revealedWeight: 3000n, snapshotTotal: 10_000n, memberCount: 20 });
   assert.equal(q.met, null);
-  assert.match(q.text, /3 of 4/);
+  assert.equal(q.quorumBps, null);
+  assert.match(q.text, /25% to 100%/);
+});
+
+test('a RuleChange has NO stake quorum — it needs FULL CONSENSUS', () => {
+  // Governance.sol:511-514 — revealedWeight == snapshotTotal && forWeight >= snapshotTotal.
+  // Reporting "0.00% of eligible stake revealed · 25% floor" against this is the wrong answer,
+  // not a rounding one.
+  const base = { ptype: 'RuleChange', memberCount: 20, quorumBps: 2500 };
+  const none = quorumReadout({ ...base, revealedWeight: 0n, forWeight: 0n, snapshotTotal: 10_000n });
+  assert.equal(none.regime, 'consensus');
+  assert.equal(none.met, false);
+  assert.match(none.text, /full consensus/i);
+  assert.match(none.text, /100%/);
+
+  const partial = quorumReadout({ ...base, revealedWeight: 9_999n, forWeight: 9_999n, snapshotTotal: 10_000n });
+  assert.equal(partial.met, false, 'one unrevealed share defeats it');
+
+  const full = quorumReadout({ ...base, revealedWeight: 10_000n, forWeight: 10_000n, snapshotTotal: 10_000n });
+  assert.equal(full.met, true);
+
+  // Revealed in full but not all FOR: consensus is on the FOR side, not on turnout.
+  const against = quorumReadout({ ...base, revealedWeight: 10_000n, forWeight: 9_000n, snapshotTotal: 10_000n });
+  assert.equal(against.met, false);
+});
+
+test('under 5 members it is headMajorityWithStake OR forStakeMajority, not a signer count', () => {
+  // Governance.sol:530-544. Both branches count FOR weight; `revealedVoterCount` alone decides
+  // nothing, and branch 2 passes on stake with no head majority at all.
+  const base = { memberCount: 4, snapshotTotal: 10_000n, quorumBps: 2500 };
+
+  // 3 of 4 revealed, FOR weight 3000 ≥ 25% of snapshot ⇒ branch 1 passes.
+  const b1 = quorumReadout({ ...base, revealedVoterCount: 3, revealedWeight: 3000n, forWeight: 3000n });
+  assert.equal(b1.regime, 'signers');
+  assert.equal(b1.met, true);
+  assert.match(b1.text, /3 of 4/);
+
+  // Same head majority, but the FOR side carries only 1% — branch 1 fails on stake, and the old
+  // bare-signer reading would have called this quorum.
+  assert.equal(quorumReadout({ ...base, revealedVoterCount: 3, revealedWeight: 3000n, forWeight: 100n }).met, false);
+
+  // One voter of four, but 60% of stake voting FOR ⇒ branch 2 passes with no head majority.
+  assert.equal(quorumReadout({ ...base, revealedVoterCount: 1, revealedWeight: 6000n, forWeight: 6000n }).met, true);
+
+  // Head majority but no configured quorum to test branch 1 against, and no stake majority:
+  // genuinely unknown, not false.
+  assert.equal(quorumReadout({ ...base, quorumBps: undefined, revealedVoterCount: 3, forWeight: 3000n }).met, null);
 });
 
 test('quorum is unknown, not zero, when the snapshot is not exposed', () => {

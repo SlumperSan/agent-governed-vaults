@@ -106,6 +106,59 @@ test('the creator 5% withdrawal gate blocks the exit it would breach', () => {
   assert.match(a.exit.reason, /5%/);
 });
 
+test('an UNKNOWN freeze state is neither frozen nor healthy', () => {
+  // `frozen: null` is what a source with no oracle data must emit. Taking the "not frozen" branch
+  // paints an actually-frozen vault as Open, which is the exact rendering the app exists to avoid.
+  const a = actions({ ...open, frozen: null });
+  assert.ok(a.notices.some((n) => n.id === 'freeze-unknown'));
+  assert.equal(vaultStatus({ ...open, frozen: null }).key, 'freeze-unknown');
+  assert.notEqual(vaultStatus({ ...open, frozen: null }).tone, 'good');
+  // Still usable, but every verdict says what it cannot verify rather than claiming it is fine.
+  assert.equal(a.deposit.severity, 'warn');
+  assert.match(a.deposit.reason, /freeze state/i);
+  assert.equal(a.exit.severity, 'warn');
+  assert.equal(a.cancelPending.available, false, 'nothing pending — and cancel is unaffected by a freeze either way');
+});
+
+test('skipWindow is withheld while frozen — it activates the pending deposit and reverts', () => {
+  // With a pending deposit, skipWindow() falls through to _activatePending → _mintShares →
+  // navWad(), the identical path `activate` is already frozen-gated on.
+  const frozen = actions({ ...open, frozen: true, hasPendingDeposit: true });
+  assert.equal(frozen.skipWindow.available, false);
+  assert.match(frozen.skipWindow.reason, /NAV|oracle/i);
+  assert.equal(frozen.activate.available, false, 'and its sibling agrees');
+  assert.equal(actions({ ...open, hasPendingDeposit: true }).skipWindow.available, true);
+});
+
+test('the creator gate is checked at QUEUE time, so it outranks the exit-mode branches', () => {
+  // VaultCore.sol:497-511 (the L-1 fix) applies _checkCreatorGate on the Mode-F branch too. A
+  // gated creator was being handed an enabled "Queue irrevocable exit" for a guaranteed revert.
+  for (const exitMode of ['I', 'F', 'unknown']) {
+    const a = actions({ ...open, exitMode, isCreatorBelowGate: true });
+    assert.equal(a.exit.available, false, `${exitMode} must still respect the gate`);
+    assert.match(a.exit.reason, /5%/);
+  }
+});
+
+test('settleQueuedExit is an action somebody has to take — nothing settles a queue for you', () => {
+  // VaultCore.sol:531-539 is an ordinary external call that reverts ExecutionStillPending until
+  // !_pendingExecution(). A member who reads "it settles automatically" and waits holds locked,
+  // non-voting shares indefinitely.
+  const queued = { ...open, hasQueuedExit: true };
+  assert.equal(actions(open).settleQueuedExit.available, false);
+  assert.match(actions(open).settleQueuedExit.reason, /no queued exit/i);
+
+  assert.equal(actions({ ...queued, exitMode: 'F' }).settleQueuedExit.available, false);
+  assert.match(actions({ ...queued, exitMode: 'F' }).settleQueuedExit.reason, /ExecutionStillPending/);
+  assert.equal(actions({ ...queued, frozen: true }).settleQueuedExit.available, false);
+  assert.equal(actions({ ...queued, exitMode: 'unknown' }).settleQueuedExit.severity, 'warn');
+  assert.equal(actions(queued).settleQueuedExit.available, true);
+
+  const notice = actions(queued).notices.find((n) => n.id === 'queued-exit');
+  assert.match(notice.body, /settleQueuedExit/);
+  assert.doesNotMatch(notice.body, /settles automatically/i);
+});
+
 test('vaultStatus ranks the most decision-changing fact first', () => {
   assert.equal(vaultStatus({ ...open, attested: false, frozen: true }).key, 'unattested');
   assert.equal(vaultStatus({ ...open, frozen: true, exitMode: 'F' }).key, 'frozen');

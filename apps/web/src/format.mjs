@@ -64,11 +64,32 @@ export function usdcExact(value, { unit = true } = {}) {
   return `${formatUnits(b, USDC_DECIMALS, { minFrac: USDC_DECIMALS })}${unit ? ' USDC' : ''}`;
 }
 
-/** USDC to cents — for headlines and tables where the exact form is a click away. */
+/**
+ * USDC to cents — for headlines and tables where the exact form is a click away. It TRUNCATES to
+ * two places, so it marks itself with `≈` whenever there is a sub-cent remainder. A caller cannot
+ * present a truncated figure as an exact one by forgetting to wrap it.
+ */
 export function usdcShort(value) {
   const b = toBig(value);
   if (b === null) return '—';
-  return `$${formatUnits(b, USDC_DECIMALS, { minFrac: 2, maxFrac: 2 })}`;
+  const abs = b < 0n ? -b : b;
+  const s = `$${formatUnits(b, USDC_DECIMALS, { minFrac: 2, maxFrac: 2 })}`;
+  return abs % 10_000n === 0n ? s : approx(s); // 1e4 base units = one cent at 6dp
+}
+
+/**
+ * A token amount held in its own decimals, expressed in WAD so it can be rendered by `wadExact`.
+ * `VaultCore` rejects a basket asset with `decimals > 18` at construction, but this value arrives
+ * from data, and a bare `10n ** BigInt(18 - decimals)` throws RangeError on a negative exponent
+ * instead of rendering anything at all.
+ * @returns {bigint|null} null when the amount or the decimals are unusable
+ */
+export function scaleToWad(amount, decimals) {
+  const a = toBig(amount);
+  if (a === null || !Number.isInteger(decimals) || decimals < 0) return null;
+  return decimals > WAD_DECIMALS
+    ? a / 10n ** BigInt(decimals - WAD_DECIMALS)
+    : a * 10n ** BigInt(WAD_DECIMALS - decimals);
 }
 
 /** Exact WAD amount (share counts, NAV/share). */
@@ -137,6 +158,27 @@ export function duration(seconds) {
   return parts.slice(0, 2).map(([u, v]) => `${v}${u}`).join(' ');
 }
 
+/**
+ * The countdown threshold just crossed, for a live region that announces at meaningful points
+ * rather than every second.
+ *
+ * `thresholds` is descending — `[3600, 900, 300, 60, 0]` — so `find(t => left <= t)` returns 3600
+ * for EVERY value below an hour: one announcement at T-1h and silence for the rest, expiry
+ * included. The threshold that has actually just been reached is the SMALLEST one still cleared.
+ *
+ * @param {number} left seconds remaining
+ * @param {number[]} thresholds in any order
+ * @returns {number|null} null while the countdown is above every threshold. Monotonically
+ *   decreasing as `left` falls, so a caller that announces on change fires once per threshold.
+ */
+export function crossedThreshold(left, thresholds) {
+  let best = null;
+  for (const t of thresholds ?? []) {
+    if (left <= t && (best === null || t < best)) best = t;
+  }
+  return best;
+}
+
 /** Zero-padded clock for a live countdown: `03:59:12`. */
 export function clock(seconds) {
   const s = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -151,16 +193,18 @@ export function clock(seconds) {
  * different amount than the one the user read back.
  * @param {string} input
  * @param {number} decimals
+ * @param {{unit?:string}} [opts] the unit being parsed — this function is called with 18 for SHARE
+ *   amounts as well as with 6 for USDC, and the error must name the right one.
  * @returns {{ok:true, value:bigint}|{ok:false, error:string}}
  */
-export function parseUnits(input, decimals = USDC_DECIMALS) {
+export function parseUnits(input, decimals = USDC_DECIMALS, { unit = 'USDC' } = {}) {
   const s = String(input ?? '').trim().replace(/,/g, '').replace(/_/g, '');
   if (s === '') return { ok: false, error: 'Enter an amount.' };
   if (!/^\d*(\.\d*)?$/.test(s)) return { ok: false, error: 'Digits and one decimal point only.' };
   const [w = '', f = ''] = s.split('.');
   if (w === '' && f === '') return { ok: false, error: 'Enter an amount.' };
   if (f.length > decimals) {
-    return { ok: false, error: `USDC has ${decimals} decimals — ${f.length} given. Remove ${f.length - decimals}.` };
+    return { ok: false, error: `${unit} amounts take ${decimals} decimals — ${f.length} given. Remove ${f.length - decimals}.` };
   }
   const value = BigInt(w || '0') * 10n ** BigInt(decimals) + BigInt((f || '').padEnd(decimals, '0') || '0');
   if (value === 0n) return { ok: false, error: 'Amount must be more than zero.' };
