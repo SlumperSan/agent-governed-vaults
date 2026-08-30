@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Risks — Agent-Governed Vaults</title>
+<meta name="description" content="Fourteen named risks, each with what it is, the worst realistic case, and what is actually done about it — including the ones where the answer is that nothing is done.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="pre-launch">
+  <div class="wrap">
+    <span class="tag">Pre-launch</span>
+    <p>Not deployed. No mainnet or testnet deployment of the current code exists. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+    <!-- COUNSEL: sitewide pre-launch banner — deployment-status disclosure plus the "not an offer, not a solicitation, not advice" disclaimer. -->
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="risks.html" aria-current="page">Risks</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Risks</p>
+      <h1>Fourteen ways this hurts you, and what is done about each.</h1>
+      <p class="lede">Four of these have no mitigation and are simply accepted. They are marked as accepted rather than buried, because a risk page that only lists solved problems is a marketing page wearing a warning label.</p>
+      <!-- COUNSEL: risk-of-total-loss and residual-risk disclosure page. Every entry states an unmitigated worst case; four are labelled explicitly as accepted with no mitigation. -->
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Contents</p>
+      <h2>All fourteen.</h2>
+      <ul class="jump">
+        <li><a href="#r1">1. Immutability itself</a></li>
+        <li><a href="#r2">2. Oracle freeze traps exits</a></li>
+        <li><a href="#r3">3. A single price provider</a></li>
+        <li><a href="#r4">4. USDC is pinned at $1.00</a></li>
+        <li><a href="#r5">5. Sequencer downtime</a></li>
+        <li><a href="#r6">6. Forward-settled exits are irrevocable</a></li>
+        <li><a href="#r7">7. Governance capture and thin electorates</a></li>
+        <li><a href="#r8">8. The rules can freeze permanently</a></li>
+        <li><a href="#r9">9. Operator identity cannot be rotated</a></li>
+        <li><a href="#r10">10. Total loss is possible</a></li>
+        <li><a href="#r11">11. Securities and scheme recharacterization</a></li>
+        <li><a href="#r12">12. The reference agent is beta code</a></li>
+        <li><a href="#r13">13. An open licensing question</a></li>
+        <li><a href="#r14">14. This is experimental software</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+
+      <article class="risk" id="r1">
+        <span class="severity severity--accepted">Structural — no mitigation exists</span>
+        <h2>1. Immutability itself</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>There are no proxies, no upgrade path, no pause and no admin key. Whatever is deployed is what runs, permanently.</dd></div>
+          <div><dt>Worst case</dt><dd>A critical bug that survived review is permanent. Funds may be unrecoverable, and no party — including the people who wrote the code — has any power to stop it, patch it or claw anything back.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing can be done after deployment; that is the point. Before deployment: an external security review, four internal adversarial review rounds, and an AI pre-audit. The evidence that this is not enough is in the project's own history — the AI pre-audit found five Critical issues in a frozen tree that had already passed internal review, and every fix required a full redeploy because nothing can be edited in place.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r2">
+        <span class="severity severity--accepted">Accepted by design</span>
+        <h2>2. An oracle freeze traps every exit</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>If a price feed goes past its staleness bound, the oracle refuses to answer and every function that reads NAV reverts: deposits, rebalance execution and redemptions alike.</dd></div>
+          <div><dt>Worst case</dt><dd>All active capital in the vault is frozen for the duration of the outage, with exits included and no escape hatch. You cannot leave at any price while the freeze lasts.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, deliberately, and no hatch will be added — any escape hatch is exactly the stale-price exit the breaker exists to prevent. The reasoning is that freezing beats mispricing: an exit priced off a stale feed is a transfer from the members who stay to whoever moves first. The one thing that stays reclaimable during a freeze is un-activated observation-window capital, because cancelling a pending deposit reads no oracle.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r3">
+        <span class="severity">Partially mitigated</span>
+        <h2>3. A single price provider, with no fallback</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>Each asset is priced from exactly one Chainlink Data Feed: WETH from ETH/USD, cbBTC from BTC/USD. There is no second provider and no fallback source. This is a named residual risk, not an oversight.</dd></div>
+          <div><dt>Worst case</dt><dd>A wrong answer that lands inside the sane-price band and inside the heartbeat is treated as truth, and the vault trades or settles on it. A feed deprecation fails that asset closed, which stops the vault rather than mispricing it — but there is nothing to fail over to.</dd></div>
+          <div><dt>What is done</dt><dd>Three defences, and they are the only ones: a heartbeat and staleness bound per asset (3,600 seconds in the reference mainnet configuration), a plausibility band per asset that rejects prices outside it, and the mandatory Base sequencer gate. The basket is limited to the two assets Base has Chainlink USD feeds for, rather than reaching for assets that would need a weaker price source.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r4">
+        <span class="severity severity--accepted">Accepted — no mitigation</span>
+        <h2>4. USDC is pinned at $1.00 in the oracle</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>The oracle does not price USDC. It assumes one dollar.</dd></div>
+          <div><dt>Worst case</dt><dd>A sustained USDC depeg is mispriced by exactly the size of the depeg. Every NAV computed during it is wrong by that amount, and every deposit, redemption and rebalance priced off that NAV is wrong with it. There is no median and no second source to outvote the pin.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing. This one is accepted outright. If you think a sustained depeg is likely, this protocol misprices your position for the whole duration and you should treat that as disqualifying.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r5">
+        <span class="severity severity--mitigated">Mitigated, at the cost of a longer freeze</span>
+        <h2>5. Sequencer downtime</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>Base is an L2 with a sequencer. When it stops, on-chain prices stop being trustworthy before they stop being available.</dd></div>
+          <div><dt>Worst case</dt><dd>A sequencer incident extends into a vault freeze that outlasts the incident itself, because the oracle will not price anything until the grace period has elapsed.</dd></div>
+          <div><dt>What is done</dt><dd>A Chainlink L2 Sequencer Uptime Feed is mandatory — without one the oracle reverts every price — and it enforces a 3,600-second grace period after the sequencer comes back up. The mitigation and the risk are the same mechanism: you are protected from stale-sequencer pricing by being locked out for an hour longer than the outage.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r6">
+        <span class="severity severity--accepted">Accepted by design</span>
+        <h2>6. Forward-settled exits are irrevocable</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>From the moment a rebalance passes its vote until it executes, redemption requests queue in forward settlement mode and price at post-execution NAV.</dd></div>
+          <div><dt>Worst case</dt><dd>You can be right about disliking a rebalance, vote against it, request your exit, and still carry the full effect of its execution. Once queued, the request cannot be withdrawn. Your shares stay outstanding and keep gaining and losing with the vault, but they are locked: non-transferable and excluded from voting-eligible stake.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is worse: instant exits during that window would be a free option to leave at pre-rebalance prices while already knowing the outcome, paid for by every member who stayed.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r7">
+        <span class="severity">Partially mitigated</span>
+        <h2>7. Governance capture and thin electorates</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>Voting is stake-weighted, so a large enough holder can pass proposals. Below five members the vault switches away from a stake fraction to absolute signer counts, a regime that is stake-blind and counts any address holding shares.</dd></div>
+          <div><dt>Worst case</dt><dd>A small vault is governed by whoever holds the most, or — in the small-member regime — by whoever can afford several addresses. Proposals you oppose pass, and your exit settles after they execute.</dd></div>
+          <div><dt>What is done</dt><dd>A protocol quorum floor of 25% of voting-eligible stake, a per-vault proposal threshold, a per-proposer cooldown, a cap on how much delegated weight any single delegate may receive, and a minimum deposit that exists precisely as a listing constraint against cheap address-splitting in the small-member regime. None of these makes a determined majority holder harmless.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r8">
+        <span class="severity severity--accepted">Accepted by design</span>
+        <h2>8. The rules can freeze permanently</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>After a vault is funded, changing its rules requires 100% of voting-eligible stake plus a timelock.</dd></div>
+          <div><dt>Worst case</dt><dd>One permanently offline member — a lost key, a death, a walked-away wallet — freezes the vault's rules forever. Nobody can change a parameter again, no matter how much everyone else agrees.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing. Unanimity is what makes "nobody can change the rules behind you" true, and a lower bar would make it false. The consequence is stated here rather than discovered later.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r9">
+        <span class="severity severity--accepted">Accepted — no recovery path</span>
+        <h2>9. Operator identity cannot be rotated</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>The operator identity is attested by the registry at vault creation and is immutable for that vault. There is no rebind, and the payout address is permanent.</dd></div>
+          <div><dt>Worst case</dt><dd>A compromised operator identity cannot be rotated, replaced or revoked. Whoever controls it controls the proposal right that identity carries, for as long as the vault exists.</dd></div>
+          <div><dt>What is done</dt><dd>The remedy is procedural, not technical: wind the vault down through exits and launch a new one. The compromise cannot let an attacker move member funds — the operator has no such power — but it cannot be undone either. Operators are told to use a multisig, because the address is permanent.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r10">
+        <span class="severity severity--accepted">Not mitigable</span>
+        <h2>10. Total loss is possible</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>The vault holds spot crypto assets. Spot crypto assets fall, sometimes a long way, sometimes permanently.</dd></div>
+          <div><dt>Worst case</dt><dd>You lose everything you deposited. Market losses, a permanent bug, or both.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, and nothing can be. There is no insurance fund, no backstop, no reimbursement and no party who makes anyone whole. Do not deposit what you cannot afford to lose entirely.</dd></div>
+          <!-- COUNSEL: the unhedged risk-of-total-loss statement. Confirm this wording is the one used consistently across the site and in any future channel. -->
+        </dl>
+      </article>
+
+      <article class="risk" id="r11">
+        <span class="severity severity--accepted">Open — unresolved</span>
+        <h2>11. Securities and collective investment scheme recharacterization</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>Interests in these vaults may be treated as securities, or as collective investment scheme interests, in some jurisdictions. This is an unresolved legal question, not a settled one.</dd></div>
+          <div><dt>Worst case</dt><dd>A regulator takes that view. Participants face consequences that depend entirely on where they are, and this project cannot indemnify anyone against them.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end — a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. We will not characterize your position for you.</dd></div>
+          <!-- COUNSEL: the securities / CIS recharacterization disclosure, the "not an offer" language, and the geofencing-as-good-faith-measure framing. Highest-priority review item on the site. -->
+        </dl>
+      </article>
+
+      <article class="risk" id="r12">
+        <span class="severity">Out of review scope</span>
+        <h2>12. The reference agent is beta code</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>A reference operator agent ships in the repository. It is beta reference code and it sat outside the scope of the contract security review.</dd></div>
+          <div><dt>Worst case</dt><dd>An operator runs it as-is, it proposes something the operator did not intend, and the members pass it.</dd></div>
+          <div><dt>What is done</dt><dd>It is labelled as reference code here and in the repository. It has no privileged power — it can only propose and vote its own weight — so its failure mode is a bad proposal, not a theft. Read it before you run it.</dd></div>
+        </dl>
+      </article>
+
+      <article class="risk" id="r13">
+        <span class="severity">Open — with counsel</span>
+        <h2>13. An open licensing question</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository.</dd></div>
+          <div><dt>Worst case</dt><dd>The combination is judged incompatible, and the licensing of part of the tree has to change.</dd></div>
+          <div><dt>What is done</dt><dd>It is flagged for counsel and recorded rather than quietly left alone. It is disclosed here because you should know about it before you build on the repository, not after.</dd></div>
+          <!-- COUNSEL: the vendored GPL-2.0-or-later / MIT inside BUSL-1.1 licensing question, disclosed publicly. Confirm this is the disclosure you want made and in these terms. -->
+        </dl>
+      </article>
+
+      <article class="risk" id="r14">
+        <span class="severity severity--accepted">Structural</span>
+        <h2>14. This is experimental software</h2>
+        <dl class="rows">
+          <div><dt>What it is</dt><dd>New contracts, a new governance mechanism, a new operator model, none of it battle-tested by time or volume, and none of it deployed anywhere yet.</dd></div>
+          <div><dt>Worst case</dt><dd>Something nobody on this page thought of.</dd></div>
+          <div><dt>What is done</dt><dd>The first vault's capacity is capped at 50,000 USDC as a deliberate limit on how much any single unknown can destroy. That is a bound on the blast radius, not a defence. Do not deposit what you cannot afford to lose entirely.</dd></div>
+        </dl>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">On the security review</p>
+      <h2>What has and has not been checked.</h2>
+      <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical, all of which are now resolved or closed by launch configuration.</p>
+      <!-- COUNSEL: the security-review attestation sentence, repeated verbatim from the overview page. The owner's attestation and the absence of a public report must always appear together and this paragraph must not be shortened. -->
+      <p class="tight">The remaining launch blockers are operational and legal rather than security: a testnet lifecycle re-run, a soak, a canary re-run, a recorded restore drill, and counsel review. Every security gate the team defined is cleared. The launch verdict today is still NO-GO.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="faq.html">The awkward questions</a>
+        <a class="btn" href="how-it-works.html">The mechanism</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Read the code yourself</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="faq.html">Questions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority. Where this site and the code disagree, the code is right and this site is wrong.</p>
+      </div>
+      <div>
+        <h2>Standing facts</h2>
+        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <!-- COUNSEL: the no-token statement and the licence characterisation, pinned to every page footer. -->
+      </div>
+    </div>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed. No mainnet or testnet deployment of the current code exists. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <!-- COUNSEL: jurisdiction and geofencing language, repeated in every footer. -->
+  </div>
+</footer>
+
+</body>
+</html>

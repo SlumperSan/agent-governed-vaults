@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Questions — Agent-Governed Vaults</title>
+<meta name="description" content="Direct answers to the hard questions: is there a token, is it running anywhere, can you rug me, can I always get out, what does the operator earn, and what licence the code is under.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="pre-launch">
+  <div class="wrap">
+    <span class="tag">Pre-launch</span>
+    <p>Not deployed. No mainnet or testnet deployment of the current code exists. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+    <!-- COUNSEL: sitewide pre-launch banner — deployment-status disclosure plus the "not an offer, not a solicitation, not advice" disclaimer. -->
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="risks.html">Risks</a></li>
+        <li><a href="faq.html" aria-current="page">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Questions</p>
+      <h1>The questions people ask when they have been burned before.</h1>
+      <p class="lede">Answered the way they were asked. Where the answer is no, it says no.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+
+      <article class="qa">
+        <h2>Is there a token?</h2>
+        <p>No. No token, no points programme, no distribution event, no pre-launch sale, and nothing to farm. The current recommendation on the record is that there should be no token at all.</p>
+        <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
+        <!-- COUNSEL: the no-token answer, stated in the body of the page as well as in the footer. -->
+      </article>
+
+      <article class="qa">
+        <h2>Is it running anywhere yet?</h2>
+        <p>No. Not deployed. No mainnet or testnet deployment of the current code exists. An earlier Base Sepolia deployment exists in the project's history, but six contracts have changed since, so that bytecode is superseded and its lifecycle, soak and canary evidence are marked stale pending a re-run.</p>
+        <p>There are no contract addresses to publish, which is why this site publishes none. Anyone showing you an address for this protocol is not showing you this protocol.</p>
+      </article>
+
+      <article class="qa">
+        <h2>Can you rug me?</h2>
+        <p>Not through the contracts. They are non-custodial and there is no seize function, no privileged withdrawal and no admin key. An operator cannot withdraw another member's funds, and neither can anyone else. The operator's powers are the powers of any member holding the same stake: propose, and vote.</p>
+        <p>You can still lose everything — to a bug, to the market, or to a governance majority you disagree with. Those are different failure modes and they are all on the <a href="risks.html">risks page</a>.</p>
+        <!-- COUNSEL: the non-custodial claim, stated as a direct answer. Must be verified against the final deployed bytecode before this page is published. -->
+      </article>
+
+      <article class="qa">
+        <h2>Can you pause it?</h2>
+        <p>No. There is no pause function, no proxy and no upgrade path. Nobody can stop a vault — not the operator, not the members, not the people who wrote it. The only thing that halts a vault is the oracle staleness breaker, and that is a property of the code rather than a switch anyone holds.</p>
+        <!-- COUNSEL: the "cannot pause or upgrade" claim, stated as an absolute about deployed code. -->
+      </article>
+
+      <article class="qa">
+        <h2>What happens if the oracle breaks?</h2>
+        <p>The vault freezes. Every function that reads NAV reverts: deposits, rebalance execution and redemptions. Exits are included. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent.</p>
+        <p>The one thing that stays reclaimable during a freeze is capital still sitting in an un-activated observation window, because cancelling a pending deposit reads no oracle. Active share capital is trapped for the duration.</p>
+      </article>
+
+      <article class="qa">
+        <h2>Can I always get out?</h2>
+        <p>No. Two situations stop you.</p>
+        <p>During an oracle freeze you cannot exit at all, at any price, until the feed recovers. And if a rebalance has passed its vote but has not executed, your request queues in forward settlement mode: it is irrevocable once submitted and it settles at post-execution NAV, so you carry the execution whether you voted for it or not. Between request and settlement your shares stay outstanding — still gaining and losing with the vault — but locked, non-transferable and excluded from voting-eligible stake.</p>
+      </article>
+
+      <article class="qa">
+        <h2>What does the operator earn, and what do they have to lock?</h2>
+        <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows the operator's identity across vaults. They earn no share of the exit fee — that is retained in the vault for the members who stay and is never routed to the operator. There is no management fee.</p>
+        <p>They lock capital. The creator withdrawal gate is 5%: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. At the planned 50,000 USDC first-vault cap that is 2,500 USDC, locked while other members remain. Separately, the proposal threshold — 5% of voting-eligible stake in the reference mainnet configuration — decays passively as others deposit, and losing it means losing the right to propose anything. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
+        <!-- COUNSEL: the operator capital obligation, quantified, and the two distinct 5% mechanisms kept separate. No projection of operator fee income appears anywhere on this site. -->
+      </article>
+
+      <article class="qa">
+        <h2>Why is the cap so small?</h2>
+        <p>Because nothing can be patched and nothing can be paused. 50,000 USDC is the largest amount this team is willing to have permanently trapped by a bug that survived review. It is a limit on the blast radius, not a scarcity mechanic — there is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean deploying a different vault, not editing this one.</p>
+      </article>
+
+      <article class="qa">
+        <h2>Has it been security reviewed?</h2>
+        <p>An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical, all of which are now resolved or closed by launch configuration.</p>
+        <p>Read that precisely. An attestation you cannot check is weaker evidence than a report you can, and this site will not use a word that implies you can check it.</p>
+        <!-- COUNSEL: the security-review attestation sentence, third and final placement. Owner attestation and the absence of a public report must always appear together. -->
+      </article>
+
+      <article class="qa">
+        <h2>Can I fork it? What licence is the code under?</h2>
+        <p>Source-available under BUSL-1.1 — not open source. You can read every line, and you should. You cannot treat it as freely reusable, and the licence terms in the repository govern what you may do with it.</p>
+        <p>One thing to know before you build on it: vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository. That is an open licensing question flagged for counsel, and it is disclosed on the <a href="risks.html#r13">risks page</a> rather than left for you to find.</p>
+      </article>
+
+      <article class="qa">
+        <h2>What if I disagree with a rebalance?</h2>
+        <p>Vote against it. Voting is commit then reveal: you submit a hash of your vote and a salt, then reveal it after the commit deadline. An unrevealed commit is forfeit and counts as an abstain, so committing is not enough — you have to come back.</p>
+        <p>If it passes anyway, your options are to stay or to leave, and leaving during that window means a forward-settled exit that prices after the swap. There is no way to opt out of an executed rebalance while remaining in the vault.</p>
+      </article>
+
+      <article class="qa">
+        <h2>What happens if everyone leaves?</h2>
+        <p>The vault empties out in order. Redemption is pro-rata and in kind, so each member takes their share of every basket asset plus their share of the idle USDC. The exit fee decays with tenure and is waived entirely for the last member out, so the final redeemer is not penalised for turning the lights off.</p>
+        <p>The creator's withdrawal gate binds only while at least one non-creator member remains; once they are gone, the creator can redeem in full. Nothing lingers, and there is no residual claim on an empty vault.</p>
+      </article>
+
+      <article class="qa">
+        <h2>Am I an investor?</h2>
+        <p>We will not characterize your position for you, and you should not take a characterization from a marketing page.</p>
+        <p>Mechanically, here is what is true: you hold shares in a vault whose rules you govern by stake-weighted vote, alongside other members. No one exercises discretion over your capital, and no one is contractually obliged to act on your behalf. Whether that makes you an investor in a security or a collective investment scheme where you live is a legal question with a jurisdiction-specific answer, it is unresolved, and it is listed as risk 11. Take your own advice.</p>
+        <!-- COUNSEL: the "you govern, we do not manage your money" framing and the deliberate refusal to characterize a depositor's position. Highest-priority review item alongside risk 11. -->
+      </article>
+
+      <article class="qa">
+        <h2>Which jurisdictions?</h2>
+        <p>Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end. That is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end.</p>
+        <p>Nothing on this site is an offer, a solicitation, or financial advice, and none of it is directed at anyone in a jurisdiction where it would be unlawful.</p>
+        <!-- COUNSEL: jurisdiction, geofencing and targeting language stated as a direct answer. -->
+      </article>
+
+      <article class="qa">
+        <h2>How do I get in?</h2>
+        <p>You do not, yet — there is nothing running. When there is, you will deposit into a specific vault by interacting with a specific contract, and you will read that vault's parameters first.</p>
+        <p>There is no list to join, no allocation to claim, no priority to earn, no form on this site and no wallet connection on this site. If someone offers you a place in a queue for this protocol, they are not connected to it.</p>
+      </article>
+
+      <article class="qa">
+        <h2>What is x402 doing here?</h2>
+        <p>Nothing that touches your money. Metered read access to vault data is paid per request in USDC over x402, entirely inside the off-chain API. The contracts have no x402 dependency, and depositing, voting and redeeming never involve it.</p>
+      </article>
+
+      <article class="qa">
+        <h2>Is this ERC-4626?</h2>
+        <p>No, and it makes no ERC-4626 claim. It exposes 4626-shaped read-only views for convenience. Treat them as indicative only, and do not integrate against them expecting the standard's semantics to hold.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Still reading</p>
+      <h2>The risks page answers more than this one does.</h2>
+      <div class="actions">
+        <a class="btn btn--primary" href="risks.html">Fourteen named risks</a>
+        <a class="btn" href="how-it-works.html">The mechanism</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Read the code</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="risks.html">Risks</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority. Where this site and the code disagree, the code is right and this site is wrong.</p>
+      </div>
+      <div>
+        <h2>Standing facts</h2>
+        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <!-- COUNSEL: the no-token statement and the licence characterisation, pinned to every page footer. -->
+      </div>
+    </div>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed. No mainnet or testnet deployment of the current code exists. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <!-- COUNSEL: jurisdiction and geofencing language, repeated in every footer. -->
+  </div>
+</footer>
+
+</body>
+</html>

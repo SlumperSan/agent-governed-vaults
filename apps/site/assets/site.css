@@ -1,0 +1,593 @@
+/* ===========================================================================
+   SITE STYLES
+   ---------------------------------------------------------------------------
+   Rules of this file, enforced by apps/site/test/site.test.mjs:
+     - Every colour is a var(--token) from assets/tokens.css. No raw literals.
+     - No @import, no font host, no remote asset of any kind.
+     - No transitions, no animations, no transforms that move. There is nothing
+       for prefers-reduced-motion to reduce; the media query below is a latch,
+       not a fix.
+   The craft budget here is typography, spacing and hairlines. There are no
+   images and no webfonts, so rhythm has to do the work.
+   =========================================================================== */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 24px;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* One global focus ring. Deliberately not scoped to a class: every interactive
+   element on every page inherits it, including ones added later. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------- primitives */
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+@media (max-width: 480px) {
+  .wrap { padding: 0 18px; }
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+p { max-width: 68ch; }
+
+strong { font-weight: 600; color: var(--ink); }
+
+code, .mono, .num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: .9375em;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  color: var(--faint);
+  margin: 0 0 14px;
+}
+
+.lede {
+  font-size: clamp(1.0625rem, 1rem + .45vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+  margin: 0;
+}
+
+.tight { max-width: 62ch; }
+
+/* Skip link: visually hidden until focused, then a solid block at the top. */
+.skip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip:focus {
+  position: static;
+  display: block;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  padding: 14px 24px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------- pre-launch bar */
+
+.pre-launch {
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--warn);
+  color: var(--ink);
+}
+
+.pre-launch .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 18px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.pre-launch .tag {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.pre-launch p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 82ch;
+}
+
+/* -------------------------------------------------------------------- masthead */
+
+.masthead {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 24px;
+  padding-top: 10px;
+}
+
+.brand {
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 10px 0;
+  display: inline-block;
+}
+
+.brand:hover { color: var(--accent); }
+
+.masthead nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0 2px;
+}
+
+/* Target size: 12px padding + 20px line box clears WCAG 2.2 SC 2.5.8 (24x24). */
+.masthead nav a {
+  display: inline-block;
+  padding: 12px 11px;
+  min-height: 44px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .11em;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.masthead nav a:hover { color: var(--ink); }
+
+.masthead nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------- sections */
+
+main { display: block; }
+
+.hero {
+  padding: clamp(48px, 7vw, 88px) 0 clamp(36px, 5vw, 60px);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+h1 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 1.1rem + 3.4vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: -.028em;
+  margin: 0 0 24px;
+  max-width: 19ch;
+  text-wrap: balance;
+}
+
+.hero--plain {
+  padding: clamp(40px, 5vw, 64px) 0 clamp(28px, 3vw, 40px);
+}
+
+.hero--plain h1 { max-width: 22ch; }
+
+section {
+  padding: clamp(40px, 5vw, 68px) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+section:last-of-type { border-bottom: 0; }
+
+h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(1.45rem, 1.2rem + 1.1vw, 2.05rem);
+  line-height: 1.18;
+  letter-spacing: -.02em;
+  margin: 0 0 20px;
+  max-width: 26ch;
+  text-wrap: balance;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  letter-spacing: -.005em;
+  margin: 0 0 8px;
+}
+
+h4 {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin: 0 0 6px;
+}
+
+.stack > * + * { margin-top: 18px; }
+
+/* --------------------------------------------------------------- hairline grid */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  margin: 0;
+}
+
+.grid > * {
+  background: var(--surface);
+  padding: 24px 22px;
+  margin: 0;
+}
+
+.grid p { margin: 0; font-size: 14.5px; color: var(--muted); max-width: 42ch; }
+.grid p + p { margin-top: 10px; }
+
+.grid .stat {
+  font-family: var(--mono);
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 1.9rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--ink);
+  display: block;
+  margin: 0 0 8px;
+}
+
+/* --------------------------------------------------------------- key/value rows */
+
+.rows { margin: 0; border-top: 1px solid var(--line); }
+
+.rows > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 250px) 1fr;
+  gap: 6px 36px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.rows dt {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--faint);
+  line-height: 1.7;
+}
+
+.rows dd { margin: 0; max-width: 62ch; }
+
+@media (max-width: 660px) {
+  .rows > div { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ---------------------------------------------------------------------- steps */
+
+ol.steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+  max-width: 74ch;
+}
+
+ol.steps > li {
+  counter-increment: step;
+  position: relative;
+  margin-left: 16px;
+  padding: 0 0 30px 40px;
+  border-left: 1px solid var(--line);
+}
+
+ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: -17px;
+  top: -4px;
+  width: 33px;
+  height: 33px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+ol.steps p { margin: 0; color: var(--muted); }
+ol.steps p + p { margin-top: 8px; }
+
+/* -------------------------------------------------------------------- callouts */
+
+.note {
+  border-left: 3px solid var(--line);
+  padding: 2px 0 2px 20px;
+  margin: 22px 0;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+.note p { margin: 0; }
+.note p + p { margin-top: 10px; }
+.note .label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  margin-bottom: 6px;
+}
+
+.note--crit { border-left-color: var(--crit); }
+.note--crit .label { color: var(--crit); }
+.note--warn { border-left-color: var(--warn); }
+.note--warn .label { color: var(--warn); }
+.note--good { border-left-color: var(--good); }
+.note--good .label { color: var(--good); }
+.note--flat .label { color: var(--faint); }
+
+/* ---------------------------------------------------------------------- panels */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: clamp(22px, 3vw, 32px);
+  box-shadow: var(--shadow-1);
+}
+
+.panel > :first-child { margin-top: 0; }
+.panel > :last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------------- tables */
+
+.tablewrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 480px;
+  font-size: 14.5px;
+}
+
+caption {
+  text-align: left;
+  padding: 15px 20px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--line);
+}
+
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+thead th {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-weight: 500;
+}
+
+tbody th { font-weight: 600; color: var(--ink); }
+tbody td { color: var(--muted); }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+
+/* --------------------------------------------------------------------- risks */
+
+.risk { padding: 30px 0; border-top: 1px solid var(--line); max-width: 78ch; }
+.risk:first-of-type { border-top: 0; padding-top: 0; }
+.risk h2 { font-size: clamp(1.25rem, 1.15rem + .4vw, 1.45rem); max-width: 42ch; margin-bottom: 14px; }
+.risk .rows { border-top: 0; }
+.risk .rows > div:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.severity {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.severity--accepted { border-color: var(--crit); color: var(--crit); }
+.severity--mitigated { border-color: var(--good); color: var(--good); }
+
+/* ------------------------------------------------------------------ index list */
+
+.jump { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 40px; }
+.jump li { break-inside: avoid; margin: 0 0 2px; }
+.jump a { display: block; padding: 8px 0; font-size: 14.5px; min-height: 24px; }
+
+@media (max-width: 620px) { .jump { columns: 1; } }
+
+/* ------------------------------------------------------------------------- qa */
+
+.qa { border-top: 1px solid var(--line); padding: 28px 0; max-width: 76ch; }
+.qa:first-of-type { border-top: 0; }
+.qa h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.1875rem;
+  letter-spacing: -.005em;
+  max-width: 56ch;
+  margin-bottom: 12px;
+}
+.qa p { color: var(--muted); }
+.qa p + p { margin-top: 12px; }
+
+/* -------------------------------------------------------------------- actions */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn--primary:hover { color: var(--accent-ink); }
+
+/* --------------------------------------------------------------------- footer */
+
+footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 44px 0 72px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+footer h2 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  /* --muted, not --faint: the footer sits on --surface-2, where --faint drops to 4.38:1 and fails
+     AA for this 11px label. --muted is 5.28:1 there. See the reservation note in tokens.css. */
+  color: var(--muted);
+  margin: 0 0 14px;
+  max-width: none;
+}
+
+footer p { max-width: 80ch; margin: 0 0 12px; }
+footer p:last-child { margin-bottom: 0; }
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 32px 48px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 28px;
+}
+
+.footer-grid ul { list-style: none; margin: 0; padding: 0; }
+.footer-grid li { margin: 0; }
+.footer-grid li a { display: inline-block; padding: 6px 0; min-height: 24px; }
+
+.footer-pins { color: var(--ink); font-weight: 600; }
+
+.small { font-size: 13px; line-height: 1.6; }
