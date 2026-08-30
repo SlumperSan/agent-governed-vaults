@@ -25,3 +25,7 @@ scripts/soak/.state-*.json
 skills-lock.json
 # Local, per-machine Claude Code settings (never shared).
 .claude/settings.local.json
+
+# Local pre-merge gate result (scripts/gate.mjs). Describes THIS machine last run,
+# not a property of the branch, so it is never committed.
+.gate-state.json
