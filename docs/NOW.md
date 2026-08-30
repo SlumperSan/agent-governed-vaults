@@ -50,7 +50,7 @@ These need a funded key or a decision, and no amount of agent work advances them
   not chosen*, and "zero capital cost to the operator" is false — say *low*, and state the number.
 - **This is a shared worktree.** Never `git add -A`; it has swept another session's work into a PR
   **twice** — the second time (PR #76) carried five half-finished oracle file renames whose import
-  sites were never updated, and left `protocol/main` unbuildable until they were reverted. Commit
+  sites were never updated, and left `protocol/main` unbuildable until PR #84 reverted them. Commit
   named paths only.
 - **`OperatorRegistry` attestation has no rebind**, so the operator payout address is permanent.
   It should be a Safe, not an EOA.
