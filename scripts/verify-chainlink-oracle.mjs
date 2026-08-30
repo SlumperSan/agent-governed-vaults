@@ -15,7 +15,8 @@
  *   - a feed with unexpected `decimals()` (the WAD scale is cached at construction from it);
  *   - a stale feed whose last answer is already older than its own heartbeat;
  *   - a non-positive answer (a broken/deprecated feed);
- *   - a missing L2 Sequencer Uptime Feed (mandatory on Base — the ChainlinkOracle reverts without it).
+ *   - a missing L2 Sequencer Uptime Feed (mandatory on every chain except the exempt ids below — the
+ *     ChainlinkOracle would otherwise serve prices computed while the sequencer was down).
  * Each check below fails the config rather than letting the deploy proceed.
  *
  * Exit 0 = every listed feed passed; the `chainlinkOracle` block may be flipped to VERIFIED and the
@@ -25,8 +26,10 @@
  * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
  *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
  *        chainId — Base mainnet 8453 or Base Sepolia 84532), CAST (default `cast`).
- *        The L2 sequencer feed is REQUIRED only on Base mainnet; off-mainnet an empty one is accepted
- *        (the guard is skipped there and mock-tested in ChainlinkOracle.t.sol).
+ *        The L2 sequencer feed is REQUIRED on every chain except local 31337 and Base Sepolia 84532,
+ *        whose config leaves it empty by design (the guard is skipped there and mock-tested in
+ *        ChainlinkOracle.t.sol). Same allowlist, same fail-closed default, as the on-chain rule in
+ *        DeployChainlinkOracle.s.sol — keep the two in sync.
  * Run:  node scripts/verify-chainlink-oracle.mjs [--json]                 # mainnet (default)
  *       CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs   # testnet
  */
@@ -46,9 +49,13 @@ const RPC =
   process.env.BASE_MAINNET_RPC ??
   process.env.BASE_RPC ??
   (CFG.chainId === 84532 ? 'https://sepolia.base.org' : 'https://mainnet.base.org');
-// Mainnet is the only chain where the L2 sequencer uptime feed is mandatory (ChainlinkOracle reverts
-// every price without it). Off-mainnet (testnet/local) an empty sequencer means the guard is skipped.
-const IS_MAINNET = CFG.chainId === 8453;
+// Which chains may ship WITHOUT an L2 sequencer uptime feed: an ALLOWLIST of the ids known to have
+// none (local anvil; Base Sepolia, whose config leaves it empty by design), fail-closed for every
+// other id — this mirrors DeployChainlinkOracle.requiresSequencerUptimeFeed, which is the guard that
+// actually blocks the deploy. Previously this was `chainId === 8453`, so a config for any OTHER L2
+// passed verification with an empty sequencer feed, matching the deploy-script hole (fixed 2026-08-29).
+const SEQUENCER_EXEMPT_CHAIN_IDS = new Set([31337, 84532]);
+const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);
 const CAST = process.env.CAST ?? 'cast';
 const JSON_OUT = process.argv.includes('--json');
 const ZERO = '0x0000000000000000000000000000000000000000';
@@ -101,15 +108,15 @@ function main() {
     return finish();
   }
 
-  // 1. Sequencer uptime feed — mandatory on Base.
+  // 1. Sequencer uptime feed — mandatory on every chain outside the exempt allowlist.
   const seq = co.sequencerUptimeFeed;
   if (!seq || seq === ZERO) {
     check(
       'sequencer uptime feed',
-      !IS_MAINNET,
-      IS_MAINNET
-        ? 'empty/zero — REQUIRED on Base mainnet (ChainlinkOracle reverts every price without it)'
-        : 'empty/zero — guard intentionally skipped off-mainnet (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
+      !SEQUENCER_REQUIRED,
+      SEQUENCER_REQUIRED
+        ? `empty/zero — REQUIRED on chain ${CFG.chainId} (the deploy script refuses it; without the feed the oracle would price through a sequencer outage)`
+        : 'empty/zero — guard intentionally skipped on an exempt chain (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
     );
   } else {
     const hasCode = code(seq).length > 2;

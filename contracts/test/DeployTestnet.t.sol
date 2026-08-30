@@ -27,6 +27,9 @@ contract DeployTestnetTest is Test {
     address constant LINK_USD_FEED = 0xb113F5A928BCfF189C998ab20d753a47F9dE5A61;
     address constant ROUTER = 0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4;
 
+    string constant REFUSED =
+        "DeployTestnet: allowed only on local 31337 or Base Sepolia 84532 - it enables sub-vaults (C-1); use Deploy.s.sol on any other chain";
+
     function _mockFeed(address feed, int256 answer8dec) internal {
         vm.etch(feed, hex"00"); // mockCall requires code at the address
         vm.mockCall(feed, abi.encodeWithSignature("decimals()"), abi.encode(uint8(8)));
@@ -105,13 +108,18 @@ contract DeployTestnetTest is Test {
         );
     }
 
+    /// @notice The config-vs-RPC check still bites INSIDE the permitted chain set: an operator on Base
+    /// Sepolia who grabs the mainnet config clears the chain allowlist and is then stopped by the
+    /// chainId the config itself declares. (The config path is passed as an argument rather than
+    /// exported as DEPLOY_CONFIG: forge runs a suite's tests in parallel against process-global env,
+    /// so exporting a config only this test wants would flake the tests around it.)
     function test_testnetDeployRevertsOnWrongChain() public {
         _mockFeed(ETH_USD_FEED, 1917e8);
         _mockFeed(LINK_USD_FEED, 975e6);
-        vm.chainId(999); // a non-mainnet chain whose id does not match the base-sepolia config (84532)
+        vm.chainId(84532);
         DeployTestnet d = new DeployTestnet();
-        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 84532, 999));
-        d.run();
+        vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 8453, 84532));
+        d.runWithConfig("config/base-mainnet.json"); // the MAINNET config on the testnet chain
     }
 
     /// @notice This testnet script hardcodes allowSubVaults=true; on Base MAINNET that is the C-1
@@ -121,9 +129,26 @@ contract DeployTestnetTest is Test {
     function test_refusesBaseMainnet() public {
         vm.chainId(8453); // Base mainnet
         DeployTestnet d = new DeployTestnet();
-        vm.expectRevert(
-            bytes("DeployTestnet refuses Base mainnet: it enables sub-vaults (C-1) - use Deploy.s.sol")
-        );
+        vm.expectRevert(bytes(REFUSED));
+        d.run();
+    }
+
+    /// @notice L2-GENERIC: the guard is an ALLOWLIST (local 31337 / Base Sepolia 84532), not a
+    /// denylist of Base mainnet. Optimism mainnet — and every other L2 mainnet — is refused the same
+    /// way, so no other chain can take the sub-vault-enabled immutable factory Base mainnet cannot.
+    function test_refusesOtherL2Mainnet() public {
+        vm.chainId(10); // Optimism mainnet: not 8453, and previously waved straight through
+        DeployTestnet d = new DeployTestnet();
+        vm.expectRevert(bytes(REFUSED));
+        d.run();
+    }
+
+    /// @notice An unrecognized chain id (a mis-pointed RPC) fails closed rather than being permitted
+    /// by default. Under the old denylist this reached the config parse and could have proceeded.
+    function test_refusesUnknownChain() public {
+        vm.chainId(424_242);
+        DeployTestnet d = new DeployTestnet();
+        vm.expectRevert(bytes(REFUSED));
         d.run();
     }
 }
