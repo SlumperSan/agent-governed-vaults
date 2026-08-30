@@ -367,3 +367,51 @@ node --env-file=data-drill/drill.env packages/indexer/src/index-runner.mjs   # w
 `data-drill/` is deliberately **not committed** — it is a scratch state directory, and the
 artifacts are machine- and block-specific. Every command and every line of output it produced is
 quoted verbatim above.
+
+## 8. Gate status for this PR — and a blocker found on `protocol/main`
+
+This PR changes **two documentation files and no code**. `npm run gate` nonetheless **fails**, for a
+reason that predates it:
+
+```
+  pass             fmt        0.1s
+  pass             syntax     0.3s
+  FAIL             build      1.1s
+  pass             opscheck   0.1s
+  pass             backend    2.5s
+  FAIL             test       1.1s
+  FAIL             snapshot   1.1s
+  FAIL             sizes      1.1s
+  warn             slither    1.9s
+GATE FAILED on build (9.5s)
+```
+
+**Every step that does not depend on `forge build` passes.** The four failures are the same failure:
+
+```
+Error (6275): Source "test/OracleAggregator.sol" not found
+ --> test/retired/PythSource.sol:4:1
+```
+
+`contracts/test/retired/` carries three unresolvable imports after the oracle retirement moved these
+files: `PythSource.sol` and `UniswapV3TwapSource.sol` import `../OracleAggregator.sol` when
+`OracleAggregator.sol` is now their *sibling*, and `OracleAggregator.sol` imports
+`./interfaces/IOracleAggregator.sol` when that interface stayed in `src/interfaces/`.
+
+**This is not caused by this PR**, and the proof is mechanical — the branch's contracts tree is
+byte-identical to `protocol/main`:
+
+```bash
+$ git diff --stat protocol/main..HEAD -- contracts/     # empty
+$ git diff --name-only protocol/main..HEAD
+docs/LAUNCH-READINESS.md
+docs/NOW.md
+docs/RESTORE-DRILL.md
+```
+
+Left unfixed **deliberately**, per SWARM.md §4 ("if you spot something worth fixing that is outside
+your task, report it — do not fix it") and §9 (one PR per coherent change). Correcting three import
+paths inside a documentation PR is exactly the merge-surface expansion those rules exist to prevent.
+It is reported here, recorded in `docs/NOW.md`, and queued as its own task. **No agent can meet the
+definition of done until it lands**, and CI could not have caught it — Actions minutes are exhausted
+until ~2026-09-01.

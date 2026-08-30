@@ -26,6 +26,14 @@ work it describes.
 - **CI is unavailable** — GitHub Actions minutes exhausted 2026-08-29, back around 2026-09-01.
   `npm run gate` is the substitute and mirrors `ci.yml` step for step. Do not trust a red CI in this
   window without reproducing it locally: PR #71's "backend fail" was minutes exhaustion, not code.
+- **⚠ `protocol/main` is RED at the tip — `npm run gate` fails on `build`, and has since the oracle
+  retirement landed.** `contracts/test/retired/` has three unresolvable imports: `PythSource.sol`
+  and `UniswapV3TwapSource.sol` both import `../OracleAggregator.sol` (now `./`, since
+  `OracleAggregator.sol` moved into that same directory), and `OracleAggregator.sol` imports
+  `./interfaces/IOracleAggregator.sol` (the interface stayed in `src/interfaces/`). `build`, `test`,
+  `snapshot` and `sizes` therefore all fail; `fmt`, `syntax`, `opscheck` and `backend` still pass.
+  **No agent can meet the definition of done until this is fixed**, and CI could not catch it
+  because minutes are exhausted. Found 2026-08-30 by the gate-7 drill, which changed no code.
 - **Batch related changes into one PR.** A CI round trip is 6–7 minutes, so three PRs for three
   related fixes costs 20 minutes of waiting for nothing.
 
@@ -36,7 +44,10 @@ These need a funded key or a decision, and no amount of agent work advances them
 1. **Resume the smoke lifecycle** (needs the `deployer` keystore password) — unblocks launch gate 2.
 2. **Soak + canary re-run** on the pivoted tree — unblocks gates 3 and 6. Wired and ready:
    `scripts/soak/run-soak.ps1`.
-3. **Recorded restore drill** — gate 7. ~30 minutes, read-only, no keys needed.
+3. ~~**Recorded restore drill** — gate 7.~~ **DONE 2026-08-30** — `docs/RESTORE-DRILL.md`. The
+   restore genuinely works on both state files. Gate 7 stays CONDITIONAL for one reason: steps 1
+   and 6 of the runbook are `docker compose stop/start` and **there is no Docker on this machine**,
+   so they were substituted. **Closing the row now needs Docker, not a key.**
 4. **Launch parameter: `proposalThresholdBps = 500`.** Keep it or lower it — immutable per vault
    once shipped. See the trap below.
 
