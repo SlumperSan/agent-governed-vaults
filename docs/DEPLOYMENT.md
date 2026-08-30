@@ -246,7 +246,7 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 
 | Signal | Alert condition |
 | --- | --- |
-| Oracle freshness | any basket asset within 1 breaker-trip of `StaleOracle` |
+| Oracle health | any basket asset whose `priceWad` reverts `StaleOracle` — aged past its heartbeat, outside its sane-price band, feed dead or unlisted — or the L2 sequencer down / inside its grace period ([CANARY.md §3(a)](CANARY.md)) |
 | NAV vs. token balances | `navWad` diverges from independently-computed holdings > 0.5% |
 | Share conservation | `Σ sharesOf != totalShares` (indexer vs. chain read) |
 | Exit liveness | any `requestExit` reverting for a non-gate reason (H-1 regression sentinel) |
