@@ -6,7 +6,7 @@ import {VaultCore} from "../src/VaultCore.sol";
 import {Governance} from "../src/Governance.sol";
 import {DirectPoolAdapter, IUniswapV2Pair} from "../src/DirectPoolAdapter.sol";
 import {IExecutionAdapter} from "../src/interfaces/IExecutionAdapter.sol";
-import {OracleAggregator, IPriceSource} from "../src/OracleAggregator.sol";
+import {OracleAggregator, IPriceSource} from "./retired/OracleAggregator.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";

@@ -46,25 +46,49 @@ reader can run. Never state a recovery time you cannot evidence.
 
 ## 1. Oracle staleness / the K-4 capital freeze
 
-The big one. On a stale oracle (quorum lost for `maxStalenessSeconds`), **every NAV path freezes
-— deposits activate, exits settle, rebalances execute: none of them, until freshness returns.**
-This is SF-2 working as designed, not a bug: a frozen vault cannot be drained at a wrong price.
+The big one. When the oracle cannot produce a trustworthy price for an asset, **every NAV path
+freezes — deposits activate, exits settle, rebalances execute: none of them, until the price is
+good again.** This is SF-2 working as designed, not a bug: a frozen vault cannot be drained at a
+wrong price.
 
-- **Detect:** canary `oracle-freshness` → ALERT (margin < 0); confirm on-chain:
-  `cast call <aggregator> 'priceWad(address)(uint256)' <asset>` reverting is the breaker's own
-  verdict. Check every source's `updatedAt` to identify which class died.
-- **Act:** (1) confirm which mechanism class is stale — push feed halted, pull feed unfunded
-  keeper, TWAP pool gone quiet — they have different owners and different clocks;
-  (2) for a Pyth leg: **push a price update yourself** — it is permissionless and costs gas, and
-  restores that leg immediately; (3) for a quiet TWAP pool or halted Chainlink feed: nothing
-  on-chain can be done by us — communicate and wait.
-- **Comms template:** "Vault pricing for <asset> is frozen because <n> of 3 oracle sources went
-  stale at <time> (verify: <cast command>). Funds are not lost and cannot be mispriced — the
-  freeze exists to guarantee that. Pending (unactivated) deposits can be reclaimed at any time
-  with `cancelPending()`. Exits resume automatically when freshness returns; no action from us
-  is possible or needed on-chain."
-- **Cannot do:** unfreeze, override the price, extend or shorten the staleness bound. The bound
-  is immutable per deployment.
+> **Post-C-6 pivot — there is no quorum any more.** The launch oracle is `ChainlinkOracle`: **one
+> genuine Chainlink Data Feed per asset**, no median, no source set. A freeze now has exactly four
+> causes, and none of them is "n of 3 sources went stale". Earlier revisions of this runbook told
+> you to push a Pyth update or check a TWAP pool; those legs do not exist on a launch vault.
+
+- **Detect:** confirm on-chain — `cast call <oracle> 'priceWad(address)(uint256)' <asset>`
+  reverting `StaleOracle(asset)` is the breaker's own verdict. Then identify **which** of the four
+  causes it is:
+  1. **Sequencer** — read the Base L2 sequencer uptime feed
+     (`cast call <oracle> 'sequencerUptimeFeed()(address)'`, then `latestRoundData` on it). Answer
+     `1` means down; answer `0` with `block.timestamp - startedAt < 3600` means it is up but inside
+     the one-hour grace period. **Grace is anchored on `startedAt`, not `updatedAt`** — do not
+     recompute it against `updatedAt`, which can sit months past `startedAt` on a long-lived round.
+  2. **Heartbeat** — `latestRoundData().updatedAt` on the asset's feed is older than the
+     configured heartbeat (`cast call <oracle> 'feedOf(address)' <asset>`).
+  3. **Sane-price band** — the answer is outside `minPriceWad`/`maxPriceWad` for that asset. This
+     is the deliberate defence against a feed reporting a deprecated min/maxAnswer clamp during a
+     depeg or flash crash.
+  4. **Feed dead or unlisted** — the feed reverts, answers non-positive, or the asset was never
+     listed on this oracle.
+- **Act:** for (1) sequencer — wait; the grace period is protocol-imposed and correct. For (2),
+  (3) and (4) — **nothing on-chain can be done by us.** There is no second source to fail over to,
+  the oracle's config is immutable, and a vault's oracle is immutable too, so there is no rotation
+  lever. Communicate and wait for Chainlink. If a feed is permanently deprecated, that asset's
+  vaults stay frozen: this is gate 5's named residual, and it is a known, accepted consequence of
+  the single-provider design.
+- **Comms template:** "Vault pricing for \<asset\> is frozen because its Chainlink price feed
+  \<went stale past its heartbeat / reported a price outside the configured sane band / the Base
+  sequencer is recovering\> at \<time\> (verify: \<cast command\>). Funds are not lost and cannot
+  be mispriced — the freeze exists to guarantee that. Pending (unactivated) deposits can be
+  reclaimed at any time with `cancelPending()`. Exits resume automatically once the feed is healthy;
+  no action from us is possible or needed on-chain."
+- **Cannot do:** unfreeze, override the price, retune the heartbeat or band, or repoint the feed.
+  All of it is immutable per deployment.
+- **Canary caveat:** the `oracle-freshness` signal has **not** been ported to this oracle — it
+  still reads the retired aggregator's `assetConfig`, so on a launch vault it emits `skipped`
+  rather than alerting. Do not treat a quiet canary as evidence the oracle is healthy. See
+  [CANARY.md](CANARY.md) §3(a).
 
 ## 2. `nav-backing` divergence (composition or custody)
 

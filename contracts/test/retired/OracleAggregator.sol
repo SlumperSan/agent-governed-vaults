@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
+// RETIRED (C-6), formerly src/OracleAggregator.sol. The bespoke median-aggregator stack is
+// superseded by src/oracle/ChainlinkOracle.sol and is no longer production source.
+// It lives under test/ rather than being deleted because the audit tests for
+// C-3/C-4/C-6 and H-1/H-2/M-1 drive the REAL contract, not a mock, and that evidence
+// must keep building (SWARM §6). Citations to the old path resolve in git history.
+
+import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
+import {IAggregatorV3} from "../../src/interfaces/IAggregatorV3.sol";
 
 /// @notice One independent price source (Chainlink-style push, TWAP, pull-oracle wrapper…).
 /// Source *mechanism diversity* is the SF-1 listing criterion — correlated upstreams are not
@@ -188,16 +195,6 @@ contract OracleAggregator is IOracleAggregator {
         AssetConfig storage cfg = _cfg[asset];
         return (cfg.sources, cfg.maxStaleness, cfg.quorum);
     }
-}
-
-/// @notice Chainlink-style AggregatorV3 wrapper normalizing to WAD. One mechanism class among
-/// several — pair with TWAP / pull-oracle sources for real independence (SF-1).
-interface IAggregatorV3 {
-    function decimals() external view returns (uint8);
-    function latestRoundData()
-        external
-        view
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 }
 
 contract ChainlinkSourceAdapter is IPriceSource {

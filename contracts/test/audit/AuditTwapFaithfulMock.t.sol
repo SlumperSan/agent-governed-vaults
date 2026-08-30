@@ -2,8 +2,8 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../../src/oracle/UniswapV3TwapSource.sol";
-import {TickMath} from "../../src/oracle/vendor/TickMath.sol";
+import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../retired/UniswapV3TwapSource.sol";
+import {TickMath} from "../retired/vendor/TickMath.sol";
 import {FaithfulUniV3Pool, Erc20Stub} from "../mocks/FaithfulUniV3Pool.sol";
 
 /// @notice AUDIT RE-VERIFICATION of findings H-2 and H-3.

@@ -164,6 +164,8 @@
         "asset": "0x4200000000000000000000000000000000000006",
         "feed": "0x50015f8b17fb2C290Dde41fDc246ed0dcEE93a8b",
         "feedDescription": "Chainlink ETH / USD (8 decimals)",
+        "feedDescriptionOnChain": "ETH / USD",
+        "feedDescriptionOnChainNote": "The EXACT string the proxy returns from description(). Machine-compared by scripts/verify-chainlink-oracle.mjs (equality, not a substring) so a plausible-but-wrong feed - right pair, wrong deployment - fails before deploy. ChainlinkOracle enforces the weaker on-chain invariant that it ends in a USD quote leg.",
         "heartbeatSeconds": 3600,
         "heartbeatNote": "The feed's own heartbeat is 1200s; 3600 is the ChainlinkOracle staleness bound (heartbeat + generous L2 buffer, so a healthy 1200s feed never false-trips while a >1h-frozen feed fails closed).",
         "minPriceWad": "100000000000000000000",
@@ -175,6 +177,7 @@
         "asset": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
         "feed": "0x32F587986D3fb47601157c19615d568BeD0BCabc",
         "feedDescription": "Chainlink BTC / USD (8 decimals)",
+        "feedDescriptionOnChain": "BTC / USD",
         "heartbeatSeconds": 3600,
         "heartbeatNote": "Feed heartbeat 1200s; 3600 staleness bound (heartbeat + L2 buffer).",
         "minPriceWad": "1000000000000000000000",
@@ -186,7 +189,8 @@
       "cbETH": "No Chainlink cbETH/USD Data Feed exists on Base (only CBETH/ETH, an exchange-rate feed). ChainlinkOracle is single-feed-per-asset, so cbETH cannot be priced without composing cbETH/ETH x ETH/USD — out of launch scope. This is the documented single-provider asset-coverage tradeoff (C-6)."
     },
     "verification": [
-      "For each asset feed: code.length > 0; decimals() <= 18; latestRoundData() answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "For each asset feed: code.length > 0; decimals() == 8 (Chainlink USD-feed convention); latestRoundData() answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "DENOMINATION: description() must be USD-quoted (ends in ' USD' or '/USD') AND equal feedDescriptionOnChain exactly. Base ships CBETH / ETH and no cbETH/USD feed, so an ETH-denominated feed is one copy-paste away and would be read as dollars by every consumer. ChainlinkOracle's constructor enforces the USD quote leg + 8 decimals on-chain; this verifier adds the exact-string match.",
       "For each asset: a sane-price band MUST be set — minPriceWad > 0 and maxPriceWad >= minPriceWad (the depeg-clamp defence; 0/0 is rejected by the verifier for mainnet).",
       "sequencerUptimeFeed: code.length > 0 and latestRoundData() answers.",
       "USDC not also present in assets[].",

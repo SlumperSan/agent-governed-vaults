@@ -9,7 +9,7 @@ import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {OracleAggregator, IPriceSource} from "../src/OracleAggregator.sol";
+import {OracleAggregator, IPriceSource} from "./retired/OracleAggregator.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";

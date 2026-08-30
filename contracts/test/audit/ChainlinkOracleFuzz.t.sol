@@ -35,18 +35,28 @@ contract ChainlinkOracleFuzzTest is Test {
         return new ChainlinkOracle(assets, feeds, hb, mn, mx, address(0), address(0));
     }
 
-    /// WAD normalization is exact for any feed-decimals in [0,18] and any positive answer that
-    /// won't overflow when scaled. Result is always > 0 (never a zero price).
-    function testFuzz_wadNormalizationExact(uint8 decimals, uint256 answer) public {
-        decimals = uint8(bound(decimals, 0, 18));
-        uint256 scale = 10 ** (18 - uint256(decimals));
+    /// WAD normalization is exact for any positive answer that won't overflow when scaled. Result
+    /// is always > 0 (never a zero price). Decimals are FIXED at 8: the constructor now pins
+    /// feed-decimals to the Chainlink USD-feed convention as the denomination cross-check, so the
+    /// old 0..18 sweep would only ever exercise the reject path. That path is fuzzed below instead.
+    function testFuzz_wadNormalizationExact(uint256 answer) public {
         // keep answer positive and the WAD product within int256/uint256 sanity
         answer = bound(answer, 1, type(uint128).max);
-        MockAggregatorV3 feed = new MockAggregatorV3(decimals, int256(answer), block.timestamp);
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(answer), block.timestamp);
         ChainlinkOracle oracle = _oracle(feed, 0, 0); // band disabled
         uint256 p = oracle.priceWad(ASSET);
-        assertEq(p, answer * scale, "WAD = answer * 10^(18-decimals)");
+        assertEq(p, answer * 1e10, "WAD = answer * 10^(18-8)");
         assertGt(p, 0, "never a zero price");
+    }
+
+    /// Denomination cross-check: EVERY feed-decimals other than 8 is rejected at construction,
+    /// across the whole uint8 space — including 18, the Chainlink ETH-denominated convention that
+    /// a cbETH/ETH-style misconfiguration would carry.
+    function testFuzz_nonEightDecimalsRejected(uint8 decimals) public {
+        vm.assume(decimals != 8);
+        MockAggregatorV3 feed = new MockAggregatorV3(decimals, 2500e8, block.timestamp);
+        vm.expectRevert(ChainlinkOracle.BadOracleConfig.selector);
+        _oracle(feed, 0, 0);
     }
 
     /// Any answer as stale as or staler than the heartbeat fails closed.

@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {ChainlinkOracle} from "../../src/oracle/ChainlinkOracle.sol";
-import {OracleAggregator, IPriceSource} from "../../src/OracleAggregator.sol";
+import {OracleAggregator, IPriceSource} from "../retired/OracleAggregator.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 
@@ -88,16 +88,18 @@ contract ChainlinkOracleTest is Test {
         assertEq(oracle.priceWad(WETH), 2500e18, "8-dec feed -> WAD");
     }
 
-    function test_wadNormalization_18Decimals() public {
+    /// 18 decimals is Chainlink's ETH-DENOMINATED convention. Even with a USD-looking description
+    /// the decimals cross-check rejects it at construction — see AuditFeedDenomination.t.sol.
+    function test_constructor_rejects18DecimalFeed() public {
         MockAggregatorV3 feed = new MockAggregatorV3(18, 2500e18, block.timestamp);
-        ChainlinkOracle oracle = _one(WETH, address(feed), address(0), address(0));
-        assertEq(oracle.priceWad(WETH), 2500e18, "18-dec feed -> WAD");
+        vm.expectRevert(ChainlinkOracle.BadOracleConfig.selector);
+        _one(WETH, address(feed), address(0), address(0));
     }
 
-    function test_wadNormalization_6Decimals() public {
+    function test_constructor_rejects6DecimalFeed() public {
         MockAggregatorV3 feed = new MockAggregatorV3(6, 30000e6, block.timestamp);
-        ChainlinkOracle oracle = _one(WBTC, address(feed), address(0), address(0));
-        assertEq(oracle.priceWad(WBTC), 30000e18, "6-dec feed -> WAD");
+        vm.expectRevert(ChainlinkOracle.BadOracleConfig.selector);
+        _one(WBTC, address(feed), address(0), address(0));
     }
 
     // --- fail-closed on bad reads -----------------------------------------
@@ -237,7 +239,7 @@ contract ChainlinkOracleTest is Test {
         new ChainlinkOracle(assets, feeds, hb, z, z, address(0), address(0));
     }
 
-    function test_constructor_rejectsFeedOver18Decimals() public {
+    function test_constructor_rejectsFeedWithAbsurdDecimals() public {
         MockAggregatorV3 feed = new MockAggregatorV3(19, 2500e8, block.timestamp);
         vm.expectRevert(ChainlinkOracle.BadOracleConfig.selector);
         _one(WETH, address(feed), address(0), address(0));

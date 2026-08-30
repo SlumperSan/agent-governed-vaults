@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {OracleAggregator, IPriceSource} from "../../src/OracleAggregator.sol";
+import {OracleAggregator, IPriceSource} from "../retired/OracleAggregator.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 
 /// @notice A price source whose price and publish time are directly settable.

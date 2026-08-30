@@ -2,9 +2,9 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../src/oracle/UniswapV3TwapSource.sol";
-import {TickMath} from "../src/oracle/vendor/TickMath.sol";
-import {FullMath} from "../src/oracle/vendor/FullMath.sol";
+import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "./retired/UniswapV3TwapSource.sol";
+import {TickMath} from "./retired/vendor/TickMath.sol";
+import {FullMath} from "./retired/vendor/FullMath.sol";
 import {MockV3Pool} from "./mocks/OracleSourceMocks.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
 
