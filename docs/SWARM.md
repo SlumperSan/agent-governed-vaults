@@ -10,6 +10,45 @@ porting guide, not into porting.** That guide is what made the other 64 agents a
 
 ---
 
+## 0. Start in the vault, end in the vault
+
+**Every sprint opens by onboarding from Obsidian ("ob") and closes by updating it.** Not optional,
+and not a nicety — the vault is the project's memory. The repo records what the code does; the vault
+records *why*, what was decided, what was tried and rejected, and what is blocked on a human. A
+sprint that skips the read re-derives context that already exists; a sprint that skips the write
+makes the next sprint pay for it again.
+
+**Vault root:** `C:\Users\Micha\desktop\Obsidian Vault\Agent-Governed Vaults\`
+
+### Onboarding — first thing, before any code
+
+Read, in this order, stopping once you have what your task needs:
+
+1. `Project State.md` — where the build actually stands.
+2. The most recent `Session Handoff *.md` — what the last session did and left open.
+3. `Key Decisions.md` and `Security Findings.md` — decisions and findings you must not re-litigate.
+4. Whichever of `Business/` or `Working Agreement.md` your task touches.
+
+Then `docs/NOW.md` and `npm run cc` for the live, computed state. The vault carries the reasoning;
+`cc` carries the facts. Where they disagree the facts win, and the vault is what needs fixing.
+
+### Closeout — last thing, after the gate passes
+
+Update the vault before you report done. At minimum:
+
+- `Project State.md` — what changed, and what is now true that was not before.
+- Anything your work invalidated. A stale vault note is worse than a missing one, because it will be
+  believed. If you found that a recorded number or claim is wrong, correct it and say so explicitly
+  rather than quietly overwriting it.
+- New findings, decisions and dead ends worth not repeating — including what you deliberately did
+  **not** do, and why. Rejected approaches are among the most valuable things in the vault.
+
+Convert relative dates to absolute. Link related notes with `[[wikilinks]]`.
+
+The shorthand for this is **"update ob"**.
+
+---
+
 ## 1. The unit of work
 
 **One agent owns one module.** Not one feature spanning six files — one file, or one tightly-bounded

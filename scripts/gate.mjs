@@ -127,14 +127,18 @@ const STEPS = [
     id: 'snapshot',
     title: 'forge snapshot --check (gas, no regressions)',
     cmd: 'forge',
-    args: ['snapshot', '--check', '--nmt', 'testFuzz|c4EndToEnd'],
+    args: ['snapshot', '--check', '--nmt', 'testFuzz|c4EndToEnd|testFork'],
     cwd: CONTRACTS,
     quickSkip: true,
     // The --nmt filter is not optional and not arbitrary; ci.yml carries the full reasoning.
     // Short version: fuzz gas is a mean over a non-reproducible corpus, and the two c4EndToEnd
     // tests probe storage via stdStorage whose trial SSTORE/SLOAD gas differs by a few units
     // between Windows and Linux. Gating either measures noise.
-    // Regenerate deliberately with: cd contracts && forge snapshot --nmt "testFuzz"
+    // `testFork` is excluded for the same reason: the fork tests run against Base mainnet at the
+    // LATEST block, so their gas is a function of live chain state and is not reproducible -- and
+    // with no RPC configured they skip and emit no entry at all. Either way they must never land
+    // in .gas-snapshot.
+    // Regenerate deliberately with: cd contracts && forge snapshot --nmt "testFuzz|testFork"
     why: 'Re-runs the suite, so it roughly doubles gate time -- this is what --quick drops.',
   },
   {
