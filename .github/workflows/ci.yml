@@ -38,8 +38,14 @@ jobs:
       # same class as fuzz). They are audit exploit DEMONSTRATIONS, not protocol hot paths,
       # so gating their gas measures platform noise. The rest of AuditC4EndToEnd (the
       # view-only median-boundary cases) stays in the gate.
+      # `testFork` joins them for the same reason. The fork tests
+      # (test/audit/ChainlinkOracleSequencerFork.t.sol) run against Base mainnet at the LATEST
+      # block, so their gas is a function of live chain state and is not reproducible between
+      # runs — and on CI, which sets no BASE_MAINNET_RPC_URL, they vm.skip() and produce no
+      # entry at all. Either way they must never enter .gas-snapshot. Regenerate with:
+      #   cd contracts && forge snapshot --nmt "testFuzz|testFork"
       - name: Gas snapshot (no regressions)
-        run: forge snapshot --check --nmt "testFuzz|c4EndToEnd"
+        run: forge snapshot --check --nmt "testFuzz|c4EndToEnd|testFork"
       # Stays last. It used to fail here on VaultFactory vs the EIP-170 cap (issue
       # #10) — a real undeployability defect, kept red on purpose rather than
       # suppressed. Ordering it last meant the suite and the gas gate still ran.
