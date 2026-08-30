@@ -261,6 +261,38 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
+> ⚠ **The canary does NOT yet watch the launch oracle.** Its `oracle-freshness` signal reads
+> `assetConfig(asset)` → `(sources, maxStaleness, quorum)`, which is the retired `OracleAggregator`
+> ABI; `ChainlinkOracle` exposes `feedOf(asset)` and has no quorum at all. Against a vault priced by
+> the C-6 pivot every asset therefore comes back **`skipped`**, not `ok` — visible as an OK→SKIPPED
+> transition by design, never a silent pass, but it means the row below is currently **unmanned on
+> the launch oracle**. Porting the signal is tracked as its own task; until then the recurring check
+> immediately below is the oracle's only continuous monitoring.
+
+### 7a. Recurring feed check — run this on a cadence, not only before deploying
+
+```bash
+node scripts/verify-chainlink-oracle.mjs
+```
+
+Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
+**weekly, and after any Chainlink feed announcement.** Two things it catches that nothing on-chain
+can:
+
+- **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
+  configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
+  `scale = 10**(18 - decimals)` once, at construction, from a value that lives on the *aggregator*.
+  The script's `decimals() == 8` check is a **complete** test of that residual: if a feed still
+  reports 8, the deployed oracle's cached scale is still correct however many swaps happened. Each
+  feed's `aggregatorPin` in the config makes the swap itself **visible** — reported as a `DRIFT`
+  notice, never a failure, because a swap is legitimate. A `DRIFT` line alongside a passing decimals
+  check is the reassuring outcome: it moved, and it re-checked clean. Update the pin and move on.
+- **A `FAIL` on decimals is the alarming outcome** and needs the row-13 response, not a config edit:
+  every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
+  it (the vault's oracle is `immutable` — row 12), and members should be told to exit. Exits still
+  settle correctly under drift: `_settleExit` pays a pro-rata slice and only *values* it through the
+  oracle.
+
 | Signal | Alert condition |
 | --- | --- |
 | Oracle freshness | any basket asset within 1 breaker-trip of `StaleOracle` |
