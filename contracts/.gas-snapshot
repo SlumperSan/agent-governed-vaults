@@ -28,7 +28,7 @@ AuditDosExitLivenessTest:test_remediated_A_unboundedRevealDurationFreezesAllExit
 AuditExecutionWindowFreezeTest:test_remediated_validatorRejectsAnUnboundedExecutionWindow() (gas: 13387)
 AuditExitSliceRoundingTest:test_exitPaysTheDivideOnceSliceOnBothLegs() (gas: 934444)
 AuditExitSliceRoundingTest:test_fixtureShapeIsTheOneTheDefectNeeds() (gas: 822003)
-AuditExitSliceRoundingTest:test_reorderStillRoundsDownAndDoesNotDilateNavPerShare() (gas: 934376)
+AuditExitSliceRoundingTest:test_reorderStillRoundsDownAndDoesNotDilateNavPerShare() (gas: 936202)
 AuditFeeEngineReentrancyTest:test_remediated_crossVaultNestingIsRefused() (gas: 763023)
 AuditFeeEngineReentrancyTest:test_remediated_sequentialPullsCreditExactlyWhatArrived() (gas: 705052)
 AuditFeedDenominationTest:test_ethDenominatedFeedIsRejected() (gas: 428897)

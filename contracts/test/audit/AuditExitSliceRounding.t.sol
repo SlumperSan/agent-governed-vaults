@@ -158,22 +158,25 @@ contract AuditExitSliceRoundingTest is Test {
 
     /// @notice The property the reorder must not break: it still rounds DOWN, so the exiter never
     /// takes more than an exact pro-rata share net of the fee, and NAV per share for the members
-    /// who stay is non-decreasing (§4.6).
+    /// who stay is non-decreasing (§4.6). This is a DIRECTIONAL guard, not a regression test — it
+    /// holds under both orderings by design. Do not tighten it into a copy of the test above.
     function test_reorderStillRoundsDownAndDoesNotDilateNavPerShare() public {
         _setUpExitFixture();
 
+        uint256 daiBefore = dai.balanceOf(alice);
+        uint256 wethBefore = weth.balanceOf(alice);
         uint256 navPsBefore = vault.navWad() * 1e18 / vault.totalShares();
 
         vm.prank(alice);
         vault.requestExit(ALICE_SHARES);
 
         assertLe(
-            dai.balanceOf(alice) - (1_000_000e18 - D_ALICE),
+            dai.balanceOf(alice) - daiBefore,
             (D_CREATOR + D_ALICE) * ALICE_SHARES * 9_900 / (TS_AT_EXIT * 10_000),
             "cash leg never exceeds the exact fee-netted pro-rata share"
         );
         assertLe(
-            weth.balanceOf(alice),
+            weth.balanceOf(alice) - wethBefore,
             WETH_SEEDED * ALICE_SHARES * 9_900 / (TS_AT_EXIT * 10_000),
             "in-kind leg never exceeds the exact fee-netted pro-rata share"
         );
