@@ -16,7 +16,7 @@ assumed).
 | --- | --- | --- |
 | A — indexer snapshot | **PASS** | corrupted live file → restored from `.1` → daemon resumed at `lastBlock+1`, re-indexed the 13-block loss, counts identical |
 | B — canary state | **PASS** | restored state reloaded **8 tracked signals**; **zero duplicate pages** for the 3 signals already firing — the property the ring exists for |
-| C — atomicity under a hard kill | **PASS (incidental)** | an un-graceful termination left the snapshot fully parseable; `verify` exit 0 |
+| C — atomicity under a hard kill | **NOT PROVEN** | the kill landed ~2.4s *after* a completed write, in the poll sleep — no write was in flight, so the run says nothing about atomicity. See §6. |
 
 **Gate 7 verdict: the restore genuinely works, and gate 7 stays CONDITIONAL.** The procedure
 recovered real state twice, but two of its six steps (`docker compose stop/start`) had no Docker
@@ -116,8 +116,12 @@ snapshot ./data-drill/indexer-state.json: OK
     .3  lastBlock=46140891 vaults=1 630 bytes  2026-08-30T00:34:41.065Z
 ```
 
-**Drill C, incidental and worth recording: the hard kill did not truncate the snapshot.** Atomic
-temp-then-rename held under an un-graceful termination — the exact thing §8.3 claims it buys.
+The snapshot came through the hard kill fully parseable. **That is not evidence of atomicity, and
+this report will not claim it is.** The last write completed at `00:35:56.341` and the kill landed
+at `00:35:58.703` — **~2.4s later, in the middle of the 12s poll sleep.** The file was already at
+rest; no write was in flight. Atomic temp-then-rename was never put under load here. Recorded in
+§6 as not proven.
+
 One `verify` invocation covered the live file *and* every rung with its own cursor, so step 2's
 plural "candidates" is satisfied by the single command the step prints.
 
@@ -305,8 +309,11 @@ Stated without softening.
   here. This alone is why gate 7 stays CONDITIONAL.
 - **It did not prove graceful shutdown.** Every stop in this drill was a hard kill. The
   finish-the-batch-then-snapshot hook, `shutdown.complete`, and the final-snapshot ring push were
-  never reached. What *was* proven is stronger in one narrow way — atomicity survives an
-  un-graceful kill — and weaker in every other.
+  never reached.
+- **It did not prove atomicity under a hard kill**, despite the snapshot surviving one. Both kills
+  landed in a poll sleep, seconds after a completed write (§3). Catching a write *in flight* would
+  need a kill timed into the temp-then-rename window, which this drill did not attempt. The
+  atomicity claim in §8.3 remains supported only by its tests.
 - **It did not prove restore at production scale.** The snapshot was 630 bytes with 1 vault and 1
   operator. A 184KB snapshot with 7 vaults and 64 holders (§8.3's own example) may expose
   parse-time or fold-time behaviour this did not touch. Nothing observed suggests it would; the
@@ -331,8 +338,28 @@ Stated without softening.
 ```bash
 npm ci
 mkdir -p data-drill
-# drill.env: the address book above + STATE_PATH=./data-drill/indexer-state.json
-#            SNAPSHOT_BACKUPS=3 SNAPSHOT_BACKUP_INTERVAL_MS=20000
+```
+
+Write `data-drill/drill.env` with all five required indexer variables, taken from
+`contracts/config/deployments/base-sepolia.json` (`singletons.VaultFactory`,
+`.OperatorRegistry`, `.SubVaultRegistry`, `.Governance`, and `startBlock`):
+
+```
+RPC_URL=https://base-sepolia-rpc.publicnode.com
+CHAIN_ID=84532
+CHAIN_NAME=base-sepolia
+FACTORY_ADDRESS=0x72767FAD4C8254D20Fc06e4a47DFd16683AAFD0A
+OPERATOR_REGISTRY_ADDRESS=0xd702E688110CB2B2503bEBc2087D984C4Ab18307
+SUBVAULT_REGISTRY_ADDRESS=0x075Cd3455A5CE0f828f4D3B6B3A124313930eeE0
+GOVERNANCE_ADDRESS=0xcd9B2E37D14c57362f005355757bfa6Db450C206
+START_BLOCK=46111530
+STATE_PATH=./data-drill/indexer-state.json
+SNAPSHOT_BACKUPS=3
+SNAPSHOT_BACKUP_INTERVAL_MS=20000
+LOG_FORMAT=json
+```
+
+```bash
 node --env-file=data-drill/drill.env packages/indexer/src/index-runner.mjs   # wait ~75s for the ring
 # then RUNTIME.md 8.3 steps 1-6 against ./data-drill/
 ```
