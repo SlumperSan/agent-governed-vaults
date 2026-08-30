@@ -356,3 +356,21 @@ test('a legacy quorum oracle is NOT mistaken for a broken detector', async () =>
   assert.equal(r.detail?.detectorBroken, undefined);
   assert.ok([SRC1, SRC2, SRC3].length === 3);
 });
+
+test('when the sequencer AND the heartbeat are both blown, the SEQUENCER is named — the contract checks it first', async () => {
+  // The realistic post-outage shape, not a corner case: the Base outages on record ran 2,760s,
+  // 9,432s and 3,612s, so a feed on a 3600s heartbeat is stale by the end of any of them. Naming
+  // the heartbeat here would send on-call chasing Chainlink during the grace hour, when the answer
+  // is "wait, and here is the exact second it clears".
+  const results = await run(readerFor({
+    sequencerUptimeFeed: SEQ_FEED, sequencerUpForSec: 600,
+    ageSec: 9600, heartbeat: 3600, priceWadReverts: true,
+  }));
+  const r = forAsset(results);
+  assert.equal(r.status, 'alert');
+  assert.match(r.message, /the sequencer is inside its post-restart grace period/);
+  assert.ok(!/past its 3600s heartbeat/.test(r.message), 'the heartbeat is not the cause the contract reverts on');
+  // The staleness is still recorded, so nobody loses the second fact.
+  assert.equal(r.detail.staleBySec, 6000);
+  assert.equal(forSequencer(results).status, 'alert');
+});

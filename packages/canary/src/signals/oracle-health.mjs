@@ -281,7 +281,12 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
   if (!price.ok) {
     const isStaleOracle = typeof price.revertData === 'string'
       && price.revertData.slice(0, 10).toLowerCase() === STALE_ORACLE;
-    const cause = facts.cause ?? sequencerCause ?? null;
+    // SEQUENCER FIRST, matching `priceWad`'s own order: `_requireSequencerUp` runs before any feed
+    // is read, so when both are true the contract reverts on the sequencer. Naming the heartbeat
+    // instead would be wrong in the most likely real case — the Base outages on record ran 2,760s,
+    // 9,432s and 3,612s, and a feed on a 3600s heartbeat is stale by the end of any of them, so
+    // "outage + stale feed" IS the shape of the grace hour when member confusion peaks.
+    const cause = sequencerCause ?? facts.cause ?? null;
     return alert({
       ...base,
       message: cause
