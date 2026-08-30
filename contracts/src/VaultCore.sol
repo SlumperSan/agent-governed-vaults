@@ -143,6 +143,14 @@ contract VaultCore {
         _lock = 1;
     }
 
+    /// @notice True while one of this vault's guarded entry points is mid-execution.
+    /// @dev Read-only-reentrancy handle for look-through valuation (`_fullNavWad`): between a
+    /// rebalance leg's debit and its measured credit this vault's own accounting understates
+    /// its NAV, so a parent must refuse to price it.
+    function locked() external view returns (bool) {
+        return _lock != 1;
+    }
+
     // ─────────────────────────────── events ───────────────────────────────────
     event DepositPending(address indexed member, uint256 amountUsdc, uint64 availableAt);
     event DepositActivated(address indexed member, uint256 amountUsdc, uint256 sharesMinted);
@@ -310,6 +318,11 @@ contract VaultCore {
     /// backstop). Every descendant asset is a subset of this vault's basket (factory-enforced),
     /// so assetUnit/oracle always resolve.
     function _fullNavWad(VaultCore v, uint256 depth) internal view returns (uint256 nav) {
+        // Read-only reentrancy: mid-`executeRebalance` a leg's input is already debited and its
+        // measured output not yet credited, so `v`'s accounting understates its NAV — pricing it
+        // then overmints to a depositor and underpays an exiter here. A locked vault is
+        // observable ONLY from inside its own call stack, so no honest caller ever sees this.
+        require(!v.locked(), Reentrancy());
         nav = v.idleUsdc() * usdcScalar;
         uint256 n = v.basketLength();
         for (uint256 i; i < n; ++i) {
@@ -746,6 +759,9 @@ contract VaultCore {
             VaultCore(child).skipWindow();
         }
 
+        // Slither reads the debit-after-`skipWindow()` order as CEI-violating. It is not: the
+        // debit books a transfer that has NOT happened yet, so accounting is truthful for the
+        // whole of `skipWindow()`. Hoisting it above the call would CREATE an understatement.
         idleUsdc -= amountUsdc;
         usdc.safeApprove(child, amountUsdc);
         VaultCore(child).deposit(amountUsdc);
