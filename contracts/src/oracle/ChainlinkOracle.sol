@@ -14,14 +14,15 @@ interface IAggregatorV3Description {
 }
 
 /// @title ChainlinkOracle — single-feed-per-asset IOracleAggregator over Chainlink Data Feeds
-/// @notice An ADDITIVE alternative to {OracleAggregator} that a VaultCore can be deployed with
-/// INSTEAD of the bespoke per-vault median. It resolves audit finding C-6 by trusting Chainlink's
-/// OWN decentralized OCR aggregation per asset rather than curating a per-vault source set and a
-/// quorum here. There is no median, no quorum, and no per-vault source list to misconfigure: each
-/// asset maps to exactly one Chainlink AggregatorV3 feed, so there is no "2-of-n" freshness regime
-/// for a vault creator to size wrong or for an attacker to game by selectively stalling sources
-/// (contrast {OracleAggregator}, whose integrity depends on a correctly-sized source set and a
-/// strict-majority quorum — the surface C-6/H-1/M-1 live on).
+/// @notice THE launch oracle. It REPLACES the bespoke per-vault median {OracleAggregator}, which
+/// is retired to `contracts/test/retired/` and kept only as the C-4/C-6 exploit evidence — it is
+/// not on the launch path and must not be deployed. This resolves audit finding C-6 by trusting
+/// Chainlink's OWN decentralized OCR aggregation per asset, rather than curating a per-vault
+/// source set and a quorum here. There is no median, no quorum, and no per-vault source list to
+/// misconfigure: each asset maps to exactly one Chainlink AggregatorV3 feed, so there is no
+/// "2-of-n" freshness regime for a vault creator to size wrong, or for an attacker to game by
+/// selectively stalling sources (contrast {OracleAggregator}, whose integrity depended on a
+/// correctly-sized source set and a strict-majority quorum — the surface C-6/H-1/M-1 live on).
 ///
 /// Config is IMMUTABLE after construction, exactly like {OracleAggregator}: no admin can swap a
 /// feed, retune a heartbeat, or repoint the sequencer feed. A vault creator who wants different
