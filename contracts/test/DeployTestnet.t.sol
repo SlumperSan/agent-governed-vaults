@@ -10,7 +10,7 @@ import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
-import {IAggregatorV3} from "../src/OracleAggregator.sol";
+import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 
 /// Proves the parameterized testnet deploy script wires the FULL stack the committed
@@ -39,9 +39,14 @@ contract DeployTestnetTest is Test {
         vm.setEnv("DEPLOY_CONFIG", "config/base-sepolia.json");
     }
 
-    function _mockFeed(address feed, int256 answer8dec) internal {
+    /// @param description_ the feed's own `description()`. ChainlinkOracle proves the quote leg is
+    /// USD from this string at construction, so the mock must report exactly what the real Base
+    /// Sepolia proxy reports — the strings recorded in config/base-sepolia.json
+    /// (`feedDescriptionOnChain`). A mock that returned something else would prove nothing.
+    function _mockFeed(address feed, int256 answer8dec, string memory description_) internal {
         vm.etch(feed, hex"00"); // mockCall requires code at the address
         vm.mockCall(feed, abi.encodeWithSignature("decimals()"), abi.encode(uint8(8)));
+        vm.mockCall(feed, abi.encodeWithSignature("description()"), abi.encode(description_));
         vm.mockCall(
             feed,
             abi.encodeWithSignature("latestRoundData()"),
@@ -51,8 +56,8 @@ contract DeployTestnetTest is Test {
 
     function test_testnetDeployWiresFullStack() public {
         // Answers inside the config's sane-price bands (WETH $100..$100k, LINK $1..$1k).
-        _mockFeed(ETH_USD_FEED, 1917e8); // $1,917
-        _mockFeed(LINK_USD_FEED, 975e6); // $9.75
+        _mockFeed(ETH_USD_FEED, 1917e8, "ETH / USD"); // $1,917
+        _mockFeed(LINK_USD_FEED, 975e6, "LINK / USD"); // $9.75
 
         DeployTestnet d = new DeployTestnet();
         (
@@ -123,9 +128,10 @@ contract DeployTestnetTest is Test {
     /// exported as DEPLOY_CONFIG: forge runs a suite's tests in parallel against process-global env,
     /// so exporting a config only this test wants would flake the tests around it.)
     function test_testnetDeployRevertsOnWrongChain() public {
-        _mockFeed(ETH_USD_FEED, 1917e8);
-        _mockFeed(LINK_USD_FEED, 975e6);
-        vm.chainId(84532);
+        _mockFeed(ETH_USD_FEED, 1917e8, "ETH / USD");
+        _mockFeed(LINK_USD_FEED, 975e6, "LINK / USD");
+        vm.chainId(84532); // an ALLOWED chain, so the allowlist guard passes and the config
+        // mismatch below is what actually stops the deploy
         DeployTestnet d = new DeployTestnet();
         vm.expectRevert(abi.encodeWithSelector(DeployTestnet.ChainIdMismatch.selector, 8453, 84532));
         d.runWithConfig("config/base-mainnet.json"); // the MAINNET config on the testnet chain

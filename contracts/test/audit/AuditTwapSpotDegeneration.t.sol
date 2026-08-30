@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../../src/oracle/UniswapV3TwapSource.sol";
+import {UniswapV3TwapSource, IUniswapV3PoolMinimal} from "../retired/UniswapV3TwapSource.sol";
 
 /// @notice Minimal ERC20 with settable decimals (the TWAP source only reads `decimals()`).
 contract TokenStub {

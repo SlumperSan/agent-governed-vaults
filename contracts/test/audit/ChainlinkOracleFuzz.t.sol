@@ -35,18 +35,28 @@ contract ChainlinkOracleFuzzTest is Test {
         return new ChainlinkOracle(assets, feeds, hb, mn, mx, address(0), address(0));
     }
 
-    /// WAD normalization is exact for any feed-decimals in [0,18] and any positive answer that
-    /// won't overflow when scaled. Result is always > 0 (never a zero price).
-    function testFuzz_wadNormalizationExact(uint8 decimals, uint256 answer) public {
-        decimals = uint8(bound(decimals, 0, 18));
-        uint256 scale = 10 ** (18 - uint256(decimals));
+    /// WAD normalization is exact for any positive answer that won't overflow when scaled. Result
+    /// is always > 0 (never a zero price). Decimals are FIXED at 8: the constructor now pins
+    /// feed-decimals to the Chainlink USD-feed convention as the denomination cross-check, so the
+    /// old 0..18 sweep would only ever exercise the reject path. That path is fuzzed below instead.
+    function testFuzz_wadNormalizationExact(uint256 answer) public {
         // keep answer positive and the WAD product within int256/uint256 sanity
         answer = bound(answer, 1, type(uint128).max);
-        MockAggregatorV3 feed = new MockAggregatorV3(decimals, int256(answer), block.timestamp);
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(answer), block.timestamp);
         ChainlinkOracle oracle = _oracle(feed, 0, 0); // band disabled
         uint256 p = oracle.priceWad(ASSET);
-        assertEq(p, answer * scale, "WAD = answer * 10^(18-decimals)");
+        assertEq(p, answer * 1e10, "WAD = answer * 10^(18-8)");
         assertGt(p, 0, "never a zero price");
+    }
+
+    /// Denomination cross-check: EVERY feed-decimals other than 8 is rejected at construction,
+    /// across the whole uint8 space — including 18, the Chainlink ETH-denominated convention that
+    /// a cbETH/ETH-style misconfiguration would carry.
+    function testFuzz_nonEightDecimalsRejected(uint8 decimals) public {
+        vm.assume(decimals != 8);
+        MockAggregatorV3 feed = new MockAggregatorV3(decimals, 2500e8, block.timestamp);
+        vm.expectRevert(ChainlinkOracle.BadOracleConfig.selector);
+        _oracle(feed, 0, 0);
     }
 
     /// Any answer as stale as or staler than the heartbeat fails closed.
@@ -69,13 +79,22 @@ contract ChainlinkOracleFuzzTest is Test {
 
     /// Sane-price band: an 8-decimal feed with band [lo,hi]. In-band prices exactly; out-of-band
     /// (either side) fails closed. Never returns an out-of-band value.
+    /// @dev The band is now shape-checked at construction (strict ordering, width <= 1000x, and it
+    /// must contain the feed's CURRENT answer), so the fuzzed width is bounded to the admissible
+    /// range and the oracle is built at an in-band price. The fuzzed answer is applied afterwards
+    /// — which is the property under test: what `priceWad` does once the feed MOVES.
     function testFuzz_saneBandEnforced(uint256 answer8, uint256 lo, uint256 hi) public {
-        lo = bound(lo, 1e18, 1_000_000e18);
-        hi = bound(hi, lo, 10_000_000e18);
+        // Draw the floor in 8-decimal units so it is exactly representable by the feed, then the
+        // ceiling anywhere in the admissible (lo, lo*1000] width. Domain is the original $1..$1m.
+        uint256 lo8 = bound(lo, 1e8, 1_000_000e8);
+        lo = lo8 * 1e10;
+        hi = bound(hi, lo + 1, lo * 1000);
         answer8 = bound(answer8, 1, 100_000_000e8); // up to $100m/token in 8-dec units
         uint256 priceWad = answer8 * 1e10;
-        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(answer8), block.timestamp);
+        // Construct at exactly the band floor — in band for every (lo, hi) above — then move.
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(lo8), block.timestamp);
         ChainlinkOracle oracle = _oracle(feed, lo, hi);
+        feed.set(int256(answer8), block.timestamp);
         if (priceWad >= lo && priceWad <= hi) {
             assertEq(oracle.priceWad(ASSET), priceWad, "in-band prices exactly");
         } else {

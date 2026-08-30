@@ -1,35 +1,92 @@
 # Current State
 
-What is true right now. The live branch is `protocol/main` (@ `78ea1f87`); the launch verdict is **NO-GO**. Snapshot as of Phase-2 remediation, C-6 / ChainlinkOracle pivot, factory oracle-gate, and C-6 deploy scaffolding (2026-08-28).
+What is true right now. The launch verdict is **NO-GO** — but no longer for security reasons.
+
+> **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
+> [docs/NOW.md](../NOW.md); the argued go/no-go board is
+> [docs/LAUNCH-READINESS.md](../LAUNCH-READINESS.md). Where they disagree with this note, they win
+> and this note is what needs fixing. Corrected 2026-08-30 — the previous version predated the
+> C-6 pivot shipping, the owner's audit attestation and the live Base Sepolia deploy, and asserted
+> all three wrongly.
 
 ## Why it matters
 
-This protocol is immutable at deployment, so "ship" is a one-way door. This note is the single place to read the current go/no-go posture without reconstructing it from PRs and audit prose. If a row here says NO-GO, real money should not go in.
+This protocol is immutable at deployment, so "ship" is a one-way door. This note is the single place
+to read the current posture without reconstructing it from PRs and audit prose. If a row here says
+NO-GO, real money should not go in.
 
-## Launch verdict: NO-GO
+## Launch verdict: NO-GO — on operational gates only
 
-Two gates keep it there ([[launch-readiness-gates]]):
+Every **security** gate is cleared ([[launch-readiness-gates]]):
 
-- **Gate 0 — no known unfixed Critical: NO-GO, on C-6.** Four of five original Criticals are closed with **executed** evidence: C-1 ([[root-vaults-only]]), C-2, C-3, C-5. C-4/C-6 keep the row NO-GO — the Phase-2 re-verification (`AuditC4EndToEnd.t.sol`) falsified the inferred "C-4 path closed" claim and surfaced **C-6** ([[c6-oracle-byzantine]]): at `a ≥ 2` adversarial oracle sources the theft re-opens. C-6 has no clean code fix at m=5; the resolution is the [[chainlink-direct-pivot]]. The C-6 **remediation mechanism and deploy scaffolding are now complete in code** — the safe [[chainlinkoracle]] (#49), [[vaultfactory]]'s `allowedOracles_` factory oracle-gate (#50), `DeployChainlinkOracle.s.sol` + `scripts/verify-chainlink-oracle.mjs` (#55), and `Deploy.s.sol` guard (#53). The **only missing piece is populating the config with real Base Chainlink feed addresses** (fill placeholders → verify → set `BLESSED_ORACLES` → deploy). Gate 0 stays NO-GO until then and the external audit clears; issue #48 tracks that residual.
-- **Gate 1 — external audit: NO-GO.** Not started, and nothing in these sessions could change it — an AI pre-audit is not an external audit. Commission a **full** review of the corrected tree at a new tag (`v0.4.0-audit` recommended); it must also cover the remediation itself.
+- **Gate 0 — no known unfixed Critical: GO (root-only).** C-1 closed at launch by
+  [[root-vaults-only]] (`allowSubVaults = false`, confirmed on `Deploy.s.sol:77`); C-2, C-3 and C-5
+  fixed with executed evidence; **C-6 resolved by the [[chainlink-direct-pivot]]** — the bespoke
+  median was *removed*, not patched. Re-enabling sub-vaults reopens C-1.
+- **Gate 1 — external audit: GO on OWNER ATTESTATION, not on independent verification.** An audit
+  was commissioned at `v0.4.0-audit`; the owner has read the report and attests it surfaced **no
+  major issues**. The report contains sensitive material and is **held privately** — deliberately
+  not in the repo. The scope list and the Low/Informational findings have **not** been published,
+  and the gate reads *findings remediated*, not *no criticals*. **Do not describe this protocol as
+  "audited" without that qualifier.**
+- **Gate 5 — mainnet oracle stack: GO with a named residual.** See below.
 
-## Branch and evidence state
+What still blocks GO is operational and needs a funded key, not more code: gates **2/3/6** (testnet
+full lifecycle, soak, canary — must be re-run on the pivoted tree) and gate **7** (one recorded
+restore drill, ~30 min, no keys).
 
-- **Live branch:** `protocol/main` @ `a265b9dd`. Remediation lands via [[auto-merge]] per-finding PRs.
-- **Merged (Phase 2):** #43 (C-1 root-vaults-only), #44 (H-8), #45 (M-15), #46 (dispositions), #47 (C-6 re-verification), #49 (ChainlinkOracle), #50 (C-6 factory oracle-gate), #51 (vault), #53 (deploy guard), #54–57 (C-6 scaffolding: tests, config, fuzz, docs). See [[prs-and-issues]].
-- **Open issues:** #40 (VaultCore-headroom sprint), #41 (rebuild `base-mainnet.json`), #48 (C-6 tracking).
-- **CI (gate 8): GO.** Full battery green — `forge fmt --check`, `forge build --sizes`, `forge test`, `forge snapshot --check`, and the backend suite all pass. (The last recorded `forge test` count was 252 pass / 0 fail / 0 skip on the 2026-08-27 remediation branch; later PRs added tests, so treat the count as indicative, not a live `protocol/main` figure — forge was not re-run here.) Green certifies the gates *ran*, not that the protocol is safe.
-- **Evidence STALE:** the remediation changed six contracts, so gates 2 (testnet lifecycle), 3 (soak), and 6 (canary) are re-marked STALE — their reports describe superseded bytecode. Gate 4 (live x402 settlement) is the one operational gate that survives intact. See [[audit-reverification]].
-- **`base-mainnet.json`: NOT-DEPLOYABLE** — the config no longer builds against the hardened constructors (needs 5 sources/asset at quorum 3, `maxObservationAge ≤ window/20`); real addresses are a human input.
+## The oracle, as it actually ships
+
+`ChainlinkOracle` ([[chainlinkoracle]]) reads **one genuine Chainlink Data Feed per asset**, with no
+median, no quorum and no per-vault source set. WETH via **ETH/USD**, cbBTC via **BTC/USD**, USDC
+**pinned to $1.00**, and **no cbETH** — Base publishes no cbETH/USD feed, only cbETH/ETH, which the
+constructor now rejects on denomination. The mainnet config block in
+`contracts/config/base-mainnet.json` is verified on-chain **12/12**; the Base Sepolia mirror verifies
+**11/11**. A `VaultFactory` oracle allowlist blesses specific oracle *instances*, so the retired
+aggregator cannot be selected.
+
+**Named residual — single-provider dependency.** An **L2 sequencer uptime gate** with a grace
+period, a per-feed **heartbeat**, and a **sane-price band** are the *only* defences against a wrong
+Chainlink answer; there is no second source to cross-check against. A feed deprecation or freeze
+fails that asset **CLOSED with no fallback** — every NAV path in a vault holding it, exits included,
+reverts until the feed recovers. A vault's oracle is `immutable` and the factory allowlist gates
+*creation* only, so there is **no rotation lever** (residual 12, "curation immobility"). The
+sequencer guard has never run against a real uptime feed outside the fork tests.
+
+The retired stack — `OracleAggregator.sol`, `PythSource.sol`, `UniswapV3TwapSource.sol` and the
+vendored `FullMath`/`TickMath` — now lives under **`contracts/test/retired/`**, kept solely as the
+C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
+
+## Deployment state
+
+- **Live on Base Sepolia** (testnet only; nothing has ever been broadcast to mainnet). Canonical
+  address book: `contracts/config/deployments/base-sepolia.json`, every address verified on-chain.
+  A vault has been created, registered and funded with a USDC deposit priced by the live
+  `ChainlinkOracle`; the remaining lifecycle phases sit behind the protocol's own 4h observation
+  window and ~2h of governance timelocks.
+- **Config paths, since they are easy to get wrong:** the mainnet config is
+  `contracts/config/base-mainnet.json` — *not* under `config/deployments/`. Only
+  `base-sepolia.json` (the generated address book) lives under `config/deployments/`.
+
+## EIP-170 headroom
+
+Only `VaultCore` is size-constrained: **~283 B** of margin. That figure was corrected on 2026-08-30
+— earlier notes recorded 1,014 B (LAUNCH-READINESS §5) and 1,182 B (the H-5/H-6 notes), both of
+which predate M-15's deposit overload spending 731 B. `VaultFactory` (~21,004 B spare) and
+`ChainlinkOracle` (~23,044 B spare) are **not** tight, contrary to what earlier notes assumed.
+Anything `VaultCore`-shaped is now effectively closed — which is the real reason H-5/H-6 stay
+deferred, over and above the sub-vault dormancy.
 
 ## Launch shape once GO is reached
 
-Root vaults only, majors-only baskets (WETH + cbETH), first `capacityCapUsdc` 50,000 USDC, Chainlink-direct oracle as the intended launch default. See [[go-to-market-plan]].
+Root vaults only, majors-only baskets (**WETH + cbBTC**), first `capacityCapUsdc` 50,000 USDC,
+Chainlink-direct oracle. See [[go-to-market-plan]].
 
 ## Links
 
 - Gates & evidence: [[launch-readiness-gates]] · [[audit-reverification]] · [[open-items]]
 - The arc that got here: [[remediation-history]] · [[prs-and-issues]]
-- Decisions in force: [[root-vaults-only]] · [[chainlink-direct-pivot]] · [[build-vs-buy]] · [[delegatecall-split-rejected]] · [[continuous-autonomous-mode]]
-- Open Criticals: [[c6-oracle-byzantine]] · [[c4-depressed-price-theft]]
+- Decisions in force: [[root-vaults-only]] · [[chainlink-direct-pivot]] · [[build-vs-buy]] ·
+  [[delegatecall-split-rejected]] · [[continuous-autonomous-mode]]
+- Findings, as history: [[c6-oracle-byzantine]] · [[c4-depressed-price-theft]]
 - Plan: [[go-to-market-plan]] · [[decisions-index]] · [[security-index]]

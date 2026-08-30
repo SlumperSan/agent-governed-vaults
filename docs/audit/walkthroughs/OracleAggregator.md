@@ -1,6 +1,13 @@
 # Walkthrough — OracleAggregator.sol
 
-**Risk: Critical (prices everything).** ~140 LoC. `contracts/src/OracleAggregator.sol`.
+**Risk: Critical (priced everything, pre-C-6).** ~140 LoC.
+`contracts/test/retired/OracleAggregator.sol` (was `contracts/src/`).
+
+> **⚠ RETIRED — NOT THE LAUNCH ORACLE (marked 2026-08-30).** Critical **C-6** replaced this design
+> with `contracts/src/oracle/ChainlinkOracle.sol` (one genuine Chainlink Data Feed per asset, no
+> median, no quorum). The source now lives under **`contracts/test/retired/`** and is
+> non-selectable through the `VaultFactory` oracle allowlist. This walkthrough is kept as the
+> C-4/C-6 evidence record — scope it only if you are reviewing that finding.
 
 ## Purpose
 

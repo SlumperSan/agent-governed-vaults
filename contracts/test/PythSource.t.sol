@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {PythSource, IPyth} from "../src/oracle/PythSource.sol";
+import {PythSource, IPyth} from "./retired/PythSource.sol";
 import {MockPyth} from "./mocks/OracleSourceMocks.sol";
 
 /// Sprint 11 — unit, fixture and fuzz coverage for `PythSource` (a post-audit-freeze additive

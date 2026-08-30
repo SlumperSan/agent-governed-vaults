@@ -4,12 +4,8 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {Governance} from "../src/Governance.sol";
-import {
-    OracleAggregator,
-    IPriceSource,
-    ChainlinkSourceAdapter,
-    IAggregatorV3
-} from "../src/OracleAggregator.sol";
+import {OracleAggregator, IPriceSource, ChainlinkSourceAdapter} from "./retired/OracleAggregator.sol";
+import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IExecutionAdapter} from "../src/interfaces/IExecutionAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";

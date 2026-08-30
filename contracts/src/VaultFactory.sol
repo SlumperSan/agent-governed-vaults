@@ -58,8 +58,8 @@ contract VaultFactory {
     IVaultDeployer public immutable vaultDeployer;
 
     /// @dev C-6 launch remediation (audit finding C-6, "curated oracle"). A vault's oracle is
-    /// creator-supplied, and oracle safety CANNOT be enforced permissionlessly: the custom
-    /// {OracleAggregator} lets two adversarial sources seize an asset's price (C-6), and even a
+    /// creator-supplied, and oracle safety CANNOT be enforced permissionlessly: the retired custom
+    /// {OracleAggregator} let two adversarial sources seize an asset's price (C-6), and even a
     /// {ChainlinkOracle} pointed at a creator-controlled FAKE `AggregatorV3` prices whatever the
     /// creator wants — both pass every per-oracle constructor check. There is no on-chain way for
     /// the factory to tell a genuine Chainlink feed from a fake, so the launch resolution is

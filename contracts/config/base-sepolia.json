@@ -23,6 +23,8 @@
         "asset": "0x4200000000000000000000000000000000000006",
         "feed": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
         "feedDescription": "Chainlink ETH / USD (8 decimals)",
+        "feedDescriptionOnChain": "ETH / USD",
+        "feedDescriptionOnChainNote": "The EXACT string the proxy returns from description(). Machine-compared by scripts/verify-chainlink-oracle.mjs (equality, not a substring) so a plausible-but-wrong feed - right pair, wrong deployment - fails before deploy. ChainlinkOracle enforces the weaker on-chain invariant that it ends in a USD quote leg.",
         "heartbeatSeconds": 86400,
         "heartbeatNote": "24h staleness bound (== maxStalenessSeconds). DELIBERATELY generous vs mainnet's 3600: Base Sepolia feeds update irregularly with no economic SLA, so a tight bound would false-freeze a multi-hour soak on testnet-feed flakiness rather than a protocol bug. Mainnet WETH uses 3600.",
         "minPriceWad": "100000000000000000000",
@@ -34,6 +36,7 @@
         "asset": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
         "feed": "0xb113F5A928BCfF189C998ab20d753a47F9dE5A61",
         "feedDescription": "Chainlink LINK / USD (8 decimals)",
+        "feedDescriptionOnChain": "LINK / USD",
         "heartbeatSeconds": 86400,
         "heartbeatNote": "24h staleness bound (testnet-generous, see WETH). LINK stands in for the second mainnet asset (cbBTC) - Base Sepolia has no cbBTC feed, but LINK/USD is a live 8-decimal Chainlink feed, which is all the pivot exercise needs.",
         "minPriceWad": "1000000000000000000",
@@ -43,10 +46,12 @@
     ],
     "legacyAssetsNote": "The top-level `assets` block below is the DEPRECATED custom-OracleAggregator shape (quorum + 3 adapters over one feed - the `testnetCompromise`). C-6 replaced that whole path with this chainlinkOracle block. `assets` is retained only for the legacy deploy path / historical reference; the launch path is chainlinkOracle.",
     "verification": [
-      "For each asset feed: code.length > 0; decimals() <= 18; latestRoundData answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "For each asset feed: code.length > 0; decimals() == 8 (Chainlink USD-feed convention); latestRoundData answer > 0 and updatedAt fresh within heartbeatSeconds.",
+      "DENOMINATION: description() must be USD-quoted (ends in ' USD' or '/USD') AND equal feedDescriptionOnChain exactly. ChainlinkOracle's constructor enforces the USD quote leg + 8 decimals on-chain; this verifier adds the exact-string match.",
       "Sane-price band set (minPriceWad > 0, maxPriceWad >= minPriceWad).",
       "sequencerUptimeFeed empty on this testnet (guard skipped) - acceptable for the testnet exercise ONLY; mainnet requires it.",
       "USDC not also present in assets[].",
+      "Heartbeat and band are BOUNDED ON-CHAIN by the ChainlinkOracle constructor: heartbeatSeconds in [600, 86400]; an enabled band needs minPriceWad > 0, maxPriceWad > minPriceWad, maxPriceWad <= 1000 * minPriceWad, and it must contain the feed's current answer. Off-chain verification is no longer the only thing standing between a typo and a permanently mis-parameterised immutable oracle.",
       "Run: CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs"
     ]
   },

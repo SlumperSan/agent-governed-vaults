@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {DeployChainlinkOracle} from "../script/DeployChainlinkOracle.s.sol";
 import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
-import {IAggregatorV3} from "../src/OracleAggregator.sol";
+import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 
 /// Proves the L2 sequencer guard in the curated-oracle deploy script is L2-GENERIC and FAIL-CLOSED.
 ///
@@ -48,10 +48,14 @@ contract DeployChainlinkOracleTest is Test {
     }
 
     /// @dev AggregatorV3 stub: the ChainlinkOracle constructor decode-proves decimals() and
-    /// latestRoundData() on every asset feed AND on the sequencer feed.
+    /// latestRoundData() on every asset feed AND on the sequencer feed, and additionally proves the
+    /// USD quote leg from description() on ASSET feeds. The stub answers "ETH / USD" because these
+    /// tests are about the CHAIN-ID guard, not denomination — AuditFeedDenomination.t.sol owns that
+    /// check. Without it the deploy reverts before any chain-id assertion is reached.
     function _mockFeed(address feed, int256 answer) internal {
         vm.etch(feed, hex"00"); // mockCall requires code at the address
         vm.mockCall(feed, abi.encodeWithSignature("decimals()"), abi.encode(uint8(8)));
+        vm.mockCall(feed, abi.encodeWithSignature("description()"), abi.encode("ETH / USD"));
         vm.mockCall(
             feed,
             abi.encodeWithSignature("latestRoundData()"),

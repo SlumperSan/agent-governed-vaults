@@ -10,7 +10,7 @@ import {Governance} from "../src/Governance.sol";
 import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {ChainlinkOracle} from "../src/oracle/ChainlinkOracle.sol";
-import {IAggregatorV3} from "../src/OracleAggregator.sol";
+import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
