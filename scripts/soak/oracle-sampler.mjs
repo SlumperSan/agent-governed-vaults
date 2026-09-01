@@ -60,6 +60,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadDeployment } from './deployment.mjs';
+import { vaultsIn } from './snapshot.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
 const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
@@ -68,6 +69,38 @@ const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
 const PROBE_MEMBER = process.env.SOAK_PROBE_MEMBER ?? '';
 const VAULTS = (process.env.SOAK_VAULTS ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+const INDEXER_STATE = process.env.SOAK_INDEXER_STATE ?? path.join(ROOT, 'data', 'indexer-state.json');
+
+/**
+ * Vaults to run the freeze-safety probe against, resolved FRESH each sample.
+ *
+ * `SOAK_VAULTS` stays authoritative when set. When it is not — which is how `run-soak.ps1`
+ * starts this sampler, since the drills create their vaults minutes to hours AFTER launch and
+ * no launcher can name them — fall back to the indexer's own snapshot, the same source the
+ * canary discovers vaults from.
+ *
+ * This is not a convenience. With neither source the list was EMPTY, `freezeSafety` was `[]` in
+ * every sample, and `summarizeFreezeSafety` therefore returned `probedWithPending = 0` →
+ * `demonstrated: false`. Drill 4 would have been correct and useless at once: it would refuse to
+ * claim freeze safety, not because the property failed but because nothing ever probed it. The
+ * K-4 escape hatch is the one member-capital path that must survive an oracle freeze, so
+ * "nothing measured" is the outcome least worth shipping.
+ *
+ * Re-read per sample rather than cached at startup: the probe is only meaningful while the
+ * member actually HAS a pending deposit, and those windows open and close during the run.
+ *
+ * @returns {string[]}
+ */
+function probeVaults() {
+  if (VAULTS.length) return VAULTS;
+  try {
+    return vaultsIn(JSON.parse(fs.readFileSync(INDEXER_STATE, 'utf8')));
+  } catch {
+    // No snapshot yet, or a torn read mid-write. Missing evidence, recorded as an empty probe
+    // list for this sample — never as a verdict.
+    return [];
+  }
+}
 
 const dep = loadDeployment(
   path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
@@ -429,7 +462,7 @@ function sample(env) {
   });
 
   // FREEZE-SAFETY: cancelPending must stay callable while the oracle is frozen.
-  const freezeSafety = VAULTS.map((vault) => {
+  const freezeSafety = probeVaults().map((vault) => {
     if (!PROBE_MEMBER) return { vault, probed: false, verdict: 'not-probed', reason: 'no SOAK_PROBE_MEMBER set' };
     const pend = callRaw(vault, 'pendingDeposit(address)(uint256,uint64)', PROBE_MEMBER);
     const pendingAmount = pend.ok ? clean(pend.out.split('\n')[0]) : null;
