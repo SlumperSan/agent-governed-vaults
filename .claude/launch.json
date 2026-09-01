@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vault-atlas",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "apps/web", "-p", "8791", "-c-1", "--silent"],
+      "port": 8791
+    }
+  ]
+}
