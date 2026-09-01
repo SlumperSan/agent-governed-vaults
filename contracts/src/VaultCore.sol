@@ -147,6 +147,17 @@ contract VaultCore {
     /// @dev Read-only-reentrancy handle for look-through valuation (`_fullNavWad`): between a
     /// rebalance leg's debit and its measured credit this vault's own accounting understates
     /// its NAV, so a parent must refuse to price it.
+    ///
+    /// LOAD-BEARING INVARIANT — **every state-mutating external on this contract is
+    /// `nonReentrant`.** `locked()` is not a statement about NAV; it is a statement about the
+    /// lock, and `_fullNavWad` treats the two as equivalent. That substitution is sound only
+    /// while every window in which `idleUsdc`, `assetBalance`, `totalShares`, `totalPendingUsdc`
+    /// or `claimable` can be mid-write sits inside this vault's own lock. **Adding a mutating
+    /// external without `nonReentrant` silently reopens H-9 at full severity** — an ancestor
+    /// reads through this view, sees `false`, and prices an understated vault. It is not enough
+    /// that the new function looks harmless: the ancestor never calls it, it calls `locked()`.
+    /// Enforced by `test/audit/AuditReentrancyGuardCoverage.t.sol`, which enumerates the
+    /// compiled ABI and fails when a mutating external appears outside its register.
     function locked() external view returns (bool) {
         return _lock != 1;
     }
@@ -327,6 +338,17 @@ contract VaultCore {
         // measured output not yet credited, so `v`'s accounting understates its NAV — pricing it
         // then overmints to a depositor and underpays an exiter here. A locked vault is
         // observable ONLY from inside its own call stack, so no honest caller ever sees this.
+        //
+        // This check stands on an invariant stated at `locked()`: every state-mutating external
+        // on VaultCore is `nonReentrant`, so every understatement window sits inside the lock
+        // this reads. A mutating external added without the modifier reopens H-9 while this line
+        // still appears to defend it — `AuditReentrancyGuardCoverage.t.sol` is what catches that.
+        //
+        // It must also stay HERE rather than move up into `_childValueWad`: `_childValueWad` is
+        // only the depth-1 entry point, and the recursion below re-enters `_fullNavWad` for each
+        // descendant. Hoisting it passes every depth-1 test and leaves grandchildren exploitable
+        // — measured at a 1.5× overmint and a one-third short-paid exit in
+        // AuditLookThroughDepth2Test.
         require(!v.locked(), Reentrancy());
         nav = v.idleUsdc() * usdcScalar;
         uint256 n = v.basketLength();

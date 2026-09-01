@@ -98,6 +98,30 @@ returns, and trusting the adapter's claimed amount instead is exactly EX-3. The 
 made *unobservable*, not eliminated. Do not delete the `require(!v.locked())` to reclaim bytes —
 `executeRebalance`'s docstring says so, and says why.
 
+**Two review findings closed 2026-09-01, both about what the fix rests on rather than the fix.**
+
+*Depth.* The original regression built one parent/child pair, so it pinned the guard at depth 1
+only — moving the `require` up into `_childValueWad` passed all three tests while every grandchild
+stayed exploitable. `AuditLookThroughDepth2Test` now drives the hostile adapter from a **grandchild**
+and re-enters the **root**: `navWad`, `deposit` and `requestExit` all revert on
+`VaultCore.Reentrancy` **by selector**, and the intermediate vault is asserted **not** locked, which
+is what makes the test about the recursion rather than about "something reverted". Verified by
+mutation: with the `require` hoisted, the three depth-1 tests pass and the depth-2 exploit tests
+fail, at a **1.5× overmint** (500 USDC → 750e18 shares against a 1:1 baseline) and an exiter paid
+**333 USDC for 500 USDC of shares**. Depth 3 is out of scope **by construction** — `MAX_DEPTH = 3`
+caps `depthOf` at 2, so the factory cannot build a great-grandchild; `MAX_LOOKTHROUGH_DEPTH` is a
+backstop past what the registry admits.
+
+*The unstated invariant.* The guard substitutes "locked" for "understated", and that is sound only
+because **every state-mutating external on `VaultCore` is `nonReentrant`** — a property that was
+emergent, recorded nowhere, and tested nowhere. A future external added without the modifier reopens
+H-9 at full severity with every existing test still green. It is now stated at `locked()` and at the
+guard itself, and enforced by `AuditReentrancyGuardCoverage.t.sol`: one leg enumerates the compiled
+ABI and fails when a mutating external appears outside its register, the other calls every register
+entry from inside a real lock and requires `Reentrancy()`. Both legs mutation-verified. The audit
+report's "all 11 mutating externals" is corrected to 12 there — M-15's `deposit` overload landed
+after the count was written, which is the argument for enforcing it rather than writing it down.
+
 ## Links
 
 - [[c1-empty-electorate]] (closes H-5/H-6/H-7/H-9 as a class) · [[c4-depressed-price-theft]] ·
