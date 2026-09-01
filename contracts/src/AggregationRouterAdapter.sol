@@ -80,6 +80,8 @@ contract AggregationRouterAdapter is IExecutionAdapter {
         amountOut = IERC20Balance(order.tokenOut).balanceOf(address(this)) - outBefore;
 
         // The check that matters: measured delta versus caller-supplied floor (EX-3).
+        // Slither `reentrancy-balance` flags this: `outBefore` is read before the call. That is
+        // the measured delta, not a stale read — and the mutex above is what makes it sound.
         require(amountOut >= order.minAmountOut, Slippage());
 
         order.tokenIn.safeApprove(router, 0); // revoke residual approval (EX-2)

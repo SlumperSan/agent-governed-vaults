@@ -90,6 +90,8 @@ contract DirectPoolAdapter is IExecutionAdapter {
         amountOut = IERC20Bal(order.tokenOut).balanceOf(address(this)) - outBefore;
 
         // The check that matters: measured delta vs caller floor (EX-3) — never the quote.
+        // Slither `reentrancy-balance` flags this: `outBefore` is read before `pair.swap`. That
+        // is the measured delta, not a stale read — and the mutex above is what makes it sound.
         require(amountOut >= order.minAmountOut, Slippage());
         order.tokenOut.safeTransfer(msg.sender, amountOut);
 

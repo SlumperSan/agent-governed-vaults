@@ -221,6 +221,20 @@ contract AdapterReentrancyTest is Test {
         assertEq(tokenOut.balanceOf(address(this)), DELIVERED * 2, "adapter still usable");
     }
 
+    /// A new mutex on a SHARED singleton is only safe if it releases on every path: the
+    /// aggregation adapter is allowlisted by many vaults, so a stuck `_lock` would brick all of
+    /// them. Revert the outer call, then swap again on the same instance.
+    function test_lockReleasesAfterAnOuterRevert() public {
+        IExecutionAdapter.SwapOrder memory bad = _order();
+        bad.minAmountOut = DELIVERED + 1; // route under-delivers ⇒ Slippage
+        vm.expectRevert(AggregationRouterAdapter.Slippage.selector);
+        adapter.executeSwap(bad);
+
+        adapter.executeSwap(_order());
+        assertEq(tokenOut.balanceOf(address(this)), DELIVERED, "adapter still usable after a revert");
+        assertEq(tokenIn.balanceOf(address(this)), EXPECTED_REFUND, "refund path intact");
+    }
+
     /// `DirectPoolAdapter` carries the same interface-level invariant.
     function test_directPoolAdapterRefusesNestedSwap() public {
         MockERC20 a = new MockERC20("A", 18);

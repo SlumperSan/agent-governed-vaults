@@ -1,6 +1,7 @@
 AdapterReentrancyTest:test_directPoolAdapterRefusesNestedSwap() (gas: 2024557)
 AdapterReentrancyTest:test_lockReleasesAfterASwallowedNestedRevert() (gas: 342428)
-AdapterReentrancyTest:test_nestedSwapCannotSweepTheOuterOrdersInput() (gas: 288703)
+AdapterReentrancyTest:test_lockReleasesAfterAnOuterRevert() (gas: 283030)
+AdapterReentrancyTest:test_nestedSwapCannotSweepTheOuterOrdersInput() (gas: 288725)
 AdapterReentrancyTest:test_partialFillRefundsUnspentInput() (gas: 155523)
 AuditAggregatorDecodeBrickTest:test_control_revertingSourceIsAbsorbed() (gas: 879089)
 AuditAggregatorDecodeBrickTest:test_remediated_codelessSourceAddressIsRejectedAtConstruction() (gas: 210079)
