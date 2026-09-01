@@ -1,19 +1,18 @@
 {
   "note": "Vault definitions for the Sprint-12 soak drills. Deliberately DIFFERENT from the Sprint-9 smoke vault in basket, caps, fees and governance, so that drill 1's leaderboard aggregation is proving real cross-vault aggregation rather than summing two identical rows.",
-
   "agentDepositWholeUsdc": "1",
   "agentDepositNote": "Drill 5: WHOLE USDC, not base units. policy.join.depositUsdc in the reference agent is denominated in dollars (its shipped default is \"25\"), unlike every other amount in this file. 1 = the smoke vault minimum of 1.00 USDC. Passing base units here made the agent request a million-dollar deposit and its capacity gate correctly refused.",
-
   "smokeVault": {
     "address": "0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f",
     "note": "REPOINTED 2026-09-01 (Team3-SoakPreflight). The old address here, 0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330, was the Sprint-9 vault -- created against the retired custom OracleAggregator stack. The C-6 pivot (2026-08-29) redeployed six singletons (factory, both registries, governance, vaultDeployer, and the oracle itself); `cast call 0x9702...oracle()` still returns the OLD OracleAggregator address, not the live ChainlinkOracle at contracts/config/deployments/base-sepolia.json, so every write drill 2 or drill 5 would have sent against that vault was going to a contract wired to dead infrastructure. It was also not actually exited (totalShares()=4e18 on-chain, contradicting the old note below), which would have made drill 2's parent-deposit math wrong on top of everything else. 0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f is the vault launch gate 2 exercised on 2026-09-01, created fresh against the current pivoted deployment: basketLength=2 (WETH, LINK, matching this file's assumptions), quorumBps=2500, exitFeeMaxBps=50 (both exactly what childVault's govNote/amountsNote below assume for 'the parent'), minDepositUsdc=1e6 (1.00 USDC, matching agentDepositNote), capacityCapUsdc=1e9. It finished gate 2's exit at totalShares()=0 / idleUsdc=0 -- genuinely empty this time, independently confirmed on-chain -- so drills 2 and 5 still need to re-deposit into it, same as the old note said.",
     "supersededAddress": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330"
   },
-
   "vaultB": {
     "label": "soak-B",
     "note": "Drill 1's second vault and drill 3's Mode-F host. Basket is LINK-ONLY -- a strict subset of the smoke vault's basket, which makes it a different risk profile for the leaderboard AND keeps it eligible to be a child of the smoke vault should we need a second sub-vault case. Governance runs a 50% quorum against the smoke vault's 25% floor.",
-    "basket": ["LINK"],
+    "basket": [
+      "LINK"
+    ],
     "capacityCapUsdc": "500000000",
     "minDepositUsdc": "2000000",
     "depositUsdc": "5000000",
@@ -26,15 +25,17 @@
       "executionWindow": 86400,
       "quorumBps": 5000,
       "proposalThresholdBps": 0,
-      "concentrationCapBps": 10000,
-      "proposalCooldown": 0
-    }
+      "concentrationCapBps": 5000,
+      "proposalCooldown": 3600
+    },
+    "govNote": "M-6 bounds (2026-09-01, Ops3-SoakLaunch): Governance._validateConfig now requires 0 < concentrationCapBps <= 5000 and 3600 <= proposalCooldown <= cap. The pre-remediation values (10000 / 0) made registerVault revert BadGovConfig (0x41d05fdb) on the first soak attempt against the pivoted tree. Values match the live smoke vault (configOf = 3600,3600,0,86400,2500,100,5000,3600) except quorum and threshold, which are the dimensions drill 1 deliberately varies."
   },
-
   "childVault": {
     "label": "soak-child",
     "note": "Drill 2's sub-vault, created under the smoke vault. Basket [WETH] is a strict subset of the parent's [WETH, LINK] -- VaultFactory.createChildVault enforces the subset rule and the same USDC. exitFeeMaxBps must keep the SV-4 stacked ceiling under the registry cap: parent 50 + child 25 = 75 bps.",
-    "basket": ["WETH"],
+    "basket": [
+      "WETH"
+    ],
     "capacityCapUsdc": "200000000",
     "minDepositUsdc": "1000000",
     "parentDepositUsdc": "4000000",
@@ -49,18 +50,15 @@
       "executionWindow": 86400,
       "quorumBps": 5000,
       "proposalThresholdBps": 0,
-      "concentrationCapBps": 10000,
-      "proposalCooldown": 0
+      "concentrationCapBps": 5000,
+      "proposalCooldown": 3600
     },
-    "govNote": "SV-6 / _requireParentQuorumFloor: a child's quorum may not sit below its parent's. Parent runs 2500, child runs 5000, so the floor is satisfied with margin.",
-    "allocateUsdc": "2000000"
+    "govNote": "SV-6 / _requireParentQuorumFloor: a child's quorum may not sit below its parent's. Parent runs 2500, child runs 5000, so the floor is satisfied with margin. Same M-6 bounds applied 2026-09-01 (concentrationCapBps 5000, proposalCooldown 3600); no drill registers the child with governance, so this block is documentary."
   },
-
   "parentDeposit": {
     "depositUsdc": "8000000",
     "note": "Into the smoke vault, funding drill 2's allocation into the child (4 USDC) with idle USDC left over so the parent's own NAV stays non-zero and look-through arithmetic has two non-trivial terms to check."
   },
-
   "budget": {
     "creatorUsdcTotal": "13000000",
     "note": "13 of the creator's 20 USDC: 5 into vault B (drills 1+3) and 8 into the smoke vault (drill 2). 7 USDC held in reserve so a stranded drill can be re-run without a faucet round trip."
