@@ -268,8 +268,11 @@ affordable only because M-11 came first.**
 > (retired to `contracts/test/retired/`), so their rows describe contracts that are no longer
 > built for deployment.
 
-**H-5, H-6, H-9 and M-15 remain unfixed for this reason** — they all land in `VaultCore`, and
-several would not fit even alone. `Governance` net *shrank* across the session despite gaining
+**H-5, H-6 and M-15 remain unfixed for this reason** — they all land in `VaultCore`, and
+several would not fit even alone. *(**H-9 was in this list and is now fixed** — 2026-09-01, at a
+cost of 169 B, which fits comfortably since PR #90 took the margin to 4,095 B. And the size wall
+that justified this paragraph is gone: what still blocks H-5/H-6 is the escrow-degradation design
+decision in issue #40, not bytes.)* `Governance` net *shrank* across the session despite gaining
 M-6's bounds, because C-5's fix replaced four inline weight reads with one helper.
 
 **The gas snapshot was regenerated wholesale**, not reviewed line by line: six contracts changed
@@ -336,8 +339,10 @@ Shorter than it was, and still not short.
    time. Degrading the residue to escrow changes payout semantics. This needs design, not a
    patch — and it needs EIP-170 headroom, which may mean moving code out of `VaultCore`.
 
-3. **Work the rest of the High tier** — H-8 (dust sybils buy the quorum regime) and H-9
-   (read-only cross-contract reentrancy through look-through NAV).
+3. **Work the rest of the High tier** — now **H-8 alone** (dust sybils buy the quorum regime).
+   ~~H-9 (read-only cross-contract reentrancy through look-through NAV)~~ is **fixed in code
+   2026-09-01**: `_fullNavWad` refuses to price a `locked()` descendant, closing both windows the
+   finding names. H-8 is therefore the only open High that is *reachable* at a root-only launch.
 
 4. **Rebuild `base-mainnet.json`** to the shape the contracts now demand: 5 sources per asset at
    quorum 3, `maxObservationAge <= window / 20`. Needs real addresses for two further sources per

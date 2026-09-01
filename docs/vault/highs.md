@@ -76,12 +76,27 @@ regardless of head count (kills the dust-griefing lockout) — additive, so no M
 must be economically meaningful (base-mainnet.json smoke minimum raised 1 → 100 USDC). This is the
 key open High for a root-only launch. Regression: `AuditQuorumRegimeDust.t.sol` (3 tests).
 
-### H-9 — Read-only cross-contract reentrancy through look-through NAV — **DORMANT-AT-LAUNCH**
+### H-9 — Read-only cross-contract reentrancy through look-through NAV — **FIXED IN CODE 2026-09-01** (was DORMANT-AT-LAUNCH)
 `executeRebalance` and `_redeemChildMeasured` leave a `VaultCore`'s accounting understated during an
 external call; `nonReentrant` protects *that* vault, not an ancestor reading it through unguarded
 views inside `_childValueWad`/`_fullNavWad`. Per-contract mutex is definitionally no defence against a
 different contract reading mid-mutation — Slither's blind spot coincides. Requires a parent/child pair
-→ **dormant at launch**; deferred with sub-vaults.
+→ dormant at launch, and it was deferred with sub-vaults.
+
+**Fixed rather than left dormant.** `VaultCore` gained a `locked()` view, and `_fullNavWad` now
+requires `!v.locked()` before pricing a descendant — so an ancestor refuses to read a vault that is
+mid-mutation instead of reading an understated number. This closes **both** windows H-9 names, not
+only the `executeRebalance` one, because the guard sits at the *read* rather than at either write.
+
+The finding's own status also moved from **PLAUSIBLE** — it was filed with "no executing test" —
+to demonstrated: `test/audit/AuditLookThroughReadOnlyReentrancy.t.sol` reproduces the exploit at
+**2,000e18 shares minted for 1,000 USDC**, a 2× overmint, and fails when the guard is removed
+(verified by mutation twice, independently).
+
+The window itself is **not** closed and cannot be: a leg's output is unknowable until the swap
+returns, and trusting the adapter's claimed amount instead is exactly EX-3. The understatement is
+made *unobservable*, not eliminated. Do not delete the `require(!v.locked())` to reclaim bytes —
+`executeRebalance`'s docstring says so, and says why.
 
 ## Links
 

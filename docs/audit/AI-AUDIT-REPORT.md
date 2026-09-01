@@ -1073,7 +1073,7 @@ well. **Requires redeploy + re-review of the quorum regime and holder accounting
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **PLAUSIBLE** — derived from source by two independent passes; no executing test |
+| **Status** | **REMEDIATED 2026-09-01** — and *confirmed* on the way there. Filed PLAUSIBLE with "no executing test"; it now has one. `test/audit/AuditLookThroughReadOnlyReentrancy.t.sol` reproduces the exploit at **2,000e18 shares minted for 1,000 USDC** (a 2× overmint) and fails when the guard is removed. Fix: a `VaultCore.locked()` view plus `require(!v.locked(), Reentrancy())` in `_fullNavWad` — which closes **both** windows described below, because it sits at the *read* rather than at either write. The windows themselves stay open by necessity: a leg's output is unknowable until the swap returns, and trusting the adapter's claimed amount instead is exactly EX-3. So the understatement is made **unobservable**, not eliminated. Cost: 169 B. |
 | **Files** | `VaultCore.sol:765-771` vs `:773`, `:776`; `:695-717` (`:707` vs `:711`/`:715`); readers `:274`, `:282`, `:286`; consumers `:324`, `:391`, `:515`, `:555` |
 
 Two windows exist where a `VaultCore`'s internal accounting is understated while an external call is
