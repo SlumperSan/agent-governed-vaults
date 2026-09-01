@@ -26,6 +26,9 @@ function compiledEventSignatures() {
     'OperatorRegistry.sol/OperatorRegistry.json',
     'SubVaultRegistry.sol/SubVaultRegistry.json',
     'VaultFactory.sol/VaultFactory.json',
+    'FeeEngine.sol/FeeEngine.json',
+    'AggregationRouterAdapter.sol/AggregationRouterAdapter.json',
+    'DirectPoolAdapter.sol/DirectPoolAdapter.json',
   ];
   /** @type {Map<string, Set<string>>} */
   const sigs = new Map();

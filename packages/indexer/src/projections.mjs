@@ -26,6 +26,8 @@
  * @property {bigint} capacityCapUsdc
  * @property {string|null} parent        // sub-vault parent, or null for a root
  * @property {number} depth
+ * @property {number} exitQueuedCount    // ExitQueued occurrences (Mode-F entries)
+ * @property {number} exitSettledCount   // ExitSettled occurrences (all settled exits, Mode-F + Mode-I)
  */
 
 /**
@@ -59,7 +61,34 @@ export const HANDLED_EVENTS = Object.freeze([
   'RealizationRecorded', 'FeeRecorded', 'DepositPending', 'PendingCancelled',
   'DepositActivated', 'ExitSettled', 'Proposed', 'Revealed', 'DefaultApplied',
   'DelegatedRevealed', 'Finalized', 'Executed', 'ProposalExpired',
+  // Mode-F exit queue, in-kind escrow, module-call failures and rebalance execution counts
+  // (data-analytics build-order #1 — packages/indexer/src/abis.mjs is the source of these).
+  'ExitQueued', 'SliceEscrowed', 'EscrowClaimed', 'ModuleCallFailed', 'RebalanceExecuted',
+  // FeeEngine per-token fee accrual + Governance quorum context / reveal drop-off (build-order #2).
+  'FeeAssessed', 'FeeCredited', 'FeesClaimed', 'VaultRegistered', 'Committed',
+  // Execution-adapter fills (build-order #3).
+  'SwapExecuted',
 ]);
+
+/**
+ * Events tracked only as a count + last-seen marker (§ build-order #1/#2/#3): no bespoke reducer
+ * exists for these yet (that is the bigger Postgres-substrate work in the vault note's build order
+ * items 4+). Folding them here at least means they are not silently dropped — `state.eventStats`
+ * answers "has this event ever fired, how many times, as of which block" for every one of them.
+ */
+const STAT_ONLY_EVENTS = Object.freeze([
+  'ExitQueued', 'SliceEscrowed', 'EscrowClaimed', 'ModuleCallFailed', 'RebalanceExecuted',
+  'FeeAssessed', 'FeeCredited', 'FeesClaimed', 'VaultRegistered', 'Committed', 'SwapExecuted',
+]);
+const STAT_ONLY_EVENT_SET = new Set(STAT_ONLY_EVENTS);
+
+function bumpEventStat(state, e) {
+  const s = state.eventStats.get(e.name) ?? { count: 0, lastBlock: 0, lastLogIndex: -1 };
+  s.count += 1;
+  s.lastBlock = e.blockNumber;
+  s.lastLogIndex = e.logIndex;
+  state.eventStats.set(e.name, s);
+}
 
 export function emptyState() {
   return {
@@ -68,6 +97,9 @@ export function emptyState() {
     /** @type {Map<string, Map<string, bigint>>} */ shares: new Map(), // vault -> member -> shares
     /** @type {Map<number, ProposalState>} */ proposals: new Map(), // pid -> proposal
     /** @type {Map<string, number>} */ activeProposal: new Map(), // vault -> pid (0 = none)
+    /** @type {Map<string, {count:number, lastBlock:number, lastLogIndex:number}>} */
+    eventStats: new Map(), // event name -> occurrence count + last-seen cursor (STAT_ONLY_EVENTS)
+    /** @type {Set<string>} */ adapters: new Set(), // execution-adapter addresses, learned from RebalanceExecuted
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -92,6 +124,8 @@ function ensureVault(state, vault) {
       capacityCapUsdc: 0n,
       parent: null,
       depth: 0,
+      exitQueuedCount: 0,
+      exitSettledCount: 0,
     };
     state.vaults.set(vault, v);
   }
@@ -127,6 +161,7 @@ function creditShares(state, vault, member, delta) {
  */
 export function apply(state, e) {
   const a = e.args ?? {};
+  if (STAT_ONLY_EVENT_SET.has(e.name)) bumpEventStat(state, e);
   switch (e.name) {
     case 'VaultCreated': {
       const v = ensureVault(state, e.args.vault);
@@ -191,8 +226,17 @@ export function apply(state, e) {
       // idle tracking is approximate off events; authoritative NAV comes from a chain read.
       break;
     }
+    case 'ExitQueued':
+      ensureVault(state, e.vault).exitQueuedCount += 1;
+      break;
     case 'ExitSettled':
+      ensureVault(state, e.vault).exitSettledCount += 1;
       creditShares(state, e.vault, a.member, -big(a.sharesBurned));
+      break;
+    case 'RebalanceExecuted':
+      // Learns the adapter's address so the chain source can poll it for SwapExecuted the same
+      // way it learns a vault's address from VaultCreated (see rpc.mjs).
+      if (a.adapter) state.adapters.add(a.adapter);
       break;
     case 'Proposed': {
       const pid = Number(a.pid);
@@ -314,6 +358,25 @@ export function listVaults(state) {
     capacityCapUsdc: v.capacityCapUsdc,
     attested: v.operatorId !== 0, // operatorId 0 = unattested (scam-quarantine signal)
   }));
+}
+
+/**
+ * Approximate Mode-F exit rate for a vault: `ExitQueued` occurrences over `ExitSettled`
+ * occurrences (counts, not value — matches the vault note's "exits, NOT value" framing).
+ *
+ * This is a first-order signal, not the exact per-member discriminator from the data-analytics
+ * build note (§3.6): the precise rule is "an ExitSettled is Mode-F iff that (vault, member) has an
+ * ExitQueued with no intervening ExitSettled," which needs a per-member exit ledger (the
+ * `exit_event` table in the note's build order item 4+, on the Postgres substrate). Two counts
+ * over the vault's whole history is the natural small addition available from the existing
+ * scalar-fold shape; it will over- or under-count relative to the exact ledger whenever queued
+ * exits settle out of order across members. Returns null when the vault is unknown or has no
+ * settled exits yet (undefined rate, not zero).
+ */
+export function modeFExitRate(state, vault) {
+  const v = state.vaults.get(vault);
+  if (!v || v.exitSettledCount === 0) return null;
+  return v.exitQueuedCount / v.exitSettledCount;
 }
 
 /** A member's share position in a vault (0 if none). */
