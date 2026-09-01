@@ -15,8 +15,14 @@
 - [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
 
 ## Key semantics an integrator must respect
+- NOT DEPLOYED. No deployment of the current code exists on any network; the Base Sepolia address
+  book is superseded bytecode. Launch verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md).
+  There is nothing live to integrate against yet, and no token, presale or airdrop exists.
 - First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
-- Exiting between a vote passing and executing is forward-priced (settles at post-rebalance NAV).
+- Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
+  its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
+  execution window. Governance.hasPendingExecution(vault) is the exact predicate; a defeated
+  proposal still queued the exits requested while it was live.
 - Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
@@ -28,5 +34,7 @@
   AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
 
 ## Build & test
-- Contracts: cd contracts && forge test  (101 tests)
-- Backend/SDK/frontend logic: npm run test:backend  (31 node tests)
+- Everything CI runs: npm run gate  (`--list` explains every step)
+- Contracts: cd contracts && forge test
+- Backend/SDK/frontend logic: npm run test:backend
+(Test counts are deliberately not quoted here — they go stale silently. Run the suites.)
