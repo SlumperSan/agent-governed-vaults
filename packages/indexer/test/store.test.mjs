@@ -39,6 +39,32 @@ test('serialize → deserialize is a faithful round-trip (bigints + Maps preserv
   assert.equal(back.shares.get(V).get(A), 100n * 10n ** 12n);
 });
 
+test('serialize → deserialize round-trips eventStats and adapters', () => {
+  const ADAPTER = '0x' + '7'.repeat(40);
+  const events = [
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 1n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 10n }),
+    ev('RebalanceExecuted', 3, 0, V, { adapter: ADAPTER, orderCount: 1n }),
+  ];
+  const built = applyAll(events);
+  const back = deserializeState(JSON.parse(JSON.stringify(serializeState(built))));
+  assert.equal(back.eventStats.get('ExitQueued').count, 1);
+  assert.equal(back.eventStats.get('ExitQueued').lastBlock, 2);
+  assert.equal(back.eventStats.get('RebalanceExecuted').count, 1);
+  assert.ok(back.adapters.has(ADAPTER));
+  assert.equal(back.vaults.get(V).exitQueuedCount, 1);
+});
+
+test('deserializeState defaults eventStats/adapters to empty for a snapshot written before they existed', () => {
+  const legacy = JSON.parse(JSON.stringify(serializeState(richState())));
+  delete legacy.eventStats;
+  delete legacy.adapters;
+  const back = deserializeState(legacy);
+  assert.equal(back.eventStats.size, 0);
+  assert.equal(back.adapters.size, 0);
+  assert.equal(back.lastBlock, richState().lastBlock);
+});
+
 test('snapshot survives a file save/load cycle', async () => {
   const path = join(tmpdir(), `idx-${process.pid}-${Date.now()}.json`);
   try {
