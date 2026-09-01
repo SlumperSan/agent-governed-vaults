@@ -48,13 +48,23 @@ These need a decision or a machine capability. **Two entries stood here for days
 which is the more useful lesson: *"needs a key"* had become a habit rather than a fact, and nobody
 re-checked it. Re-check this list before repeating it.
 
-1. ~~**Resume the smoke lifecycle** (needs the `deployer` keystore password)~~ — **NOT BLOCKED, and
-   running as of 2026-09-01.** The password file already existed at `%USERPROFILE%\.soak.pw` and
-   unlocks the `deployer` account (verified read-only: it returns `0x0f80…9f35`). The earlier
-   failure was a **mistyped** password, so the fix was `--password-file`, not a human at the
-   keyboard. The 4-hour observation window had also elapsed **78 hours** earlier. Resume with
-   `SMOKE_SIGNER_ARGS="--account deployer --password-file %USERPROFILE%\.soak.pw"`, plus
-   `SMOKE_STATE` and `DEPLOY_JSON` pointed at the main checkout's copies.
+1. ~~**Resume the smoke lifecycle**~~ — **DONE 2026-09-01, and it PASSED. Launch gate 2 is EARNED.**
+   All ten phases green on the pivoted tree against the live C-6 deployment: createVault →
+   registerGov → deposit → activate → propose → commit → reveal → finalize → execute → exit.
+   **The exit settled Mode I for exactly 5,000,000 USDC units — an exact round trip — and left
+   `totalShares() == 0`**, confirmed by an independent `cast call` after the run. Vault
+   `0x4d60…1a0f`, proposal 1; run record kept at `scripts/.smoke-state.json`. 2h 0m wall clock,
+   almost all of it the 1h commit + 1h reveal timelocks.
+
+   **It was never blocked.** The password file was already at `%USERPROFILE%\.soak.pw`, the deployer
+   already held 0.5897 ETH, and the observation window had elapsed **78 hours** earlier — the
+   original failure was a *mistyped* password and the fix was `--password-file`. Re-run any time
+   with `SMOKE_SIGNER_ARGS="--account deployer --password-file %USERPROFILE%\.soak.pw"`.
+
+   **What it does NOT prove**, stated so the row is not over-read: the sequencer guard still has
+   never executed — Base Sepolia leaves `sequencerUptimeFeed` at `address(0)` by design, so its
+   first real run is still mainnet — and this was one vault, one member, one no-op rebalance. No
+   Mode-F queue, no sub-vaults, no adversarial adapter. Those are the soak's job, below.
 2. ~~**Soak + canary re-run** (needs a funded testnet key)~~ — **NOT BLOCKED.** The deployer holds
    **0.5897 ETH** on Base Sepolia and both password files exist (`.soak.pw`, `.soak-agent.pw`).
    `run-soak.ps1`'s own header says so: *"Nothing needs a human once the password files are in
