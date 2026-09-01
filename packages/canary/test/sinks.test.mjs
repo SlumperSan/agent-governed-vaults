@@ -190,6 +190,69 @@ test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG dec
   assert.ok(liveSignals.size >= 7, `only ${liveSignals.size} signals discovered — the readdir is not working`);
 });
 
+// ── the feed-identity split, proven by DISPATCH rather than by set membership ─
+//
+// The coverage test above is a claim about the SETS. This is the claim that actually matters, and
+// it is only true if the whole path — emitAll -> tiered sink -> tierOf -> CONDITIONAL_PAGE
+// predicate -> the chosen URL — agrees: a LATCHING feed-identity drift must physically arrive at
+// the PAGE endpoint, and the self-clearing aggregator swap must physically arrive at the LOG one.
+
+/** One real feed-identity ALERT transition, shaped the way `signals/feed-identity.mjs` emits it. */
+const feedIdentityAlert = (harm) => ({
+  id: 'feed-identity|0xv|0xasset', signal: 'feed-identity', vault: '0xv', key: '0xasset',
+  from: 'ok', to: 'alert', line: `ALERT [feed-identity] harm=${harm}`,
+  result: {
+    signal: 'feed-identity', vault: '0xv', key: '0xasset', status: 'alert',
+    measured: 'decimals 6', threshold: 'the cached scale 10000000000',
+    detail: { vault: '0xv', asset: '0xasset', feed: '0xfeed', harm },
+  },
+});
+
+test('dispatch: a LATCHING feed-identity ALERT physically reaches the PAGE endpoint', async () => {
+  for (const harm of ['decimals', 'denomination']) {
+    const posted = [];
+    const sink = createTieredWebhookSink({
+      pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+      fetchImpl: async (url, init) => { posted.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200 }; },
+    });
+    await emitAll([sink], [feedIdentityAlert(harm)]);
+    assert.equal(posted.length, 1, `harm='${harm}' must produce exactly one POST`);
+    assert.equal(posted[0].url, 'https://example.invalid/page', `harm='${harm}' must WAKE somebody: the oracle's cached scale is now permanently wrong and only feed-identity can see it`);
+    assert.equal(posted[0].body.tier, 'page', 'and the body must say so, for a receiver on a single shared URL');
+    assert.equal(posted[0].body.signal, 'feed-identity');
+    assert.equal(posted[0].body.detail.harm, harm);
+  }
+});
+
+test('dispatch: a self-clearing feed-identity aggregator swap physically reaches the LOG endpoint', async () => {
+  const posted = [];
+  const sink = createTieredWebhookSink({
+    pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+    fetchImpl: async (url, init) => { posted.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200 }; },
+  });
+  const swap = feedIdentityAlert(null);
+  swap.result.detail.swapped = true;
+  await emitAll([sink], [swap]);
+  assert.deepEqual(posted.map((p) => p.url), ['https://example.invalid/log'], 'routine Chainlink operation that clears itself next sweep must not wake anyone');
+  assert.equal(posted[0].body.tier, 'log');
+});
+
+test('dispatch: both feed-identity tiers in ONE sweep split across the two endpoints', async () => {
+  const posted = [];
+  const sink = createTieredWebhookSink({
+    pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+    fetchImpl: async (url) => { posted.push(url); return { ok: true, status: 200 }; },
+  });
+  // Two assets on one vault: one drifted, one merely rotated. Same signal, same sweep.
+  const drifted = feedIdentityAlert('decimals');
+  const rotated = feedIdentityAlert(null);
+  rotated.id = 'feed-identity|0xv|0xasset2';
+  rotated.key = '0xasset2';
+  await emitAll([sink], [drifted, rotated]);
+  assert.deepEqual(posted, ['https://example.invalid/page', 'https://example.invalid/log'],
+    'the split is per-transition, not per-signal — one signal name, two endpoints, same sweep');
+});
+
 test('createTieredWebhookSink routes a PAGE-tier transition to pageUrl only', async () => {
   const calls = [];
   const sink = createTieredWebhookSink({
