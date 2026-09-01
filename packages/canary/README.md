@@ -74,18 +74,27 @@ every transition, same channel, no severity. Full env reference is in
 - **Tiered webhooks.** `PAGE_WEBHOOK_URL` gets only ALERT transitions on `nav-backing`,
   `share-conservation`, `fee-routing`, `exit-liveness`, `oracle-freshness` — the signals Operations'
   Severity Ladder puts at SEV-1/2 and worth waking for. `LOG_WEBHOOK_URL` gets everything else:
-  recoveries, every DEGRADED/DETECTOR BROKEN line, and `feed-identity` (its own ALERT self-clears or
-  is caught at the weekly ops review by design). `ALERT_WEBHOOK_URL` is the backwards-compatible
+  recoveries, every DEGRADED/DETECTOR BROKEN line, and the self-clearing half of `feed-identity`.
+  `ALERT_WEBHOOK_URL` is the backwards-compatible
   fallback for whichever of the two is unset; set only that one and behaviour is exactly what it was
   before tiering existed.
-- **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep. `ops-check`
+- **`feed-identity` pages on harm only.** Its `decimals` / `denomination` ALERTs LATCH (the oracle's
+  cached scale is immutable — every price since is silently wrong, not frozen) and PAGE; its
+  aggregator-swap ALERT self-clears next sweep and LOGs. `sinks.mjs`'s `CONDITIONAL_PAGE` keys that
+  on `detail.harm != null`. Above BTC $100,000 the sane-price band stops catching a −2-decimal drift
+  (`Owner Decisions 2026-09-01.md` §1), and this is then the only detector.
+- **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep **that
+  watched at least one vault** — an empty watch set is not "watching", so the ping is withheld and
+  the external check goes red rather than reporting a canary that watches nothing. `ops-check`
   (`packages/oplog`) already detects a stalled canary, but it runs on the *same host* — this ping is
-  the thing that notices from outside it. Off by default; provisioning the external check account
-  (e.g. Healthchecks.io) is a human task, not something this package does.
+  the thing that notices from outside it. Off by default (startup says so on stderr); provisioning
+  the external check account (e.g. Healthchecks.io) is a human task, not something this package does.
 - **Alert self-test.** `CANARY_TEST_ALERT_ON_START=1` fires one synthetic PAGE and one synthetic LOG
   transition through the real sinks right after startup — the "the first real page must not be the
   first test" requirement (security-ops.md §5.3). Same thing on demand, without starting the sweep
   loop: `node packages/canary/src/canary-runner.mjs test-alert`. Never touches transition state.
+  **Do not leave it set in `.env`:** compose restarts this service automatically and it fires on
+  every restart. Startup warns when it is on.
 
 ## Tests
 
