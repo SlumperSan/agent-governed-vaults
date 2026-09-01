@@ -49,7 +49,7 @@ all four are now fixed, so the exploitable path is closed [only when at most one
 adversarial].
 The mint-time NAV bound it suggested as defence-in-depth is **deferred**, not shipped — it needs
 VaultCore bytes (only **1,014 B** of EIP-170 headroom remained on the merged tree at the time —
-**~283 B today**, see §5) and touches the
+**~283 B at the time of writing; 4,095 B since PR #90**, see §5) and touches the
 deposit path, which is not a place to add unreviewed logic; it lands in the VaultCore-headroom
 sprint (#40, #32). A second layer over an already-closed path, not the fix.
 
@@ -250,7 +250,8 @@ inline at every call site), reaching 1,518; then M-2 spent 504 on the escrow rou
 affordable only because M-11 came first.**
 
 > **⚠ CORRECTION, 2026-08-30 — the table above is a dated record, not the current tree.**
-> `VaultCore`'s live EIP-170 margin is **283 B** (measured 2026-08-30 and recorded in the
+> `VaultCore`'s live EIP-170 margin is **4,095 B** since PR #90 (2026-09-01). It was **283 B**
+> when this note was written — measured 2026-08-30 and recorded in the
 > knowledge vault; not re-measured in this edit, since `forge build --sizes` cannot run while the
 > tree does not build — see PR #82), not the 1,014 B recorded here (nor the 1,182 B
 > quoted in the H-5/H-6 notes, which was an intermediate value mid-session). M-15's

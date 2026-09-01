@@ -61,7 +61,7 @@ remediation. Current margins (post-M-15; see [[vaultcore]] for the reconciliatio
 
 | Contract | Runtime | Margin |
 | --- | --- | --- |
-| VaultCore | ~24,293 B | **~283 B** |
+| VaultCore | ~20,481 B | **~4,095 B** (was ~24,293 B / ~283 B before PR #90) |
 | ChainlinkOracle | ~1,532 B | ~23,044 B |
 | Governance | ~12,051 B | ~12,525 B |
 | VaultFactory | ~3,572 B | ~21,004 B |
