@@ -32,6 +32,10 @@ export const FEED = `0x${'fe'.repeat(18)}0001`;
 export const SEQ_FEED = `0x${'5e'.repeat(18)}0002`;
 export const ZERO_ADDR = `0x${'0'.repeat(40)}`;
 
+/** The aggregator currently behind FEED, and the one Chainlink swaps in. */
+export const AGGREGATOR = `0x${'a9'.repeat(18)}0003`;
+export const AGGREGATOR_2 = `0x${'a9'.repeat(18)}0004`;
+
 /** 8-decimal feed answer of $3.00 — × the 1e10 scale it is the 3e18 the NAV fixture expects. */
 export const FEED_ANSWER_3USD = 300_000_000n;
 export const FEED_SCALE_8DP = 10_000_000_000n;
@@ -197,6 +201,17 @@ export function chainlinkVault({
   maxPriceWad = 0n,
   feed = FEED,
   feedReverts = false,
+  // The proxy's self-description, which `signals/feed-identity.mjs` re-checks every sweep. The
+  // defaults are the healthy launch shape: 8 decimals (so 10**(18-8) == the 1e10 default `scale`),
+  // a USD-quoted description, and a stable aggregator/phaseId pair.
+  feedDecimals = 8,
+  feedDescription = 'ETH / USD',
+  feedAggregator = AGGREGATOR,
+  feedPhaseId = 4,
+  feedDecimalsReverts = false,
+  feedDescriptionReverts = false,
+  feedAggregatorReverts = false,
+  feedPhaseIdReverts = false,
   priceWadReverts = false,
   priceWadRevertData = '0xa2671f4b', // StaleOracle(address)
   usdcPin = ZERO_ADDR,
@@ -226,8 +241,13 @@ export function chainlinkVault({
   };
 
   const stamp = BigInt(nowSec - ageSec);
+  const RV = { revert: '0xdeadbeef' };
   contracts[lc(feed)] = {
-    latestRoundData: () => (feedReverts ? { revert: '0xdeadbeef' } : [1n, answer, stamp, stamp, 1n]),
+    latestRoundData: () => (feedReverts ? RV : [1n, answer, stamp, stamp, 1n]),
+    decimals: () => (feedDecimalsReverts ? RV : feedDecimals),
+    description: () => (feedDescriptionReverts ? RV : feedDescription),
+    aggregator: () => (feedAggregatorReverts ? RV : feedAggregator),
+    phaseId: () => (feedPhaseIdReverts ? RV : feedPhaseId),
   };
 
   if (lc(sequencerUptimeFeed) !== lc(ZERO_ADDR)) {

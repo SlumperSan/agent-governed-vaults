@@ -22,7 +22,12 @@
  *   OPERATOR_REGISTRY_ADDRESS  enables the fee-routing signal (skipped without it)
  *   EXTRA_OPERATOR_ADDRESSES   comma-separated extra operator addresses to treat as prohibited
  *   ALERT_WEBHOOK_URL          POST one JSON body per transition
- *   CANARY_STATE_PATH (./data/canary-state.json)  transition state, so a restart does not re-page
+ *   CANARY_STATE_PATH (./data/canary-state.json)  transition state, so a restart does not re-page.
+ *                              It also holds the aggregator identities `feed-identity` pinned on
+ *                              first sight. Deleting it re-pins from whatever is live, so a swap
+ *                              that happened while the canary was down is not narrated — the
+ *                              decimals and denomination checks in that signal need no pin and
+ *                              cover the harm either way.
  *   CHAIN_ID (8453)  CHAIN_NAME (base)  CONFIRMATIONS (5)
  *   CANARY_POLL_INTERVAL_MS (30000)  sweep cadence. Named apart from the indexer's
  *                              POLL_INTERVAL_MS because docker-compose feeds both services one
@@ -69,6 +74,7 @@ import { createConsoleSink, createWebhookSink, emitAll } from './sinks.mjs';
 import { VAULT_VIEWS } from './abis.mjs';
 import { skipped, detectorBroken, shortAddr } from './signal.mjs';
 import { checkOracleSignals } from './signals/oracle-health.mjs';
+import { checkFeedIdentity, applyIdentityObservations } from './signals/feed-identity.mjs';
 import { checkNavBacking } from './signals/nav-backing.mjs';
 import { checkShareConservation } from './signals/share-conservation.mjs';
 import { checkExitLiveness } from './signals/exit-liveness.mjs';
@@ -164,9 +170,12 @@ export function resolveCanaryConfig(env) {
  * @param {string[]} ctx.vaults
  * @param {ReturnType<typeof resolveCanaryConfig>} ctx.cfg
  * @param {{fromBlock:number, toBlock:number, nowSec:number}} ctx.window
+ * @param {Record<string, any>} [ctx.identityPins] remembered aggregator identities, from the canary
+ *        state file. Read-only in here; the caller folds this sweep's observations back in with
+ *        `applyIdentityObservations` and persists the result.
  * @returns {Promise<import('./signal.mjs').SignalResult[]>}
  */
-export async function collectSignals({ reader, state, vaults, cfg, window }) {
+export async function collectSignals({ reader, state, vaults, cfg, window, identityPins = {} }) {
   const out = [];
   const { fromBlock, toBlock, nowSec } = window;
 
@@ -230,6 +239,13 @@ export async function collectSignals({ reader, state, vaults, cfg, window }) {
       cadenceByAsset: cfg.oracleFeedCadenceSeconds,
     }));
 
+    // The other half of the oracle: not "is the price fresh" but "is it still the same feed, and
+    // is it still scaled the way the immutable config assumed". Silent on a retired-aggregator
+    // deployment, where no Chainlink proxy exists to drift.
+    await run('feed-identity', () => checkFeedIdentity({
+      reader, vault, oracle: meta.oracle, assets: meta.assets, pins: identityPins,
+    }));
+
     await run('nav-backing', () => checkNavBacking({
       reader, vault, atBlock: toBlock, thresholdBps: cfg.navDivergenceBps,
     }));
@@ -285,6 +301,8 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
   const persisted = await loadCanaryState(cfg.canaryStatePath);
   const tracker = createTransitionTracker({ initial: persisted.transitions });
   let lastScannedBlock = persisted.lastScannedBlock ?? null;
+  // Defaulted, not assumed: a state file written before this key existed is a legitimate input.
+  let identityPins = persisted.feedIdentity ?? {};
   let poll = 0;
 
   const stateWriter = createCanaryStateWriter({
@@ -342,11 +360,15 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
     }
 
     const results = await collectSignals({
-      reader, state, vaults, cfg,
+      reader, state, vaults, cfg, identityPins,
       window: { fromBlock: windowFrom, toBlock, nowSec },
     });
 
     const transitions = tracker.observe(results, { poll, timestamp: now().toISOString() });
+    // AFTER the transition is computed, never before: the alert for a swap is the comparison
+    // against the OLD pin, and re-pinning first would compare the new identity against itself and
+    // report nothing. Re-pinning here is also what makes a benign swap self-clear next sweep.
+    identityPins = applyIdentityObservations(identityPins, results);
     await emitAll(sinks, transitions, { onError: errLine });
 
     lastScannedBlock = toBlock;
@@ -356,8 +378,8 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
 
   /** Persist what the tracker knows right now. Called after every sweep, and on shutdown. */
   async function flush() {
-    await stateWriter.save({ transitions: tracker.snapshot(), lastScannedBlock });
-    return { tracked: tracker.size, lastScannedBlock };
+    await stateWriter.save({ transitions: tracker.snapshot(), lastScannedBlock, feedIdentity: identityPins });
+    return { tracked: tracker.size, lastScannedBlock, feedsPinned: Object.keys(identityPins).length };
   }
 
   const ac = new AbortController();
