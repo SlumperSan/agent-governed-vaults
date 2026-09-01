@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "tokens": {
+    "roster": {
+      "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
+      "postedBy": "the orchestrator, when it spawns reviewers",
+      "purpose": "makes 'assigned but not yet posted' a computable state. The roster is the denominator; verdicts are the numerator."
+    },
+    "verdict": {
+      "form": "<!-- REVIEW-VERDICT reviewer=Name verdict=ACCEPT|REJECT -->",
+      "postedBy": "each reviewer, inside its existing '## Adversarial review — VERDICT' comment",
+      "purpose": "the ONLY thing that may CLEAR a PR. Prose can never clear."
+    }
+  },
+  "invariants": [
+    "A structured token is the only thing that may CLEAR a blocker. Prose is never sufficient, so 'satisfy the check by writing the word ACCEPT' is impossible by construction.",
+    "The legacy prose heuristic may only ADD a blocker, never remove one. Its fragility is therefore bounded to false alarms, which a reviewer clears by posting a token.",
+    "The latest verdict per reviewer wins. Verdicts arrive out of band and a REJECT must be clearable, or no fixer pass could ever land.",
+    "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around."
+  ],
+  "rules": [
+    {
+      "id": "pr-open",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "the PR must be OPEN",
+      "blocksWhen": "state is MERGED or CLOSED, or the PR is a draft",
+      "why": "Mode C. A freshly-merged branch is indistinguishable from a live one by git divergence -- 'git rev-list --left-right --count' reports 0 behind / N ahead for both. GitHub reopens no PR on push, creates no CI run, and still accepts comments onto the closed PR, so the work looks landed and is silently stranded. This cost PR #107's entire fixer pass on 2026-09-01."
+    },
+    {
+      "id": "no-standing-reject",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "no reviewer's latest verdict may be REJECT",
+      "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a legacy prose REJECT heading is not followed by a later ACCEPT token",
+      "why": "Mode A. #107 merged 8 minutes after a REJECT was standing in writing on the PR; #92 merged 29 minutes after one. This is a policy failure, not a visibility one: the standing self-merge rule had no clause about an open REJECT, so an agent following it as written merges correctly and lands a HIGH."
+    },
+    {
+      "id": "ci-matches-head",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "a successful CI run must exist for THIS head SHA",
+      "blocksWhen": "no completed successful workflow run has headSha equal to the PR's headRefOid",
+      "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion."
+    },
+    {
+      "id": "roster-declared",
+      "modes": [
+        "strict"
+      ],
+      "title": "a review roster must have been declared",
+      "blocksWhen": "no REVIEW-ROSTER token appears on the PR",
+      "why": "Mode B, half one. Without a declared roster there is no denominator, so 'nobody has objected' and 'nobody has looked' are the same observation. #109 merged 5.5 minutes before its review existed."
+    },
+    {
+      "id": "roster-resolved",
+      "modes": [
+        "strict"
+      ],
+      "title": "every rostered reviewer must have posted a verdict",
+      "blocksWhen": "any name in the roster has no REVIEW-VERDICT token",
+      "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'."
+    }
+  ],
+  "legacyProseHeuristic": {
+    "pattern": "^#{1,6}\\s+.*\\breview\\b.*\\bREJECT\\b",
+    "appliedTo": "the first non-empty line of a comment, with markdown bold markers stripped",
+    "direction": "block-only",
+    "evidence": "Validated against every comment on PRs #90-#120 on 2026-09-01: 15 matches, 15 correct. It catches all 13 real verdict headings and correctly skips '## Fixer pass -- Review92-B findings' and '## Fixer pass -- Review109 findings', both of which quote the word REJECT in their bodies and which a naive body grep flags as verdicts."
+  },
+  "enforcement": {
+    "today": "convention. scripts/merge-preflight.mjs is a preflight an orchestrator runs; nothing compels it to.",
+    "toBecomeEnforcement": "branch protection on protocol/main requiring the 'merge-preflight' status context, with enforce_admins true. That needs the repository owner; an agent cannot set it.",
+    "nativeReviewsUnavailable": "The whole swarm is one GitHub identity (SlumperSan) and every PR is authored by it, so GitHub refuses approve/request-changes on its own PRs: reviewDecision is permanently null and CHANGES_REQUESTED -- the state branch protection natively blocks on -- is unreachable. Zero native reviews exist in this repo's history. A second machine account is the only path to natively-enforced reviewer independence, and that is the owner's call.",
+    "requiredStatusContext": "merge-preflight",
+    "ghApi": [
+      "gh api -X PUT repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/required_status_checks -f strict=true -f 'contexts[]=merge-preflight'",
+      "gh api -X POST repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/enforce_admins"
+    ]
+  }
+}
