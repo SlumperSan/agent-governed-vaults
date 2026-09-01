@@ -90,7 +90,8 @@ binding** — several audit fixes could only be afforded by first *shrinking* ot
 
 ## Size — EIP-170
 
-VaultCore is the **only** contract meaningfully near the cap. Current margin is **~283 B**.
+VaultCore is the **only** contract meaningfully near the cap, though far less so since PR #90
+(2026-09-01) reclaimed 3,806 B. Current margin is **~4,095 B**, up from ~283 B.
 
 > Reconciliation (three docs, three points in time): the LAUNCH-READINESS table's **1,014 B**
 > predates M-15's `deposit(uint256,uint256)` overload, which spent **731 B** → ~283 B left; the
