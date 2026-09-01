@@ -41,6 +41,40 @@ contract DirectPoolAdapter is IExecutionAdapter {
     error BadOrder();
     error TokenNotInPair();
     error Slippage();
+    error Reentrancy();
+
+    uint256 private _lock = 1;
+
+    /// @dev Non-reentrancy is a property of the `IExecutionAdapter` contract itself, not of any
+    /// one caller: every implementation settles on a measured balance delta, and a nested call
+    /// measures the outer order's in-flight balance. The sibling aggregation adapter is
+    /// exploitable that way, so the guard is stated once for the interface. Same shape as
+    /// `VaultCore._lock`.
+    ///
+    /// THIS adapter is not exploitable by re-entry, and the reason matters more than the
+    /// conclusion — a wrong reason here is an argument for deleting the guard. Two facts, and it
+    /// is the second that carries it:
+    ///   1. There is **no whole-balance sweep**. This adapter moves only its own measured delta,
+    ///      so a nested call cannot walk off with a sibling order's in-flight input — which is
+    ///      precisely what the aggregation adapter's `balanceOf(tokenIn)` sweep allowed.
+    ///   2. `pair.swap` is the **only** external call, and it is the counterparty's own contract.
+    ///      Re-entry therefore grants the pair no capability it does not already hold as
+    ///      counterparty: a hostile pair can inflict the same loss by simply minting less, and
+    ///      the outer order's own `minAmountOut` is what refuses it either way. An honest V2 pair
+    ///      also carries its own `lock` and only calls back when `data.length > 0`, and this
+    ///      adapter passes `""` at both call sites.
+    ///
+    /// Do NOT restate this as "re-entry can only shrink the outer delta, so it fails closed on
+    /// `Slippage`". That was the original wording and it is false: a shrink that stays inside the
+    /// caller's tolerance is **absorbed, not refused**. The guard is cheap and the interface
+    /// invariant is worth stating uniformly; that is the reason it is here, not a proof that
+    /// re-entry would otherwise steal from this adapter.
+    modifier nonReentrant() {
+        require(_lock == 1, Reentrancy());
+        _lock = 2;
+        _;
+        _lock = 1;
+    }
 
     /// @param pair_ the V2-style pair this adapter is permanently pinned to
     constructor(IUniswapV2Pair pair_) {
@@ -50,7 +84,7 @@ contract DirectPoolAdapter is IExecutionAdapter {
     }
 
     /// @inheritdoc IExecutionAdapter
-    function executeSwap(SwapOrder calldata order) external returns (uint256 amountOut) {
+    function executeSwap(SwapOrder calldata order) external nonReentrant returns (uint256 amountOut) {
         require(block.timestamp <= order.deadline, Expired());
         require(order.minAmountOut > 0 && order.amountIn > 0, BadOrder());
         require(order.tokenIn != order.tokenOut, BadOrder());
@@ -75,6 +109,8 @@ contract DirectPoolAdapter is IExecutionAdapter {
         amountOut = IERC20Bal(order.tokenOut).balanceOf(address(this)) - outBefore;
 
         // The check that matters: measured delta vs caller floor (EX-3) — never the quote.
+        // Slither `reentrancy-balance` flags this: `outBefore` is read before `pair.swap`. That
+        // is the measured delta, not a stale read — and the mutex above is what makes it sound.
         require(amountOut >= order.minAmountOut, Slippage());
         order.tokenOut.safeTransfer(msg.sender, amountOut);
 
