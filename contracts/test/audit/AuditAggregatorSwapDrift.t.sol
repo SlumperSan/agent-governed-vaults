@@ -248,6 +248,61 @@ contract AuditAggregatorSwapDriftTest is Test {
         assertEq(oracle.priceWad(CBBTC), 7_770e18, "RESIDUAL: 10x underprice, inside the band");
     }
 
+    // --- 3a. the expiry: backstop (ii) is a property of the PRICE, not of the config -----
+
+    /// The band bounds a -2-decimal drift only while `spot < 100 * minPriceWad`, and the contract's
+    /// floor comparison is `priceWad_ < cfg.minPriceWad` — EXCLUSIVE, so landing exactly on the
+    /// floor does not revert either. cbBTC's floor is $1,000, so the backstop lapses at BTC =
+    /// $100,000: a 100x underprice then reads as a sane price, which is C-4's share-minting shape
+    /// with nothing to stop it. No config change is involved. Nobody has to do anything for this
+    /// to happen — the asset just has to go up, and BTC was ~$77,700 when the band was set.
+    ///
+    /// This is pinned as a TEST rather than a sentence because residual-register row 14 accepts the
+    /// cached-`scale` risk ON the strength of backstop (ii). A prose caveat about a price boundary
+    /// is the kind of thing that gets read once; a failing assertion is not.
+    function test_expiry_atBtc100kTheMinusTwoDecimalDriftNoLongerTripsTheFloor() public {
+        uint256 spotUsd = 100_000; // the boundary itself
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(CBBTC, address(feed), CBBTC_MIN_WAD, CBBTC_MAX_WAD);
+
+        _swapAggregatorTo(feed, 6, spotUsd); // 8 -> 6 decimals: a /100 mis-scale
+
+        uint256 p = oracle.priceWad(CBBTC);
+        assertEq(p, CBBTC_MIN_WAD, "the drifted price lands exactly ON the floor");
+        assertFalse(p < CBBTC_MIN_WAD, "and the contract's comparison is exclusive, so it does not revert");
+        assertEq(
+            p, 1_000e18, "BTC priced at $1,000 while the feed says $100,000 -- 100x underprice, no revert"
+        );
+    }
+
+    /// One dollar below the boundary the backstop still works, which is what makes the line above a
+    /// boundary and not an argument about the whole design.
+    function test_expiry_justBelowTheBoundaryTheFloorStillCatchesIt() public {
+        uint256 spotUsd = 99_999;
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(CBBTC, address(feed), CBBTC_MIN_WAD, CBBTC_MAX_WAD);
+
+        _swapAggregatorTo(feed, 6, spotUsd);
+
+        vm.expectRevert();
+        oracle.priceWad(CBBTC);
+    }
+
+    /// WETH has the same expiry an order of magnitude lower: its floor is $100, so the -2-decimal
+    /// backstop lapses at ETH = $10,000. Recorded because the two launch assets fail at different
+    /// prices and the register should not imply one number.
+    function test_expiry_wethBackstopLapsesAtTenThousand() public {
+        uint256 spotUsd = 10_000;
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(WETH, address(feed), WETH_MIN_WAD, WETH_MAX_WAD);
+
+        _swapAggregatorTo(feed, 6, spotUsd);
+
+        assertEq(
+            oracle.priceWad(WETH), WETH_MIN_WAD, "exactly on the $100 floor, and exclusive means no revert"
+        );
+    }
+
     // --- 4. the harm model: drift misprices MINTING, not REDEMPTION -------
 
     /// The asymmetry the whole decision rests on. Under a live 10x drift an exiting member still

@@ -117,7 +117,7 @@ test('isUsdQuoted rejects non-strings and short strings without throwing', () =>
 });
 
 // --- band width: the check that makes residual row 14 TRUE, not merely asserted ---
-// Row 13 accepts the cached-`scale` risk because the sane-price band already fail-closes on every
+// Row 14 accepts the cached-`scale` risk because the sane-price band already fail-closes on every
 // drift of >= 2 decimals. That argument holds only while the band is tight relative to the live
 // price -- and the pre-existing verifier check only asked whether a band EXISTS. A band of
 // $0.01..$1e12 satisfies "set" and catches nothing, silently voiding the acceptance. Live values
@@ -135,8 +135,13 @@ test('the real launch bands DO bound a 2-decimal drift at live prices', () => {
 test('a band that is merely SET but far too wide fails — the gap this check exists to close', () => {
   const r = bandBoundsTwoDecimalDrift(2440n * 10n ** 18n, 10n ** 16n, 10n ** 30n);
   assert.equal(r.ok, false);
-  assert.match(r.detail, /BAND TOO WIDE/);
+  assert.match(r.detail, /BAND NO LONGER BOUNDS/);
   assert.match(r.detail, /row 14/, 'the message must name the acceptance it invalidates');
+  assert.match(
+    r.detail,
+    /CHECK WHICH INPUT MOVED/,
+    'the message must not assume the band is at fault: the same failure is produced by the PRICE moving, with no config change',
+  );
 });
 
 test('the ceiling alone can fail it, and the message says which side', () => {

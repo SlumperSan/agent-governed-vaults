@@ -95,11 +95,21 @@ const MIN_HEARTBEAT = 600n;
 const MAX_HEARTBEAT = 86400n;
 const MAX_BAND_RATIO = 1000n;
 
+/**
+ * `--strict` (or STRICT=1) makes NOTICES set the exit code. Off by default, because the two
+ * callers want opposite things: a pre-deploy run must not be blocked by a legitimate aggregator
+ * swap, while the RECURRING run (DEPLOYMENT.md section 7a) exists precisely to notice that a swap
+ * happened. Residual row 14 is accepted ON the basis that this script surfaces drift -- and a
+ * notice that exits 0 into a cron surfaces nothing.
+ */
+const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
+
 /** @type {{name:string, ok:boolean, drift?:boolean, detail:string}[]} */
 const results = [];
 const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: String(detail) });
 /**
- * A NOTICE, not a verdict. Reported loudly and counted separately, but it never sets the exit code.
+ * A NOTICE, not a verdict. Counted separately from passes -- never folded into them -- and it sets
+ * the exit code only under `--strict`.
  * Chainlink swapping the aggregator behind a proxy is legitimate routine operation, so hard-failing
  * on it would block a correct deploy for a benign upstream event -- the same trap that makes an
  * on-chain re-check a bad idea (see LAUNCH-READINESS section 4 row 14). The safety verdict is
@@ -287,11 +297,15 @@ export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
   return {
     ok: false,
     detail:
-      `BAND TOO WIDE to bound a 2-decimal aggregator-swap drift: price $${usd(priceWad)}, band $${usd(min)}..$${usd(max)}. ` +
-      `${!upOk ? `x100 = $${usd(priceWad * 100n)} is still <= the ceiling. ` : ''}` +
-      `${!downOk ? `/100 = $${usd(priceWad / 100n)} is still >= the floor. ` : ''}` +
-      'Residual-register row 14 accepts the cached-scale risk BECAUSE the band catches every drift of >= 2 decimals; ' +
-      'a band this wide voids that argument. Tighten it, or re-open row 14.',
+      `BAND NO LONGER BOUNDS a 2-decimal aggregator-swap drift AT THIS PRICE: price ${usd(priceWad)}, ` +
+      `band ${usd(min)}..${usd(max)}. ` +
+      `${!upOk ? `x100 = ${usd(priceWad * 100n)} is still <= the ceiling. ` : ''}` +
+      `${!downOk ? `/100 = ${usd(priceWad / 100n)} is still >= the floor (the contract's check is exclusive, so equal does not revert either). ` : ''}` +
+      'CHECK WHICH INPUT MOVED before editing anything: this fails either because the band is too wide ' +
+      'OR because the asset moved far enough that a fixed band stopped covering the drift, with no config ' +
+      'change at all. Residual-register row 14 accepts the cached-scale risk BECAUSE the band fail-closes ' +
+      'on a >= 2-decimal drift AT THE LIVE PRICE; whichever input moved, that argument no longer holds. ' +
+      'Retune the band, or re-open row 14.',
   };
 }
 
@@ -415,7 +429,15 @@ function main() {
       // 8-decimal pin is ever relaxed.
       if (spotWad !== null) {
         const width = bandBoundsTwoDecimalDrift(spotWad, mn, mx);
-        check(`${label}: band bounds a 2-decimal drift (residual row 14)`, width.ok, width.detail);
+        // Named as price-contingent because it is: this flips from pass to fail with NO config
+        // change, purely because the asset moved. That is the check telling the truth about the
+        // band rather than a false alarm -- but an operator reading a FAIL needs to know which of
+        // the two inputs moved before hunting for a config error that is not there.
+        check(
+          `${label}: band bounds a 2-decimal drift AT THE LIVE PRICE (residual row 14)`,
+          width.ok,
+          width.detail,
+        );
       }
     }
   }
@@ -424,20 +446,29 @@ function main() {
 }
 
 function finish() {
-  const passed = results.filter((r) => r.ok).length;
-  const failed = results.length - passed;
-  const drifted = results.filter((r) => r.drift).length;
+  // Three counts, not two. A notice used to be counted as a pass, so a config with an unpinned or
+  // unreadable aggregator still printed "18/18 checks passed" -- and that tally is what residual
+  // row 14 cites as evidence the feeds are clean. A summary that cannot express "not clean" is not
+  // evidence. `passed + noticed + failed === total`, always.
+  const noticed = results.filter((r) => r.drift).length;
+  const passed = results.filter((r) => r.ok && !r.drift).length;
+  const failed = results.length - passed - noticed;
   if (JSON_OUT) {
-    console.log(JSON.stringify({ passed, failed, drift: drifted, total: results.length, results }, null, 2));
+    console.log(
+      JSON.stringify({ passed, failed, drift: noticed, strict: STRICT, total: results.length, results }, null, 2),
+    );
   } else {
     for (const r of results) console.log(`${r.drift ? 'DRIFT' : r.ok ? 'PASS ' : 'FAIL '} ${r.name} — ${r.detail}`);
+    const noticeTail = STRICT
+      ? ' — --strict, so these set the exit code'
+      : ' — read them; re-run with --strict to make them exit non-zero';
     console.log(
       `\n${passed}/${results.length} checks passed` +
         `${failed ? `, ${failed} FAILED — do NOT deploy the oracle` : ''}` +
-        `${drifted ? `, ${drifted} DRIFT notice(s) — not a failure, but read them` : ''}`,
+        `${noticed ? `, ${noticed} DRIFT notice(s)${noticeTail}` : ''}`,
     );
   }
-  process.exit(failed === 0 && results.length > 0 ? 0 : 1);
+  process.exit(failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : 0);
 }
 
 // Importable by unit tests without firing the RPC sweep: only run when this file is the entrypoint.

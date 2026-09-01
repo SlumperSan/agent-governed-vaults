@@ -261,13 +261,16 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
-> ⚠ **The canary does NOT yet watch the launch oracle.** Its `oracle-freshness` signal reads
-> `assetConfig(asset)` → `(sources, maxStaleness, quorum)`, which is the retired `OracleAggregator`
-> ABI; `ChainlinkOracle` exposes `feedOf(asset)` and has no quorum at all. Against a vault priced by
-> the C-6 pivot every asset therefore comes back **`skipped`**, not `ok` — visible as an OK→SKIPPED
-> transition by design, never a silent pass, but it means the row below is currently **unmanned on
-> the launch oracle**. Porting the signal is tracked as its own task; until then the recurring check
-> immediately below is the oracle's only continuous monitoring.
+> **The canary watches the launch oracle, and what it does not watch is feed IDENTITY.** Since
+> #89 the `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
+> directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
+> sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
+> cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
+> The gap that remains is the one this section exists for: nothing on-chain or in the canary
+> compares a feed's `aggregator()` / `description()` / `decimals()` against what was pinned at
+> deploy — that is **G2** in `Business/Operations/Monitoring Gap Analysis`, whose §3 specs a
+> `feed-identity` signal that is **not built**. Until it is, the recurring check below is the only
+> thing that looks at feed identity at all, and it looks only when someone runs it.
 
 ### 7a. Recurring feed check — run this on a cadence, not only before deploying
 
@@ -276,22 +279,33 @@ node scripts/verify-chainlink-oracle.mjs
 ```
 
 Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
-**weekly, and after any Chainlink feed announcement.** Two things it catches that nothing on-chain
+**weekly, and after any Chainlink feed announcement** — with
+`--strict`, so an aggregator swap exits non-zero instead of scrolling past as a notice nobody
+reads. Two things it catches that nothing on-chain
 can:
 
 - **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
   configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
   `scale = 10**(18 - decimals)` once, at construction, from a value that lives on the *aggregator*.
-  The script's `decimals() == 8` check is a **complete** test of that residual: if a feed still
-  reports 8, the deployed oracle's cached scale is still correct however many swaps happened. Each
+  The script's `decimals() == 8` check is a complete test of that residual **at the sampling
+  instant**: if a feed reports 8 when you run it, the cached scale was correct however many swaps
+  had happened by then. It says nothing about the interval between runs — a swap that drifts and
+  reverts between two weekly runs is invisible — so the exposure window is the run interval, and
+  the cadence is the control. Each
   feed's `aggregatorPin` in the config makes the swap itself **visible** — reported as a `DRIFT`
   notice, never a failure, because a swap is legitimate. A `DRIFT` line alongside a passing decimals
   check is the reassuring outcome: it moved, and it re-checked clean. Update the pin and move on.
-- **A `FAIL` on decimals is the alarming outcome** and needs the row-13 response, not a config edit:
+- **A `FAIL` on decimals is the alarming outcome** and needs the [INCIDENTS.md §1a](INCIDENTS.md)
+  response (residual register **row 14**), not a config edit:
   every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
-  it (the vault's oracle is `immutable` — row 12), and members should be told to exit. Exits still
-  settle correctly under drift: `_settleExit` pays a pro-rata slice and only *values* it through the
-  oracle.
+  it (the vault's oracle is `immutable` — row 12), and members should be told to exit. **On a vault with
+  no sub-vaults, exits still settle correctly under drift** — `_settleExit` sizes the in-kind
+  slice pro-rata from `assetBalance` and only *values* it through the oracle, which is what
+  `test_harmModel_driftDoesNotRobAnExitingMember` demonstrates. That is the shape the proof
+  covers, and it is the launch shape (`Deploy.s.sol` sets `allowSubVaults = false`). **With
+  children present it is unproven**: `childValTotalWad` is oracle-derived and enters the *sizing*
+  of the cash leg, not only its valuation. Do not tell a member with a sub-vault parent that
+  their exit is unaffected.
 
 | Signal | Alert condition |
 | --- | --- |
