@@ -280,7 +280,10 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 > live `description()`, and reads which `aggregator()` / `phaseId()` is behind the proxy. The two
 > **harm** legs (decimals, denomination) compare chain against chain, so they have nothing to pin
 > and nothing that can go stale; only the **identity** leg (aggregator, phaseId) keeps a remembered
-> value, pinned on first sight into the canary's own state. That is a stronger check than the
+> value, pinned on first sight into the canary's own state. Note the routing, because it decides
+> who sees it: `feed-identity` can ALERT but sits in the canary's **LOG** tier, not the PAGE tier
+> (§3(g) and `packages/canary/src/sinks.mjs`), since a benign swap alerts there too and self-clears
+> next sweep. That is a stronger check than the
 > recurring script below, which tests Chainlink's 8-decimal *convention* rather than the number
 > this oracle uses — **the canary now continuously re-runs the two construction-time proofs an
 > immutable contract can never re-run itself.**
