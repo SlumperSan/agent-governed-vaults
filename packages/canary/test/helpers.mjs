@@ -22,9 +22,18 @@ export const CREATOR = A('5');
 export const MEMBER = A('6');
 export const OPERATOR = A('7');
 export const FEE_ENGINE = A('8');
+export const GOVERNANCE = A('9');
 export const SRC1 = A('a');
 export const SRC2 = A('b');
 export const SRC3 = A('c');
+
+/**
+ * Chainlink USDC/USD reference feed — `signals/depeg-reference.mjs` (G4). resolveCanaryConfig
+ * defaults `usdcUsdFeed` to this SAME address on chainId 8453 (the default `baseCfg` in
+ * runner.test.mjs never sets CHAIN_ID), so every fixture below carries a healthy $1.00 entry for
+ * it — otherwise every full sweep in this package would report a DETECTOR BROKEN depeg leg.
+ */
+export const USDC_USD_FEED = '0x7e860098f58bbfc8648a4311b374b1d669a2bc6b';
 
 // ChainlinkOracle fixtures (the LIVE oracle). Deliberately not built from A(), so they can never
 // collide with the `0x9999…`-style throwaway addresses the existing tests use inline.
@@ -143,7 +152,15 @@ export function healthyVault(overrides = {}) {
       assetBalance: (a) => (lc(a) === lc(ASSET) ? 2_000000000000000000n : 0n),
       childVaultCount: 0n,
       childVaults: () => { throw new Error('no children'); },
-      sharesOf: () => 0n,
+      // CREATOR holds 100e18 of the 500e18 total (20%, matching healthyState()'s share book below)
+      // — comfortably above the 750 bps WARN bar at the launch 500 bps threshold, so the default
+      // fixture reads OK on signals/operator-power.mjs (G1). Everyone else holds nothing, matching
+      // the pre-existing behaviour every other signal's fixture already assumed.
+      sharesOf: (a) => (lc(a) === lc(CREATOR) ? 100_000000000000000000n : 0n),
+      governance: () => GOVERNANCE,
+      capacityCapUsdc: () => 0n, // uncapped by default
+      nonCreatorMemberCount: () => 1n, // MEMBER, per healthyState()'s share book
+      CREATOR_MIN_STAKE_BPS: () => 500n,
     },
     [ORACLE]: {
       priceWad: () => 3_000000000000000000n,
@@ -157,6 +174,19 @@ export function healthyVault(overrides = {}) {
     [REGISTRY]: {
       operatorOf: () => 7n,
       operatorAddressOf: () => OPERATOR,
+    },
+    // Governance smoke defaults from contracts/config/base-mainnet.json's `smoke.gov` block —
+    // 500 bps proposalThresholdBps, the same "500 bps at launch" figure CREATOR_MIN_STAKE_BPS
+    // carries, so the default fixture's two operator-power legs agree (thresholdsDiffer: false).
+    [GOVERNANCE]: {
+      vaultRegistered: () => true,
+      configOf: () => [3600, 3600, 86400, 86400, 2500, 500, 4000, 21600],
+    },
+    // A healthy $1.00 reading, 8 decimals, comfortably inside the 0.995..1.005 band — so
+    // signals/depeg-reference.mjs (G4) reads OK by default across every fixture in this package.
+    [USDC_USD_FEED]: {
+      latestRoundData: () => [1n, 100_000000n, 1_699_999_990n, 1_699_999_990n, 1n],
+      decimals: () => 8,
     },
   };
 

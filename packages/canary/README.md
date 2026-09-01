@@ -37,6 +37,8 @@ its own `CANARY_STATE_PATH`.
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 | `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
+| `src/signals/operator-power.mjs` | signal (h): the operator's own `sharesOf(creator) / totalShares` against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately (G1) |
+| `src/signals/depeg-reference.mjs` | signal (i): a Chainlink USDC/USD reference feed read every sweep, purely informational — the vault's own oracle pins USDC at $1.00 regardless (G4) |
 
 ## Design notes
 
@@ -68,6 +70,6 @@ gets one alert instead of three.
 node --test packages/canary/test/*.test.mjs
 ```
 
-226 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+256 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

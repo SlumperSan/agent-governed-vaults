@@ -51,6 +51,37 @@ export const VAULT_VIEWS = Object.freeze([
   view('childVaults', ['uint256'], ['address']),
   view('sharesOf', ['address'], ['uint256']),
   view('totalPendingUsdc', [], ['uint256']),
+  // The four reads `signals/operator-power.mjs` needs (G1): `governance` is the immutable
+  // Governance address to read `configOf` from; `capacityCapUsdc`/`nonCreatorMemberCount` decide
+  // whether a further member deposit is even possible and whether the creator exit gate is live;
+  // `CREATOR_MIN_STAKE_BPS` is the protocol CONSTANT (public, so it has an auto-getter) that
+  // `_checkCreatorGate` enforces — a second, independent 5% gate from Governance's own
+  // `proposalThresholdBps`, which can be configured to a different value per vault.
+  view('governance', [], ['address']),
+  view('capacityCapUsdc', [], ['uint256']),
+  view('nonCreatorMemberCount', [], ['uint256']),
+  view('CREATOR_MIN_STAKE_BPS', [], ['uint256']),
+]);
+
+/**
+ * Governance — read for `signals/operator-power.mjs` only (G1). `configOf` is a mapping-to-struct
+ * getter; viem flattens it to `GovConfig`'s eight fields in DECLARATION order, so field order here
+ * is load-bearing (mirrors the AGGREGATOR_V3_VIEWS comment). `vaultRegistered` matters because
+ * `propose()` reverts `NotRegistered()` before it ever reads `proposalThresholdBps` — an
+ * unregistered vault has no live propose-gate to monitor, whatever `configOf` happens to hold.
+ */
+export const GOVERNANCE_VIEWS = Object.freeze([
+  view('vaultRegistered', ['address'], ['bool']),
+  view('configOf', ['address'], [
+    { name: 'commitDuration', type: 'uint32' },
+    { name: 'revealDuration', type: 'uint32' },
+    { name: 'timelockDuration', type: 'uint32' },
+    { name: 'executionWindow', type: 'uint32' },
+    { name: 'quorumBps', type: 'uint16' },
+    { name: 'proposalThresholdBps', type: 'uint16' },
+    { name: 'concentrationCapBps', type: 'uint16' },
+    { name: 'proposalCooldown', type: 'uint32' },
+  ]),
 ]);
 
 /**

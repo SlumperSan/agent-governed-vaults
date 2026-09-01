@@ -21,6 +21,12 @@
  * Optional env:
  *   OPERATOR_REGISTRY_ADDRESS  enables the fee-routing signal (skipped without it)
  *   EXTRA_OPERATOR_ADDRESSES   comma-separated extra operator addresses to treat as prohibited
+ *   USDC_USD_FEED_ADDRESS      Chainlink USDC/USD reference feed for the depeg-reference signal
+ *                              (G4). Defaults to the verified Base mainnet feed
+ *                              (contracts/config/base-mainnet.json usdcReferenceFeeds.chainlinkUsdcUsd)
+ *                              ONLY when CHAIN_ID is 8453 — no Base Sepolia address is documented
+ *                              anywhere in this repo, so none is guessed; on any other chain id the
+ *                              signal reports `skipped` (a configuration fact) until this is set.
  *   ALERT_WEBHOOK_URL          POST one JSON body per transition
  *   CANARY_STATE_PATH (./data/canary-state.json)  transition state, so a restart does not re-page.
  *                              It also holds the aggregator identities `feed-identity` pinned on
@@ -80,10 +86,23 @@ import { checkShareConservation } from './signals/share-conservation.mjs';
 import { checkExitLiveness } from './signals/exit-liveness.mjs';
 import { checkModuleEvents } from './signals/module-events.mjs';
 import { checkFeeRouting } from './signals/fee-routing.mjs';
+import { checkOperatorPower } from './signals/operator-power.mjs';
+import { checkDepegReference } from './signals/depeg-reference.mjs';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
 const list = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+
+/**
+ * Chainlink USDC/USD Data Feed, Base MAINNET — `contracts/config/base-mainnet.json`
+ * `usdcReferenceFeeds.chainlinkUsdcUsd`, verified on-chain 2026-08-24 (see that file's
+ * `verifiedOnChain` block). Used as the default for `USDC_USD_FEED_ADDRESS` ONLY when
+ * `CHAIN_ID` resolves to 8453 (base-mainnet.json's own chainId) — see `resolveCanaryConfig`.
+ * No Base Sepolia equivalent is documented in `contracts/config/base-sepolia.json` or
+ * `contracts/config/deployments/base-sepolia.json`, so none is invented here; that chain gets
+ * no default and `signals/depeg-reference.mjs` reports `skipped` until one is supplied.
+ */
+export const BASE_MAINNET_USDC_USD_FEED = '0x7e860098f58bbfc8648a4311b374b1d669a2bc6b';
 
 /**
  * Parse + validate the canary config from a raw env object. Pure and testable (no I/O).
@@ -106,6 +125,19 @@ export function resolveCanaryConfig(env) {
     throw new Error(`canary: OPERATOR_REGISTRY_ADDRESS is not a 20-byte address: ${operatorRegistry}`);
   }
 
+  const chainId = num('CHAIN_ID', 8453);
+  // Explicit override always wins. Left unset, default to the verified mainnet feed ONLY on
+  // mainnet (chainId 8453) — see BASE_MAINNET_USDC_USD_FEED above for why no other chain gets one.
+  let usdcUsdFeed = null;
+  if (env.USDC_USD_FEED_ADDRESS) {
+    usdcUsdFeed = lc(env.USDC_USD_FEED_ADDRESS);
+    if (!ADDRESS_RE.test(usdcUsdFeed)) {
+      throw new Error(`canary: USDC_USD_FEED_ADDRESS is not a 20-byte address: ${usdcUsdFeed}`);
+    }
+  } else if (chainId === 8453) {
+    usdcUsdFeed = BASE_MAINNET_USDC_USD_FEED;
+  }
+
   // address:seconds pairs — the one fact no oracle exposes on-chain, so the derived early-warning
   // bar in signals/oracle-health.mjs has to be told it. An asset left out simply gets no derived
   // bar (reported, not silent — see `warnDisabledReason` on that signal).
@@ -126,7 +158,7 @@ export function resolveCanaryConfig(env) {
   const pollIntervalMs = num('CANARY_POLL_INTERVAL_MS', 30_000);
   return {
     rpcUrl: env.RPC_URL,
-    chainId: num('CHAIN_ID', 8453),
+    chainId,
     chainName: env.CHAIN_NAME || 'base',
     statePath,
     canaryStatePath: env.CANARY_STATE_PATH || './data/canary-state.json',
@@ -138,6 +170,7 @@ export function resolveCanaryConfig(env) {
     vaults,
     operatorRegistry,
     extraOperators,
+    usdcUsdFeed,
     webhookUrl: env.ALERT_WEBHOOK_URL || null,
     confirmations: num('CONFIRMATIONS', 5),
     pollIntervalMs,
@@ -277,6 +310,15 @@ export async function collectSignals({ reader, state, vaults, cfg, window, ident
       reader, vault, usdc: meta.usdc,
       operatorRegistry: cfg.operatorRegistry, extraOperators: cfg.extraOperators,
       fromBlock, toBlock,
+    }));
+
+    // G1: the operator's own governance/exit stake against proposalThresholdBps and
+    // CREATOR_MIN_STAKE_BPS. `meta.creator` is the same read exit-liveness already shares.
+    await run('operator-power', () => checkOperatorPower({ reader, vault, operator: meta.creator }));
+
+    // G4: purely informational — the vault's own oracle keeps pricing USDC at $1.00 regardless.
+    await run('depeg-reference', () => checkDepegReference({
+      reader, vault, feed: cfg.usdcUsdFeed, chainId: cfg.chainId,
     }));
   }
 
