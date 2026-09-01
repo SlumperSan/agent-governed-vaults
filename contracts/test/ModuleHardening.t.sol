@@ -175,4 +175,103 @@ contract ModuleHardeningTest is Test {
         // Member got the rest.
         assertApproxEqRel(wbtc.balanceOf(alice), 0.451e8, 0.05e18, "member slice net of fee");
     }
+
+    // ── unused-return (Slither `unused-return`): `retSize` from `boundedCall` is discarded ──
+    //
+    // VaultCore._settleExit reads `(bool feeOk, uint256 feeWord,) = ...boundedCall(...)` and
+    // never inspects the third return value, `retSize`. BoundedCall zeroes its scratch word and
+    // copies at most 32 bytes of returndata into it, so a module that succeeds with 0 bytes of
+    // returndata is indistinguishable from one that succeeds with a full, well-formed 32-byte
+    // word — and a module that returns 1-31 bytes yields a `feeWord` that is those bytes
+    // left-aligned in the word (e.g. a single 0xff byte becomes an astronomically large
+    // uint256). The only thing standing between that garbage and an over-withheld or
+    // exit-blocking fee is the `cap = gain / 10` clamp a few lines below. These two tests pin
+    // both unpinned returndata shapes.
+
+    function test_unusedRetSize_shortReturningFeeEngineCannotBlockAnExit() public {
+        ShortReturnFeeEngine feeEngineStub = new ShortReturnFeeEngine();
+        VaultCore v = _newVault(
+            address(new StubGovernance()), address(feeEngineStub), address(new StubRegistry()), new address[](0)
+        );
+
+        // Create a realized gain on the cash leg: mint extra USDC into the vault and bump
+        // idleUsdc via stdstore, exactly as test_m2_fullyInvestedVault_feeStillCollected does.
+        usdc.mint(address(v), 1_000 * USDC_1);
+        stdstore.target(address(v)).sig("idleUsdc()").checked_write(uint256(3_000 * USDC_1));
+        assertEq(v.idleUsdc(), 3_000 * USDC_1, "slot guard");
+
+        uint256 bal = usdc.balanceOf(alice);
+        uint256 shares = v.sharesOf(alice);
+        vm.prank(alice);
+        v.requestExit(shares); // must NOT revert despite the 1-byte returndata garbage fee word
+
+        uint256 received = usdc.balanceOf(alice) - bal;
+        assertGt(received, 0, "exit settled, alice's balance strictly increased");
+
+        // feeEngineStub's own USDC balance IS the fee actually withheld — exact, and simpler
+        // than reconstructing it from a hypothetical zero-fee run of the same exit.
+        uint256 feeWithheld = usdc.balanceOf(address(feeEngineStub));
+        // gain = alice's pre-fee payout value minus her cost basis; her pre-fee payout value is
+        // exactly what she received plus what was withheld as fee.
+        uint256 gain = (received + feeWithheld) - 1_000 * USDC_1;
+        assertLe(feeWithheld, gain / 10, "clamp bounds a garbage fee word");
+    }
+
+    function test_unusedRetSize_emptyReturningFeeEngineChargesNoFee() public {
+        EmptyReturnFeeEngine feeEngineStub = new EmptyReturnFeeEngine();
+        VaultCore v = _newVault(
+            address(new StubGovernance()), address(feeEngineStub), address(new StubRegistry()), new address[](0)
+        );
+
+        usdc.mint(address(v), 1_000 * USDC_1);
+        stdstore.target(address(v)).sig("idleUsdc()").checked_write(uint256(3_000 * USDC_1));
+        assertEq(v.idleUsdc(), 3_000 * USDC_1, "slot guard");
+
+        uint256 bal = usdc.balanceOf(alice);
+        uint256 shares = v.sharesOf(alice);
+        vm.prank(alice);
+        v.requestExit(shares); // must NOT revert
+
+        uint256 received = usdc.balanceOf(alice) - bal;
+        // feeOk=true (call succeeded), feeWord=0 (zero-length returndata never touches the
+        // zeroed scratch word) -> perfFee=0 -> cap clamp is a no-op -> zero fee withheld. This
+        // is fail-open in the member's favor: the documented consequence of discarding
+        // `retSize`, not a defect this test is asserting away.
+        assertEq(usdc.balanceOf(address(feeEngineStub)), 0, "empty returndata -> zero fee, fail-open");
+        // idleUsdc after mint is 3_000 USDC_1 split evenly between creator and alice (equal
+        // deposits at equal NAV) -> alice's full pro-rata cash payout, with zero fee, is exactly
+        // half of it.
+        assertEq(received, 1_500 * USDC_1, "alice received the full pro-rata payout, no fee withheld");
+    }
+}
+
+/// unused-return fixture: succeeds but returns exactly ONE byte of returndata (0xff), which
+/// BoundedCall left-aligns into `feeWord` as an astronomically large uint256. Declared as a
+/// plain contract (not `is IFeeEngine`) matching only the three entry points VaultCore actually
+/// calls — that is sufficient for VaultCore's raw `boundedCall`/`call` to reach it.
+contract ShortReturnFeeEngine {
+    function onRealize(address, uint256, uint256) external returns (uint256) {
+        assembly {
+            mstore(0, 0xff00000000000000000000000000000000000000000000000000000000000000)
+            return(0, 1)
+        }
+    }
+
+    function onFeeCollected(address, uint256) external {}
+
+    function onFeeCollectedAsset(address, address, uint256) external {}
+}
+
+/// unused-return fixture: succeeds but returns ZERO bytes of returndata, so `feeWord` stays the
+/// zeroed scratch value BoundedCall initializes it to.
+contract EmptyReturnFeeEngine {
+    function onRealize(address, uint256, uint256) external returns (uint256) {
+        assembly {
+            return(0, 0)
+        }
+    }
+
+    function onFeeCollected(address, uint256) external {}
+
+    function onFeeCollectedAsset(address, address, uint256) external {}
 }
