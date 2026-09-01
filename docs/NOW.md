@@ -20,12 +20,17 @@ work it describes.
 
 - **Launch is NO-GO, but no longer for security reasons.** Every security gate is cleared. What
   remains is operational (testnet re-runs, a restore drill), legal, and calendar-bound.
-- **Smoke test is parked mid-lifecycle on Base Sepolia**, at the `activate` step. It is idempotent
-  and resumable; the last attempt failed only on a mistyped keystore password. Remaining phases sit
-  behind ~2h of protocol timelocks.
-- **CI is unavailable** — GitHub Actions minutes exhausted 2026-08-29, back around 2026-09-01.
-  `npm run gate` is the substitute and mirrors `ci.yml` step for step. Do not trust a red CI in this
-  window without reproducing it locally: PR #71's "backend fail" was minutes exhaustion, not code.
+- **The smoke lifecycle is RUNNING on Base Sepolia** (resumed 2026-09-01). It was parked at
+  `activate` for three days on a mistyped keystore password, not a missing one — see "Blocked on a
+  human" below, which was wrong about this. Past `activate` (5e18 shares minted), `propose` and
+  `commitVote`; the remaining phases sit behind ~2h of protocol timelocks (1h commit, 1h reveal),
+  then finalize → execute → exit. Idempotent and resumable at every step, and the commit salt is
+  persisted *before* the commit transaction is sent, so a reveal is never stranded.
+- **CI is back.** Actions minutes were exhausted 2026-08-29 and returned **2026-09-01** as predicted:
+  `backend`, `contracts` and `slither` all run for real again, 5–6 minutes each, and pass. The tell
+  for the outage window was a **2-second red with zero steps and no logs** — if you ever see that
+  shape again, it is capacity, not code. `npm run gate` remains the fast local mirror (~30 s warm)
+  and is still the right first check, but **a red CI is evidence again** rather than noise.
 - **`protocol/main` was RED for about an hour on 2026-08-30 and is now GREEN again** (repaired at
   `4fc6ffbc`, `npm run gate` passes all 9 steps). Recorded because the CAUSE is a live hazard, not
   because the breakage stands: the oracle retirement moved five files out of `contracts/src/`, and
@@ -39,11 +44,24 @@ work it describes.
 
 ## Blocked on a human
 
-These need a funded key or a decision, and no amount of agent work advances them:
+These need a decision or a machine capability. **Two entries stood here for days and were wrong**,
+which is the more useful lesson: *"needs a key"* had become a habit rather than a fact, and nobody
+re-checked it. Re-check this list before repeating it.
 
-1. **Resume the smoke lifecycle** (needs the `deployer` keystore password) — unblocks launch gate 2.
-2. **Soak + canary re-run** on the pivoted tree — unblocks gates 3 and 6. Wired and ready:
-   `scripts/soak/run-soak.ps1`.
+1. ~~**Resume the smoke lifecycle** (needs the `deployer` keystore password)~~ — **NOT BLOCKED, and
+   running as of 2026-09-01.** The password file already existed at `%USERPROFILE%\.soak.pw` and
+   unlocks the `deployer` account (verified read-only: it returns `0x0f80…9f35`). The earlier
+   failure was a **mistyped** password, so the fix was `--password-file`, not a human at the
+   keyboard. The 4-hour observation window had also elapsed **78 hours** earlier. Resume with
+   `SMOKE_SIGNER_ARGS="--account deployer --password-file %USERPROFILE%\.soak.pw"`, plus
+   `SMOKE_STATE` and `DEPLOY_JSON` pointed at the main checkout's copies.
+2. ~~**Soak + canary re-run** (needs a funded testnet key)~~ — **NOT BLOCKED.** The deployer holds
+   **0.5897 ETH** on Base Sepolia and both password files exist (`.soak.pw`, `.soak-agent.pw`).
+   `run-soak.ps1`'s own header says so: *"Nothing needs a human once the password files are in
+   place."* ⚠ **Run it from a checkout at current `main`** — the harness's oracle sampler
+   fabricated staleness events on a healthy oracle until #94 fixed it, so an older tree produces a
+   soak result that is worse than useless. Start it **after** the smoke lifecycle finishes: track B
+   drives the smoke vault.
 3. ~~**Recorded restore drill** — gate 7.~~ **DONE 2026-08-30** — `docs/RESTORE-DRILL.md`. The
    restore genuinely works on both state files. Gate 7 stays CONDITIONAL for one reason: steps 1
    and 6 of the runbook are `docker compose stop/start` and **there is no Docker on this machine**,
