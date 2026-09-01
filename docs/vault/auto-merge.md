@@ -12,6 +12,17 @@ Each finding gets its own `security/*` branch and PR; CI runs the full battery (
 
 This pairs with [[continuous-autonomous-mode]]: parallel workers each own a finding, and the merge queue serializes their output onto the live branch without a human gate per PR. **Caveat, learned the hard way:** the worktree is shared across concurrent sessions, so `git add -A` is banned here; it once swept another sprint's contracts into an unrelated PR. Stage explicitly.
 
+**Standing exceptions (security-ops §3, launch gate 10).** Two cases never auto-merge, however green the board:
+
+- **Any `viem` or `@noble/*` version bump gets a human review gate.** A human reads the diff, or at minimum the release provenance, before it lands. These are the signing-path dependencies; no agent merges them on CI alone. All three `@noble` packages are in the runtime closure below (`@noble/ciphers`, `@noble/curves`, `@noble/hashes`), so this is not a hypothetical class.
+- **No new runtime dependency without an explicit, recorded decision.** The runtime closure is an asset that each addition spends, and it is currently **99 non-dev packages** behind three direct dependencies. Re-derive rather than trusting that number, which has already gone stale once — it read 13 when this rule was drafted, and `@solana/web3.js` and `@solana/spl-token` multiplied it:
+
+  ```
+  node -e "const d=require('./package-lock.json');console.log(Object.entries(d.packages).filter(([k,v])=>k&&!v.dev&&!v.devOptional).length)"
+  ```
+
+  A PR that grows `dependencies` in `package.json` waits for that decision; it is not a CI question.
+
 Because the fixes are additive and gated by CI, gate 8 ("all CI gates green at the candidate ref") stays GO throughout, though a green board certifies the gates *ran*, not that the protocol is *safe* ([[launch-readiness-gates]]).
 
 ## Links
