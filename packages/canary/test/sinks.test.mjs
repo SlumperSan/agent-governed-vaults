@@ -6,17 +6,33 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
 import {
   createConsoleSink, createWebhookSink, createTieredWebhookSink, createDeadmanPing, emitAll,
-  PAGE_SIGNALS, LOG_SIGNALS, tierOf,
+  PAGE_SIGNALS, LOG_SIGNALS, CONDITIONAL_PAGE, tierOf,
 } from '../src/sinks.mjs';
-import { SIGNAL as EXIT_LIVENESS } from '../src/signals/exit-liveness.mjs';
-import { SIGNAL as FEE_ROUTING } from '../src/signals/fee-routing.mjs';
-import { SIGNAL as FEED_IDENTITY } from '../src/signals/feed-identity.mjs';
-import { SIGNAL as MODULE_EVENTS } from '../src/signals/module-events.mjs';
-import { SIGNAL as NAV_BACKING } from '../src/signals/nav-backing.mjs';
-import { SIGNAL as ORACLE_HEALTH } from '../src/signals/oracle-health.mjs';
-import { SIGNAL as SHARE_CONSERVATION } from '../src/signals/share-conservation.mjs';
+
+/**
+ * Every SIGNAL name `src/signals/` can emit, read from DISK rather than from a hand-written import
+ * list. The list version could only catch a RENAME: adding a whole new signal file left the
+ * coverage test below passing while `tierOf` routed the new signal to LOG by default — exactly the
+ * silent-severity-decision this test exists to prevent. Resolved against `import.meta.url`, not the
+ * cwd, because `npm run gate` runs the suite from the repo root. A file with no `SIGNAL` export is
+ * a shared helper, not a signal, and is skipped.
+ */
+const SIGNALS_DIR = new URL('../src/signals/', import.meta.url);
+async function signalNamesOnDisk() {
+  const files = (await readdir(SIGNALS_DIR)).filter((f) => f.endsWith('.mjs'));
+  assert.ok(files.length > 0, 'src/signals/ resolved to an empty directory — the URL above is wrong');
+  const names = new Set();
+  for (const file of files) {
+    const mod = await import(new URL(file, SIGNALS_DIR).href);
+    // Two files legitimately export the SAME name (`oracle-freshness.mjs` and the post-pivot
+    // `oracle-health.mjs`, which kept the wire name across the rename); a Set is the point.
+    if (typeof mod.SIGNAL === 'string') names.add(mod.SIGNAL);
+  }
+  return names;
+}
 
 const tr = (to = 'alert', signal = 'nav-backing') => ({
   id: `${signal}|0xv`, signal, vault: '0xv', key: undefined,
@@ -97,40 +113,81 @@ test('tierOf: PAGE iff the transition is an ALERT for one of the four named sign
   }
 });
 
-test('tierOf: feed-identity is LOG even on ALERT — not in the note\'s PAGE list', () => {
+test('tierOf: a feed-identity ALERT that carries HARM pages; the self-clearing swap does not', () => {
+  const harmful = (harm) => {
+    const t = tr('alert', 'feed-identity');
+    t.result.detail = { ...t.result.detail, harm };
+    return t;
+  };
+  // The two LATCHING alerts: the oracle's cached scale / denomination is now permanently wrong and
+  // cannot be repaired, only evacuated. Above BTC $100,000 the sane-price band no longer catches a
+  // -2-decimal drift at all (Owner Decisions 2026-09-01 §1), so this is the ONLY detector.
+  assert.equal(tierOf(harmful('decimals')), 'page', 'a mis-scaled feed is member capital wrong-priced — SEV-1');
+  assert.equal(tierOf(harmful('denomination')), 'page', 'a non-USD-quoted feed is the same latch by another route');
+  // The harmless one: a routine Chainlink aggregator swap, re-pinned and self-cleared next sweep.
+  assert.equal(tierOf(harmful(null)), 'log', 'a benign aggregator swap must not wake anyone');
+  // A feed-identity result with no `harm` key at all (an older state file, a future leg) is not
+  // proven harmful, so it must not page.
   assert.equal(tierOf(tr('alert', 'feed-identity')), 'log');
+  // And the predicate is only ever consulted on an ALERT.
+  const degraded = tr('skipped', 'feed-identity');
+  degraded.result.detail = { ...degraded.result.detail, harm: 'decimals' };
+  assert.equal(tierOf(degraded), 'log', 'a DEGRADED feed-identity is a broken detector, not a proven drift');
 });
 
 test('tierOf: an unknown/renamed signal defaults to LOG, never silently PAGE', () => {
   assert.equal(tierOf(tr('alert', 'some-future-signal')), 'log');
 });
 
-test('tierOf: an explicit detail.tier wins over the derived signal/status map (the self-test path)', () => {
+test('tierOf: detail.tier is honoured ONLY alongside detail.selfTest — a real signal cannot demote its own page', () => {
   const forced = tr('ok', 'nav-backing');
   forced.result.detail.tier = 'page';
+  forced.result.detail.selfTest = true;
   assert.equal(tierOf(forced), 'page', 'a synthetic self-test can force PAGE without impersonating a real ALERT');
-  const forcedLog = tr('alert', 'nav-backing');
+  const forcedLog = tr('alert', 'self-test');
   forcedLog.result.detail.tier = 'log';
-  assert.equal(tierOf(forcedLog), 'log', 'and force LOG even on what looks like a real ALERT');
+  forcedLog.result.detail.selfTest = true;
+  assert.equal(tierOf(forcedLog), 'log', 'and force LOG for the LOG-tier half of the self-test');
+
+  // The footgun this scoping closes: `detail` is a bag of DECODED ON-CHAIN VALUES. A future signal
+  // that spreads a struct containing a field named `tier` into it would otherwise be able to
+  // silently route a real SEV-1 ALERT to the LOG endpoint.
+  const smuggled = tr('alert', 'nav-backing');
+  smuggled.result.detail.tier = 'log';
+  assert.equal(tierOf(smuggled), 'page', 'a real nav-backing ALERT pages no matter what detail.tier says');
+  const promoted = tr('alert', 'module-events');
+  promoted.result.detail.tier = 'page';
+  assert.equal(tierOf(promoted), 'log', 'and the override cannot promote a real LOG signal either');
 });
 
-test('coverage: every signal name the runner can actually emit is an explicit PAGE or LOG decision', () => {
-  const liveSignals = new Set([
-    EXIT_LIVENESS, FEE_ROUTING, FEED_IDENTITY, MODULE_EVENTS, NAV_BACKING, ORACLE_HEALTH,
-    SHARE_CONSERVATION,
-    'vault-config', // the whole-vault-unreadable DETECTOR BROKEN result in canary-runner.mjs
-  ]);
+test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG decision', async () => {
+  const liveSignals = await signalNamesOnDisk();
+  // Not a file: `canary-runner.mjs` synthesises this one when a whole vault is unreadable.
+  liveSignals.add('vault-config');
+
+  const classify = (signal) => [
+    PAGE_SIGNALS.has(signal) && 'PAGE_SIGNALS',
+    CONDITIONAL_PAGE.has(signal) && 'CONDITIONAL_PAGE',
+    LOG_SIGNALS.has(signal) && 'LOG_SIGNALS',
+  ].filter(Boolean);
+
   for (const signal of liveSignals) {
-    assert.ok(
-      PAGE_SIGNALS.has(signal) || LOG_SIGNALS.has(signal),
-      `${signal} is not classified in either PAGE_SIGNALS or LOG_SIGNALS — a rename or a new ` +
-      'signal must be an explicit tiering decision, not fall through by accident',
+    assert.deepEqual(
+      classify(signal).length, 1,
+      `${signal} is classified in ${classify(signal).length} of PAGE_SIGNALS / CONDITIONAL_PAGE / ` +
+      'LOG_SIGNALS, and must be in exactly one. A NEW SIGNAL FILE, or a rename, is a severity ' +
+      'decision somebody has to make on purpose — it must not fall through to LOG by accident. ' +
+      'Three canary PRs were adding signals when this test was written (#115 operator-power and ' +
+      'depeg-reference, #117 governance-watch); whichever lands last adds its names to sinks.mjs.',
     );
   }
-  // And nothing in the two sets has silently drifted apart from what actually exists.
-  for (const signal of [...PAGE_SIGNALS, ...LOG_SIGNALS]) {
+  // And nothing classified has silently drifted apart from what actually exists on disk.
+  for (const signal of [...PAGE_SIGNALS, ...CONDITIONAL_PAGE.keys(), ...LOG_SIGNALS]) {
     assert.ok(liveSignals.has(signal), `${signal} is classified but no signal file emits it any more`);
   }
+  // A self-check on the mechanism itself: reading the directory is only worth anything if it is
+  // actually seeing files. Seven signal FILES exported six distinct names when this was written.
+  assert.ok(liveSignals.size >= 7, `only ${liveSignals.size} signals discovered — the readdir is not working`);
 });
 
 test('createTieredWebhookSink routes a PAGE-tier transition to pageUrl only', async () => {
