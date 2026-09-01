@@ -1,0 +1,140 @@
+/* ===========================================================================
+   DESIGN TOKENS — swappable contract
+   ---------------------------------------------------------------------------
+   THIS FILE IS A PLACEHOLDER WITH A CONTRACT. When a real design system lands,
+   replace this file WHOLESALE. Do not edit site.css to match it.
+
+   The contract has three clauses:
+     1. The custom-property NAMES below are the interface. They are the same
+        names apps/web/index.html already uses, so a genuine tokens file is a
+        drop-in replacement.
+     2. site.css references these names and NOTHING else. It contains no raw
+        colour literal — the claims test in apps/site/test/site.test.mjs
+        enforces that. So a swap re-themes the whole site with no markup churn.
+     3. Every colour pair used for text in site.css meets WCAG 2.2 AA (4.5:1
+        for body text, 3:1 for large text). A replacement file inherits that
+        obligation. Ratios are recorded beside the values below.
+
+   Fonts are SYSTEM STACKS ONLY. The site makes zero external requests, so the
+   webfont names apps/web loads (Newsreader, IBM Plex Sans, IBM Plex Mono) are
+   dropped here and their existing fallbacks kept. Do not add an @import or a
+   <link> to a font host.
+
+   THREE THEME STATES, matching apps/web exactly:
+     :root                                             -> light
+     @media (prefers-color-scheme: dark) :root:not([data-theme="light"]) -> dark
+     :root[data-theme="dark"]                          -> dark, forced
+   The dark palette is duplicated across the last two on purpose. Any change to
+   one must be made to the other, or the forced-dark path silently drifts.
+   =========================================================================== */
+
+:root {
+  /* surfaces and rules */
+  --ground: #f2f2f7;
+  --surface: #fff;
+  --surface-2: #eaeaf1;
+  --line: #dbdbe6;
+  --line-soft: #e8e8f0;
+
+  /* text */
+  --ink: #17171f;      /* 15.5:1 on --ground */
+  --muted: #5f5f72;    /*  5.7:1 on --ground */
+
+  /* OVERRIDE. Inherited --faint #8a8a9e measures 3.03:1 on --ground and fails
+     AA for body text. #6b6b80 measures 4.66:1 on --ground and 4.9:1 on
+     --surface. Reserved for text on --ground/--surface only: on --surface-2 it
+     drops to 4.38:1, so site.css uses --muted there instead. */
+  --faint: #6b6b80;
+
+  --accent: #5a4ce0;       /* 5.3:1 on --ground, 5.9:1 on --surface */
+  --accent-soft: #ece9fd;
+  --accent-ink: #fff;      /* on --accent: 5.9:1 */
+
+  /* OVERRIDE. Inherited --good #178a4c measures 4.40:1 on white and misses AA
+     by a hair. #12703d measures 6.16:1 on white, 5.5:1 on --ground. */
+  --good: #12703d;
+  --good-soft: #e4f2ea;
+
+  /* OVERRIDE. Inherited --warn #a56a09 is borderline on --warn-soft. #8a5807
+     measures 5.4:1 on --ground and 5.2:1 on --warn-soft. */
+  --warn: #8a5807;
+  --warn-soft: #f6ecd7;
+
+  /* OVERRIDE. Inherited --crit #c23b3b is borderline on --crit-soft. #b53434
+     measures 5.4:1 on --ground and 4.9:1 on --crit-soft. */
+  --crit: #b53434;
+  --crit-soft: #f7e2e2;
+
+  --shadow-1: 0 1px 2px rgba(24, 24, 40, .05), 0 1px 3px rgba(24, 24, 40, .04);
+  --shadow-2: 0 4px 16px rgba(24, 24, 40, .08), 0 1px 3px rgba(24, 24, 40, .05);
+
+  /* type — system stacks, no webfonts */
+  --display: Georgia, 'Times New Roman', serif;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  /* geometry */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --maxw: 1160px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0e0e16;
+    --surface: #17171f;
+    --surface-2: #20202c;
+    --line: #2b2b3a;
+    --line-soft: #22222e;
+
+    --ink: #eaeaf3;      /* 15.2:1 on --surface */
+    --muted: #9393ab;    /*  6.4:1 on --ground */
+
+    /* OVERRIDE. Inherited dark --faint #616178 measures 2.96:1 on --surface and
+       fails AA. #8b8ba3 measures 5.5:1 on --surface and 4.84:1 on --surface-2,
+       which is the worst case in this palette. */
+    --faint: #8b8ba3;
+
+    --accent: #8a7cf6;   /* 5.8:1 on --ground */
+    --accent-soft: #211d3a;
+    --accent-ink: #14121f;
+
+    --good: #45c883;
+    --good-soft: #123020;
+    --warn: #f0b429;
+    --warn-soft: #312608;
+    --crit: #f2726a;     /* 6.8:1 on --ground, 5.7:1 on --crit-soft */
+    --crit-soft: #331a17;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-2: 0 6px 24px rgba(0, 0, 0, .5);
+  }
+}
+
+/* Forced dark. Kept byte-identical to the media-query block above. */
+:root[data-theme="dark"] {
+  --ground: #0e0e16;
+  --surface: #17171f;
+  --surface-2: #20202c;
+  --line: #2b2b3a;
+  --line-soft: #22222e;
+
+  --ink: #eaeaf3;
+  --muted: #9393ab;
+  --faint: #8b8ba3;
+
+  --accent: #8a7cf6;
+  --accent-soft: #211d3a;
+  --accent-ink: #14121f;
+
+  --good: #45c883;
+  --good-soft: #123020;
+  --warn: #f0b429;
+  --warn-soft: #312608;
+  --crit: #f2726a;
+  --crit-soft: #331a17;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, .5);
+}

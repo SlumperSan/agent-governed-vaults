@@ -32,6 +32,10 @@ contract Eip170Test is Test {
     uint256 constant FACTORY_RUNTIME_BUDGET = 5_000;
     uint256 constant DEPLOYER_RUNTIME_BUDGET = 2_000;
 
+    /// The headroom floor VaultCore must keep. See
+    /// `test_vaultCoreKeepsTheReclaimedEip170Budget` for why this number and not another.
+    uint256 constant CORE_MIN_RUNTIME_MARGIN = 2_000;
+
     uint256 constant USDC_1 = 1e6;
 
     MockERC20 usdc;
@@ -87,6 +91,38 @@ contract Eip170Test is Test {
 
         assertLt(fac, FACTORY_RUNTIME_BUDGET, "VaultFactory grew past its budget - re-embedded?");
         assertLt(dep, DEPLOYER_RUNTIME_BUDGET, "VaultDeployer grew past its budget - re-embedded?");
+    }
+
+    /// VaultCore's EIP-170 margin is not slack — it is the budget that decides whether a known
+    /// fix can be deployed at all. H-5 and H-6 are confirmed High findings whose remediations
+    /// were deferred for one reason: at **289 B** of margin they did not fit (both together
+    /// measure +1,016 B; the figure was 283 B when the deferral was recorded, and #97 returned 6).
+    /// Reclaiming duplicated call shapes took the margin to **4,095 B**, measured on the merged
+    /// tree — not the 4,132 B this PR was written against, which predates #97.
+    ///
+    /// This guards that budget rather than the cap: `forge build --sizes` already fails at the
+    /// cap, but by then the next fix has already been deferred.
+    ///
+    /// The floor is 2,000 B and not something tighter on purpose. Landing both remediations
+    /// measured 3,320 B of remaining margin, but that was a probe: it priced the cheapest
+    /// credible shape of each and did not carry the in-kind truncation drag, nor the
+    /// escrow-degradation variant of H-6, either of which costs more. A floor set just under
+    /// the probe would risk blocking the very sprint this budget exists to unblock. The job
+    /// here is to catch headroom quietly disappearing — 2,000 B fires far sooner than the
+    /// 289 B that caused the deferral, without arguing with the implementer who spends it.
+    ///
+    /// Be clear about what that buys and what it does not: this is a FLOOR, not a ratchet, so it
+    /// correctly needs no edit when a change legitimately spends bytes — and it will let roughly
+    /// half the reclaimed budget go without a word. That is the deliberate trade. It catches the
+    /// cliff, not the slope. If the slope turns out to be the real risk, the answer is a ratchet
+    /// that records the measured value, not a tighter floor.
+    function test_vaultCoreKeepsTheReclaimedEip170Budget() public view {
+        uint256 core = vm.getDeployedCode("VaultCore.sol:VaultCore").length;
+        // `assertLt(core, cap - floor)` and not `assertGt(cap - core, floor)`: the latter
+        // underflows to Panic(0x11) the moment VaultCore exceeds the cap, so the guard would die
+        // without printing its own message in exactly the case it exists for. Both operands here
+        // are compile-time constants, so the subtraction cannot underflow.
+        assertLt(core, EIP170_RUNTIME_CAP - CORE_MIN_RUNTIME_MARGIN, "VaultCore headroom spent");
     }
 
     /// The cliff the fix trades onto: VaultCore's creation code no longer has to fit in a

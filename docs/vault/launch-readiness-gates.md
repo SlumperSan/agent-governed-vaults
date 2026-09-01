@@ -38,7 +38,7 @@ Root vaults only (the cheapest risk reduction — see [[root-vaults-only]]); fir
 a per-feed heartbeat and sane-price band per asset; first baskets **WETH + cbBTC** (majors only —
 cbETH was dropped because Base publishes no cbETH/USD feed). The "each asset needs five price
 sources" line described the retired aggregator and no longer applies. EIP-170: `VaultCore` runs with
-**~283 B** of margin — corrected 2026-08-30; the 1,014 B previously recorded here predates M-15's
+**~4,095 B** of margin since PR #90 (2026-09-01), up from **~283 B** — corrected 2026-08-30; the 1,014 B previously recorded here predates M-15's
 deposit overload, which spent 731 B. `VaultFactory` (~21,004 B spare) and `ChainlinkOracle`
 (~23,044 B spare) are **not** size-constrained, contrary to what earlier notes assumed.
 
