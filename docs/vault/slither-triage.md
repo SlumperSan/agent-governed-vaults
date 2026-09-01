@@ -33,9 +33,10 @@ widened run went 245 → 254 results with **no new detector class**.
   **2,000e18 shares for 1,000 USDC**), and the sibling `reentrancy-balance` row hid an outright
   theft at `AggregationRouterAdapter.executeSwap` (#101). "Dormant at launch" under
   [[root-vaults-only]] remains true as a *deployment-config* mitigation — undone by the first
-  sub-vault — not as a reason the detector was wrong. **Status:** #101 is merged; **#98 is still
-  open, so H-9 is UNFIXED on `protocol/main`** — do not cite its guard or its coverage test as
-  present.
+  sub-vault — not as a reason the detector was wrong. **Status (updated 2026-09-01, ccf4b401):** #101 and
+  **#98 are both merged, so H-9 is FIXED on `protocol/main`** — `VaultCore.locked()` and
+  `AuditReentrancyGuardCoverage.t.sol` are present and may now be cited. The line this replaces said
+  the opposite and was correct when written; #98 landed between that branch and this one.
 - **`timestamp`** — **superseded 2026-09-01: triaged row by row, and one of the thirty is real.**
   The old bullet was sound for `Governance` and `Checkpoints` as far as it went, and its only stated
   gap (`UniswapV3TwapSource.sol:255` → **H-2**) is doubly closed: H-2 was fixed, and that contract
