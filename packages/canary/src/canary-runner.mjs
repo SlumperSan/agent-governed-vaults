@@ -441,7 +441,12 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
 
     const { vaults, state } = await resolveVaults();
     if (vaults.length === 0) {
-      errLine(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath})`);
+      // Structured as well as printed: this is the state in which the canary is UP and watching
+      // NOTHING, which is exactly the state an operator must be able to alert on from the log
+      // stream (docs/RUNTIME.md §8.1). The dead-man ping is withheld for the same reason — see
+      // `loop()`.
+      logger.warn?.('sweep.no_vaults', { statePath: cfg.statePath, vaultsConfigured: cfg.vaults.length });
+      errLine(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath}). The off-host dead-man ping is being WITHHELD until at least one vault is in scope, so the external monitor will go red rather than report a canary that is watching nothing.`);
       return { transitions: [], results: [], vaults: [] };
     }
 
@@ -510,7 +515,15 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
         // monitoring anything and must not keep telling ops-check that it is — and, symmetrically,
         // must not ping the off-host dead-man's switch either.
         await heartbeat.beat({ vaults: vaults.length, tracked: tracker.size, notOk: tracker.unhealthy().length, lastScannedBlock });
-        await deadman.ping();
+        // ZERO vaults is a successful sweep of nothing: the RPC answered, no signal ran, no
+        // transition could possibly fire. Pinging the off-host dead-man there would make the
+        // EXTERNAL monitor — the one thing not on this host — report "alive" while the canary is
+        // blind (missing snapshot, unset VAULTS, unmounted volume). So the ping is withheld and the
+        // external check goes red, which is the correct alarm for "nobody is watching the chain".
+        // The on-host heartbeat file is still written: `ops-check` reports process liveness, and
+        // turning a configuration problem into a "canary process dead" page is Operations' call to
+        // make, not this PR's.
+        if (vaults.length > 0) await deadman.ping();
         if (cfg.heartbeatMs > 0 && Date.now() - lastHeartbeatLine >= cfg.heartbeatMs) {
           lastHeartbeatLine = Date.now();
           const bad = tracker.unhealthy();
@@ -530,12 +543,33 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
       if (signal.aborted) ac.abort();
       else signal.addEventListener('abort', () => ac.abort(), { once: true });
     }
+    // Booleans, never the URLs: a Slack/PagerDuty webhook and a Healthchecks.io ping UUID are both
+    // credentials, and this log stream is shipped off-host.
     logger.info?.('starting', {
       chainId: cfg.chainId, pollIntervalMs: cfg.pollIntervalMs, statePath: cfg.statePath,
       canaryStatePath: cfg.canaryStatePath, tracked: tracker.size, readOnly: true,
+      pageWebhook: Boolean(cfg.pageWebhookUrl), logWebhook: Boolean(cfg.logWebhookUrl),
+      deadman: deadman.enabled, testAlertOnStart: Boolean(cfg.testAlertOnStart),
+      heartbeatMs: cfg.heartbeatMs,
     });
     line(`canary up: chain ${cfg.chainId}, read-only, polling every ${cfg.pollIntervalMs}ms. Silence means healthy.`);
-    if (cfg.testAlertOnStart) await testAlert();
+    // A sink that is not configured is a sink that will not deliver, and the only moment anyone
+    // reads these lines is the moment they start the service. Saying it once here is the difference
+    // between "silence means healthy" and "silence means nothing was ever wired up".
+    line(`canary sinks: PAGE webhook ${cfg.pageWebhookUrl ? 'configured' : 'NOT configured'}, LOG webhook ${cfg.logWebhookUrl ? 'configured' : 'NOT configured'}, off-host dead-man ${deadman.enabled ? 'configured' : 'NOT configured'}.`);
+    if (!deadman.enabled) {
+      errLine('canary: DEADMAN_PING_URL is unset — nothing OFF THIS HOST will notice if this canary or its host dies. ops-check runs on the same host and cannot cover that. Set it to a Healthchecks.io-style check URL (docs/CANARY.md §5.3).');
+    }
+    if (!cfg.pageWebhookUrl && !cfg.logWebhookUrl) {
+      errLine('canary: neither PAGE_WEBHOOK_URL nor LOG_WEBHOOK_URL (nor the ALERT_WEBHOOK_URL fallback) is set — transitions go to the log and nowhere else. Nobody is being paged.');
+    }
+    if (cfg.testAlertOnStart) {
+      // Compose runs this service under `restart: unless-stopped`. Left set in `.env`, this fires a
+      // synthetic PAGE on every crash-restart, not once — loud here so it is not discovered by the
+      // on-call rotation. See docs/CANARY.md §5.3.
+      errLine('canary: CANARY_TEST_ALERT_ON_START is set — firing one synthetic PAGE and one synthetic LOG transition now. This fires on EVERY start, including every automatic restart under `restart: unless-stopped`; unset it once the self-test has passed.');
+      await testAlert();
+    }
     running = loop(ac.signal);
     return running;
   }

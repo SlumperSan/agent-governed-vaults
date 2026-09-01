@@ -62,8 +62,12 @@ services:
   # Post-launch canary (docs/CANARY.md). Read-only against the chain: no key, no wallet, no
   # transaction — it only reads. It mounts the shared volume because two of its signals compare
   # the indexer's projection against chain state; it reads that snapshot and never writes it.
-  # Silent while healthy: one line per signal transition, nothing otherwise. Set ALERT_WEBHOOK_URL
-  # in .env to also POST each transition.
+  # Silent while healthy: one line per signal transition, nothing otherwise. Set PAGE_WEBHOOK_URL /
+  # LOG_WEBHOOK_URL in .env to also POST each transition, split by severity tier (or the single
+  # ALERT_WEBHOOK_URL fallback for both), and DEADMAN_PING_URL for the off-host dead-man's switch —
+  # `restart: unless-stopped` below restarts a CRASHED canary, but only something not on this host
+  # notices a dead host. Do NOT leave CANARY_TEST_ALERT_ON_START set in .env: this service restarts
+  # automatically and the self-test fires on every one of those restarts (docs/CANARY.md §5.3).
   canary:
     build: .
     command: npm run start:canary
