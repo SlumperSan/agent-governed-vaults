@@ -70,7 +70,8 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 
 ## EIP-170 headroom
 
-Only `VaultCore` is size-constrained: **~283 B** of margin. That figure was corrected on 2026-08-30
+Only `VaultCore` is size-constrained, and much less so since PR #90 (2026-09-01) reclaimed
+3,806 B: **~4,095 B** of margin, up from ~283 B. That figure was corrected on 2026-08-30
 — earlier notes recorded 1,014 B (LAUNCH-READINESS §5) and 1,182 B (the H-5/H-6 notes), both of
 which predate M-15's deposit overload spending 731 B. `VaultFactory` (~21,004 B spare) and
 `ChainlinkOracle` (~23,044 B spare) are **not** tight, contrary to what earlier notes assumed.
