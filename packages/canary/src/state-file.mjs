@@ -14,7 +14,16 @@
 import { readFile } from 'node:fs/promises';
 import { createRotatingWriter, listBackups } from '../../oplog/src/durable.mjs';
 
-export const emptyCanaryState = () => ({ transitions: {}, lastScannedBlock: null });
+/**
+ * `feedIdentity` is the aggregator identity `signals/feed-identity.mjs` observed on first sight,
+ * keyed by that signal's transition id. It is the ONLY remembered value in the canary that is not a
+ * status: everything else that signal checks (the feed's live `decimals()` against the oracle's
+ * cached `scale`, and the USD denomination) is read from the chain on both sides and needs no
+ * memory. A state file written before this key existed simply has no pins, and the identity leg
+ * re-pins on first sight — see the caveat that carries in the signal's own "PINNED on first sight"
+ * message.
+ */
+export const emptyCanaryState = () => ({ transitions: {}, lastScannedBlock: null, feedIdentity: {} });
 
 /** Atomic writer with the backup ring. `save(obj)` replaces the old inline temp-then-rename. */
 export function createCanaryStateWriter({ path, backups = 0, backupIntervalMs = 0, now }) {
@@ -50,7 +59,7 @@ export function summariseTransitions(transitions) {
  * The question after an incident is "what did it already know, and how far had it scanned?".
  */
 export async function verifyCanaryState(path, { keep = 5 } = {}) {
-  const report = { path, ok: false, exists: false, error: null, lastScannedBlock: null, summary: null, backups: [] };
+  const report = { path, ok: false, exists: false, error: null, lastScannedBlock: null, summary: null, feedsPinned: 0, backups: [] };
   for (const b of await listBackups(path, keep)) {
     const row = { ...b, ok: false, lastScannedBlock: null, tracked: null, error: null };
     try {
@@ -78,6 +87,7 @@ export async function verifyCanaryState(path, { keep = 5 } = {}) {
     const obj = JSON.parse(raw);
     report.lastScannedBlock = obj.lastScannedBlock ?? null;
     report.summary = summariseTransitions(obj.transitions);
+    report.feedsPinned = Object.keys(obj.feedIdentity ?? {}).length;
     report.ok = true;
   } catch (err) {
     report.error = String(err?.message ?? err);
@@ -96,6 +106,10 @@ export function formatCanaryStateReport(report) {
     lines.push(`  cursor      lastScannedBlock=${report.lastScannedBlock ?? 'null (cold start)'}`);
     lines.push(`  signals     ${s.tracked} tracked — ${Object.entries(s.byStatus).map(([k, v]) => `${k}=${v}`).join(' ') || 'none'}`);
     for (const n of s.notOk) lines.push(`    NOT OK    ${n.id} (${n.status} since poll ${n.since})`);
+    // 0 pinned after a live run is worth seeing: it means the feed-identity signal has never
+    // reached a Chainlink feed, so an aggregator swap would not be narrated (the decimals and
+    // denomination checks still run — they need no pin).
+    lines.push(`  feed pins   ${report.feedsPinned} aggregator identit${report.feedsPinned === 1 ? 'y' : 'ies'} remembered`);
     lines.push(`  file        ${report.bytes} bytes`);
   }
   if (report.backups.length === 0) {
