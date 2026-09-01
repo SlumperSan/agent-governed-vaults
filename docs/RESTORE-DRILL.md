@@ -424,8 +424,17 @@ until ~2026-09-01.
 
 ## 9. Addendum 2026-09-01 — why the substitution can't be scripted away, and a Docker-free corroboration
 
-Re-investigated with `docker` still absent from this machine (`where docker.exe` → not found;
-`wsl --status` → WSL launcher present but **no distro installed**). Two follow-ups.
+Re-investigated with `docker` still absent from PATH in this shell at the start of the session
+(`where docker.exe` → not found; `wsl --status` → WSL launcher present but no distro installed).
+**State changed mid-session and is recorded precisely, because it matters for what the owner does
+next:** a coordinator session was installing Docker Desktop in parallel (see [[Owner Decisions
+2026-09-01]] §7 in the ops vault). By 22:17Z, `C:\Program Files\Docker\Docker\resources\bin\docker.exe`
+exists and runs (**Docker Desktop 29.7.2/4.88.1, `docker compose` v5.4.0 present**), `Docker
+Desktop.exe` and `com.docker.backend.exe` are running as processes — but `docker info`/`docker ps`
+fail with **"Docker Desktop is unable to start"**, and `wsl --status` now reports the kernel present
+but no usable distro: `wsl --install --no-distribution` was run elevated and **needs a reboot to
+finish** before the engine can come up. Docker is still **not usable** as of this writing, for a
+different reason than "not installed" — it is installed and one reboot away. Three follow-ups.
 
 **1. The hard-kill substitution is a Windows platform limit, not a Git-Bash quirk — confirmed with
 three more methods, none of which went through Git Bash at all.** §5 finding 1 left open whether a
@@ -455,10 +464,19 @@ Two ways to get a real POSIX kernel to run this drill on, priced for the owner:
 - **Docker Desktop for Windows** (itself WSL2-backed) — runs the runbook's literal
   `docker compose stop/start`, closing the row exactly as written.
 
-Either needs the owner; see `docs/NOW.md` "Blocked on a human" item 3 for exact links and numbered
-PowerShell steps.
+**2. Docker Desktop is already installed on this machine and is one reboot away from working —
+this is closer to done than "needs Docker" suggests.** Checked directly (not inferred): `docker.exe`
+at `C:\Program Files\Docker\Docker\resources\bin\docker.exe` runs and reports **version 29.7.2**
+(Docker Desktop 4.88.1) with `docker compose` v5.4.0 available; `Docker Desktop.exe` and
+`com.docker.backend.exe` are running processes. The engine itself refuses with **"Docker Desktop is
+unable to start"** because WSL2 isn't finished installing — `wsl --install --no-distribution` was
+run elevated by a coordinator session and needs a **Windows reboot** to complete, per [[Owner
+Decisions 2026-09-01]] §7. Nothing here needs a fresh Docker Desktop download; the remaining steps
+are: reboot → open Docker Desktop → accept its agreement → open a **new** PowerShell (existing
+shells won't have `docker` on PATH) → verify → re-run steps 1/6 for real. Exact steps in
+`docs/NOW.md` item 3.
 
-**2. Drill A (indexer snapshot) re-run independently, 2 days later, Docker-free, on the current
+**3. Drill A (indexer snapshot) re-run independently, 2 days later, Docker-free, on the current
 tree** (post oracle-stack-prune; same deployment addresses — factory `0x72767FAD…FD0A`, deploy
 block 46,111,530). Throwaway `./data-drill-team8/`, read-only against
 `https://sepolia.base.org`, no key, no transaction.
@@ -483,6 +501,8 @@ no reason to expect a different result, and it would not add evidence toward the
 either.
 
 **Net: gate 7's verdict is unchanged (drill performed and PASSED; CONDITIONAL on steps 1/6).** What
-changed is confidence in *why*: this is now confirmed to be a genuine, unscriptable Windows
-platform limit rather than an artifact of one tool's `kill`, and the Docker-free half of the drill
-(everything except steps 1/6) is now independently reproduced twice.
+changed is confidence in *why*, and how close the fix is: this is now confirmed to be a genuine,
+unscriptable Windows platform limit rather than an artifact of one tool's `kill`; the Docker-free
+half of the drill (everything except steps 1/6) is now independently reproduced twice; and Docker
+Desktop is not a from-scratch install for the owner — it is already on this machine, one reboot
+from usable.

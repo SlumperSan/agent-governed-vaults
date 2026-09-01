@@ -76,19 +76,48 @@ re-checked it. Re-check this list before repeating it.
    `docs/RESTORE-DRILL.md` (+ its 2026-09-01 §9 addendum). The restore genuinely works on both
    state files, re-proven Docker-free and independently 2 days apart. Gate 7 stays CONDITIONAL for
    one reason: steps 1 and 6 of the runbook (`docker compose stop/start`) need a real POSIX kernel
-   to deliver a real `SIGTERM`/`SIGINT`, and **this machine has neither Docker nor WSL2**
-   (`where docker.exe` → not found; `wsl --status` → launcher present, no distro installed).
-   **Checked 2026-09-01, three more scripted methods (none via Docker or Git Bash): Node-native
-   `child_process.kill('SIGINT')`, the same with a detached process group, and `taskkill /PID`
-   without `/F` — all three fail identically to the original Git-Bash `kill` (Windows itself
-   refuses the last one: "can only be terminated forcefully"). This is a genuine, unscriptable
-   Windows platform limit, not a tooling quirk — no further agent effort can close this without one
-   of the two installs below.** RUNTIME.md §8.3/§8.6 now document the Linux/macOS bare-metal
-   commands and this limitation explicitly.
+   to deliver a real `SIGTERM`/`SIGINT`. **Checked 2026-09-01, three more scripted methods (none via
+   Docker or Git Bash): Node-native `child_process.kill('SIGINT')`, the same with a detached process
+   group, and `taskkill /PID` without `/F` — all three fail identically to the original Git-Bash
+   `kill` (Windows itself refuses the last one: "can only be terminated forcefully"). This is a
+   genuine, unscriptable Windows platform limit, not a tooling quirk — no further agent effort can
+   close this without a real POSIX kernel.** RUNTIME.md §8.3/§8.6 now document the Linux/macOS
+   bare-metal commands and this limitation explicitly.
 
-   **Two ways to close it, either works, WSL2-alone is cheaper:**
+   **This is closer to done than "needs Docker" sounds — checked directly, not assumed, 2026-09-01
+   ~22:17Z: Docker Desktop 4.88.1 is already installed on this machine** (`docker.exe` at
+   `C:\Program Files\Docker\Docker\resources\bin\` runs, reports version 29.7.2, `docker compose`
+   v5.4.0 present; `Docker Desktop.exe`/`com.docker.backend.exe` are running). **The engine just
+   can't start yet** ("Docker Desktop is unable to start") because a coordinator ran
+   `wsl --install --no-distribution` elevated and it **needs a reboot to finish** — see [[Owner
+   Decisions 2026-09-01]] §7 for the full context. Two ways to finish this, Option A is faster if
+   the reboot already happened or happens anyway for other reasons; Option B needs nothing but the
+   reboot since the install itself is done:
 
-   **Option A — WSL2 alone (no Docker; run the daemons as native Linux processes):**
+   **Option A — finish the Docker Desktop install already in progress (recommended, nothing left to download):**
+   1. **Reboot** Windows (finishes the pending WSL2 kernel install).
+   2. Start menu → **Docker Desktop** → open it. Accept the **Docker Subscription Service
+      Agreement** if prompted (free for personal/small-business use —
+      [terms](https://www.docker.com/legal/docker-subscription-service-agreement/)). Skip sign-in.
+      Wait for the whale icon to say "Engine running".
+   3. Open a **new** PowerShell window (existing ones won't have `docker` on PATH) and confirm:
+      ```powershell
+      docker --version
+      docker compose version
+      docker info | Select-String -Pattern "Server Version|OSType|WSL"
+      ```
+      If `docker` isn't found: `$env:Path += ";C:\Program Files\Docker\Docker\resources\bin"`, then
+      add it permanently via *Settings → System → About → Advanced system settings → Environment
+      Variables → Path*.
+   4. If `docker info` still errors on WSL: `wsl --status`, then `wsl --update`, and in Docker
+      Desktop *Settings → General* confirm "Use the WSL 2 based engine" is ticked.
+   5. From the repo root: `docker compose up --build` (RUNTIME.md §4), then run the restore
+      procedure exactly as `RUNTIME.md` §8.3 prints it — `docker compose stop indexer` /
+      `docker compose start indexer` — no substitution needed.
+   6. Update `docs/RESTORE-DRILL.md` and the gate 7 row in `docs/LAUNCH-READINESS.md` with the
+      result (PASS → GO, or whatever it actually shows).
+
+   **Option B — WSL2 alone, no Docker (cheaper if you'd rather not wait on Docker Desktop's engine):**
    1. Open **PowerShell as Administrator** and run:
       ```powershell
       wsl --install
@@ -108,24 +137,6 @@ re-checked it. Re-check this list before repeating it.
    6. Re-run `docs/RESTORE-DRILL.md` §7's reproduction steps verbatim — `kill -TERM $(pgrep -f
       index-runner.mjs)` for step 1 and `node packages/indexer/src/index-runner.mjs` for step 6 are
       now real signals, not substitutes. Confirm `shutdown.complete` appears in the logs (§8.6).
-   7. Update `docs/RESTORE-DRILL.md` and the gate 7 row in `docs/LAUNCH-READINESS.md` with the
-      result (PASS → GO, or whatever it actually shows).
-
-   **Option B — Docker Desktop (runs the runbook's literal `docker compose` commands):**
-   1. Do WSL2 steps 1–3 above first (Docker Desktop's WSL2 backend needs it).
-   2. Download Docker Desktop for Windows from
-      **https://www.docker.com/products/docker-desktop/** (click "Download for Windows").
-   3. Run the installer; leave "Use WSL 2 instead of Hyper-V" checked (default).
-   4. Reboot if prompted, then launch Docker Desktop and complete its first-run setup (Docker's
-      Subscription Service Agreement — free for personal/small-business use).
-   5. In PowerShell, confirm:
-      ```powershell
-      docker --version
-      docker compose version
-      ```
-   6. From the repo root: `docker compose up --build` (RUNTIME.md §4), then run the restore
-      procedure exactly as `RUNTIME.md` §8.3 prints it — `docker compose stop indexer` /
-      `docker compose start indexer` — no substitution needed.
    7. Update `docs/RESTORE-DRILL.md` and the gate 7 row in `docs/LAUNCH-READINESS.md` with the
       result.
 4. **Launch parameter: `proposalThresholdBps = 500`.** Keep it or lower it — immutable per vault
