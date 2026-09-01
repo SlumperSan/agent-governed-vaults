@@ -52,10 +52,18 @@ allowlist. So the oracle is deployed **before** the factory:
    uptime feed, per-asset heartbeats and sane-price bounds.
 2. **Deploy the ChainlinkOracle** via
    [`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) with the
-   `ORACLE_*` env vars from that config.
+   `ORACLE_*` env vars from that config. The band values are copied by hand and nothing
+   machine-checks that the env matches the JSON (residual register row 14's `BAND-BINDING` gap) —
+   compare them yourself before broadcasting. **The band width is an owner decision (SWARM §10),
+   not a deployer default:** an aggregator-swap drift of ±2 decimals is caught only while
+   `hi/100 < spot < 100·lo`, a window `10,000 / (hi ÷ lo)` wide, so the shipped ratio-1000 bands
+   give the *least* coverage the constructor allows (10x: WETH $1,000..$10,000, cbBTC
+   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the owner
+   memo `Owner Decisions 2026-09-01` §1 the options; do not retune without that decision recorded.
 3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
    exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
-   present and answering).
+   present and answering; and the band bounds a 2-decimal drift **at the live price**, which the
+   constructor does not check — it accepts a spot inside the band but outside the covered window).
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
