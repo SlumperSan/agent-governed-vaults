@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who it is for — Agent-Governed Vaults</title>
+<meta name="description" content="The assumptions this design makes about whoever uses it, what governing a vault demands every week, and the four groups this is explicitly not for at launch.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="pre-launch">
+  <div class="wrap">
+    <span class="tag">Pre-launch</span>
+    <p>Not deployed. No mainnet or testnet deployment of the current code exists. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+    <!-- COUNSEL: sitewide pre-launch banner — deployment-status disclosure plus the "not an offer, not a solicitation, not advice" disclaimer. -->
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="who-its-for.html" aria-current="page">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="risks.html">Risks</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Assumptions</p>
+      <h1>What this design assumes about the people who use it.</h1>
+      <p class="lede">It assumes self-custody on Base, by someone who has been rugged, paused or frozen out of a position before and now weighs "nobody can pause, upgrade or seize this" above almost everything else. Every trade-off on this site follows from that assumption. It is written down here so it can be checked against those trade-offs. It is not a test anyone passes.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The deal</p>
+      <h2>Governance participation is not a feature. It is the product.</h2>
+      <!-- COUNSEL: the "you govern, we do not manage your money" framing. Depositors govern their own vault; no party exercises discretion over another member's capital. This section is the site's clearest statement of that and is load-bearing for the collective-investment-scheme analysis. -->
+      <p class="tight">The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. That means the work does not stop at the deposit, and the protocol will not chase anyone for it.</p>
+      <dl class="rows">
+        <div>
+          <dt>You have to show up</dt>
+          <dd>Voting is commit then reveal, in two phases with deadlines. A commit you never reveal is forfeit and counts as an abstain. Miss the reveal window and your vote simply does not exist — not as a "no", not as anything.</dd>
+        </div>
+        <div>
+          <dt>You have to read the vault</dt>
+          <dd>Quorum, timelock, exit-fee schedule, minimum deposit, capacity and the commit and reveal durations are all chosen by whoever created the vault and frozen when it is funded. Two vaults built on the same contracts can behave very differently. Nothing on this page tells you what a particular vault's rules are.</dd>
+        </div>
+        <div>
+          <dt>You have to accept being outvoted</dt>
+          <dd>From the moment the reveal phase opens on any live proposal — not from the moment one passes — your exit queues and settles after the swap executes. You carry the execution you voted against, and a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is the cost of closing the free option of leaving at pre-vote prices while already knowing the result.</dd>
+        </div>
+        <div>
+          <dt>You have to accept a frozen door</dt>
+          <dd>If a price feed goes stale, everything that reads NAV reverts — including your exit. There is no escape hatch, and adding one would recreate the exact stale-price exit the breaker exists to prevent. Only capital still inside an un-activated observation window stays reclaimable. If the feed is deprecated or retired rather than merely late, the freeze does not end: a vault's oracle address is fixed at construction and cannot be replaced by anyone. That is <a href="risks.html#r15">risk 15</a>.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Not for you if</p>
+      <h2>Four groups this is explicitly wrong for at launch.</h2>
+      <div class="grid">
+        <div>
+          <h3>DAO treasuries and larger allocators</h3>
+          <p>The first vault's planned capacity cap is 50,000 USDC, and a capacity cap is immutable per vault. That cannot absorb a treasury, and the cap on <em>this</em> vault will not be raised. The recorded plan is a second, larger vault of at least 250,000 USDC after at least 30 incident-free days. That is a different deployment on a later date, and it is a plan, not a commitment.</p>
+        </div>
+        <div>
+          <h3>Anyone who wants set-and-forget</h3>
+          <p>There is no autopilot. Skipping votes does not park your position neutrally; it moves quorum, it wastes your commit, and it hands the outcome to whoever did turn up.</p>
+        </div>
+        <div>
+          <h3>Anyone who cannot survive a total loss</h3>
+          <p>Spot crypto assets fall. The code cannot be patched. There is no insurance fund, no backstop, and nobody who makes anyone whole. Deposit only what you can lose entirely.</p>
+          <!-- COUNSEL: risk-of-total-loss language, stated as an exclusion criterion rather than a hedge. -->
+        </div>
+        <div>
+          <h3>Anyone in a restricted jurisdiction</h3>
+          <p>Interests in these vaults may be treated as securities or as collective investment scheme interests where you live. Front-end geofencing is intended, but it is a good-faith measure and not a guarantee — the contracts are permissionless and can be called directly by anyone. Take your own advice about your own jurisdiction.</p>
+          <!-- COUNSEL: jurisdiction and geofencing language repeated as an exclusion criterion; note the explicit admission that the contracts remain directly callable. -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The cap</p>
+      <h2>A planned 50,000 USDC is a blast radius, not a queue.</h2>
+      <p class="tight">A small first vault is not scarcity and it is not a signal to hurry. The reason that matters to a depositor is blast radius: it is the largest amount this team is willing to have permanently trapped by a bug that survived review, at a point where nothing can be patched and nothing can be paused. If the code is wrong, the cap is the ceiling on how wrong it can be for anyone. Other reasons are on record; that is the one to weigh.</p>
+      <div class="note note--flat">
+        <span class="label">What that means in practice</span>
+        <p>There is no allocation to claim, no queue to join, no priority to earn, and nothing on this site to sign up for. If a vault is full, it is full; the answer is a different vault, later, not a place in line.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Before you decide</p>
+      <h2>Read the risks page in full, then decide.</h2>
+      <p class="tight">Fifteen named risks, each with its worst case and what is actually done about it — including the seven where the honest answer is that nothing is done and the risk is simply accepted. That page is the most useful thing on this site.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="risks.html">The fifteen risks</a>
+        <a class="btn" href="faq.html">The awkward questions</a>
+        <a class="btn" href="how-it-works.html">The mechanism in detail</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="risks.html">Risks</a></li>
+          <li><a href="faq.html">Questions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">The repository is not public yet. Publishing it is a prerequisite for this site going public — until then, the links above resolve only for people who already have access.</p>
+        <!-- COUNSEL: the private-repository note — the repository this site tells readers to check is not public, so every source link on the page currently resolves only for people who already have access. Stated beside the link rather than left as a dead end. -->
+      </div>
+      <div>
+        <h2>Standing facts</h2>
+        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <!-- COUNSEL: the no-token statement and the licence characterisation, pinned to every page footer. -->
+      </div>
+    </div>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed. No mainnet or testnet deployment of the current code exists. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <!-- COUNSEL: jurisdiction and geofencing language, repeated in every footer. -->
+  </div>
+</footer>
+
+</body>
+</html>
