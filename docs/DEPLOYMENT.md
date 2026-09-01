@@ -164,6 +164,19 @@ allowlist makes it non-selectable there anyway).
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
 
+   > ⚠ **The live Base Sepolia adapter `0xf3e08c8b00281750d531a48473d053009038a9b1` predates the
+   > scoped-refund fix and CANNOT BE REPOINTED.** It carries the old
+   > `leftover = balanceOf(tokenIn)` sweep, so it is exposed to the donation DoS described in
+   > [the walkthrough](audit/walkthroughs/AggregationRouterAdapter.md): anyone can `transfer`
+   > USDC to that address and the next `executeRebalance` leg through it reverts `Panic(0x11)`.
+   > `VaultCore.isAllowedAdapter` is populated in the constructor and never written again, so the
+   > existing testnet vaults — including the smoke vault
+   > `0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f` — cannot be pointed at a fixed adapter. **The
+   > soak therefore runs against the old shape**, and a rebalance failure there may be this and
+   > not the soak's own subject. Fixing it on Sepolia means a fresh adapter *and* fresh vaults;
+   > that is a redeploy decision, not part of the contract fix. Mainnet must deploy the fixed
+   > bytecode — this is the constructor-only immutability that made the finding a deploy gate.
+
 ## 4. Create a vault
 
 ```solidity
