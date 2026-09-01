@@ -261,18 +261,21 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
-> **The canary watches the launch oracle, and what it does not watch is feed IDENTITY.** Since
-> #89 the `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
+> **The canary watches the launch oracle on two axes: freshness since #89, and feed IDENTITY since
+> #103.** The `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
 > directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
 > sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
 > cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
-> **Feed identity is watched too, as of #103** — the `feed-identity` signal (G2's on-chain half)
-> compares each feed's live `decimals()` against the **cached `scale` the deployed oracle actually
-> multiplies by**, read from `feedOf(asset)`, plus its denomination and its `aggregator()`. Both
-> sides come from the chain, so there is nothing to pin and nothing that can go stale. That is a
-> stronger check than the recurring script below, which tests Chainlink's 8-decimal *convention*
-> rather than the number this oracle uses — **the canary now continuously re-runs the two
-> construction-time proofs an immutable contract can never re-run itself.**
+> The `feed-identity` signal (G2's on-chain half, [CANARY.md](CANARY.md) §3(g)) compares each
+> feed's live `decimals()` against the **cached `scale` the deployed oracle actually multiplies
+> by**, read from `feedOf(asset)`, re-runs the constructor's USD-denomination predicate against the
+> live `description()`, and reads which `aggregator()` / `phaseId()` is behind the proxy. The two
+> **harm** legs (decimals, denomination) compare chain against chain, so they have nothing to pin
+> and nothing that can go stale; only the **identity** leg (aggregator, phaseId) keeps a remembered
+> value, pinned on first sight into the canary's own state. That is a stronger check than the
+> recurring script below, which tests Chainlink's 8-decimal *convention* rather than the number
+> this oracle uses — **the canary now continuously re-runs the two construction-time proofs an
+> immutable contract can never re-run itself.**
 >
 > What the recurring check below still adds, and why it is not redundant: a **git-tracked** pin
 > (the canary pins on first sight, so a benign swap during canary downtime is adopted silently on
