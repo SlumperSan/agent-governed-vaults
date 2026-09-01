@@ -186,8 +186,13 @@ test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG dec
     assert.ok(liveSignals.has(signal), `${signal} is classified but no signal file emits it any more`);
   }
   // A self-check on the mechanism itself: reading the directory is only worth anything if it is
-  // actually seeing files. Seven signal FILES exported six distinct names when this was written.
-  assert.ok(liveSignals.size >= 7, `only ${liveSignals.size} signals discovered — the readdir is not working`);
+  // actually seeing files. EIGHT signal files exported SEVEN distinct names when this was written
+  // (`oracle-freshness.mjs` and `oracle-health.mjs` both export `'oracle-freshness'`), which with
+  // `vault-config` is eight live names. The old by-name import list held seven of those eight files
+  // and never imported `oracle-freshness.mjs` at all. That particular omission was HARMLESS — the
+  // unimported file exports the same name as one that was imported, so no name went uncovered — but
+  // it shows the hand-written list had already drifted from the directory it claimed to mirror.
+  assert.ok(liveSignals.size >= 8, `only ${liveSignals.size} signals discovered — the readdir is not working`);
 });
 
 // ── the feed-identity split, proven by DISPATCH rather than by set membership ─
