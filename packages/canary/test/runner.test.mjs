@@ -11,13 +11,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rm, mkdtemp, readFile } from 'node:fs/promises';
+import { rm, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { resolveCanaryConfig, collectSignals, buildCanary } from '../src/canary-runner.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
   mockReader, healthyVault, healthyState, chainlinkVault, log,
   VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3, SEQ_FEED,
+  AGGREGATOR, AGGREGATOR_2,
 } from './helpers.mjs';
 
 const NOW = 1_700_000_000;
@@ -438,4 +439,105 @@ test('a full sweep derives the early-warning bar from ORACLE_FEED_CADENCE_SECOND
   assert.match(r.message, /AGEING/);
   assert.equal(r.detail.warnBarSource, 'derived');
   assert.equal(r.detail.warnAtSec, 2400);
+});
+
+// ── feed identity (signal g) is wired into the sweep ─────────────────────────
+
+test('a healthy PIVOTED sweep runs SEVEN signals — feed-identity included, and silent', async () => {
+  const results = await collectSignals({
+    reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  assert.deepEqual(results.filter((r) => r.status !== 'ok').map((r) => r.message), []);
+  assert.deepEqual(
+    [...new Set(results.map((r) => r.signal))].sort(),
+    ['exit-liveness', 'fee-routing', 'feed-identity', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
+  );
+});
+
+test('a RETIRED-oracle sweep still runs exactly six signals — feed-identity has nothing to watch there', async () => {
+  const results = await collectSignals({
+    reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  assert.ok(!results.some((r) => r.signal === 'feed-identity'), 'no Chainlink proxy exists to drift');
+});
+
+test('a mis-scaled feed pages from feed-identity while every other signal reads healthy', async () => {
+  // The whole point of the signal: the vault is NOT frozen. priceWad answers, so oracle-freshness
+  // is OK, and nav-backing recomputes through that same priceWad so its two sides still agree.
+  const results = await collectSignals({
+    reader: mockReader({ contracts: pivotedFixture({ feedDecimals: 6 }), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  const alerts = results.filter((r) => r.status === 'alert');
+  assert.equal(alerts.length, 1, 'exactly one page for one root cause');
+  assert.equal(alerts[0].signal, 'feed-identity');
+  assert.match(alerts[0].message, /FEED DECIMALS DRIFT/);
+  assert.equal(results.find((r) => r.signal === 'oracle-freshness' && r.key === ASSET).status, 'ok');
+  assert.equal(results.find((r) => r.signal === 'nav-backing').status, 'ok');
+});
+
+test('the aggregator pin survives a restart through the canary state file, so a swap pages once and only once', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const canaryStatePath = join(dir, 'canary-state.json');
+    const mkCfg = () => resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+    });
+    const wire = async (contracts, out, err) => {
+      const canary = await buildCanary(mkCfg(), { log: (m) => out.push(m), error: (m) => err.push(m), client: {} });
+      canary.reader.headBlock = async () => 1000;
+      canary.reader.chainNow = async () => NOW;
+      const mock = mockReader({ contracts, nowSec: NOW });
+      Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+      return canary;
+    };
+
+    const out = [], err = [];
+    const first = await wire(pivotedFixture(), out, err);
+    assert.deepEqual((await first.runOnce()).transitions, [], 'first sight pins silently');
+    await first.stop();
+    const pinned = JSON.parse(await readFile(canaryStatePath, 'utf8')).feedIdentity;
+    assert.equal(Object.keys(pinned).length, 1);
+    assert.equal(pinned[`feed-identity|${VAULT}|${ASSET}`].aggregator, AGGREGATOR);
+
+    // A fresh process against a SWAPPED aggregator — the pin has to come off disk, or the swap is
+    // invisible and every restart silently re-pins to whatever is live.
+    const swapped = pivotedFixture({ feedAggregator: AGGREGATOR_2, feedPhaseId: 5 });
+    const second = await wire(swapped, out, err);
+    const t = (await second.runOnce()).transitions;
+    assert.equal(t.length, 1);
+    assert.match(t[0].line, /AGGREGATOR SWAPPED/);
+    // Same process, same fixture: the re-pin clears it rather than parking a permanent not-OK row.
+    assert.equal((await second.runOnce()).transitions[0].to, 'ok');
+    assert.deepEqual((await second.runOnce()).transitions, []);
+    await second.stop();
+    assert.equal(
+      JSON.parse(await readFile(canaryStatePath, 'utf8')).feedIdentity[`feed-identity|${VAULT}|${ASSET}`].phaseId,
+      '5',
+    );
+  });
+});
+
+test('a canary state file written BEFORE feedIdentity existed loads and re-pins, rather than throwing', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const canaryStatePath = join(dir, 'canary-state.json');
+    await writeFile(canaryStatePath, JSON.stringify({ transitions: {}, lastScannedBlock: 990 }), 'utf8');
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+    });
+    const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: pivotedFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    assert.deepEqual((await canary.runOnce()).transitions, []);
+    const flushed = await canary.flush();
+    assert.equal(flushed.feedsPinned, 1);
+  });
 });

@@ -257,9 +257,20 @@ affordable only because M-11 came first.**
 > quoted in the H-5/H-6 notes, which was an intermediate value mid-session). M-15's
 > `deposit(uint256,uint256)` overload landed after this battery ran and spent **731 B**. The record
 > above is left intact deliberately — it is what the battery measured at this ref — but any
-> decision about whether a `VaultCore` change *fits* must use 283 B. At that margin, anything
-> `VaultCore`-shaped is effectively closed, which reshapes the H-5/H-6 deferral: it is now a size
-> wall as much as a sub-vault-dormancy choice.
+> decision about whether a `VaultCore` change *fits* must use the CURRENT margin, and that is now
+> **4,095 B**, not 283 B.
+>
+> **⚠ SECOND CORRECTION, 2026-09-01 — this block contradicted itself and the second half was
+> stale.** It opened with 4,095 B and then told the reader to size changes against 283 B, which was
+> true only between 2026-08-30 and PR #90. Re-measured on this branch with
+> `cd contracts && forge build --sizes`: **`VaultCore` runtime 20,481 B, margin 4,095 B.** So the
+> sentence that followed — "at that margin, anything `VaultCore`-shaped is effectively closed,
+> which reshapes the H-5/H-6 deferral: it is now a size wall as much as a sub-vault-dormancy
+> choice" — **no longer holds. The size wall is gone; the dormancy is not.** H-5/H-6/H-9 stay
+> deferred because `allowSubVaults = false` makes them unreachable at launch (they all require a
+> funded child — AI-AUDIT-REPORT §"Phase-2 disposition"), *not* because they will not fit. Do not
+> cite EIP-170 headroom as the reason they are open. Note also that **M-15 has since landed** and
+> is no longer in the unfixed set below.
 >
 > Two further rows in that table were also read wrongly by later sessions and are corrected here:
 > **`VaultFactory` is not tight** (3,572 B used, **21,004 B spare**) and **`ChainlinkOracle` is not
@@ -269,8 +280,11 @@ affordable only because M-11 came first.**
 > (retired to `contracts/test/retired/`), so their rows describe contracts that are no longer
 > built for deployment.
 
-**H-5, H-6, H-9 and M-15 remain unfixed for this reason** — they all land in `VaultCore`, and
-several would not fit even alone. `Governance` net *shrank* across the session despite gaining
+**H-5, H-6, H-9 and M-15 remained unfixed for this reason at the time of this battery** — they all
+land in `VaultCore`, and several would not fit even alone. *(Superseded on both counts, 2026-09-01:
+M-15 landed, and PR #90 reclaimed the margin to 4,095 B, so size is no longer the reason. What
+keeps H-5/H-6/H-9 out of scope is that `allowSubVaults = false` makes them unreachable at launch —
+see the correction block above.)* `Governance` net *shrank* across the session despite gaining
 M-6's bounds, because C-5's fix replaced four inline weight reads with one helper.
 
 **The gas snapshot was regenerated wholesale**, not reviewed line by line: six contracts changed

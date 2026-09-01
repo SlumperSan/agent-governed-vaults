@@ -322,3 +322,107 @@ Do **not** deploy to mainnet before: (a) an external audit consuming
 [AUDIT-HANDOFF.md](AUDIT-HANDOFF.md), (b) audit findings remediated + re-reviewed, (c) a
 staged-value guardrail period on testnet, (d) `capacityCapUsdc` set conservatively for the
 initial vaults.
+
+## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)
+
+**`HEAD` is not guaranteed to reproduce a historical deployment's bytecode — only the exact
+commit it was built from is.** `contracts/foundry.toml` sets no `bytecode_hash`, so solc's
+default `ipfs` metadata mode applies: every compiled contract's runtime bytecode ends with a CBOR
+trailer whose IPFS hash is a digest of the compiler's `sources` map, keyed by **source path**.
+Moving, renaming, or re-pathing *any* file in a contract's compiled dependency graph — including
+one it only imports indirectly, and including a file that has nothing to do with the contract's
+own logic — changes that trailer, even though not one opcode changed. Deployed bytecode is fixed
+forever; `HEAD` keeps moving. The two drift apart the first time a relevant path changes.
+
+**This already happened once, silently.** The 2026-08-29 retired-oracle prune
+(`chore/prune-retired-oracle-stack`) moved five files out of `contracts/src/` into
+`contracts/test/retired/` and rewrote `ChainlinkOracle.sol`'s import of one of them.
+`ChainlinkOracle.sol` itself did not move and its logic did not change, but its compiled metadata
+trailer did — found only because a reviewer went looking after the fact. Measured on 2026-09-01,
+against the live Base Sepolia deployment
+(`0x6371E14C0682882e75E8382caf0216545B1f43C6`, recorded in
+[`contracts/config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json)):
+
+- Building `ChainlinkOracle` at `protocol/main` and masking its two immutable slots (`usdc`,
+  `sequencerUptimeFeed` — the only non-deterministic bytes a fresh build can never match, since
+  they are baked in at construction, not compile time) still leaves a **32-byte divergence in the
+  trailing CBOR metadata** (the IPFS hash) against the deployed runtime code. Everything else —
+  every opcode, all 1,532 bytes of runtime length — is identical.
+- Building at the commit the deployment record pins as **`sourceCommit`** (`5934ef22` —
+  [`config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json))
+  reproduces the deployed runtime bytecode **byte-for-byte, including the trailer**. Zero bytes
+  differ, not even under masking.
+
+So the finding is a **documentation gap, not a code defect**: nothing on-chain is wrong, the
+deployed contract behaves exactly as its source says, and it can still be source-verified — the
+missing piece was ever writing down that verification must build at the pinned commit, not at
+whatever `main` happens to be when you get around to it.
+
+### The procedure
+
+1. **Read `sourceCommit` from the deployment record** for the chain you're verifying against
+   (`contracts/config/deployments/<chain>.json`). If the field is missing, stop — there is
+   nothing to pin to, and verifying against `HEAD` is a coin flip that happens to work until the
+   next file move.
+2. **Check out that commit into its own worktree**, so you never disturb whatever branch you're
+   actually working on (this is a shared worktree — see `docs/SWARM.md` §8):
+   ```bash
+   git worktree add ../verify-<chain>-<sourceCommit> <sourceCommit>
+   cd ../verify-<chain>-<sourceCommit>/contracts
+   forge build --skip test --skip script
+   ```
+3. **Recover the constructor arguments** the same way the deploy script did — from that SAME
+   commit's config file, not today's. For `ChainlinkOracle` on Base Sepolia,
+   `script/DeployTestnet.s.sol` builds them from `config/base-sepolia.json`'s `chainlinkOracle`
+   block (`assets[].asset` / `.feed` / `.heartbeatSeconds` / `.minPriceWad` / `.maxPriceWad`,
+   `usdcPin`, `sequencerUptimeFeed`), in that array order — read that script's `_deployOracle`
+   helper at the pinned commit if the shape has since changed. (As of
+   this writing the `chainlinkOracle` block's *values* are unchanged since `5934ef22` — only
+   explanatory notes were added — so today's committed config still reconstructs the right
+   arguments; that was checked, not assumed, and may not stay true forever.) Alternatively, skip
+   manual reconstruction and pass `--guess-constructor-args` (see `forge verify-contract --help`)
+   to have `forge` extract them from the on-chain creation transaction directly.
+4. **Verify from the pinned-commit worktree**, not your working tree, so the compiler sees that
+   commit's file layout:
+   ```bash
+   forge verify-contract --chain 84532 <address> \
+     src/oracle/ChainlinkOracle.sol:ChainlinkOracle \
+     --constructor-args <abi-encoded-args-or---guess-constructor-args> \
+     --etherscan-api-key "$ETHERSCAN_API_KEY" --watch
+   ```
+5. **Remove the scratch worktree** when done (`git worktree remove ../verify-<chain>-<sourceCommit>`).
+
+### What to expect from each verifier
+
+This repo has not run a real verification submission against either explorer as part of this
+finding (no API key was available; only the pinned-commit rebuild above was measured). What
+follows is documented, standard verifier behavior, not a repo-specific measurement — treat it as
+guidance, and expect the pinned-commit build to be the reliable path either way:
+
+- **A pinned-commit build should verify cleanly everywhere**, since the bytecode — trailer
+  included — matches exactly what step 2 above proved.
+- **Basescan/Etherscan-family explorers** generally require the submitted source to compile to
+  bytecode that matches the deployed contract; a metadata-only mismatch (built at `HEAD` instead
+  of the pinned commit) is the most common reason a "the source is definitely right" submission
+  still comes back unverified. If a `HEAD`-built submission is ever rejected only on the trailer,
+  that is this exact issue — rebuild at `sourceCommit` and resubmit.
+- **Sourcify** distinguishes a "full match" (bytecode identical including metadata) from a
+  "partial match" (identical except metadata) and accepts both as verified, labeling which one you
+  got — by protocol design, precisely to handle non-reproducible metadata hashes like this one. A
+  `HEAD`-built submission there may succeed as a partial match even without pinning; a
+  pinned-commit build should come back a full match. This was not tested against a live endpoint
+  for this finding — confirm before relying on it.
+
+### Keeping this reproducible: `node scripts/verify-deployment-reproducibility.mjs` (standalone, not wired into `npm run gate`)
+
+This checks, offline and without touching an RPC,
+that every `contracts/config/deployments/*.json`'s `sourceCommit` still resolves in local git
+history **and** is still reachable from `origin/protocol/main` — the one part of this procedure
+that can rot silently (a rebase or a pruned branch can make a previously-valid `sourceCommit`
+unreachable long after the deployment it describes is still live). It does **not** and cannot
+detect metadata drift itself — drift is expected any time `contracts/` changes under `ipfs` mode
+and is not, on its own, a defect. It is deliberately **not** one of `scripts/gate.mjs`'s 9 CI-mirroring
+steps (that file's own header states it must mirror `.github/workflows/ci.yml`, not add to it —
+wiring this in would mean editing both, and the check has nothing to do with whether the current
+diff is mergeable). Run it by hand before cutting a new deployment record, or whenever
+`contracts/src/` moves files around and a live deployment references the old layout.

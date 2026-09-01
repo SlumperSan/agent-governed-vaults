@@ -110,6 +110,31 @@ export const AGGREGATOR_V3_VIEWS = Object.freeze([
   ]),
 ]);
 
+/**
+ * The feed's OWN self-description — the surface `signals/feed-identity.mjs` re-checks every sweep.
+ *
+ * `ChainlinkOracle` reads `description()` and `decimals()` exactly ONCE, in its constructor, and
+ * caches `scale = 10**(18 - decimals)` in an immutable `feedOf` entry. Chainlink swaps the
+ * aggregator behind an `EACAggregatorProxy` as routine operation, and the proxy forwards all four
+ * of these to whichever aggregator is current — so every one of them can move after construction
+ * while the oracle keeps using what it cached. That gap is G2.
+ *
+ * `decimals()` and `description()` are the HARM legs: a change to either silently mis-scales or
+ * re-denominates every price the vault computes. `aggregator()` and `phaseId()` are the IDENTITY
+ * legs, which only say that a swap happened. `phaseId` increments on every swap, so it convicts on
+ * its own; `aggregator` names the new implementation for the alert line.
+ *
+ * Only `decimals()` and `description()` are cross-checkable against a contract in this tree — the
+ * other two belong to Chainlink's `EACAggregatorProxy`, which we do not compile. test/abis.test.mjs
+ * pins what can be pinned and says so about the rest.
+ */
+export const CHAINLINK_FEED_IDENTITY_VIEWS = Object.freeze([
+  view('decimals', [], ['uint8']),
+  view('description', [], ['string']),
+  view('aggregator', [], ['address']),
+  view('phaseId', [], ['uint16']),
+]);
+
 /** IPriceSource — polled per source to count how many are fresh right now. */
 export const PRICE_SOURCE_VIEWS = Object.freeze([
   view('latestPrice', [], [

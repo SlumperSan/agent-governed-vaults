@@ -24,7 +24,7 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `VAULTS` | | — | explicit comma-separated vault list, to run without an indexer |
 | `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
 | `EXTRA_OPERATOR_ADDRESSES` | | — | extra operator addresses to treat as prohibited fee destinations |
-| `CANARY_STATE_PATH` | | `./data/canary-state.json` | transition state, so a restart does not re-page |
+| `CANARY_STATE_PATH` | | `./data/canary-state.json` | transition state, so a restart does not re-page. Also holds the aggregator identities `feed-identity` pins on first sight; see §3(g) |
 | `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS` — compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
@@ -165,10 +165,13 @@ source to fail over to: the heartbeat, the band, the feed and the vault's oracle
 them, during a grace tail included. For a sequencer grace tail, `detail.resumesAtSec` is the one
 honest ETA this protocol can ever publish, because it is a contract constant.
 
-**Two things it still does not watch**, both filed as gaps rather than silently absent: the feed's
-*identity* (`aggregator()` / `description()` / `decimals()` swapping behind the proxy — a Chainlink
-deprecation looks like ordinary staleness only *after* the point of no return), and a USDC depeg,
+**One thing it still does not watch**, filed as a gap rather than silently absent: a USDC depeg,
 which by design freezes nothing at all because the pin is never stale.
+
+The feed's *identity* — `decimals()` / `description()` / `aggregator()` moving behind the proxy —
+**is** watched, but by a different signal, because it is a different question. This one asks whether
+the price is FRESH; identity asks whether it is RIGHT, and a mis-scaled feed is not stale, not
+frozen and not out of band. See **(g) `feed-identity`** below.
 
 #### The retired oracle (`OracleAggregator`)
 
@@ -333,6 +336,86 @@ operator outside the claim flow is a value-extraction finding: reconcile against
 `FeesClaimed` on the FeeEngine for the same period, and treat the vault as compromised until the
 transfers are explained.
 
+### (g) `feed-identity` — is it still the same feed, and still scaled the way the oracle assumed?
+
+**What it measures.** Per basket asset, every sweep: the live `decimals()` and `description()` of the
+Chainlink proxy behind that asset, and which aggregator is currently behind it (`aggregator()`,
+`phaseId()`).
+
+**The gap it closes.** `ChainlinkOracle`'s constructor proves three things about every feed it lists
+— that the feed describes itself as USD-quoted (`_requireUsdQuote`), that it reports 8 decimals, and
+that `scale = 10**(18 - decimals)` is therefore correct — and then caches the result in an immutable
+`feedOf` entry and never looks again. Chainlink meanwhile swaps the aggregator behind an
+`EACAggregatorProxy` as routine operation, and the proxy forwards `decimals()` and `description()` to
+whichever aggregator is current. So the contract's construction-time proofs can silently stop being
+true on a contract that cannot re-check them. This signal re-checks them.
+
+**Nothing else in the canary can see this.** A mis-scaled feed is not stale, not frozen and not out
+of band, so signal (a) reads OK — the price is served, it is just wrong. And `nav-backing` recomputes
+NAV through the same `oracle.priceWad(asset)` the vault uses, so a uniform mis-scale cancels exactly
+on both sides of its comparison and that signal stays silent through the whole event.
+
+**Ground truth, and why there is no configuration here.** The comparison that matters for decimals is
+**live-vs-cached, not live-vs-config** — and the cached value is observable on-chain: `feedOf(asset)`
+is a public mapping getter and `scale` *is* `10**(18 - decimals)` as cached at construction. So the
+check is
+
+```
+10n ** (18n - BigInt(feed.decimals())) === feedOf(asset).scale
+```
+
+with **both sides read from the chain**. No pin, no env var, no config file, nothing that can go
+stale, and correct on the very first sweep after a cold start — which matters, because a swap that
+happened while the canary was down must still be caught when it comes back. The denomination leg is
+the same shape: it re-runs the constructor's own `_requireUsdQuote` predicate (ends in `USD` as a
+whole word, separator and all) against the description the proxy reports now.
+
+Only the **identity** leg needs a remembered value, and it is the leg that carries no harm on its
+own. It is pinned on first sight into `CANARY_STATE_PATH`. Rejected alternatives:
+
+| Where the pin could come from | Rejected because |
+|---|---|
+| `contracts/config/*.json`'s `aggregatorPin` | `.dockerignore` excludes `contracts/` from the runtime image, so the canary cannot read it — the same finding that shaped `ORACLE_FEED_CADENCE_SECONDS` |
+| a new env var, told like the cadence map | It must be hand-edited after every routine Chainlink swap or the signal alerts forever. A standing alert that needs a config deploy to silence is the strongest possible muting pressure, and it buys nothing the harm legs do not already cover pin-free |
+| first sight, in the canary's own state | **Chosen.** No config surface, no maintenance. Residual, stated in the signal's own message: a swap during canary downtime is adopted silently and never narrated — `scripts/verify-chainlink-oracle.mjs` compares against the config's git-tracked `aggregatorPin`, which is the half that survives a restart |
+
+**Severity, and why the two findings are not calibrated the same.** A Chainlink aggregator swap is
+routine and legitimate — `phaseId` exists to count them. A `decimals()` change is not routine and is
+the one that silently mis-scales every price. So:
+
+| Finding | Status | Behaviour |
+|---|---|---|
+| decimals no longer match the cached `scale` (including a value > 18, which no `scale` can express) | **ALERT** | **Latches.** The oracle's config is immutable, so there is no operator action that repairs it — the vault stays not-OK until it is evacuated or the oracle replaced |
+| the description no longer ends in `USD` as a whole word | **ALERT** | **Latches**, same reason |
+| the aggregator behind the proxy changed, decimals and denomination still check out | **ALERT** | **Clears itself next sweep**, because the runner re-pins. A notification ("go read Chainlink's announcement"), not a standing incident |
+
+The self-clear is the calibration, not a softening. Latching a benign swap would park a permanent
+not-OK row in the heartbeat summary and in `ops-check` with no action that clears it — which is the
+muting pressure `ORACLE_MIN_MARGIN` and `ORACLE_STALENESS_WARN_PCT` were both calibrated against. And
+alerting at all is safe here for a reason the flat staleness bar could not claim: an aggregator is
+swapped on the order of **once or twice a year**, not dozens of times a day.
+
+Critically the self-clear is **gated on the harm legs**: the swap alert only clears because decimals
+and denomination passed against the *new* aggregator on the same sweep. A swap that also moves
+decimals leaves the harm leg alerting and the vault not-OK. Two adjacent tests in
+`test/feed-identity.test.mjs` pin that conjunction.
+
+**Conviction rules for the identity leg** mirror `scripts/verify-chainlink-oracle.mjs` rather than
+inventing a second argument: `phaseId` increments on every swap so it convicts on its own; a changed
+`aggregator()` convicts only when both sides are readable, because an `aggregator()` read coming back
+empty is network noise, not evidence (observed against a live proxy on 2026-08-30).
+
+**When it fires.** There is no on-chain remedy — `feedOf` is immutable. For a decimals or
+denomination finding, treat every price served since the change as wrong (`detail` carries the
+cached scale, the live decimals and the factor the price is off by) and follow the de-listing /
+evacuation path, not the freeze path: the vault is not frozen, it is *transacting at a wrong price*,
+which is worse. For a swap notice, verify it against Chainlink's announcement — that is the moment a
+deprecation is still recoverable, because on-chain a deprecation looks like ordinary staleness only
+*after* the response window has closed.
+
+**Silent on a retired-oracle deployment**, and deliberately so: `OracleAggregator` has no Chainlink
+proxy anywhere, so feed identity is not a capability that exists to be blind about there.
+
 ---
 
 ## 4. Signals that cannot run
@@ -347,6 +430,7 @@ vault. The cases:
 | `… reverts StaleOracle` (NAV, exit liveness) | the oracle breaker is tripped | signal (a) is paging for the real cause; coverage resumes when the breaker clears |
 | `sequencer gate not configured … sequencerUptimeFeed is address(0)` | the oracle has no uptime feed | correct off a sequencer L2 (Base Sepolia leaves it `address(0)` by design, so expect exactly one line per vault on testnet). **On Base mainnet it means the deployment shipped with no sequencer guard at all** |
 | `no vaults to watch` | empty watch set | set `VAULTS`, or point `STATE_PATH` at a snapshot that has seen a `VaultCreated` |
+| `feed identity cannot be checked … feedOf() lists no feed for it` | the asset is unlisted, or it is the oracle's pinned USDC leg | if unlisted, signal (a) is already paging (`priceWad` reverts permanently); if it is the pin, there is no aggregator behind it and nothing to drift |
 
 An empty watch set is reported loudly rather than read as a clean bill of health.
 
@@ -358,6 +442,16 @@ re-assert on a backoff until fixed:
 | `ORACLE DETECTOR BLIND … answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig()` | the vault's oracle is a flavor this canary does not know | the canary needs a new oracle implementation before this vault is monitored at all — do not treat the vault as healthy |
 | `vault … is unreadable` | wrong address, wrong chain, or the RPC is failing | check `RPC_URL`/`CHAIN_ID` and the address. **Every** signal for that vault is suspended |
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
+| `FEED IDENTITY DETECTOR BLIND … did not answer description() / decimals()` | the proxy stopped answering the two reads the harm checks compare against | the asset is unmonitored for aggregator-swap drift. A feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry |
+| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()` | the feed is not an `EACAggregatorProxy`, or both reads are failing | the harm checks (decimals, denomination) **did** run and passed; it is the swap *notice* that is blind |
+
+**These three damp against RPC noise, and none of the others do.** Every blind branch in
+`feed-identity` is triggered by an `eth_call` coming back empty, and one empty return is noise while
+three consecutive is the feed — so they carry `minConsecutive: 3` and only escalate on the third
+sweep. The exception is the very first sighting of an asset, which reports immediately: a monitor
+that has never once succeeded must not be indistinguishable from silence. `oracle-freshness` needs no
+such damping, because its blind branch is structural (an oracle answering an ABI it does not have),
+not a transient read.
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never
@@ -381,7 +475,10 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
   not OK.
 - **Restarts do not re-page.** Transition state persists to `CANARY_STATE_PATH` (atomic
   write-temp-then-rename, same discipline as the indexer snapshot). Delete that file to force a fresh
-  report of everything currently wrong.
+  report of everything currently wrong. That file also holds the aggregator identities `feed-identity`
+  pinned on first sight, so deleting it re-pins from whatever is live and a swap that happened while
+  the canary was down is never narrated. The decimals and denomination checks in that signal need no
+  pin and are unaffected. `node packages/canary/src/canary-runner.mjs verify` prints the pin count.
 - **A paging outage is not a monitoring outage.** A webhook that throws, times out, or returns 500 is
   logged and stepped over; the sweep continues.
 - **One broken vault does not blind the others.** A signal that errors becomes a DEGRADED result for
@@ -392,19 +489,24 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
   fresh pages — but if you are standing the canary up after a vault has been live for a while, set
   `LOG_LOOKBACK_BLOCKS` to cover the gap for the first run. The level signals (a–d) read current
   state and are complete from the first sweep regardless.
-- **Sizing.** A sweep is `O(vaults × basket assets)` reads against a `ChainlinkOracle` (roughly three
-  per asset — `feedOf`, `priceWad`, `latestRoundData` — plus four fixed per vault), and
-  `O(vaults × basket assets × oracle sources)` against the retired aggregator. The default 30s
+- **Sizing.** A sweep is `O(vaults × basket assets)` reads against a `ChainlinkOracle` (roughly eight
+  per asset — `feedOf`, `priceWad`, `latestRoundData` for signal (a), then a second `feedOf` plus
+  `description`, `decimals`, `aggregator`, `phaseId` for signal (g), which are issued in one batch —
+  plus four fixed per vault). The two oracle signals deliberately do **not** share their `feedOf`
+  read: each is a pure function of the reader, which is what lets every one of them be tested against
+  a plain mock, and one duplicate `eth_call` per asset is a cheaper price than coupling them. Against
+  the retired aggregator a sweep is
+  `O(vaults × basket assets × oracle sources)`, and signal (g) does not run at all. The default 30s
   cadence is comfortable for a handful of vaults on a normal RPC; raise `CANARY_POLL_INTERVAL_MS`
   before raising your rate limit.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 175 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 226 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 
-Three guards worth knowing about:
+Four guards worth knowing about:
 
 - `test/abis.test.mjs` recomputes every embedded 4-byte selector with viem and cross-checks the
   watched events, the views, and the gate errors against the **compiled** `VaultCore` ABI. A stale
@@ -415,6 +517,12 @@ Three guards worth knowing about:
   *not* on it (the flavor probe depends on that absence). **This guard is the direct answer to how
   the pivot broke this signal:** the oracle table was previously checked only against itself, so
   nothing in CI could see that the signal was calling functions the deployed contract does not have.
+- The same file cross-checks `feed-identity`'s two **harm** legs (`decimals()`, `description()`)
+  against the compiled `IAggregatorV3` / `IAggregatorV3Description` — the interfaces
+  `ChainlinkOracle`'s own constructor reads them through. `aggregator()` and `phaseId()` belong to
+  Chainlink's `EACAggregatorProxy`, which is not in this tree, so they are **not** pinned that way and
+  the test says so rather than pretending; their runtime failure is covered instead, by a
+  DETECTOR BROKEN result.
 - `test/reader.test.mjs` asserts the chain reader exposes no send/sign/write surface, and
   `test/abis.test.mjs` asserts the ABI table declares no non-`view` function. The read-only claim is
   enforced, not just documented.
