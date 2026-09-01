@@ -15,6 +15,22 @@
  *   - a feed quoted in the WRONG DENOMINATION — Base has `CBETH / ETH` and no cbETH/USD feed, so an
  *     ETH-denominated price would be read as dollars by NAV, deposits, exits and rebalances alike;
  *   - a feed with unexpected `decimals()` (the WAD scale is cached at construction from it);
+ *   - AGGREGATOR-SWAP DRIFT: the configured addresses are `EACAggregatorProxy` instances and
+ *     Chainlink swaps the aggregator behind them as routine operation, so the `decimals()` the
+ *     oracle cached at construction is a one-time snapshot of a mutable upstream. See
+ *     `docs/LAUNCH-READINESS.md` section 4 row 14 and
+ *     `contracts/test/audit/AuditAggregatorSwapDrift.t.sol`.
+ *
+ * ## Re-run this AFTER deploying, not only before
+ *
+ * The decimals check below is a COMPLETE test of the aggregator-swap-drift residual, because
+ * `ChainlinkOracle` derives its cached `scale` from nothing else: if a feed still reports 8
+ * decimals, a deployed oracle's cached `scale` is still correct no matter how many times the
+ * aggregator was swapped underneath. This script is read-only and keyless, so it is safe to run on
+ * a cadence against a live deployment -- that is the off-chain half of the accepted residual. The
+ * per-feed `aggregatorPin` block makes a swap VISIBLE (reported as DRIFT, never a failure -- a swap
+ * is legitimate Chainlink operation), so an operator can tell "nothing moved" apart from "it moved
+ * and the decimals still check out".
  *   - a stale feed whose last answer is already older than its own heartbeat;
  *   - a non-positive answer (a broken/deprecated feed);
  *   - a heartbeat or sane-price band outside the bounds the ChainlinkOracle constructor enforces
@@ -79,12 +95,44 @@ const MIN_HEARTBEAT = 600n;
 const MAX_HEARTBEAT = 86400n;
 const MAX_BAND_RATIO = 1000n;
 
-/** @type {{name:string, ok:boolean, detail:string}[]} */
+/**
+ * `--strict` (or STRICT=1) makes NOTICES set the exit code. Off by default, because the two
+ * callers want opposite things: a pre-deploy run must not be blocked by a legitimate aggregator
+ * swap, while the RECURRING run (DEPLOYMENT.md section 7a) exists precisely to notice that a swap
+ * happened. Residual row 14 is accepted ON the basis that this script surfaces drift -- and a
+ * notice that exits 0 into a cron surfaces nothing.
+ */
+const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
+
+/** @type {{name:string, ok:boolean, drift?:boolean, detail:string}[]} */
 const results = [];
 const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: String(detail) });
+/**
+ * A NOTICE, not a verdict. Counted separately from passes -- never folded into them -- and it sets
+ * the exit code only under `--strict`.
+ * Chainlink swapping the aggregator behind a proxy is legitimate routine operation, so hard-failing
+ * on it would block a correct deploy for a benign upstream event -- the same trap that makes an
+ * on-chain re-check a bad idea (see LAUNCH-READINESS section 4 row 14). The safety verdict is
+ * carried by the `decimals() == 8` check, which is independent of how many swaps happened.
+ */
+const notice = (name, detail) => results.push({ name, ok: true, drift: true, detail: String(detail) });
 
 function cast(args) {
   return execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+/**
+ * `cast` with one retry. The public Base RPC rate-limits a burst of calls, and this script fires
+ * one burst per feed: observed 2026-08-30, a mid-sweep `aggregator()` read came back empty while
+ * the identical call succeeded three times in a row on its own. An un-retried hiccup would FAIL the
+ * `decimals() == 8` check and exit 1 -- blocking a correct deploy on network noise, which is a
+ * strictly worse outcome than the extra round trip. A genuine revert simply fails twice.
+ */
+function castRetry(args) {
+  try {
+    return cast(args);
+  } catch {
+    return cast(args);
+  }
 }
 function code(addr) {
   try {
@@ -97,7 +145,7 @@ function callString(addr, sig) {
   // returns the string, or null on revert / no code. `cast` prints a string return wrapped in
   // double quotes ("ETH / USD"); strip them.
   try {
-    const out = cast(['call', addr, sig, '--rpc-url', RPC]);
+    const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
     return out.replace(/^"(.*)"$/s, '$1');
   } catch {
     return null;
@@ -108,7 +156,7 @@ function callString(addr, sig) {
  * `USD` as a WHOLE WORD — last three chars `USD`, preceded by a pair separator (' ' or '/'). The
  * separator is what rejects "ETH / PYUSD" (a USD-ish token, not USD) on a bare suffix match.
  */
-function isUsdQuoted(description) {
+export function isUsdQuoted(description) {
   if (typeof description !== 'string' || description.length < 4) return false;
   if (description.slice(-3) !== 'USD') return false;
   const sep = description[description.length - 4];
@@ -117,7 +165,7 @@ function isUsdQuoted(description) {
 function callUint(addr, sig) {
   // returns a decimal string, or null on revert / no code
   try {
-    const out = cast(['call', addr, sig, '--rpc-url', RPC]);
+    const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
     return BigInt(out).toString();
   } catch {
     return null;
@@ -128,7 +176,7 @@ function latestRoundData(addr) {
   // annotates large ints with a scientific-notation suffix, e.g. "244049270000 [2.44e11]" — take
   // the leading integer token of each line and ignore the annotation.
   try {
-    const out = cast(['call', addr, 'latestRoundData()(uint80,int256,uint256,uint256,uint80)', '--rpc-url', RPC]);
+    const out = castRetry(['call', addr, 'latestRoundData()(uint80,int256,uint256,uint256,uint80)', '--rpc-url', RPC]);
     const nums = out
       .split('\n')
       .map((l) => l.trim().split(/\s+/)[0])
@@ -138,6 +186,127 @@ function latestRoundData(addr) {
   } catch {
     return null;
   }
+}
+
+/** Read an address-returning view; null on revert / no code. */
+function callAddr(addr, sig) {
+  try {
+    const m = castRetry(['call', addr, sig, '--rpc-url', RPC]).match(/0x[0-9a-fA-F]{40}/);
+    return m ? m[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare a feed's currently-active aggregator against the one the config pinned when it was last
+ * verified. PURE -- no RPC, no config -- so the decision table is unit-testable.
+ *
+ * `EACAggregatorProxy` forwards `decimals()` and `description()` to whichever aggregator is current
+ * and increments `phaseId` on every swap. `ChainlinkOracle` reads those ONCE, at construction, and
+ * caches `scale = 10**(18 - decimals)`; its config is immutable. A swap is therefore the only event
+ * that could invalidate the cached scale, and `phaseId` is the cheapest signal that one happened.
+ *
+ * @param {{implementation?:string, phaseId?:number|string}|undefined|null} pin config `aggregatorPin`
+ * @param {{implementation:string|null, phaseId:string|null}} observed what the proxy reports now
+ * @returns {{status:'ok'|'drift'|'unpinned'|'unreadable', message:string}}
+ */
+export function compareAggregatorPin(pin, observed) {
+  const obsImpl = observed && observed.implementation != null ? observed.implementation : null;
+  const obsPhase = observed && observed.phaseId != null ? observed.phaseId : null;
+  if (obsImpl === null && obsPhase === null) {
+    return {
+      status: 'unreadable',
+      message: 'proxy answered neither aggregator() nor phaseId() -- not an EACAggregatorProxy, or a non-standard feed',
+    };
+  }
+  if (!pin || (!pin.implementation && pin.phaseId === undefined)) {
+    return {
+      status: 'unpinned',
+      message: `no aggregatorPin recorded -- add {"implementation":"${obsImpl}","phaseId":${obsPhase}} so a future swap is detectable`,
+    };
+  }
+  const samePhase = pin.phaseId === undefined || obsPhase === null || String(pin.phaseId) === String(obsPhase);
+  // A read that did not answer is NOT evidence of a swap. Saying "SWAPPED -> now null" is a false
+  // alarm, and it is the one this notice produced on its very first live run (a rate-limited public
+  // RPC dropped one `aggregator()` call). Only phaseId can convict on its own.
+  if (obsImpl === null) {
+    if (!samePhase) {
+      return {
+        status: 'drift',
+        message:
+          `AGGREGATOR SWAPPED: phaseId moved ${pin.phaseId} -> ${obsPhase} (aggregator() did not answer this run). ` +
+          'Legitimate Chainlink operation, NOT a failure. Confirm the decimals check above still passes, then update aggregatorPin.',
+      };
+    }
+    return {
+      status: 'unreadable',
+      message: `aggregator() did not answer -- pin NOT confirmed. phaseId ${obsPhase} still matches the pin, so no swap is evidenced; re-run before reading anything into it.`,
+    };
+  }
+  const sameImpl =
+    typeof pin.implementation === 'string' && pin.implementation.toLowerCase() === obsImpl.toLowerCase();
+  if (sameImpl && samePhase) {
+    return { status: 'ok', message: `aggregator ${obsImpl} phaseId ${obsPhase} -- unchanged since the pin` };
+  }
+  return {
+    status: 'drift',
+    message:
+      `AGGREGATOR SWAPPED: pinned ${pin.implementation} (phaseId ${pin.phaseId}) -> now ${obsImpl} (phaseId ${obsPhase}). ` +
+      'Legitimate Chainlink operation, NOT a failure. Confirm the decimals check above still passes -- that is what ' +
+      'proves a deployed oracle cached scale is still correct -- then update aggregatorPin in the config.',
+  };
+}
+
+/**
+ * Is the sane-price band tight enough that a 2-DECIMAL aggregator-swap drift leaves it?
+ *
+ * This is the check that makes residual row 14 true rather than merely asserted. `ChainlinkOracle`
+ * caches `scale` from a one-time `decimals()` read, and the argument for accepting that -- instead
+ * of re-checking on every read and risking a permanent freeze -- is that the band already catches
+ * every drift with a Chainlink precedent: 18 decimals, and any shift of >= 2. But `priceWad` trips
+ * only on `p < min || p > max`, so THAT argument holds only while the band is tight relative to the
+ * live price. A band of $0.01..$1e12 satisfies "a band is set" and catches nothing.
+ *
+ * The predicate is exactly the drift arithmetic. A +2-decimal swap multiplies the reported price by
+ * 100 and a -2-decimal swap divides it by 100, so the band bounds both iff
+ *   priceWad * 100 > maxPriceWad   and   priceWad / 100 < minPriceWad.
+ *
+ * It is deliberately a FUNCTION OF THE LIVE PRICE, not of the band alone: if the asset falls far
+ * enough, a fixed band stops bounding the drift even though nothing about the config changed. That
+ * is a true statement about the residual widening, and the deployer should see it. Hard-failing is
+ * safe here in a way it is not on-chain -- a false reject costs a re-run, not a frozen vault.
+ *
+ * @param {bigint} priceWad live price, WAD  @param {bigint} min  @param {bigint} max
+ * @returns {{ok:boolean, detail:string}}
+ */
+export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
+  if (max === 0n || min === 0n || min > max) {
+    return { ok: false, detail: `band disabled or malformed (min=${min} max=${max})` };
+  }
+  if (priceWad <= 0n) return { ok: false, detail: `no live price to size the band against (priceWad=${priceWad})` };
+  const upOk = priceWad * 100n > max;
+  const downOk = priceWad / 100n < min;
+  const usd = (v) => (v / 10n ** 16n).toString().replace(/(\d+)(\d\d)$/, '$1.$2');
+  if (upOk && downOk) {
+    return {
+      ok: true,
+      detail: `price $${usd(priceWad)} in $${usd(min)}..$${usd(max)}; a +/-2-decimal drift (x100 / /100) leaves it`,
+    };
+  }
+  return {
+    ok: false,
+    detail:
+      `BAND NO LONGER BOUNDS a 2-decimal aggregator-swap drift AT THIS PRICE: price ${usd(priceWad)}, ` +
+      `band ${usd(min)}..${usd(max)}. ` +
+      `${!upOk ? `x100 = ${usd(priceWad * 100n)} is still <= the ceiling. ` : ''}` +
+      `${!downOk ? `/100 = ${usd(priceWad / 100n)} is still >= the floor (the contract's check is exclusive, so equal does not revert either). ` : ''}` +
+      'CHECK WHICH INPUT MOVED before editing anything: this fails either because the band is too wide ' +
+      'OR because the asset moved far enough that a fixed band stopped covering the drift, with no config ' +
+      'change at all. Residual-register row 14 accepts the cached-scale risk BECAUSE the band fail-closes ' +
+      'on a >= 2-decimal drift AT THE LIVE PRICE; whichever input moved, that argument no longer holds. ' +
+      'Retune the band, or re-open row 14.',
+  };
 }
 
 function main() {
@@ -204,6 +373,19 @@ function main() {
     // denomination smell and an un-deployable config.
     const dec = callUint(feed, 'decimals()(uint8)');
     check(`${label}: feed decimals == 8 (USD convention)`, dec !== null && BigInt(dec) === 8n, `decimals=${dec}`);
+
+    // AGGREGATOR-SWAP DRIFT (notice only). The decimals check above is the safety verdict; this one
+    // tells the operator WHETHER the upstream moved since the config was last verified -- the
+    // difference between "nothing changed" and "it changed and re-checked clean".
+    const pinResult = compareAggregatorPin(a.aggregatorPin, {
+      implementation: callAddr(feed, 'aggregator()(address)'),
+      phaseId: callUint(feed, 'phaseId()(uint16)'),
+    });
+    if (pinResult.status === 'ok') {
+      check(`${label}: aggregator unchanged since pin`, true, pinResult.message);
+    } else {
+      notice(`${label}: aggregator pin`, pinResult.message);
+    }
     // latestRoundData: positive answer, fresh within heartbeat
     const rd = latestRoundData(feed);
     if (!rd) {
@@ -240,6 +422,23 @@ function main() {
         spotWad !== null && spotWad >= mn && spotWad <= mx,
         spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
       );
+      // BAND WIDTH, not just band presence. "A band is set" is not the property residual row 14
+      // depends on -- it depends on the band being tight enough that a 2-decimal aggregator-swap
+      // drift leaves it. Checked against the live answer, because that is what the band is compared
+      // against at runtime. Sized in WAD from the feed's own decimals so it stays correct if the
+      // 8-decimal pin is ever relaxed.
+      if (spotWad !== null) {
+        const width = bandBoundsTwoDecimalDrift(spotWad, mn, mx);
+        // Named as price-contingent because it is: this flips from pass to fail with NO config
+        // change, purely because the asset moved. That is the check telling the truth about the
+        // band rather than a false alarm -- but an operator reading a FAIL needs to know which of
+        // the two inputs moved before hunting for a config error that is not there.
+        check(
+          `${label}: band bounds a 2-decimal drift AT THE LIVE PRICE (residual row 14)`,
+          width.ok,
+          width.detail,
+        );
+      }
     }
   }
 
@@ -247,15 +446,30 @@ function main() {
 }
 
 function finish() {
-  const passed = results.filter((r) => r.ok).length;
-  const failed = results.length - passed;
+  // Three counts, not two. A notice used to be counted as a pass, so a config with an unpinned or
+  // unreadable aggregator still printed "18/18 checks passed" -- and that tally is what residual
+  // row 14 cites as evidence the feeds are clean. A summary that cannot express "not clean" is not
+  // evidence. `passed + noticed + failed === total`, always.
+  const noticed = results.filter((r) => r.drift).length;
+  const passed = results.filter((r) => r.ok && !r.drift).length;
+  const failed = results.length - passed - noticed;
   if (JSON_OUT) {
-    console.log(JSON.stringify({ passed, failed, total: results.length, results }, null, 2));
+    console.log(
+      JSON.stringify({ passed, failed, drift: noticed, strict: STRICT, total: results.length, results }, null, 2),
+    );
   } else {
-    for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name} — ${r.detail}`);
-    console.log(`\n${passed}/${results.length} checks passed${failed ? `, ${failed} FAILED — do NOT deploy the oracle` : ''}`);
+    for (const r of results) console.log(`${r.drift ? 'DRIFT' : r.ok ? 'PASS ' : 'FAIL '} ${r.name} — ${r.detail}`);
+    const noticeTail = STRICT
+      ? ' — --strict, so these set the exit code'
+      : ' — read them; re-run with --strict to make them exit non-zero';
+    console.log(
+      `\n${passed}/${results.length} checks passed` +
+        `${failed ? `, ${failed} FAILED — do NOT deploy the oracle` : ''}` +
+        `${noticed ? `, ${noticed} DRIFT notice(s)${noticeTail}` : ''}`,
+    );
   }
-  process.exit(failed === 0 && results.length > 0 ? 0 : 1);
+  process.exit(failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : 0);
 }
 
-main();
+// Importable by unit tests without firing the RPC sweep: only run when this file is the entrypoint.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

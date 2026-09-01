@@ -20,7 +20,9 @@ const FACTORY = '0x' + 'f'.repeat(40);
 const OPREG = '0x' + 'e'.repeat(40);
 const SUBREG = '0x' + 'd'.repeat(40);
 const GOV = '0x' + 'c'.repeat(40);
+const FEE_ENGINE = '0x' + '9'.repeat(40);
 const ADDRESSES = { factory: FACTORY, operatorRegistry: OPREG, subvaultRegistry: SUBREG, governance: GOV };
+const ADDRESSES_WITH_FEE_ENGINE = { ...ADDRESSES, feeEngine: FEE_ENGINE };
 
 // A vault whose address has mixed case. viem gives us the checksummed form in decoded args and
 // the lowercased form as the emitting log.address — the two must collapse to ONE projection key.
@@ -108,6 +110,42 @@ test('folds through the daemon into a single, correct vault + leaderboard', asyn
   } finally {
     await rm(path, { force: true });
   }
+});
+
+test('feeEngine is an optional singleton: its events are only polled when an address is configured', async () => {
+  const feeLog = L(FEE_ENGINE, 'FeeAssessed', 5, 0, { vault: V_LOWER, member: MEMBER, netGain: 100n, fee: 10n });
+
+  const withoutFeeEngine = createChainSource({ client: fakeClient([feeLog], 20), addresses: ADDRESSES });
+  const eventsWithout = await withoutFeeEngine.fetchEvents(1, 20);
+  assert.ok(!eventsWithout.some((e) => e.name === 'FeeAssessed'), 'no feeEngine address configured — not polled');
+
+  const withFeeEngine = createChainSource({ client: fakeClient([feeLog], 20), addresses: ADDRESSES_WITH_FEE_ENGINE });
+  const eventsWith = await withFeeEngine.fetchEvents(1, 20);
+  assert.ok(eventsWith.some((e) => e.name === 'FeeAssessed'), 'feeEngine address configured — polled like any other singleton');
+});
+
+test('adapter discovery: an adapter used and swapped through in the SAME batch is fully captured', async () => {
+  const ADAPTER = '0x' + '7'.repeat(40);
+  const logs = [
+    ...fixture(),
+    L(V_LOWER, 'RebalanceExecuted', 14, 0, { adapter: ADAPTER, orderCount: 1n }),
+    L(ADAPTER, 'SwapExecuted', 14, 1, { vault: V_LOWER, tokenIn: ('0x' + '4'.repeat(40)), tokenOut: ('0x' + '5'.repeat(40)), amountIn: 100n, amountOut: 99n }),
+  ];
+  const src = createChainSource({ client: fakeClient(logs, 20), addresses: ADDRESSES });
+  const events = await src.fetchEvents(1, 20);
+
+  assert.ok(events.some((e) => e.name === 'RebalanceExecuted' && e.args.adapter === ADAPTER));
+  assert.ok(events.some((e) => e.name === 'SwapExecuted' && e.vault === V_LOWER), 'adapter learned from RebalanceExecuted, then polled in the same batch');
+  assert.deepEqual([...src.knownAdapters], [ADAPTER]);
+});
+
+test('adapter resume seeding: SwapExecuted indexes even with no RebalanceExecuted in the current range', async () => {
+  const ADAPTER = '0x' + '8'.repeat(40);
+  const laterLogs = [L(ADAPTER, 'SwapExecuted', 30, 0, { vault: V_LOWER, tokenIn: ('0x' + '4'.repeat(40)), tokenOut: ('0x' + '5'.repeat(40)), amountIn: 1n, amountOut: 1n })];
+  const src = createChainSource({ client: fakeClient(laterLogs, 40), addresses: ADDRESSES, knownAdapters: [ADAPTER] });
+  const events = await src.fetchEvents(25, 35);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].name, 'SwapExecuted');
 });
 
 test('resume seeding: VaultCore events index even with no VaultCreated in the current range', async () => {
