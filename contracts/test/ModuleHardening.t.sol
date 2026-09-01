@@ -191,7 +191,10 @@ contract ModuleHardeningTest is Test {
     function test_unusedRetSize_shortReturningFeeEngineCannotBlockAnExit() public {
         ShortReturnFeeEngine feeEngineStub = new ShortReturnFeeEngine();
         VaultCore v = _newVault(
-            address(new StubGovernance()), address(feeEngineStub), address(new StubRegistry()), new address[](0)
+            address(new StubGovernance()),
+            address(feeEngineStub),
+            address(new StubRegistry()),
+            new address[](0)
         );
 
         // Create a realized gain on the cash leg: mint extra USDC into the vault and bump
@@ -220,7 +223,10 @@ contract ModuleHardeningTest is Test {
     function test_unusedRetSize_emptyReturningFeeEngineChargesNoFee() public {
         EmptyReturnFeeEngine feeEngineStub = new EmptyReturnFeeEngine();
         VaultCore v = _newVault(
-            address(new StubGovernance()), address(feeEngineStub), address(new StubRegistry()), new address[](0)
+            address(new StubGovernance()),
+            address(feeEngineStub),
+            address(new StubRegistry()),
+            new address[](0)
         );
 
         usdc.mint(address(v), 1_000 * USDC_1);
