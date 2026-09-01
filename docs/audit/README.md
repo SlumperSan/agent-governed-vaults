@@ -57,7 +57,10 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 
 - [walkthroughs/VaultCore.md](walkthroughs/VaultCore.md) — **critical**, holds all funds
 - [walkthroughs/Governance.md](walkthroughs/Governance.md) — **critical**, authorizes fund movement
-- [walkthroughs/OracleAggregator.md](walkthroughs/OracleAggregator.md) — **critical**, prices everything
+- [walkthroughs/OracleAggregator.md](walkthroughs/OracleAggregator.md) — **RETIRED (C-6)**, now
+  `contracts/test/retired/OracleAggregator.sol`, out of production scope. Pricing is done by
+  `contracts/src/oracle/ChainlinkOracle.sol` (single Chainlink feed per asset, enforced by
+  VaultFactory's blessed-oracle allowlist); it has no walkthrough yet — read the source
 - [walkthroughs/FeeEngine.md](walkthroughs/FeeEngine.md)
 - [walkthroughs/OperatorRegistry.md](walkthroughs/OperatorRegistry.md)
 - [walkthroughs/AggregationRouterAdapter.md](walkthroughs/AggregationRouterAdapter.md)
@@ -73,8 +76,10 @@ internal review passes (see [../CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIE
 live under `contracts/test/retired/` and no deployed vault can use them:
 
 - [walkthroughs/UniswapV3TwapSource.md](walkthroughs/UniswapV3TwapSource.md) — spot-market TWAP
-  source, plus two vendored Uniswap math libraries under their own licenses
-- [walkthroughs/PythSource.md](walkthroughs/PythSource.md) — pull-oracle source
+  source, plus two vendored Uniswap math libraries under their own licenses.
+  **RETIRED (C-6)**, now `contracts/test/retired/UniswapV3TwapSource.sol` + `retired/vendor/`
+- [walkthroughs/PythSource.md](walkthroughs/PythSource.md) — pull-oracle source.
+  **RETIRED (C-6)**, now `contracts/test/retired/PythSource.sol`
 
 Cross-references:
 
@@ -124,7 +129,7 @@ Cross-references:
 | --- | --- | --- | --- |
 | `VaultCore.sol` | ~850 | Shares/NAV, deposits + observation window, two-mode exits, in-kind redemption + escrow, rebalance execution, sub-vault allocate/redeem/look-through, creator gate, exit fee, capacity cap, voting-stake checkpoints | **Critical** — holds all funds |
 | `Governance.sol` | ~490 | Proposals (3 types), commit-reveal, 3 quorum regimes, standing defaults, delegation + concentration cap, timelock, execute | **Critical** — authorizes every fund movement |
-| `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker | **Critical** — prices everything |
+| `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker. **RETIRED (C-6)** — moved to `contracts/test/retired/`, not production source. Assets are priced by `src/oracle/ChainlinkOracle.sol` | Out of production scope — was **Critical** |
 | `FeeEngine.sol` | ~130 | 10% perf fee netted against registry carry; operator fee claims per token | High |
 | `OperatorRegistry.sol` | ~150 | Operator identity, (member, operator) loss carryforward, monotone leaderboard stats | High |
 | `AggregationRouterAdapter.sol` | ~76 | Off-chain-routed DEX-aggregation execution (pinned router + selector allowlist) | High — external calls |
@@ -138,6 +143,12 @@ Cross-references:
 
 Out of scope: `packages/indexer`, `apps/api` (x402 metering), `apps/web`. These never custody
 funds; the API server holds no keys; the contracts have zero x402 coupling (ARCHITECTURE §9).
+
+Also out of the production set: **`contracts/test/retired/`** — the C-6-retired bespoke oracle stack
+(`OracleAggregator.sol`, `PythSource.sol`, `UniswapV3TwapSource.sol`, `vendor/{TickMath,FullMath}.sol`).
+These still compile and are still driven by the audit tests that demonstrate C-3/C-4/C-6, so the
+exploit evidence keeps building, but they are not deployable protocol code and no production
+contract imports them. The production oracle is `contracts/src/oracle/ChainlinkOracle.sol`.
 
 ## 3. Trust boundaries
 

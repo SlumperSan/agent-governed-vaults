@@ -104,3 +104,81 @@ test('an alert line names the vault, the signal, and measured vs threshold', () 
   assert.match(line, /\[nav-backing\]/);
   assert.match(line, /\(measured 1\.20%, threshold 0\.50%\)/);
 });
+
+// ── the one exception to report-once: a detector that cannot run at all ──────
+//
+// Report-once is right for a problem in the SYSTEM — someone is already looking at it. It is
+// exactly wrong for a problem in the MONITOR: the pre-C-6 oracle signal called a function its
+// oracle does not have, emitted one DEGRADED line at startup, and then stayed silent for the
+// rest of the deployment's life while the flagship freeze detector was dead. These tests are the
+// guard on that.
+
+const brokenR = (signal = 'oracle-freshness') => skipped({
+  signal, vault: V, message: 'cannot reach the oracle', detail: { detectorBroken: true },
+});
+
+test('a BROKEN detector is re-asserted on a doubling backoff instead of falling silent', () => {
+  const t = createTransitionTracker();
+  const seen = [];
+  for (let poll = 1; poll <= 40; poll += 1) {
+    for (const tr of t.observe([brokenR()], { poll })) seen.push({ poll, repeat: tr.repeat ?? 0 });
+  }
+  assert.deepEqual(seen.map((s) => s.poll), [1, 2, 4, 8, 16, 32], 'sweeps 1, 2, 4, 8, 16, 32');
+  assert.deepEqual(seen.map((s) => s.repeat), [0, 2, 4, 8, 16, 32]);
+});
+
+test('the re-assertion says DETECTOR BROKEN and how long it has been blind, not just DEGRADED', () => {
+  const t = createTransitionTracker();
+  const [first] = t.observe([brokenR()], { poll: 1 });
+  assert.match(first.line, /DETECTOR BROKEN \[oracle-freshness\]/);
+  assert.ok(!/DEGRADED/.test(first.line), 'a blind monitor must not read like a degraded check');
+  t.observe([brokenR()], { poll: 2 });
+  t.observe([brokenR()], { poll: 3 });
+  const [again] = t.observe([brokenR()], { poll: 4 });
+  assert.match(again.line, /still blind after 4 consecutive sweeps/);
+});
+
+test('an ORDINARY degraded check still reports exactly once — the escalation is opt-in, not blanket', () => {
+  // exit-liveness with no member to probe, or a NAV read behind a StaleOracle, are known-state
+  // skips. Escalating those would page forever and get the whole canary muted.
+  const t = createTransitionTracker();
+  let lines = 0;
+  for (let poll = 1; poll <= 40; poll += 1) lines += t.observe([skipR()], { poll }).length;
+  assert.equal(lines, 1);
+});
+
+test('a broken detector that RECOVERS stops escalating and reports the recovery once', () => {
+  const t = createTransitionTracker();
+  t.observe([brokenR()], { poll: 1 });
+  t.observe([brokenR()], { poll: 2 });
+  const [rec] = t.observe([okR('oracle-freshness')], { poll: 3 });
+  assert.equal(rec.to, 'ok');
+  assert.match(rec.line, /RECOVERED/);
+  for (let poll = 4; poll <= 20; poll += 1) {
+    assert.deepEqual(t.observe([okR('oracle-freshness')], { poll }), [], 'healthy again means silent again');
+  }
+});
+
+test('a RESTART cannot inherit silence: a still-broken detector re-asserts within two sweeps', () => {
+  // The persisted state file predates these counters on any canary upgraded in place, so the
+  // restored entry has no backoff position at all. It must resurface, not stay quiet forever.
+  const t1 = createTransitionTracker();
+  t1.observe([brokenR()], { poll: 1 });
+  const restored = JSON.parse(JSON.stringify(t1.snapshot()));
+  delete restored[`oracle-freshness|${V}`].brokenPolls;
+  delete restored[`oracle-freshness|${V}`].brokenNext;
+
+  const t2 = createTransitionTracker({ initial: restored });
+  assert.equal(t2.observe([brokenR()], { poll: 1 }).length, 0);
+  const out = t2.observe([brokenR()], { poll: 2 });
+  assert.equal(out.length, 1, 'the blind detector is announced again after the restart');
+  assert.match(out[0].line, /DETECTOR BROKEN/);
+});
+
+test('escalation state round-trips through a snapshot, so the backoff is not restarted every sweep', () => {
+  const t = createTransitionTracker();
+  for (let poll = 1; poll <= 5; poll += 1) t.observe([brokenR()], { poll });
+  const snap = JSON.parse(JSON.stringify(t.snapshot()));
+  assert.equal(snap[`oracle-freshness|${V}`].brokenPolls, 5);
+  assert.equal(snap[`oracle-freshness|${V}`].brokenNext, 8);
+});

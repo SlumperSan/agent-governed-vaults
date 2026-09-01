@@ -281,6 +281,12 @@ and every rung, so it is correct as written. And `.bad-<epoch>` does not consume
 
 ### Finding beyond gate 7 — the canary's oracle-freshness signal is blind on the pivoted deployment
 
+> **RESOLVED 2026-08-30 — the signal now measures the deployed oracle.** Kept as the record of
+> how the blind spot was found. `oracle-freshness` probes the oracle and dispatches to
+> `signals/oracle-health.mjs` for `ChainlinkOracle`; an oracle it recognises as neither flavor is
+> reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet. Gate 6 is
+> re-earnable by the soak re-run, not re-earned by this fix.
+
 Not a restore finding; surfaced because the drill ran the canary against the live deployment, and
 too important to leave in a log file. The canary reported, for **both** assets on the deployed
 vault:

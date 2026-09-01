@@ -34,6 +34,7 @@
         "feedDescriptionOnChainNote": "The EXACT string the proxy returns from description(). Machine-compared by scripts/verify-chainlink-oracle.mjs (equality, not a substring) so a plausible-but-wrong feed - right pair, wrong deployment - fails before deploy. ChainlinkOracle enforces the weaker on-chain invariant that it ends in a USD quote leg.",
         "heartbeatSeconds": 86400,
         "heartbeatNote": "24h staleness bound (== maxStalenessSeconds). DELIBERATELY generous vs mainnet's 3600: Base Sepolia feeds update irregularly with no economic SLA, so a tight bound would false-freeze a multi-hour soak on testnet-feed flakiness rather than a protocol bug. Mainnet WETH uses 3600.",
+        "feedCadenceSecondsNote": "Deliberately OMITTED (no feedCadenceSeconds field). Base Sepolia feeds have no economic SLA (see heartbeatNote) - there is no reliable cadence here to derive a safe canary early-warning bar from, so ORACLE_FEED_CADENCE_SECONDS should stay unset for this asset on testnet. That correctly leaves the canary's derived bar off, same reasoning as the loose 86400s heartbeat, not a gap to fill in.",
         "minPriceWad": "100000000000000000000",
         "maxPriceWad": "100000000000000000000000",
         "bandNote": "sane-price band $100 .. $100,000 (WAD), same as mainnet WETH. Testnet ETH/USD ~ $2,433 at verification - comfortably inside."
@@ -53,6 +54,7 @@
         "feedDescriptionOnChain": "LINK / USD",
         "heartbeatSeconds": 86400,
         "heartbeatNote": "24h staleness bound (testnet-generous, see WETH). LINK stands in for the second mainnet asset (cbBTC) - Base Sepolia has no cbBTC feed, but LINK/USD is a live 8-decimal Chainlink feed, which is all the pivot exercise needs.",
+        "feedCadenceSecondsNote": "Deliberately OMITTED - see WETH's feedCadenceSecondsNote above.",
         "minPriceWad": "1000000000000000000",
         "maxPriceWad": "1000000000000000000000",
         "bandNote": "sane-price band $1 .. $1,000 (WAD). Testnet LINK/USD ~ $11.30 at verification - inside."

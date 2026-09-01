@@ -42,6 +42,28 @@ export const ok = build('ok');
 export const alert = build('alert');
 export const skipped = build('skipped');
 
+/**
+ * A `skipped` whose cause is the DETECTOR, not the system under observation.
+ *
+ * The distinction is the whole point. "No member holds shares to probe with" and "navWad reverts
+ * StaleOracle" are KNOWN-STATE skips: the monitor understands the situation, the situation is
+ * covered by another signal, and repeating it every poll would be noise. "This oracle answers
+ * neither ABI I know" and "the check threw" are different in kind — the monitor is BLIND and does
+ * not know what it is missing. Those are marked here, and the transition tracker re-asserts them on
+ * an escalating backoff instead of falling silent after one line.
+ *
+ * That failure mode is not hypothetical: the pre-C-6 oracle signal called `assetConfig` on a
+ * `ChainlinkOracle` that has no such function, emitted ONE degraded line at startup, and then said
+ * nothing for the rest of the deployment's life while the flagship freeze detector was dead.
+ *
+ * @param {{signal:string, vault:string, key?:string, message:string,
+ *          measured?:string, threshold?:string, detail?:Record<string,any>}} fields
+ * @returns {SignalResult}
+ */
+export function detectorBroken(fields) {
+  return skipped({ ...fields, detail: { ...(fields.detail ?? {}), detectorBroken: true } });
+}
+
 /** Short vault label for alert lines: 0x1234…cdef. Full address always rides in `detail`. */
 export function shortAddr(a) {
   return typeof a === 'string' && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : String(a);
