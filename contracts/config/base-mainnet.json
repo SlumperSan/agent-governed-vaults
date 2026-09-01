@@ -163,6 +163,13 @@
         "symbol": "WETH",
         "asset": "0x4200000000000000000000000000000000000006",
         "feed": "0x50015f8b17fb2C290Dde41fDc246ed0dcEE93a8b",
+        "aggregatorPin": {
+          "implementation": "0x05c84a58Fe042275b37DB038BAacd15F410c7bB0",
+          "phaseId": 1,
+          "decimals": 8,
+          "observedAt": "2026-08-30"
+        },
+        "aggregatorPinNote": "The aggregator implementation this EACAggregatorProxy pointed at when the config was last verified on-chain, plus the proxy's phaseId (which Chainlink increments on every swap). Chainlink swaps the aggregator behind a proxy as routine operation and ChainlinkOracle caches `scale` from decimals() ONCE at construction, so this pin is how a swap becomes VISIBLE. scripts/verify-chainlink-oracle.mjs reports a change as DRIFT, never as a failure -- a swap is legitimate. The safety verdict stays with the `decimals() == 8` check next to it, which is a complete test of the residual: if decimals is still 8, a deployed oracle's cached scale is still correct however many swaps happened. Re-run the verifier on a cadence post-deploy, not only before deploying. See docs/LAUNCH-READINESS.md section 4 row 14.",
         "feedDescription": "Chainlink ETH / USD (8 decimals)",
         "feedDescriptionOnChain": "ETH / USD",
         "feedDescriptionOnChainNote": "The EXACT string the proxy returns from description(). Machine-compared by scripts/verify-chainlink-oracle.mjs (equality, not a substring) so a plausible-but-wrong feed - right pair, wrong deployment - fails before deploy. ChainlinkOracle enforces the weaker on-chain invariant that it ends in a USD quote leg.",
@@ -178,6 +185,13 @@
         "symbol": "cbBTC",
         "asset": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
         "feed": "0x32F587986D3fb47601157c19615d568BeD0BCabc",
+        "aggregatorPin": {
+          "implementation": "0x137233996b6586a110bB7A753248e26cC0307B1B",
+          "phaseId": 1,
+          "decimals": 8,
+          "observedAt": "2026-08-30"
+        },
+        "aggregatorPinNote": "The aggregator implementation this EACAggregatorProxy pointed at when the config was last verified on-chain, plus the proxy's phaseId (which Chainlink increments on every swap). Chainlink swaps the aggregator behind a proxy as routine operation and ChainlinkOracle caches `scale` from decimals() ONCE at construction, so this pin is how a swap becomes VISIBLE. scripts/verify-chainlink-oracle.mjs reports a change as DRIFT, never as a failure -- a swap is legitimate. The safety verdict stays with the `decimals() == 8` check next to it, which is a complete test of the residual: if decimals is still 8, a deployed oracle's cached scale is still correct however many swaps happened. Re-run the verifier on a cadence post-deploy, not only before deploying. See docs/LAUNCH-READINESS.md section 4 row 14.",
         "feedDescription": "Chainlink BTC / USD (8 decimals)",
         "feedDescriptionOnChain": "BTC / USD",
         "heartbeatSeconds": 3600,

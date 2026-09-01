@@ -143,6 +143,25 @@ contract VaultCore {
         _lock = 1;
     }
 
+    /// @notice True while one of this vault's guarded entry points is mid-execution.
+    /// @dev Read-only-reentrancy handle for look-through valuation (`_fullNavWad`): between a
+    /// rebalance leg's debit and its measured credit this vault's own accounting understates
+    /// its NAV, so a parent must refuse to price it.
+    ///
+    /// LOAD-BEARING INVARIANT — **every state-mutating external on this contract is
+    /// `nonReentrant`.** `locked()` is not a statement about NAV; it is a statement about the
+    /// lock, and `_fullNavWad` treats the two as equivalent. That substitution is sound only
+    /// while every window in which `idleUsdc`, `assetBalance`, `totalShares`, `totalPendingUsdc`
+    /// or `claimable` can be mid-write sits inside this vault's own lock. **Adding a mutating
+    /// external without `nonReentrant` silently reopens H-9 at full severity** — an ancestor
+    /// reads through this view, sees `false`, and prices an understated vault. It is not enough
+    /// that the new function looks harmless: the ancestor never calls it, it calls `locked()`.
+    /// Enforced by `test/audit/AuditReentrancyGuardCoverage.t.sol`, which enumerates the
+    /// compiled ABI and fails when a mutating external appears outside its register.
+    function locked() external view returns (bool) {
+        return _lock != 1;
+    }
+
     // ─────────────────────────────── events ───────────────────────────────────
     event DepositPending(address indexed member, uint256 amountUsdc, uint64 availableAt);
     event DepositActivated(address indexed member, uint256 amountUsdc, uint256 sharesMinted);
@@ -315,6 +334,22 @@ contract VaultCore {
     /// backstop). Every descendant asset is a subset of this vault's basket (factory-enforced),
     /// so assetUnit/oracle always resolve.
     function _fullNavWad(VaultCore v, uint256 depth) internal view returns (uint256 nav) {
+        // Read-only reentrancy: mid-`executeRebalance` a leg's input is already debited and its
+        // measured output not yet credited, so `v`'s accounting understates its NAV — pricing it
+        // then overmints to a depositor and underpays an exiter here. A locked vault is
+        // observable ONLY from inside its own call stack, so no honest caller ever sees this.
+        //
+        // This check stands on an invariant stated at `locked()`: every state-mutating external
+        // on VaultCore is `nonReentrant`, so every understatement window sits inside the lock
+        // this reads. A mutating external added without the modifier reopens H-9 while this line
+        // still appears to defend it — `AuditReentrancyGuardCoverage.t.sol` is what catches that.
+        //
+        // It must also stay HERE rather than move up into `_childValueWad`: `_childValueWad` is
+        // only the depth-1 entry point, and the recursion below re-enters `_fullNavWad` for each
+        // descendant. Hoisting it passes every depth-1 test and leaves grandchildren exploitable
+        // — measured at a 1.5× overmint and a one-third short-paid exit in
+        // AuditLookThroughDepth2Test.
+        require(!v.locked(), Reentrancy());
         nav = v.idleUsdc() * usdcScalar;
         uint256 n = v.basketLength();
         for (uint256 i; i < n; ++i) {
@@ -754,6 +789,13 @@ contract VaultCore {
             VaultCore(child).skipWindow();
         }
 
+        // Slither reads the debit-after-`skipWindow()` order as CEI-violating. It is not, but
+        // the ordering is the lesser of the two reasons: this vault holds its own reentrancy
+        // lock across the whole call, so `_fullNavWad` refuses to price it from outside no
+        // matter where the debit sits. The ordering still earns its place — the debit books a
+        // transfer that has NOT happened yet, so the accounting is truthful throughout
+        // `skipWindow()`, and hoisting it above the call would CREATE an understatement inside
+        // the lock rather than remove one. Reordering is safe; removing the lock is not.
         idleUsdc -= amountUsdc;
         usdc.safeApprove(child, amountUsdc);
         VaultCore(child).deposit(amountUsdc);
@@ -826,8 +868,17 @@ contract VaultCore {
 
     /// @notice Execute a passed rebalance: governance-only, allowlisted adapter, every leg's
     /// tokens constrained to USDC + basket, every output measured by the vault's OWN balance
-    /// delta (EX-3 — the adapter's word is never the accounting source). Internal accounting
-    /// is debited before and credited after each swap, so NAV stays truthful mid-rebalance.
+    /// delta (EX-3 — the adapter's word is never the accounting source).
+    /// @dev NAV IS UNDERSTATED MID-EXECUTION, and making that unobservable is what the
+    /// `nonReentrant` guard is for. Each leg debits its input before the swap and credits the
+    /// measured output after, so between those two writes this vault's accounting omits the
+    /// whole in-transit leg. The window cannot be closed: the output is not knowable until the
+    /// swap returns, and taking the adapter's claimed amount instead is precisely EX-3. So the
+    /// understatement is hidden rather than removed — `locked()` is true for the whole call and
+    /// `_fullNavWad` refuses to price a locked vault. DO NOT DELETE that `require(!v.locked())`
+    /// to reclaim bytes: a parent pricing a mid-swap child mints against the understated NAV,
+    /// demonstrated at 2,000e18 shares for 1,000 USDC in
+    /// test/audit/AuditLookThroughReadOnlyReentrancy.t.sol.
     /// @param adapter allowlisted execution adapter to route every leg through
     /// @param orders swap legs; tokenIn/tokenOut restricted to USDC + basket assets
     function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)

@@ -4,6 +4,11 @@ The canary watches a deployed vault set and **stays silent while healthy**. It p
 signal *transition* (OK→ALERT, ALERT→OK, OK→DEGRADED), so anything it says is worth reading. It is
 the runnable form of the signal table in [DEPLOYMENT.md §6](DEPLOYMENT.md).
 
+"Silent while healthy" is a claim about transition lines specifically. By default the canary also
+prints an hourly "still watching" heartbeat line (§5) — a deliberate exception, not a contradiction:
+without it a dead canary and a healthy protocol produce the identical observation (nothing), which
+is exactly the operational blind spot the dead-man's switch in §5.3 closes.
+
 It is **strictly read-only**: a viem *public* client, `eth_call` / `eth_getLogs` /
 `eth_blockNumber` / `eth_getBlockByNumber` and nothing else. There is no wallet client, no account,
 and no key anywhere in `packages/canary`. It reads the indexer's snapshot but never writes it — its
@@ -25,7 +30,11 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
 | `EXTRA_OPERATOR_ADDRESSES` | | — | extra operator addresses to treat as prohibited fee destinations |
 | `CANARY_STATE_PATH` | | `./data/canary-state.json` | transition state, so a restart does not re-page. Also holds the aggregator identities `feed-identity` pins on first sight; see §3(g) |
-| `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
+| `PAGE_WEBHOOK_URL` | | — | POST one JSON body per PAGE-tier transition; see §5.3 |
+| `LOG_WEBHOOK_URL` | | — | POST one JSON body per LOG-tier transition; see §5.3 |
+| `ALERT_WEBHOOK_URL` | | — | back-compat fallback for whichever of the two above is unset; see §5.3 |
+| `DEADMAN_PING_URL` | | — | off-host dead-man's switch, pinged once per successful sweep; see §5.3 |
+| `CANARY_TEST_ALERT_ON_START` | | off | `1`/`true`: fire the alert self-test once at startup; see §5.3 |
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS` — compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
@@ -33,8 +42,8 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `ORACLE_FEED_CADENCE_SECONDS` | | — | **`ChainlinkOracle` deployments only** — `addr:seconds` pairs giving each feed's own publish cadence, sourced from `contracts/config/*.json`'s `feedCadenceSeconds`. Drives the derived early-warning bar below; see §3(a) |
 | `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | **`ChainlinkOracle` deployments only** — MANUAL override of the early-warning bar (% of heartbeat), which otherwise alerts once a feed's answer has aged past it, *before* the breaker trips. Unset = DERIVED per asset from `ORACLE_FEED_CADENCE_SECONDS`; see §3(a) |
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
-| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback |
-| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line, so silence is provably alive |
+| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap — the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
+| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2 — set `0` to explicitly opt out |
 
 **Signals (c) and (d) need the indexer projection.** With `VAULTS` alone and no snapshot they report
 DEGRADED, not OK — see §4.
@@ -470,9 +479,13 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
 
 ## 5. Operating notes
 
-- **Silence is the healthy state**, which makes "is it alive?" a fair question. Set `HEARTBEAT_MS`
-  (e.g. `3600000`) for an hourly one-line summary of vault count, signals tracked, and how many are
-  not OK.
+- **Silence is the healthy state**, which makes "is it alive?" a fair question. `HEARTBEAT_MS`
+  defaults to `3600000` (one hour) precisely so this question always has an answer — without it, a
+  dead canary and a healthy protocol are the same observation (nothing). Set `HEARTBEAT_MS=0` to opt
+  back out. The heartbeat line is a "still watching" summary of vault count, signals tracked, and
+  how many are not OK; it always goes to stdout via the console sink, never to a webhook, and is
+  unrelated to the dead-man's switch below (which is off-host and pings something you do not
+  control the uptime of).
 - **Restarts do not re-page.** Transition state persists to `CANARY_STATE_PATH` (atomic
   write-temp-then-rename, same discipline as the indexer snapshot). Delete that file to force a fresh
   report of everything currently wrong. That file also holds the aggregator identities `feed-identity`
@@ -480,9 +493,50 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
   the canary was down is never narrated. The decimals and denomination checks in that signal need no
   pin and are unaffected. `node packages/canary/src/canary-runner.mjs verify` prints the pin count.
 - **A paging outage is not a monitoring outage.** A webhook that throws, times out, or returns 500 is
-  logged and stepped over; the sweep continues.
+  logged and stepped over; the sweep continues. §5.3 below is what stops that fact from being
+  discovered for the first time during a real incident.
 - **One broken vault does not blind the others.** A signal that errors becomes a DEGRADED result for
   that vault and the sweep carries on.
+
+### 5.3 Sinks, severity tiers, and the dead-man's switch
+
+Closes the Monitoring Gap Analysis' G6: "no paging tiers, no off-host dead-man's switch. Undetected:
+a dead host, overnight (~8h)." `sinks.mjs` used to be console + one generic webhook — every
+transition, same channel, no severity — and `ops-check` (`packages/oplog`), the thing that notices a
+dead canary, runs **on the same host as the canary**, so host death silenced both the watcher and the
+watcher's watcher. This section is the fix in three parts.
+
+**Tiered webhooks.** `PAGE_WEBHOOK_URL` receives only ALERT transitions on the signals Operations'
+Severity Ladder rates SEV-1/2 and worth waking a human for: `nav-backing`, `share-conservation`,
+`fee-routing`, `exit-liveness`, `oracle-freshness` (this is the "oracle-v2"/"oracle-health" the
+Monitoring Gap Analysis' §3 item 4 refers to — `signals/oracle-health.mjs`'s `SIGNAL` constant is
+still `'oracle-freshness'`, unchanged across the post-pivot rename). `LOG_WEBHOOK_URL` receives every
+other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and `feed-identity` — that
+signal can ALERT (§3(g)) but is deliberately not in the PAGE list: a benign aggregator-swap ALERT
+there self-clears the next sweep by design, and escalating that list further is Operations' call, not
+inferred here. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
+the two is unset — set only that one and every transition reaches the one configured URL exactly
+once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
+'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
+
+**Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged (plain `GET`) once per **successful**
+sweep — the same condition that gates the `ops-check` heartbeat file, so a canary that cannot reach
+the RPC neither claims to be watching nor pings as if it were. Point it at an external
+heartbeat-monitoring check — e.g. a Healthchecks.io-style URL (`https://hc-ping.com/<uuid>`) — so a
+dead host is noticed by something that is not itself on that host. Off by default when unset; a
+failed ping is logged, never fatal — the ping's whole purpose is to be noticed from outside this
+process, so a delivery failure here must not be the thing that crashes the last line of defence.
+**Provisioning the external account is a human task**, not something this package can do (no key, no
+signup flow, by design); this is only the code path that pings whatever URL you give it.
+
+**Alert self-test.** security-ops.md §5.3: "a webhook that 500s is logged and skipped, by design.
+Something must test the alert path end-to-end on a schedule, or the first real page is also the
+first test." `CANARY_TEST_ALERT_ON_START=1` fires one synthetic PAGE-tier and one synthetic LOG-tier
+transition through the exact sinks a real sweep uses, right after startup and before the sweep loop
+begins. On demand, without starting anything: `node packages/canary/src/canary-runner.mjs test-alert`
+(mirrors the existing `verify` subcommand — same env, no sweep). Both paths bypass the transition
+tracker entirely, so a self-test can never plant fake state in `CANARY_STATE_PATH` that would
+suppress a real future transition on a colliding id.
 - **Cold start sees no history.** With the default `LOG_LOOKBACK_BLOCKS=0`, the first sweep scans a
   single block, so `ModuleCallFailed`, `SliceEscrowed`, and fee outflows from *before* the canary
   started are never reported. That is deliberate — starting a monitor should not replay a backlog as
@@ -502,7 +556,7 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 226 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 247 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 
