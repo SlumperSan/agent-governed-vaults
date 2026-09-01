@@ -25,7 +25,7 @@ Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. Th
    the retired aggregator and no longer applies. The file is at `contracts/config/base-mainnet.json`
    — note the path: only `base-sepolia.json` lives under `config/deployments/`.
 4. **Re-run testnet lifecycle + soak + canary (gates 2, 3, 6).** STALE — earned against superseded bytecode. Redeploy testnet, re-run drills against the corrected contracts. See [[audit-reverification]].
-5. **VaultCore-headroom sprint (issue #40).** H-5/H-6/H-9 and M-15's exit-side need `VaultCore` bytes that do not exist (**~4,095 B** of margin since PR #90, up from ~283 B — corrected 2026-08-30; the 1,014 B previously recorded predates M-15's deposit overload, which spent 731 B, so this is *tighter* than the note claimed, not looser). Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
+5. **VaultCore-headroom sprint (issue #40).** H-5/H-6 and M-15's exit-side need `VaultCore` bytes that do not exist (**~4,095 B** of margin since PR #90, up from ~283 B — corrected 2026-08-30; the 1,014 B previously recorded predates M-15's deposit overload, which spent 731 B, so this is *tighter* than the note claimed, not looser). Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
 6. **One recorded restore drill (gate 7).** ~30 min, no keys, doable anytime — CONDITIONAL until performed.
 
 ## Open Highs / not-mitigated
