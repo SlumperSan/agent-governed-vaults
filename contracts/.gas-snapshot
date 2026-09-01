@@ -92,7 +92,7 @@ AuditProposalThresholdFloorTest:test_theSameMembershipGovernsFineWithoutTheFloor
 AuditQuorumRegimeDustTest:test_finding_h8a_regimeFlipResidual_configMitigated() (gas: 2107637)
 AuditQuorumRegimeDustTest:test_remediated_h8b_dominantStakeMemberGovernsDespiteDust() (gas: 1510021)
 AuditQuorumRegimeDustTest:test_remediated_h8c_zeroStakeSybilsCannotPassArbitraryRebalance() (gas: 1686305)
-AuditReentrancyGuardCoverageTest:test_everyMutatingExternalIsRegistered() (gas: 1467993)
+AuditReentrancyGuardCoverageTest:test_everyMutatingExternalIsRegistered() (gas: 1467971)
 AuditReentrancyGuardCoverageTest:test_everyRegisteredExternalRevertsWhileLocked() (gas: 349700)
 AuditRootVaultsOnlyTest:test_finding_c1_fundedChildHasEmptyElectorate_dustBuysSoleControl() (gas: 20732443)
 AuditRootVaultsOnlyTest:test_remediated_c1_rootVaultsOnly_noChildCanBeCreatedOrFunded() (gas: 15646826)
