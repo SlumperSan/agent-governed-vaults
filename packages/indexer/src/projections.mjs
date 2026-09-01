@@ -26,8 +26,9 @@
  * @property {bigint} capacityCapUsdc
  * @property {string|null} parent        // sub-vault parent, or null for a root
  * @property {number} depth
- * @property {number} exitQueuedCount    // ExitQueued occurrences (Mode-F entries)
+ * @property {number} exitQueuedCount    // ExitQueued occurrences (lifetime Mode-F entries)
  * @property {number} exitSettledCount   // ExitSettled occurrences (all settled exits, Mode-F + Mode-I)
+ * @property {number} modeFSettledCount  // of those, the ones that resolved a queued Mode-F exit
  */
 
 /**
@@ -100,6 +101,8 @@ export function emptyState() {
     /** @type {Map<string, {count:number, lastBlock:number, lastLogIndex:number}>} */
     eventStats: new Map(), // event name -> occurrence count + last-seen cursor (STAT_ONLY_EVENTS)
     /** @type {Set<string>} */ adapters: new Set(), // execution-adapter addresses, learned from RebalanceExecuted
+    /** @type {Map<string, Set<string>>} */
+    queuedExits: new Map(), // vault -> members with an OUTSTANDING queued Mode-F exit (see `apply`)
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -109,27 +112,51 @@ function big(x) {
   return typeof x === 'bigint' ? x : BigInt(x);
 }
 
+/**
+ * Every field of a vault record, at its zero value. Exported because `store.deserializeState` uses
+ * it as the BASE a resumed record is spread over: a snapshot written before a field existed simply
+ * has no key for it, and spreading over this default is what turns that absence into 0 rather than
+ * `undefined` (which then poisons `+= 1` into NaN, and the next snapshot write into null). Adding a
+ * field here is therefore the whole migration for it — see the note in `deserializeState`.
+ * @param {string} vault
+ * @returns {VaultState}
+ */
+export function newVault(vault) {
+  return {
+    vault,
+    creator: '0x',
+    usdc: '0x',
+    operatorId: 0,
+    totalShares: 0n,
+    idleUsdc: 0n,
+    memberCount: 0,
+    pendingCount: 0,
+    capacityCapUsdc: 0n,
+    parent: null,
+    depth: 0,
+    exitQueuedCount: 0,
+    exitSettledCount: 0,
+    modeFSettledCount: 0,
+  };
+}
+
 function ensureVault(state, vault) {
   let v = state.vaults.get(vault);
   if (!v) {
-    v = {
-      vault,
-      creator: '0x',
-      usdc: '0x',
-      operatorId: 0,
-      totalShares: 0n,
-      idleUsdc: 0n,
-      memberCount: 0,
-      pendingCount: 0,
-      capacityCapUsdc: 0n,
-      parent: null,
-      depth: 0,
-      exitQueuedCount: 0,
-      exitSettledCount: 0,
-    };
+    v = newVault(vault);
     state.vaults.set(vault, v);
   }
   return v;
+}
+
+/** The set of members with an outstanding queued Mode-F exit in `vault` (created on demand). */
+function queuedExitSet(state, vault) {
+  let q = state.queuedExits.get(vault);
+  if (!q) {
+    q = new Set();
+    state.queuedExits.set(vault, q);
+  }
+  return q;
 }
 
 function shareBook(state, vault) {
@@ -227,12 +254,23 @@ export function apply(state, e) {
       break;
     }
     case 'ExitQueued':
+      // VaultCore.requestExit allows ONE queued exit per member at a time
+      // (`queuedExitShares[msg.sender] == 0`, ExitAlreadyQueued) and a queued exit is
+      // irrevocable, so this set holds at most one entry per member and never needs a size.
       ensureVault(state, e.vault).exitQueuedCount += 1;
+      queuedExitSet(state, e.vault).add(a.member);
       break;
-    case 'ExitSettled':
-      ensureVault(state, e.vault).exitSettledCount += 1;
+    case 'ExitSettled': {
+      const v = ensureVault(state, e.vault);
+      v.exitSettledCount += 1;
+      // The EXACT Mode-F discriminator, not an approximation. While a member sits in the queued
+      // set, `requestExit` reverts for them (ExitAlreadyQueued) and `settleQueuedExit` is the only
+      // path that clears `queuedExitShares` — so the next ExitSettled for a queued member is
+      // necessarily the settlement of that queued exit, and every other ExitSettled is Mode I.
+      if (queuedExitSet(state, e.vault).delete(a.member)) v.modeFSettledCount += 1;
       creditShares(state, e.vault, a.member, -big(a.sharesBurned));
       break;
+    }
     case 'RebalanceExecuted':
       // Learns the adapter's address so the chain source can poll it for SwapExecuted the same
       // way it learns a vault's address from VaultCreated (see rpc.mjs).
@@ -361,32 +399,39 @@ export function listVaults(state) {
 }
 
 /**
- * Approximate Mode-F exit rate for a vault, in integer basis points of `ExitQueued` occurrences
- * over `ExitSettled` occurrences (counts, not value — matches the vault note's "exits, NOT value"
- * framing and its own field name, `mode_f_exit_rate_bps`, §4.2). Bps rather than a float ratio to
- * match the repo's existing convention for a counts-over-counts fraction (see `shareOfVaultBps` in
- * `memberPosition`, right below) and because §4.4's public-field lint permits `_bps` only for
- * exactly this shape.
+ * The vault note's `mode_f_exit_rate_bps` (§4.2): what share of a vault's SETTLED exits went
+ * through the Mode-F queue rather than settling instantly (Mode I). Integer basis points of a
+ * counts-over-counts fraction — the shape §4.4's public-field lint permits `_bps` for, and the
+ * same convention as `shareOfVaultBps` in `memberPosition` below. Counts, not value, matching the
+ * note's "exits, NOT value" framing.
  *
- * This is a first-order signal, not the exact per-member discriminator from the data-analytics
- * build note (§3.6): the precise rule is "an ExitSettled is Mode-F iff that (vault, member) has an
- * ExitQueued with no intervening ExitSettled," which needs a per-member exit ledger (the
- * `exit_event` table in the note's build order item 4+, on the Postgres substrate). Two counts
- * over the vault's whole history is the natural small addition available from the existing
- * scalar-fold shape; it will over- or under-count relative to the exact ledger whenever queued
- * exits settle out of order across members.
+ * This is the note's EXACT discriminator, computed in the fold, not an approximation of it. The
+ * rule the note states — "an ExitSettled is Mode-F iff that (vault, member) has an ExitQueued with
+ * no intervening ExitSettled" — is decidable from the event stream alone and needs no per-member
+ * `exit_event` table on a Postgres substrate: VaultCore permits one queued exit per member
+ * (`requestExit` requires `queuedExitShares[msg.sender] == 0`) and `settleQueuedExit` is the only
+ * way a queued exit ever resolves, so `state.queuedExits` — a per-vault set of members with an
+ * outstanding queue entry — is a complete and exact ledger. See the `ExitSettled` case in `apply`.
  *
- * Can legitimately exceed 10000 bps (100%) when more exits have been queued than have settled —
- * e.g. 3 queued, 1 settled, a stranded-queue situation (§3.6) — since it divides two independent
- * lifetime counters, not a partition of one total. That is a real signal (a backlog of unsettled
- * Mode-F exits), not a bug; do not clamp it.
+ * Because Mode-F settlements are a subset of all settlements, the result is a genuine partition
+ * and is bounded by 10000 (100%). The unsettled backlog it deliberately does NOT fold in — the
+ * stranded-queue signal of §3.6 — is a different quantity with its own accessor,
+ * `queuedExitBacklog`; conflating the two is what makes a "rate" exceed 100%.
  *
  * Returns null when the vault is unknown or has no settled exits yet (undefined rate, not zero).
  */
 export function modeFExitRateBps(state, vault) {
   const v = state.vaults.get(vault);
   if (!v || v.exitSettledCount === 0) return null;
-  return Math.round((v.exitQueuedCount * 10000) / v.exitSettledCount);
+  return Math.round((v.modeFSettledCount * 10000) / v.exitSettledCount);
+}
+
+/**
+ * Members with an outstanding queued Mode-F exit in `vault` — the stranded-queue backlog (§3.6).
+ * A count, not a rate: it has no denominator, so it is deliberately not expressed in bps.
+ */
+export function queuedExitBacklog(state, vault) {
+  return state.queuedExits.get(vault)?.size ?? 0;
 }
 
 /** A member's share position in a vault (0 if none). */

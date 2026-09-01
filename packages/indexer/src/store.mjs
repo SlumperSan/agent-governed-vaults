@@ -8,7 +8,7 @@
 
 import { readFile, writeFile, rename, mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { emptyState } from './projections.mjs';
+import { emptyState, newVault } from './projections.mjs';
 import { createRotatingWriter, listBackups } from '../../oplog/src/durable.mjs';
 
 const VERSION = 1;
@@ -45,6 +45,7 @@ export function serializeState(state) {
     activeProposal: mapEntries(state.activeProposal),
     eventStats: mapEntries(state.eventStats),
     adapters: [...state.adapters],
+    queuedExits: mapEntries(state.queuedExits, (members) => [...members]),
   };
 }
 
@@ -55,7 +56,15 @@ export function deserializeState(obj) {
   s.lastBlock = obj.lastBlock;
   s.lastLogIndex = obj.lastLogIndex;
   for (const [k, v] of obj.vaults) {
+    // `newVault(k)` FIRST, so a record written before a field existed resumes with that field at
+    // its zero value instead of `undefined`. Without it a counter added by a later release reads
+    // undefined out of an older snapshot, `undefined + 1` is NaN, every derived metric is NaN, and
+    // the next snapshot write persists `null` — a silent, permanent corruption of a live indexer
+    // across an upgrade. Spreading a default record makes that structural rather than a per-field
+    // `?? 0` someone must remember: adding a field to `newVault` migrates it. Same reasoning as
+    // the `?? []` on the two collections below.
     s.vaults.set(k, {
+      ...newVault(k),
       ...v,
       totalShares: BigInt(v.totalShares),
       idleUsdc: BigInt(v.idleUsdc),
@@ -82,10 +91,15 @@ export function deserializeState(obj) {
     });
   }
   for (const [k, pid] of obj.activeProposal) s.activeProposal.set(k, pid);
-  // Both absent on a snapshot written before these fields existed — default to empty rather than
-  // throwing, so an older snapshot still resumes cleanly (only these two collections were added).
+  // Absent on a snapshot written before these fields existed — default to empty rather than
+  // throwing, so an older snapshot still resumes cleanly. VERSION deliberately stays at 1: the
+  // guard on line 53 rejects any snapshot whose version is not exactly VERSION, so bumping it
+  // would make every existing snapshot UNLOADABLE (loadSnapshot rethrows, the daemon dies on
+  // restart, verifySnapshot reports UNUSABLE) — the opposite of a migration. These defaults ARE
+  // the migration; the added fields are all additive and zero-valued.
   for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
   for (const a of obj.adapters ?? []) s.adapters.add(a);
+  for (const [k, members] of obj.queuedExits ?? []) s.queuedExits.set(k, new Set(members));
   return s;
 }
 
