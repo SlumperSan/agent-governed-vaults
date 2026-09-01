@@ -147,6 +147,16 @@ Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address
 “Contract Source Code Verified” badge, and `VaultFactory → Read` resolves `registry`,
 `governance`, `feeEngine`, `subVaultRegistry`.
 
+> **Re-verifying later, from a checkout that has since moved on, is a different procedure.** The
+> commands above work because they run from the same tree the deploy just broadcast from. Coming
+> back later — a new session, `main` has since moved — and running `forge verify-contract` against
+> `HEAD` is **not** guaranteed to reproduce the deployed bytecode: solc's default `ipfs` metadata
+> mode keys the trailing CBOR hash by source path, so any file move anywhere in the compiled
+> dependency graph changes it, even with zero logic changes. See
+> [DEPLOYMENT.md §9](DEPLOYMENT.md#9-source-verifying-a-live-deployment-read-this-before-running-forge-verify-contract)
+> for the pinned-commit procedure and the measurement that found this against the live
+> `ChainlinkOracle` deployment above.
+
 ## 6. Troubleshooting
 
 - **RPC 503 / “no backend healthy”** — the default `sepolia.base.org` endpoint is flaky; use
