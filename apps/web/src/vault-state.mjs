@@ -79,7 +79,7 @@ export function actions(f) {
       tone: 'warn',
       title: 'Whether this vault is frozen cannot be read from this data.',
       body:
-        'The breaker lives on the OracleAggregator, which is read directly and never emitted, so ' +
+        'The breaker lives on the vault’s oracle, which is read directly and never emitted, so ' +
         'no event-derived projection carries it. This vault may be frozen right now — every ' +
         'figure below that depends on NAV is unreadable in that state, and deposits, activations ' +
         'and exits all stop. Unknown is not the same claim as healthy, and it is not shown as one.',

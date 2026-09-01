@@ -219,8 +219,12 @@ export const VAULTS = [
 
   {
     address: '0x5555000000000000000000000000000000005555',
-    name: 'AlphaSeek Index',
-    operatorName: 'AlphaSeek Capital', // self-declared, unverifiable
+    // Renamed 2026-09-01 from "AlphaSeek Index" / "AlphaSeek Capital" (claims audit): "alpha" is
+    // return-implying vocabulary and a fixture name is screenshot-able, which is exactly how
+    // "Stable Yield Micro" reached a review. A demo name may describe what a vault HOLDS; it may
+    // never imply what it EARNS. See apps/site/test/site.test.mjs for the enforced rule.
+    name: 'Ridgeline Broad Basket',
+    operatorName: 'Ridgeline Capital', // self-declared, unverifiable
     operatorAddress: null,
     operatorId: 0, // UNATTESTED — the non-spoofable trust bit
     attested: false,

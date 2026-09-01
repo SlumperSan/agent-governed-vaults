@@ -61,7 +61,7 @@ The metered API is read-only. State changes go directly to the contracts (ABIs i
 | Propose | `Governance.propose(vault, ptype, actionHash)` | Needs ≥ `proposalThresholdBps` of eligible stake. `ptype`: 0 Rebalance, 1 RuleChange, 2 ChildAllocation. |
 | Vote | `Governance.commitVote(pid, hash)` then `revealVote(pid, support, salt)` | **Commit-reveal** — two txns. `hash = keccak256(abi.encode(pid, voter, support, salt))`. Missing the reveal window forfeits your vote. |
 | Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. |
-| Exit | `VaultCore.requestExit(shares)` | Instant pro-rata **in-kind** (Mode I). If a rebalance is passed-but-pending, it queues and settles at **post-rebalance NAV** (Mode F) — call `settleQueuedExit(self)` after execution. |
+| Exit | `VaultCore.requestExit(shares)` | Instant pro-rata **in-kind** (Mode I). While `Governance.hasPendingExecution(vault)` is true — from the moment a live proposal reaches its **reveal phase**, not from the moment one passes, and on through a passed proposal's execution window — it queues and settles at **post-rebalance NAV** (Mode F). Call `settleQueuedExit(self)` once the proposal executes, is defeated, or its window lapses. |
 
 **Read NAV/eligibility before acting:** `VaultCore.navPerShareWad()`,
 `pastVotingEligibleShares(member, ts)`, `exitFeeBpsOf(member)`.
@@ -70,8 +70,12 @@ The metered API is read-only. State changes go directly to the contracts (ABIs i
 
 - **Observation window:** a first deposit is sequestered 4h with no shares and no vote. Budget for
   it; use `skipWindow()` only if you accept immediate entry.
-- **Forward pricing:** exiting between a vote passing and its execution settles at the *post*-
-  rebalance price — you carry the rebalance outcome. Check `Governance.hasPendingExecution(vault)`.
+- **Forward pricing:** the queueing window opens when a live proposal reaches its **reveal phase**
+  (`Governance.hasPendingExecution` returns true from `commitDeadline` onward), **not** when a
+  proposal passes, and it stays open while a passed proposal is inside its execution window. An
+  exit requested in that window settles at the *post*-rebalance price — you carry the rebalance
+  outcome, and a proposal that is ultimately *defeated* still queued your exit while it was live.
+  Check `Governance.hasPendingExecution(vault)` before every `requestExit`.
 - **Oracle breaker:** the vault prices its basket from **one genuine Chainlink Data Feed per
   asset** (`ChainlinkOracle`; WETH via ETH/USD, cbBTC via BTC/USD, USDC pinned). If that feed
   breaches its heartbeat or the sane-price band, or the Base sequencer is down or inside its

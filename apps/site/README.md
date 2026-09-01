@@ -121,6 +121,33 @@ footer sentences are counted rather than blanket-stripped — one occurrence per
 people quote. If you change any of those sentences, or repeat one somewhere new, change the test in
 the same commit.
 
+### It also guards the claim surface outside this directory (added 2026-09-01)
+
+A claims test protects the files it reads and nothing else. The 2026-09-01 audit found claims this
+file already bans alive in repository prose that publishes on the same day the site does, so three
+rules now reach past `apps/site`. Scope is per-rule and deliberately narrow — the engineering docs
+have legitimate uses for several words on the `BANNED` list, so that list is *not* run over them.
+(This README is itself scanned by it: the first draft of this paragraph quoted three of those words
+as examples and turned the gate red, which is the check working.)
+
+- **Mode F opens at the reveal phase, not at passage.** Five phrasings that place the trigger at
+  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the six pages,
+  and each of those three files must positively name the reveal phase — otherwise the ban is
+  satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
+  `p.commitDeadline` onward (`Governance.sol:622-633`). The site-only ban on *one* phrasing had
+  existed since 2026-08-29 and did not stop the same claim shipping three other ways.
+- **The open High is named wherever it is claimed.** Any sentence saying a High "remains open at
+  the launch configuration" must name it in that same sentence — it is **H-8**, the stake-blind
+  `<5`-member quorum regime. H-5/H-6/H-7/H-9 are *unreachable* at launch, not open: each needs a
+  funded child and `allowSubVaults = false`. At least three surfaces must carry the claim, so it
+  cannot be quietly deleted instead of qualified.
+- **No demo name implies an outcome.** Every vault and operator name in `apps/web/src/fixtures.mjs`
+  is imported and checked against outcome vocabulary, by substring rather than word boundary — the
+  case that got through was a compound, `AlphaSeek`. The line: a name may say what a vault *holds*
+  or how it is *built* (`cbBTC Micro`, `Base Blue-Chip 5`, `Momentum Majors`), never what it
+  *earns*. `apps/web` previously had no claims coverage at all, which is how `AlphaSeek Index`
+  survived the rename of `Stable Yield Micro`.
+
 Run it alone while editing copy:
 
 ```
