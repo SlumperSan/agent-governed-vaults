@@ -214,6 +214,14 @@ components:
         parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
         depth: { type: integer, description: 0 root … 2 grandchild }
         holders: { type: integer }
+        exitQueuedCount: { type: integer, description: lifetime ExitQueued events (Mode-F exit requests) }
+        exitSettledCount: { type: integer, description: lifetime ExitSettled events (Mode-F + Mode-I) }
+        modeFSettledCount:
+          type: integer
+          description: >-
+            of exitSettledCount, the settlements that resolved a queued Mode-F exit. The Mode-F
+            share in basis points is modeFSettledCount * 10000 / exitSettledCount, and is a
+            partition, so it never exceeds 10000.
     LeaderboardRow:
       type: object
       properties:

@@ -174,6 +174,7 @@ Production notes:
 | `OPERATOR_REGISTRY_ADDRESS` | ✅ | — | OperatorRegistry |
 | `SUBVAULT_REGISTRY_ADDRESS` | ✅ | — | SubVaultRegistry |
 | `GOVERNANCE_ADDRESS` | ✅ | — | Governance |
+| `FEE_ENGINE_ADDRESS` | | — | FeeEngine. **Unset is almost always a mistake** — every deploy script deploys one. Without it `FeeAssessed` / `FeeCredited` / `FeesClaimed` are not indexed and the indexer logs a `indexer.feeEngine.unset` warning at startup. Take it from `singletons.FeeEngine` in `contracts/config/deployments/<chain>.json`. |
 | `CHAIN_ID` | | `8453` | `8453` Base, `84532` Base Sepolia |
 | `CHAIN_NAME` | | `base` | label for the viem chain |
 | `START_BLOCK` | | `0` | deploy block — skip empty history on a cold start |

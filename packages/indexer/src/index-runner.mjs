@@ -26,7 +26,7 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { createChainSource } from './rpc.mjs';
+import { createChainSource, MAX_TRACKED_ADAPTERS } from './rpc.mjs';
 import { createIndexerDaemon } from './daemon.mjs';
 import { loadSnapshot, resumeCursor, createSnapshotWriter, verifySnapshot, formatSnapshotReport } from './store.mjs';
 import { loggerFromEnv } from '../../oplog/src/logger.mjs';
@@ -94,10 +94,30 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
   const knownVaults = [...resumed.vaults.keys()];
   const knownAdapters = [...resumed.adapters];
 
+  // FEE_ENGINE_ADDRESS is optional, but EVERY deploy script deploys a FeeEngine (Deploy.s.sol,
+  // DeployTestnet.s.sol; `contracts/config/deployments/<chain>.json` records it under
+  // `singletons.FeeEngine`), so an unset one is almost always a misconfiguration rather than a
+  // deployment that genuinely has none. Silently indexing no fee events would leave
+  // FeeAssessed/FeeCredited/FeesClaimed permanently missing from a running indexer with nothing
+  // in the log to explain the gap — so say so once, loudly, at startup. See docs/RUNTIME.md §5.
+  if (!cfg.addresses.feeEngine) {
+    logger.warn?.('indexer.feeEngine.unset', {
+      detail: 'FEE_ENGINE_ADDRESS is not set — FeeAssessed / FeeCredited / FeesClaimed will NOT be indexed',
+      fix: 'set FEE_ENGINE_ADDRESS to singletons.FeeEngine from contracts/config/deployments/<chain>.json',
+    });
+    line('WARNING: FEE_ENGINE_ADDRESS unset — fee events (FeeAssessed/FeeCredited/FeesClaimed) are NOT indexed');
+  }
+
   const source = createChainSource({
     client, // tests inject a fake viem client; production builds one from rpcUrl
     rpcUrl: cfg.rpcUrl, chainId: cfg.chainId, chainName: cfg.chainName,
     addresses: cfg.addresses, knownVaults, knownAdapters,
+    // Hitting this means something is standing up adapters faster than any honest deployment
+    // would (see the trust-boundary note in rpc.mjs) — it is an operator-visible event.
+    onAdapterCap: (adapter) => logger.warn?.('indexer.adapterCap.hit', {
+      adapter, cap: MAX_TRACKED_ADAPTERS,
+      detail: 'adapter discovery is capped; this adapter will NOT be polled for SwapExecuted',
+    }),
   });
 
   const writer = createSnapshotWriter({
