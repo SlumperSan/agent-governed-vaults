@@ -19,6 +19,14 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
 
 /**
+ * Ceiling on the DISCOVERED execution-adapter set (see the trust-boundary note on `fetchEvents`).
+ * Every member is an address in every `getLogs` call and is persisted in the snapshot forever, and
+ * membership is attacker-influenceable, so the set needs a bound. Honest deployments share one
+ * adapter; 64 is far above any real count and far below a set that would degrade polling.
+ */
+export const MAX_TRACKED_ADAPTERS = 64;
+
+/**
  * @param {Object} cfg
  * @param {any} [cfg.client]            an injected viem-style client (tests); built from rpcUrl if omitted
  * @param {string} [cfg.rpcUrl]         HTTP RPC endpoint (required when no client is injected)
@@ -27,12 +35,19 @@ const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
  * @param {{factory?:string, operatorRegistry?:string, subvaultRegistry?:string, governance?:string, feeEngine?:string}} cfg.addresses
  * @param {Iterable<string>} [cfg.knownVaults]    vault addresses already known (seed from resumed state)
  * @param {Iterable<string>} [cfg.knownAdapters]  execution-adapter addresses already known (seed from resumed state)
+ * @param {(adapter:string) => void} [cfg.onAdapterCap]  called when MAX_TRACKED_ADAPTERS is hit and
+ *   a newly seen adapter is therefore NOT polled (the runner turns this into a warn line)
  */
-export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 'base', addresses, knownVaults = [], knownAdapters = [] }) {
+export function createChainSource({
+  client, rpcUrl, chainId = 8453, chainName = 'base', addresses,
+  knownVaults = [], knownAdapters = [], onAdapterCap = () => {},
+}) {
   const addr = {};
   for (const label of SINGLETON_LABELS) if (addresses?.[label]) addr[label] = lc(addresses[label]);
   const vaults = new Set([...knownVaults].filter((v) => ADDRESS_RE.test(v)).map(lc));
-  const adapters = new Set([...knownAdapters].filter((a) => ADDRESS_RE.test(a)).map(lc));
+  // Seeded from the snapshot, which was itself written under the cap — sliced anyway so a
+  // hand-edited or pre-cap snapshot cannot reintroduce an unbounded set.
+  const adapters = new Set([...knownAdapters].filter((a) => ADDRESS_RE.test(a)).map(lc).slice(0, MAX_TRACKED_ADAPTERS));
 
   let _client = client ?? null;
   async function getClient() {
@@ -57,11 +72,16 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
     return Number(await c.getBlockNumber());
   }
 
-  /** Read + decode logs from one address (or address array) for one contract group's events. */
-  async function logsFor(c, address, events, from, to) {
+  /**
+   * Read + decode logs from one address (or address array) for one contract group's events.
+   * `attributed` is forwarded to `normalizeLog`: false for groups whose code is not ours, so a
+   * `vault` ARGUMENT from an untrusted emitter never becomes a projection key (see the adapter
+   * group below and the note in chain.mjs).
+   */
+  async function logsFor(c, address, events, from, to, { attributed = true } = {}) {
     if (Array.isArray(address) ? address.length === 0 : !address) return [];
     const raw = await c.getLogs({ address, events, fromBlock: BigInt(from), toBlock: BigInt(to) });
-    return raw.filter((l) => l && l.eventName).map((l) => normalizeLog(l));
+    return raw.filter((l) => l && l.eventName).map((l) => normalizeLog(l, undefined, { attributed }));
   }
 
   /**
@@ -70,6 +90,21 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
    * created and used within one batch is captured. Adapters are discovered one hop further in:
    * from each VaultCore's own RebalanceExecuted(adapter, orderCount), so an adapter used for the
    * first time in this same range still has its SwapExecuted fills picked up in this batch.
+   *
+   * Adapter discovery is the one hop that crosses a TRUST BOUNDARY, and it is bounded on both
+   * sides. `createVault` is permissionless and takes a caller-supplied `allowedAdapters`, so an
+   * attacker can stand up their own vault, allowlist their own contract, pass a rebalance through
+   * their own governance (`executeRebalance` accepts an empty order array) and get that contract
+   * into this set. Nothing here can tell that vault apart from an honest one — the factory
+   * deployed both — so an `isAllowedAdapter` read would not help: `executeRebalance` already
+   * requires it on-chain (VaultCore.sol:838), so it returns true for every genuine
+   * `RebalanceExecuted` by construction. The two defences that do bite:
+   *   1. attribution — adapter logs are normalized with `attributed:false`, so a hostile
+   *      `SwapExecuted(vault: <victim>)` can never be folded against the victim's record; and
+   *   2. this cap — the set is an argument to every `getLogs` call and is persisted forever, so
+   *      an unbounded one is a griefing vector against the indexer itself. Honest deployments
+   *      share a single AggregationRouterAdapter (see contracts/config/deployments), so the
+   *      realistic count is one or two and the cap is never approached in practice.
    * @returns {Promise<import('./projections.mjs').Event[]>}
    */
   async function fetchEvents(from, to) {
@@ -88,13 +123,21 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
     if (vaults.size > 0) {
       const vaultEvts = await logsFor(c, [...vaults], CONTRACT_ABIS.vault, from, to);
       for (const e of vaultEvts) {
-        if (e.name === 'RebalanceExecuted' && ADDRESS_RE.test(e.args?.adapter)) adapters.add(lc(e.args.adapter));
+        if (e.name !== 'RebalanceExecuted' || !ADDRESS_RE.test(e.args?.adapter)) continue;
+        const adapter = lc(e.args.adapter);
+        if (adapters.has(adapter)) continue;
+        if (adapters.size >= MAX_TRACKED_ADAPTERS) {
+          onAdapterCap(adapter);
+          continue;
+        }
+        adapters.add(adapter);
       }
       out.push(...vaultEvts);
     }
 
     if (adapters.size > 0) {
-      const adapterEvts = await logsFor(c, [...adapters], CONTRACT_ABIS.adapter, from, to);
+      // attributed:false — adapter code is arbitrary (see the trust-boundary note above).
+      const adapterEvts = await logsFor(c, [...adapters], CONTRACT_ABIS.adapter, from, to, { attributed: false });
       out.push(...adapterEvts);
     }
 

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { createChainSource } from '../src/rpc.mjs';
+import { createChainSource, MAX_TRACKED_ADAPTERS } from '../src/rpc.mjs';
 import { createIndexerDaemon } from '../src/daemon.mjs';
 import { leaderboard, vaultView } from '../src/projections.mjs';
 
@@ -135,8 +135,63 @@ test('adapter discovery: an adapter used and swapped through in the SAME batch i
   const events = await src.fetchEvents(1, 20);
 
   assert.ok(events.some((e) => e.name === 'RebalanceExecuted' && e.args.adapter === ADAPTER));
-  assert.ok(events.some((e) => e.name === 'SwapExecuted' && e.vault === V_LOWER), 'adapter learned from RebalanceExecuted, then polled in the same batch');
+  const swap = events.find((e) => e.name === 'SwapExecuted');
+  assert.ok(swap, 'adapter learned from RebalanceExecuted, then polled in the same batch');
+  assert.equal(swap.emitter, ADAPTER, 'attributed to the contract that actually emitted it');
+  assert.equal(swap.vault, null, "an adapter's `vault` ARG is a claim, never a projection key");
+  assert.equal(swap.args.vault, V_LOWER, 'the claim is preserved in args for a consumer that verifies it');
   assert.deepEqual([...src.knownAdapters], [ADAPTER]);
+});
+
+test('a hostile adapter cannot attribute its SwapExecuted to a victim vault', async () => {
+  // The full attack path, end to end. `VaultFactory.createVault` is permissionless and takes a
+  // caller-supplied `allowedAdapters`, and `executeRebalance` accepts an EMPTY order array — so an
+  // attacker stands up their own vault, allowlists their own contract, and pushes a no-op rebalance
+  // through their own governance purely to get that contract into the indexer's polled set. It
+  // then emits SwapExecuted naming SOMEONE ELSE'S vault. Note there is no defence available at
+  // discovery time: VaultCore.executeRebalance already requires isAllowedAdapter on-chain, so an
+  // `isAllowedAdapter` read would return true here. Attribution is the boundary that holds.
+  const EVIL_VAULT = '0x' + '3'.repeat(40);
+  const EVIL_ADAPTER = '0x' + '6'.repeat(40);
+  const logs = [
+    ...fixture(), // creates + funds the victim vault V_LOWER
+    L(FACTORY, 'VaultCreated', 13, 0, { vault: EVIL_VAULT, creator: MEMBER, usdc: ('0x' + '2'.repeat(40)), capacityCapUsdc: 0n }),
+    L(EVIL_VAULT, 'RebalanceExecuted', 14, 0, { adapter: EVIL_ADAPTER, orderCount: 0n }),
+    L(EVIL_ADAPTER, 'SwapExecuted', 15, 0, { vault: V_LOWER, tokenIn: ('0x' + '4'.repeat(40)), tokenOut: ('0x' + '5'.repeat(40)), amountIn: 10n ** 30n, amountOut: 1n }),
+  ];
+  const src = createChainSource({ client: fakeClient(logs, 20), addresses: ADDRESSES });
+  const events = await src.fetchEvents(1, 20);
+
+  const spoof = events.find((e) => e.name === 'SwapExecuted');
+  assert.ok(spoof, 'the log is still indexed — it is real, it is just not the victim vault’s');
+  assert.equal(spoof.emitter, EVIL_ADAPTER);
+  assert.equal(spoof.vault, null, 'MUST NOT be attributed to the victim vault');
+  assert.notEqual(spoof.vault, V_LOWER);
+  // And nothing else in the batch was re-pointed at the victim by the spoof.
+  assert.ok(events.every((e) => e.name !== 'SwapExecuted' || e.vault !== V_LOWER));
+});
+
+test('adapter discovery is capped, and the rejected adapter is reported', async () => {
+  const overflow = MAX_TRACKED_ADAPTERS + 1;
+  const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
+  const logs = [
+    ...fixture(),
+    ...Array.from({ length: overflow }, (_, i) => L(V_LOWER, 'RebalanceExecuted', 14, i, { adapter: adapterAt(i + 1), orderCount: 0n })),
+  ];
+  const capped = [];
+  const src = createChainSource({
+    client: fakeClient(logs, 20), addresses: ADDRESSES, onAdapterCap: (a) => capped.push(a),
+  });
+  await src.fetchEvents(1, 20);
+
+  assert.equal(src.knownAdapters.size, MAX_TRACKED_ADAPTERS, 'the polled set is bounded');
+  assert.deepEqual(capped, [adapterAt(overflow)], 'the adapter that did not fit is reported once');
+});
+
+test('a resumed snapshot cannot reintroduce an unbounded adapter set', async () => {
+  const many = Array.from({ length: MAX_TRACKED_ADAPTERS + 25 }, (_, i) => '0x' + (i + 1).toString(16).padStart(40, '0'));
+  const src = createChainSource({ client: fakeClient([], 20), addresses: ADDRESSES, knownAdapters: many });
+  assert.equal(src.knownAdapters.size, MAX_TRACKED_ADAPTERS);
 });
 
 test('adapter resume seeding: SwapExecuted indexes even with no RebalanceExecuted in the current range', async () => {
@@ -146,6 +201,7 @@ test('adapter resume seeding: SwapExecuted indexes even with no RebalanceExecute
   const events = await src.fetchEvents(25, 35);
   assert.equal(events.length, 1);
   assert.equal(events[0].name, 'SwapExecuted');
+  assert.equal(events[0].emitter, ADAPTER);
 });
 
 test('resume seeding: VaultCore events index even with no VaultCreated in the current range', async () => {
