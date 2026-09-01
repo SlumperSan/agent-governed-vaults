@@ -29,7 +29,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Resolve from this module, not process.cwd(): apps/site deliberately has no package.json (apps/*
 // is a workspace glob), so the suite is always run from the repo root by `npm run test:backend`.
@@ -610,6 +610,142 @@ test('tables carry a caption and scoped headers', () => {
     for (const t of html.match(/<table[\s\S]*?<\/table>/gi) ?? []) {
       assert.ok(/<caption>/i.test(t), `${p}: a <table> is missing its <caption>`);
       assert.ok(/<th[^>]*\sscope="(?:col|row)"/i.test(t), `${p}: a <table> is missing scoped <th> cells`);
+    }
+  }
+});
+
+// ═══════════════ the claim surface OUTSIDE apps/site — added by the 2026-09-01 audit ═══════════════
+//
+// WHY THIS SECTION EXISTS. Everything above stops at the six marketing pages. The 2026-09-01 claims
+// audit found the same claims — one of them the *identical* claim this file already bans — alive
+// and false in the repository's own member- and agent-facing prose, which publishes on the same day
+// the site does. The rule that produced the gap is worth stating so it is not re-learned: a claims
+// test protects the FILES IT READS and nothing else. Where a claim travels, the check must travel.
+//
+// Scope is per-rule and narrow rather than "run BANNED over the whole repo": the engineering docs
+// legitimately say "audit", "safe" and "returns", and a blanket list over them would be neutered by
+// its first false positive — the exact failure mode this file's header warns about.
+
+/** Repository prose a non-developer or an integrating agent reads. Paths are repo-relative. */
+const REPO_PROSE = ['README.md', 'llms.txt', 'docs/AGENT-QUICKSTART.md'];
+const repoProse = new Map(REPO_PROSE.map((f) => [f, readFileSync(path.join(REPO, f), 'utf8')]));
+
+/**
+ * Mode F opens when a live proposal reaches its REVEAL phase, not when a proposal passes:
+ * `VaultCore.requestExit` queues on `Governance.hasPendingExecution`, which returns true from
+ * `p.commitDeadline` onward (`Governance.sol:622-633`). Every phrasing below puts the trigger at
+ * passage instead, which understates the window in which a member's exit can be trapped, and hides
+ * that a DEFEATED proposal still queued the exits requested while it was live.
+ *
+ * The site-page ban on one phrasing of this has existed since 2026-08-29 (correction A1 above). It
+ * did not stop README.md, llms.txt and docs/AGENT-QUICKSTART.md shipping the same claim in three
+ * other phrasings, because nothing read those files. Both halves now run over both surfaces.
+ */
+const MODE_F_MISSTATEMENTS = [
+  /\bpassed[-\s]but[-\s]pending\b/i,
+  /\bpassed[-\s]but[-\s]unexecuted\b/i,
+  /\bbetween a vote passing\b/i,
+  /\bvote passing and execut/i,
+  /\brebalance has passed but has not yet executed\b/i,
+];
+
+test('no surface places the Mode-F trigger at proposal passage instead of reveal', () => {
+  for (const [f, text] of repoProse) {
+    for (const re of MODE_F_MISSTATEMENTS) {
+      const hit = text.match(re);
+      assert.equal(
+        hit,
+        null,
+        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:626-628)`,
+      );
+    }
+  }
+  for (const p of PAGES) {
+    const prose = publishedProse(raw.get(p) ?? '');
+    for (const re of MODE_F_MISSTATEMENTS) {
+      const hit = prose.match(re);
+      assert.equal(hit, null, `${p}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage, not at the reveal phase`);
+    }
+  }
+});
+
+test('every surface that describes Mode F names the reveal phase as its trigger', () => {
+  // The negative check alone is satisfiable by deleting the sentence. This is the positive half:
+  // each of these files explains the exit modes, so each must say WHEN the window opens.
+  for (const [f, text] of repoProse) {
+    assert.ok(
+      /reveal phase/i.test(text),
+      `${f} describes forward settlement but never names the reveal phase as the trigger — state when the window opens, do not merely avoid stating when it does not`,
+    );
+  }
+});
+
+/**
+ * The open High must be NAMED wherever it is claimed, never left as an anonymous severity.
+ *
+ * At the launch configuration (`Deploy.s.sol` hardcodes `allowSubVaults = false`) exactly one High
+ * is reachable: **H-8**, the stake-blind `<5`-member quorum regime — partially fixed in code, with
+ * its regime-flip (attack (a)) mitigated only by a meaningful `minDepositUsdc`. H-5/H-6/H-7/H-9 are
+ * NOT open-but-unfixed at launch; they are unreachable, because each requires a funded child vault
+ * (AI-AUDIT-REPORT: "Dormant at launch — all require a funded child"). Their deferral is dormancy,
+ * not EIP-170 headroom: PR #90 reclaimed VaultCore to 4,095 B of margin on 2026-09-01.
+ *
+ * risks.html carried this claim anonymously ("A High-severity pre-audit finding remains open…")
+ * while index.html and faq.html named it in the same words two screens away. An unnamed severity is
+ * the one form of this sentence a reader cannot check, and it reads as a larger admission than the
+ * truth — so the check is that the class travels with the claim.
+ */
+const OPEN_HIGH_CLAIM = /remains open at the launch configuration/i;
+const OPEN_HIGH_CLASS = /stake-blind/i;
+
+test('the "open High at the launch configuration" claim always names the finding', () => {
+  /** @type {[string, string][]} */
+  const surfaces = [
+    ...PAGES.map((p) => /** @type {[string, string]} */ ([p, publishedProse(raw.get(p) ?? '')])),
+    ...REPO_PROSE.map((f) => /** @type {[string, string]} */ ([f, repoProse.get(f) ?? ''])),
+  ];
+  let seen = 0;
+  for (const [where, text] of surfaces) {
+    for (const s of sentencesOf(text)) {
+      if (!OPEN_HIGH_CLAIM.test(s)) continue;
+      seen++;
+      assert.ok(
+        OPEN_HIGH_CLASS.test(s),
+        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the stake-blind <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
+      );
+    }
+  }
+  assert.ok(seen >= 3, `expected the open-High claim on at least three surfaces, found ${seen} — if it was deleted rather than qualified, say so in the commit`);
+});
+
+/**
+ * Demo vault and operator names in the allocator app.
+ *
+ * `apps/web` had no claims coverage at all, which is how "AlphaSeek Index" survived the rename of
+ * "Stable Yield Micro" — the fixture that reached a legal review as a screenshot. A fixture name is
+ * product copy: it renders as an `<h1>`. The line this draws, stated so it can be applied
+ * consistently: a name may describe what a vault HOLDS or how it is BUILT ("cbBTC Micro",
+ * "Base Blue-Chip 5", "Momentum Majors" are strategy descriptors, not outcome claims); it may never
+ * describe or imply what it EARNS. Substring matching rather than word boundaries, because the
+ * failure case was a compound ("AlphaSeek") and a proper noun has no legitimate use for any of these.
+ */
+const NAME_OUTCOME_WORDS = [/alpha/i, /yield/i, /\bstable/i, /\bapy\b/i, /\bapr\b/i, /profit/i, /\breturn/i, /guarantee/i, /\bsafe/i, /outperform/i, /passive/i, /\bgains?\b/i];
+
+test('no demo vault or operator name implies an outcome', async () => {
+  const fixtures = await import(pathToFileURL(path.join(REPO, 'apps', 'web', 'src', 'fixtures.mjs')).href);
+  /** @type {string[]} */
+  const names = [
+    ...fixtures.VAULTS.flatMap((/** @type {any} */ v) => [v.name, v.operatorName].filter(Boolean)),
+    ...fixtures.LEADERBOARD.map((/** @type {any} */ r) => r.name).filter(Boolean),
+  ];
+  assert.ok(names.length >= 8, `expected the fixture set to carry at least eight names, found ${names.length}`);
+  for (const n of names) {
+    for (const re of NAME_OUTCOME_WORDS) {
+      assert.equal(
+        n.match(re),
+        null,
+        `apps/web/src/fixtures.mjs: the demo name ${JSON.stringify(n)} implies an outcome (${re}). A name may say what a vault holds, never what it earns`,
+      );
     }
   }
 });
