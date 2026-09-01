@@ -47,9 +47,28 @@ contract DirectPoolAdapter is IExecutionAdapter {
 
     /// @dev Non-reentrancy is a property of the `IExecutionAdapter` contract itself, not of any
     /// one caller: every implementation settles on a measured balance delta, and a nested call
-    /// measures the outer order's in-flight balance. Here re-entry can only shrink the outer
-    /// delta (fails closed on `Slippage`), but the sibling aggregation adapter is exploitable,
-    /// so the guard is stated once for the interface. Same shape as `VaultCore._lock`.
+    /// measures the outer order's in-flight balance. The sibling aggregation adapter is
+    /// exploitable that way, so the guard is stated once for the interface. Same shape as
+    /// `VaultCore._lock`.
+    ///
+    /// THIS adapter is not exploitable by re-entry, and the reason matters more than the
+    /// conclusion — a wrong reason here is an argument for deleting the guard. Two facts, and it
+    /// is the second that carries it:
+    ///   1. There is **no whole-balance sweep**. This adapter moves only its own measured delta,
+    ///      so a nested call cannot walk off with a sibling order's in-flight input — which is
+    ///      precisely what the aggregation adapter's `balanceOf(tokenIn)` sweep allowed.
+    ///   2. `pair.swap` is the **only** external call, and it is the counterparty's own contract.
+    ///      Re-entry therefore grants the pair no capability it does not already hold as
+    ///      counterparty: a hostile pair can inflict the same loss by simply minting less, and
+    ///      the outer order's own `minAmountOut` is what refuses it either way. An honest V2 pair
+    ///      also carries its own `lock` and only calls back when `data.length > 0`, and this
+    ///      adapter passes `""` at both call sites.
+    ///
+    /// Do NOT restate this as "re-entry can only shrink the outer delta, so it fails closed on
+    /// `Slippage`". That was the original wording and it is false: a shrink that stays inside the
+    /// caller's tolerance is **absorbed, not refused**. The guard is cheap and the interface
+    /// invariant is worth stating uniformly; that is the reason it is here, not a proof that
+    /// re-entry would otherwise steal from this adapter.
     modifier nonReentrant() {
         require(_lock == 1, Reentrancy());
         _lock = 2;
