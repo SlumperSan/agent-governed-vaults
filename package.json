@@ -18,6 +18,6 @@
     "ops-check": "node packages/oplog/src/ops-check.mjs"
   },
   "dependencies": {
-    "viem": "^2.21.0"
+    "viem": "2.55.19"
   }
 }
