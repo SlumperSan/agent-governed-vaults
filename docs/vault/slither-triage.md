@@ -27,8 +27,15 @@ widened run went 245 → 254 results with **no new detector class**.
 - **`reentrancy-*`** — sound for same-contract reentrancy, incomplete for cross-contract: a
   `VaultCore`'s public views are read as an oracle by its *parent* mid-mutation, and a per-contract
   mutex is definitionally no defence against a different contract reading it → **H-9**. Slither does
-  not model this either, so the row's reasoning and the analyser's blind spot coincide. Dormant at
-  launch under [[root-vaults-only]].
+  not model this either, so the row's reasoning and the analyser's blind spot coincide.
+  **Corrected again 2026-09-01:** "false positive" is disproved for this class twice over — #98
+  gave H-9 the executing test it had been filed without (a parent prices a mid-swap child and mints
+  **2,000e18 shares for 1,000 USDC**), and the sibling `reentrancy-balance` row hid an outright
+  theft at `AggregationRouterAdapter.executeSwap` (#101). "Dormant at launch" under
+  [[root-vaults-only]] remains true as a *deployment-config* mitigation — undone by the first
+  sub-vault — not as a reason the detector was wrong. **Status:** #101 is merged; **#98 is still
+  open, so H-9 is UNFIXED on `protocol/main`** — do not cite its guard or its coverage test as
+  present.
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
   `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
   FIXED; the omission is now closed).
