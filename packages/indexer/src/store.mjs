@@ -43,6 +43,8 @@ export function serializeState(state) {
     shares: mapEntries(state.shares, (book) => mapEntries(book, (b) => b.toString())),
     proposals: mapEntries(state.proposals, prop),
     activeProposal: mapEntries(state.activeProposal),
+    eventStats: mapEntries(state.eventStats),
+    adapters: [...state.adapters],
   };
 }
 
@@ -80,6 +82,10 @@ export function deserializeState(obj) {
     });
   }
   for (const [k, pid] of obj.activeProposal) s.activeProposal.set(k, pid);
+  // Both absent on a snapshot written before these fields existed — default to empty rather than
+  // throwing, so an older snapshot still resumes cleanly (only these two collections were added).
+  for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
+  for (const a of obj.adapters ?? []) s.adapters.add(a);
   return s;
 }
 
@@ -179,6 +185,7 @@ export function countState(state) {
     shareBooks: state.shares.size,
     holders,
     activeProposals: state.activeProposal.size,
+    adapters: state.adapters.size,
   };
 }
 
@@ -209,7 +216,7 @@ export function formatSnapshotReport(report) {
     const c = report.counts;
     lines.push(`snapshot ${report.path}: OK`);
     lines.push(`  cursor      lastBlock=${report.lastBlock} lastLogIndex=${report.lastLogIndex} → resumes from block ${report.resumeFrom}`);
-    lines.push(`  counts      vaults=${c.vaults} operators=${c.operators} proposals=${c.proposals} shareBooks=${c.shareBooks} holders=${c.holders} activeProposals=${c.activeProposals}`);
+    lines.push(`  counts      vaults=${c.vaults} operators=${c.operators} proposals=${c.proposals} shareBooks=${c.shareBooks} holders=${c.holders} activeProposals=${c.activeProposals} adapters=${c.adapters}`);
     lines.push(`  file        ${report.bytes} bytes, written ${report.mtime} (${report.ageSec}s ago)`);
   }
   if (report.backups.length === 0) {

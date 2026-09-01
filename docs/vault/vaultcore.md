@@ -100,7 +100,7 @@ VaultCore is the **only** contract meaningfully near the cap, though far less so
 > AUDIT-HANDOFF **1,182 B** is an earlier intermediate value (before M-11 returned bytes and M-2
 > spent them). The overload is present in the current source (`:358`), so ~283 B is the live figure.
 
-This is why **H-5, H-6, H-9 and the exit-side `minValueOut`** all remain unfixed — they land in
+This is why **H-5, H-6 and the exit-side `minValueOut`** remained unfixed (H-9 was in this list and is fixed in code as of 2026-09-01; PR #90 has since removed the size wall itself) — they land in
 VaultCore and several would not fit even alone. Any future VaultCore fix likely requires moving
 code out (see [[delegatecall-split-rejected]] for the rejected split).
 
