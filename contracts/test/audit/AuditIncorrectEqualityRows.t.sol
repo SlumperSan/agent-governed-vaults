@@ -436,7 +436,9 @@ contract AuditIncorrectEqualityRowsTest is Test {
         uint256 squatterCost = minDep - (usdc.balanceOf(bob) - sqBefore);
 
         assertEq(v.sharesOf(bob), 1, "squatter's whole locked position is 1 wei of shares");
-        assertEq(squatterCost, 10_000_001, "transient cost is one 1% exit fee on the minimum, not the minimum");
+        assertEq(
+            squatterCost, 10_000_001, "transient cost is one 1% exit fee on the minimum, not the minimum"
+        );
         assertLe(squatterCost, minDep / 100 + 1, "and it is bounded by exitFeeMaxBps of one deposit");
 
         // The incumbent tops up ONCE. `lastDepositTime` resets on every top-up (`:491`), so the
@@ -458,7 +460,11 @@ contract AuditIncorrectEqualityRowsTest is Test {
         v.requestExit(1);
         uint256 squatterTake = usdc.balanceOf(bob) - sqBefore2;
 
-        assertEq(squatterTake, incumbentLoss + squatterCost, "squatter takes the whole stranded fee, plus its own back");
+        assertEq(
+            squatterTake,
+            incumbentLoss + squatterCost,
+            "squatter takes the whole stranded fee, plus its own back"
+        );
         assertEq(squatterTake, 10_010_100_001, "10,010.100001 USDC captured on a 1-wei position");
         assertEq(v.totalShares(), 0, "and the vault closes clean");
         assertEq(v.navWad(), 0, "with no residue for the ts == 0 branch to hand away");
