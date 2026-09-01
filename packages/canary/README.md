@@ -36,6 +36,7 @@ its own `CANARY_STATE_PATH`.
 | `src/sinks.mjs` | console + optional webhook; a sink failure never propagates |
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
+| `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
 
 ## Design notes
 
@@ -51,8 +52,11 @@ reports DEGRADED — never a false OK.
 render as DETECTOR BROKEN and are re-asserted on a doubling backoff instead of being reported once.
 Report-once is right for a problem in the system; for a problem in the monitor it manufactures
 confidence, which is how the pre-pivot oracle signal stayed dead for a whole deployment after one
-startup line. Only three things set the flag: an oracle answering neither known ABI, an unreadable
-vault, and a signal that threw.
+startup line. Things that set the flag: an oracle answering neither known ABI, an unreadable vault, a
+signal that threw, and every branch of `feed-identity` that could not read the feed. That last group
+is the only one that damps — each is an `eth_call` coming back empty, so they carry
+`minConsecutive: 3` (one empty return is RPC noise, three consecutive is the feed), except on a first
+sighting, which reports at once because a monitor that has never succeeded must not look like silence.
 
 **One root cause, one page.** A tripped oracle breaker makes `navWad()` and `requestExit` revert too.
 Those two attribute their `StaleOracle` reverts to the oracle signal and go DEGRADED, so the operator
@@ -64,6 +68,6 @@ gets one alert instead of three.
 node --test packages/canary/test/*.test.mjs
 ```
 
-175 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+226 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

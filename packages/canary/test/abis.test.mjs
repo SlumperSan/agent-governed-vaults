@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
-  VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS,
+  VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
   VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   signatureOf,
 } from '../src/abis.mjs';
@@ -39,6 +39,12 @@ const oracleAbi = oracleBuilt ? JSON.parse(readFileSync(oracleAbiPath, 'utf8')).
 const feedAbiPath = join(OUT, 'IAggregatorV3.sol/IAggregatorV3.json');
 const feedBuilt = existsSync(feedAbiPath);
 const feedAbi = feedBuilt ? JSON.parse(readFileSync(feedAbiPath, 'utf8')).abi ?? [] : [];
+
+// `description()` is declared as its own interface inside ChainlinkOracle.sol, because the
+// constructor reaches it by raw staticcall rather than through IAggregatorV3.
+const descAbiPath = join(OUT, 'ChainlinkOracle.sol/IAggregatorV3Description.json');
+const descBuilt = existsSync(descAbiPath);
+const descAbi = descBuilt ? JSON.parse(readFileSync(descAbiPath, 'utf8')).abi ?? [] : [];
 
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
 const EXPECTED = {
@@ -81,7 +87,7 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS]) {
+  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS, ...CHAINLINK_FEED_IDENTITY_VIEWS]) {
     assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
   }
 });
@@ -203,4 +209,45 @@ test('the Chainlink feed tuple matches the compiled IAggregatorV3 — field ORDE
       `${sig} field NAMES drifted — startedAt and updatedAt are adjacent uint256s and are not interchangeable`,
     );
   }
+});
+
+/**
+ * The feed-identity table, split by what can actually be pinned.
+ *
+ * `decimals()` and `description()` are the HARM legs, and both are read by `ChainlinkOracle`'s own
+ * constructor — `decimals()` through `IAggregatorV3`, `description()` through the
+ * `IAggregatorV3Description` interface declared alongside it for the raw staticcall. Those two are
+ * cross-checked against the compiled contracts here for the same reason the ChainlinkOracle table
+ * is: a signal reading a selector the target does not implement goes blind, and this file is the
+ * only place that can notice at build time.
+ *
+ * `aggregator()` and `phaseId()` are NOT checkable this way and are not pretended otherwise: they
+ * belong to Chainlink's `EACAggregatorProxy`, which is not in this tree and is not ours to compile.
+ * Their runtime failure is covered instead — `signals/feed-identity.mjs` reports a feed answering
+ * neither as DETECTOR BROKEN, and test/feed-identity.test.mjs pins that.
+ */
+test('the feed-identity HARM legs exist on the compiled contracts the oracle itself reads them through', { skip: (!feedBuilt || !descBuilt) && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const declared = new Map(
+    [...feedAbi, ...descAbi].filter((i) => i.type === 'function').map((i) => [canonical(i), i]),
+  );
+  for (const name of ['decimals', 'description']) {
+    const frag = CHAINLINK_FEED_IDENTITY_VIEWS.find((f) => f.name === name);
+    const sig = signatureOf(frag);
+    const onChain = declared.get(sig);
+    assert.ok(onChain, `${sig} is not on IAggregatorV3/IAggregatorV3Description — the harm leg would read a reverting selector and go blind`);
+    assert.equal(onChain.stateMutability, 'view');
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted — feed-identity would mis-decode the value it compares against the cached scale`,
+    );
+  }
+});
+
+test('the feed-identity IDENTITY legs are the EACAggregatorProxy signatures, and are recorded as unpinnable', () => {
+  // Self-referential on purpose, and labelled as such: there is no compiled EACAggregatorProxy in
+  // this repo to check against. The assertion is here so a rename is at least deliberate.
+  assert.deepEqual(
+    CHAINLINK_FEED_IDENTITY_VIEWS.map(signatureOf).sort(),
+    ['aggregator()', 'decimals()', 'description()', 'phaseId()'],
+  );
 });

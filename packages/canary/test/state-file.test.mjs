@@ -29,6 +29,42 @@ test('write then load round-trips, and an absent file is a cold start not an err
   }
 });
 
+test('the empty state carries a feed-identity pin map, and a file written before it existed still loads', async () => {
+  assert.deepEqual(emptyCanaryState().feedIdentity, {});
+  const dir = await tmp();
+  const p = join(dir, 'canary-state.json');
+  try {
+    // The exact legacy shape: no `feedIdentity` key at all. It must be a cold pin store, not a
+    // crash — and not a reason to refuse the transition history that IS in the file.
+    await writeFile(p, JSON.stringify(STATE(42, { 'nav-backing|0xabc': { status: 'alert', since: 3 } })), 'utf8');
+    const back = await loadCanaryState(p);
+    assert.equal(back.feedIdentity, undefined, 'absent, and the runner defaults it');
+    assert.equal(back.transitions['nav-backing|0xabc'].status, 'alert');
+    const r = await verifyCanaryState(p);
+    assert.equal(r.ok, true);
+    assert.equal(r.feedsPinned, 0);
+    assert.match(formatCanaryStateReport(r), /feed pins {3}0 aggregator identities remembered/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('verify counts the remembered aggregator identities, so "never pinned" is visible after an incident', async () => {
+  const dir = await tmp();
+  const p = join(dir, 'canary-state.json');
+  try {
+    await createCanaryStateWriter({ path: p, backups: 0 }).save({
+      ...STATE(7, {}),
+      feedIdentity: { 'feed-identity|0xaaa|0xbbb': { feed: '0xfeed', aggregator: '0xagg', phaseId: '4' } },
+    });
+    const r = await verifyCanaryState(p);
+    assert.equal(r.feedsPinned, 1);
+    assert.match(formatCanaryStateReport(r), /feed pins {3}1 aggregator identity remembered/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('summariseTransitions counts by status and lists what is not OK', () => {
   const s = summariseTransitions({
     a: { status: 'ok', since: 1 },
