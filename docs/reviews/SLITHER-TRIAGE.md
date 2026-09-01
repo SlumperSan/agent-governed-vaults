@@ -42,7 +42,7 @@ reference for what is signal vs. noise.
 | `unused-return` | **By design.** (a) The `boundedCall` results are intentionally best-effort (H-1): the `ok` flag is checked where liveness needs it and the rest ignored — a failing bookkeeping module must not block an exit. (b) `IExecutionAdapter.executeSwap`'s return is ignored because output is measured from the vault's OWN balance delta (EX-3), never the adapter's word. (c) `getReserves`/`latestRoundData` ignore fields the caller doesn't need (timestamp / round metadata). |
 | `incorrect-equality` | **Safe.** All flagged `==` are on share counts / status enums / `totalShares == 0` first-deposit and sole-holder checks — exact-value comparisons, not balance-of equality that a donation could grief (NAV never reads `balanceOf`, EE-1). **+1 in Sprint 10** (newly visible, `src/lib/Checkpoints.sol#23`): `h.arr[len-1].ts == uint64(block.timestamp)` in `push`. The strict equality is the point of the line — it detects "a checkpoint already exists for this exact second" and overwrites it instead of appending a duplicate (the standard OZ `Checkpoints` idiom). A range or `>=` comparison here would corrupt history, not harden it. |
 | `uninitialized-local` | **Safe.** `k`, `perfFee`, `childValTotalWad` are accumulators intentionally relying on Solidity's zero-default before being summed. |
-| `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), so the omission is closed. |
+| `timestamp` (×30) | **Superseded — triaged row by row on 2026-09-01; see "[`timestamp`, thirty rows](#timestamp-thirty-rows-triaged-2026-09-01)" below.** The blanket K-4 acceptance beneath was right that the protocol uses `block.timestamp` as its only clock (C-2) and that governance windows sit far outside miner tolerance, and wrong to stop there: it never checked whether the two comparisons on either side of a deadline agree about the boundary second, and it never separated the rows that contain a `block.timestamp` comparison from the 13 that contain no `block.timestamp` at all. The per-row triage finds **1 REAL (Low), 16 by-design, 13 analyser taint**. Prior text, retained: **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), so the omission is closed.
 | `calls-loop`, `costly-loop`, `cache-array-length`, `cyclomatic-complexity` | **Accepted for the basket loop** (capped at 10). **AI-audit correction (§4.5):** the "~237k gas" bound was measured on a 1-child/1-grandchild fixture (6 `priceWad` calls); the caps actually permit ~730 calls at the `MAX_CHILDREN` fan-out, so `navWad` is bounded in *shape* but unbounded in *cost* (**M-5**, ~12M gas at 8×8 vaults). M-5's fan-out requires sub-vaults, which are **disabled at launch** (root vaults only, C-1 gate), so at launch `navWad` loops only over the basket (≤10) and the original bound holds; M-5 is deferred with the sub-vault feature. The `NavGas.t.sol` sub-vault assertion is a fixture bound, not a proof of the worst case. |
 | `low-level-calls` | **By design.** `AggregationRouterAdapter.executeSwap` — the pinned-router call behind the selector allowlist + measured-delta minOut (EX-3). **+3 in Sprint 10** (newly visible): `SafeTransferLib.safeTransfer` / `safeTransferFrom` / `safeApprove`, each a `token.call(abi.encodeWithSelector(...))`. The low-level form is the whole point — it tolerates non-standard ERC-20s that return nothing or malformed data instead of reverting on them (H-2), which a high-level call cannot do. Every one checks `ok` and validates the return payload. Reviewed in SPRINT1; before Sprint 10 the analyser had never actually seen them (banner above), and now that it has, it reports exactly these three by-design sites and nothing more. |
 | `missing-inheritance` | **Cosmetic.** Interface-shaped contracts that don't formally `is` the interface; ABIs match. Sprint 7 added one instance: `VaultDeployer` vs `IVaultDeployer` (declared inside `VaultFactory.sol`). Same disposition — the single `deploy(bytes) returns (address)` selector matches, and `Eip170::test_factoryPinsItsDeployerImmutably` plus every factory-path test exercise the call across the interface. |
@@ -154,6 +154,174 @@ went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-ev
 adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
 guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B.
 `VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
+
+## `timestamp`, thirty rows (triaged 2026-09-01)
+
+Slither's `timestamp` detector is "dangerous comparisons using `block.timestamp`". It fires per
+FUNCTION and then lists every comparison in that function, so a row's "Dangerous comparisons" list
+is not the same thing as a list of timestamp comparisons. The count above (`timestamp` ×30) is
+reproduced exactly by `slither . --filter-paths "^lib/|^test/|^script/" --detect timestamp` at
+`protocol/main` @ `29b1b470`.
+
+**Thirteen of the thirty rows contain no `block.timestamp` at all.** That is not an assertion — it
+was measured, by ablation on a throwaway copy of `contracts/` outside the working tree:
+
+| tree | rows |
+| --- | --- |
+| `protocol/main` as-is | **30** |
+| `VaultCore._exitFeeBps`'s `block.timestamp - lastDepositTime[member]` (`:956`) replaced by a constant | **20** |
+| …and the three `block.timestamp` WRITES into `proposals` / `standingDefaultOf` (`Governance.sol:283, 438, 553`) also replaced | **17** |
+
+Slither's `is_dependent` taint is per STATE VARIABLE, not per struct field or per expression. The
+tenure-decayed exit fee flows into `idleUsdc`/`assetBalance` in `_settleExit` and thence into
+`totalShares`/`sharesOf` via `_mintShares`, which is why ten `VaultCore` rows about share and
+balance arithmetic are reported as timestamp rows. The `proposals` struct is written from
+`block.timestamp`, so every comparison that reads *anything* out of it inherits the taint — which
+is how `_isSettled`, a `pure` function comparing a `Status` enum, ends up in a timestamp report.
+
+### What the boundary analysis found
+
+Every deadline in the protocol that has two or more comparisons against it **partitions the
+timeline exactly**: there is no second in which both adjacent phases are open and none in which
+neither is. Nowhere is a `<=` on one side of a deadline matched by a `<` on the other.
+
+| deadline | opens / stays open | closes / next phase | at exactly `t == D` |
+| --- | --- | --- | --- |
+| `p.commitDeadline` | `commitVote` `<` (`:348`) | `revealVote`/`revealDelegated`/`applyStandingDefault` `>=` (`:365, :395, :457`); `hasPendingExecution` `>=` (`:627`) | commit closed, reveal open, Mode F on |
+| `p.revealDeadline` | reveal family `<` (`:366, :396, :458`) | `finalize` `>=` (`:508`) | reveal closed, finalize open |
+| `p.expiresAt` | `execute` `<=` (`:571`); `hasPendingExecution` `<=` (`:630`) | `markExpired` `>` (`:599`); `_refreshStatus` `>` (`:606`) | execute open, Mode F on, expiry closed |
+| `p.createdAt` | `d.setAt < createdAt` strict (`:470`) | snapshots read `createdAt - 1` (`:287, :288, :304, :338`) | same-second default rejected, same-second stake weightless — same strictness on both sides |
+| `order.deadline` | `<=` in `AggregationRouterAdapter:67` | `<=` in `DirectPoolAdapter:88` | both adapters agree; the deadline second is inside the window |
+
+The **Mode I / Mode F seam** is the one that matters financially, and it is clean on both sides:
+`hasPendingExecution` at `<= p.expiresAt` is the same comparison `execute` uses, so at
+`t == expiresAt` execution is open and `settleQueuedExit` reverts `ExecutionStillPending`, and at
+`t == expiresAt + 1` execution reverts `ExecutionWindowOver` and the queued exit settles. That
+complementarity is what makes EE-10's no-indefinite-lock claim true, and it now has a test.
+
+Staleness math cannot underflow or wrap. `ChainlinkOracle:280` rejects a future `updatedAt` before
+`:283` subtracts, and `:283` saturates anyway; `:316` rejects a future `startedAt` before `:318`
+subtracts; `VaultCore.lastDepositTime` has exactly one writer (`:456`, `= block.timestamp`) so
+`:956` can never go negative. Every governance deadline addend is a `uint32` bounded by
+`_validateConfig`, so no `uint64` sum overflows.
+
+Sequencer/miner skew of 1–2 seconds changes no financial outcome: the smallest window in any
+shipped config is one hour, and the only per-second-continuous quantity is the exit fee, which
+moves by `exitFeeMaxBps / exitFeeDecayPeriod` per second — 0.00004 bps/s at the shipped 100 bps
+over 30 days, i.e. it floors to zero for any skew under half a day.
+
+### One row is real
+
+**Row 6 — `Governance.applyStandingDefault`, `Governance.sol:469-471`.** See T-1 below. Slither
+pointed at the right line.
+
+### The rows
+
+Legend: **REAL** = a defect. **DESIGN** = a genuine `block.timestamp` comparison, correct by a
+named invariant, with the pinning test. **TAINT** = the function contains no `block.timestamp`;
+the row is Slither's state-variable taint and the listed comparisons are ordinary arithmetic.
+
+| # | Site | What the comparison decides | Grade | Invariant / pinning test |
+| --- | --- | --- | --- | --- |
+| 1 | `Governance.propose` `:281` | `block.timestamp >= lastAt + cfg.proposalCooldown` — whether this proposer may open another proposal | **DESIGN** | M-7 rate limit, bounded to `[1h, 30d]` by `_validateConfig`. Boundary now pinned by `AuditGovernanceDeadlineBoundaries::test_proposalCooldown_boundary`. Honest residual already recorded at `Governance.sol:255-257`: `lastProposalAt` is per-PROPOSER, so a second address sidesteps it. That is not a timestamp defect. |
+| 2 | `ChainlinkOracle.priceWad` `:280, :283, :284` | whether a feed round is fresh: reject future stamps, then `updatedAt >= block.timestamp - heartbeat` | **DESIGN** | Fail-closed staleness (C-6). Exactly-at-heartbeat is fresh; `:283` saturates so a heartbeat above the clock cannot underflow-panic out of `StaleOracle`. `AuditTimestampBoundaries::test_heartbeat_partitionsExactly`, plus existing `ChainlinkOracle::test_freshAtHeartbeatBoundary` / `::test_failClosed_stale`. |
+| 3 | `ChainlinkOracle._requireSequencerUp` `:316, :318` | whether the L2 sequencer has been up longer than `GRACE_PERIOD` | **DESIGN** | Conservative direction: exactly-at-grace reads DOWN, so the window must fully elapse. `:316` guards `:318` against underflow. Already the best-covered family in the suite — `ChainlinkOracleSequencerFork` exercises grace−1, grace and grace+1. |
+| 4 | `Governance.revealVote` `:365-366` | reveal-phase membership `[commitDeadline, revealDeadline)` | **DESIGN** | Exact complement of `commitVote` `:348` and `finalize` `:508`. `AuditGovernanceDeadlineBoundaries::test_commitDeadline_partitionsExactly` and `::test_revealDeadline_partitionsExactly`. |
+| 5 | `Governance.markExpired` `:599` | `block.timestamp > p.expiresAt` — whether a passed proposal may be marked Expired | **DESIGN** | The strict `>` is the exact complement of `execute`'s `<=` (`:571`). `AuditGovernanceDeadlineBoundaries::test_expiresAt_partitionsExactly_executeVsMarkExpired`. |
+| 6 | `Governance.applyStandingDefault` `:457-458` (phase) and **`:470` (TTL)** | the phase guard is fine; **the TTL guard `block.timestamp <= d.setAt + DEFAULT_TTL` is evaluated during the REVEAL phase, so a standing default's usable life is `DEFAULT_TTL - cfg.commitDuration`, not `DEFAULT_TTL`** | **REAL (Low)** | See T-1 below. Failing tests exist and are deliberately NOT committed. |
+| 7 | `Governance._accrueDelegate` `:422-425` | concentration cap, `accrued * BPS <= capBps * p.snapshotTotal` | **TAINT** | No `block.timestamp` in the function; it reads `p.snapshotTotal` out of the tainted `proposals`. Dropped in ablation 2. VO-5. |
+| 8 | `VaultCore._mintShares` `:445, :446, :448` | `ts == 0` first-deposit, `minted > 0`, `sharesOf[member] == 0` new-holder | **TAINT** | The function's only `block.timestamp` (`:456`) is a WRITE to `lastDepositTime`, not a comparison. Dropped in ablation 1. |
+| 9 | `Governance.commitVote` `:348` | `block.timestamp < p.commitDeadline` — commit-phase membership | **DESIGN** | The strict `<` is the exact complement of the reveal family's `>=`. `::test_commitDeadline_partitionsExactly`. |
+| 10 | `VaultCore._settleExit` (16 comparisons, `:566`–`:727`) | pro-rata exit arithmetic, shortfall dust, performance fee | **TAINT** | Reaches the clock only through `_exitFeeBps`. Dropped in ablation 1. The exit-fee *value* is a function of time; none of the sixteen listed comparisons is. |
+| 11 | `Governance.setDelegate` `:494` | `_isSettled(proposals[activePid].status)` — no delegation changes mid-proposal | **TAINT** | Reaches the clock only through `_refreshStatus` (`:606`). Dropped in ablation 2. |
+| 12 | `VaultCore._exitFeeBps` `:958` | `tenure >= period` — whether the tenure-decayed exit fee has fully decayed | **DESIGN** | **The only guard in the protocol with no boundary semantics at all — measured.** Flipping `>=` to `>` is observationally equivalent: at `tenure == period` the `>` branch falls through to `maxBps * (period - period) / period`, which is also 0, and at `tenure == period + 1` the `>` branch returns 0 before the subtraction can underflow. The mutation SURVIVES the whole suite. The `>=` is an underflow guard on `period - tenure`, not a deadline. The decay is likewise continuous into the boundary — the linear term floors to 0 long before `period` (measured: 3 bps at `period - 1 day`, 0 at `period - 1`) — so no 1-second skew has a discontinuity to straddle. `AuditTimestampBoundaries::test_exitFeeDecay_boundaryIsContinuous` pins the decay curve (it catches a mutation of the formula) rather than an operator choice, and is labelled as such. |
+| 13 | `AggregationRouterAdapter.executeSwap` `:67` | `block.timestamp <= order.deadline` — order freshness | **DESIGN** | The deadline second is inside the valid window, identical to `DirectPoolAdapter:88`. `AuditTimestampBoundaries::test_adapterOrderDeadline_partitionsExactly`. |
+| 14 | `Governance.revealDelegated` `:395-396` | reveal-phase membership for the delegation crank | **DESIGN** | The same guard as row 4, character for character. Same tests. |
+| 15 | `VaultCore.convertToAssets` `:1035` | `ts == 0` | **TAINT** | Indicative-only preview (C-1, not ERC-4626). Dropped in ablation 1. |
+| 16 | `VaultCore.navPerShareWad` `:342` | `ts == 0` | **TAINT** | Dropped in ablation 1. |
+| 17 | `Governance._isSettled` `:613` | `s == Defeated \|\| s == Executed \|\| s == Expired` | **TAINT** | A `pure` function over an enum — the clearest single proof that the detector is reporting argument taint rather than logic. Dropped in ablation 2. |
+| 18 | `VaultCore.executeRebalance` `:851-855, :859, :863` | slippage floor and balance sufficiency | **TAINT** | Dropped in ablation 1 (`idleUsdc`/`assetBalance` carry the fee taint). The EX-3 measured-delta reasoning is unrelated to the clock. |
+| 19 | `VaultCore._checkCreatorGate` `:557-560` | creator 5% minimum stake (CM-1/CM-2) | **TAINT** | Dropped in ablation 1. |
+| 20 | `Checkpoints.push` `:23` | `h.arr[len-1].ts == uint64(block.timestamp)` — overwrite a same-second checkpoint instead of appending | **DESIGN** | The standard OZ idiom; the strict equality is the point of the line. It pairs with `getAt`'s inclusive `<=` to make the `createdAt - 1` snapshot convention (VO-9) exact. `AuditTimestampBoundaries::test_checkpointsSameSecondOverwriteIsLastWriteWins`. |
+| 21 | `VaultCore.requestExit` `:509` | `sharesOf[msg.sender] >= shares` | **TAINT** | Reaches the clock only via `_snapshot` → `Checkpoints.push`. Dropped in ablation 1. The Mode I / Mode F choice at `:511` is a `hasPendingExecution` call, not a comparison. |
+| 22 | `VaultCore.convertToShares` `:1028` | `ts == 0` | **TAINT** | Dropped in ablation 1. |
+| 23 | `VaultCore._deposit` `:375, :386, :389` | capacity cap, deposit slippage, one-pending-deposit-at-a-time | **TAINT** | The function's `block.timestamp` (`:390`) is a WRITE computing `availableAt`; none of the three listed comparisons touches it. Survives both ablations because it carries its own seed. |
+| 24 | `DirectPoolAdapter.executeSwap` `:88` | `block.timestamp <= order.deadline` | **DESIGN** | Identical to row 13; the two adapters agreeing on the boundary is itself the property worth pinning. Same test. |
+| 25 | `VaultCore.allocateToChild` `:746` | `idleUsdc >= amountUsdc` | **TAINT** | Dropped in ablation 1. |
+| 26 | `Governance._refreshStatus` `:606` | `block.timestamp > p.expiresAt` — lazy transition Passed → Expired | **DESIGN** | The same strict `>` as `markExpired`. Crucially `hasPendingExecution` does NOT depend on this crank having run — it re-derives expiry from the clock — so a stale `Passed` status never traps an exit. Same test as row 5. |
+| 27 | `Governance.finalize` `:508` | `block.timestamp >= p.revealDeadline` — the tally may begin | **DESIGN** | Exact complement of the reveal family's `<`. `::test_revealDeadline_partitionsExactly`. |
+| 28 | `Governance.hasPendingExecution` `:627, :630` | **the Mode I / Mode F exit seam** — `>= commitDeadline` while Active, `<= expiresAt` while Passed | **DESIGN** | The `<=` matches `execute`'s `<=` exactly, which is what makes EE-10 true. The `>= commitDeadline` start is VO-8: the outcome begins leaking on-chain at reveal, so exits after that must be forward-priced, and Mode F is deliberately OFF for the whole commit phase — the C-5 note at `Governance.sol:312-330` documents that seam. `::test_expiresAt_partitionsExactly_executeVsMarkExpired` and `::test_commitDeadline_partitionsExactly`. |
+| 29 | `Governance.execute` `:570, :571` | timelock elapsed, and execution window not yet over | **DESIGN** | `>= executableAt` and `<= expiresAt`. `::test_executableAt_boundary` and `::test_expiresAt_partitionsExactly_executeVsMarkExpired`. |
+| 30 | `VaultCore.activate` `:403` | `block.timestamp >= p.availableAt` — the 4h observation window has elapsed | **DESIGN** | One-sided by design; there is no upper deadline (see the residual below). `AuditTimestampBoundaries::test_observationWindow_partitionsExactly` adds the missing `availableAt + 1` case to the existing −1 / exact pair. |
+
+Tally: **1 REAL, 16 DESIGN, 13 TAINT.**
+
+### T-1 — `applyStandingDefault`'s TTL is measured at apply time (REAL, Low)
+
+```solidity
+// Governance.sol:469-471
+require(
+    d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_TTL, DefaultUnavailable()
+);
+```
+
+`applyStandingDefault` is callable only during the reveal phase (`:457-458`), i.e. no earlier than
+`p.createdAt + cfg.commitDuration`. The TTL is therefore never evaluated at proposal creation, and
+the **usable** life of a standing default is `DEFAULT_TTL - cfg.commitDuration`, not `DEFAULT_TTL`.
+
+`_validateConfig` bounds `cfg.commitDuration` to `[1 hours, COMMIT_HARD_CAP]` with
+`COMMIT_HARD_CAP = 30 days`, and **never relates it to `DEFAULT_TTL = 72 hours`**. So a vault
+registered with `commitDuration >= 72 hours` — legal, silent, no event, chosen by the creator at
+`registerVault` and changeable later by RuleChange (`configOf[p.vault] = newCfg`, `:577-580`) — has
+every standing default provably expired before its reveal window opens. VO-3 is dead for that
+vault, and the validator whose stated purpose is to stop a config disabling its own defences (its
+own M-6 comment, `:238-247`) does not object.
+
+Demonstrated by a three-test pair, RUN and deliberately NOT committed — a red test never lands, so
+the file is carried in the PR body and in the Ops2 findings file instead:
+
+```
+[PASS] test_T1_control_shortCommitPhase_defaultApplies()                                      commitDuration 6h
+[FAIL: DefaultUnavailable()] test_T1_exploit_commitPhaseLongerThanTtlKillsStandingDefaults()   commitDuration 4 days
+[FAIL: DefaultUnavailable()] test_T1b_effectiveTtlIsShortenedByTheCommitPhase()                commitDuration 1h (shipped)
+```
+
+The control is the discriminator: the identical sequence succeeds at 6 hours and reverts at 4 days.
+
+**Severity Low, argued rather than asserted.** Standing defaults count toward the tally and never
+toward quorum (VO-2/K-3) and are Rebalance-only (VO-4), so suppressing them can only move
+`forWeight > againstWeight` — no funds are at risk directly. The consequence is that pre-declared
+AGAINST weight can silently fail to reach the tally, letting a proposal pass on a smaller live FOR
+vote. It is bounded by the member's own diligence, since VO-3's design is that defaults expire and
+are refreshed. What is nowhere stated — docs, NatSpec or test — is that the window is
+`72h - commitDuration`, and that it is zero at `commitDuration >= 72h`. **Not reachable at launch:**
+`base-mainnet.json` and `base-sepolia.json` both ship `commitDuration: 3600`, so only the shortened
+window (T-1b) applies today, not the total kill.
+
+**Fix shape (deliberately not applied on the audit branch).** Either is sufficient:
+
+1. `_validateConfig`: `require(cfg.commitDuration < DEFAULT_TTL, BadGovConfig());` — makes the dead
+   configuration unrepresentable. It narrows an existing legal range; no registered vault is above
+   72h, so nothing in flight breaks.
+2. `:470`: compare against the proposal rather than against the clock —
+   `p.createdAt <= d.setAt + DEFAULT_TTL`. This states the semantics the surrounding comment already
+   claims ("the default must be genuinely STANDING — set before the proposal existed"), keeps the
+   `d.setAt < p.createdAt` lower bound intact, and additionally removes a crank-order dependence:
+   today, whether a default counts can depend on how promptly a permissionless cranker calls
+   `applyStandingDefault` within the reveal window.
+
+### Residual found but not changed (SWARM §4)
+
+**`activate` has no upper deadline, and `cancelPending` has none at all.** From `availableAt`
+onward both are open indefinitely, so a pending depositor chooses the second at which they mint —
+the entry-side sibling of **M-9** (settlement timing as a free option, `AI-AUDIT-REPORT.md`), which
+is recorded only for the exit side. Its value is bounded by oracle accuracy rather than by the
+clock, since minting at a correct NAV never dilutes, so it is worth something only while the feed
+lags; and `activate` being permissionless means a keeper can end the option at any time. The
+unbounded `cancelPending` is a deliberate, documented liveness guarantee (`ARCHITECTURE.md:255`,
+"pending capital is never frozen"), so this is a note on an accepted design rather than a proposed
+change. Recorded because `ARCHITECTURE.md:98-99` states the forward-pricing rationale in one
+direction only.
 
 ## Running it
 
