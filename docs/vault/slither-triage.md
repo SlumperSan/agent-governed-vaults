@@ -41,11 +41,43 @@ module addresses; a zero `governance` makes `_pendingExecution` return `false` p
 masking a mis-wired vault as "always Mode I." The canonical factory always wires real modules, so this
 bites only a hand-rolled deployment.
 
+## `incorrect-equality` x13 — triaged per row, 2026-09-01
+
+The one-line "Safe" that used to cover this detector reached the right verdict on the wrong
+evidence: it cited "NAV never reads `balanceOf`, EE-1" as though that argument covered all thirteen
+rows, when only four of them (`ts == 0`) are about NAV at all — and said nothing about the three
+whose invariant is the share-accounting identity, nor about the one (`Governance._isSettled`) whose
+real risk is a permanent-freeze DoS rather than a donation. Same shape as the `reentrancy-balance`
+line #101 disproved, so every row now carries its own argument.
+
+**Tally: REAL 0 · BENIGN-BY-DESIGN 10 · STYLE 3.** Nothing needs a fix. Per-row table in
+[SLITHER-TRIAGE.md](../reviews/SLITHER-TRIAGE.md#incorrect-equality-thirteen-rows-triaged-2026-09-01).
+
+The three arguments that were load-bearing enough to execute now do, in
+`contracts/test/audit/AuditIncorrectEqualityRows.t.sol`, each verified against the mutation that
+would make its row real:
+
+- **`ts == 0`** (`_mintShares`, `navPerShareWad`, both `convertTo*`) — `totalShares == 0` implies
+  `navWad() == 0`, because the last exiter is by construction the sole holder and their pro-rata
+  legs collapse to identities; and donation cannot move NAV (EE-1 checked for these rows, not
+  cited). Mutating `navWad` to read `balanceOf` turns it red.
+- **`Checkpoints.push`'s same-second overwrite** — still the OZ idiom, and it cannot backfill a
+  vote because governance reads `createdAt - 1`. Pinned at the **Governance** level, not as a
+  `Checkpoints` unit test: mutating `p.createdAt - 1` to `p.createdAt` in `_boundedWeight` buys a
+  same-second depositor 9x weight, and a unit test on `push` would not notice.
+- **`_isSettled`** — every non-settled `Status` has a permissionless, external-call-free exit
+  (`finalize` makes no external call; `markExpired` drains `Passed`), so the freeze DoS documented
+  at `Governance.sol:57-67` cannot be reached through this equality.
+
+Out of scope but recorded: EE-8's squatter economics are a `minDepositUsdc` **launch-parameter**
+question — "bounded at 1%" is true per-exit, but the squatter's cost is one minimum deposit while
+the prize is up to 1% of a recently-topped-up whale's whole exit.
+
 ## Rows checked and found correct
 
-`unused-return`, `incorrect-equality` (including the load-bearing same-second `Checkpoints.push`
-overwrite), `uninitialized-local`, `low-level-calls`, `assembly` (all six sites reviewed opcode by
-opcode), `too-many-digits`, `missing-inheritance`. The Sprint-10 anchor fix is genuinely good work.
+`unused-return`, `uninitialized-local`, `low-level-calls`, `assembly` (all six sites reviewed opcode
+by opcode), `too-many-digits`, `missing-inheritance`. The Sprint-10 anchor fix is genuinely good
+work.
 
 ## Links
 
