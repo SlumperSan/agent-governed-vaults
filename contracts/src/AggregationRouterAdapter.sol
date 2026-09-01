@@ -16,7 +16,22 @@ interface IERC20Balance {
 ///  - routeData's selector must be on the construction-time allowlist (EX-1).
 ///  - minAmountOut and deadline are enforced HERE on measured balance deltas — never trusted
 ///    from router return values or calldata-embedded slippage params (EX-3).
-///  - Approvals are granted per-swap and revoked after; leftovers swept back to the caller.
+///  - Approvals are granted per-swap and revoked after; THIS ORDER'S OWN unspent input is
+///    refunded to the caller afterwards — never the adapter's whole `tokenIn` balance.
+///
+/// The adapter is stateless and is designed to hold nothing of the protocol's between calls.
+/// Anyone may nonetheless push tokens at it. Two consequences, both deliberate:
+///
+///  - A `tokenIn` donation STAYS STRANDED here. It is excluded from every refund by the
+///    balance-delta measurement in `executeSwap`, and there is no rescue function: adding one
+///    would be a new external surface on a contract many vaults share, guarding value that is
+///    never the protocol's. Donating to this address is burning.
+///  - A `tokenOut` donation landing DURING the route is measured inside `outBefore..balanceOf`
+///    and is therefore over-delivered to the caller. That is not a defect and is not "fixed"
+///    here: the caller (`VaultCore.executeRebalance`) credits its own measured `tokenOut`
+///    delta, so the surplus becomes vault assets, and its `received >= o.minAmountOut` check
+///    can only be helped by a larger delta. A donation before the call is excluded by
+///    `outBefore` outright.
 ///
 /// Venue-agnostic posture (C-2): this contract is one adapter behind IExecutionAdapter —
 /// other chains/venues implement the same interface; VaultCore knows only the interface.
@@ -40,11 +55,18 @@ contract AggregationRouterAdapter is IExecutionAdapter {
     uint256 private _lock = 1;
 
     /// @dev The adapter settles on MEASURED balance deltas while holding an order's funds
-    /// transiently, so a nested `executeSwap` measures the outer order's in-flight balance:
-    /// the `leftover` sweep below returns the adapter's WHOLE `tokenIn` balance to its own
-    /// `msg.sender`, and `safeApprove(router, 0)` revokes the outer call's approval. Reachable
-    /// with an HONEST pinned router and a hostile counterparty inside the route. Same shape as
-    /// `VaultCore._lock`.
+    /// transiently, so a nested `executeSwap` measures the outer order's in-flight balance.
+    /// It once paid for that directly: the refund below used to be `balanceOf(tokenIn)` — the
+    /// adapter's WHOLE balance — so a nested call handed the outer order's unspent input to
+    /// its own `msg.sender`. Reachable with an HONEST pinned router and a hostile counterparty
+    /// inside the route. Same shape as `VaultCore._lock`.
+    ///
+    /// KEEP THIS GUARD even though the refund is now scoped to the order's own delta and that
+    /// theft is therefore impossible rather than merely blocked. It still buys two things the
+    /// scoping does not: a nested call's `safeApprove(router, 0)` would otherwise revoke the
+    /// OUTER call's approval mid-route, and `outBefore`/`inBefore` remain balance snapshots
+    /// spanning an external call — the property Slither's `reentrancy-balance` names, and the
+    /// one the interface promises every other integrator. Defence in depth, different attacker.
     modifier nonReentrant() {
         require(_lock == 1, Reentrancy());
         _lock = 2;
@@ -71,6 +93,12 @@ contract AggregationRouterAdapter is IExecutionAdapter {
             order.routeData.length >= 4 && allowedSelector[bytes4(order.routeData[0:4])], SelectorNotAllowed()
         );
 
+        // Read BEFORE the pull, so the refund below tracks what actually ARRIVED for this order
+        // rather than what the order claimed: on a fee-on-transfer `tokenIn`, snapshotting after
+        // the pull would refund `amountIn` worth of a balance that only grew by `amountIn - fee`,
+        // which is the whole-balance sweep again in a smaller costume.
+        uint256 inBefore = IERC20Balance(order.tokenIn).balanceOf(address(this));
+
         order.tokenIn.safeTransferFrom(msg.sender, address(this), order.amountIn);
         order.tokenIn.safeApprove(router, order.amountIn);
 
@@ -84,12 +112,38 @@ contract AggregationRouterAdapter is IExecutionAdapter {
         // the measured delta, not a stale read — and the mutex above is what makes it sound.
         require(amountOut >= order.minAmountOut, Slippage());
 
+        // Refund THIS order's own unspent input, measured as the adapter's `tokenIn` balance
+        // delta ACROSS THE ROUTE — never `balanceOf(tokenIn)`, which was the whole balance.
+        // Same shape, and the same reason, as `VaultCore.sol:880-888` (S6 Finding 3 / E3):
+        // `spent = (inBefore + amountIn) - inAfter`, `refund = amountIn - spent`, which reduces
+        // to `inAfter - inBefore`. TWO clauses, closing TWO different attacks — neither is
+        // redundant with the other:
+        //
+        //  1. `inAfter - inBefore` excludes `tokenIn` that was ALREADY sitting here. Under the
+        //     old sweep a donation of N units was handed to the next caller on top of its own
+        //     refund; `VaultCore.executeRebalance` then computed `spent = inBefore - inAfter`
+        //     over ITS balances and UNDERFLOWED — `Panic(0x11)` — whenever N exceeded what the
+        //     route actually pulled. Cost to the griefer: gas, repeatable, and permanent, since
+        //     `VaultCore.isAllowedAdapter` is constructor-only. The same clause is what makes
+        //     the nested cross-order theft the mutex above forbids IMPOSSIBLE rather than
+        //     merely unreachable: there is no longer a sum for a nested call to walk off with.
+        //  2. The `> order.amountIn` cap. A counterparty inside the route can PUSH `tokenIn`
+        //     back at the adapter, so the delta can exceed what this order brought in; refunded
+        //     unclamped it would underflow the caller's `spent` exactly as (1) did. Clamped,
+        //     the caller's `spent = amountIn - refund >= 0` holds by construction for any router
+        //     and any counterparty. A push beyond `amountIn` strands here, per the donation
+        //     note on the contract.
+        //
+        // The `inAfter > inBefore` ternary is the saturating floor: a `tokenIn` that shrinks
+        // balances (rebasing, fee-on-transfer on the router's own pull) must refund 0, not
+        // revert the vault's rebalance.
+        uint256 inAfter = IERC20Balance(order.tokenIn).balanceOf(address(this));
+        uint256 refund = inAfter > inBefore ? inAfter - inBefore : 0;
+        if (refund > order.amountIn) refund = order.amountIn;
+
         order.tokenIn.safeApprove(router, 0); // revoke residual approval (EX-2)
         order.tokenOut.safeTransfer(msg.sender, amountOut);
-
-        // Sweep unspent input back to the caller — partial fills never strand funds here.
-        uint256 leftover = IERC20Balance(order.tokenIn).balanceOf(address(this));
-        if (leftover > 0) order.tokenIn.safeTransfer(msg.sender, leftover);
+        if (refund > 0) order.tokenIn.safeTransfer(msg.sender, refund);
 
         emit SwapExecuted(msg.sender, order.tokenIn, order.tokenOut, order.amountIn, amountOut);
     }
