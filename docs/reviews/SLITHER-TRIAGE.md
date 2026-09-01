@@ -154,7 +154,7 @@ detector, so it still reports **8** after the fix. Expect that; it is not a fail
 went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-events` on the two
 adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
 guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B.
-`VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
+`VaultCore` is untouched **by this PR**; it now measures 20,650 B (3,926 B of EIP-170 margin) on this branch, the +169 B being #98's `locked()` view arriving through the merge.
 
 ## `incorrect-equality`, thirteen rows (triaged 2026-09-01)
 
@@ -162,9 +162,9 @@ The row above used to be one line reading "**Safe.**" It reached the right verdi
 class argument nobody had checked per row — the same shape as the `reentrancy-balance` line that
 PR #101 disproved. Every row is now argued on its own, against the `225` results
 (`slither 0.11.6`) produced on `protocol/main` @ `29b1b470`. **Every `contracts/src/` line number
-below has since been re-verified against this branch's tree** (`protocol/main` @ `ccf4b401`,
+below has since been re-verified against this branch's tree** (`protocol/main` @ `52d10aee`,
 i.e. after #98 added 53 lines to `VaultCore.sol`) — the arguments are unchanged, the citations
-moved.
+moved. They were re-derived by locating each expression, not by shifting the old numbers.
 
 **Tally: REAL 0 · BENIGN-BY-DESIGN 10 · STYLE 3.** Nothing here needs a fix.
 

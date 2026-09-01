@@ -225,8 +225,9 @@ contract AuditIncorrectEqualityRowsTest is Test {
     ///
     /// Three writes land in ONE second `T`: a deposit (appends a checkpoint at `T`), the
     /// `propose` call (`createdAt == T`), and a second deposit (OVERWRITES the checkpoint at `T`,
-    /// `Checkpoints.sol:23-24`). The proposal reads `pastVotingEligibleShares(voter, T - 1)`
-    /// (`Governance.sol:284-285`, `:660`), which is strictly before any of them.
+    /// `Checkpoints.sol:23-24`). The vote's weight is read at `createdAt - 1`
+    /// (`Governance._boundedWeight:338`), and the quorum denominators at `nowTs - 1`
+    /// (`Governance.propose:287`, `:288`, `:304`) — all strictly before any of the three writes.
     ///
     /// Mutations that turn this red, both verified:
     ///   - `p.createdAt - 1` -> `p.createdAt` in `Governance._boundedWeight` (`:338`), the read
