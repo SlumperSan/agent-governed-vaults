@@ -36,9 +36,24 @@ widened run went 245 → 254 results with **no new detector class**.
   sub-vault — not as a reason the detector was wrong. **Status:** #101 is merged; **#98 is still
   open, so H-9 is UNFIXED on `protocol/main`** — do not cite its guard or its coverage test as
   present.
-- **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
-  FIXED; the omission is now closed).
+- **`timestamp`** — **superseded 2026-09-01: triaged row by row, and one of the thirty is real.**
+  The old bullet was sound for `Governance` and `Checkpoints` as far as it went, and its only stated
+  gap (`UniswapV3TwapSource.sol:255` → **H-2**) is doubly closed: H-2 was fixed, and that contract
+  has since been pruned from the tree. The gap it never named was the one that mattered — it asked
+  whether the windows are wide enough to survive miner skew (they are; the smallest shipped window
+  is an hour) and never asked whether the two comparisons on either side of a deadline **agree about
+  the boundary second**. They do, everywhere: every deadline with two or more comparisons partitions
+  the timeline exactly, including the Mode I / Mode F seam that makes **EE-10** true
+  (`hasPendingExecution` uses `<= p.expiresAt`, the same comparison `execute` uses). That is now
+  pinned by tests rather than argued. **The real one is T-1:** `applyStandingDefault` is callable
+  only in the reveal phase, so `Governance.sol:470`'s TTL check runs no earlier than
+  `createdAt + commitDuration` — a standing default's usable life is `DEFAULT_TTL - commitDuration`,
+  and `_validateConfig` bounds `commitDuration` to `[1h, 30 days]` without ever relating it to the
+  72h TTL, so `commitDuration >= 72h` silently kills VO-3 for that vault. **Low** (defaults never
+  count toward quorum) and **not reachable at launch** (both shipped configs use 3600). Also
+  measured: **13 of the 30 rows list no timestamp comparison at all** — established by ablating the
+  seeds and re-counting, not by arguing each row. Full table in
+  [SLITHER-TRIAGE](../reviews/SLITHER-TRIAGE.md).
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check
   unsatisfiable and reverts a member's child-backed exit → **H-6**. Dormant at launch.
