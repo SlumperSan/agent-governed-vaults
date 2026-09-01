@@ -5,8 +5,9 @@
   "agentDepositNote": "Drill 5: WHOLE USDC, not base units. policy.join.depositUsdc in the reference agent is denominated in dollars (its shipped default is \"25\"), unlike every other amount in this file. 1 = the smoke vault minimum of 1.00 USDC. Passing base units here made the agent request a million-dollar deposit and its capacity gate correctly refused.",
 
   "smokeVault": {
-    "address": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330",
-    "note": "The Sprint-9 vault. Basket [WETH, LINK]. Fully exited at the end of Sprint-9 (0 shares, 0 NAV), so drills 2 and 5 must re-deposit into it. Host for drill 2 (sub-vault) and drill 5 (agent execute mode)."
+    "address": "0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f",
+    "note": "REPOINTED 2026-09-01 (Team3-SoakPreflight). The old address here, 0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330, was the Sprint-9 vault -- created against the retired custom OracleAggregator stack. The C-6 pivot (2026-08-29) redeployed six singletons (factory, both registries, governance, vaultDeployer, and the oracle itself); `cast call 0x9702...oracle()` still returns the OLD OracleAggregator address, not the live ChainlinkOracle at contracts/config/deployments/base-sepolia.json, so every write drill 2 or drill 5 would have sent against that vault was going to a contract wired to dead infrastructure. It was also not actually exited (totalShares()=4e18 on-chain, contradicting the old note below), which would have made drill 2's parent-deposit math wrong on top of everything else. 0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f is the vault launch gate 2 exercised on 2026-09-01, created fresh against the current pivoted deployment: basketLength=2 (WETH, LINK, matching this file's assumptions), quorumBps=2500, exitFeeMaxBps=50 (both exactly what childVault's govNote/amountsNote below assume for 'the parent'), minDepositUsdc=1e6 (1.00 USDC, matching agentDepositNote), capacityCapUsdc=1e9. It finished gate 2's exit at totalShares()=0 / idleUsdc=0 -- genuinely empty this time, independently confirmed on-chain -- so drills 2 and 5 still need to re-deposit into it, same as the old note said.",
+    "supersededAddress": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330"
   },
 
   "vaultB": {
