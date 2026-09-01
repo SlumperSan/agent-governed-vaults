@@ -189,7 +189,9 @@ test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG dec
   // actually seeing files. EIGHT signal files exported SEVEN distinct names when this was written
   // (`oracle-freshness.mjs` and `oracle-health.mjs` both export `'oracle-freshness'`), which with
   // `vault-config` is eight live names. The old by-name import list held seven of those eight files
-  // and never imported `oracle-freshness.mjs` at all — a second way it was already blind.
+  // and never imported `oracle-freshness.mjs` at all. That particular omission was HARMLESS — the
+  // unimported file exports the same name as one that was imported, so no name went uncovered — but
+  // it shows the hand-written list had already drifted from the directory it claimed to mirror.
   assert.ok(liveSignals.size >= 8, `only ${liveSignals.size} signals discovered — the readdir is not working`);
 });
 
