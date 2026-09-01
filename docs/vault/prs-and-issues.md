@@ -30,7 +30,7 @@ Earlier (Phase 1): **#39** (`security/critical-remediation`) closed the twelve f
 
 | Issue | Subject |
 | --- | --- |
-| **#40** | VaultCore-headroom sprint — the EIP-170 budget that blocks H-5/H-6/H-9 and M-15 exit-side |
+| **#40** | VaultCore-headroom sprint — the EIP-170 budget that blocked H-5/H-6 and M-15 exit-side (reclaimed by #90; H-9 fixed separately by #98) |
 | **#41** | Rebuild `base-mainnet.json` — 5 sources/asset at quorum 3, `maxObservationAge ≤ window/20`; human-supplied addresses |
 | **#48** | C-6 tracking — remediation **mechanism now complete in code** (safe oracle #49 + factory gate #50); stays OPEN only until the mainnet deploy config populates `allowedOracles_` with real blessed-oracle addresses and the external audit clears; **gate 0 does not clear while open** |
 

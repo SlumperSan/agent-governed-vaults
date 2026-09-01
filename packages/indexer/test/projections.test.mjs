@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -143,6 +143,70 @@ test('standing default counts in tally but not quorum (revealedWeight)', () => {
   const p = s.proposals.get(2);
   assert.equal(p.forWeight, 900n, 'default in tally');
   assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
+});
+
+test('ExitQueued + ExitSettled counts drive an approximate modeFExitRateBps', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 100n }),
+  ]);
+  assert.equal(vaultView(s, V).exitQueuedCount, 1);
+  assert.equal(vaultView(s, V).exitSettledCount, 1);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'one queued, one settled == 100%');
+});
+
+test('modeFExitRateBps is null for an unknown vault or a vault with no settled exits', () => {
+  const unknown = '0x' + '9'.repeat(40);
+  const s = applyAll([ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n })]);
+  assert.equal(modeFExitRateBps(s, unknown), null);
+  assert.equal(modeFExitRateBps(s, V), null, 'no ExitSettled yet');
+});
+
+test('modeFExitRateBps can exceed 10000 (a stranded-queue backlog), and is not clamped', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 300n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 3, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 4, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 5, 0, V, { member: A, sharesBurned: 100n }),
+  ]);
+  assert.equal(modeFExitRateBps(s, V), 30000, '3 queued over 1 settled == 300%, not clamped');
+});
+
+test('stat-only events (SliceEscrowed, EscrowClaimed, ModuleCallFailed, FeeAssessed, FeeCredited, '
+  + 'FeesClaimed, VaultRegistered, Committed, SwapExecuted) are counted with a last-seen cursor, not dropped', () => {
+  const s = emptyState();
+  apply(s, ev('SliceEscrowed', 1, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 10n }));
+  apply(s, ev('SliceEscrowed', 2, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 5n }));
+  apply(s, ev('EscrowClaimed', 3, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 10n }));
+  apply(s, ev('ModuleCallFailed', 4, 0, V, { module: '0x' + '0'.repeat(64), member: A }));
+  apply(s, ev('FeeAssessed', 5, 0, V, { member: A, netGain: 100n, fee: 10n }));
+  apply(s, ev('FeeCredited', 6, 0, V, { opId: 1, token: A, amount: 10n }));
+  apply(s, ev('FeesClaimed', 7, 0, V, { operator: A, token: A, amount: 10n }));
+  apply(s, ev('VaultRegistered', 8, 0, V, {
+    config: { commitDuration: 3600, revealDuration: 3600, timelockDuration: 0, executionWindow: 3600, quorumBps: 2500, proposalThresholdBps: 0, concentrationCapBps: 5000, proposalCooldown: 0 },
+  }));
+  apply(s, ev('Committed', 9, 0, V, { pid: 1, voter: A }));
+  apply(s, ev('SwapExecuted', 10, 0, V, { tokenIn: A, tokenOut: B, amountIn: 100n, amountOut: 99n }));
+
+  assert.equal(s.eventStats.get('SliceEscrowed').count, 2);
+  assert.equal(s.eventStats.get('SliceEscrowed').lastBlock, 2);
+  assert.equal(s.eventStats.get('EscrowClaimed').count, 1);
+  assert.equal(s.eventStats.get('ModuleCallFailed').count, 1);
+  assert.equal(s.eventStats.get('FeeAssessed').count, 1);
+  assert.equal(s.eventStats.get('FeeCredited').count, 1);
+  assert.equal(s.eventStats.get('FeesClaimed').count, 1);
+  assert.equal(s.eventStats.get('VaultRegistered').count, 1);
+  assert.equal(s.eventStats.get('Committed').count, 1);
+  assert.equal(s.eventStats.get('SwapExecuted').lastLogIndex, 0);
+});
+
+test('RebalanceExecuted learns the adapter address into state.adapters', () => {
+  const ADAPTER = '0x' + '7'.repeat(40);
+  const s = applyAll([ev('RebalanceExecuted', 1, 0, V, { adapter: ADAPTER, orderCount: 3n })]);
+  assert.ok(s.adapters.has(ADAPTER));
+  assert.equal(s.eventStats.get('RebalanceExecuted').count, 1);
 });
 
 test('memberPosition reports shares and vault fraction', () => {

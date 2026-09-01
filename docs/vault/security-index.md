@@ -22,8 +22,9 @@ any audit gate — it is findings to fix before a paid engagement, not clearance
 - **C-6** — **OPEN (new, Phase-2, issue #48)**; resolved in code by [[chainlinkoracle]] /
   [[chainlink-direct-pivot]] (PR #49) but gate 0 stays NO-GO pending a factory oracle-gate and the
   external audit.
-- **H-1..H-4** — FIXED. **H-5, H-6, H-7, H-9** — DORMANT-AT-LAUNCH (need a funded child). **H-8** —
-  partially fixed + config-mitigated.
+- **H-1..H-4** — FIXED. **H-9** — **FIXED IN CODE 2026-09-01** (was dormant; see [[highs]]).
+  **H-5, H-6, H-7** — DORMANT-AT-LAUNCH (need a funded child). **H-8** — partially fixed +
+  config-mitigated, and the one open High that is *reachable* at a root-only launch.
 - Medium/Low tier — per the report's disposition table; see [[mediums-and-lows]].
 
 ## The pattern worth carrying

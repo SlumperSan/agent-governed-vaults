@@ -47,7 +47,7 @@ deposit overload, which spent 731 B. `VaultFactory` (~21,004 B spare) and `Chain
 C-1 decided (root-only) · C-6 resolved by the pivot · external audit commissioned (owner
 attestation, gate 1) · `base-mainnet.json.chainlinkOracle` populated and on-chain-verified ·
 **remaining:** re-run the testnet lifecycle, soak and canary on the pivoted tree (gates 2/3/6, need
-a funded key) and one recorded restore drill (gate 7). H-5/H-6/H-9 stay deferred with the sub-vault
+a funded key) and one recorded restore drill (gate 7). H-5/H-6 stay deferred with the sub-vault (H-9 was fixed in code 2026-09-01)
 feature — and with `VaultCore` at ~283 B of margin, anything VaultCore-shaped is now effectively
 closed.
 

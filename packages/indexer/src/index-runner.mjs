@@ -11,6 +11,9 @@
  *   SUBVAULT_REGISTRY_ADDRESS  SubVaultRegistry
  *   GOVERNANCE_ADDRESS         Governance
  * Optional env:
+ *   FEE_ENGINE_ADDRESS  FeeEngine — enables FeeAssessed/FeeCredited/FeesClaimed indexing when set;
+ *                        omitted deployments simply skip that singleton group (SINGLETON_LABELS
+ *                        loop in rpc.mjs already treats every label as optional).
  *   CHAIN_ID (8453)  CHAIN_NAME (base)  START_BLOCK (0)  STATE_PATH (./data/indexer-state.json)
  *   CONFIRMATIONS (5)  BATCH_BLOCKS (2000)  POLL_INTERVAL_MS (12000)
  *   SNAPSHOT_BACKUPS (3)  SNAPSHOT_BACKUP_INTERVAL_MS (300000)
@@ -52,6 +55,11 @@ export function resolveIndexerConfig(env) {
   for (const [label, a] of Object.entries(addresses)) {
     if (!isAddr(a)) throw new Error(`indexer: ${label} is not a 20-byte address: ${a}`);
   }
+  // Optional: unset means "don't index FeeEngine events yet", not a config error.
+  if (env.FEE_ENGINE_ADDRESS) {
+    if (!isAddr(env.FEE_ENGINE_ADDRESS)) throw new Error(`indexer: feeEngine is not a 20-byte address: ${env.FEE_ENGINE_ADDRESS}`);
+    addresses.feeEngine = env.FEE_ENGINE_ADDRESS;
+  }
   const statePath = env.STATE_PATH || './data/indexer-state.json';
   const pollIntervalMs = num('POLL_INTERVAL_MS', 12_000);
   return {
@@ -80,14 +88,16 @@ export function resolveIndexerConfig(env) {
 export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer'), client } = {}) {
   const line = log ?? logger.text('indexer.progress');
 
-  // Load once to discover already-known vaults, so VaultCore events keep indexing across restarts.
+  // Load once to discover already-known vaults (and adapters), so VaultCore / adapter events keep
+  // indexing across restarts without re-seeing their discovery event.
   const resumed = await loadSnapshot(cfg.statePath);
   const knownVaults = [...resumed.vaults.keys()];
+  const knownAdapters = [...resumed.adapters];
 
   const source = createChainSource({
     client, // tests inject a fake viem client; production builds one from rpcUrl
     rpcUrl: cfg.rpcUrl, chainId: cfg.chainId, chainName: cfg.chainName,
-    addresses: cfg.addresses, knownVaults,
+    addresses: cfg.addresses, knownVaults, knownAdapters,
   });
 
   const writer = createSnapshotWriter({

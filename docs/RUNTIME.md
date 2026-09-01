@@ -538,6 +538,18 @@ rather than poisoning the rest.
    ```bash
    docker compose stop indexer
    ```
+   **Bare-metal equivalent (Linux/macOS):** `kill -TERM $(cat /path/to/indexer.pid)`, or Ctrl-C in
+   the foreground terminal — either delivers a real `SIGTERM`/`SIGINT` that the process's shutdown
+   hooks (§8.6) observe. **Bare-metal Windows cannot do this.** Confirmed empirically
+   (`docs/RESTORE-DRILL.md` §5 finding 2, re-confirmed 2026-09-01): neither Git Bash `kill`, nor
+   Node's own `child_process.kill('SIGTERM'|'SIGINT')`, nor `taskkill /PID` without `/F` deliver a
+   signal a Node process's `process.on('SIGTERM'|'SIGINT')` handler observes — Windows silently
+   hard-terminates every time (`taskkill` without `/F` even refuses outright: *"This process can
+   only be terminated forcefully"*). The one native exception, a genuine interactive Ctrl-C
+   keystroke in the process's own console window, is real but not scriptable/reproducible as a
+   drill. **On Windows, run the stack inside WSL2** (with or without Docker — WSL2 alone gives a
+   real Linux kernel, so `kill -TERM` works there exactly as on Linux/macOS above) to exercise this
+   step at all.
 2. **Verify the candidates** and pick a rung by its printed cursor, not by its number. `.1` is
    usually the one you want, but a clean shutdown takes a final snapshot, which can push the ring
    along by one — so read the `lastBlock` and `vaults=` on each rung rather than assuming.
@@ -564,6 +576,13 @@ rather than poisoning the rest.
    docker compose start indexer
    docker compose logs -f indexer      # watch batch.indexed reach the head
    ```
+   **Bare-metal equivalent (Linux/macOS, or Windows via WSL2):**
+   ```bash
+   node --env-file=.env packages/indexer/src/index-runner.mjs
+   ```
+   Watch for `"resumed at block <N> (<M> vaults)"` with `M` matching the restored file's `counts`,
+   then `indexed [<lastBlock+1>..…]` closing the gap. No bare-metal-Windows path exists for this
+   step either, for the same reason as step 1 — see above.
 
 > **If every backup is bad**, delete the snapshot and set `START_BLOCK` to the **factory deploy
 > block**. The indexer rebuilds from chain history — slow, never wrong. Do **not** set a later
@@ -692,8 +711,17 @@ docker compose restart indexer      # clean stop, clean resume from the snapshot
 docker compose down                 # stops all three cleanly; the volume survives
 ```
 
+**Bare-metal equivalent (Linux/macOS, or Windows via WSL2):** `kill -TERM <pid>` (or Ctrl-C in the
+foreground) delivers the same signal the hooks in the table above listen for. **This document's
+runtime target is Linux/Docker.** Bare-metal Windows cannot exercise graceful shutdown at all — no
+scripted or interactive-from-another-window method reaches a `node.exe` process's signal handlers
+short of a real interactive Ctrl-C in that exact console (see the restore procedure above and
+`docs/RESTORE-DRILL.md` §5 for how this was confirmed, twice, a Docker-only environment apart).
+
 Look for `shutdown.complete` in the logs. `shutdown.timeout` or `shutdown.forced` means the stop
-was **not** clean — verify the snapshot before restarting.
+was **not** clean — verify the snapshot before restarting. **On bare-metal Windows this line will
+never appear**, by the platform limitation above, not because the stop was dirty — do not read its
+absence there as a signal of anything.
 
 ### 8.7 Incident quick-table
 

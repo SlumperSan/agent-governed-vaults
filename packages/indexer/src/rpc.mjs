@@ -24,13 +24,15 @@ const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
  * @param {string} [cfg.rpcUrl]         HTTP RPC endpoint (required when no client is injected)
  * @param {number} [cfg.chainId]        chain id for the viem client (e.g. 8453 Base, 84532 Base Sepolia)
  * @param {string} [cfg.chainName]
- * @param {{factory?:string, operatorRegistry?:string, subvaultRegistry?:string, governance?:string}} cfg.addresses
- * @param {Iterable<string>} [cfg.knownVaults]  vault addresses already known (seed from resumed state)
+ * @param {{factory?:string, operatorRegistry?:string, subvaultRegistry?:string, governance?:string, feeEngine?:string}} cfg.addresses
+ * @param {Iterable<string>} [cfg.knownVaults]    vault addresses already known (seed from resumed state)
+ * @param {Iterable<string>} [cfg.knownAdapters]  execution-adapter addresses already known (seed from resumed state)
  */
-export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 'base', addresses, knownVaults = [] }) {
+export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 'base', addresses, knownVaults = [], knownAdapters = [] }) {
   const addr = {};
   for (const label of SINGLETON_LABELS) if (addresses?.[label]) addr[label] = lc(addresses[label]);
   const vaults = new Set([...knownVaults].filter((v) => ADDRESS_RE.test(v)).map(lc));
+  const adapters = new Set([...knownAdapters].filter((a) => ADDRESS_RE.test(a)).map(lc));
 
   let _client = client ?? null;
   async function getClient() {
@@ -65,7 +67,9 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
   /**
    * NORMALIZED events for [from, to], globally sorted by (blockNumber, logIndex). Discovers new
    * vaults from VaultCreated in this same range before polling VaultCore events, so a vault
-   * created and used within one batch is captured.
+   * created and used within one batch is captured. Adapters are discovered one hop further in:
+   * from each VaultCore's own RebalanceExecuted(adapter, orderCount), so an adapter used for the
+   * first time in this same range still has its SwapExecuted fills picked up in this batch.
    * @returns {Promise<import('./projections.mjs').Event[]>}
    */
   async function fetchEvents(from, to) {
@@ -83,7 +87,15 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
 
     if (vaults.size > 0) {
       const vaultEvts = await logsFor(c, [...vaults], CONTRACT_ABIS.vault, from, to);
+      for (const e of vaultEvts) {
+        if (e.name === 'RebalanceExecuted' && ADDRESS_RE.test(e.args?.adapter)) adapters.add(lc(e.args.adapter));
+      }
       out.push(...vaultEvts);
+    }
+
+    if (adapters.size > 0) {
+      const adapterEvts = await logsFor(c, [...adapters], CONTRACT_ABIS.adapter, from, to);
+      out.push(...adapterEvts);
     }
 
     return sortEvents(out);
@@ -94,5 +106,7 @@ export function createChainSource({ client, rpcUrl, chainId = 8453, chainName = 
     fetchEvents,
     /** The live known-vault set (grows as VaultCreated logs are seen). */
     get knownVaults() { return new Set(vaults); },
+    /** The live known-adapter set (grows as RebalanceExecuted logs are seen). */
+    get knownAdapters() { return new Set(adapters); },
   };
 }

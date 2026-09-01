@@ -153,7 +153,7 @@ contract NavGasTest is Test {
         assertGt(nav, 0, "nav computed");
         // Depth-3, 3-asset parent basket, 5 sources/asset, recursive look-through. Ceiling is
         // generous but far below the block limit — a regression that blows up NAV cost fails here.
-        assertLt(used, 600_000, "navWad gas regression"); // ~237k actual, 2.5x headroom
+        assertLt(used, 600_000, "navWad gas regression"); // ~241k actual, 2.5x headroom
         emit log_named_uint("navWad gas @ depth-3", used);
     }
 }
