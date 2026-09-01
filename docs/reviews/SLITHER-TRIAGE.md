@@ -43,7 +43,7 @@ reference for what is signal vs. noise.
 | `incorrect-equality` | **Safe.** All flagged `==` are on share counts / status enums / `totalShares == 0` first-deposit and sole-holder checks — exact-value comparisons, not balance-of equality that a donation could grief (NAV never reads `balanceOf`, EE-1). **+1 in Sprint 10** (newly visible, `src/lib/Checkpoints.sol#23`): `h.arr[len-1].ts == uint64(block.timestamp)` in `push`. The strict equality is the point of the line — it detects "a checkpoint already exists for this exact second" and overwrites it instead of appending a duplicate (the standard OZ `Checkpoints` idiom). A range or `>=` comparison here would corrupt history, not harden it. |
 | `uninitialized-local` | **Safe.** `k`, `perfFee`, `childValTotalWad` are accumulators intentionally relying on Solidity's zero-default before being summed. |
 | `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), so the omission is closed. |
-| `calls-loop`, `costly-loop`, `cache-array-length`, `cyclomatic-complexity` | **Accepted for the basket loop** (capped at 10). **AI-audit correction (§4.5):** the "~237k gas" bound was measured on a 1-child/1-grandchild fixture (6 `priceWad` calls); the caps actually permit ~730 calls at the `MAX_CHILDREN` fan-out, so `navWad` is bounded in *shape* but unbounded in *cost* (**M-5**, ~12M gas at 8×8 vaults). M-5's fan-out requires sub-vaults, which are **disabled at launch** (root vaults only, C-1 gate), so at launch `navWad` loops only over the basket (≤10) and the original bound holds; M-5 is deferred with the sub-vault feature. The `NavGas.t.sol` sub-vault assertion is a fixture bound, not a proof of the worst case. |
+| `costly-loop`, `cache-array-length`, `cyclomatic-complexity` | **Accepted for the basket loop** (capped at 10). **`calls-loop` moved out of this row on 2026-09-01** — its 121 results are dispositioned cluster by cluster in "`calls-loop`, 121 rows, 23 sites, 9 clusters" below. The three detectors left here keep the disposition unchanged. **AI-audit correction (§4.5):** the "~237k gas" bound was measured on a 1-child/1-grandchild fixture (6 `priceWad` calls); the caps actually permit ~730 calls at the `MAX_CHILDREN` fan-out, so `navWad` is bounded in *shape* but unbounded in *cost* (**M-5**, ~12M gas at 8×8 vaults). M-5's fan-out requires sub-vaults, which are **disabled at launch** (root vaults only, C-1 gate), so at launch `navWad` loops only over the basket (≤10) and the original bound holds; M-5 is deferred with the sub-vault feature. The `NavGas.t.sol` sub-vault assertion is a fixture bound, not a proof of the worst case. |
 | `low-level-calls` | **By design.** `AggregationRouterAdapter.executeSwap` — the pinned-router call behind the selector allowlist + measured-delta minOut (EX-3). **+3 in Sprint 10** (newly visible): `SafeTransferLib.safeTransfer` / `safeTransferFrom` / `safeApprove`, each a `token.call(abi.encodeWithSelector(...))`. The low-level form is the whole point — it tolerates non-standard ERC-20s that return nothing or malformed data instead of reverting on them (H-2), which a high-level call cannot do. Every one checks `ok` and validates the return payload. Reviewed in SPRINT1; before Sprint 10 the analyser had never actually seen them (banner above), and now that it has, it reports exactly these three by-design sites and nothing more. |
 | `missing-inheritance` | **Cosmetic.** Interface-shaped contracts that don't formally `is` the interface; ABIs match. Sprint 7 added one instance: `VaultDeployer` vs `IVaultDeployer` (declared inside `VaultFactory.sol`). Same disposition — the single `deploy(bytes) returns (address)` selector matches, and `Eip170::test_factoryPinsItsDeployerImmutably` plus every factory-path test exercise the call across the interface. |
 | `assembly` | **By design.** Six sites. **Three newly visible in Sprint 10** and predating it by far — `BoundedCall.boundedCall`, `BoundedCall.boundedStaticCall` (gas-bounded, returndata-capped module calls, the H-1 fix) and `SafeTransferLib.tryTransfer` (non-reverting transfer, the H-2 fix); all three were reviewed by hand in SPRINT1-SECURITY-REVIEW, which is where those fixes were designed. **Three from Sprint 7**, all in `VaultDeployer`: the SSTORE2 `_writeChunk` header, the `CREATE` in `deploy`, and `_readChunk`'s `extcodecopy`. This contract exists *because* the work cannot be expressed in Solidity — `type(VaultCore).creationCode` has to be relocated out of the factory's runtime (#10). All three blocks were reviewed opcode by opcode in [SPRINT10-DEPLOYMENT-REVIEW §3.5](SPRINT10-DEPLOYMENT-REVIEW.md), including the `memory-safe` annotations and the revert-path memory clobber. |
@@ -154,6 +154,209 @@ went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-ev
 adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
 guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B.
 `VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
+
+## `calls-loop`, 121 rows, 23 sites, 9 clusters (triaged 2026-09-01)
+
+`calls-loop` is the largest group in the output by a factor of four and had never been triaged row
+by row — it was folded into a shared "accepted for the basket loop" disposition with three other
+detectors. This section replaces the `calls-loop` half of that row.
+
+**The 121 rows are 23 physical sites.** Slither emits one row per *entry-point call path* that
+reaches a loop, not one per loop, so a single expression inside `_fullNavWad` appears eleven times
+because eleven public functions reach it. The unit of judgement is therefore the site, and the unit
+of disposition is the cluster of sites that share a bound and a callee. Counts below are from
+`slither . --filter-paths "^lib/|^test/|^script/" --json -` at `protocol/main` @ `29b1b470`
+(225 results total) and sum to 121 exactly.
+
+| # | Cluster | Rows | Sites | Callee | Bound | Verdict |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| A | Look-through NAV recursion — `_fullNavWad` (:318, :319, :321, :322, :326, :328) and `_holdingValueWad` (:308, :310) | 88 | 8 | child `VaultCore` public views | `MAX_CHILDREN` 8 × registry depth × `MAX_BASKET_ASSETS` 10 | **BENIGN AT LAUNCH** (conditional — see below) |
+| B | `_assetValueWad` :929 → `oracle.priceWad` | 12 | 1 | immutable, factory-blessed oracle | `MAX_BASKET_ASSETS` = 10 | **BENIGN BY DESIGN** (K-4 fail-closed) |
+| C | `_bal` :910 → `balanceOf` | 3 | 1 | basket ERC-20 / USDC | 10 (+ USDC) | **BENIGN BY DESIGN**, conditional on basket curation |
+| D | Child exit/redeem legs — `_redeemChildMeasured` (:792, :793), `_childPendingExecution` :808, `_settleExit` :633 | 8 | 4 | child `VaultCore` | `MAX_CHILDREN` = 8 | **BENIGN AT LAUNCH** (same gate as A) |
+| E | `VaultFactory._requireOracleCoversBasket` :155, `createChildVault` :214 | 3 | 2 | oracle / parent vault | caller-supplied array | **STYLE** |
+| F | `SubVaultRegistry` ancestor walks — `registerChild` :68, `stackedExitFeeCapBps` :97 | 2 | 2 | `IVaultFees.exitFeeMaxBps` | ancestor chain, `MAX_DEPTH` = 3 | **BENIGN BY DESIGN** |
+| G | `VaultCore` constructor :270 → `decimals()` | 1 | 1 | basket ERC-20 | length checked ≤ 10 at :265, *before* the loop | **STYLE** |
+| H | `executeRebalance` :870 → `adapter.executeSwap` | 1 | 1 | allowlisted adapter | **`orders.length` unbounded** | **BENIGN BY DESIGN**, with a recorded residual |
+| I | `ChainlinkOracle` constructor :184, :199, :254 | 3 | 3 | Chainlink feeds | deploy-time admin arrays | **STYLE** |
+| | **Total** | **121** | **23** | | | |
+
+**No cluster is REAL.** The reason is structural and worth stating once: *every* loop bound in this
+contract set is either an immutable compile-time constant or a governance-gated counter. There is no
+loop over members, holders, or the exit queue anywhere in `src/` — all 20 `for` sites and all three
+`while` sites were enumerated to confirm it (the third `while`, `Checkpoints.sol:39`, is a binary
+search with no external call, which is why it produces no `calls-loop` row). That is a stronger
+property than a bound: the classic `calls-loop` DoS — spam the array, brick the loop — has no array
+to spam.
+
+### A — the look-through recursion (88 of 121 rows)
+
+The bound is three constants: `MAX_CHILDREN = 8` (VaultCore.sol:129),
+`MAX_LOOKTHROUGH_DEPTH = 3` (:130), `MAX_BASKET_ASSETS = 10` (:131).
+
+**No untrusted party can grow it.** `childVaults` is pushed in exactly one place —
+`allocateToChild` (:740) — which requires `msg.sender == address(governance)`, requires a
+creation-time registry edge (`parentOf(child) == address(this)`), and enforces
+`childVaults.length < MAX_CHILDREN`. `registerChild` is factory-only, and `createChildVault`
+additionally requires `msg.sender == parent.creator()`.
+
+One asymmetry worth naming, because it looks like a hole and is not: **`registerChild` has no
+fan-out cap of its own.** A parent's creator can register a ninth, or a nine-hundredth, child edge
+in the registry. `MAX_CHILDREN` bites only in `allocateToChild` — and `childVaults`, the array the
+loop actually walks, is only appended there. So the registry may hold arbitrarily many edges while
+the looped array stays capped at 8. The bound is on the funded set, which is the set NAV prices.
+Pinned by `AuditCallsLoopMaxBound::test_childVaultsCannotBeGrownByAnUntrustedCaller`, which creates
+a ninth child successfully and then shows `allocateToChild` refusing it with `TooManyChildren`.
+
+**At the launch configuration these 88 rows execute zero iterations, and the gate is per-vault
+immutable state rather than a factory flag.** `VaultFactory.sol:250` passes
+`allowSubVaults ? subVaultRegistry : address(0)` into the `VaultCore` constructor, so with
+`allowSubVaults == false` every vault carries `subVaultRegistry == address(0)` in its own immutable
+storage. `allocateToChild`'s first `require` then fails on state the vault holds itself,
+independently of any later factory or registry. That is the fact an auditor can verify per vault
+on-chain, and it is a stronger statement than "`createChildVault` reverts".
+
+**This disposition is conditional, not permanent.** It holds *because* `allowSubVaults == false`,
+which is a deployment parameter, not code. Enabling sub-vaults re-opens **M-5** — `navWad` bounded
+in shape but not in cost — on the same day. The disposition must be re-read, not inherited, at that
+point.
+
+**The registry, not the look-through constant, is what actually bounds the fan-out.**
+`MAX_LOOKTHROUGH_DEPTH = 3` admits three descendant levels (8 + 64 + 512 = 584 nodes, ~5,850
+`priceWad` calls). `SubVaultRegistry.MAX_DEPTH = 3` is "levels including root" and `registerChild`
+requires `parentDepth + 1 < MAX_DEPTH`, so `depthOf ∈ {0,1,2}` and only **two** descendant levels
+can exist (8 + 64 = 72 nodes, ~730 `priceWad` calls). The previously recorded ~730 figure is
+correct, and it is correct because of the registry. A backstop looser than the constraint it backs
+up is worth knowing about: if the registry cap ever moves, the look-through constant will not catch
+it at the value a reader would expect.
+
+Measured at the structural maximum (8 × 8 × 10, 73 vaults, every one fully funded on all ten
+assets) in `test/audit/AuditCallsLoopMaxBound.t.sol`: **`navWad()` costs 10,108,782 gas**, pinned
+under a `NAV_GAS_CEILING` of 11,200,000 (~11% headroom).
+
+**This is the first measurement of M-5 rather than an estimate of it, and it substantially confirms
+the recorded figure.** The register carried "~12M gas at 8×8 vaults"; the measured number is 10.1M —
+about 16% lower, same order, same conclusion. The estimate was sound and is now evidence.
+
+Two things make 10.1M worse than it looks, not better. First, it is a **floor**: the fixture prices
+through the production `ChainlinkOracle` but against *mock* aggregators, and a live Chainlink read
+goes proxy → aggregator with cold storage on each hop, so real feeds cost strictly more. Second, it
+is **transaction gas, not a free `eth_call`** — `navWad` sits on the `deposit`, `activate`,
+`requestExit` and `settleQueuedExit` paths, so a member pays it to enter or leave. At that cost a
+single NAV read consumes a large fraction of a Base block, which is the substance of M-5: bounded in
+shape, and expensive enough in cost that the deposit and exit paths become the concern. The
+pre-existing
+`NavGas.t.sol` bound (~237k, `< 600_000`) is a 1-child/1-grandchild/3-asset fixture and, as this
+document already noted, is a fixture bound rather than a proof of the worst case; the new test is
+the proof. Its ceiling is set tight enough that raising `MAX_CHILDREN` or `MAX_LOOKTHROUGH_DEPTH`
+breaks it.
+
+### B — the oracle read inside the basket loop (12 rows)
+
+Twelve rows, one expression: `_assetValueWad` (:929) is `amount * oracle.priceWad(asset) /
+assetUnit[asset]`, reached from twelve public entry points including `deposit`, `activate`,
+`requestExit`, `settleQueuedExit` and `executeRebalance`.
+
+`ChainlinkOracle.priceWad` fails closed per asset: an unlisted asset, a reverting feed, a
+non-positive or future-stamped answer, an answer past its heartbeat, or one outside the sane-price
+band all `revert StaleOracle(asset)`. There is **no `try`/`catch` and no gas cap** at
+`_assetValueWad`. So **one stale feed on one funded basket asset freezes every path in the vault,
+including exits.** That is intended and is stated in two places already: `navWad`'s natspec
+("Reverts while the oracle breaker is tripped — freezing everything, including exits, by design
+(K-4)") and `VaultFactory._requireOracleCoversBasket`'s comment ("a feed that later goes stale or
+gets deprecated still freezes the vault — the accepted single-provider tradeoff, K-4/SF-2").
+
+The bound is `MAX_BASKET_ASSETS = 10`, checked at :265 *before* the constructor loop, and
+`basketAssets` is never written after construction. The oracle is immutable and C-6-blessed.
+
+**What makes this benign rather than a griefing vector is EE-1, and it deserves to be explicit.**
+`navWad` prices only assets with a non-zero *internal* `assetBalance` (:287), and there is no
+permissionless path that credits `assetBalance`. The writes are `executeRebalance` (governance),
+`_redeemChildMeasured` (governance-gated `credit` flag), and `pullChildEscrow` — which is
+permissionless but requires `isChildVault[child]` and moves value out of a registered child's
+escrow, not from a caller-supplied transfer. **A donation of a basket token to the vault credits
+nothing**, because NAV reads `assetBalance` and never `balanceOf`. So an attacker cannot pick the
+one basket asset whose feed is dead, donate a wei of it, and freeze the vault. Pinned by
+`test/audit/AuditCallsLoopFailClosed.t.sol`:
+`test_oneDeadFeedOnAFundedAssetFreezesTheWholeVault`,
+`test_deadFeedOnAZeroBalanceAssetDoesNotFreezeTheVault`, and
+`test_donatingTheDeadFeedTokenDoesNotFreezeTheVault`.
+
+One coherence note, because the escrow machinery reads like a general liveness answer and is not one
+here: the oracle revert fires in `_assetValueWad` **before** any transfer, so EE-6 escrow
+degradation and `MODULE_CALL_GAS` bounding are both downstream of it. Neither is a defence against
+an oracle outage.
+
+### C — `balanceOf` inside the measured-delta loops (3 rows)
+
+`_bal` (:910) is `IERC20Metadata(token).balanceOf(address(this))` with **no gas cap** — unlike every
+payout leg, which goes through `_payOrEscrow` (:898) → `tryTransfer(..., MODULE_CALL_GAS)`. A basket
+token that consumes all remaining gas in `balanceOf` therefore bricks `executeRebalance` and
+`_redeemChildMeasured`, and the constructor's `IERC20Metadata(a).decimals()` probe (:270) proves
+nothing about `balanceOf` — pinned by
+`AuditCallsLoopFailClosed::test_constructorDecimalsProbeDoesNotProveBalanceOfIsSafe`, which shows
+such a vault constructs successfully.
+
+The basket is chosen by the vault creator at construction and is immutable, so this is a curation
+assumption and not a code guarantee. Stating it plainly rather than folding it into "tokens are
+curated": **the entire defence for cluster C is that the creator did not pick a hostile token.**
+
+### D — the child exit and redeem legs (8 rows)
+
+`_redeemChildMeasured` calls `VaultCore(child).requestExit` and reads `queuedExitShares` inside the
+shortfall loop; `_childPendingExecution` and `_settleExit` :633 read child views in the same loop.
+Bound is `MAX_CHILDREN = 8` and the callee is a registry-admitted, factory-deployed `VaultCore` —
+same gate and same launch reasoning as cluster A, so the same conditional disposition applies. Note
+these calls are *mutating* (`requestExit`), not views: the loop is already defended against a child
+that queues rather than settles (`ChildSettlementPending`, and the Finding-4 `continue` at :629),
+which is exit-liveness handling rather than DoS surface.
+
+### E, G, I — the deploy-time and creation-time loops (7 rows)
+
+`VaultFactory._requireOracleCoversBasket` (:155) and the `createChildVault` subset check (:214) loop
+over a **caller-supplied** `basketAssets` array with no length check of their own; `VaultCore`'s
+`≤ MAX_BASKET_ASSETS` require lives in the constructor, which for the :214 loop runs *after* it. The
+`ChainlinkOracle` constructor loops (:184, :199, :254) are over deployer-supplied arrays. In all
+cases an oversized array costs the caller their own gas and nothing else — no other party's
+transaction is affected, and no state survives the revert. `_requireOracleCoversBasket` additionally
+wraps its call in `try`/`catch`. **STYLE**; adding a length guard would be a readability
+improvement, not a fix.
+
+### F — the `SubVaultRegistry` ancestor walks (2 rows)
+
+Both are `while (a != address(0))` walks up `parentOf`, calling `IVaultFees(a).exitFeeMaxBps()`.
+Neither has a numeric bound in its own body — the bound is an invariant of the registry, which is
+worth writing down because it is not local:
+
+1. `registerChild` is **factory-only** and enforces `parentDepth + 1 < MAX_DEPTH`, so any chain is
+   at most 3 long.
+2. `parentOf` can never cycle, because the only caller (`VaultFactory.createChildVault`) always
+   passes a **freshly deployed** `vault` as `child`, and `registerChild` refuses a child that is
+   already registered. A cycle would require registering a pre-existing vault as a child of its own
+   descendant, which no caller can construct.
+
+Point 2 is the load-bearing one and is exactly what a future admin-callable `registerChild` would
+silently break. Pinned by `AuditCallsLoopMaxBound::test_registryCapsDescendantLevelsAtTwo…`.
+
+### H — `executeRebalance`'s unbounded `orders` array (1 row)
+
+`orders.length` has **no bound** (VaultCore.sol:840). The function is governance-only and the
+adapter is allowlisted, so no untrusted party reaches it — which is why this is not REAL. The
+residual is nonetheless larger than "the proposer wastes gas", and it was verified rather than
+assumed:
+
+`Governance.execute` writes `p.status = Status.Executed` at Governance.sol:574 and makes the
+external `executeRebalance` call at :590 — *after* the write. An out-of-gas inside the loop
+therefore reverts the whole transaction and unwinds the status write, leaving the proposal `Passed`.
+`hasPendingExecution` then returns `block.timestamp <= p.expiresAt` (:629-630), which keeps the
+vault in Mode F: `requestExit` queues and `settleQueuedExit` reverts. So a rebalance proposal that
+is too large to execute **traps every exit in the vault for the remainder of its execution window**.
+
+Bounded, and that is the difference from the permanent freeze in
+`test/audit/AuditExecutionWindowFreeze.t.sol`: `EXECUTION_WINDOW_HARD_CAP = 90 days`, and
+`markExpired` (:597) is permissionless once the window lapses. Recorded as an out-of-scope
+recommendation rather than fixed here (SWARM §4): a `require(orders.length <= MAX_ORDERS)` in
+`executeRebalance` would make the failure mode a rejected proposal instead of a Mode-F window.
 
 ## Running it
 
