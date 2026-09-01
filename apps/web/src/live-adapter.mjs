@@ -137,7 +137,7 @@ export function mapVaultRecords(list, board) {
 /** The fields `mapVaultRecords` cannot fill, and why — rendered verbatim in the live-mode banner. */
 export const MISSING_IN_LIVE = Object.freeze([
   ['NAV, NAV/share, basket composition', 'events carry no post-swap balances or prices; needs a chain read'],
-  ['Oracle freshness / frozen state', 'OracleAggregator is read directly, never emitted'],
+  ['Oracle freshness / frozen state', 'ChainlinkOracle is read directly, never emitted'],
   ['Proposal deadlines — so exit Mode I vs F', 'Governance.Proposed emits no commitDeadline; the mode turns on it'],
   ['Exit-fee ceiling and decay period', 'immutable VaultCore constructor args, not in any event'],
   ['Your position, pending deposit and queued exit', 'per-member projections do not exist; ExitQueued is not indexed at all'],

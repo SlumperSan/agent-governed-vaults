@@ -332,9 +332,13 @@ threat model on a card; never bury a fund-losing risk behind a hover.
 
 ### Tier 3 — Deep (Risk tab + /learn, linked contextually)
 - **Oracle-freeze-traps-exits (K-4/SF-2)** — the headline systemic risk. Plain language:
-  "If the price oracle loses enough trusted sources, the vault FREEZES — deposits, exits, and
-  rebalances all stop until sources recover. There is no emergency withdrawal, by design. Your
-  capital can be temporarily trapped." Link from the Risk tab and from any deposit confirm. This
+  "Each asset is priced from ONE Chainlink feed with no fallback. If that feed goes past its
+  heartbeat, prices outside its sane band, or the Base sequencer is down, the vault FREEZES —
+  deposits, exits, and rebalances all stop until it recovers. There is no emergency withdrawal, by
+  design. Your capital is trapped for the whole of that period, and permanently if the feed is
+  retired rather than merely late." (Pre-C-6 this paragraph said "loses enough trusted sources" and
+  "temporarily trapped"; there is no source set to lose any more, and a deprecation is permanent —
+  see LAUNCH-READINESS §4 rows 12/13.) Link from the Risk tab and from any deposit confirm. This
   is the one risk that must be *acknowledged* (checkbox) before a first deposit.
 - **Forward-pricing / timelock interplay (VO-8)** — explainer for why a mid-vote exit settles
   later.

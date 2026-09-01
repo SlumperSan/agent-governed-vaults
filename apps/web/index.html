@@ -733,7 +733,7 @@ function renderBasket(x) {
 function renderOracle(x) {
   const o = x.oracle;
   const head = '<div class="seclabel"><h2>The oracle pricing it</h2></div>';
-  if (!o.assets.length) return head + stateBlock(empty('Oracle freshness is read from the aggregator directly and is not served by this API.'));
+  if (!o.assets.length) return head + stateBlock(empty('Oracle freshness is read from the vault’s oracle directly and is not served by this API.'));
   return `${head}<div class="feeds">
     ${o.assets.map((a) => `<div class="feed">
       <span>${esc(a.symbol)}</span>
@@ -933,9 +933,12 @@ function renderDeposit(x) {
 
       <div class="seclabel"><h2>Acknowledge</h2></div>
       <label class="chk"><input type="checkbox" id="ackFreeze"${draft.ackFreeze ? ' checked' : ''}>
-        <span>I understand that if this vault’s price oracle loses a source, <strong>deposits, activations
-        and exits all stop</strong> until it recovers, that there is <strong>no emergency withdrawal and
-        no admin who can override it</strong>, and that my active capital can be temporarily trapped.</span></label>
+        <span>I understand that this vault prices each asset from <strong>one Chainlink feed with no
+        fallback</strong>, and that if that feed goes past its heartbeat, prices outside its sane band, or
+        the Base sequencer is down, <strong>deposits, activations and exits all stop</strong> until it
+        recovers, that there is <strong>no emergency withdrawal and no admin who can override it</strong>,
+        and that my active capital is trapped for the whole of that period — <strong>permanently if the
+        feed is retired rather than merely late</strong>, because a vault’s oracle cannot be replaced.</span></label>
       <label class="chk"><input type="checkbox" id="ackWindow"${draft.ackWindow ? ' checked' : ''}>
         <span>I understand these contracts are <strong>immutable</strong> — no upgrades, no recovery — and
         that shares are <strong>non-transferable</strong>, so exiting is the only way out.</span></label>`;
