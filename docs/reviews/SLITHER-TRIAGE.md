@@ -252,6 +252,7 @@ was measured, by ablation on a throwaway copy of `contracts/` outside the workin
 | `protocol/main` as-is | **30** |
 | `VaultCore._exitFeeBps`'s `block.timestamp - lastDepositTime[member]` (`:956`) replaced by a constant | **20** |
 | …and the three `block.timestamp` WRITES into `proposals` / `standingDefaultOf` (`Governance.sol:283, 438, 553`) also replaced | **17** |
+| separately, only `VaultCore._deposit`'s `availableAt` write (`:390`) replaced | **30**, but `_deposit` loses one of its three comparisons |
 
 Slither's `is_dependent` taint is per STATE VARIABLE, not per struct field or per expression. The
 tenure-decayed exit fee flows into `idleUsdc`/`assetBalance` in `_settleExit` and thence into
@@ -298,9 +299,12 @@ pointed at the right line.
 
 ### The rows
 
-Legend: **REAL** = a defect. **DESIGN** = a genuine `block.timestamp` comparison, correct by a
-named invariant, with the pinning test. **TAINT** = the function contains no `block.timestamp`;
-the row is Slither's state-variable taint and the listed comparisons are ordinary arithmetic.
+Legend: **REAL** = a defect. **DESIGN** = the row lists a genuine `block.timestamp` comparison,
+correct by a named invariant, with the pinning test. **TAINT** = **none of the comparisons the row
+lists reads the clock**; they are ordinary arithmetic reported through Slither's state-variable
+taint. Twelve of the thirteen TAINT rows contain no `block.timestamp` anywhere in the function; the
+thirteenth (row 23, `_deposit`) contains one, but it is a WRITE whose value none of the row's three
+comparisons reads.
 
 | # | Site | What the comparison decides | Grade | Invariant / pinning test |
 | --- | --- | --- | --- | --- |
@@ -323,10 +327,10 @@ the row is Slither's state-variable taint and the listed comparisons are ordinar
 | 17 | `Governance._isSettled` `:613` | `s == Defeated \|\| s == Executed \|\| s == Expired` | **TAINT** | A `pure` function over an enum — the clearest single proof that the detector is reporting argument taint rather than logic. Dropped in ablation 2. |
 | 18 | `VaultCore.executeRebalance` `:851-855, :859, :863` | slippage floor and balance sufficiency | **TAINT** | Dropped in ablation 1 (`idleUsdc`/`assetBalance` carry the fee taint). The EX-3 measured-delta reasoning is unrelated to the clock. |
 | 19 | `VaultCore._checkCreatorGate` `:557-560` | creator 5% minimum stake (CM-1/CM-2) | **TAINT** | Dropped in ablation 1. |
-| 20 | `Checkpoints.push` `:23` | `h.arr[len-1].ts == uint64(block.timestamp)` — overwrite a same-second checkpoint instead of appending | **DESIGN** | The standard OZ idiom; the strict equality is the point of the line. It pairs with `getAt`'s inclusive `<=` to make the `createdAt - 1` snapshot convention (VO-9) exact. `AuditTimestampBoundaries::test_checkpointsSameSecondOverwriteIsLastWriteWins`. |
+| 20 | `Checkpoints.push` `:23` | `h.arr[len-1].ts == uint64(block.timestamp)` — overwrite a same-second checkpoint instead of appending | **DESIGN** | The standard OZ idiom; the strict equality is the point of the line. It pairs with `getAt`'s inclusive `<=` to make the `createdAt - 1` snapshot convention (VO-9) exact. `AuditTimestampBoundaries::test_checkpointsSameSecondOverwriteIsLastWriteWins` pins that at the library level. **Same line as row 7 of the `incorrect-equality` section above, read from the other end** — that row argues the overwrite is unobservable to readers and pins it with a Governance-level composition test (`test_sameSecondCheckpointCannotBackfillProposalWeight`), which dies to the mutation that actually matters (`nowTs - 1` → `nowTs` in `propose`). Read both; neither subsumes the other. |
 | 21 | `VaultCore.requestExit` `:509` | `sharesOf[msg.sender] >= shares` | **TAINT** | Reaches the clock only via `_snapshot` → `Checkpoints.push`. Dropped in ablation 1. The Mode I / Mode F choice at `:511` is a `hasPendingExecution` call, not a comparison. |
 | 22 | `VaultCore.convertToShares` `:1028` | `ts == 0` | **TAINT** | Dropped in ablation 1. |
-| 23 | `VaultCore._deposit` `:375, :386, :389` | capacity cap, deposit slippage, one-pending-deposit-at-a-time | **TAINT** | The function's `block.timestamp` (`:390`) is a WRITE computing `availableAt`; none of the three listed comparisons touches it. Survives both ablations because it carries its own seed. |
+| 23 | `VaultCore._deposit` `:375, :386, :389` | capacity cap, deposit slippage, one-pending-deposit-at-a-time | **TAINT** | The function's `block.timestamp` (`:390`) is a WRITE computing `availableAt`; none of the three listed comparisons reads it. **Split by a third ablation** (stub only `:390`, keeping the exit-fee seed): `:389`'s `pendingDeposit[msg.sender].amountUsdc == 0` DROPS — it was tainted by the `pendingDeposit` struct being timestamp-written — while `:375` and `:386` survive on the exit-fee taint through `idleUsdc`/`totalShares`. So all three are downstream taint, from two different seeds, and none is a clock comparison. |
 | 24 | `DirectPoolAdapter.executeSwap` `:88` | `block.timestamp <= order.deadline` | **DESIGN** | Identical to row 13; the two adapters agreeing on the boundary is itself the property worth pinning. Same test. |
 | 25 | `VaultCore.allocateToChild` `:746` | `idleUsdc >= amountUsdc` | **TAINT** | Dropped in ablation 1. |
 | 26 | `Governance._refreshStatus` `:606` | `block.timestamp > p.expiresAt` — lazy transition Passed → Expired | **DESIGN** | The same strict `>` as `markExpired`. Crucially `hasPendingExecution` does NOT depend on this crank having run — it re-derives expiry from the clock — so a stale `Passed` status never traps an exit. Same test as row 5. |
