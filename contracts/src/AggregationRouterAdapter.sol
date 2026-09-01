@@ -35,6 +35,22 @@ contract AggregationRouterAdapter is IExecutionAdapter {
     error RouterCallFailed();
     error Slippage();
     error BadOrder();
+    error Reentrancy();
+
+    uint256 private _lock = 1;
+
+    /// @dev The adapter settles on MEASURED balance deltas while holding an order's funds
+    /// transiently, so a nested `executeSwap` measures the outer order's in-flight balance:
+    /// the `leftover` sweep below returns the adapter's WHOLE `tokenIn` balance to its own
+    /// `msg.sender`, and `safeApprove(router, 0)` revokes the outer call's approval. Reachable
+    /// with an HONEST pinned router and a hostile counterparty inside the route. Same shape as
+    /// `VaultCore._lock`.
+    modifier nonReentrant() {
+        require(_lock == 1, Reentrancy());
+        _lock = 2;
+        _;
+        _lock = 1;
+    }
 
     /// @param router_ the aggregation router this adapter is permanently pinned to (EX-2)
     /// @param selectors_ the router function selectors routeData may invoke (EX-1)
@@ -47,7 +63,7 @@ contract AggregationRouterAdapter is IExecutionAdapter {
     }
 
     /// @inheritdoc IExecutionAdapter
-    function executeSwap(SwapOrder calldata order) external returns (uint256 amountOut) {
+    function executeSwap(SwapOrder calldata order) external nonReentrant returns (uint256 amountOut) {
         require(block.timestamp <= order.deadline, Expired());
         require(order.minAmountOut > 0, BadOrder()); // minOut is mandatory, never optional
         require(order.tokenIn != order.tokenOut && order.amountIn > 0, BadOrder());

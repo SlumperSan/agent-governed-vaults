@@ -41,6 +41,21 @@ contract DirectPoolAdapter is IExecutionAdapter {
     error BadOrder();
     error TokenNotInPair();
     error Slippage();
+    error Reentrancy();
+
+    uint256 private _lock = 1;
+
+    /// @dev Non-reentrancy is a property of the `IExecutionAdapter` contract itself, not of any
+    /// one caller: every implementation settles on a measured balance delta, and a nested call
+    /// measures the outer order's in-flight balance. Here re-entry can only shrink the outer
+    /// delta (fails closed on `Slippage`), but the sibling aggregation adapter is exploitable,
+    /// so the guard is stated once for the interface. Same shape as `VaultCore._lock`.
+    modifier nonReentrant() {
+        require(_lock == 1, Reentrancy());
+        _lock = 2;
+        _;
+        _lock = 1;
+    }
 
     /// @param pair_ the V2-style pair this adapter is permanently pinned to
     constructor(IUniswapV2Pair pair_) {
@@ -50,7 +65,7 @@ contract DirectPoolAdapter is IExecutionAdapter {
     }
 
     /// @inheritdoc IExecutionAdapter
-    function executeSwap(SwapOrder calldata order) external returns (uint256 amountOut) {
+    function executeSwap(SwapOrder calldata order) external nonReentrant returns (uint256 amountOut) {
         require(block.timestamp <= order.deadline, Expired());
         require(order.minAmountOut > 0 && order.amountIn > 0, BadOrder());
         require(order.tokenIn != order.tokenOut, BadOrder());
