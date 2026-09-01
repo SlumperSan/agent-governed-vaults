@@ -120,15 +120,28 @@ can only *shrink* the outer call's measured delta, which fails closed on `Slippa
 extraction was constructed.
 
 **Guarded anyway**, because non-reentrancy is a property of the `IExecutionAdapter` contract, not of
-any one caller — see the next row for what the same shape costs when the adapter *does* sweep.
-`test_directPoolAdapterRefusesNestedSwap` pins it.
+any one caller — see the next row for what the same shape cost when the sibling adapter *did* sweep
+its whole balance (it no longer does). `test_directPoolAdapterRefusesNestedSwap` pins it.
 
-### `AggregationRouterAdapter.executeSwap` — 1 row — REAL, fixed
+**Checked again 2026-09-01 while scoping the aggregation adapter's sweep, and still clean:**
+`DirectPoolAdapter` transfers the FULL `order.amountIn` to the pair and moves only its own measured
+`amountOut`. It has no `balanceOf(tokenIn)` sweep and no refund leg at all, so the donation DoS
+below has no purchase on it. It also therefore has no refund path for a pair that consumes less
+than `amountIn` — not reachable through an honest V2 pair, which always takes the whole transferred
+balance, and deliberately left alone.
 
-The trailing "sweep unspent input back to the caller" returns `balanceOf(tokenIn)` — the adapter's
+### `AggregationRouterAdapter.executeSwap` — 1 row — REAL, fixed TWICE (#101, then the scoped refund)
+
+The trailing "sweep unspent input back to the caller" returned `balanceOf(tokenIn)` — the adapter's
 **whole** balance, including another order's in-flight input — to that call's `msg.sender`, and
 `safeApprove(router, 0)` revokes the outer call's approval. Both were written assuming the adapter
 only ever handles one order at a time; nothing enforced it.
+
+> **This row said "fixed" after #101 and that was one fix short.** #101's `nonReentrant` closed the
+> *reentrant* half. It made the theft **unreachable**, not impossible, and it left a second, purely
+> non-reentrant exploit of the same root cause untouched — see **The donation DoS** below. The row is
+> corrected rather than deleted: recording a finding as closed when only one of its two mechanisms
+> was addressed is the failure mode worth keeping visible.
 
 **The attacker is not the router.** The router stays honest: pinned immutable (EX-2), selector
 allowlisted (EX-1). The attacker is a **counterparty reached through the route** — the maker side of
@@ -148,11 +161,41 @@ realised", not an open drain. It is **not** bounded for the published `IExecutio
 abstraction, which promises no such thing to any other integrator. Fixed with a `nonReentrant`
 mutex of the same shape as `VaultCore._lock`.
 
+#### The donation DoS — same root cause, no reentrancy, and it gated the mainnet deploy
+
+Both #101 reviewers reached this independently and neither was asked for it. A whole-balance sweep
+does not need a nested call to be dangerous — it just needs a balance. Anyone `transfer`s `d` units
+of `tokenIn` to the shared adapter. The next vault leg is refunded its own unspent input **plus
+`d`**, and `VaultCore.executeRebalance` computes `spent = inBefore - inAfter` over ITS OWN balances
+(`VaultCore.sol:882-884`), which **underflows — `Panic(0x11)`** — as soon as `d` exceeds what the
+route actually pulled. Note the threshold is `d > pull`, not `d > 0`; below it the same defect is
+quieter and still real, silently over-crediting `idleUsdc` by `d`. The griefer then recovers the
+donation with a 1-unit order, so the cost is gas and it is repeatable — and because
+`VaultCore.isAllowedAdapter` is **constructor-only**, it is permanent for every vault built against
+that bytecode, with no repointing path.
+
+**Fixed by scoping the refund to this order's own delta**, `refund = min(amountIn, inAfter -
+inBefore)` — the shape `VaultCore.sol:880-888` already carried (S6 Finding 3 / E3). Two clauses,
+two attacks: `- inBefore` excludes a pre-existing donation (and makes the reentrant theft above
+*impossible* rather than merely blocked), and the `min(…, amountIn)` clamp bounds a counterparty
+that pushes `tokenIn` back mid-route. Both clauses have their own executing test.
+
+Reproduced in `test/audit/AuditAdapterScopedSweep.t.sol` — 7 tests, **5 of which fail against
+`protocol/main`'s adapter**, two with `panic: arithmetic underflow or overflow (0x11)` inside
+`executeRebalance` (401 units donated against a 400-unit route, the reviewers' own figure). It is a
+separate file from `test/AdapterReentrancy.t.sol` on purpose: that file is #101's record for the
+nested-sweep mechanism, this finding needs no reentrancy at all, and reproducing it needs a
+vault-level harness.
+
+**The live Base Sepolia adapter `0xf3e08c8b…a9b1` predates this fix and cannot be repointed.**
+
 **The `reentrancy-balance` count does not move.** Slither does not model the mutex for this
 detector, so it still reports **8** after the fix. Expect that; it is not a failed fix. The total
 went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-events` on the two
 adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
-guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B.
+guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B. The
+scoped refund then took `AggregationRouterAdapter` **1,839 → 1,981 B** (+142); `DirectPoolAdapter`
+is untouched at 2,210 B.
 `VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
 
 ## Running it
