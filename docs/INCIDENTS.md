@@ -102,7 +102,7 @@ permanently, and every NAV path keeps answering. Accepted as residual register *
 "what would invalidate this row".
 
 - **Detect:** `node scripts/verify-chainlink-oracle.mjs --strict` reporting **FAIL** on
-  `decimals() == 8`. Nothing on-chain and nothing in the canary detects this — `docs/CANARY.md`
+  `decimals() == 8`. Nothing on-chain detects this, and until #103 nothing in the canary did either — the `feed-identity` signal now compares live `decimals()` against the cached `scale` in `feedOf(asset)` every sweep, which catches this before a price is ever wrong — `docs/CANARY.md`
   §3(a) names feed identity as a blind spot, and `nav-backing` recomputes NAV through the same
   `priceWad`, so a uniform mis-scale cancels exactly and that signal stays silent. **A `DRIFT`
   notice with a passing decimals check is the benign case**: the aggregator moved and re-checked

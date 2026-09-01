@@ -266,11 +266,18 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 > directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
 > sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
 > cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
-> The gap that remains is the one this section exists for: nothing on-chain or in the canary
-> compares a feed's `aggregator()` / `description()` / `decimals()` against what was pinned at
-> deploy — that is **G2** in `Business/Operations/Monitoring Gap Analysis`, whose §3 specs a
-> `feed-identity` signal that is **not built**. Until it is, the recurring check below is the only
-> thing that looks at feed identity at all, and it looks only when someone runs it.
+> **Feed identity is watched too, as of #103** — the `feed-identity` signal (G2's on-chain half)
+> compares each feed's live `decimals()` against the **cached `scale` the deployed oracle actually
+> multiplies by**, read from `feedOf(asset)`, plus its denomination and its `aggregator()`. Both
+> sides come from the chain, so there is nothing to pin and nothing that can go stale. That is a
+> stronger check than the recurring script below, which tests Chainlink's 8-decimal *convention*
+> rather than the number this oracle uses — **the canary now continuously re-runs the two
+> construction-time proofs an immutable contract can never re-run itself.**
+>
+> What the recurring check below still adds, and why it is not redundant: a **git-tracked** pin
+> (the canary pins on first sight, so a benign swap during canary downtime is adopted silently on
+> restart), and the deprecation **announcement**, which is off-chain by nature and remains a weekly
+> human item — up to 7 days of exposure, by choice, per the gap analysis's own build-vs-buy call.
 
 ### 7a. Recurring feed check — run this on a cadence, not only before deploying
 
