@@ -87,6 +87,20 @@ re-checked it. Re-check this list before repeating it.
   implemented, measured, and reverted — `test/audit/AuditProposalThresholdFloor.t.sol` — because a
   constructor cannot observe live stake distribution). Consequence: the operator seed is *derived,
   not chosen*, and "zero capital cost to the operator" is false — say *low*, and state the number.
+- **Below 5%, the operator cannot withdraw *anything* while a non-creator member remains.**
+  `_checkCreatorGate` requires `(s − b) · 10_000 ≥ 500 · (T − b)`; for `s/T < 5%` that fraction
+  only falls as the burn grows, so every burn amount fails — one share included. The same passive
+  dilution that removes proposal rights also freezes the remaining capital. By design, not a bug
+  (the gate binds creator *action*, CM-2), and recoverable: a top-up, a member exit, or the last
+  member leaving. Pinned in `test/audit/AuditCreatorGateTraps.t.sol`; the arithmetic is Finance's
+  (`Operator Capital Requirement.md`, "Dilution is passive, and the gate math is one-directional").
+- **Past 95% external fill, the top-up can never reach 5% again.** The capacity cap binds the
+  operator's deposit too, so once outsiders hold more than 95% of cap, even filling the vault to
+  cap leaves the operator short (`K = C − E < 0.05 · C`; at a 50k cap, once outsiders hold >
+  $47,500, $2,500 is unreachable). Recovery is a member exit or an NAV drawdown reopening
+  headroom — nothing the operator controls. By design, not a bug: the cap is a cap. The top-up
+  must *lead* the fill, not chase it, which is why the seed is 5%-of-cap on day one. Same test
+  file; same Finance note, "The cap race".
 - **This is a shared worktree.** Never `git add -A`; it has already swept another session's work
   into a PR. Commit named paths only.
 - **`OperatorRegistry` attestation has no rebind**, so the operator payout address is permanent.
