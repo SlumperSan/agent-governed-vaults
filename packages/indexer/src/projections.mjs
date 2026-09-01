@@ -361,8 +361,12 @@ export function listVaults(state) {
 }
 
 /**
- * Approximate Mode-F exit rate for a vault: `ExitQueued` occurrences over `ExitSettled`
- * occurrences (counts, not value — matches the vault note's "exits, NOT value" framing).
+ * Approximate Mode-F exit rate for a vault, in integer basis points of `ExitQueued` occurrences
+ * over `ExitSettled` occurrences (counts, not value — matches the vault note's "exits, NOT value"
+ * framing and its own field name, `mode_f_exit_rate_bps`, §4.2). Bps rather than a float ratio to
+ * match the repo's existing convention for a counts-over-counts fraction (see `shareOfVaultBps` in
+ * `memberPosition`, right below) and because §4.4's public-field lint permits `_bps` only for
+ * exactly this shape.
  *
  * This is a first-order signal, not the exact per-member discriminator from the data-analytics
  * build note (§3.6): the precise rule is "an ExitSettled is Mode-F iff that (vault, member) has an
@@ -370,13 +374,19 @@ export function listVaults(state) {
  * `exit_event` table in the note's build order item 4+, on the Postgres substrate). Two counts
  * over the vault's whole history is the natural small addition available from the existing
  * scalar-fold shape; it will over- or under-count relative to the exact ledger whenever queued
- * exits settle out of order across members. Returns null when the vault is unknown or has no
- * settled exits yet (undefined rate, not zero).
+ * exits settle out of order across members.
+ *
+ * Can legitimately exceed 10000 bps (100%) when more exits have been queued than have settled —
+ * e.g. 3 queued, 1 settled, a stranded-queue situation (§3.6) — since it divides two independent
+ * lifetime counters, not a partition of one total. That is a real signal (a backlog of unsettled
+ * Mode-F exits), not a bug; do not clamp it.
+ *
+ * Returns null when the vault is unknown or has no settled exits yet (undefined rate, not zero).
  */
-export function modeFExitRate(state, vault) {
+export function modeFExitRateBps(state, vault) {
   const v = state.vaults.get(vault);
   if (!v || v.exitSettledCount === 0) return null;
-  return v.exitQueuedCount / v.exitSettledCount;
+  return Math.round((v.exitQueuedCount * 10000) / v.exitSettledCount);
 }
 
 /** A member's share position in a vault (0 if none). */

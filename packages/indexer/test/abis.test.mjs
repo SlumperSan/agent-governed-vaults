@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { CONTRACT_ABIS, allEventFragments, eventSignature } from '../src/abis.mjs';
+import { CONTRACT_ABIS, allEventFragments, eventSignature, typeOf } from '../src/abis.mjs';
 import { HANDLED_EVENTS } from '../src/projections.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +38,11 @@ function compiledEventSignatures() {
     const abi = JSON.parse(readFileSync(p, 'utf8')).abi ?? [];
     for (const item of abi) {
       if (item.type !== 'event') continue;
-      const sig = `${item.name}(${item.inputs.map((i) => i.type).join(',')})`;
+      // Foundry's ABI JSON gives a struct input the bare `type: "tuple"` too, with the real shape
+      // in `components` — expand it the same way abis.mjs's eventSignature() does, so a reordered
+      // or retyped struct field (e.g. Governance.GovConfig) actually fails this test instead of
+      // both sides silently agreeing on the string "tuple".
+      const sig = `${item.name}(${item.inputs.map(typeOf).join(',')})`;
       if (!sigs.has(item.name)) sigs.set(item.name, new Set());
       sigs.get(item.name).add(sig);
     }

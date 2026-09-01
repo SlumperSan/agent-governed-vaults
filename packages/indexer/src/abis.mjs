@@ -108,7 +108,18 @@ export function allEventFragments() {
   return Object.values(CONTRACT_ABIS).flat();
 }
 
+/**
+ * The canonical type string for one ABI input, expanding a `tuple` (struct) to its parenthesized
+ * component list — `tuple` alone would let e.g. a reordered or retyped `GovConfig` field pass the
+ * drift test silently, since every struct's bare JSON `type` is just the string "tuple".
+ * @param {{type:string, components?:Array<{type:string, components?:any}>}} input
+ */
+export function typeOf(input) {
+  if (input.type === 'tuple' && input.components) return `(${input.components.map(typeOf).join(',')})`;
+  return input.type;
+}
+
 /** Canonical `name(type,type,...)` signature for an event fragment (for drift comparison). */
 export function eventSignature(fragment) {
-  return `${fragment.name}(${fragment.inputs.map((i) => i.type).join(',')})`;
+  return `${fragment.name}(${fragment.inputs.map(typeOf).join(',')})`;
 }

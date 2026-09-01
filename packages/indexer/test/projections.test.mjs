@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRate } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -145,7 +145,7 @@ test('standing default counts in tally but not quorum (revealedWeight)', () => {
   assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
 });
 
-test('ExitQueued + ExitSettled counts drive an approximate modeFExitRate', () => {
+test('ExitQueued + ExitSettled counts drive an approximate modeFExitRateBps', () => {
   const s = applyAll([
     ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
     ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
@@ -153,14 +153,25 @@ test('ExitQueued + ExitSettled counts drive an approximate modeFExitRate', () =>
   ]);
   assert.equal(vaultView(s, V).exitQueuedCount, 1);
   assert.equal(vaultView(s, V).exitSettledCount, 1);
-  assert.equal(modeFExitRate(s, V), 1);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'one queued, one settled == 100%');
 });
 
-test('modeFExitRate is null for an unknown vault or a vault with no settled exits', () => {
+test('modeFExitRateBps is null for an unknown vault or a vault with no settled exits', () => {
   const unknown = '0x' + '9'.repeat(40);
   const s = applyAll([ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n })]);
-  assert.equal(modeFExitRate(s, unknown), null);
-  assert.equal(modeFExitRate(s, V), null, 'no ExitSettled yet');
+  assert.equal(modeFExitRateBps(s, unknown), null);
+  assert.equal(modeFExitRateBps(s, V), null, 'no ExitSettled yet');
+});
+
+test('modeFExitRateBps can exceed 10000 (a stranded-queue backlog), and is not clamped', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 300n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 3, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 4, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 5, 0, V, { member: A, sharesBurned: 100n }),
+  ]);
+  assert.equal(modeFExitRateBps(s, V), 30000, '3 queued over 1 settled == 300%, not clamped');
 });
 
 test('stat-only events (SliceEscrowed, EscrowClaimed, ModuleCallFailed, FeeAssessed, FeeCredited, '
