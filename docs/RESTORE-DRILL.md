@@ -421,3 +421,68 @@ paths inside a documentation PR is exactly the merge-surface expansion those rul
 It is reported here, recorded in `docs/NOW.md`, and queued as its own task. **No agent can meet the
 definition of done until it lands**, and CI could not have caught it — Actions minutes are exhausted
 until ~2026-09-01.
+
+## 9. Addendum 2026-09-01 — why the substitution can't be scripted away, and a Docker-free corroboration
+
+Re-investigated with `docker` still absent from this machine (`where docker.exe` → not found;
+`wsl --status` → WSL launcher present but **no distro installed**). Two follow-ups.
+
+**1. The hard-kill substitution is a Windows platform limit, not a Git-Bash quirk — confirmed with
+three more methods, none of which went through Git Bash at all.** §5 finding 1 left open whether a
+different signal-delivery method would succeed where `kill` in Git Bash failed. It does not:
+
+| Method | Result |
+| --- | --- |
+| Node-native `child_process.spawn` + `child.kill('SIGINT')` | Process exits; the shutdown hook's log line is never written. Silent hard kill. |
+| Same, child spawned `{ detached: true }` (own process group) | Identical. |
+| `taskkill /PID <pid>` **without** `/F` | Windows itself refuses: *"This process can only be terminated forcefully (with /F option)."* There is no graceful path to a bare `node.exe` for Windows to offer, even from its own tooling. |
+
+All three isolated in a throwaway probe (not committed), same shutdown-hook shape as
+`packages/oplog/src/shutdown.mjs`. Conclusion: `libuv`'s Windows signal emulation only delivers a
+real signal via `GenerateConsoleCtrlEvent`, and only for a genuine interactive Ctrl-C/Ctrl-Break
+keystroke landing in the *same console* as the target — never from a background/scripted sender,
+which is what every automated drill (and every agent) is. `SIGTERM` is unconditionally a hard
+`TerminateProcess` on Windows regardless of how it's sent. **This closes off "maybe a different
+script would work": nothing scripted on native Windows can exercise steps 1/6 or §8.6's restart
+path.** RUNTIME.md §8.3/§8.6 now say so and give the Linux/macOS bare-metal commands plus a
+Windows note.
+
+Two ways to get a real POSIX kernel to run this drill on, priced for the owner:
+- **WSL2 alone, no Docker.** Run the indexer/canary as native Linux processes inside a WSL2 distro;
+  `kill -TERM $pid` there is a real signal. Cheaper than Docker Desktop and satisfies this row's own
+  "amend the runbook and re-drill with a bare-metal-equivalent stop/start" alternative
+  (`docs/LAUNCH-READINESS.md` gate 7 row) without installing Docker at all.
+- **Docker Desktop for Windows** (itself WSL2-backed) — runs the runbook's literal
+  `docker compose stop/start`, closing the row exactly as written.
+
+Either needs the owner; see `docs/NOW.md` "Blocked on a human" item 3 for exact links and numbered
+PowerShell steps.
+
+**2. Drill A (indexer snapshot) re-run independently, 2 days later, Docker-free, on the current
+tree** (post oracle-stack-prune; same deployment addresses — factory `0x72767FAD…FD0A`, deploy
+block 46,111,530). Throwaway `./data-drill-team8/`, read-only against
+`https://sepolia.base.org`, no key, no transaction.
+
+- Cold start **46,111,530 → 46,265,978 (154,448 blocks) in ~27.0s**, then steady-state polling.
+  (The chain had advanced ~125k more blocks than the 2026-08-30 run's 29,341 — consistent with the
+  elapsed time.)
+- Truncated the live 991-byte file to 400 bytes → `verify` reported `UNUSABLE`, exit 1, three
+  healthy rungs still summarised — same behavior as §3.
+- `mv` to `.bad-<epoch>`, `cp .1` in, re-`verify` → `OK`, exit 0. **Restored file SHA-256
+  byte-identical to `.1`**: `03b15707aa4e9106bc5637f5a586e1bb7fb0f1e16c01c5e2092dec1163e9e75f`.
+- Restarted the writer: `knownVaults:1` seeded from the restored file, resumed at
+  `lastBlock+1` (46,266,024), closed the ~34-block gap in one 0.68s batch, counts identical
+  before/after (vaults=1 operators=1 proposals=1 shareBooks=1 activeProposals=1 — one more
+  proposal/shareBook than the original drill, reflecting gate 2's Sepolia lifecycle run that
+  happened on-chain in between).
+
+This corroborates §3 (Drill A) exactly on an independent run; it does not touch the
+graceful-shutdown or atomicity questions, which item 1 above covers and which remain the actual
+open condition. Drill B (canary) was not re-run — same `createShutdown`/ring/`verify` code path,
+no reason to expect a different result, and it would not add evidence toward the open condition
+either.
+
+**Net: gate 7's verdict is unchanged (drill performed and PASSED; CONDITIONAL on steps 1/6).** What
+changed is confidence in *why*: this is now confirmed to be a genuine, unscriptable Windows
+platform limit rather than an artifact of one tool's `kill`, and the Docker-free half of the drill
+(everything except steps 1/6) is now independently reproduced twice.

@@ -72,10 +72,62 @@ re-checked it. Re-check this list before repeating it.
    fabricated staleness events on a healthy oracle until #94 fixed it, so an older tree produces a
    soak result that is worse than useless. Start it **after** the smoke lifecycle finishes: track B
    drives the smoke vault.
-3. ~~**Recorded restore drill** — gate 7.~~ **DONE 2026-08-30** — `docs/RESTORE-DRILL.md`. The
-   restore genuinely works on both state files. Gate 7 stays CONDITIONAL for one reason: steps 1
-   and 6 of the runbook are `docker compose stop/start` and **there is no Docker on this machine**,
-   so they were substituted. **Closing the row now needs Docker, not a key.**
+3. ~~**Recorded restore drill** — gate 7.~~ **DONE 2026-08-30, re-confirmed 2026-09-01** —
+   `docs/RESTORE-DRILL.md` (+ its 2026-09-01 §9 addendum). The restore genuinely works on both
+   state files, re-proven Docker-free and independently 2 days apart. Gate 7 stays CONDITIONAL for
+   one reason: steps 1 and 6 of the runbook (`docker compose stop/start`) need a real POSIX kernel
+   to deliver a real `SIGTERM`/`SIGINT`, and **this machine has neither Docker nor WSL2**
+   (`where docker.exe` → not found; `wsl --status` → launcher present, no distro installed).
+   **Checked 2026-09-01, three more scripted methods (none via Docker or Git Bash): Node-native
+   `child_process.kill('SIGINT')`, the same with a detached process group, and `taskkill /PID`
+   without `/F` — all three fail identically to the original Git-Bash `kill` (Windows itself
+   refuses the last one: "can only be terminated forcefully"). This is a genuine, unscriptable
+   Windows platform limit, not a tooling quirk — no further agent effort can close this without one
+   of the two installs below.** RUNTIME.md §8.3/§8.6 now document the Linux/macOS bare-metal
+   commands and this limitation explicitly.
+
+   **Two ways to close it, either works, WSL2-alone is cheaper:**
+
+   **Option A — WSL2 alone (no Docker; run the daemons as native Linux processes):**
+   1. Open **PowerShell as Administrator** and run:
+      ```powershell
+      wsl --install
+      ```
+      (Installs WSL2 + the default Ubuntu distro. [Microsoft's WSL install docs](https://learn.microsoft.com/en-us/windows/wsl/install) if anything prompts unexpectedly.)
+   2. Reboot if prompted.
+   3. Launch **Ubuntu** from the Start menu once, and complete the first-run UNIX username/password
+      setup it asks for.
+   4. Inside that Ubuntu shell, install Node 24+:
+      ```bash
+      curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+      node --version   # confirm >= 24
+      ```
+   5. From that same shell, `cd` to the repo via its Windows path (e.g.
+      `cd /mnt/c/Users/Micha/desktop/x402`) and run `npm ci`.
+   6. Re-run `docs/RESTORE-DRILL.md` §7's reproduction steps verbatim — `kill -TERM $(pgrep -f
+      index-runner.mjs)` for step 1 and `node packages/indexer/src/index-runner.mjs` for step 6 are
+      now real signals, not substitutes. Confirm `shutdown.complete` appears in the logs (§8.6).
+   7. Update `docs/RESTORE-DRILL.md` and the gate 7 row in `docs/LAUNCH-READINESS.md` with the
+      result (PASS → GO, or whatever it actually shows).
+
+   **Option B — Docker Desktop (runs the runbook's literal `docker compose` commands):**
+   1. Do WSL2 steps 1–3 above first (Docker Desktop's WSL2 backend needs it).
+   2. Download Docker Desktop for Windows from
+      **https://www.docker.com/products/docker-desktop/** (click "Download for Windows").
+   3. Run the installer; leave "Use WSL 2 instead of Hyper-V" checked (default).
+   4. Reboot if prompted, then launch Docker Desktop and complete its first-run setup (Docker's
+      Subscription Service Agreement — free for personal/small-business use).
+   5. In PowerShell, confirm:
+      ```powershell
+      docker --version
+      docker compose version
+      ```
+   6. From the repo root: `docker compose up --build` (RUNTIME.md §4), then run the restore
+      procedure exactly as `RUNTIME.md` §8.3 prints it — `docker compose stop indexer` /
+      `docker compose start indexer` — no substitution needed.
+   7. Update `docs/RESTORE-DRILL.md` and the gate 7 row in `docs/LAUNCH-READINESS.md` with the
+      result.
 4. **Launch parameter: `proposalThresholdBps = 500`.** Keep it or lower it — immutable per vault
    once shipped. See the trap below.
 
