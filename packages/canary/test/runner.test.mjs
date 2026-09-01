@@ -55,6 +55,35 @@ test('config: defaults are the documented ones', () => {
   assert.equal(cfg.canaryStatePath, './data/canary-state.json');
   assert.notEqual(cfg.canaryStatePath, cfg.statePath, 'the canary must never write to the indexer snapshot');
   assert.equal(cfg.webhookUrl, null);
+  assert.equal(cfg.pageWebhookUrl, null);
+  assert.equal(cfg.logWebhookUrl, null);
+  assert.equal(cfg.deadmanPingUrl, null);
+  assert.equal(cfg.testAlertOnStart, false);
+  assert.equal(cfg.heartbeatMs, 3_600_000, 'non-negotiable per security-ops.md §5.2 — a dead canary must not look like a healthy one');
+});
+
+test('config: PAGE_WEBHOOK_URL / LOG_WEBHOOK_URL fall back to ALERT_WEBHOOK_URL independently', () => {
+  const both = resolveCanaryConfig({ RPC_URL: 'http://x', ALERT_WEBHOOK_URL: 'https://hooks.example/only' });
+  assert.equal(both.pageWebhookUrl, 'https://hooks.example/only');
+  assert.equal(both.logWebhookUrl, 'https://hooks.example/only');
+
+  const split = resolveCanaryConfig({
+    RPC_URL: 'http://x', ALERT_WEBHOOK_URL: 'https://hooks.example/fallback',
+    PAGE_WEBHOOK_URL: 'https://hooks.example/page',
+  });
+  assert.equal(split.pageWebhookUrl, 'https://hooks.example/page', 'the specific URL wins over the fallback');
+  assert.equal(split.logWebhookUrl, 'https://hooks.example/fallback', 'the unset one still falls back');
+});
+
+test('config: HEARTBEAT_MS=0 explicitly disables the heartbeat, distinct from leaving it unset', () => {
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', HEARTBEAT_MS: '0' }).heartbeatMs, 0);
+});
+
+test('config: CANARY_TEST_ALERT_ON_START accepts "1" or "true"', () => {
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).testAlertOnStart, false);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CANARY_TEST_ALERT_ON_START: '1' }).testAlertOnStart, true);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CANARY_TEST_ALERT_ON_START: 'true' }).testAlertOnStart, true);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CANARY_TEST_ALERT_ON_START: 'nope' }).testAlertOnStart, false);
 });
 
 test('config: the poll interval is namespaced, so the indexer POLL_INTERVAL_MS cannot capture it', () => {
@@ -539,5 +568,99 @@ test('a canary state file written BEFORE feedIdentity existed loads and re-pins,
     assert.deepEqual((await canary.runOnce()).transitions, []);
     const flushed = await canary.flush();
     assert.equal(flushed.feedsPinned, 1);
+  });
+});
+
+// ── alert-delivery self-test (security-ops.md §5.3) ──────────────────────────
+//
+// "A webhook that 500s is logged and skipped, by design. Something must test the alert path
+// end-to-end on a schedule, or the first real page is also the first test." testAlert() fires one
+// synthetic PAGE and one synthetic LOG transition through the SAME sinks a real sweep would use.
+
+test('testAlert() emits exactly one PAGE-tier and one LOG-tier line through the real sinks', async () => {
+  await withTempDir(async (dir) => {
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      PAGE_WEBHOOK_URL: 'https://example.invalid/page', LOG_WEBHOOK_URL: 'https://example.invalid/log',
+    });
+    const out = [], err = [], hooked = [];
+    const canary = await buildCanary(cfg, {
+      log: (m) => out.push(m), error: (m) => err.push(m), client: {},
+      fetchImpl: async (url) => { hooked.push(url); return { ok: true, status: 200 }; },
+    });
+
+    const synthetic = await canary.testAlert();
+
+    assert.equal(synthetic.length, 2);
+    assert.equal(synthetic[0].to, 'alert');
+    assert.equal(synthetic[1].to, 'skipped');
+    // Both lines are non-'ok', so the console sink puts both on stderr — same split a real ALERT
+    // and a real DEGRADED line would use.
+    assert.equal(err.length, 2);
+    assert.equal(out.length, 0);
+    assert.match(err[0], /self-test \(PAGE tier\)/);
+    assert.match(err[1], /self-test \(LOG tier\)/);
+    assert.deepEqual(hooked, ['https://example.invalid/page', 'https://example.invalid/log'], 'each synthetic transition reached its own tier\'s URL');
+  });
+});
+
+test('testAlert() never touches the transition tracker or canary-state.json', async () => {
+  await withTempDir(async (dir) => {
+    const canaryStatePath = join(dir, 'canary-state.json');
+    const cfg = resolveCanaryConfig({ RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: canaryStatePath });
+    const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
+
+    const sizeBefore = canary.tracker.size;
+    await canary.testAlert();
+    assert.equal(canary.tracker.size, sizeBefore, 'a self-test must never plant state that could suppress a real future transition');
+
+    await canary.flush();
+    const persisted = JSON.parse(await readFile(canaryStatePath, 'utf8'));
+    assert.deepEqual(persisted.transitions, {}, 'the self-test left nothing behind to persist');
+  });
+});
+
+test('testAlert() reaches the ALERT_WEBHOOK_URL fallback exactly once per synthetic transition, matching real-sweep back-compat', async () => {
+  await withTempDir(async (dir) => {
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      ALERT_WEBHOOK_URL: 'https://example.invalid/only',
+    });
+    const hooked = [];
+    const canary = await buildCanary(cfg, {
+      log: () => {}, error: () => {}, client: {},
+      fetchImpl: async (url) => { hooked.push(url); return { ok: true, status: 200 }; },
+    });
+    await canary.testAlert();
+    assert.deepEqual(hooked, ['https://example.invalid/only', 'https://example.invalid/only']);
+  });
+});
+
+test('CANARY_TEST_ALERT_ON_START fires the self-test once, before the sweep loop begins', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+      CANARY_TEST_ALERT_ON_START: '1', CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const out = [], err = [];
+    const canary = await buildCanary(cfg, { log: (m) => out.push(m), error: (m) => err.push(m), client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 10));
+    await canary.stop();
+    await running;
+
+    assert.ok(err.some((m) => /self-test \(PAGE tier\)/.test(m)), 'the self-test line appears even though the underlying deployment is healthy');
+    const trackedIds = Object.keys(canary.tracker.snapshot());
+    assert.ok(
+      trackedIds.every((id) => !id.startsWith('self-test')),
+      'the self-test must never be recorded as a real signal transition, even once the real sweep loop has also run',
+    );
   });
 });
