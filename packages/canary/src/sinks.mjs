@@ -1,13 +1,22 @@
 // @ts-check
 /**
- * Where transition lines go. Two sinks, both optional-failure-tolerant: a sink that throws must
- * never take the canary down, because a paging outage is not a reason to stop watching the chain.
+ * Where transition lines go. Optional-failure-tolerant throughout: a sink that throws must never
+ * take the canary down, because a paging outage is not a reason to stop watching the chain.
  *
  * console  — always on. stdout for recoveries, stderr for alerts and degradations, so a `2>` split
  *            gives you a pure problem feed.
- * webhook  — on iff ALERT_WEBHOOK_URL is set. POSTs one JSON body per transition, carrying the
- *            structured `detail` from the signal so a receiver can route on vault or signal
- *            without parsing the human line.
+ * webhook  — plain, single-URL POST of one JSON body per transition. Kept for callers that only
+ *            want one endpoint.
+ * tiered webhook — PAGE vs LOG by signal (Monitoring Gap Analysis §2 G6 / §3 item 4): `sinks.mjs`
+ *            used to be console + one generic webhook, every transition, same channel, no
+ *            severity — this is that gap closed. `PAGE_WEBHOOK_URL` / `LOG_WEBHOOK_URL` route to
+ *            two endpoints; `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback for
+ *            whichever of the two is unset, so an existing single-webhook deployment is unchanged.
+ * deadman ping — an off-host dead-man's switch: a successful sweep pings an external URL
+ *            (Healthchecks.io-style). `ops-check` (packages/oplog) already notices a dead canary,
+ *            but it runs ON THE SAME HOST as the canary — host death silences both the watcher and
+ *            the watcher's watcher. This ping is the "something not on that host" G6 asks for. Off
+ *            by default when `DEADMAN_PING_URL` is unset; a failed ping is logged, never fatal.
  */
 
 /** @param {{log?:Function, error?:Function}} [io] */
@@ -19,6 +28,44 @@ export function createConsoleSink({ log = console.log, error = console.error } =
       (t.to === 'ok' ? log : error)(t.line);
     },
   };
+}
+
+/**
+ * Signals that PAGE on ALERT — the four "member capital wrong-priced or invariant broken" /
+ * "flagship freeze detector" signals the Monitoring Gap Analysis §3 item 4 names explicitly:
+ * "PAGE: nav-backing, share-conservation, fee-routing, exit-liveness ALERT, oracle-v2 ALERT".
+ * `oracle-freshness` is the SIGNAL name `signals/oracle-health.mjs` still emits post-pivot (the
+ * file was renamed, the wire name was not, so standing transition state and this map both survive
+ * the rename) — it is the "oracle-v2" the note refers to.
+ *
+ * Deliberately NOT here even though it can ALERT: `feed-identity` (G2's on-chain half) — the note's
+ * PAGE list does not include it, an aggregator-swap ALERT there self-clears on the next sweep by
+ * design, and a decimals-change ALERT there is exactly the kind of thing the weekly ops review is
+ * built to catch. Escalating that list is Operations' call, not something to infer here.
+ */
+export const PAGE_SIGNALS = new Set([
+  'nav-backing', 'share-conservation', 'fee-routing', 'exit-liveness', 'oracle-freshness',
+]);
+
+/**
+ * Every OTHER signal name the runner can currently emit, spelled out on purpose rather than left
+ * as "whatever isn't in PAGE_SIGNALS". A signal rename that lands in neither set fails
+ * `sinks.test.mjs`'s coverage test instead of silently defaulting to LOG (or PAGE).
+ */
+export const LOG_SIGNALS = new Set(['feed-identity', 'module-events', 'vault-config']);
+
+/**
+ * PAGE or LOG for one transition. A synthetic self-test transition (see `canary-runner.mjs`
+ * `testAlert()`) forces its tier via `result.detail.tier` rather than impersonating a real signal
+ * name — that keeps the routing path under test genuine without ever being able to page on a fake
+ * `nav-backing` ALERT. Real transitions fall through to the signal/status derivation.
+ * @param {import('./transitions.mjs').Transition} t
+ * @returns {'page'|'log'}
+ */
+export function tierOf(t) {
+  const forced = t?.result?.detail?.tier;
+  if (forced === 'page' || forced === 'log') return forced;
+  return t?.to === 'alert' && PAGE_SIGNALS.has(t?.signal) ? 'page' : 'log';
 }
 
 /**
@@ -40,6 +87,10 @@ export function createWebhookSink({ url, fetchImpl = globalThis.fetch, timeoutMs
         // >0 on a broken-detector re-assertion: how many consecutive sweeps the check has been
         // blind. A receiver can escalate on it without parsing the human line.
         repeat: t.repeat ?? 0,
+        // 'page' | 'log' — lets a receiver on a SINGLE endpoint (e.g. the ALERT_WEBHOOK_URL
+        // fallback, or a tiered deployment that points both URLs at the same place) still route
+        // without re-deriving the severity map itself.
+        tier: tierOf(t),
         signal: t.signal,
         vault: t.vault,
         key: t.key ?? null,
@@ -59,6 +110,70 @@ export function createWebhookSink({ url, fetchImpl = globalThis.fetch, timeoutMs
         if (!res?.ok) onError(`canary: webhook returned ${res?.status ?? '?'} for ${t.id}`);
       } catch (err) {
         onError(`canary: webhook delivery failed for ${t.id}: ${err?.message ?? err}`);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+/**
+ * Two webhook URLs, routed by `tierOf`. Either URL may be omitted (that tier is simply not
+ * delivered); when `pageUrl === logUrl` — the `ALERT_WEBHOOK_URL`-only back-compat case — routing
+ * still resolves to exactly one physical POST per transition, identical to today's single-webhook
+ * behaviour, because each `emit` call handles one transition and picks one URL for it.
+ * @param {Object} cfg
+ * @param {string|null} [cfg.pageUrl]
+ * @param {string|null} [cfg.logUrl]
+ * @param {typeof fetch} [cfg.fetchImpl]
+ * @param {number} [cfg.timeoutMs]
+ * @param {Function} [cfg.onError]
+ */
+export function createTieredWebhookSink({ pageUrl, logUrl, fetchImpl = globalThis.fetch, timeoutMs = 5000, onError = console.error }) {
+  const sinkFor = (url) => createWebhookSink({ url, fetchImpl, timeoutMs, onError });
+  const pageSink = pageUrl ? sinkFor(pageUrl) : null;
+  const logSink = logUrl ? (logUrl === pageUrl ? pageSink : sinkFor(logUrl)) : null;
+  return {
+    name: 'webhook-tiered',
+    /** @param {import('./transitions.mjs').Transition} t */
+    async emit(t) {
+      const sink = tierOf(t) === 'page' ? pageSink : logSink;
+      if (sink) await sink.emit(t);
+    },
+  };
+}
+
+/**
+ * Off-host dead-man's switch. `ping()` is called once per SUCCESSFUL sweep (see
+ * `canary-runner.mjs`'s `loop()`) against an external heartbeat-monitoring URL — e.g.
+ * https://hc-ping.com/<uuid> from a Healthchecks.io-style free check. That account is a human's to
+ * create (see the README); this is only the code path that pings it. A plain GET matches the
+ * simplest form every such service accepts (curl/wget compatible, no body needed).
+ *
+ * Off by default when `url` is unset: most deployments start before the external monitor account
+ * exists, and pinging nothing must never look like a failure. A failed ping is logged, never
+ * fatal — the whole point of this switch is to be noticed from OUTSIDE this host, so a delivery
+ * failure here is itself something an operator reading logs should see, not a reason to crash the
+ * loop that is the last line of defence.
+ * @param {Object} cfg
+ * @param {string|null} [cfg.url]
+ * @param {typeof fetch} [cfg.fetchImpl]
+ * @param {number} [cfg.timeoutMs]
+ * @param {Function} [cfg.onError]
+ */
+export function createDeadmanPing({ url = null, fetchImpl = globalThis.fetch, timeoutMs = 5000, onError = console.error } = {}) {
+  return {
+    name: 'deadman',
+    enabled: Boolean(url),
+    async ping() {
+      if (!url) return;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), timeoutMs);
+      try {
+        const res = await fetchImpl(url, { method: 'GET', signal: ac.signal });
+        if (!res?.ok) onError(`canary: dead-man ping returned ${res?.status ?? '?'}`);
+      } catch (err) {
+        onError(`canary: dead-man ping failed: ${err?.message ?? err}`);
       } finally {
         clearTimeout(timer);
       }

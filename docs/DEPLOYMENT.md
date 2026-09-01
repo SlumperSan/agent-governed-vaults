@@ -274,6 +274,59 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
+> **The canary watches the launch oracle, and what it does not watch is feed IDENTITY.** Since
+> #89 the `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
+> directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
+> sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
+> cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
+> **Feed identity is watched too, as of #103** — the `feed-identity` signal (G2's on-chain half)
+> compares each feed's live `decimals()` against the **cached `scale` the deployed oracle actually
+> multiplies by**, read from `feedOf(asset)`, plus its denomination and its `aggregator()`. Both
+> sides come from the chain, so there is nothing to pin and nothing that can go stale. That is a
+> stronger check than the recurring script below, which tests Chainlink's 8-decimal *convention*
+> rather than the number this oracle uses — **the canary now continuously re-runs the two
+> construction-time proofs an immutable contract can never re-run itself.**
+>
+> What the recurring check below still adds, and why it is not redundant: a **git-tracked** pin
+> (the canary pins on first sight, so a benign swap during canary downtime is adopted silently on
+> restart), and the deprecation **announcement**, which is off-chain by nature and remains a weekly
+> human item — up to 7 days of exposure, by choice, per the gap analysis's own build-vs-buy call.
+
+### 7a. Recurring feed check — run this on a cadence, not only before deploying
+
+```bash
+node scripts/verify-chainlink-oracle.mjs
+```
+
+Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
+**weekly, and after any Chainlink feed announcement** — with
+`--strict`, so an aggregator swap exits non-zero instead of scrolling past as a notice nobody
+reads. Two things it catches that nothing on-chain
+can:
+
+- **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
+  configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
+  `scale = 10**(18 - decimals)` once, at construction, from a value that lives on the *aggregator*.
+  The script's `decimals() == 8` check is a complete test of that residual **at the sampling
+  instant**: if a feed reports 8 when you run it, the cached scale was correct however many swaps
+  had happened by then. It says nothing about the interval between runs — a swap that drifts and
+  reverts between two weekly runs is invisible — so the exposure window is the run interval, and
+  the cadence is the control. Each
+  feed's `aggregatorPin` in the config makes the swap itself **visible** — reported as a `DRIFT`
+  notice, never a failure, because a swap is legitimate. A `DRIFT` line alongside a passing decimals
+  check is the reassuring outcome: it moved, and it re-checked clean. Update the pin and move on.
+- **A `FAIL` on decimals is the alarming outcome** and needs the [INCIDENTS.md §1a](INCIDENTS.md)
+  response (residual register **row 14**), not a config edit:
+  every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
+  it (the vault's oracle is `immutable` — row 12), and members should be told to exit. **On a vault with
+  no sub-vaults, exits still settle correctly under drift** — `_settleExit` sizes the in-kind
+  slice pro-rata from `assetBalance` and only *values* it through the oracle, which is what
+  `test_harmModel_driftDoesNotRobAnExitingMember` demonstrates. That is the shape the proof
+  covers, and it is the launch shape (`Deploy.s.sol` sets `allowSubVaults = false`). **With
+  children present it is unproven**: `childValTotalWad` is oracle-derived and enters the *sizing*
+  of the cash leg, not only its valuation. Do not tell a member with a sub-vault parent that
+  their exit is unaffected.
+
 | Signal | Alert condition |
 | --- | --- |
 | Oracle health | any basket asset whose `priceWad` reverts `StaleOracle` — aged past its heartbeat, outside its sane-price band, feed dead or unlisted — or the L2 sequencer down / inside its grace period ([CANARY.md §3(a)](CANARY.md)) |
