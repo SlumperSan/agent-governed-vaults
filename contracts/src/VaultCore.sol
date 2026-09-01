@@ -573,7 +573,12 @@ contract VaultCore {
         for (uint256 i; i < childVaults.length; ++i) {
             childValTotalWad += _childValueWad(childVaults[i]);
         }
-        uint256 cashTargetWad = (idleUsdc * usdcScalar + childValTotalWad) * burnShares / ts * keepBps / BPS;
+        // Both pro-rata legs divide ONCE, by `ts * BPS`: dividing by `ts` first discarded the
+        // remainder before `keepBps` was applied. Still floors, so the exiter is still rounded
+        // down and §4.6 holds; it just no longer loses a unit that belongs to them.
+        uint256 tsBps = ts * BPS;
+        uint256 burnKeep = burnShares * keepBps;
+        uint256 cashTargetWad = (idleUsdc * usdcScalar + childValTotalWad) * burnKeep / tsBps;
         uint256 usdcPay = cashTargetWad / usdcScalar;
         if (usdcPay > idleUsdc) usdcPay = idleUsdc;
         uint256 shortfallWad = cashTargetWad - usdcPay * usdcScalar;
@@ -594,7 +599,7 @@ contract VaultCore {
         uint256[] memory slices = new uint256[](basketAssets.length);
         for (uint256 i; i < slices.length; ++i) {
             address a = basketAssets[i];
-            uint256 slice = assetBalance[a] * burnShares / ts * keepBps / BPS;
+            uint256 slice = assetBalance[a] * burnKeep / tsBps;
             if (slice == 0) continue;
             assetBalance[a] -= slice;
             slices[i] = slice;
@@ -661,6 +666,9 @@ contract VaultCore {
         // M-2: the fee is withheld UNIFORMLY across the whole payout — cash and in-kind alike —
         // so a fully invested vault still pays the 10%-of-net-gain fee. gain ≤ payoutValue ⇒
         // feeFrac ≤ 10%. Rounding down under-collects in the member's favor.
+        // One WAD fraction, resolved once and applied per leg, is what makes it uniform — so the
+        // division here necessarily precedes the per-leg multiplications below (a known
+        // divide-before-multiply, bounded at 1 wei per leg, always against the fee).
         uint256 feeFracWad = payoutValueWad == 0 ? 0 : perfFee * usdcScalar * WAD / payoutValueWad;
 
         // ── Pass 2: external transfers ──

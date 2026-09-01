@@ -45,6 +45,84 @@ export const SIGNAL = 'oracle-freshness';
 /** ChainlinkOracle.GRACE_PERIOD, used only if the constant cannot be read from the deployment. */
 const DEFAULT_GRACE_PERIOD = 3600;
 
+/**
+ * The pre-trip early-warning bar, DERIVED rather than assumed.
+ *
+ * A flat percentage of the heartbeat cannot be calibrated once for every feed: it has to clear the
+ * worst age a HEALTHY feed ever reaches, and that worst case is the feed's own publish cadence
+ * (its real heartbeat, or its deviation threshold if that fires sooner) — not the configured
+ * staleness bound `feedOf` reports, which is deliberately wider (heartbeat + an L2 buffer, per
+ * `heartbeatNote` in `contracts/config/*.json`). No oracle exposes its own cadence on-chain — it is
+ * a fact about Chainlink's off-chain publishing config, not contract state — so it has to be TOLD,
+ * via `ORACLE_FEED_CADENCE_SECONDS` (see canary-runner.mjs), sourced from the same
+ * `feedCadenceSeconds` the deploy config already carries in prose.
+ *
+ * The bar sits at `WARN_SAFETY_CADENCES` cadence-lengths of age — comfortably above the ~1x worst
+ * healthy age — and is DISABLED, never tightened, once that would land past `MAX_DERIVED_WARN_PCT`
+ * of the heartbeat: past that point the configured bound is not meaningfully wider than the feed's
+ * own cadence, and any bar at all would page on ordinary heartbeat-cadence updates. That one
+ * condition is the whole answer to "what if the ratio is not safe" — it is what #89 shipped off by
+ * default to avoid, and what PR #85 first argued a healthy feed sits nowhere near the bound (true
+ * for both launch assets: mainnet's WETH and cbBTC publish at least every 1,200s against a 3,600s
+ * bound, ratio 3).
+ */
+const WARN_SAFETY_CADENCES = 2;
+const MAX_DERIVED_WARN_PCT = 90;
+
+/**
+ * @param {{heartbeat: number, cadenceSec: number|undefined}} args
+ * @returns {{warnAtSec: number, pct: number} | {warnAtSec: null, pct: number|null, reason: string}}
+ */
+function deriveWarnAt({ heartbeat, cadenceSec }) {
+  if (!(heartbeat > 0)) return { warnAtSec: null, pct: null, reason: 'no heartbeat configured' };
+  if (!(cadenceSec > 0)) {
+    return {
+      warnAtSec: null, pct: null,
+      reason: "feed cadence unknown — set ORACLE_FEED_CADENCE_SECONDS for this asset to enable a derived early warning",
+    };
+  }
+  const warnAtSec = WARN_SAFETY_CADENCES * cadenceSec;
+  const rawPct = (100 * warnAtSec) / heartbeat;
+  const pct = Math.round(rawPct * 10) / 10;
+  if (rawPct > MAX_DERIVED_WARN_PCT) {
+    return {
+      warnAtSec: null, pct,
+      reason: `the configured ${heartbeat}s heartbeat is not comfortably wider than the feed's own `
+        + `~${cadenceSec}s cadence (a safe bar would sit at ${pct}% of the heartbeat, over the `
+        + `${MAX_DERIVED_WARN_PCT}% cap) — an early warning here would page on ordinary `
+        + `heartbeat-cadence updates, so it stays off`,
+    };
+  }
+  return { warnAtSec, pct };
+}
+
+/**
+ * Resolve which warn bar applies to one asset, in precedence order:
+ *   1. `stalenessWarnPct` explicitly passed (even `0`) — the MANUAL override. An operator who set
+ *      this, including to force it off, must not be silently overridden by the derived default:
+ *      that would reproduce the exact muting failure this bar exists to avoid, with extra steps.
+ *   2. Otherwise, DERIVED from `cadenceByAsset`, per `deriveWarnAt` above.
+ *   3. Otherwise OFF, with the reason named — never a silent absence.
+ *
+ * @param {{heartbeat: number, asset: string, stalenessWarnPct: number|undefined,
+ *           cadenceByAsset: Record<string, number>|undefined}} args
+ */
+function resolveWarnBar({ heartbeat, asset, stalenessWarnPct, cadenceByAsset }) {
+  if (stalenessWarnPct != null) {
+    const warnAtSec = stalenessWarnPct > 0 && heartbeat > 0
+      ? Math.floor((heartbeat * stalenessWarnPct) / 100)
+      : null;
+    return {
+      source: 'manual', pct: stalenessWarnPct, warnAtSec,
+      reason: warnAtSec == null ? 'ORACLE_STALENESS_WARN_PCT is set to 0' : null,
+    };
+  }
+  const cadenceSec = cadenceByAsset ? cadenceByAsset[String(asset).toLowerCase()] : undefined;
+  const derived = deriveWarnAt({ heartbeat, cadenceSec });
+  if (derived.warnAtSec == null) return { source: 'off', pct: derived.pct, warnAtSec: null, reason: derived.reason };
+  return { source: 'derived', pct: derived.pct, warnAtSec: derived.warnAtSec, reason: null, cadenceSec };
+}
+
 const ZERO = '0x0000000000000000000000000000000000000000';
 const isZero = (a) => typeof a !== 'string' || /^0x0{40}$/i.test(a);
 const eqAddr = (a, b) => typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
@@ -68,7 +146,14 @@ const STALE_ORACLE = Object.keys(EXIT_FROZEN_SELECTORS)[0];
  * @param {string[]} ctx.assets
  * @param {number} ctx.nowSec
  * @param {number} [ctx.minMargin]        retired flavor only: fresh-sources-minus-quorum bar
- * @param {number} [ctx.stalenessWarnPct] live flavor only: warn at this % of heartbeat (0 = off)
+ * @param {number} [ctx.stalenessWarnPct] live flavor only: MANUAL warn-bar override, % of heartbeat.
+ *                                        `undefined` (not passed) means "not set" — the derived
+ *                                        default applies. Any defined value, including `0`, is an
+ *                                        explicit operator choice and wins outright.
+ * @param {Record<string, number>} [ctx.cadenceByAsset] live flavor only: address (any case) -> the
+ *                                        feed's own publish cadence in seconds, told via
+ *                                        ORACLE_FEED_CADENCE_SECONDS. Drives the derived warn bar
+ *                                        when `stalenessWarnPct` is not set.
  * @returns {Promise<import('../signal.mjs').SignalResult[]>}
  */
 export async function checkOracleSignals(ctx) {
@@ -101,9 +186,10 @@ export async function checkOracleSignals(ctx) {
  * @param {number} ctx.nowSec
  * @param {string} ctx.sequencerFeed
  * @param {number} [ctx.stalenessWarnPct]
+ * @param {Record<string, number>} [ctx.cadenceByAsset]
  * @returns {Promise<import('../signal.mjs').SignalResult[]>}
  */
-export async function checkChainlinkOracle({ reader, vault, oracle, assets, nowSec, sequencerFeed, stalenessWarnPct = 0 }) {
+export async function checkChainlinkOracle({ reader, vault, oracle, assets, nowSec, sequencerFeed, stalenessWarnPct, cadenceByAsset }) {
   const out = [];
 
   const graceRead = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'GRACE_PERIOD', []);
@@ -121,7 +207,7 @@ export async function checkChainlinkOracle({ reader, vault, oracle, assets, nowS
   for (const asset of assets) {
     out.push(await assetLeg({
       reader, vault, oracle, asset, nowSec, pinned,
-      sequencerCause: seq.cause, stalenessWarnPct,
+      sequencerCause: seq.cause, stalenessWarnPct, cadenceByAsset,
     }));
   }
 
@@ -234,7 +320,7 @@ async function sequencerLeg({ reader, vault, oracle, sequencerFeed, nowSec, grac
 // ── one basket asset ─────────────────────────────────────────────────────────
 
 /** @returns {Promise<import('../signal.mjs').SignalResult>} */
-async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequencerCause, stalenessWarnPct }) {
+async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequencerCause, stalenessWarnPct, cadenceByAsset }) {
   const base = { signal: SIGNAL, vault, key: asset };
 
   const cfgRead = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'feedOf', [asset]);
@@ -304,16 +390,15 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
     });
   }
 
-  // priceWad answered, so nothing is frozen right now. The only remaining question is proximity.
-  const warnAt = stalenessWarnPct > 0 && cfg.heartbeat > 0
-    ? Math.floor((cfg.heartbeat * stalenessWarnPct) / 100)
-    : null;
-  if (warnAt != null && facts.ageSec != null && facts.ageSec >= warnAt) {
+  // priceWad answered, so nothing is frozen right now. The only remaining question is proximity —
+  // see resolveWarnBar for the precedence between a manual override and the derived default.
+  const bar = resolveWarnBar({ heartbeat: cfg.heartbeat, asset, stalenessWarnPct, cadenceByAsset });
+  if (bar.warnAtSec != null && facts.ageSec != null && facts.ageSec >= bar.warnAtSec) {
     return alert({
       ...base,
-      message: `oracle answer AGEING for ${shortAddr(asset)} on vault ${shortAddr(vault)}: last update ${facts.ageSec}s ago against a ${cfg.heartbeat}s heartbeat (${stalenessWarnPct}% bar). The vault is still priceable; it freezes the moment the age passes the heartbeat`,
-      measured: `age ${facts.ageSec}s`, threshold: `< ${warnAt}s (${stalenessWarnPct}% of ${cfg.heartbeat}s)`,
-      detail: { ...detail, stalenessWarnPct, warnAtSec: warnAt },
+      message: `oracle answer AGEING for ${shortAddr(asset)} on vault ${shortAddr(vault)}: last update ${facts.ageSec}s ago against a ${cfg.heartbeat}s heartbeat (bar ${bar.warnAtSec}s, ${bar.source === 'derived' ? `derived from a ${bar.cadenceSec}s feed cadence` : 'set by ORACLE_STALENESS_WARN_PCT'}). The vault is still priceable; it freezes the moment the age passes the heartbeat`,
+      measured: `age ${facts.ageSec}s`, threshold: `< ${bar.warnAtSec}s`,
+      detail: { ...detail, stalenessWarnPct: bar.pct, warnAtSec: bar.warnAtSec, warnBarSource: bar.source },
     });
   }
 
@@ -322,7 +407,13 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
     message: `oracle healthy for ${shortAddr(asset)} on vault ${shortAddr(vault)}: priceWad ${price.value}${facts.ageSec != null ? `, answer ${facts.ageSec}s old against a ${cfg.heartbeat}s heartbeat` : ''}`,
     measured: facts.ageSec != null ? `age ${facts.ageSec}s` : 'priceWad returns',
     threshold: cfg.heartbeat > 0 ? `<= ${cfg.heartbeat}s heartbeat` : 'priceWad returns',
-    detail,
+    detail: {
+      ...detail,
+      warnBarSource: bar.source,
+      ...(bar.pct != null ? { stalenessWarnPct: bar.pct } : {}),
+      ...(bar.warnAtSec != null ? { warnAtSec: bar.warnAtSec } : {}),
+      ...(bar.reason != null ? { warnDisabledReason: bar.reason } : {}),
+    },
   });
 }
 

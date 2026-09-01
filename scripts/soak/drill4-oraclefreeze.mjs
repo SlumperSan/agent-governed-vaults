@@ -14,17 +14,23 @@
  *
  * ## What this deployment can and cannot prove
  *
- * Base Sepolia runs THREE `ChainlinkSourceAdapter` instances over ONE underlying feed per
- * asset (the documented testnet compromise). All three therefore share a single heartbeat and
- * go stale TOGETHER. The aggregator's freshness margin (`freshSources - quorum`) is
- * all-or-nothing: `+1` while the feed lives, `-2` the instant it lapses. There is no gradual
- * decay, and the canary's `oracle-freshness` signal jumps OK → ALERT with no intermediate
- * state. Mainnet's three mechanism-diverse sources (Sprint 11) would decay independently.
+ * The C-6 pivot retired the multi-source median: {ChainlinkOracle} prices each asset from ONE
+ * genuine Chainlink Data Feed, so there is no quorum, no source set and no freshness margin. An
+ * asset is either priceable or frozen, and `priceWad` reverting IS the breach — there is no
+ * partial-quorum degradation for this drill to observe on ANY chain, testnet or mainnet.
+ *
+ * What Base Sepolia additionally cannot exercise is the SEQUENCER leg: the testnet oracle leaves
+ * `sequencerUptimeFeed` at `address(0)` by design, so `_requireSequencerUp` is a no-op and the
+ * grace-tail path's first real execution is still mainnet.
  *
  * So a "no freeze occurred" outcome is NOT a weaker version of this drill — it is the expected
  * outcome on a healthy feed, and #21 anticipates it: *"if none occurs within the soak window,
- * document the observed worst-case feed age vs the 1-day bound instead."* This script produces
+ * document the observed worst-case feed age vs the bound instead."* This script produces
  * that either way and labels which case it is, rather than reporting absence as success.
+ *
+ * What it will NOT do is report an absence of EVIDENCE as an absence of events. A series whose
+ * samples are all unreadable yields `INSUFFICIENT_EVIDENCE` and fails the drill, because "nothing
+ * broke" and "nothing was measured" are opposite claims.
  *
  * ## The property that actually matters: freeze safety
  *
@@ -45,7 +51,7 @@ import path from 'node:path';
 import { ROOT, log, assert, openState } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
 import {
-  readSeries, summarize, findGaps, summarizeFreezeSafety, oracleCanaryRows, verdictOf,
+  readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer, oracleCanaryRows, verdictOf,
 } from './series-analysis.mjs';
 
 const dep = loadDeployment(
@@ -75,6 +81,7 @@ log(`series: ${samples.length} samples spanning ${windowSec}s (${(windowSec / 36
 const byAsset = summarize(samples);
 const { gaps, medianSec } = findGaps(samples, MAX_GAP_MULT);
 const freeze = summarizeFreezeSafety(samples);
+const sequencer = summarizeSequencer(samples);
 
 const canaryExists = fs.existsSync(CANARY_STATE);
 const canaryRows = canaryExists ? oracleCanaryRows(JSON.parse(fs.readFileSync(CANARY_STATE, 'utf8'))) : [];
@@ -82,13 +89,31 @@ const result = verdictOf(byAsset, canaryRows);
 
 log('──────────────────────────────────────────────');
 for (const a of Object.values(byAsset)) {
-  log(`${a.symbol}: worst age ${a.maxAgeSec}s of ${a.maxStalenessSeconds}s bound (${(a.maxAgeFractionOfBound * 100).toFixed(3)}% of the 1-day limit) at ${a.worstAt}`);
-  log(`  freshSources min ${a.minFreshSources} (quorum ${a.quorum}), margin min ${a.minMargin}, price reverted in ${a.priceRevertSamples}/${a.samples} samples`);
+  log(`${a.symbol}: worst age ${a.maxAgeSec ?? 'n/a'}s of the ${a.staleBoundSec ?? '?'}s staleness bound (${(a.maxAgeFractionOfBound * 100).toFixed(3)}%, bound read from ${a.staleBoundSource ?? 'unknown'}) at ${a.worstAt ?? 'n/a'}`);
+  log(`  priceWad reverted in ${a.priceRevertSamples}/${a.readableSamples} readable samples; ${a.unreadableSamples} sample(s) UNREADABLE (missing evidence, scored as neither breach nor health)`);
+  const causes = Object.entries(a.causes ?? {});
+  if (causes.length) log(`  attributed freeze causes: ${causes.map(([k, n]) => `${k}=${n}`).join(', ')}`);
+  if (a.attributionGapSamples) {
+    log(`  *** ${a.attributionGapSamples} freeze sample(s) this detector could NOT attribute to any known cause — the freeze is real, the model is incomplete ***`);
+  }
+  if (a.boundDriftSamples) {
+    log(`  *** the address book's oracle.maxStalenessSeconds disagrees with the oracle's on-chain heartbeat in ${a.boundDriftSamples} sample(s) — the CONTRACT wins; fix the JSON ***`);
+  }
+  // A legacy (pre-pivot) series still carries these; a ChainlinkOracle series has no quorum at all.
+  if (a.quorum != null) log(`  [legacy series] freshSources min ${a.minFreshSources}, quorum ${a.quorum}, margin min ${a.minMargin}`);
 }
 
 if (gaps.length) {
   log(`SAMPLING GAPS: ${gaps.length} (median interval ${medianSec}s). A gap is missing evidence, not a healthy period:`);
   for (const g of gaps.slice(0, 5)) log(`  ${g.gapSec}s between ${g.afterSample} and ${g.beforeSample}`);
+}
+
+log(`sequencer gate: ${JSON.stringify(sequencer.states)}`);
+if (!sequencer.exercised) {
+  log('  the sequencer leg was NOT exercised in this window (sequencerUptimeFeed is address(0) — Base Sepolia by design).');
+  log('  That is an unexecuted code path, not a passing sub-check: its first real execution is mainnet.');
+} else if (sequencer.notUpSamples) {
+  log(`  *** the sequencer was not fully up in ${sequencer.notUpSamples} sample(s); earliest computed resume ${sequencer.earliestResumesAtSec ?? 'n/a'} ***`);
 }
 
 log(`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`);
@@ -105,19 +130,27 @@ if (freeze.oracleBlocked > 0) {
   log(`  cancelPending stayed callable in all ${freeze.probedWithPending} probed sample(s) — freeze safety held`);
 }
 
-log(`canary oracle-freshness rows: ${canaryRows.length}${canaryExists ? '' : ' (canary state file absent)'}`);
-for (const r of canaryRows) log(`  ${r.subject} status=${r.status} since=${r.since} pending=${r.pendingStatus ?? '-'}`);
+log(`canary oracle-freshness rows: ${canaryRows.length} (${result.canaryAssetRows ?? 0} keyed by a basket asset)${canaryExists ? '' : ' (canary state file absent)'}`);
+for (const r of canaryRows) {
+  log(`  ${r.subject}${r.isAsset ? '' : ' [per-vault meta row — cannot evidence asset coverage]'} status=${r.status} since=${r.since} pending=${r.pendingStatus ?? '-'}`);
+}
 
-if (result.verdict === 'STALENESS_EVENT_OBSERVED') {
+if (result.verdict === 'INSUFFICIENT_EVIDENCE') {
+  log('VERDICT: INSUFFICIENT EVIDENCE — the series contains no readable asset observation');
+  log(`  ${result.unreadableSamples} unreadable sample(s). "Nothing broke" and "nothing was measured" are opposite claims;`);
+  log('  this drill will not report the second as the first. Fix the sampler/RPC and re-run across a fresh window.');
+  assert(false,
+    'drill 4 collected no readable oracle observation across the window — it certifies nothing, so it must not pass');
+} else if (result.verdict === 'STALENESS_EVENT_OBSERVED') {
   log('VERDICT: STALENESS EVENT OBSERVED');
-  for (const a of result.breached) log(`  ${a.symbol}: ${a.breachSamples}/${a.samples} samples below quorum`);
+  for (const a of result.breached) log(`  ${a.symbol}: ${a.breachSamples}/${a.readableSamples} readable samples frozen (priceWad reverted)`);
   assert(result.canaryTracked,
-    'a staleness breach was observed on-chain but every canary oracle-freshness row still reads ok — the canary did NOT track the freeze');
-  log('  canary tracked the event (at least one row left ok)');
+    `a staleness breach was observed on-chain but no canary oracle-freshness row keyed by a BASKET ASSET left ok (${result.canaryAssetRows} such row(s) exist) — the canary did NOT track the freeze. Per-vault meta rows (sequencer, flavor) are excluded on purpose: on Base Sepolia the sequencer row is permanently skipped and would satisfy this check by itself`);
+  log('  canary tracked the event (at least one ASSET row left ok)');
 } else {
   log('VERDICT: NO STALENESS EVENT IN THE WINDOW — documenting worst-case age instead (per #21)');
   if (result.worst) {
-    log(`  closest approach: ${result.worst.symbol} reached ${result.worst.maxAgeSec}s = ${(result.worst.maxAgeFractionOfBound * 100).toFixed(3)}% of the ${result.worst.maxStalenessSeconds}s bound`);
+    log(`  closest approach: ${result.worst.symbol} reached ${result.worst.maxAgeSec}s = ${(result.worst.maxAgeFractionOfBound * 100).toFixed(3)}% of the ${result.worst.staleBoundSec}s bound`);
   }
   log('  this is the expected outcome on a live feed and is NOT a failed drill');
 }
@@ -129,10 +162,11 @@ state.steps.analyze = {
   firstSample: first.t, lastSample: last.t,
   byAsset, gaps,
   freezeSafety: freeze,
-  canary: { present: canaryExists, oracleRows: canaryRows },
+  sequencer,
+  canary: { present: canaryExists, oracleRows: canaryRows, assetRows: result.canaryAssetRows ?? 0 },
   verdict: result.verdict,
   testnetCaveat:
-    'three ChainlinkSourceAdapters share ONE underlying feed per asset on Base Sepolia, so sources go stale together and the margin is all-or-nothing (+1 / -2). Mainnet Sprint-11 sources decay independently; this drill cannot exercise partial-quorum degradation.',
+    'Post-C-6 the oracle is ChainlinkOracle: ONE Chainlink feed per asset, no quorum and no freshness margin, so partial-quorum degradation does not exist to be exercised on any chain. What Base Sepolia specifically cannot exercise is the sequencer gate — sequencerUptimeFeed is address(0) there by design, so _requireSequencerUp is a no-op and the grace-tail path first executes on mainnet.',
 };
 save();
 

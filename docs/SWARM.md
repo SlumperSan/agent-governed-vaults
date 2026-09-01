@@ -204,7 +204,7 @@ across ~60,000 tests. That is the standard here.
 A task is done when **all** of these hold:
 
 1. `npm run gate` passes from the repo root. It mirrors CI step for step (~31s warm).
-2. If gas legitimately changed: regenerated via `cd contracts && forge snapshot --nmt "testFuzz"`,
+2. If gas legitimately changed: regenerated via `cd contracts && forge snapshot --nmt "testFuzz|testFork"`,
    and **said so explicitly** in the report.
 3. If `src/` changed: EIP-170 margin measured before and after, and reported as numbers.
 4. Work is committed on your own branch, in your own worktree.
