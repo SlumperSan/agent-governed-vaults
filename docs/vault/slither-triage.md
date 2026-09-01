@@ -76,9 +76,16 @@ would make its row real:
   (`finalize` makes no external call; `markExpired` drains `Passed`), so the freeze DoS documented
   at `Governance.sol:57-67` cannot be reached through this equality.
 
-Out of scope but recorded: EE-8's squatter economics are a `minDepositUsdc` **launch-parameter**
-question — "bounded at 1%" is true per-exit, but the squatter's cost is one minimum deposit while
-the prize is up to 1% of a recently-topped-up whale's whole exit.
+Out of scope but recorded, and **corrected** after PR #106's review: EE-8's squatter economics are
+NOT a `minDepositUsdc` question. "Bounded at 1%" is true of the *rate* and false of the *size*.
+`requestExit` enforces no minimum residual, so a squatter exits down to **one wei** of shares and
+waits; when the incumbent leaves, `memberShares == ts` is satisfied by that one wei and the whole
+stranded fee is theirs **regardless of stake**. Executed at 1,000 USDC minimum / 1% cap / 30-day
+decay: an incumbent holding 1,000,000 USDC who tops up once loses 10,000.10 USDC and the squatter
+takes 10,010.10 on a 1-wei position. The levers are `exitFeeMaxBps` (0 removes the prize),
+`exitFeeDecayPeriod`, or a code change (weighted tenure rather than resetting `lastDepositTime` on
+every top-up, or a minimum residual position) — a **launch-parameter decision**, unchanged here and
+now pinned by two characterisation tests. See [[threat-model-commitments]].
 
 ## Rows checked and found correct
 

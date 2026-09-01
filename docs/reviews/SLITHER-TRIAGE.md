@@ -63,8 +63,8 @@ detector describes.
 
 | Site | Rows | Verdict |
 | --- | --- | --- |
-| `VaultCore.executeRebalance` (`executeSwap` at :870) | 4 | **Not real as flagged; real in a dimension the detector does not model.** |
-| `VaultCore._settleExit` → `_redeemChildMeasured(…, false)` (:635) | 1 | **Not real.** |
+| `VaultCore.executeRebalance` (`executeSwap` at :921) | 4 | **Not real as flagged; real in a dimension the detector does not model.** |
+| `VaultCore._settleExit` → `_redeemChildMeasured(…, false)` (:670) | 1 | **Not real.** |
 | `DirectPoolAdapter.executeSwap` (both `pair.swap` branches) | 2 | **Not real as an exploit; guarded anyway.** |
 | `AggregationRouterAdapter.executeSwap` (`router.call`) | 1 | **REAL — fixed.** |
 
@@ -100,8 +100,8 @@ that file.
 
 ### `VaultCore._settleExit` → `_redeemChildMeasured(child, cs, false)` — 1 row
 
-**Not real.** `_settleExit` has exactly two call sites, `requestExit` (:520) and
-`settleQueuedExit` (:551); both are `nonReentrant`. Every internal decrement — `sharesOf`,
+**Not real.** `_settleExit` has exactly two call sites, `requestExit` (:541) and
+`settleQueuedExit` (:580); both are `nonReentrant`. Every internal decrement — `sharesOf`,
 `totalShares`, `costBasisUsdc`, `idleUsdc`, each basket `slice` — completes *before* the first
 external call, so the flagged `shortfallWad` condition is evaluated against accounting that is
 already final. The child proceeds are deliberately left un-credited (`credit = false`): they belong
@@ -160,46 +160,49 @@ guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 
 
 The row above used to be one line reading "**Safe.**" It reached the right verdict, but by a
 class argument nobody had checked per row — the same shape as the `reentrancy-balance` line that
-PR #101 disproved. Every row is now argued on its own, against `protocol/main` @ `29b1b470`
-(`225` results total; `slither 0.11.6`).
+PR #101 disproved. Every row is now argued on its own, against the `225` results
+(`slither 0.11.6`) produced on `protocol/main` @ `29b1b470`. **Every `contracts/src/` line number
+below has since been re-verified against this branch's tree** (`protocol/main` @ `ccf4b401`,
+i.e. after #98 added 53 lines to `VaultCore.sol`) — the arguments are unchanged, the citations
+moved.
 
 **Tally: REAL 0 · BENIGN-BY-DESIGN 10 · STYLE 3.** Nothing here needs a fix.
 
 | # | Site (`contracts/src/…`) | Expression | Grade | Reason | Pinned by |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `VaultCore.sol:342` `navPerShareWad` | `ts == 0` | BENIGN | `totalShares == 0` implies `navWad() == 0` — see "the `ts == 0` group" below. | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` |
+| 1 | `VaultCore.sol:377` `navPerShareWad` | `ts == 0` | BENIGN | `totalShares == 0` implies `navWad() == 0` — see "the `ts == 0` group" below. | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` |
 | 2 | `Governance.sol:613` `_isSettled` | `s == Defeated \|\| s == Executed \|\| s == Expired` | BENIGN | Not "is the enum exhaustive" (it is) but "can a proposal hang non-settled and freeze `propose`". Every non-settled status has a permissionless, external-call-free exit. | `test_abandonedProposalIsAlwaysSettleableByAStrangerAndUnblocksPropose`, `test_passedButUnexecutedProposalExpiresAndUnblocksPropose` |
-| 3 | `VaultCore.sol:615` `_settleExit` | `slice == 0` | STYLE | `continue`-guard on a zero in-kind leg. Floors **down**, against the exiter — the algebraic condition for the §4.6 NAVps invariant; a `< 1` would behave identically. | — |
-| 4 | `VaultCore.sol:1035` `convertToAssets` | `ts == 0` | BENIGN | Same invariant as row 1, on an explicitly indicative-only 4626-shaped view (C-1). | as row 1 |
-| 5 | `VaultCore.sol:684` `_settleExit` | `payoutValueWad == 0` | STYLE | Divide-by-zero guard, and the branch is unreachable with a nonzero numerator: `payoutValueWad == 0` forces the `else` at `:670`, so `perfFee == 0` and `0` is the correct substitute. | — |
-| 6 | `VaultCore.sol:634` `_settleExit` | `cs == 0` | BENIGN | Needs `parentShares × takeWad < cv` while `takeWad > SHORTFALL_DUST_WAD` — at an 18-decimal share scale, a child worth > $1e12. If it ever fired, the consequence is a **clean revert** at `:652`, not a silent underpayment (the H-6 shape; sub-vaults are off at launch, C-1). | — |
+| 3 | `VaultCore.sol:650` `_settleExit` | `slice == 0` | STYLE | `continue`-guard on a zero in-kind leg. Floors **down**, against the exiter — the algebraic condition for the §4.6 NAVps invariant; a `< 1` would behave identically. | — |
+| 4 | `VaultCore.sol:1086` `convertToAssets` | `ts == 0` | BENIGN | Same invariant as row 1, on an explicitly indicative-only 4626-shaped view (C-1). | as row 1 |
+| 5 | `VaultCore.sol:719` `_settleExit` | `payoutValueWad == 0` | STYLE | Divide-by-zero guard, and the branch is unreachable with a nonzero numerator: `payoutValueWad == 0` forces the `else` at `:705`, so `perfFee == 0` and `0` is the correct substitute. | — |
+| 6 | `VaultCore.sol:669` `_settleExit` | `cs == 0` | BENIGN | Needs `parentShares × takeWad < cv` while `takeWad > SHORTFALL_DUST_WAD` — at an 18-decimal share scale, a child worth > $1e12. If it ever fired, the consequence is a **clean revert** at `:687`, not a silent underpayment (the H-6 shape; sub-vaults are off at launch, C-1). | — |
 | 7 | `lib/Checkpoints.sol:23` `push` | `len > 0 && h.arr[len-1].ts == uint64(block.timestamp)` | BENIGN | Still the OZ idiom. Overwrite ≡ append for every reader (`getAt` returns the last entry with `ts' <= ts` either way), and it cannot backfill a vote because governance reads `createdAt - 1`, strictly before any push in that second. | `test_sameSecondCheckpointCannotBackfillProposalWeight` |
-| 8 | `VaultCore.sol:639` `_settleExit` | `childDeltas[j] == 0` | STYLE | `continue`-guard on a leg the child did not deliver; skipping it also skips `_assetValueWad`, so `receivedWad` is not credited for value that never arrived (S6 Finding 5). | — |
-| 9 | `VaultCore.sol:445` `_mintShares` | `ts == 0` | BENIGN | The ERC-4626 inflation-attack site. The attack needs a NAV a donor can move; `navWad()` reads only `idleUsdc` / `assetBalance` / child look-through (EE-1, **verified for this row**, not cited). | `test_donationCannotMoveNavOrDiluteTheNextMint` |
-| 10 | `VaultCore.sol:601` `_settleExit` | `sharesOf[member] == 0 && memberShares > 0` | BENIGN | Holder-count decrement, exact mirror of `:448`; `creator` is `immutable` so `nonCreatorMemberCount` cannot drift. The `memberShares > 0` conjunct is defensive only — `:607` would `Panic(0x12)` on a zero-share member first. | — |
-| 11 | `VaultCore.sol:1028` `convertToShares` | `ts == 0` | BENIGN | Same invariant as row 1; indicative-only view (C-1). | as row 1 |
-| 12 | `VaultCore.sol:448` `_mintShares` | `sharesOf[member] == 0` | BENIGN | "First shares for this address ⇒ new holder." The only other writer zeroes it and decrements symmetrically, so re-entry after a full exit re-counts correctly. | — |
-| 13 | `VaultCore.sol:576` `_settleExit` | `memberShares == ts` | BENIGN | Sole-holder exit-fee waiver. Cannot be a false positive: `sharesOf` and `totalShares` are written only in matched pairs (`:452`/`:453`, `:599`/`:600`) and **there is no share-transfer function**, so `sum(sharesOf) == totalShares` exactly. | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` |
+| 8 | `VaultCore.sol:674` `_settleExit` | `childDeltas[j] == 0` | STYLE | `continue`-guard on a leg the child did not deliver; skipping it also skips `_assetValueWad`, so `receivedWad` is not credited for value that never arrived (S6 Finding 5). | — |
+| 9 | `VaultCore.sol:480` `_mintShares` | `ts == 0` | BENIGN | The ERC-4626 inflation-attack site. The attack needs a NAV a donor can move; `navWad()` reads only `idleUsdc` / `assetBalance` / child look-through (EE-1, **verified for this row**, not cited). | `test_donationCannotMoveNavOrDiluteTheNextMint` |
+| 10 | `VaultCore.sol:636` `_settleExit` | `sharesOf[member] == 0 && memberShares > 0` | BENIGN | Holder-count decrement, exact mirror of `:483`; `creator` is `immutable` so `nonCreatorMemberCount` cannot drift. The `memberShares > 0` conjunct is defensive only — `:642` would `Panic(0x12)` on a zero-share member first. | — |
+| 11 | `VaultCore.sol:1079` `convertToShares` | `ts == 0` | BENIGN | Same invariant as row 1; indicative-only view (C-1). | as row 1 |
+| 12 | `VaultCore.sol:483` `_mintShares` | `sharesOf[member] == 0` | BENIGN | "First shares for this address ⇒ new holder." The only other writer zeroes it and decrements symmetrically, so re-entry after a full exit re-counts correctly. | — |
+| 13 | `VaultCore.sol:611` `_settleExit` | `memberShares == ts` | BENIGN | Sole-holder exit-fee waiver. Cannot be a false positive: `sharesOf` and `totalShares` are written only in matched pairs (`:487`/`:488`, `:634`/`:635`) and **there is no share-transfer function**, so `sum(sharesOf) == totalShares` exactly. | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` |
 
 ### The `ts == 0` group (rows 1, 4, 9, 11) — the one question that decides all four
 
-*Can `totalShares == 0` while `navWad() > 0`?* If yes, the 1:1 re-open at `_mintShares:445` gives
+*Can `totalShares == 0` while `navWad() > 0`?* If yes, the 1:1 re-open at `_mintShares:480` gives
 away residue and `navPerShareWad`'s `WAD` is a lie. It cannot:
 
-- **Donation is inert.** `navWad()` (`:281-292`) sums `idleUsdc * usdcScalar`, `assetBalance[a]`
-  and `_childValueWad(...)` — all internal. The only `balanceOf` in `VaultCore` is `_tokenBalance`
-  at `:910`, on the measured-delta rebalance path (EX-3), never in NAV. Checked for these rows
+- **Donation is inert.** `navWad()` (`:300-311`) sums `idleUsdc * usdcScalar`, `assetBalance[a]`
+  and `_childValueWad(...)` — all internal. The only `balanceOf` in `VaultCore` is `_bal`
+  at `:960`, on the measured-delta rebalance path (EX-3), never in NAV. Checked for these rows
   rather than cited from EE-1.
 - **The last exiter is always the sole holder**, so `memberShares == ts` (row 13) sets `feeBps = 0`,
   `keepBps = BPS`, `burnKeep == tsBps`, and both pro-rata legs collapse to identities:
-  `slice = assetBalance[a] * tsBps / tsBps` (`:614`) and `cashTargetWad / usdcScalar = idleUsdc`
-  (`:593-595`). Nothing is floored away.
+  `slice = assetBalance[a] * tsBps / tsBps` (`:649`) and `cashTargetWad / usdcScalar = idleUsdc`
+  (`:628-630`). Nothing is floored away.
 - **The sub-vault leg is exact-or-revert.** On a full sole-holder exit `shortfallWad ==
   childValTotalWad`, so `takeWad == cv` for each child and `cs = parentShares * cv / cv` is the
   whole position. Any child that is skipped or under-delivers leaves `shortfallWad` above
-  `SHORTFALL_DUST_WAD` and the exit **reverts** at `:652` rather than settling with residue.
+  `SHORTFALL_DUST_WAD` and the exit **reverts** at `:687` rather than settling with residue.
   Residual is bounded at `1e12` WAD (1e-6 USD), and the constructor pins
-  `usdcScalar <= SHORTFALL_DUST_WAD` (`:253`).
+  `usdcScalar <= SHORTFALL_DUST_WAD` (`:272`).
 - **Observed on-chain:** the 2026-09-01 Base Sepolia gate-2 lifecycle exited for exactly
   `5,000,000` USDC units and left `totalShares() == 0`.
 
@@ -207,34 +210,73 @@ away residue and `navPerShareWad`'s `WAD` is a lie. It cannot:
 
 The interesting attack on `memberShares == ts` is not a false positive but the reverse: a squatter
 who deposits `minDepositUsdc`, clears the observation window, and thereby **destroys** the waiver,
-so the incumbent's exit pays up to `exitFeeMaxBps` — which stays in the vault (`:580-581`) and
+so the incumbent's exit pays up to `exitFeeMaxBps` — which stays in the vault (`:615-616`) and
 accrues almost entirely to the squatter. That is **THREAT-MODEL EE-8** (last-two-members endgame),
 Accepted at **L**. Bounded twice over in code: `EXIT_FEE_CAP_BPS = 100` (`:54`) and `_exitFeeBps`
-decays linearly to zero at `exitFeeDecayPeriod` (`:953-960`). Removing the waiver makes the row
+decays linearly to zero at `exitFeeDecayPeriod` (`:1004-1011`). Removing the waiver makes the row
 strictly worse — the `==` narrows a fee, it does not create one.
 
 Worth one line in the launch-parameter set (alongside the band re-parameterisation): EE-8's "bounded
-at 1%" is true per-exit, but the *ratio* is not — the squatter's cost is `minDepositUsdc` plus the
-window, and the prize is up to 1% of a recently-topped-up whale's whole exit, because
-`lastDepositTime[member] = block.timestamp` (`:455`) resets the tenure clock on **every** top-up.
+at 1%" is true of the *rate* and false of the *size*, and the squatter's position is **not** sized by
+`minDepositUsdc`. `requestExit` (`:541`) enforces no minimum residual: a squatter deposits the
+minimum, clears the window, exits all but **one wei** of shares — paying at most `exitFeeMaxBps` on
+that one transient exit — and then simply waits. Their locked capital from that point on is 1 wei of
+shares. When the incumbent leaves, `memberShares == ts` (`:611`) is satisfied by the squatter alone,
+so the whole stranded fee is theirs **regardless of stake**.
 
-### The three tests, and the mutations that make them red
+Executed against this tree: with `minDepositUsdc` = 1,000 USDC, `exitFeeMaxBps` = 100 and
+`exitFeeDecayPeriod` = 30 d, an incumbent holding 1,000,000 USDC aged a year who tops up **once**
+pays 10,000.10 USDC on the way out — `lastDepositTime[member] = block.timestamp` (`:491`) resets the
+tenure clock on **every** top-up, so one top-up re-arms the full 1% against the *whole* position —
+and the squatter then withdraws 10,010.10 USDC (that fee, plus its own 10.00 back) holding 1 wei.
 
-`contracts/test/audit/AuditIncorrectEqualityRows.t.sol` (5 tests, all green). Each was verified to
-fail under the mutation that would make its row real:
+Raising `minDepositUsdc` does not touch this. It raises the squatter's *transient* cost by
+`exitFeeMaxBps` of one deposit (10 USDC at 1%), not the capital they must keep locked. The levers
+that do bite:
 
-| Mutation | Test that turns red | Observed |
+- **`exitFeeMaxBps = 0`** — removes the prize outright (`_exitFeeBps` then returns `0` before
+  reading tenure at all, `:1005-1006`). It also removes the fee's intended function, so it is a
+  trade, not a free win.
+- **A shorter `exitFeeDecayPeriod`** — shrinks the window in which an incumbent carries a fee at
+  all, so the squatter has to predict a top-up rather than merely outwait one. Bounds how *often* a
+  capture is available, not how large it is.
+- **A code change**, if the size is judged unacceptable rather than the frequency: weight tenure
+  across a member's whole position instead of resetting `lastDepositTime` on every top-up (a top-up
+  would then dilute the aged lot rather than re-arm the full fee against it), and/or require a
+  minimum residual position on a partial `requestExit`, so a 1-wei squat is not a reachable state.
+
+**This is a launch-parameter decision (SWARM §10) and no parameter is changed here.** What is
+recorded is that `minDepositUsdc` is the wrong lever to reach for.
+
+### The tests, and the mutations that make them red
+
+`contracts/test/audit/AuditIncorrectEqualityRows.t.sol` (8 tests, all green). Each load-bearing
+claim was verified to fail under the mutation that would make its row real — and, just as
+importantly, the mutations that do **not** kill a test are recorded too, because a test that is
+green under the mutation its own comment names is pinning nothing:
+
+| Mutation | Test | Observed |
 | --- | --- | --- |
-| `Governance._boundedWeight:660` `p.createdAt - 1` → `p.createdAt` | `test_sameSecondCheckpointCannotBackfillProposalWeight` | `9000e18 != 1000e18` — 8,000 USDC deposited in the proposal's own second buys 9× weight |
-| `VaultCore.navWad:282` `idleUsdc` → `IERC20Metadata(usdc).balanceOf(address(this))` | `test_donationCannotMoveNavOrDiluteTheNextMint` | `6000e18 != 1000e18` — a donation moves NAV |
-| `VaultCore:576` delete `if (memberShares == ts) feeBps = 0;` | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` | `999900000 != 1010000000` — the sole holder's fee is stranded in a zero-share vault |
+| `Governance._boundedWeight:338` `p.createdAt - 1` → `p.createdAt` | `test_sameSecondCheckpointCannotBackfillProposalWeight` | **RED** — `9000e18 != 1000e18`; 8,000 USDC deposited in the proposal's own second buys 9× weight |
+| `Checkpoints.sol:23` `==` → `<=` (always overwrite) | `test_sameSecondCheckpointCannotBackfillProposalWeight` | **RED** — `9000e18 != 1000e18`; the composition test discriminates on the `Checkpoints` side too |
+| `Governance.propose:287`/`:288`/`:304` `nowTs - 1` → `nowTs` | `test_sameSecondCheckpointCannotBackfillProposalWeight` | **GREEN — deliberately recorded.** Those reads feed `snapshotTotal`/`memberCount`, which this test never asserts on. An earlier revision of the test's own NatSpec claimed this mutation turned it red; it does not. |
+| `Governance._isSettled:613` drop `s == Status.Executed` | `test_executedProposalIsSettledAndUnblocksPropose` | **RED** — `ProposalActive()`; a vault that legislated once could never legislate again |
+| ” (same mutation) | `…AbandonedProposal…`, `…PassedButUnexecuted…` | **GREEN** — neither of those two ever executes a proposal, which is why the `Executed` leg needed its own test |
+| `VaultCore.navWad:301` `idleUsdc` → `IERC20Metadata(usdc).balanceOf(address(this))` | `test_donationCannotMoveNavOrDiluteTheNextMint` | **RED** — `6000e18 != 1000e18`; a donation moves NAV |
+| `VaultCore:611` delete `if (memberShares == ts) feeBps = 0;` | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` | **RED** — `999900000 != 1010000000`; the sole holder's fee is stranded in a zero-share vault |
 
 Row 7's test is deliberately a **Governance-level composition test rather than a `Checkpoints` unit
 test**: three writes land in one second `T` (a deposit that appends at `T`, the `propose` call, and
 a second deposit that *overwrites* the checkpoint at `T`), and the assertions are that the
-proposal's `T - 1` read is unmoved and that `getAt(T)` still returns the end-of-second value. A unit
-test on `push` would die only to a `Checkpoints` mutation and would miss the one above, which is the
-mutation that actually matters.
+proposal's `T - 1` read is unmoved and that `getAt(T)` still returns the end-of-second value. The
+table above shows this is strictly the better choice: the composition test dies to the `Checkpoints`
+mutation *and* to the `_boundedWeight` one, whereas a unit test on `push` would miss the second —
+and the second is the one that prices a vote.
+
+The two `ee8` tests are **characterisations of current behaviour**, not defect claims: they pin the
+size and the stake-independence of the last-member prize described above, so that the note cannot be
+re-derived as a `minDepositUsdc` question again. They assert exact figures (10,010.100001 USDC
+captured on a 1-wei position) and change no parameter.
 
 ## Running it
 

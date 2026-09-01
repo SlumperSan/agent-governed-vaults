@@ -14,8 +14,8 @@ import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks
 /// enough that they should not rest on prose alone, and each test below is chosen so that the
 /// mutation which would make its row real turns it red:
 ///
-///  1. `ts == 0` (rows 1/4/9/11 — `navPerShareWad:342`, `convertToAssets:1035`, `_mintShares:445`,
-///     `convertToShares:1028`). The classic ERC-4626 inflation attack needs a NAV a donor can move.
+///  1. `ts == 0` (rows 1/4/9/11 — `navPerShareWad:377`, `convertToAssets:1086`, `_mintShares:480`,
+///     `convertToShares:1079`). The classic ERC-4626 inflation attack needs a NAV a donor can move.
 ///     `navWad()` reads only internal accounting (EE-1), so donation is inert — and the reverse
 ///     shape, `totalShares == 0` with residual NAV, is unreachable because the last exiter is by
 ///     construction the sole holder, whose pro-rata legs are exact identities. Mutating `navWad`
@@ -63,6 +63,13 @@ contract AuditIncorrectEqualityRowsTest is Test {
     }
 
     function _deployVault(uint256 exitFeeMaxBps, uint256 decayPeriod) internal returns (VaultCore v) {
+        v = _deployVault(exitFeeMaxBps, decayPeriod, 10 * USDC_1);
+    }
+
+    function _deployVault(uint256 exitFeeMaxBps, uint256 decayPeriod, uint256 minDepositUsdc)
+        internal
+        returns (VaultCore v)
+    {
         v = new VaultCore(
             address(usdc),
             new address[](0),
@@ -72,7 +79,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
             fees,
             oracle,
             1_000_000_000 * USDC_1,
-            10 * USDC_1,
+            minDepositUsdc,
             exitFeeMaxBps,
             decayPeriod,
             new address[](0),
@@ -150,10 +157,10 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// `totalShares` can only reach 0 through the sole-holder exit, and that exit is EXACT.
     ///
     /// `memberShares == ts` (row 13) makes `feeBps = 0`, so `keepBps = BPS` and `burnKeep == tsBps`
-    /// — both pro-rata legs collapse to identities (`VaultCore.sol:591-597`, `:614`) and nothing is
+    /// — both pro-rata legs collapse to identities (`VaultCore.sol:626-632`, `:649`) and nothing is
     /// floored away. The vault therefore never reaches `totalShares == 0` while still holding NAV,
-    /// which is what makes the 1:1 re-open at `_mintShares:445` and the `WAD` answer at
-    /// `navPerShareWad:342` correct rather than merely conventional.
+    /// which is what makes the 1:1 re-open at `_mintShares:480` and the `WAD` answer at
+    /// `navPerShareWad:377` correct rather than merely conventional.
     ///
     /// Also pins row 13 in the direction that matters: the sole holder pays no exit fee, so the
     /// fee cannot be stranded in a vault with zero shares (EE-8/EE-9).
@@ -192,12 +199,23 @@ contract AuditIncorrectEqualityRowsTest is Test {
         assertEq(v.idleUsdc(), 0, "idle accounting fully drained");
         assertEq(v.navWad(), 0, "NAV is exactly zero, not dust");
         assertEq(v.holderCount(), 0, "and no holders remain");
-        assertEq(v.navPerShareWad(), 1e18, "navPerShareWad:342 returns WAD on an empty vault");
+        assertEq(v.navPerShareWad(), 1e18, "navPerShareWad:377 returns WAD on an empty vault");
+
+        // Rows 4 and 11: the two indicative 4626-shaped views take their OWN `ts == 0` branch
+        // here, and it is the same invariant — with no NAV left, both collapse to the pure
+        // decimal scaling, with no `navWad()` term to be wrong about.
+        assertEq(v.convertToShares(1_000 * USDC_1), 1_000 * USDC_1 * SCALAR, "convertToShares:1079 ts==0 leg");
+        assertEq(v.convertToAssets(1_000 * USDC_1 * SCALAR), 1_000 * USDC_1, "convertToAssets:1086 ts==0 leg");
 
         // Re-opening therefore prices at 1:1 against a genuinely empty vault, not against residue.
         _joinAndMint(v, carol, 1_000 * USDC_1);
-        assertEq(v.sharesOf(carol), 1_000 * USDC_1 * SCALAR, "_mintShares:445 re-opens at 1:1");
+        assertEq(v.sharesOf(carol), 1_000 * USDC_1 * SCALAR, "_mintShares:480 re-opens at 1:1");
         assertEq(v.navPerShareWad(), 1e18, "and NAVps is back at par");
+
+        // And with supply back, both views leave the `ts == 0` branch and agree with it at par —
+        // which is what makes the branch a continuation of the formula rather than a special case.
+        assertEq(v.convertToShares(1_000 * USDC_1), 1_000 * USDC_1 * SCALAR, "convertToShares agrees at par");
+        assertEq(v.convertToAssets(1_000 * USDC_1 * SCALAR), 1_000 * USDC_1, "convertToAssets agrees at par");
     }
 
     // ─────────── row 7 — `Checkpoints.push` same-second overwrite ───────────
@@ -210,9 +228,17 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// `Checkpoints.sol:23-24`). The proposal reads `pastVotingEligibleShares(voter, T - 1)`
     /// (`Governance.sol:284-285`, `:660`), which is strictly before any of them.
     ///
-    /// Mutation that turns this red: `nowTs - 1` -> `nowTs` in `Governance.propose`. That is the
-    /// mutation that would make row 7 a real flash-stake finding, and it is invisible to a
-    /// `Checkpoints`-only unit test.
+    /// Mutations that turn this red, both verified:
+    ///   - `p.createdAt - 1` -> `p.createdAt` in `Governance._boundedWeight` (`:338`), the read
+    ///     that actually prices a vote: `9000e18 != 1000e18`.
+    ///   - `Checkpoints.push:23` `==` -> `<=` (always overwrite): `9000e18 != 1000e18` on
+    ///     assertion (a), so this test discriminates on the `Checkpoints` side too.
+    ///
+    /// Deliberately NOT claimed: mutating the three `nowTs - 1` reads in `Governance.propose`
+    /// (`:287`, `:288`, `:304`) leaves this test GREEN. Those feed `snapshotTotal` and
+    /// `memberCount` (the quorum denominators), which this test never reads — it asserts on the
+    /// FOR-weight, which comes from `_boundedWeight`. An earlier revision of this comment named
+    /// that mutation; it was wrong, and PR #106's review caught it.
     function test_sameSecondCheckpointCannotBackfillProposalWeight() public {
         _joinAndMint(vault, attacker, 1_000 * USDC_1);
         uint256 baseline = vault.sharesOf(attacker);
@@ -333,6 +359,125 @@ contract AuditIncorrectEqualityRowsTest is Test {
         vm.prank(honest);
         uint256 pid2 = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256("second"));
         assertGt(pid2, pid, "propose is unblocked");
+    }
+
+    /// @notice The third leg of `_isSettled`, `Executed`, pinned directly. The two tests above
+    /// drain `Active` and `Passed`; neither ever executes a proposal, so dropping
+    /// `s == Status.Executed` from `_isSettled` (`Governance.sol:613`) left them both GREEN.
+    ///
+    /// A `RuleChange` executes entirely inside `Governance` — no vault machinery, no adapter — so
+    /// it is the cheapest honest way to reach `Executed`. Mutation that turns this red: delete
+    /// `s == Status.Executed` from `_isSettled`; the final `propose` then reverts
+    /// `ProposalActive`, i.e. a vault that successfully legislated once could never legislate
+    /// again.
+    function test_executedProposalIsSettledAndUnblocksPropose() public {
+        Governance.GovConfig memory newCfg = _cfg();
+        newCfg.proposalCooldown = 2 hours; // any valid change; quorumBps stays at the 25% floor
+        bytes memory payload = abi.encode(newCfg);
+
+        vm.prank(honest);
+        uint256 pid = gov.propose(address(vault), Governance.ProposalType.RuleChange, keccak256(payload));
+
+        vm.prank(honest);
+        gov.commitVote(pid, keccak256(abi.encode(pid, honest, true, SALT)));
+        skip(6 hours);
+        vm.prank(honest);
+        gov.revealVote(pid, true, SALT);
+        skip(6 hours);
+        gov.finalize(pid);
+        assertEq(uint256(_status(pid)), uint256(Governance.Status.Passed), "quorum met, proposal Passed");
+
+        skip(1 days); // timelock, still inside the 2-day execution window
+        gov.execute(pid, payload);
+        assertEq(uint256(_status(pid)), uint256(Governance.Status.Executed), "proposal is Executed");
+
+        // THE POINT: `Executed` is settled, so the vault can legislate again. Without that leg of
+        // `_isSettled` this is a permanent freeze on the first successful proposal.
+        vm.prank(honest);
+        uint256 pid2 = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256("after"));
+        assertGt(pid2, pid, "propose is unblocked after an Executed proposal");
+        assertEq(uint256(_status(pid2)), uint256(Governance.Status.Active), "and the new proposal is live");
+    }
+
+    // ─────────── row 13, the adversarial direction — EE-8's real cost structure ───────────
+
+    /// @notice CHARACTERISATION of current behaviour, not a defect claim: the last-member exit-fee
+    /// prize (THREAT-MODEL EE-8) is **stake-independent**, so "bounded at 1%, self-limiting" is
+    /// true of the RATE and false of the SIZE.
+    ///
+    /// The triage note for row 13 used to frame the squatter's cost as `minDepositUsdc` plus the
+    /// observation window, making EE-8 look like a `minDepositUsdc` sizing question. It is not.
+    /// `requestExit` (`VaultCore.sol:541`) enforces no minimum residual, so after one transient
+    /// exit the squatter's locked capital is ONE WEI of shares, and when the incumbent leaves
+    /// `memberShares == ts` (`:611`) is satisfied by that one wei — the whole stranded fee is
+    /// theirs regardless of stake.
+    ///
+    /// The levers are `exitFeeMaxBps` (0 removes the prize), `exitFeeDecayPeriod`, or a code
+    /// change (weighted tenure instead of resetting `lastDepositTime` on every top-up at `:491`,
+    /// or a minimum residual position). NOT `minDepositUsdc`. Choosing among them is a
+    /// launch-parameter decision and this test changes nothing — it only stops the note being
+    /// re-derived wrong.
+    function test_ee8LastMemberPrizeIsStakeIndependentNotSizedByMinDeposit() public {
+        uint256 minDep = 1_000 * USDC_1; // a deliberately "meaningful" minimum deposit
+        VaultCore v = _deployVault(100, 30 days, minDep); // 1% cap, 30-day decay
+
+        // The incumbent has been in for a year: its tenure fee has fully decayed to zero.
+        _joinAndMint(v, alice, 1_000_000 * USDC_1);
+        skip(365 days);
+        assertEq(v.sharesOf(alice), v.totalShares(), "incumbent is the sole holder");
+
+        // The squatter pays the minimum in, clears the window, then exits all but ONE WEI.
+        _joinAndMint(v, bob, minDep);
+        uint256 sqShares = v.sharesOf(bob);
+        uint256 sqBefore = usdc.balanceOf(bob);
+        vm.prank(bob);
+        v.requestExit(sqShares - 1);
+        uint256 squatterCost = minDep - (usdc.balanceOf(bob) - sqBefore);
+
+        assertEq(v.sharesOf(bob), 1, "squatter's whole locked position is 1 wei of shares");
+        assertEq(squatterCost, 10_000_001, "transient cost is one 1% exit fee on the minimum, not the minimum");
+        assertLe(squatterCost, minDep / 100 + 1, "and it is bounded by exitFeeMaxBps of one deposit");
+
+        // The incumbent tops up ONCE. `lastDepositTime` resets on every top-up (`:491`), so the
+        // full 1% is re-armed against the WHOLE position, not just the new money.
+        vm.prank(alice);
+        v.deposit(minDep);
+        uint256 wBefore = usdc.balanceOf(alice);
+        uint256 wShares = v.sharesOf(alice);
+        vm.prank(alice);
+        v.requestExit(wShares);
+        uint256 incumbentLoss = (1_001_000 * USDC_1) - (usdc.balanceOf(alice) - wBefore);
+        assertEq(incumbentLoss, 10_000_100_000, "one top-up costs the incumbent ~1% of its ENTIRE position");
+
+        // The squatter is now the sole holder on 1 wei, so the waiver fires for IT and the drain
+        // is exact: it takes the incumbent's stranded fee AND recovers its own.
+        assertEq(v.totalShares(), 1, "1 wei of supply left");
+        uint256 sqBefore2 = usdc.balanceOf(bob);
+        vm.prank(bob);
+        v.requestExit(1);
+        uint256 squatterTake = usdc.balanceOf(bob) - sqBefore2;
+
+        assertEq(squatterTake, incumbentLoss + squatterCost, "squatter takes the whole stranded fee, plus its own back");
+        assertEq(squatterTake, 10_010_100_001, "10,010.100001 USDC captured on a 1-wei position");
+        assertEq(v.totalShares(), 0, "and the vault closes clean");
+        assertEq(v.navWad(), 0, "with no residue for the ts == 0 branch to hand away");
+    }
+
+    /// @notice The other half of the same characterisation, and the reason EE-8 stays Accepted at
+    /// L: the prize exists only while the incumbent is inside `exitFeeDecayPeriod`. An incumbent
+    /// that does not top up pays nothing and the squat earns nothing — which is why the lever is
+    /// the fee's parameters, not the deposit minimum.
+    function test_ee8PrizeIsZeroWhenTheIncumbentTenureHasDecayed() public {
+        VaultCore v = _deployVault(100, 30 days, 1_000 * USDC_1);
+        _joinAndMint(v, alice, 1_000_000 * USDC_1);
+        _joinAndMint(v, bob, 1_000 * USDC_1);
+        skip(31 days); // past exitFeeDecayPeriod, and no top-up
+
+        uint256 wBefore = usdc.balanceOf(alice);
+        uint256 wShares = v.sharesOf(alice);
+        vm.prank(alice);
+        v.requestExit(wShares);
+        assertEq(usdc.balanceOf(alice) - wBefore, 1_000_000 * USDC_1, "fully decayed tenure pays no exit fee");
     }
 
     /// @dev Proposal tuple order per src/Governance.sol:87-104.
