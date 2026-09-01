@@ -15,10 +15,13 @@ hotfix to ship.
 Every incident response therefore reduces to some combination of exactly four levers:
 
 1. **Communication** — telling members what is true, fast, with evidence (tx hashes, `cast`
-   commands they can run themselves).
+   commands they can run themselves — the member-facing set is
+   [MEMBER-VERIFY.md](MEMBER-VERIFY.md), so link it rather than re-typing a command under
+   pressure).
 2. **Member self-service** — the exits the contracts already guarantee: `requestExit` (Mode I/F),
    `cancelPending` for unactivated deposits (works even during an oracle freeze — executed live
-   in SOAK-REPORT §4), `settleQueuedExit` (callable by anyone).
+   in SOAK-REPORT §4), `settleQueuedExit` (callable by anyone). The copy-paste recipes for all
+   three, with the freeze reads beside them, are [MEMBER-VERIFY.md](MEMBER-VERIFY.md) §5.
 3. **Off-chain remediation** — restarting or re-keying the facilitator, indexer, API, canary;
    these are stateless or restore-from-backup services and hold no member funds.
 4. **Stopping the bleeding at the edges** — de-listing a vault from the API/web surface,
@@ -82,7 +85,9 @@ wrong price.
   sequencer is recovering\> at \<time\> (verify: \<cast command\>). Funds are not lost and cannot
   be mispriced — the freeze exists to guarantee that. Pending (unactivated) deposits can be
   reclaimed at any time with `cancelPending()`. Exits resume automatically once the feed is healthy;
-  no action from us is possible or needed on-chain."
+  no action from us is possible or needed on-chain." The "verify" slot is
+  [MEMBER-VERIFY.md](MEMBER-VERIFY.md) §3 — it shows what the revert looks like, and §5-B is the
+  `cancelPending` recipe.
 - **Cannot do:** unfreeze, override the price, retune the heartbeat or band, or repoint the feed.
   All of it is immutable per deployment.
 - **Canary:** the `oracle-freshness` signal measures this oracle directly — it calls

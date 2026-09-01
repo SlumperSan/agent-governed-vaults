@@ -13,6 +13,10 @@ work it describes.
   (`Agent-Governed Vaults/`) — narrative, decisions, session handoffs.
 - **This file** holds only what neither of those gives you: what is being worked on right now, what
   is blocked on a human, and the traps that are not visible in the code.
+- **Member self-service** — the copy-paste `cast` reads (NAV, price, shares, freeze state, exit
+  mode) and the direct-to-contract deposit / exit / `cancelPending` recipes a member uses when the
+  website is down or untrusted — is `docs/MEMBER-VERIFY.md`. Incident messages point there for
+  "verify it yourself".
 
 ---
 

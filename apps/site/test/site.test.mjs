@@ -627,7 +627,7 @@ test('tables carry a caption and scoped headers', () => {
 // its first false positive — the exact failure mode this file's header warns about.
 
 /** Repository prose a non-developer or an integrating agent reads. Paths are repo-relative. */
-const REPO_PROSE = ['README.md', 'llms.txt', 'docs/AGENT-QUICKSTART.md'];
+const REPO_PROSE = ['README.md', 'llms.txt', 'docs/AGENT-QUICKSTART.md', 'docs/MEMBER-VERIFY.md'];
 const repoProse = new Map(REPO_PROSE.map((f) => [f, readFileSync(path.join(REPO, f), 'utf8')]));
 
 /**
@@ -667,6 +667,31 @@ test('no surface places the Mode-F trigger at proposal passage instead of reveal
       assert.equal(hit, null, `${p}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage, not at the reveal phase`);
     }
   }
+});
+
+/**
+ * docs/MEMBER-VERIFY.md is the member self-service page: the copy-paste `cast` reads and the
+ * direct-to-contract deposit / exit / cancelPending recipes a member uses when the website is down
+ * or untrusted. It is member-facing prose in the same sense the six site pages are, and it is the
+ * page every incident message points at for "verify it yourself" — so the FULL site ban list runs
+ * over it, not only the Mode-F rules. The engineering docs are deliberately not in this test (see
+ * the section header); this one file is, because a member reads it under stress.
+ */
+const MEMBER_PAGE = 'docs/MEMBER-VERIFY.md';
+
+test('the member self-service page carries no banned claim', () => {
+  const text = scrubPermitted(readFileSync(path.join(REPO, MEMBER_PAGE), 'utf8'));
+  for (const re of BANNED) {
+    const hit = text.match(re);
+    assert.equal(hit, null, `${MEMBER_PAGE}: banned phrase ${re} matched ${JSON.stringify(hit?.[0])}`);
+  }
+  for (const re of BANNED_OUTSIDE_FOOTER) {
+    const hit = text.match(re);
+    assert.equal(hit, null, `${MEMBER_PAGE}: ${re} has no permitted use on the member page (${JSON.stringify(hit?.[0])})`);
+  }
+  // The page must say what it is, in the words the Legal department set for docs/ copy.
+  assert.ok(text.includes('Member self-service reference — not advice.'), `${MEMBER_PAGE}: must open with the "Member self-service reference — not advice." marker`);
+  assert.ok(/Nothing here is an\s+offer, a solicitation, or financial advice\./.test(text), `${MEMBER_PAGE}: must carry the not-an-offer sentence`);
 });
 
 test('every surface that describes Mode F names the reveal phase as its trigger', () => {
