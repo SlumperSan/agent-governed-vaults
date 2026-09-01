@@ -86,8 +86,11 @@ test('a healthy deployment produces ZERO alerts across every signal', async () =
   assert.deepEqual(bad.map((r) => `${r.signal}: ${r.message}`), [], 'every signal must read healthy');
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
-    ['exit-liveness', 'fee-routing', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
-    'all six signals must actually have run',
+    [
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'module-events', 'nav-backing',
+      'operator-power', 'oracle-freshness', 'share-conservation',
+    ],
+    'all eight signals must actually have run',
   );
 });
 
@@ -443,7 +446,7 @@ test('a full sweep derives the early-warning bar from ORACLE_FEED_CADENCE_SECOND
 
 // ── feed identity (signal g) is wired into the sweep ─────────────────────────
 
-test('a healthy PIVOTED sweep runs SEVEN signals — feed-identity included, and silent', async () => {
+test('a healthy PIVOTED sweep runs NINE signals — feed-identity, operator-power and depeg-reference included, and silent', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
@@ -451,16 +454,27 @@ test('a healthy PIVOTED sweep runs SEVEN signals — feed-identity included, and
   assert.deepEqual(results.filter((r) => r.status !== 'ok').map((r) => r.message), []);
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
-    ['exit-liveness', 'fee-routing', 'feed-identity', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
+    [
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'feed-identity', 'module-events',
+      'nav-backing', 'operator-power', 'oracle-freshness', 'share-conservation',
+    ],
   );
 });
 
-test('a RETIRED-oracle sweep still runs exactly six signals — feed-identity has nothing to watch there', async () => {
+test('a RETIRED-oracle sweep still runs exactly eight signals — feed-identity has nothing to watch there', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
   });
   assert.ok(!results.some((r) => r.signal === 'feed-identity'), 'no Chainlink proxy exists to drift');
+  assert.deepEqual(
+    [...new Set(results.map((r) => r.signal))].sort(),
+    [
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'module-events', 'nav-backing',
+      'operator-power', 'oracle-freshness', 'share-conservation',
+    ],
+    'operator-power and depeg-reference are oracle-flavor-independent — they still run',
+  );
 });
 
 test('a mis-scaled feed pages from feed-identity while every other signal reads healthy', async () => {

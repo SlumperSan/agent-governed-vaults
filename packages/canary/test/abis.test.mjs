@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
   VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
+  GOVERNANCE_VIEWS,
   VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   signatureOf,
 } from '../src/abis.mjs';
@@ -39,6 +40,10 @@ const oracleAbi = oracleBuilt ? JSON.parse(readFileSync(oracleAbiPath, 'utf8')).
 const feedAbiPath = join(OUT, 'IAggregatorV3.sol/IAggregatorV3.json');
 const feedBuilt = existsSync(feedAbiPath);
 const feedAbi = feedBuilt ? JSON.parse(readFileSync(feedAbiPath, 'utf8')).abi ?? [] : [];
+
+const govAbiPath = join(OUT, 'Governance.sol/Governance.json');
+const govBuilt = existsSync(govAbiPath);
+const govAbi = govBuilt ? JSON.parse(readFileSync(govAbiPath, 'utf8')).abi ?? [] : [];
 
 // `description()` is declared as its own interface inside ChainlinkOracle.sol, because the
 // constructor reaches it by raw staticcall rather than through IAggregatorV3.
@@ -87,7 +92,10 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS, ...CHAINLINK_FEED_IDENTITY_VIEWS]) {
+  for (const frag of [
+    ...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS,
+    ...CHAINLINK_FEED_IDENTITY_VIEWS, ...GOVERNANCE_VIEWS,
+  ]) {
     assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
   }
 });
@@ -141,6 +149,27 @@ test('the views the signals read exist on the compiled VaultCore', { skip: !buil
 test('requestExit(uint256) is a real VaultCore function — the sentinel probes a live selector', { skip: !built && 'contracts/out absent' }, () => {
   const fns = vaultAbi.filter((i) => i.type === 'function').map(canonical);
   assert.ok(fns.includes('requestExit(uint256)'));
+});
+
+/**
+ * The G1 guard, matching the ChainlinkOracle one above: `GOVERNANCE_VIEWS` is only checked for
+ * `stateMutability === 'view'` against itself unless something also compares it against the
+ * COMPILED `Governance` ABI. `configOf`'s field ORDER is load-bearing — it is a mapping-to-struct
+ * getter that viem flattens positionally, and `signals/operator-power.mjs` reads
+ * `proposalThresholdBps` out of slot 5 by position, not by name.
+ */
+test('every Governance view operator-power.mjs reads exists on the compiled contract, with the same field order', { skip: !govBuilt && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(govAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of GOVERNANCE_VIEWS) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `Governance has no ${sig} — signals/operator-power.mjs would read a reverting selector`);
+    assert.equal(onChain.stateMutability, 'view', `${sig} is not a view on the compiled contract`);
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted — operator-power.mjs would mis-decode configOf's fields`,
+    );
+  }
 });
 
 /**
