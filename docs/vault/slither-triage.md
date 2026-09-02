@@ -39,7 +39,7 @@ widened run went 245 → 254 results with **no new detector class**.
   the opposite and was correct when written; #98 landed between that branch and this one.
 - **`timestamp`** — **superseded 2026-09-01: triaged row by row, and one of the thirty is real.**
   The old bullet was sound for `Governance` and `Checkpoints` as far as it went, and its only stated
-  gap (`UniswapV3TwapSource._observe`, cited by line number at the time → **H-2**) is doubly closed: H-2 was fixed, and that contract
+  gap (`latestPrice` (`UniswapV3TwapSource.sol:282-292`) → **H-2**) is doubly closed: H-2 was fixed, and that contract
   has since been pruned from the tree. The gap it never named was the one that mattered — it asked
   whether the windows are wide enough to survive miner skew (they are; the smallest shipped window
   is an hour) and never asked whether the two comparisons on either side of a deadline **agree about
