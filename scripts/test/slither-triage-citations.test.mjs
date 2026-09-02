@@ -48,7 +48,15 @@
  *     cell, so it is a quote of the source rather than open-ended similarity.
  *   - **The measured gas figure**, which is a citation in exactly the way a line number is.
  *
- * SCOPE, stated because the cheap half is not the check: this pins Solidity citations only. The
+ * SCOPE. The triage-row assertion and the measured-gas assertion enumerate `docs/` from the
+ * FILESYSTEM, because both re-drift probes against an earlier draft of this file survived: a
+ * drifted row pasted into a third document, and the stale 10,108,782 pasted into a sibling doc,
+ * both stayed green while the guard read a hand-named list of two files. A guard that knows only
+ * the instances already fixed is a record of the fix, not a guard against its return. The
+ * remaining assertions stay scoped to the two triage documents, because other documents under
+ * `docs/` carry pre-existing drift that PR #124 owns repo-wide.
+ *
+ * Also stated because the cheap half is not the check: this pins Solidity citations only. The
  * `.mjs`, `.toml` and `.md` citations in these documents are NOT covered and can still drift, and
  * ~34 bare `:N` shorthands were DELETED rather than pinned — dropping a line number asserts
  * nothing and cannot be wrong, whereas re-pointing 34 by hand is 34 chances to ship a new wrong
@@ -219,6 +227,20 @@ const tighten = (s) => s.replace(/\s+/g, '');
 
 const DOCS = TRIAGE_DOCS.map((doc) => [doc, readFileSync(path.join(REPO, doc), 'utf8').split(/\r?\n/)]);
 
+/** Every markdown file under `docs/`, enumerated from the filesystem rather than from a list. */
+function allDocs() {
+  const out = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry.endsWith('.md')) out.push(path.relative(REPO, full).split(path.sep).join('/'));
+    }
+  })(path.join(REPO, 'docs'));
+  return out;
+}
+const ALL_DOCS = allDocs().map((doc) => [doc, readFileSync(path.join(REPO, doc), 'utf8').split(/\r?\n/)]);
+
 /** A triage table row: | N | `File.sol:LINE` `fn` | `condition` | ... */
 const TABLE_ROW = /^\|\s*\d+\s*\|\s*`([\w./-]+\.sol):(\d+)`\s+`([A-Za-z0-9_$]+)`\s*\|\s*`(.+?)`\s*\|/;
 
@@ -229,9 +251,12 @@ const SYMBOLIC = /\b([A-Z][A-Za-z0-9_$]*)\.([A-Za-z0-9_$]+):(\d+)(?:-(\d+))?\b/g
 const ANY_SOL_CITE = /\b([\w./-]+\.sol):(\d+)(?:-(\d+))?\b/g;
 
 test('every triage table row cites a line inside the function it names, holding the condition it names', () => {
+  // Enumerated from the filesystem, not from TRIAGE_DOCS: a guard that only knows the two files
+  // already fixed is a record of the fix, not a guard against its return. Pasting a drifted row
+  // into a third document under `docs/` is caught here.
   let rows = 0;
   const failures = [];
-  for (const [doc, lines] of DOCS) {
+  for (const [doc, lines] of ALL_DOCS) {
     lines.forEach((text, i) => {
       const m = TABLE_ROW.exec(text);
       if (!m) return;
@@ -425,6 +450,20 @@ test('the navWad measurement the triage doc prints is the one the gas test asser
     doc.includes(`\`NAV_GAS_CEILING\` of ${commas(cap)}`),
     `docs/reviews/SLITHER-TRIAGE.md does not state the ceiling ${commas(cap)} that ${solPath} declares`,
   );
+  // And NO document may state a different figure. The stale 10,108,782 could otherwise be pasted
+  // into any sibling doc with this staying green — a pin that knows only the instance already
+  // fixed is a record of the fix, not a guard against its return.
+  for (const [name, lines] of ALL_DOCS) {
+    lines.forEach((text, i) => {
+      for (const m of text.matchAll(/navWad\(\)`?[^.\n]{0,40}?([\d][\d,]{5,})\s*gas/g)) {
+        assert.equal(
+          m[1].replace(/,/g, ''),
+          String(gas),
+          `${name}:${i + 1} states navWad() at ${m[1]} gas; ${solPath} measures ${commas(gas)}`,
+        );
+      }
+    });
+  }
   // The ceiling is a coarse fence. The document must not describe it as anything tighter.
   const slack = ((cap - gas) / gas) * 100;
   assert.ok(slack > 0, `NAV_GAS_CEILING ${cap} is below the measured ${gas}`);
