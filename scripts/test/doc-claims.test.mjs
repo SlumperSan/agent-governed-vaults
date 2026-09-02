@@ -104,7 +104,16 @@ test('the anchors are the identifiers NEAREST the citation, not every backtick o
   const [c] = citationsIn(wide);
   assert.ok(c.anchors.includes('_settleExit'), 'the adjacent symbol is an anchor');
   assert.ok(!c.anchors.includes('alpha'), 'a symbol at the far end of the row is not');
-  assert.ok(c.anchors.length <= 3, 'anchors are capped, so a crowded row cannot match by luck');
+  assert.ok(!c.anchors.includes('beta'), 'nor the second');
+  assert.ok(!c.anchors.includes('VaultCore'), "and the citation's own span is not its own anchor");
+});
+
+test('a quoted code fragment is ONE anchor group, and keywords in it are not anchors', () => {
+  // `allowSubVaults = false` names allowSubVaults. It must not also contribute `false`: `false`
+  // occurs on most lines of a deploy script, so a drifted citation would resolve as correct.
+  const [c] = citationsIn('confirmed on the deploy path (`allowSubVaults = false`, `Deploy.s.sol:79`)');
+  assert.ok(c.anchors.includes('allowSubVaults'), 'the identifier inside the fragment is an anchor');
+  assert.ok(!c.anchors.includes('false'), 'the keyword is not');
 });
 
 test('bare `:N` continuations are resolved against the preceding citation, not ignored', () => {
