@@ -6,8 +6,9 @@ is now cleared and what remains is operational.
 
 > **⚠ [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) is authoritative; this note is a mirror.** Rows
 > 0, 1 and 5 below were corrected on 2026-08-30 after the C-6 pivot shipped and the owner's audit
-> attestation landed. Rows 2/3/6/7 are directionally right but read the source document (and
-> `npm run cc`) for the live board.
+> attestation landed, and row 7 on 2026-09-02 when the gate closed. Rows 2/3/6 are directionally
+> right but read the source document (and `npm run cc`) for the live board — gate 2 in particular
+> has moved there since this mirror was last corrected.
 
 ## Why it matters
 
@@ -28,7 +29,7 @@ safety, and both are NO-GO.
 | 4 | Live x402 settlement | **GO** (unaffected) — x402 is off-chain plus a USDC `transferWithAuthorization`; touches no contract this branch changed. The one operational gate that survives intact. |
 | 5 | Mainnet oracle stack config verified | **GO with a NAMED RESIDUAL** — reshaped by the pivot. `base-mainnet.json.chainlinkOracle` prices each asset from **one genuine Chainlink Data Feed**: WETH←ETH/USD, cbBTC←BTC/USD, USDC pinned, plus the Base L2 sequencer uptime feed — verified on Base mainnet **12/12** and mirrored + verified on Base Sepolia **11/11**. No cbETH: Base has no cbETH/USD feed. The "5 sources at quorum 3" requirement and the NOT-DEPLOYABLE status described the removed aggregator and no longer apply. **Residual: single-provider dependency** — heartbeat + sane-price band + sequencer gate are the *only* defences against a bad answer, a feed failure fails that asset **closed with no fallback**, and there is no rotation lever (residual 12). |
 | 6 | Canary operational | **STALE** — read-only and unchanged, but its evidence came from watching superseded contracts; re-earns alongside gate 3. |
-| 7 | Ops runbook exercised (a restore performed) | **CONDITIONAL** — the backup ring shipped, but a deliberate restore drill (~30 min, no keys) has not been recorded. |
+| 7 | Ops runbook exercised (a restore performed) | **GO** — 2026-09-02. The drill is recorded in [docs/RESTORE-DRILL.md](../RESTORE-DRILL.md): first Docker-free 2026-08-30 (§5–6, addendum §9), then re-run under a real Linux Docker engine with **steps 1 and 6 literal** (`docker compose stop/start`) — the one condition this row was CONDITIONAL on — in #139 (`4619f17a`), §10. The three runbook/Compose defects that re-run surfaced are fixed in #141 (`adafdc7c`). Read the row in the source document for the residuals; each belongs to a different gate. |
 | 8 | All CI gates green | **GO** — `forge test` 252 pass / 0 fail; backend 553 (551 pass, 2 skip). Certifies the gates ran, not that the protocol is safe; `v1.0.0-launch-candidate` deliberately not cut. |
 
 ## Launch parameters (§2)
@@ -46,8 +47,9 @@ deposit overload, which spent 731 B. `VaultFactory` (~21,004 B spare) and `Chain
 
 C-1 decided (root-only) · C-6 resolved by the pivot · external audit commissioned (owner
 attestation, gate 1) · `base-mainnet.json.chainlinkOracle` populated and on-chain-verified ·
-**remaining:** re-run the testnet lifecycle, soak and canary on the pivoted tree (gates 2/3/6, need
-a funded key) and one recorded restore drill (gate 7). H-5/H-6 stay deferred with the sub-vault (H-9 was fixed in code 2026-09-01)
+**remaining:** re-run on the pivoted tree whichever of the operational gates 2/3/6 the source
+document still shows short of GO (they need a funded key). Gate 7 is closed — the restore drill is
+recorded and re-run literally under Docker. H-5/H-6 stay deferred with the sub-vault (H-9 was fixed in code 2026-09-01)
 feature — and with `VaultCore` at ~283 B of margin, anything VaultCore-shaped is now effectively
 closed.
 
