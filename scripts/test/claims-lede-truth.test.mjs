@@ -14,8 +14,11 @@
  *      has no `msg.sender` check at all. `isExecutor` returns `account == address(this)` — it names
  *      the Governance contract, not an operator ACL. A grep for `operator` over `Governance.sol`
  *      returns ZERO matches, and all three `require(msg.sender ...)` gates in `VaultCore` are
- *      `OnlyGovernance`. Operatorship confers no on-chain authority over a deployed vault; its only
- *      on-chain consequence is fee accrual through `FeeEngine`.
+ *      `OnlyGovernance`. Operatorship confers no authority to vote, execute, pause, reprice, or move
+ *      member funds; its only on-chain consequence is fee accrual through `FeeEngine`.
+ *      (This sentence read "confers no on-chain authority over a deployed vault" until guard 6 was
+ *      written — the retired universal, sitting in the header of the file that bans it. `.mjs` is
+ *      not in `PUBLIC_EXT`, so the guard could not catch its own docstring. Sixth instance.)
  *
  *   2. "STAKE-WEIGHTED" IS NOT UNIVERSAL. `Governance.finalize` has THREE quorum regimes, not one.
  *      A `RuleChange` needs full consensus (`revealedWeight == snapshotTotal`). Below
@@ -63,6 +66,16 @@
  *
  * So the vault is a NAMED open item, tracked in `Rules/claims-surface-spans-two-stores.md`, and not
  * a silent one. Anyone extending this file: widen the store only together with that design.
+ *
+ * **SCOPE HAS A SECOND AXIS, AND IT IS THE ONE THAT ACTUALLY BIT.** The paragraphs above draw the
+ * boundary at the STORE (repo vs vault) and a reader finishes them believing the repo is covered.
+ * It is not: coverage inside the repo is bounded by `PUBLIC_EXT`, and the first version of this
+ * file omitted `.json` — which is where three live falsehoods were sitting, in
+ * `contracts/config/*.json`, inside this file's own PR. The store axis was the one under
+ * discussion; the file-type axis was the one with the defect behind it.
+ *
+ * Both axes must be stated wherever this file's scope is described. Neither is more real than the
+ * other, and a check that names one boundary convincingly is how the other one goes unexamined.
  *
  * ## What is deliberately NOT banned
  *
@@ -131,7 +144,12 @@ const SKIP_DIRS = new Set([
 ]);
 
 // The surfaces a reader actually reads. Extensions, not a file list (see the header).
-const PUBLIC_EXT = new Set(['.md', '.html', '.txt']);
+//
+// `.json` is here because leaving it out hid three live falsehoods inside this file's own PR:
+// `contracts/config/*.json` carried "the `<5`-member signer quorum regime is stake-blind" in
+// `minDepositNote` — the note a vault creator reads to choose `minDepositUsdc`, which IS the
+// entire H-8 mitigation. Config prose is prose. A reader acts on it, so it is a public surface.
+const PUBLIC_EXT = new Set(['.md', '.html', '.txt', '.json']);
 
 /** Every public prose surface in the repository, enumerated from the filesystem — never a list. */
 const publicSurfaces = () => {
@@ -346,18 +364,42 @@ const ONCHAIN_MEMBER_GATE =
 // So: enumerate. "operatorship confers no authority to vote, execute, pause, reprice, or move
 // member funds" is unattackable and no longer than the sentence it replaces.
 // ---------------------------------------------------------------------------------------------
-const OPERATOR_UNIVERSAL = [
-  /\b(?:no|zero)\s+(?:privileged|special)\s+(?:on-chain\s+)?(?:power|authority|rights?|control)\b/gi,
-  /\b(?:holds?|has|have|with)\s+no\s+on-chain\s+(?:power|authority|rights?|control)\b/gi,
-  /\boperators?\s+(?:holds?|has|have)\s+no\s+(?:power|authority|rights?|control)\b/gi,
-];
+// The first version of this guard listed three phrasings — "no privileged/special X", "no on-chain
+// X", "operator has no X" — and a FIFTH instance of the shape walked straight past it, in this
+// file's own PR: `risks.html`'s "It holds **no protocol-level privilege**". Not "privileged", not
+// "on-chain", not "operator"; the noun was "privilege" rather than "power". The coverage failure was
+// LEXICAL, not spatial — the walk had reached the file, the pattern had not reached the sentence.
+//
+// So do not enumerate phrasings. Match the SHAPE: "no <up to three modifiers> <power-noun>", with
+// the modifier slot deliberately open to whatever the next author invents.
+// The tell is a SCOPE-WIDENING modifier, not the noun. "no voting rights" and "no proposal rights"
+// name a capability and are true and checkable; "no PRIVILEGED power" / "no PROTOCOL-LEVEL
+// privilege" / "no ON-CHAIN authority" widen to everything and are the falsifiable form. A first
+// draft of this guard matched any "no <modifier> <power-noun>" and reddened fourteen true, scoped
+// statements across the repo — swinging from too lexical straight past correct into too broad.
+//
+// LIMIT, stated rather than implied: this catches the WIDENED form. A blanket claim built with no
+// modifier at all ("the operator has no authority.") slips through, and that is accepted — the
+// alternative reddens every scoped negation in the audit walkthroughs, and a guard that cries wolf
+// on true prose gets weakened by the next author. Guards 1-5 share this property; none is a proof
+// of absence.
+const POWER_CLAIM =
+  /\bno\s+(?:privileged|special|on-chain|onchain|protocol-level|inherent|real|actual|meaningful|extra|additional|blanket)(?:\s+[A-Za-z][A-Za-z-]*){0,2}\s+(?:privileges?|powers?|authority|authorities|control|rights?)\b/gi;
+
+// ...and exempt the one form that is NOT a universal: an ENUMERATION. The approved sentence reads
+// "confers no authority to vote, execute, pause, reprice, or move member funds" — a list a reader
+// can check item by item. "to <verb>, <verb>…" immediately after the noun is that shape. Anything
+// else — a dash, a full stop, a scoping phrase like "over a deployed vault" — is the blanket form.
+const ENUMERATION_FOLLOWS = /^\s*to\s+[a-z][\w'-]*(?:\s+[\w'-]+){0,3}\s*,/i;
 
 test('the operator\'s lack of power is enumerated, never claimed as a universal', () => {
   const hits = [];
   for (const { file, text } of surfacesWithText()) {
     const hay = flat(text);
-    for (const re of OPERATOR_UNIVERSAL) {
-      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    for (const m of hay.matchAll(POWER_CLAIM)) {
+      const after = hay.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 120);
+      if (ENUMERATION_FOLLOWS.test(after)) continue; // the approved, checkable form
+      hits.push({ file, quote: m[0] });
     }
   }
   assert.deepEqual(
