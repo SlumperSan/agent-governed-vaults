@@ -42,7 +42,7 @@ reference for what is signal vs. noise.
 | `unused-return` | **By design.** (a) The `boundedCall` results are intentionally best-effort (H-1): the `ok` flag is checked where liveness needs it and the rest ignored — a failing bookkeeping module must not block an exit. (b) `IExecutionAdapter.executeSwap`'s return is ignored because output is measured from the vault's OWN balance delta (EX-3), never the adapter's word. (c) `getReserves`/`latestRoundData` ignore fields the caller doesn't need (timestamp / round metadata). **Triaged row by row on 2026-09-01 — see “The small detector groups, 49 rows” below.** All 11 rows are enumerated there, the `SafeTransferLib` wrappers are **verified** to revert on false rather than assumed to, and the discarded `retSize` on the fee-engine call in `VaultCore._settleExit` is now pinned by two tests. |
 | `incorrect-equality` (x13) | **Triaged row by row on 2026-09-01 - see "`incorrect-equality`, thirteen rows" below.** The blanket "Safe" this replaces reached the right verdict on the wrong evidence: it cited "NAV never reads `balanceOf`, EE-1" as if that covered all thirteen rows, when only four of them are about NAV at all. No row is REAL; three now have executing tests.
 | `uninitialized-local` | **Safe.** `k`, `perfFee`, `childValTotalWad` are accumulators intentionally relying on Solidity's zero-default before being summed. **Triaged row by row on 2026-09-01 — see “The small detector groups, 49 rows” below.** Correction: `k` no longer fires — 2 rows, not 3 — and `perfFee` is *conditionally* assigned rather than accumulated. |
-| `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `latestPrice` (`UniswapV3TwapSource.sol:282-292`), the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), so the omission is closed. |
+| `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource._observe` (cited by line number at the time, before the contract was retired), the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), and the contract itself no longer exists — the Chainlink-direct pivot (C-6) deleted `UniswapV3TwapSource.sol`, so that citation is history, not a location. The omission is closed. **Per-row re-triage correction (2026-09-01):** the class verdict answered "is every comparison outside miner tolerance?" (yes) and never asked "is each comparison against the right clock?". One is not — `Governance.applyStandingDefault` measures the VO-3 standing-default TTL against `block.timestamp`, but it is callable only from the reveal phase, so the commit phase consumes part of the 72h and `commitDuration >= DEFAULT_TTL` (legal until now) killed VO-3 outright for that vault. **T-1, Low, FIXED** in the PR that added this sentence: `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`. Regression `AuditStandingDefaultTtlVsCommit.t.sol`. |
 | `calls-loop`, `costly-loop`, `cache-array-length`, `cyclomatic-complexity` | **Accepted for the basket loop** (capped at 10). **AI-audit correction (§4.5):** the "~237k gas" bound was measured on a 1-child/1-grandchild fixture (6 `priceWad` calls); the caps actually permit ~730 calls at the `MAX_CHILDREN` fan-out, so `navWad` is bounded in *shape* but unbounded in *cost* (**M-5**, ~12M gas at 8×8 vaults). M-5's fan-out requires sub-vaults, which are **disabled at launch** (root vaults only, C-1 gate), so at launch `navWad` loops only over the basket (≤10) and the original bound holds; M-5 is deferred with the sub-vault feature. The `NavGas.t.sol` sub-vault assertion is a fixture bound, not a proof of the worst case.  **`costly-loop`, `cache-array-length` and `cyclomatic-complexity` triaged row by row on 2026-09-01 — see “The small detector groups, 49 rows” below; `calls-loop` is NOT covered by that pass.** All three `costly-loop` rows are in `executeRebalance`'s **orders** loop, which this cell's “basket loop (capped at 10)” does not describe and which nothing in the contract caps. |
 | `low-level-calls` | **By design.** `AggregationRouterAdapter.executeSwap` — the pinned-router call behind the selector allowlist + measured-delta minOut (EX-3). **+3 in Sprint 10** (newly visible): `SafeTransferLib.safeTransfer` / `safeTransferFrom` / `safeApprove`, each a `token.call(abi.encodeWithSelector(...))`. The low-level form is the whole point — it tolerates non-standard ERC-20s that return nothing or malformed data instead of reverting on them (H-2), which a high-level call cannot do. Every one checks `ok` and validates the return payload. Reviewed in SPRINT1; before Sprint 10 the analyser had never actually seen them (banner above), and now that it has, it reports exactly these three by-design sites and nothing more. **Triaged row by row on 2026-09-01 — see “The small detector groups, 49 rows” below.** **That last sentence is now false:** M-11 moved the three `SafeTransferLib` calls into assembly, so the detector no longer sees them; the two live rows are the adapter's `router.call` and `ChainlinkOracle._requireUsdQuote`'s `description()` probe, which this cell never mentioned. |
 | `missing-inheritance` | **Cosmetic.** Interface-shaped contracts that don't formally `is` the interface; ABIs match. Sprint 7 added one instance: `VaultDeployer` vs `IVaultDeployer` (declared inside `VaultFactory.sol`). Same disposition — the single `deploy(bytes) returns (address)` selector matches, and `Eip170::test_factoryPinsItsDeployerImmutably` plus every factory-path test exercise the call across the interface. **Triaged row by row on 2026-09-01 — see “The small detector groups, 49 rows” below.** Still cosmetic, but no longer unpinned: `test/InterfaceSelectorDrift.t.sol` asserts every selector on all four pairs. |
@@ -178,7 +178,7 @@ that tree (`scripts/test/slither-triage-citations.test.mjs` keeps them there).
 | # | Site (`contracts/src/…`) | Expression | Grade | Reason | Pinned by |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `VaultCore.sol:377` `navPerShareWad` | `ts == 0` | BENIGN | `totalShares == 0` implies `navWad() == 0` — see "the `ts == 0` group" below. | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` |
-| 2 | `Governance.sol:613` `_isSettled` | `s == Status.Defeated \|\| s == Status.Executed \|\| s == Status.Expired` | BENIGN | Not "is the enum exhaustive" (it is) but "can a proposal hang non-settled and freeze `propose`". Every non-settled status has a permissionless, external-call-free exit. | `test_abandonedProposalIsAlwaysSettleableByAStrangerAndUnblocksPropose`, `test_passedButUnexecutedProposalExpiresAndUnblocksPropose` |
+| 2 | `Governance.sol:634` `_isSettled` | `s == Status.Defeated \|\| s == Status.Executed \|\| s == Status.Expired` | BENIGN | Not "is the enum exhaustive" (it is) but "can a proposal hang non-settled and freeze `propose`". Every non-settled status has a permissionless, external-call-free exit. | `test_abandonedProposalIsAlwaysSettleableByAStrangerAndUnblocksPropose`, `test_passedButUnexecutedProposalExpiresAndUnblocksPropose` |
 | 3 | `VaultCore.sol:650` `_settleExit` | `slice == 0` | STYLE | `continue`-guard on a zero in-kind leg. Floors **down**, against the exiter — the algebraic condition for the §4.6 NAVps invariant; a `< 1` would behave identically. | — |
 | 4 | `VaultCore.sol:1086` `convertToAssets` | `ts == 0` | BENIGN | Same invariant as row 1, on an explicitly indicative-only 4626-shaped view (C-1). | as row 1 |
 | 5 | `VaultCore.sol:719` `_settleExit` | `payoutValueWad == 0` | STYLE | Divide-by-zero guard, and the branch is unreachable with a nonzero numerator: `payoutValueWad == 0` forces the `else` branch, so `perfFee == 0` and `0` is the correct substitute. | — |
@@ -235,7 +235,7 @@ fail under the mutation that would make its row real:
 
 | Mutation | Test that turns red | Observed |
 | --- | --- | --- |
-| `Governance._boundedWeight:338` `p.createdAt - 1` → `p.createdAt` | `test_sameSecondCheckpointCannotBackfillProposalWeight` | `9000e18 != 1000e18` — 8,000 USDC deposited in the proposal's own second buys 9× weight |
+| `Governance._boundedWeight:348` `p.createdAt - 1` → `p.createdAt` | `test_sameSecondCheckpointCannotBackfillProposalWeight` | `9000e18 != 1000e18` — 8,000 USDC deposited in the proposal's own second buys 9× weight |
 | `VaultCore.navWad:301` `idleUsdc` → `IERC20Metadata(usdc).balanceOf(address(this))` | `test_donationCannotMoveNavOrDiluteTheNextMint` | `6000e18 != 1000e18` — a donation moves NAV |
 | `VaultCore._settleExit:611` delete `if (memberShares == ts) feeBps = 0;` | `test_soleHolderExitDrainsExactlyAndTheTsZeroBranchReopensClean` | `999900000 != 1010000000` — the sole holder's fee is stranded in a zero-share vault |
 
@@ -427,7 +427,7 @@ different reason" and not an instance of the mutex row.
 | # | site | verdict |
 | --- | --- | --- |
 | 1 | `FeeEngine.onFeeCollected:106` | Benign. `claimableFees` is credited **before** `registry.recordFeeCollected` — CEI holds and only the event is late. `registry` is immutable and is the canonical `OperatorRegistry`. |
-| 2 | `Governance.execute:592` | **REAL (Low, off-chain) — next section.** |
+| 2 | `Governance.execute:613` | **REAL (Low, off-chain) — next section.** |
 | 3 | `VaultFactory.createChildVault:224` | Benign. A nested `VaultCreated` gets a **lower** `logIndex`, the indexer folds ascending, and the handler is keyed on `args.vault` — a different address per event, so inner-first is order-insensitive. |
 | 4 | `VaultFactory.createVault:188` | Benign, same argument. |
 
@@ -444,12 +444,12 @@ argument breaks, because its handler is keyed on the **vault** while the event i
 belongs in `packages/indexer`, which this triage does not own (SWARM §4).
 
 **The chain half is not a bug.** `execute` sets `p.status = Status.Executed` **before** the three
-`IVaultExecution(p.vault)` calls (`Governance.execute:583-590`), so there is no double-execution and CEI
+`IVaultExecution(p.vault)` calls (`Governance.execute:604-611`), so there is no double-execution and CEI
 holds. Only `emit Executed(pid)` is after.
 
 **But that ordering has a second consequence nobody wrote down.** `_isSettled(Executed)` is `true`,
 and `propose` requires only that the vault's current active proposal be *settled*
-(`Governance.propose:278`). So a **nested `propose` reached through the external call succeeds**, and
+(`Governance.propose:288`). So a **nested `propose` reached through the external call succeeds**, and
 `activeProposalOf[vault]` legitimately becomes a new pid while the outer `execute` is still on the
 stack. The caller position is the one this repo already conceded for #101: not the router — pinned
 and selector-allowlisted — but **a counterparty reached through the route**. Residual stated
@@ -464,7 +464,7 @@ which proposal it is zeroing:
 ```js
 case 'Executed': {
   const p = state.proposals.get(Number(a.pid));
-  if (p) { p.status = 'Executed'; state.activeProposal.set(p.vault, 0); }   // projections.mjs:246
+  if (p) { p.status = 'Executed'; state.activeProposal.set(p.vault, 0); }   // projections.mjs:290
   break;
 }
 ```
@@ -501,7 +501,7 @@ compares them**:
 
 | interface (declared in) | implementation | reached from |
 | --- | --- | --- |
-| `IVaultExecution` (`Governance.sol#7-11`) | `VaultCore` | `Governance.execute:583/584/590` |
+| `IVaultExecution` (`Governance.sol#7-11`) | `VaultCore` | `Governance.execute:604/605/611` |
 | `IRegistryAttest` (`VaultFactory.sol#9-11`) | `OperatorRegistry` | `VaultFactory.createVault`, `createChildVault` |
 | `ISubRegistryChild` (`VaultFactory.sol#13-15`) | `SubVaultRegistry` | `VaultFactory.createChildVault` |
 | `IVaultDeployer` (`VaultFactory.sol#17-19`) | `VaultDeployer` | `VaultFactory._deploy` |
@@ -553,7 +553,7 @@ calldata cost, and nothing else.
 It is still not exploitable, for reasons about governance rather than about the loop:
 
 - The orders are hashed into `actionHash` at **propose** time and re-checked at execute
-  (`Governance.execute:572`) — voters approved *these* orders, including how many there are.
+  (`Governance.execute:593`) — voters approved *these* orders, including how many there are.
   (The re-check is the `keccak256(payload) == p.actionHash` require; this cell previously cited
   the status write two lines further on.)
 - `execute` is permissionless, so whoever calls it pays. An oversized payload OOGs the *executor*,

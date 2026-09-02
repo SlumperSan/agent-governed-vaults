@@ -18,7 +18,7 @@ import { emptyState } from '../../indexer/src/projections.mjs';
 import {
   mockReader, healthyVault, healthyState, chainlinkVault, log,
   VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3, SEQ_FEED,
-  AGGREGATOR, AGGREGATOR_2,
+  AGGREGATOR, AGGREGATOR_2, GOVERNANCE, GOV_CONFIG, proposalTuple,
 } from './helpers.mjs';
 
 const NOW = 1_700_000_000;
@@ -115,8 +115,8 @@ test('a healthy deployment produces ZERO alerts across every signal', async () =
   assert.deepEqual(bad.map((r) => `${r.signal}: ${r.message}`), [], 'every signal must read healthy');
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
-    ['exit-liveness', 'fee-routing', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
-    'all six signals must actually have run',
+    ['exit-liveness', 'fee-routing', 'governance-watch', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
+    'all seven signals must actually have run',
   );
 });
 
@@ -273,6 +273,159 @@ test('runOnce says so, loudly, when there is nothing to watch', async () => {
     const { vaults } = await canary.runOnce();
     assert.deepEqual(vaults, []);
     assert.match(err[0], /no vaults to watch/, 'an empty watch set must never look like a clean bill of health');
+  });
+});
+
+// ── the off-host dead-man's switch (Monitoring Gap Analysis G6) ──────────────
+//
+// The dead-man ping exists because `ops-check` runs on the SAME HOST as the canary: host death
+// silences the watcher and the watcher's watcher together. That only works if the ping means
+// "I am watching the chain" and not merely "my process is running".
+
+test('a sweep that found ZERO vaults does NOT ping the dead-man — the external monitor must go red', async () => {
+  await withTempDir(async (dir) => {
+    const pings = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545',
+      STATE_PATH: join(dir, 'absent.json'), CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      DEADMAN_PING_URL: 'https://hc-ping.invalid/uuid', CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const err = [];
+    const canary = await buildCanary(cfg, {
+      log: () => {}, error: (m) => err.push(m), client: {},
+      fetchImpl: async (url) => { pings.push(url); return { ok: true, status: 200 }; },
+    });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 30));
+    await canary.stop();
+    await running;
+
+    assert.deepEqual(pings, [], 'pinging here would tell the ONE off-host monitor that a canary watching nothing is alive');
+    assert.ok(
+      err.some((m) => /no vaults to watch/.test(m)),
+      'and the empty watch set must be visible, not silent',
+    );
+    assert.ok(
+      err.some((m) => /dead-man ping is being WITHHELD/.test(m)),
+      'the line must say the ping was withheld, or the red external check looks like an unrelated outage',
+    );
+  });
+});
+
+test('a sweep that DID watch vaults pings the dead-man', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const pings = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+      DEADMAN_PING_URL: 'https://hc-ping.invalid/uuid', CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const canary = await buildCanary(cfg, {
+      log: () => {}, error: () => {}, client: {},
+      fetchImpl: async (url) => { pings.push(url); return { ok: true, status: 200 }; },
+    });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 30));
+    await canary.stop();
+    await running;
+
+    assert.ok(pings.length > 0, 'the healthy path must still ping, or the switch is permanently dead');
+    assert.ok(pings.every((u) => u === 'https://hc-ping.invalid/uuid'));
+  });
+});
+
+test('startup states which sinks are wired, by boolean — never the URLs, which are credentials', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const out = [], err = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+      CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const canary = await buildCanary(cfg, { log: (m) => out.push(m), error: (m) => err.push(m), client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 10));
+    await canary.stop();
+    await running;
+
+    const sinkLine = out.find((m) => /^canary sinks:/.test(m));
+    assert.ok(sinkLine, 'nothing at startup said whether anything was wired up at all');
+    assert.match(sinkLine, /PAGE webhook NOT configured/);
+    assert.match(sinkLine, /off-host dead-man NOT configured/);
+    assert.ok(err.some((m) => /DEADMAN_PING_URL is unset/.test(m)), 'an unset dead-man must not be a silent no-op');
+    assert.ok(err.some((m) => /Nobody is being paged/.test(m)));
+  });
+});
+
+test('startup never prints a configured webhook or ping URL', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const out = [], err = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+      PAGE_WEBHOOK_URL: 'https://hooks.invalid/s3cr3t-page',
+      LOG_WEBHOOK_URL: 'https://hooks.invalid/s3cr3t-log',
+      DEADMAN_PING_URL: 'https://hc-ping.invalid/s3cr3t-uuid',
+      CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const canary = await buildCanary(cfg, {
+      log: (m) => out.push(m), error: (m) => err.push(m), client: {},
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+    });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 10));
+    await canary.stop();
+    await running;
+
+    for (const m of [...out, ...err]) {
+      assert.ok(!/s3cr3t/.test(m), `a sink URL leaked into the log stream: ${m}`);
+    }
+    assert.match(out.find((m) => /^canary sinks:/.test(m)) ?? '', /PAGE webhook configured.*LOG webhook configured.*dead-man configured/);
+  });
+});
+
+test('CANARY_TEST_ALERT_ON_START warns that it re-fires on every restart', async () => {
+  await withTempDir(async (dir) => {
+    const err = [];
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      STATE_PATH: join(dir, 'absent.json'),
+      CANARY_TEST_ALERT_ON_START: '1', CANARY_POLL_INTERVAL_MS: '20',
+    });
+    const canary = await buildCanary(cfg, { log: () => {}, error: (m) => err.push(m), client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+
+    const running = canary.start();
+    await new Promise((r) => setTimeout(r, 10));
+    await canary.stop();
+    await running;
+
+    assert.ok(
+      err.some((m) => /fires on EVERY start.*restart: unless-stopped/s.test(m)),
+      'compose restarts this service automatically; a self-test left switched on pages the rotation every time',
+    );
   });
 });
 
@@ -472,7 +625,7 @@ test('a full sweep derives the early-warning bar from ORACLE_FEED_CADENCE_SECOND
 
 // ── feed identity (signal g) is wired into the sweep ─────────────────────────
 
-test('a healthy PIVOTED sweep runs SEVEN signals — feed-identity included, and silent', async () => {
+test('a healthy PIVOTED sweep runs EIGHT signals — feed-identity and governance-watch included, and silent', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
@@ -480,11 +633,11 @@ test('a healthy PIVOTED sweep runs SEVEN signals — feed-identity included, and
   assert.deepEqual(results.filter((r) => r.status !== 'ok').map((r) => r.message), []);
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
-    ['exit-liveness', 'fee-routing', 'feed-identity', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
+    ['exit-liveness', 'fee-routing', 'feed-identity', 'governance-watch', 'module-events', 'nav-backing', 'oracle-freshness', 'share-conservation'],
   );
 });
 
-test('a RETIRED-oracle sweep still runs exactly six signals — feed-identity has nothing to watch there', async () => {
+test('a RETIRED-oracle sweep still runs exactly seven signals — feed-identity has nothing to watch there', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
@@ -663,4 +816,29 @@ test('CANARY_TEST_ALERT_ON_START fires the self-test once, before the sweep loop
       'the self-test must never be recorded as a real signal transition, even once the real sweep loop has also run',
     );
   });
+});
+
+// ── governance watch (signal h) is wired into the sweep ──────────────────────
+
+test('an open proposal pages exactly once from governance-watch while every other signal reads healthy', async () => {
+  const contracts = healthyFixture({
+    [GOVERNANCE]: {
+      activeProposalOf: () => 1n,
+      configOf: () => GOV_CONFIG,
+      proposals: () => proposalTuple({ createdAt: NOW - 60, commitDeadline: NOW + 3540, revealDeadline: NOW + 7140, status: 1 }),
+    },
+  });
+  const results = await collectSignals({
+    reader: mockReader({ contracts, nowSec: NOW }), state: healthyState(),
+    vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  const alerts = results.filter((r) => r.status === 'alert');
+  assert.equal(alerts.length, 1, alerts.map((r) => r.message).join('; '));
+  assert.equal(alerts[0].signal, 'governance-watch');
+  assert.equal(alerts[0].key, 'commit');
+  assert.equal(alerts[0].detail.revealDeadline, NOW + 7140);
+  assert.equal(alerts[0].detail.earliestExecuteAt, NOW + 7140 + GOV_CONFIG[2]);
+  // The sweep found Governance through the vault itself — no config carries its address.
+  assert.equal(alerts[0].detail.governance, GOVERNANCE);
+  assert.equal(baseCfg.governance, undefined);
 });
