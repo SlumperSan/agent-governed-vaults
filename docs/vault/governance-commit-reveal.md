@@ -51,7 +51,7 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 
 ## Standing defaults
 
-Count toward tally, **never quorum**; expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
+Count toward tally, and **never toward quorum at five or more members** (that branch counts `revealedWeight` only, VO-2/K-3). Below `SIGNER_REGIME_BELOW` they DO bear on passage: `finalize`'s sub-five branch tests `forWeight`, which includes applied standing defaults, so a Rebalance can pass on a >50% pre-declared-default majority with **zero live reveals**. `Governance.finalize` names this asymmetry as intended, not overlooked — defaults are Rebalance-only, must predate the proposal, and only ever widen the passing set. Expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
 only for Rebalance proposals; must predate the proposal (`setAt < createdAt`, G4 fix). Offline
 agents auto-abstain otherwise (K-3, **ACCEPTED**).
 
