@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { resolveCanaryConfig, collectSignals, buildCanary } from '../src/canary-runner.mjs';
+import { resolveCanaryConfig, collectSignals, buildCanary, BASE_MAINNET_USDC_USD_FEED } from '../src/canary-runner.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
@@ -35,7 +35,13 @@ function healthyFixture(overrides = {}) {
   });
 }
 
-const baseCfg = resolveCanaryConfig({ RPC_URL: 'http://localhost:8545', OPERATOR_REGISTRY_ADDRESS: REGISTRY });
+// CHAIN_ID is now set EXPLICITLY: `depeg-reference`'s mainnet feed default fires only when it was
+// stated on purpose, because CHAIN_ID's own default is 8453 and an unset one must not be read as
+// "this is mainnet" (Review115 F13). The fixtures below carry a healthy $1.00 feed, so the sweep
+// exercises the real signal rather than its `skipped` branch.
+const baseCfg = resolveCanaryConfig({
+  RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+});
 const WINDOW = { fromBlock: 900, toBlock: 995, nowSec: NOW };
 
 // ── config resolution ────────────────────────────────────────────────────────
@@ -60,6 +66,26 @@ test('config: defaults are the documented ones', () => {
   assert.equal(cfg.deadmanPingUrl, null);
   assert.equal(cfg.testAlertOnStart, false);
   assert.equal(cfg.heartbeatMs, 3_600_000, 'non-negotiable per security-ops.md §5.2 — a dead canary must not look like a healthy one');
+});
+
+test('config: the mainnet USDC/USD feed default needs CHAIN_ID to be SET, not merely to default', () => {
+  // CHAIN_ID defaults to 8453, so `chainId === 8453` is also true on a Sepolia deployment that never
+  // set it. Defaulting on that would hand depeg-reference a mainnet address with no code behind it:
+  // a permanent DETECTOR BROKEN, re-asserted on the backoff forever (Review115 F13).
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).usdcUsdFeed, null,
+    'CHAIN_ID unset: no feed is guessed, and the signal reports `skipped` with a reason');
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '8453' }).usdcUsdFeed,
+    BASE_MAINNET_USDC_USD_FEED, 'stated as mainnet: the verified feed');
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '84532' }).usdcUsdFeed, null,
+    'Base Sepolia: no documented feed exists, so none is invented');
+  assert.equal(
+    resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '84532', USDC_USD_FEED_ADDRESS: `0x${'ab'.repeat(20)}` }).usdcUsdFeed,
+    `0x${'ab'.repeat(20)}`, 'an explicit address always wins, on any chain');
+});
+
+test('config: the depeg feed staleness bound is configurable and defaults to a day', () => {
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).usdcUsdFeedMaxAgeSec, 86_400);
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', USDC_USD_FEED_MAX_AGE_SEC: '900' }).usdcUsdFeedMaxAgeSec, 900);
 });
 
 test('config: PAGE_WEBHOOK_URL / LOG_WEBHOOK_URL fall back to ALERT_WEBHOOK_URL independently', () => {
@@ -212,7 +238,7 @@ test('runOnce against a healthy deployment prints NOTHING — silence is the hea
     const statePath = await seedSnapshot(dir);
     const out = [], err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
     });
     const canary = await buildCanary(cfg, {
@@ -238,7 +264,7 @@ test('runOnce emits one line when something breaks, and stays quiet on the next 
     const canaryStatePath = join(dir, 'canary-state.json');
     const out = [], err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
     });
     const canary = await buildCanary(cfg, { log: (m) => out.push(m), error: (m) => err.push(m), client: {} });
@@ -267,7 +293,7 @@ test('runOnce says so, loudly, when there is nothing to watch', async () => {
   await withTempDir(async (dir) => {
     const err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545',
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453',
       STATE_PATH: join(dir, 'absent.json'), CANARY_STATE_PATH: join(dir, 'canary-state.json'),
     });
     const canary = await buildCanary(cfg, { log: () => {}, error: (m) => err.push(m), client: {} });
@@ -289,7 +315,7 @@ test('a sweep that found ZERO vaults does NOT ping the dead-man — the external
   await withTempDir(async (dir) => {
     const pings = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545',
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453',
       STATE_PATH: join(dir, 'absent.json'), CANARY_STATE_PATH: join(dir, 'canary-state.json'),
       DEADMAN_PING_URL: 'https://hc-ping.invalid/uuid', CANARY_POLL_INTERVAL_MS: '20',
     });
@@ -323,7 +349,7 @@ test('a sweep that DID watch vaults pings the dead-man', async () => {
     const statePath = await seedSnapshot(dir);
     const pings = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
       DEADMAN_PING_URL: 'https://hc-ping.invalid/uuid', CANARY_POLL_INTERVAL_MS: '20',
     });
@@ -351,7 +377,7 @@ test('startup states which sinks are wired, by boolean — never the URLs, which
     const statePath = await seedSnapshot(dir);
     const out = [], err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
       CANARY_POLL_INTERVAL_MS: '20',
     });
@@ -380,7 +406,7 @@ test('startup never prints a configured webhook or ping URL', async () => {
     const statePath = await seedSnapshot(dir);
     const out = [], err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
       PAGE_WEBHOOK_URL: 'https://hooks.invalid/s3cr3t-page',
       LOG_WEBHOOK_URL: 'https://hooks.invalid/s3cr3t-log',
@@ -412,7 +438,7 @@ test('CANARY_TEST_ALERT_ON_START warns that it re-fires on every restart', async
   await withTempDir(async (dir) => {
     const err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
       STATE_PATH: join(dir, 'absent.json'),
       CANARY_TEST_ALERT_ON_START: '1', CANARY_POLL_INTERVAL_MS: '20',
     });
@@ -437,7 +463,7 @@ test('the canary never writes to the indexer snapshot', async () => {
     const statePath = await seedSnapshot(dir);
     const before = await readFile(statePath, 'utf8');
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
     });
     const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
@@ -456,7 +482,7 @@ test('a backlog larger than one window reports the unscanned gap instead of skip
     const canaryStatePath = join(dir, 'canary-state.json');
     const err = [];
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
       MAX_LOG_SPAN_BLOCKS: '10',
     });
@@ -679,7 +705,7 @@ test('the aggregator pin survives a restart through the canary state file, so a 
     const statePath = await seedSnapshot(dir);
     const canaryStatePath = join(dir, 'canary-state.json');
     const mkCfg = () => resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
     });
     const wire = async (contracts, out, err) => {
@@ -723,7 +749,7 @@ test('a canary state file written BEFORE feedIdentity existed loads and re-pins,
     const canaryStatePath = join(dir, 'canary-state.json');
     await writeFile(canaryStatePath, JSON.stringify({ transitions: {}, lastScannedBlock: 990 }), 'utf8');
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: canaryStatePath, OPERATOR_REGISTRY_ADDRESS: REGISTRY,
     });
     const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
@@ -747,7 +773,7 @@ test('a canary state file written BEFORE feedIdentity existed loads and re-pins,
 test('testAlert() emits exactly one PAGE-tier and one LOG-tier line through the real sinks', async () => {
   await withTempDir(async (dir) => {
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
       PAGE_WEBHOOK_URL: 'https://example.invalid/page', LOG_WEBHOOK_URL: 'https://example.invalid/log',
     });
     const out = [], err = [], hooked = [];
@@ -774,7 +800,7 @@ test('testAlert() emits exactly one PAGE-tier and one LOG-tier line through the 
 test('testAlert() never touches the transition tracker or canary-state.json', async () => {
   await withTempDir(async (dir) => {
     const canaryStatePath = join(dir, 'canary-state.json');
-    const cfg = resolveCanaryConfig({ RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: canaryStatePath });
+    const cfg = resolveCanaryConfig({ RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', CANARY_STATE_PATH: canaryStatePath });
     const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
 
     const sizeBefore = canary.tracker.size;
@@ -790,7 +816,7 @@ test('testAlert() never touches the transition tracker or canary-state.json', as
 test('testAlert() reaches the ALERT_WEBHOOK_URL fallback exactly once per synthetic transition, matching real-sweep back-compat', async () => {
   await withTempDir(async (dir) => {
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', CANARY_STATE_PATH: join(dir, 'canary-state.json'),
       ALERT_WEBHOOK_URL: 'https://example.invalid/only',
     });
     const hooked = [];
@@ -807,7 +833,7 @@ test('CANARY_TEST_ALERT_ON_START fires the self-test once, before the sweep loop
   await withTempDir(async (dir) => {
     const statePath = await seedSnapshot(dir);
     const cfg = resolveCanaryConfig({
-      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      RPC_URL: 'http://localhost:8545', CHAIN_ID: '8453', STATE_PATH: statePath,
       CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
       CANARY_TEST_ALERT_ON_START: '1', CANARY_POLL_INTERVAL_MS: '20',
     });

@@ -81,10 +81,18 @@ export function divergenceBps(a, b) {
   return (diff * 10000n) / hi;
 }
 
-/** Render integer basis points as a percentage string, e.g. 137n -> "1.37%". */
+/**
+ * Render integer basis points as a percentage string, e.g. 137n -> "1.37%".
+ *
+ * The sign is taken from the WHOLE value, not from the integer-divided whole part. BigInt division
+ * truncates toward zero, so `-50n / 100n` is `0n` and the naive form renders -50 bps as "0.50%" —
+ * a lost minus sign on exactly the numbers where it matters most. Nothing rendered a negative bps
+ * value until `signals/operator-power.mjs` began reporting `marginBps` (which is negative for every
+ * operator already below their gate), so this only ever produced correct output before; it is
+ * corrected here rather than left as a trap for the next caller.
+ */
 export function bpsToPct(bps) {
   const n = typeof bps === 'bigint' ? bps : BigInt(bps);
-  const whole = n / 100n;
-  const frac = (n < 0n ? -n : n) % 100n;
-  return `${whole}.${String(frac).padStart(2, '0')}%`;
+  const abs = n < 0n ? -n : n;
+  return `${n < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}%`;
 }
