@@ -43,7 +43,7 @@ const PAGES = ['index.html', 'how-it-works.html', 'who-its-for.html', 'operators
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 
 // The exact strings the spec pins. Any drift in punctuation or dashes is a failure, by design.
-const BANNER_STATUS = 'Not deployed. No mainnet or testnet deployment of the current code exists.';
+const BANNER_STATUS = 'Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
