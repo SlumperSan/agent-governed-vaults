@@ -17,9 +17,11 @@
 - [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
 
 ## Key semantics an integrator must respect
-- NOT DEPLOYED. No deployment of the current code exists on any network; the Base Sepolia address
-  book is superseded bytecode. Launch verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md).
-  There is nothing live to integrate against yet, and no token, presale or airdrop exists.
+- NOT DEPLOYED TO MAINNET. No mainnet deployment exists. A Base Sepolia deployment of the current
+  code does exist, but it is a testnet trial with no real value at stake and its addresses are
+  not published — the committed address book records an earlier deployment, not that one. Launch
+  verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md). There is nothing live to integrate
+  against on mainnet, and no token, presale or airdrop exists.
 - First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
 - Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
   its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
