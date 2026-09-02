@@ -23,7 +23,11 @@
  *   EXTRA_OPERATOR_ADDRESSES   comma-separated extra operator addresses to treat as prohibited
  *   PAGE_WEBHOOK_URL           POST one JSON body per PAGE-tier transition (Monitoring Gap
  *                              Analysis §2 G6 / §3 item 4): nav-backing, share-conservation,
- *                              fee-routing, exit-liveness ALERT, oracle-freshness ALERT.
+ *                              fee-routing, exit-liveness ALERT, oracle-freshness ALERT, and
+ *                              governance-watch ALERT (§3 item 5 puts it here in as many words:
+ *                              "every occurrence PAGEs at SEV-2 during waking hours"). The
+ *                              waking-hours half is the receiver's to implement; nothing in this
+ *                              process knows the time of day or promises a response.
  *   LOG_WEBHOOK_URL            POST one JSON body per LOG-tier transition — everything else,
  *                              including every DEGRADED/DETECTOR BROKEN line and feed-identity.
  *   ALERT_WEBHOOK_URL          back-compat fallback: used for whichever of PAGE_WEBHOOK_URL /
@@ -108,6 +112,7 @@ import { checkShareConservation } from './signals/share-conservation.mjs';
 import { checkExitLiveness } from './signals/exit-liveness.mjs';
 import { checkModuleEvents } from './signals/module-events.mjs';
 import { checkFeeRouting } from './signals/fee-routing.mjs';
+import { checkGovernanceWatch } from './signals/governance-watch.mjs';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
@@ -317,6 +322,10 @@ export async function collectSignals({ reader, state, vaults, cfg, window, ident
       operatorRegistry: cfg.operatorRegistry, extraOperators: cfg.extraOperators,
       fromBlock, toBlock,
     }));
+
+    // Phase is read from Governance state against chain time; the window scan only attributes
+    // the block/tx. Finds the Governance module through vault.governance(), so it needs no env.
+    await run('governance-watch', () => checkGovernanceWatch({ reader, vault, fromBlock, toBlock, nowSec }));
   }
 
   return out;
@@ -392,6 +401,11 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
     // never see them. Say so: a silent coverage gap is precisely what this package exists to
     // prevent, and an operator who sees this line can widen MAX_LOG_SPAN_BLOCKS or sweep the gap
     // by hand before it scrolls away.
+    // governance-watch is NOT in that list on purpose: it reads the proposal's phase from state
+    // and uses the window only for tx attribution, so THIS gap costs it a tx hash, not a page.
+    // A SWEEP gap is the one that can cost it the page — a canary down across a whole lifecycle
+    // sees every phase key OK before and OK after and emits nothing at all. That is what the
+    // off-host dead-man ping covers; no state-poller can recover it.
     if (windowFrom > fromBlock) {
       errLine(`canary: event scan gap — blocks ${fromBlock}-${windowFrom - 1} (${windowFrom - fromBlock} blocks) were NOT scanned for ModuleCallFailed/SliceEscrowed/fee outflows. The backlog exceeded MAX_LOG_SPAN_BLOCKS=${cfg.maxLogSpanBlocks}; raise it or scan that range manually.`);
     }
