@@ -389,6 +389,19 @@ test('the navWad measurement the triage doc prints is the one the gas test asser
   // slack. AuditCallsLoopMaxBound now asserts the printed gas against NAV_GAS_MEASURED to within
   // 1%; this pins the prose to that same constant, so the two cannot part company again.
   const solPath = 'contracts/test/audit/AuditCallsLoopMaxBound.t.sol';
+  const doc0 = readFileSync(path.join(REPO, 'docs/reviews/SLITHER-TRIAGE.md'), 'utf8');
+  if (!existsSync(path.join(REPO, solPath))) {
+    // The measuring test is not on this branch (it arrives with the calls-loop triage). A
+    // measured figure with no test behind it is the defect itself, so the document must not
+    // print one here — this is the assertion, not a skip.
+    assert.doesNotMatch(
+      doc0,
+      /`navWad\(\)` costs [\d,]+ gas/,
+      `docs/reviews/SLITHER-TRIAGE.md states a measured navWad() figure, but ${solPath} — the test ` +
+        `that measures it and pins the number — is not on this branch. Land them together.`,
+    );
+    return;
+  }
   const sol = readFileSync(path.join(REPO, solPath), 'utf8');
 
   const measured = /uint256 constant NAV_GAS_MEASURED = ([\d_]+);/.exec(sol);
