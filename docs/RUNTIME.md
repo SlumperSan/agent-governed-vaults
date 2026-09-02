@@ -242,12 +242,16 @@ when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `ST
 | `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
 | `CANARY_STATE_PATH` | | `./data/canary-state.json` | its OWN transition state — never the indexer's |
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence; named apart from the indexer's `POLL_INTERVAL_MS` |
-| `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
+| `PAGE_WEBHOOK_URL` | | — | POST one JSON body per **PAGE-tier** transition — the wake-a-human set (docs/CANARY.md §5.3) |
+| `LOG_WEBHOOK_URL` | | — | POST one JSON body per **LOG-tier** transition — everything else |
+| `ALERT_WEBHOOK_URL` | | — | back-compat fallback for whichever of the two above is unset; set only this and behaviour is pre-tiering |
+| `DEADMAN_PING_URL` | | — | off-host dead-man's switch, `GET` once per successful sweep that watched **at least one vault** (docs/CANARY.md §5.3) |
+| `CANARY_TEST_ALERT_ON_START` | | off | `1`/`true`: fire the alert self-test at startup. **Fires on every restart** — see docs/CANARY.md §5.3 |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
 | `ORACLE_MIN_MARGIN` | | `0` | retired-oracle deployments only — alert when fresh sources minus quorum <= this |
 | `ORACLE_FEED_CADENCE_SECONDS` | | — | `ChainlinkOracle` only — `addr:seconds` feed cadences that drive the derived early-warning bar (docs/CANARY.md §3a) |
 | `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | `ChainlinkOracle` only — manual override of that bar; unset lets it derive from the cadence above |
-| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2) |
+| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2). Non-negotiable per security-ops.md §5.2; set `0` to explicitly opt out |
 | `SNAPSHOT_BACKUPS` / `SNAPSHOT_BACKUP_INTERVAL_MS` | | `3` / `300000` | backup ring for the canary state file too (§8.3) |
 | `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `canary.heartbeat.json` is written (§8.2) |
 | `LOG_FORMAT` / `LOG_LEVEL` | | | as above (§8.1) |
@@ -426,6 +430,7 @@ Events worth knowing:
 | `starting` / `listening` | all | boot, with the resolved config on the line |
 | `batch.indexed` (via `indexer.progress`) | indexer | a block range was folded and snapshotted |
 | `poll.failed` / `sweep.failed` | indexer, canary | one cycle failed; it will retry |
+| `sweep.no_vaults` | canary | the canary is UP and watching **nothing** — the dead-man ping is withheld until this clears |
 | `snapshot.reload_failed` | api | serving **stale-but-valid** state — see the incident table |
 | `http.rate_limited` | api | a free route returned 429 |
 | `canary.transition` | canary | a signal changed state — **the** line to page on |
@@ -433,8 +438,9 @@ Events worth knowing:
 | `shutdown.begin` / `.step` / `.complete` | all | a clean stop, hook by hook |
 | `shutdown.timeout` / `.forced` | all | a stop that did **not** finish cleanly |
 
-Alert transitions are also delivered to `ALERT_WEBHOOK_URL` as structured JSON if set — the log is
-not the only path (see [CANARY.md](CANARY.md)).
+Transitions are also delivered as structured JSON to `PAGE_WEBHOOK_URL` / `LOG_WEBHOOK_URL` by
+severity tier (`ALERT_WEBHOOK_URL` is the single-endpoint fallback), and each body carries its own
+`tier` field — the log is not the only path (see [CANARY.md](CANARY.md) §5.3).
 
 ### 8.2 Heartbeats and `ops-check`
 
@@ -540,6 +546,18 @@ rather than poisoning the rest.
    ```bash
    docker compose stop indexer
    ```
+   **Bare-metal equivalent (Linux/macOS):** `kill -TERM $(cat /path/to/indexer.pid)`, or Ctrl-C in
+   the foreground terminal — either delivers a real `SIGTERM`/`SIGINT` that the process's shutdown
+   hooks (§8.6) observe. **Bare-metal Windows cannot do this.** Confirmed empirically
+   (`docs/RESTORE-DRILL.md` §5 finding 2, re-confirmed 2026-09-01): neither Git Bash `kill`, nor
+   Node's own `child_process.kill('SIGTERM'|'SIGINT')`, nor `taskkill /PID` without `/F` deliver a
+   signal a Node process's `process.on('SIGTERM'|'SIGINT')` handler observes — Windows silently
+   hard-terminates every time (`taskkill` without `/F` even refuses outright: *"This process can
+   only be terminated forcefully"*). The one native exception, a genuine interactive Ctrl-C
+   keystroke in the process's own console window, is real but not scriptable/reproducible as a
+   drill. **On Windows, run the stack inside WSL2** (with or without Docker — WSL2 alone gives a
+   real Linux kernel, so `kill -TERM` works there exactly as on Linux/macOS above) to exercise this
+   step at all.
 2. **Verify the candidates** and pick a rung by its printed cursor, not by its number. `.1` is
    usually the one you want, but a clean shutdown takes a final snapshot, which can push the ring
    along by one — so read the `lastBlock` and `vaults=` on each rung rather than assuming.
@@ -566,6 +584,13 @@ rather than poisoning the rest.
    docker compose start indexer
    docker compose logs -f indexer      # watch batch.indexed reach the head
    ```
+   **Bare-metal equivalent (Linux/macOS, or Windows via WSL2):**
+   ```bash
+   node --env-file=.env packages/indexer/src/index-runner.mjs
+   ```
+   Watch for `"resumed at block <N> (<M> vaults)"` with `M` matching the restored file's `counts`,
+   then `indexed [<lastBlock+1>..…]` closing the gap. No bare-metal-Windows path exists for this
+   step either, for the same reason as step 1 — see above.
 
 > **If every backup is bad**, delete the snapshot and set `START_BLOCK` to the **factory deploy
 > block**. The indexer rebuilds from chain history — slow, never wrong. Do **not** set a later
@@ -694,8 +719,17 @@ docker compose restart indexer      # clean stop, clean resume from the snapshot
 docker compose down                 # stops all three cleanly; the volume survives
 ```
 
+**Bare-metal equivalent (Linux/macOS, or Windows via WSL2):** `kill -TERM <pid>` (or Ctrl-C in the
+foreground) delivers the same signal the hooks in the table above listen for. **This document's
+runtime target is Linux/Docker.** Bare-metal Windows cannot exercise graceful shutdown at all — no
+scripted or interactive-from-another-window method reaches a `node.exe` process's signal handlers
+short of a real interactive Ctrl-C in that exact console (see the restore procedure above and
+`docs/RESTORE-DRILL.md` §5 for how this was confirmed, twice, a Docker-only environment apart).
+
 Look for `shutdown.complete` in the logs. `shutdown.timeout` or `shutdown.forced` means the stop
-was **not** clean — verify the snapshot before restarting.
+was **not** clean — verify the snapshot before restarting. **On bare-metal Windows this line will
+never appear**, by the platform limitation above, not because the stop was dirty — do not read its
+absence there as a signal of anything.
 
 ### 8.7 Incident quick-table
 

@@ -21,7 +21,25 @@
  * Optional env:
  *   OPERATOR_REGISTRY_ADDRESS  enables the fee-routing signal (skipped without it)
  *   EXTRA_OPERATOR_ADDRESSES   comma-separated extra operator addresses to treat as prohibited
- *   ALERT_WEBHOOK_URL          POST one JSON body per transition
+ *   PAGE_WEBHOOK_URL           POST one JSON body per PAGE-tier transition (Monitoring Gap
+ *                              Analysis §2 G6 / §3 item 4): nav-backing, share-conservation,
+ *                              fee-routing, exit-liveness ALERT, oracle-freshness ALERT.
+ *   LOG_WEBHOOK_URL            POST one JSON body per LOG-tier transition — everything else,
+ *                              including every DEGRADED/DETECTOR BROKEN line and feed-identity.
+ *   ALERT_WEBHOOK_URL          back-compat fallback: used for whichever of PAGE_WEBHOOK_URL /
+ *                              LOG_WEBHOOK_URL is unset. Set only this and behaviour is unchanged
+ *                              from before tiering existed — every transition to one URL.
+ *   DEADMAN_PING_URL           off-host dead-man's switch: pinged once per SUCCESSFUL sweep (e.g.
+ *                              a Healthchecks.io-style check). Off by default when unset; a failed
+ *                              ping is logged, never fatal. `ops-check` (packages/oplog) already
+ *                              detects a dead canary but runs on the SAME host — this ping is the
+ *                              thing that notices from outside it. The external account is a
+ *                              human's to provision; this is only the code path that pings it.
+ *   CANARY_TEST_ALERT_ON_START  '1'|'true' — fire one synthetic PAGE and one synthetic LOG
+ *                              transition through the real sinks right after startup, before the
+ *                              sweep loop begins, so alert plumbing is proven before the first
+ *                              real page (security-ops.md §5.3). Also runnable on demand without
+ *                              starting the loop: `node canary-runner.mjs test-alert`.
  *   CANARY_STATE_PATH (./data/canary-state.json)  transition state, so a restart does not re-page.
  *                              It also holds the aggregator identities `feed-identity` pinned on
  *                              first sight. Deleting it re-pins from whatever is live, so a swap
@@ -54,9 +72,19 @@
  *                              of it just before every scheduled publish, so a low flat bar pages on
  *                              healthy behaviour and gets the canary muted. Set this to override the
  *                              derivation either way, including `0` to force the warning off.
- *   LOG_LOOKBACK_BLOCKS (0)    on a cold start, how far back to scan for events
+ *   LOG_LOOKBACK_BLOCKS (0)    on a cold start, how far back to scan for events. Also covers a
+ *                              restart gap for module-events/fee-routing — set it to whatever
+ *                              downtime you actually expect, or those signals see nothing older.
  *   MAX_LOG_SPAN_BLOCKS (2000) cap on one poll's getLogs range
- *   HEARTBEAT_MS (0)           if set, periodically print a one-line "still watching" summary
+ *   HEARTBEAT_MS (3600000)     periodically print a one-line "still watching" summary (to stdout,
+ *                              via the same sink as a RECOVERED transition — never a page). Set to
+ *                              0 to disable. The default is non-negotiable per security-ops.md
+ *                              §5.2: with it off, a dead canary and a healthy protocol are the same
+ *                              observation. This does NOT touch "silence means healthy" for
+ *                              transition lines — that claim is about the per-signal ALERT/
+ *                              RECOVERED/DEGRADED lines, which still say nothing while every
+ *                              signal stays OK. The heartbeat is a separate, deliberately-noisy
+ *                              liveness beat.
  *
  * Run: `RPC_URL=… STATE_PATH=… node packages/canary/src/canary-runner.mjs`
  */
@@ -69,10 +97,10 @@ import { createHeartbeat, defaultHeartbeatDir } from '../../oplog/src/heartbeat.
 import { createShutdown } from '../../oplog/src/shutdown.mjs';
 import { resolveDurabilityOptions } from '../../oplog/src/durable.mjs';
 import { createChainReader } from './reader.mjs';
-import { createTransitionTracker } from './transitions.mjs';
-import { createConsoleSink, createWebhookSink, emitAll } from './sinks.mjs';
+import { createTransitionTracker, formatLine } from './transitions.mjs';
+import { createConsoleSink, createTieredWebhookSink, createDeadmanPing, emitAll } from './sinks.mjs';
 import { VAULT_VIEWS } from './abis.mjs';
-import { skipped, detectorBroken, shortAddr } from './signal.mjs';
+import { skipped, detectorBroken, alert, shortAddr } from './signal.mjs';
 import { checkOracleSignals } from './signals/oracle-health.mjs';
 import { checkFeedIdentity, applyIdentityObservations } from './signals/feed-identity.mjs';
 import { checkNavBacking } from './signals/nav-backing.mjs';
@@ -139,6 +167,15 @@ export function resolveCanaryConfig(env) {
     operatorRegistry,
     extraOperators,
     webhookUrl: env.ALERT_WEBHOOK_URL || null,
+    // Tiered sinks (Monitoring Gap Analysis §2 G6 / §3 item 4). ALERT_WEBHOOK_URL is the
+    // backwards-compatible fallback for whichever of these two is unset — resolved here so
+    // `buildCanary` never has to know about the fallback rule.
+    pageWebhookUrl: env.PAGE_WEBHOOK_URL || env.ALERT_WEBHOOK_URL || null,
+    logWebhookUrl: env.LOG_WEBHOOK_URL || env.ALERT_WEBHOOK_URL || null,
+    // Off-host dead-man's switch. Off by default: most deployments start before the external
+    // monitor account exists (that account is a human's to provision, not this code's job).
+    deadmanPingUrl: env.DEADMAN_PING_URL || null,
+    testAlertOnStart: env.CANARY_TEST_ALERT_ON_START === '1' || env.CANARY_TEST_ALERT_ON_START === 'true',
     confirmations: num('CONFIRMATIONS', 5),
     pollIntervalMs,
     navDivergenceBps: num('NAV_DIVERGENCE_BPS', 50),
@@ -151,7 +188,9 @@ export function resolveCanaryConfig(env) {
     oracleFeedCadenceSeconds,
     logLookbackBlocks: num('LOG_LOOKBACK_BLOCKS', 0),
     maxLogSpanBlocks: num('MAX_LOG_SPAN_BLOCKS', 2000),
-    heartbeatMs: num('HEARTBEAT_MS', 0),
+    // Non-negotiable per security-ops.md §5.2: off, a dead canary and a healthy protocol are the
+    // same observation. `HEARTBEAT_MS=0` still disables it for anyone who explicitly opts out.
+    heartbeatMs: num('HEARTBEAT_MS', 3_600_000),
   };
 }
 
@@ -315,7 +354,12 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
   });
 
   const sinks = [createConsoleSink({ log: line, error: errLine })];
-  if (cfg.webhookUrl) sinks.push(createWebhookSink({ url: cfg.webhookUrl, fetchImpl, onError: errLine }));
+  if (cfg.pageWebhookUrl || cfg.logWebhookUrl) {
+    sinks.push(createTieredWebhookSink({
+      pageUrl: cfg.pageWebhookUrl, logUrl: cfg.logWebhookUrl, fetchImpl, onError: errLine,
+    }));
+  }
+  const deadman = createDeadmanPing({ url: cfg.deadmanPingUrl, fetchImpl, onError: errLine });
 
   /** The vault set: explicit VAULTS if given, else every vault the indexer has projected. */
   async function resolveVaults() {
@@ -355,7 +399,12 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
 
     const { vaults, state } = await resolveVaults();
     if (vaults.length === 0) {
-      errLine(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath})`);
+      // Structured as well as printed: this is the state in which the canary is UP and watching
+      // NOTHING, which is exactly the state an operator must be able to alert on from the log
+      // stream (docs/RUNTIME.md §8.1). The dead-man ping is withheld for the same reason — see
+      // `loop()`.
+      logger.warn?.('sweep.no_vaults', { statePath: cfg.statePath, vaultsConfigured: cfg.vaults.length });
+      errLine(`canary: no vaults to watch — set VAULTS, or point STATE_PATH at an indexer snapshot that has seen a VaultCreated (currently ${cfg.statePath}). The off-host dead-man ping is being WITHHELD until at least one vault is in scope, so the external monitor will go red rather than report a canary that is watching nothing.`);
       return { transitions: [], results: [], vaults: [] };
     }
 
@@ -376,6 +425,34 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
     return { transitions, results, vaults };
   }
 
+  /**
+   * Alert-delivery self-test (security-ops.md §5.3): "a webhook that 500s is logged and skipped;
+   * the first real page must not be the first test." Fires one synthetic PAGE-tier transition and
+   * one synthetic LOG-tier transition through the SAME sinks a real sweep uses — proving the
+   * PAGE_WEBHOOK_URL / LOG_WEBHOOK_URL plumbing actually delivers before anything real depends on
+   * it. Deliberately bypasses the tracker: this must never write to canary-state.json or it would
+   * plant fake state that suppresses the next real transition for a colliding id.
+   */
+  async function testAlert() {
+    const timestamp = now().toISOString();
+    const pageResult = alert({
+      signal: 'self-test', vault: 'self-test',
+      message: 'canary alert self-test (PAGE tier) — no action required, this did not come from a real signal',
+      detail: { tier: 'page', selfTest: true },
+    });
+    const logResult = skipped({
+      signal: 'self-test', vault: 'self-test', key: 'log',
+      message: 'canary alert self-test (LOG tier) — no action required, this did not come from a real signal',
+      detail: { tier: 'log', selfTest: true },
+    });
+    const synthetic = [
+      { id: pageResult.id, signal: pageResult.signal, vault: pageResult.vault, from: 'ok', to: 'alert', line: formatLine('alert', pageResult, timestamp), result: pageResult },
+      { id: logResult.id, signal: logResult.signal, vault: logResult.vault, key: logResult.key, from: 'ok', to: 'skipped', line: formatLine('skipped', logResult, timestamp), result: logResult },
+    ];
+    await emitAll(sinks, synthetic, { onError: errLine });
+    return synthetic;
+  }
+
   /** Persist what the tracker knows right now. Called after every sweep, and on shutdown. */
   async function flush() {
     await stateWriter.save({ transitions: tracker.snapshot(), lastScannedBlock, feedIdentity: identityPins });
@@ -393,8 +470,18 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
       try {
         const { vaults } = await runOnce();
         // Only a SUCCESSFUL sweep counts as watching. A canary that cannot reach the RPC is not
-        // monitoring anything and must not keep telling ops-check that it is.
+        // monitoring anything and must not keep telling ops-check that it is — and, symmetrically,
+        // must not ping the off-host dead-man's switch either.
         await heartbeat.beat({ vaults: vaults.length, tracked: tracker.size, notOk: tracker.unhealthy().length, lastScannedBlock });
+        // ZERO vaults is a successful sweep of nothing: the RPC answered, no signal ran, no
+        // transition could possibly fire. Pinging the off-host dead-man there would make the
+        // EXTERNAL monitor — the one thing not on this host — report "alive" while the canary is
+        // blind (missing snapshot, unset VAULTS, unmounted volume). So the ping is withheld and the
+        // external check goes red, which is the correct alarm for "nobody is watching the chain".
+        // The on-host heartbeat file is still written: `ops-check` reports process liveness, and
+        // turning a configuration problem into a "canary process dead" page is Operations' call to
+        // make, not this PR's.
+        if (vaults.length > 0) await deadman.ping();
         if (cfg.heartbeatMs > 0 && Date.now() - lastHeartbeatLine >= cfg.heartbeatMs) {
           lastHeartbeatLine = Date.now();
           const bad = tracker.unhealthy();
@@ -414,11 +501,33 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
       if (signal.aborted) ac.abort();
       else signal.addEventListener('abort', () => ac.abort(), { once: true });
     }
+    // Booleans, never the URLs: a Slack/PagerDuty webhook and a Healthchecks.io ping UUID are both
+    // credentials, and this log stream is shipped off-host.
     logger.info?.('starting', {
       chainId: cfg.chainId, pollIntervalMs: cfg.pollIntervalMs, statePath: cfg.statePath,
       canaryStatePath: cfg.canaryStatePath, tracked: tracker.size, readOnly: true,
+      pageWebhook: Boolean(cfg.pageWebhookUrl), logWebhook: Boolean(cfg.logWebhookUrl),
+      deadman: deadman.enabled, testAlertOnStart: Boolean(cfg.testAlertOnStart),
+      heartbeatMs: cfg.heartbeatMs,
     });
     line(`canary up: chain ${cfg.chainId}, read-only, polling every ${cfg.pollIntervalMs}ms. Silence means healthy.`);
+    // A sink that is not configured is a sink that will not deliver, and the only moment anyone
+    // reads these lines is the moment they start the service. Saying it once here is the difference
+    // between "silence means healthy" and "silence means nothing was ever wired up".
+    line(`canary sinks: PAGE webhook ${cfg.pageWebhookUrl ? 'configured' : 'NOT configured'}, LOG webhook ${cfg.logWebhookUrl ? 'configured' : 'NOT configured'}, off-host dead-man ${deadman.enabled ? 'configured' : 'NOT configured'}.`);
+    if (!deadman.enabled) {
+      errLine('canary: DEADMAN_PING_URL is unset — nothing OFF THIS HOST will notice if this canary or its host dies. ops-check runs on the same host and cannot cover that. Set it to a Healthchecks.io-style check URL (docs/CANARY.md §5.3).');
+    }
+    if (!cfg.pageWebhookUrl && !cfg.logWebhookUrl) {
+      errLine('canary: neither PAGE_WEBHOOK_URL nor LOG_WEBHOOK_URL (nor the ALERT_WEBHOOK_URL fallback) is set — transitions go to the log and nowhere else. Nobody is being paged.');
+    }
+    if (cfg.testAlertOnStart) {
+      // Compose runs this service under `restart: unless-stopped`. Left set in `.env`, this fires a
+      // synthetic PAGE on every crash-restart, not once — loud here so it is not discovered by the
+      // on-call rotation. See docs/CANARY.md §5.3.
+      errLine('canary: CANARY_TEST_ALERT_ON_START is set — firing one synthetic PAGE and one synthetic LOG transition now. This fires on EVERY start, including every automatic restart under `restart: unless-stopped`; unset it once the self-test has passed.');
+      await testAlert();
+    }
     running = loop(ac.signal);
     return running;
   }
@@ -436,7 +545,7 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
     return flushed;
   }
 
-  return { reader, tracker, runOnce, start, stop, flush, heartbeat, logger };
+  return { reader, tracker, runOnce, start, stop, flush, heartbeat, deadman, testAlert, logger };
 }
 
 function sleep(ms, signal) {
@@ -464,6 +573,22 @@ if (isMain) {
     const report = await verifyCanaryState(path);
     (report.ok ? console.log : console.error)(formatCanaryStateReport(report));
     process.exit(report.ok ? 0 : 1);
+  } else if (argv[0] === 'test-alert') {
+    // On-demand alert-delivery self-test (security-ops.md §5.3): wires the real sinks from env,
+    // fires one synthetic PAGE and one synthetic LOG transition through them, and exits — no
+    // sweep loop, no chain read beyond what buildCanary itself needs. Never touches the tracker
+    // or writes canary-state.json.
+    const logger = loggerFromEnv('canary');
+    try {
+      const cfg = resolveCanaryConfig(process.env);
+      const canary = await buildCanary(cfg, { logger });
+      const synthetic = await canary.testAlert();
+      console.log(`canary: alert self-test sent ${synthetic.length} synthetic transition(s) through the configured sinks (PAGE_WEBHOOK_URL=${cfg.pageWebhookUrl ? 'set' : 'unset'}, LOG_WEBHOOK_URL=${cfg.logWebhookUrl ? 'set' : 'unset'}) — verify they arrived before relying on this canary for the first real page.`);
+      process.exit(0);
+    } catch (err) {
+      logger.error('test-alert.failed', { error: String(err?.message ?? err) });
+      process.exit(1);
+    }
   } else {
     const logger = loggerFromEnv('canary');
     try {
