@@ -82,6 +82,25 @@
  * @property {Record<string, {verdict: Verdict, at: string}>} latestVerdicts
  */
 
+/**
+ * The `name:` of this gate's own workflow, `.github/workflows/merge-preflight.yml`.
+ *
+ * `merge-preflight.mjs` lists runs with `--branch <headRefName>` and no `--workflow` filter, so the
+ * gate's own runs arrive inside the set it is about to judge. That is a display string to key a
+ * filter on, and keying a filter to a display string is how a filter silently stops matching. The
+ * mitigation is that the string is pinned to the yml by a test in the gate's own path
+ * (`scripts/test/merge-preflight.test.mjs`, run by `npm run gate` via `test:backend`), so renaming
+ * the workflow fails the suite loudly instead of quietly re-arming self-inclusion.
+ *
+ * The rejected alternative was the run id (`GITHUB_RUN_ID`). It excludes only the CURRENTLY
+ * EXECUTING run, so previously completed preflight runs stay in the tally — leaving the two
+ * PERMISSIVE symptoms armed while fixing only the annoying one — and it is absent when the script
+ * runs on a developer's machine, breaking the header's promise that this tool "reads only `gh`, so
+ * it behaves identically on a developer's machine, in a detached review worktree, and on a CI
+ * runner."
+ */
+export const SELF_WORKFLOW_NAME = 'merge-preflight';
+
 /** The orchestrator declares who is reviewing. Last declaration wins — reviewers can be added. */
 const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]+)\s*-->/g;
 
@@ -203,16 +222,37 @@ export function latestPerReviewer(verdicts) {
 }
 
 /**
- * Runs belonging to THIS head SHA. `gh pr checks` reports the runs attached to a PR without
- * surfacing which commit they belong to, and returned green for #107 from a run belonging to the
- * previous head — so the SHA correspondence is made explicit here rather than inherited.
+ * Runs belonging to THIS head SHA, **excluding this gate's own**. `gh pr checks` reports the runs
+ * attached to a PR without surfacing which commit they belong to, and returned green for #107 from
+ * a run belonging to the previous head — so the SHA correspondence is made explicit here rather
+ * than inherited.
+ *
+ * WHY THE SECOND FILTER. `merge-preflight.mjs` lists runs with `--branch <headRefName>` and no
+ * `--workflow` filter, so a `pull_request`-triggered preflight run — which carries the PR head's
+ * SHA — matched on `headSha` alone and the gate evaluated itself. One root cause, three symptoms:
+ *
+ *   1. It blocked on its own `in_progress` run, which is by construction never `completed` while it
+ *      is the run doing the asking.
+ *   2. It counted its own *completed* run as a green, because `conclusion` is the RUN's conclusion
+ *      and a run that succeeds at posting a `failure` commit status concludes `success`. That is
+ *      the artifact substitution this whole file exists to prevent, committed inside the gate.
+ *   3. Worst, and permissive: one completed preflight run makes `mine.length === 0` false and
+ *      `succeeded.length === 1` true, defeating the `ci-matches-head` catch-all — so a head with NO
+ *      CI would pass the rule NAMED for matching CI to the head. Latent while `ci.yml` has a bare
+ *      `pull_request:` trigger with no `paths:` filter, and armed by any routine "skip CI for
+ *      docs-only changes". Nothing in the gate depended on that trigger config or checked it; after
+ *      this filter, nothing needs to.
+ *
+ * Exclusion is EXACT-match on the name, not a prefix or substring: a future `merge-preflight-lint`
+ * would be a real workflow whose result is real evidence, and swallowing it is the same class of
+ * bug in the opposite direction. `SELF_WORKFLOW_NAME` is pinned to the yml by the test suite.
  *
  * @param {Run[]} runs
  * @param {string} headSha
  */
 export function runsForHead(runs, headSha) {
   const head = (headSha ?? '').toLowerCase();
-  return runs.filter((r) => (r.headSha ?? '').toLowerCase() === head);
+  return runs.filter((r) => (r.headSha ?? '').toLowerCase() === head && r.name !== SELF_WORKFLOW_NAME);
 }
 
 /**
@@ -279,7 +319,7 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
   if (mine.length === 0) {
     blockers.push({
       ruleId: 'ci-matches-head',
-      detail: `no workflow run exists for head ${short(pr.headRefOid)}. Any green you can see belongs to another commit — 'gh pr checks' does not say which SHA it ran on.`,
+      detail: `no workflow run exists for head ${short(pr.headRefOid)} (this gate's own '${SELF_WORKFLOW_NAME}' runs are excluded, so 'gh run list' may show runs this counted as none). Any green you can see belongs to another commit — 'gh pr checks' does not say which SHA it ran on.`,
     });
   } else {
     for (const r of failed) {
