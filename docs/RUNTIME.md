@@ -174,6 +174,8 @@ Production notes:
 | `OPERATOR_REGISTRY_ADDRESS` | ✅ | — | OperatorRegistry |
 | `SUBVAULT_REGISTRY_ADDRESS` | ✅ | — | SubVaultRegistry |
 | `GOVERNANCE_ADDRESS` | ✅ | — | Governance |
+| `FEE_ENGINE_ADDRESS` | | — | FeeEngine. The **zero address counts as unset** (it is a valid 20-byte address and truthy, so a placeholder would otherwise suppress the warning below). **Unset is almost always a mistake** — every deploy script deploys one. Without it `FeeAssessed` / `FeeCredited` / `FeesClaimed` are not indexed and the indexer logs a `indexer.feeEngine.unset` warning at startup. Take it from `singletons.FeeEngine` in `contracts/config/deployments/<chain>.json`. |
+| `ADAPTER_ADDRESSES` | | — | Comma-separated execution adapters. Polled unconditionally and **exempt from the 64-adapter discovery ceiling**, so an adapter you name here can never be crowded out by adapters an attacker stood up first (`createVault` is permissionless and `allowedAdapters` is caller-supplied). Adapters are a **per-vault** choice (`docs/DEPLOYMENT.md` "Execution adapters (per-vault)"), so their distinct count scales with creators — name yours rather than relying on discovery. Unset = discovery only; the indexer logs `indexer.adapterCap.hit` once per batch when it declines one. |
 | `CHAIN_ID` | | `8453` | `8453` Base, `84532` Base Sepolia |
 | `CHAIN_NAME` | | `base` | label for the viem chain |
 | `START_BLOCK` | | `0` | deploy block — skip empty history on a cold start |
