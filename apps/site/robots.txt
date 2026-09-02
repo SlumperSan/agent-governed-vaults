@@ -2,3 +2,6 @@ User-agent: *
 Allow: /
 
 Sitemap: https://rwally.com/sitemap.xml
+
+# Machine-readable orientation for autonomous agents, mirrored from the repository root:
+# https://rwally.com/llms.txt

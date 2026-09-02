@@ -761,3 +761,23 @@ test('no demo vault or operator name implies an outcome', async () => {
     }
   }
 });
+
+/**
+ * `llms.txt` is the file written to orient autonomous agents, and it lives at the repository root.
+ * Cloudflare Pages serves `apps/site`, so the root copy is not reachable at the public origin --
+ * `https://rwally.com/llms.txt` would 404, which is the one URL an agent is most likely to try.
+ *
+ * The site therefore carries a copy. Two copies of a claim-bearing file is a drift hazard, so this
+ * pins them byte-identical rather than trusting anyone to update both. Edit the root file; this
+ * test tells you to copy it across.
+ */
+test('apps/site/llms.txt is byte-identical to the repository root copy', () => {
+  const site = readFileSync(path.join(SITE, 'llms.txt'), 'utf8');
+  const root = readFileSync(path.join(REPO, 'llms.txt'), 'utf8');
+  assert.equal(
+    site,
+    root,
+    'apps/site/llms.txt has drifted from the root llms.txt. The root file is the source: ' +
+      'copy it across rather than editing the site copy — cp llms.txt apps/site/llms.txt',
+  );
+});
