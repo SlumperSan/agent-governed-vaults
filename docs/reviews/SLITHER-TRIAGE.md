@@ -170,7 +170,7 @@ The row above used to be one line reading "**Safe.**" It reached the right verdi
 class argument nobody had checked per row — the same shape as the `reentrancy-balance` line that
 PR #101 disproved. Every row is now argued on its own, against `protocol/main` @ `29b1b470`
 (`225` results total; `slither 0.11.6`) — the commit the Slither run was made at. `main` is
-`52d10aee` as of 2026-09-02, and every `file:line` citation below has been re-resolved against
+`bab5ee90` as of 2026-09-02, and every `file:line` citation below has been re-resolved against
 that tree (`scripts/test/slither-triage-citations.test.mjs` keeps them there).
 
 **Tally: REAL 0 · BENIGN-BY-DESIGN 10 · STYLE 3.** Nothing here needs a fix.
