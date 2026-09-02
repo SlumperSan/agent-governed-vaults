@@ -196,16 +196,24 @@ is resolved. Locally, `npm run gate` is the ~30 s mirror.
 #### The check that enforces this rule cannot currently pass
 
 `merge-preflight` — the workflow that automates exactly the rule above — **can never post a green
-status, on any PR, at any head.** Its `ci-matches-head` rule enumerates every workflow run for the
-head SHA and blocks on any that is not `completed`
-(`scripts/lib/verdicts.mjs:273-293`), and `runsForHead` filters by head SHA alone with no
-workflow-name exclusion (`scripts/lib/verdicts.mjs:213-216`). The merge-preflight run performing the
-evaluation is itself a run on that head, and it is `in_progress` while it evaluates. So it blocks on
-itself, always.
+status, on any PR, at any head.** Three facts compose:
 
-Observed on PR #130 at head `bcb7a4e5`: first trigger reported 2 blockers (`CI` in progress and
-`merge-preflight` in progress); after CI completed green, a re-run reported 1 — itself. No other open
-PR carries the context at all, so the workflow is new and this has not been noticed.
+1. `scripts/merge-preflight.mjs:97-100` fetches runs with `gh run list --branch <head branch>` and
+   **no `--workflow` filter** — so its own run is in the set.
+2. `scripts/lib/verdicts.mjs:213-216` — `runsForHead` narrows that set by head SHA **alone**. No
+   workflow-name exclusion anywhere.
+3. `scripts/lib/verdicts.mjs:273-293` — `ci-matches-head` pushes a blocker for every run on the head
+   that is not `completed`.
+
+The merge-preflight run performing the evaluation is a run on that head and is `in_progress` while
+it evaluates. So it blocks on itself, always.
+
+**Observed** on PR #130 at head `bcb7a4e5` (a `pull_request` trigger): first trigger reported 2
+blockers (`CI` in progress and `merge-preflight` in progress); after CI completed green, a re-run
+reported 1 — itself. **Inferred**, not observed, for the workflow's `issue_comment` trigger: there
+CI has long since finished, but the preflight run is still live while it evaluates, so the same
+self-block applies. No other open PR carries the context at all, so the workflow is new and this has
+not been noticed.
 
 It is **advisory today**, so nothing is blocked by it. The trap is the workflow's own stated plan:
 it becomes binding the moment the owner requires the `merge-preflight` context in branch protection
@@ -239,6 +247,26 @@ is already public, so this binds `README.md`, `llms.txt`, `docs/` and `apps/web/
 | Agent policy published | Vault #1's deterministic rebalance policy exists and is public **before** the first on-chain proposal, so proposals are checkable against it. | `gtm-agent-policy-published` (AgentPolicy) |
 
 `core-claims-doc.md` is LedeFix's file; nothing else writes to it while that task is open.
+
+**Known open defect against the first row.** LaunchComms has parked four claims-doc asks for LedeFix
+at `GTM/LaunchComms to LedeFix - claims-doc asks.md` in the Obsidian vault. Three of them are re-verified here against the
+contracts rather than taken on report:
+
+- **Operator exclusivity is false.** `§1.3` and the `§5` headline both assert it.
+  `contracts/src/Governance.sol:281` — `propose` is `external` and gates only on
+  `vaultRegistered`, no active proposal, and a per-`msg.sender` cooldown. **There is no operator
+  check.** Anyone may propose. This blocks the lede row above: the surface it regenerates from is
+  itself wrong.
+- **"Fee waived" has no contract basis.** `contracts/src/FeeEngine.sol:35` —
+  `uint256 public constant PERF_FEE_BPS = 1_000` (10%), used unconditionally at line 88. A
+  `constant` has no setter and no override, so no vault can waive it.
+- **`§1.4`'s exit-fee-decay PROOF cites a retracted figure.**
+  [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 gives 604,800 s (7 days) and says the 302,400 s
+  (3.5 days) figure "was never what the 50 bps vault ran" — and flags 3.5 d vs 7 d as an
+  **unresolved owner decision**, so no claim can be pinned to either until it is made.
+
+Resolving these is LedeFix's; noticing that this section does not pass without them is this
+checklist's.
 
 ---
 
