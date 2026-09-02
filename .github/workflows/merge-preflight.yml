@@ -48,8 +48,19 @@ jobs:
         with:
           node-version: '24'
 
+      # Until this PR merges, protocol/main has no preflight script. Without this guard the job
+      # would post a red `merge-preflight` status derived from a module-not-found error, which is
+      # a false alarm indistinguishable from a real block. It also covers the reverse case: someone
+      # removing the script from main should silence this workflow, not make every PR look blocked.
+      - name: Is the preflight present on the default branch?
+        id: have
+        run: |
+          if [ -f scripts/merge-preflight.mjs ]; then echo "have=true" >> "$GITHUB_OUTPUT"
+          else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::merge-preflight is not on protocol/main yet; posting no status."; fi
+
       - name: Resolve PR number
         id: pr
+        if: steps.have.outputs.have == 'true'
         run: |
           case "${{ github.event_name }}" in
             pull_request)   n='${{ github.event.pull_request.number }}' ;;
@@ -60,6 +71,7 @@ jobs:
 
       - name: Run preflight
         id: check
+        if: steps.have.outputs.have == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -75,6 +87,7 @@ jobs:
           esac
 
       - name: Publish commit status on the PR head
+        if: steps.have.outputs.have == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
