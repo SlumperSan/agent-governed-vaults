@@ -31,12 +31,25 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # `gh run list` hits GET /repos/{o}/{r}/actions/runs. Declaring a permissions block sets every
+  # unlisted scope to none, so without this the script exits 2 ("could not determine") and the
+  # ci-matches-head rule -- the one that exists because of #107's stale green -- silently never
+  # evaluates. That would be a check reporting on a rule it did not run.
+  actions: read
   statuses: write
 
 jobs:
   preflight:
-    # issue_comment fires for plain issues too; only pull requests have this field.
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    # Two filters. issue_comment fires for plain issues too, and only pull requests carry
+    # `issue.pull_request`. And it fires for EVERY comment in the repository -- this repo ran out of
+    # Actions minutes for ~72h on 2026-08-29 -- so a comment only re-runs the preflight when it could
+    # actually change the decision: a token, or a prose verdict the block-only heuristic might read.
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && (
+        contains(github.event.comment.body, 'REVIEW-') ||
+        contains(github.event.comment.body, 'REJECT') ||
+        contains(github.event.comment.body, 'ACCEPT')))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

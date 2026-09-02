@@ -158,6 +158,11 @@ These need the repository owner. An agent cannot set branch protection, and shou
 2. **Include administrators.** Tick *Do not allow bypassing the above settings* (`enforce_admins`).
    Without it, branch protection is bypassed by exactly the account that does the merging, and the
    policy reads as real while being advisory for the only identity that matters.
+   **Backfill the PRs already open when you do this.** A required context that has *never* reported
+   blocks exactly as hard as a red one, and a PR whose head SHA predates the workflow has no status
+   and nothing scheduled to give it one. Each already-open PR needs one triggering event — a push, a
+   comment carrying a token, or `gh workflow run merge-preflight.yml -f pr=<n>` — before it can
+   merge. New PRs are unaffected.
 3. **Switch the workflow from advisory to strict** once reviewers are emitting tokens: change
    `--advisory` to `--strict` in `.github/workflows/merge-preflight.yml`. Steps 1 and 2 are worth
    taking before this one — advisory already catches Modes A and C and stale CI.
@@ -167,6 +172,16 @@ These need the repository owner. An agent cannot set branch protection, and shou
 
 The `gh api` equivalents of steps 1 and 2, for the record, are in
 `scripts/lib/merge-policy.json` → `enforcement`.
+
+### The CI cost, so it is your decision and not a surprise
+
+The workflow triggers on `issue_comment`, because a verdict arriving is the event it exists to
+notice and a `pull_request` workflow does not re-run on a comment. That fires on **every** comment in
+the repository. This repo ran out of Actions minutes for ~72 hours on 2026-08-29, so the job is
+filtered to comments that could actually change the decision — ones containing `REVIEW-`, `REJECT` or
+`ACCEPT` — which on a busy night is roughly a third of them rather than all. The job itself is
+short: a checkout, a node setup and two `gh` calls, well under a minute. If even that is too much,
+drop the `issue_comment` trigger entirely and accept that a status only refreshes on a push.
 
 ## The policy itself
 

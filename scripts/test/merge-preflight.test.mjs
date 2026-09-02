@@ -84,6 +84,12 @@ test('#98 at its merge instant: Mode B — one ACCEPT, one reviewer still out, R
   assert.equal(strict.clear, false);
   assert.deepEqual(ruleIds(strict.blockers), ['roster-resolved']);
   assert.match(strict.blockers[0].detail, /Review98b/, 'it must name the reviewer who has not reported');
+
+  // Precision about the fixture: the ROSTER token above is reconstructed, not historical — #98 had
+  // no such token, because the protocol did not exist. In the state #98 was actually in, strict
+  // blocks on roster-declared instead. Either way it does not merge; only the rule id differs.
+  const asItWas = [{ createdAt: '2026-09-01T20:05:45Z', body: '## Adversarial review 1 of 2 — **ACCEPT**, plus a finding bigger than the PR' }];
+  assert.deepEqual(ruleIds(evaluate({ pr, comments: asItWas, runs: greenOn('cccc3333'), mode: 'strict' }).blockers), ['roster-declared']);
 });
 
 test('#109 at its merge instant: Mode B at its worst — the PR merged before any verdict existed', () => {

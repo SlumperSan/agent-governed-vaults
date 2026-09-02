@@ -166,6 +166,28 @@ Rules that make it work:
   correct votes to reject. Unverified is not the same as correct.
 - **The fixer is a separate step.** The implementer does not grade their own homework.
 
+### Say the verdict in a form a program can read
+
+On 2026-09-01 four PRs merged across REJECT verdicts nobody had addressed, because a verdict was
+prose in a comment and `gh pr merge` does not read comments. So the verdict is now also a token:
+
+- **The orchestrator, when it spawns reviewers**, posts `<!-- REVIEW-ROSTER reviewers=A,B -->`.
+  This is what makes "a review is still running" visible — without it, *nobody objected* and *nobody
+  looked* are the same observation, which is how one PR merged five minutes before its verdict
+  existed.
+- **Each reviewer**, inside its existing `## Adversarial review — VERDICT` comment, posts
+  `<!-- REVIEW-VERDICT reviewer=<its own name> verdict=ACCEPT|REJECT -->`. The fixer or the reviewer
+  posts a newer one once the findings are closed; the latest per reviewer wins.
+
+Both are HTML comments, invisible in the rendered comment, so they cost a reviewer nothing.
+
+Check a PR with `node scripts/merge-preflight.mjs <n>` before merging — **and before pushing to a
+branch you did not just create**, because a merged branch looks exactly like a live one by git
+divergence and GitHub reopens no PR on a push.
+
+Only a token can CLEAR a PR; prose can only block it. The full rules, and an explicit list of what
+the check cannot catch, are in `docs/reviews/MERGE-POLICY.md`.
+
 ## 4. Mechanical faithfulness — do not refactor opportunistically
 
 Bun's rule was: *do the rewrite that looks like we transpiled the Zig code.* No cleanup along the
