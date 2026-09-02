@@ -137,9 +137,9 @@ value is accepted**, and the field is `immutable` (`:82`). `VaultFactory.createV
 allowlist and that the oracle covers the basket. So anyone may create a vault on this factory with
 `minDepositUsdc = 1`, and in that vault the H-8(a) regime flip costs about **4 USDC**.
 
-That does not change vault #1's posture — the 100 USDC / ≈400 USDC / 0.8%-of-cap figures above stand.
-It changes **what may ever be said in public about vaults in general**, so it is a claims boundary
-as much as a risk item: see §3.
+That is a separate point from vault #1's own posture, which is unresolved for a different reason
+(its `minDepositUsdc` is not set yet — above). What this changes is **what may ever be said in
+public about vaults in general**, so it is a claims boundary as much as a risk item: see §3.
 
 This is also the third of the three reasons testnet evidence does not transfer — enumerated
 below, because they need separate fixes.
