@@ -20,7 +20,7 @@ NO-GO, real money should not go in.
 Every **security** gate is cleared ([[launch-readiness-gates]]):
 
 - **Gate 0 — no known unfixed Critical: GO (root-only).** C-1 closed at launch by
-  [[root-vaults-only]] (`allowSubVaults = false`, confirmed on `Deploy.s.sol:77`); C-2, C-3 and C-5
+  [[root-vaults-only]] (`allowSubVaults = false`, confirmed on `Deploy.s.sol:79`); C-2, C-3 and C-5
   fixed with executed evidence; **C-6 resolved by the [[chainlink-direct-pivot]]** — the bespoke
   median was *removed*, not patched. Re-enabling sub-vaults reopens C-1.
 - **Gate 1 — external audit: GO on OWNER ATTESTATION, not on independent verification.** An audit
