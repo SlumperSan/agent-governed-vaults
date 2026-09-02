@@ -193,7 +193,7 @@ that tree (`scripts/test/slither-triage-citations.test.mjs` keeps them there).
 
 ### The `ts == 0` group (rows 1, 4, 9, 11) — the one question that decides all four
 
-*Can `totalShares == 0` while `navWad() > 0`?* If yes, the 1:1 re-open at `_mintShares:445` gives
+*Can `totalShares == 0` while `navWad() > 0`?* If yes, the 1:1 re-open in `_mintShares` gives
 away residue and `navPerShareWad`'s `WAD` is a lie. It cannot:
 
 - **Donation is inert.** `navWad()` sums `idleUsdc * usdcScalar`, `assetBalance[a]`
