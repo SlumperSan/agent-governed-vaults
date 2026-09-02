@@ -156,9 +156,11 @@ disagree with internal accounting.
   `navWad` and manufactures the very shortfall this signal exists to detect. Value each child as
   the contract does: its **full** NAV including its own children, scaled by this vault’s share
   (`fullNav(child) * sharesOf(vault) / totalShares(child)`, multiply-then-divide to match
-  `_childValueWad`’s truncation). `packages/canary/src/signals/nav-backing.mjs` implements this
-  correctly and is the reference — read its code, not its docstring header, which shows only the
-  simplified form. Do not shortcut this on the grounds that `Deploy.s.sol` passes
+  `_childValueWad`’s truncation). `packages/canary/src/signals/nav-backing.mjs` is the reference and is
+  **correct throughout** — its docstring header spells out all three legs (naming the SV-7
+  look-through and `MAX_LOOKTHROUGH_DEPTH = 3`) and its implementation matches. Copy the formula
+  from there rather than restating it from memory: the two-leg version is the obvious-but-wrong
+  shape, and it has now been written down independently more than once. Do not shortcut this on the grounds that `Deploy.s.sol` passes
   `allowSubVaults = false`: `DeployTestnet.s.sol` passes `true`, and a mainnet factory is
   root-only only because of a constructor argument. One `childVaultCount()` read removes the
   dependency;
