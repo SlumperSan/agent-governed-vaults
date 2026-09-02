@@ -16,7 +16,7 @@ proposal, including the `RuleChange` that would repair the config.
 `_validateConfig` capped only `timelockDuration` (the one parameter that does not gate exits);
 `commitDuration`, `revealDuration`, `executionWindow` had floors but no ceilings, and
 `proposalCooldown` was not validated at all. `hasPendingExecution`'s `Active` branch
-(`Governance.sol:519-521`) returns true for any proposal past its `commitDeadline` — **passage is
+(`hasPendingExecution`, `Governance.sol:626-628`) returns true for any proposal past its `commitDeadline` — **passage is
 irrelevant** — while `finalize` requires `block.timestamp >= revealDeadline`. So an unbounded
 `revealDuration` pins the proposal in `Active` for ~136 years. In `VaultCore` that flag is the Mode-F
 switch: `requestExit` queues (`:445`) and `settleQueuedExit` reverts `ExecutionStillPending` (`:477`),

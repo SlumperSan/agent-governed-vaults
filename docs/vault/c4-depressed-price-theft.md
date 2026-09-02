@@ -12,7 +12,7 @@ members' capital to the depositor.
 
 ## Mechanism
 
-`_mintShares` mints `amountWad * totalShares / navWad()` (`VaultCore.sol:391`); `deposit` (`:335`)
+`_mintShares` mints `amountWad * totalShares / navWad()` (`VaultCore.sol:480`); `deposit` (`:387`)
 mints immediately for any member past the one-time observation window. Measured
 (`AuditOracleToShareTheft.t.sol`), price depressed $2,500 → $100 on an 800-wETH basket: 1,000,000
 USDC in becomes a 2,777,762 USD claim; victim value 1,000,000 → 111,124 USD (−88.9%); a second test
