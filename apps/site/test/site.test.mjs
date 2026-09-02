@@ -52,7 +52,7 @@ const TITLE_SUFFIX = ' — Agent-Governed Vaults';
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
 
-// The site's own public host, and the ONE exemption to the rule above -- see canonicalHrefs().
+// The site's own public host, and the ONE exemption to the rule above -- see isExemptCanonical().
 const CANONICAL_HOST = 'rwally.com';
 
 /** Phrases banned on every page, everywhere, with no exception. */
