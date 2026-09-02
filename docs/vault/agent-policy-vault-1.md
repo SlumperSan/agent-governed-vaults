@@ -12,10 +12,15 @@ and exactly what its payload contains.
 > `[PER-LAUNCH VARIABLE]` are filled in at v1.1, published before the first proposal, and are the
 > only values in this document that are not already fixed by source or reference configuration.
 
-> **This is a published commitment, not an enforced constraint — read that literally.** The
-> contracts do not privilege the operator and cannot be made to. `Governance.propose` gates on
-> **stake**, not identity, so the operator proposes *qua member*, over the same
-> `proposalThresholdBps` gate as anyone else; `Governance.execute` has no `msg.sender` check at all.
+> **This is a published commitment, not an enforced constraint — read that literally.** Operatorship
+> confers **no governance privilege**: no privileged right to propose, execute, finalize, vote, or
+> vote with extra weight, and no power to pause, reprice, or move another member's funds.
+> `Governance.propose` gates on **stake**, not identity, so the operator proposes *qua member*, over
+> the same `proposalThresholdBps` gate as anyone else; `Governance.execute` has no `msg.sender`
+> check at all. That list is enumerated rather than summarised on purpose — operatorship is **not**
+> without privilege of every kind, and the blanket form would be false: `FeeEngine` credits the
+> vault's performance fee to the operator's registered payout address and to no one else, and
+> `claimFees` pays `claimableFees[msg.sender]` (§5.6).
 > **Nothing on-chain stops the operator, or any other member, from proposing something this policy
 > forbids.** What the chain provides is evidence, not enforcement: every proposal is permanently
 > attributed and its payload is permanently pinned by a hash, so a breach is *detectable by anyone,
@@ -31,6 +36,22 @@ take any proposal the operator has made and determine, without asking anyone, wh
 
 That test is the design constraint for every rule here. Where a rule could be read two ways, it is
 rewritten until it cannot be.
+
+**And ratification may be passive, which is the strongest reason this document exists.** Vault #1
+launches small, into `Governance.finalize`'s `memberCount < SIGNER_REGIME_BELOW` (5) branch. There
+the `forStakeMajority` test counts `forWeight`, which **includes applied standing defaults** — a
+member's position declared in advance, valid only if it pre-dates the proposal. So a rebalance in
+vault #1 **can pass with no member actively voting on it**, on pre-declared defaults alone. A member
+who set a standing default months ago and then sees a rebalance execute has not, in any meaningful
+sense, reviewed it.
+
+That is an argument *for* a deterministic published policy rather than against one. A standing
+default is only a reasonable thing to have set if the member knows in advance what they are
+consenting to — and under a discretionary operator they cannot, because the next proposal could be
+anything. Under this policy they can: the rules below fix what any future proposal will contain
+before it exists. **The policy is what makes passive ratification defensible.** If it is amended
+(§7), a member's standing default now consents to something they did not read, which is why an
+amendment takes seven days and can never be retroactive.
 
 ---
 
@@ -368,10 +389,18 @@ made in this document, and no version of this policy asserts a waiver until it i
 it arrives here as a §7 amendment, and the checkable form is the absence of `FeesClaimed` for the
 payout address.
 
-One constraint the owner's decision should carry either way, because it decides whether the outcome
-is *checkable at all*: `claimableFees` is keyed by **address, not by vault**. Unless vault #1's
-payout address is reserved to vault #1, a member cannot tell that vault's fees from any other's, and
-"never claimed" stops being an observable statement.
+**There is a second, separate decision underneath the first, and it decides whether *any* fee
+posture is checkable at all.** `claimableFees` is keyed by **address, not by vault**. A payout
+address serving two vaults pools their fees into one balance and one `FeesClaimed` stream, so a
+member cannot tell vault #1's fees from the other's, and "never claimed" stops being an observable
+statement about this vault whatever the operator does. **Reserving vault #1's payout address to
+vault #1 alone is therefore a precondition of the waiver being verifiable, not a consequence of
+it** — and it is worth deciding even if the answer on the waiver is no, because it is also what
+makes the *positive* statement ("this is what vault #1 accrued") readable.
+
+Both decisions are the owner's, both are open, and they are tracked together with the Safe-vs-EOA
+question — which is itself permanent, since `OperatorRegistry` has no rebind. This policy commits to
+neither and asserts neither.
 
 **5.7 No claim to exclusivity, and no promise to execute.** Two facts about `Governance` bound what
 this policy can honestly say:
@@ -396,9 +425,11 @@ amends the policy first — and an amendment cannot take effect for seven days (
 be used to justify a proposal already made or about to be made under a hunch. If the rules produce
 no proposal in a market the operator finds alarming, the operator proposes nothing.
 
-The operator's own remedy is the same one every member has and no better: exit under Mode F. The
-creator's exit is additionally gated at `CREATOR_MIN_STAKE_BPS` (5 %) while non-creator members
-remain, so the operator cannot quietly leave ahead of them.
+The operator's own remedy is the exit path every member has — Mode F, on the same terms — and on
+that path the operator is *more* constrained, not less: the creator's exit is additionally gated at
+`CREATOR_MIN_STAKE_BPS` (5 %) while non-creator members remain, so the operator cannot quietly leave
+ahead of them. (Stated about the exit path specifically. Operatorship is not privilege-free in
+general — see the second block at the top and §5.6.)
 
 A policy that bends when the operator dislikes the outcome is a discretionary fund with extra steps.
 The value of this document is precisely that it does not bend.
@@ -515,8 +546,9 @@ limits how much the basket can lose.
 
 **It binds one address, not the vault.** `propose` gates on stake, not identity (§5.7), so any
 member over `proposalThresholdBps` can put a proposal to the vault that this policy did not
-authorise and never contemplated. Members ratify every proposal; this policy only makes the
-operator's own proposals predictable.
+authorise and never contemplated. Every rebalance that executes has passed `Governance.finalize`
+whoever proposed it; this policy only makes the *operator's* proposals predictable, and says nothing
+about anyone else's.
 
 **The operator cannot rebalance alone — and "a vote" is not always live voting.** No *rebalance*
 executes without a proposal passing `Governance.finalize` (deposits, exits and fee collection are
