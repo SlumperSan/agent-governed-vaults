@@ -181,6 +181,13 @@ prose in a comment and `gh pr merge` does not read comments. So the verdict is n
 
 Both are HTML comments, invisible in the rendered comment, so they cost a reviewer nothing.
 
+**A fixer pass does not clear a verdict.** Posting "all findings addressed" is a claim, not a
+verdict; only the reviewer's newer `REVIEW-VERDICT` token clears one. And because a fixer's commits
+move the head, the *reviewer* must post that token **after** the fix lands — a verdict written before
+the last commit graded content that is no longer what would merge. This is the one place the review
+pattern costs an extra round trip, and it is deliberate: it is what the four PRs that merged over
+their own REJECTs on 2026-09-01 were missing.
+
 Check a PR with `node scripts/merge-preflight.mjs <n>` before merging — **and before pushing to a
 branch you did not just create**, because a merged branch looks exactly like a live one by git
 divergence and GitHub reopens no PR on a push.

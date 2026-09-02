@@ -104,9 +104,21 @@ Two HTML comments. They are invisible in the rendered comment, so they cost a re
 <!-- REVIEW-VERDICT reviewer=Review119 verdict=REJECT -->
 ```
 
-...and the fixer or the reviewer posts a newer one with `verdict=ACCEPT` once the findings are
-closed. The latest verdict per reviewer wins; verdicts arrive out of band (#92 collected a second
-REJECT 42 minutes after its merge) and a REJECT must be clearable, or no fixer pass could ever land.
+...and a newer one with `verdict=ACCEPT` clears it once the findings are closed. The latest verdict
+per reviewer wins; verdicts arrive out of band (#92 collected a second REJECT 42 minutes after its
+merge) and a REJECT must be clearable, or no fixer pass could ever land.
+
+**A fixer pass does not clear a verdict**, and this is the one workflow change beyond the tokens
+themselves, so it is worth being blunt about. Posting "all findings addressed" is a claim, not a
+verdict; only the *reviewer* clears one. And because a fixer's commits move the head,
+`verdict-covers-head` requires that token to be posted **after** the fix lands — a verdict written
+before the last commit graded content that is no longer what would merge.
+
+The practical consequence, seen live on #106 while this was being written: a PR with a standing
+REJECT and a fixer mid-pass shows **two** blockers, and only a reviewer can clear either. That is
+the discipline being argued for, not a malfunction — but a rule that mysteriously blocks everything
+gets routed around, so it belongs in `docs/SWARM.md` §3 where reviewers actually read it, and it is
+there.
 
 **The roster is the Mode B mechanism.** It is not a second, separate defence bolted on beside the
 verdicts — it is their denominator. Without it, "nobody objected" and "nobody looked" are the same
