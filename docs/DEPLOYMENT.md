@@ -338,6 +338,7 @@ can:
 | Exit liveness | any `requestExit` reverting for a non-gate reason (H-1 regression sentinel) |
 | Fee routing | any USDC leaving a vault to an operator address outside the FeeEngine claim flow |
 | Module-call failures | `ModuleCallFailed` and `SliceEscrowed` events (a creator-chosen module or a basket token misbehaving) |
+| Governance watch | a proposal entering any phase — commit, reveal, awaiting finalize, timelock, executable, lapsed — with the reveal deadline and earliest `execute` in `detail` ([CANARY.md §3(h)](CANARY.md)) |
 
 ## 8. Mainnet gate
 
