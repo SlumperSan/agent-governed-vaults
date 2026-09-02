@@ -11,7 +11,7 @@
  * addressed, landing two HIGHs on `protocol/main`. Nothing mechanically connected a verdict to
  * mergeability: `gh pr merge` does not read comments, and the review pattern is a convention.
  *
- * It was three distinct failure modes, and a defence against one is useless against the others:
+ * It was four distinct failure modes, and a defence against one is useless against the others:
  *
  *   - **Mode A — merged over a REJECT already standing in writing.** #107 by 8 minutes, #92 by 29.
  *     Not a visibility problem: a *policy* one. The standing self-merge rule had no clause about an
@@ -23,10 +23,14 @@
  *   - **Mode C — the branch pushed to was already dead.** `git rev-list --left-right --count`
  *     reports "0 behind / N ahead" for a freshly-merged branch exactly as for a live one.
  *     Divergence is not liveness.
+ *   - **Mode D — the reviewed content was replaced after the verdict.** A, B and C are all about
+ *     *when* a merge happens relative to a review; D is about *what a review can see at all*. A
+ *     conflict resolution is an edit nobody reviews — a PR diff shows the merged RESULT and never
+ *     the CHOICE — so a defect can enter after a correct verdict and ship under it.
  *
  * So the enforceable property is a conjunction, not an interval: **the declared complement of
- * reviewers has reported, and every report is resolved** — plus CI green on *this* head SHA, plus
- * the PR still being open.
+ * reviewers has reported, and every report is resolved, on the content that would actually merge**
+ * — plus CI green on *this* head SHA, plus the PR still being open.
  *
  * ## The one design decision that stops this being theatre
  *
@@ -49,6 +53,7 @@
  * @property {number} [number]
  * @property {string} state       'OPEN' | 'MERGED' | 'CLOSED'
  * @property {string} headRefOid  the commit CI must have run on
+ * @property {string} [headCommittedDate]  ISO; when the head commit landed, for Mode D
  * @property {string} [headRefName]
  * @property {boolean} [isDraft]
  *
@@ -264,6 +269,33 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
       blockers.push({
         ruleId: 'ci-matches-head',
         detail: `no successful run for head ${short(pr.headRefOid)} (${mine.length} run(s) present, none conclusive).`,
+      });
+    }
+  }
+
+  // --- verdict-covers-head (Mode D) — both modes ----------------------------------------------
+  // A verdict grades content, not a pull request. If the head moved after the verdict was posted,
+  // what merges is not what was reviewed — and the dangerous case is not a fixer's new commit
+  // (visible, expected) but a CONFLICT RESOLUTION, because a PR diff shows the merged RESULT and
+  // never the CHOICE. Seen live on #121/#117: a keep-ours resolution would have re-introduced the
+  // hand-maintained signal list that #121 exists to abolish, inside a PR whose subject is unrelated,
+  // under a verdict that was correct when it was written. The reviewer was competent, the review was
+  // right, and the defect enters afterwards in an edit nobody reads.
+  // Both modes, unlike the roster rules: this needs only a verdict token, which is the reviewer's
+  // own act, not an orchestrator convention. If a verdict exists at all, checking it against the
+  // head costs nothing and is never wrong to do.
+  if (pr.headCommittedDate) {
+    const stale = Object.entries(latest)
+      .filter(([, v]) => v.at < /** @type {string} */ (pr.headCommittedDate))
+      .map(([r, v]) => `${r} (verdict ${v.at})`);
+    if (stale.length > 0) {
+      blockers.push({
+        ruleId: 'verdict-covers-head',
+        detail:
+          `head ${short(pr.headRefOid)} was committed ${pr.headCommittedDate}, after: ${stale.join(', ')}. ` +
+          `Those verdicts graded content that is no longer what would merge. Re-confirm with a newer ` +
+          `REVIEW-VERDICT token. If the new commit is a conflict resolution, re-read the resolution ` +
+          `itself — the diff shows the result, never which side was chosen.`,
       });
     }
   }

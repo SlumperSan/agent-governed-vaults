@@ -291,6 +291,47 @@ test('two verdicts from one reviewer at the SAME timestamp: the later one in the
   ]).R.verdict, 'REJECT');
 });
 
+test('Mode D: a head commit newer than the verdict invalidates it', () => {
+  // #121/#117, live on 2026-09-01: a keep-ours conflict resolution would have re-introduced the
+  // hand-maintained signal list that #121 exists to abolish, inside a PR whose subject was
+  // unrelated -- under a verdict that was correct when it was written. A PR diff shows the merged
+  // RESULT and never the CHOICE, so no review of the diff can see it.
+  const base = {
+    comments: [
+      { createdAt: '2026-09-01T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' },
+      { createdAt: '2026-09-01T11:00:00Z', body: ['verified', '<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->'].join('\n') },
+    ],
+    runs: greenOn('abc'),
+    mode: /** @type {'strict'} */ ('strict'),
+  };
+  const prAt = (headCommittedDate) => ({ number: 1, state: 'OPEN', headRefOid: 'abc', headRefName: 'b', headCommittedDate });
+
+  // Boundary, asserted on all three sides: the merge commit lands one second before the verdict,
+  // in the same second, and one second after.
+  assert.equal(evaluate({ ...base, pr: prAt('2026-09-01T10:59:59Z') }).clear, true, 'reviewed content is the head: clear');
+  assert.equal(evaluate({ ...base, pr: prAt('2026-09-01T11:00:00Z') }).clear, true, 'same second: the verdict covers it');
+  const stale = evaluate({ ...base, pr: prAt('2026-09-01T11:00:01Z') });
+  assert.equal(stale.clear, false, 'one second later: what would merge is not what was reviewed');
+  assert.deepEqual(ruleIds(stale.blockers), ['verdict-covers-head']);
+  assert.match(stale.blockers[0].detail, /conflict resolution/);
+
+  // Re-confirming after the resolution clears it -- the action the message asks for must work.
+  const reconfirmed = evaluate({
+    ...base,
+    pr: prAt('2026-09-01T11:00:01Z'),
+    comments: [...base.comments, { createdAt: '2026-09-01T12:00:00Z', body: ['resolution re-read', '<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->'].join('\n') }],
+  });
+  assert.equal(reconfirmed.clear, true);
+
+  // And the honest limit: with no commit date available the rule cannot fire at all.
+  assert.equal(evaluate({ ...base, pr: prAt(undefined) }).clear, true, 'no commit date: Mode D is not checked, not silently passed as checked');
+
+  // Mode D runs in ADVISORY too, unlike the roster rules — it needs only a verdict token, which is
+  // the reviewer's own act rather than an orchestrator convention.
+  const adv = evaluate({ ...base, pr: prAt('2026-09-01T11:00:01Z'), mode: 'advisory' });
+  assert.deepEqual(ruleIds(adv.blockers), ['verdict-covers-head']);
+});
+
 // ---------------------------------------------------------------------------------------------
 // One source of truth: code, policy and doc cannot drift
 // ---------------------------------------------------------------------------------------------
@@ -301,8 +342,8 @@ test('the heuristic in verdicts.mjs is byte-identical to the one merge-policy.js
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved'];
-  assert.deepEqual(declared, emitted, 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
+  const emitted = ['ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
 test('MERGE-POLICY.md embeds merge-policy.json verbatim', () => {

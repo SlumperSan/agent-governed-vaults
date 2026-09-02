@@ -85,7 +85,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const pr = gh([
     'pr', 'view', opts.pr, '--repo', opts.repo,
-    '--json', 'number,state,isDraft,headRefName,headRefOid,comments',
+    '--json', 'number,state,isDraft,headRefName,headRefOid,comments,commits',
   ]);
   if (!pr.ok) {
     process.stderr.write(`merge-preflight: cannot read PR #${opts.pr}: ${pr.err}\n`);
@@ -110,6 +110,9 @@ export function main(argv = process.argv.slice(2)) {
       isDraft: pr.data.isDraft,
       headRefName: pr.data.headRefName,
       headRefOid: pr.data.headRefOid,
+      // When the head commit landed. A merge/conflict-resolution commit gets a fresh committer
+      // date, which is exactly the Mode D signal: content changed after a verdict was written.
+      headCommittedDate: (pr.data.commits ?? []).at(-1)?.committedDate,
     },
     comments: (pr.data.comments ?? []).map((/** @type {any} */ c) => ({ createdAt: c.createdAt, body: c.body })),
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({

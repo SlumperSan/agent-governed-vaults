@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed, and a fifth (#121/#117) showed that a conflict resolution can introduce a defect no review ever sees. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
   "tokens": {
     "roster": {
       "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
@@ -17,7 +17,8 @@
     "A structured token is the only thing that may CLEAR a blocker. Prose is never sufficient, so 'satisfy the check by writing the word ACCEPT' is impossible by construction.",
     "The legacy prose heuristic may only ADD a blocker, never remove one. Its fragility is therefore bounded to false alarms, which a reviewer clears by posting a token.",
     "The latest verdict per reviewer wins. Verdicts arrive out of band and a REJECT must be clearable, or no fixer pass could ever land.",
-    "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around."
+    "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around.",
+    "A verdict grades content, not a pull request. If the head moves after a verdict is posted, what merges is not what was reviewed -- and the dangerous case is a conflict resolution, because the diff shows the result and never the choice."
   ],
   "rules": [
     {
@@ -39,6 +40,16 @@
       "title": "no reviewer's latest verdict may be REJECT",
       "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a legacy prose REJECT heading is not followed by a later ACCEPT token",
       "why": "Mode A. #107 merged 8 minutes after a REJECT was standing in writing on the PR; #92 merged 29 minutes after one. This is a policy failure, not a visibility one: the standing self-merge rule had no clause about an open REJECT, so an agent following it as written merges correctly and lands a HIGH."
+    },
+    {
+      "id": "verdict-covers-head",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "every verdict must post-date the head commit",
+      "blocksWhen": "any reviewer's latest verdict is older than the PR's head commit",
+      "why": "Mode D. Modes A, B and C are all about WHEN a merge happens relative to a review; D is about WHAT A REVIEW CAN SEE AT ALL. A conflict resolution is an edit nobody reviews -- a PR diff shows the merged RESULT and never the CHOICE -- so a defect can enter after a correct verdict and ship under it. Seen live on 2026-09-01: a keep-ours resolution on #117 would have re-introduced the hand-maintained signal list that #121 exists to abolish, inside a PR whose own subject was unrelated, and it was caught only because a verifier ran merge-tree on a branch it did not own and read the conflict rather than the diff. This rule detects that the reviewed content is no longer the content that would merge; it cannot judge whether the resolution was CORRECT, which is a re-review and not automatable. Runs in BOTH modes, unlike the roster rules: it needs only a verdict token, which is the reviewer's own act rather than an orchestrator convention."
     },
     {
       "id": "ci-matches-head",
@@ -84,5 +95,8 @@
       "gh api -X PUT repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/required_status_checks -f strict=true -f 'contexts[]=merge-preflight'",
       "gh api -X POST repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/enforce_admins"
     ]
+  },
+  "conventions": {
+    "statePerFileResolutions": "When a PR resolves a non-trivial conflict, the PR body should state, per conflicted file, WHICH SIDE was taken and WHY. This detects nothing by itself. It is the only thing that makes an otherwise invisible edit into a claim a reviewer can check, and it is a CONVENTION -- do not describe it as a gate. Note also that 'the conflict is only .gas-snapshot, so regenerate it' is not a general strategy: #115 and #117 conflicted on real content."
   }
 }

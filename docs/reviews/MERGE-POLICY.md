@@ -12,13 +12,14 @@ that were never addressed, putting two HIGHs onto `protocol/main`. Nothing mecha
 verdict to mergeability: `gh pr merge` does not read comments, and the review pattern in
 `docs/SWARM.md` §3 is a convention.
 
-It was **three distinct failure modes, and a defence against one is useless against the others.**
+It was **four distinct failure modes, and a defence against one is useless against the others.**
 
 | mode | what happened | the PRs | the rule that answers it |
 |---|---|---|---|
 | **A — policy** | merged over a REJECT already standing, in writing, on the PR | #107 by 8 min, #92 by 29 min | `no-standing-reject` |
 | **B — race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-declared` + `roster-resolved` |
 | **C — orientation** | pushed to a branch whose PR had already merged | #107's fixer pass, rescued by hand as [#120] | `pr-open` |
+| **D — invisibility** | the reviewed content was replaced *after* a correct verdict | a keep-ours resolution on #117 would have re-introduced the list #121 exists to abolish | `verdict-covers-head` |
 
 Three consequences worth stating plainly, because each one defeats an obvious design:
 
@@ -30,8 +31,39 @@ Three consequences worth stating plainly, because each one defeats an obvious de
   passed the worst case and failed its own purpose.
 
 So the enforceable property is not an interval. It is a conjunction: **the declared complement of
-reviewers has reported, and every report is resolved** — plus CI green on *this* head SHA, plus the
-PR still being open.
+reviewers has reported, and every report is resolved, on the content that would actually merge** —
+plus CI green on *this* head SHA, plus the PR still being open.
+
+### Mode D is a different kind of thing, and it is worth stating separately
+
+A, B and C are all about **when** a merge happens relative to a review. **D is about what a review
+can see at all.** A conflict resolution is an edit nobody reviews: a PR diff shows the merged
+*result* and never the *choice*. So the reviewer can be competent, the review thorough and the
+verdict correct, and a defect still enters afterwards and ships under that verdict.
+
+The live instance, 2026-09-01: #121 replaced a hand-written `liveSignals` array with
+`signalNamesOnDisk()` — abolishing a hand-maintained list was the entire point of the PR — while
+#117 had independently added an entry to that array. A keep-ours resolution re-introduces exactly
+the list #121 exists to abolish, inside a PR whose own subject is unrelated to it. It was caught only
+because a verifier ran `merge-tree` on a branch it did not own and read the *conflict* rather than
+the diff.
+
+`verdict-covers-head` detects that **the reviewed content is no longer the content that would
+merge** — the automatable half. It cannot judge whether a resolution was *correct*; that is a
+re-review, and no check can do it. Two related traps, both seen the same night:
+
+- **"The conflict is only `.gas-snapshot`, so regenerate it" is not a general strategy.** #115 and
+  #117 conflicted on real content. Any mechanism assuming conflicts are mechanical will be wrong on
+  exactly the PRs where the stakes are highest.
+- **A resolution's premise can be stale even when the resolution is right.** #117's correct
+  resolution relies on `readdir` finding a signal file; if a rebase moved it, `readdir` finds
+  nothing, the coverage test still passes because it asserts `size >= 8` and eight *other* signals
+  satisfy it, and the addition is uncovered again with a green suite.
+
+**The cheap convention that makes the choice reviewable at all** — and it is a convention, not a
+gate, because it detects nothing by itself: **when a PR resolves a non-trivial conflict, its body
+should state, per conflicted file, which side was taken and why.** That converts an invisible edit
+into a claim someone can check.
 
 ### The compounding factor
 
@@ -116,7 +148,9 @@ node scripts/merge-preflight.mjs 119
 Exit 0 = clear, 1 = blocked, **2 = could not determine** (no `gh`, no auth, no such PR). Exit 2 is
 not a pass: a preflight that could not see is not a preflight that saw nothing wrong.
 
-`--advisory` drops the two roster rules, and so drops all of Mode B. It is what the rollout workflow
+`--advisory` drops the two roster rules, and so drops all of Mode B. It keeps everything else,
+including Mode D — that rule needs only a verdict token, which is a reviewer's own act rather than an
+orchestrator convention. It is what the rollout workflow
 runs while adoption is partial, and it is honestly weaker: `scripts/test/merge-preflight.test.mjs`
 asserts, as a test rather than as a claim, that advisory mode **clears** both #98 and #109 at their
 real merge instants.
@@ -197,7 +231,7 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
 ```json
 {
   "version": 1,
-  "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed, and a fifth (#121/#117) showed that a conflict resolution can introduce a defect no review ever sees. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
   "tokens": {
     "roster": {
       "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
@@ -214,7 +248,8 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
     "A structured token is the only thing that may CLEAR a blocker. Prose is never sufficient, so 'satisfy the check by writing the word ACCEPT' is impossible by construction.",
     "The legacy prose heuristic may only ADD a blocker, never remove one. Its fragility is therefore bounded to false alarms, which a reviewer clears by posting a token.",
     "The latest verdict per reviewer wins. Verdicts arrive out of band and a REJECT must be clearable, or no fixer pass could ever land.",
-    "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around."
+    "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around.",
+    "A verdict grades content, not a pull request. If the head moves after a verdict is posted, what merges is not what was reviewed -- and the dangerous case is a conflict resolution, because the diff shows the result and never the choice."
   ],
   "rules": [
     {
@@ -236,6 +271,16 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "title": "no reviewer's latest verdict may be REJECT",
       "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a legacy prose REJECT heading is not followed by a later ACCEPT token",
       "why": "Mode A. #107 merged 8 minutes after a REJECT was standing in writing on the PR; #92 merged 29 minutes after one. This is a policy failure, not a visibility one: the standing self-merge rule had no clause about an open REJECT, so an agent following it as written merges correctly and lands a HIGH."
+    },
+    {
+      "id": "verdict-covers-head",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "every verdict must post-date the head commit",
+      "blocksWhen": "any reviewer's latest verdict is older than the PR's head commit",
+      "why": "Mode D. Modes A, B and C are all about WHEN a merge happens relative to a review; D is about WHAT A REVIEW CAN SEE AT ALL. A conflict resolution is an edit nobody reviews -- a PR diff shows the merged RESULT and never the CHOICE -- so a defect can enter after a correct verdict and ship under it. Seen live on 2026-09-01: a keep-ours resolution on #117 would have re-introduced the hand-maintained signal list that #121 exists to abolish, inside a PR whose own subject was unrelated, and it was caught only because a verifier ran merge-tree on a branch it did not own and read the conflict rather than the diff. This rule detects that the reviewed content is no longer the content that would merge; it cannot judge whether the resolution was CORRECT, which is a re-review and not automatable. Runs in BOTH modes, unlike the roster rules: it needs only a verdict token, which is the reviewer's own act rather than an orchestrator convention."
     },
     {
       "id": "ci-matches-head",
@@ -281,6 +326,9 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "gh api -X PUT repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/required_status_checks -f strict=true -f 'contexts[]=merge-preflight'",
       "gh api -X POST repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/enforce_admins"
     ]
+  },
+  "conventions": {
+    "statePerFileResolutions": "When a PR resolves a non-trivial conflict, the PR body should state, per conflicted file, WHICH SIDE was taken and WHY. This detects nothing by itself. It is the only thing that makes an otherwise invisible edit into a claim a reviewer can check, and it is a CONVENTION -- do not describe it as a gate. Note also that 'the conflict is only .gas-snapshot, so regenerate it' is not a general strategy: #115 and #117 conflicted on real content."
   }
 }
 ```
