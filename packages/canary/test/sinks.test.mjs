@@ -126,9 +126,18 @@ test('tierOf: a feed-identity ALERT that carries HARM pages; the self-clearing s
   assert.equal(tierOf(harmful('denomination')), 'page', 'a non-USD-quoted feed is the same latch by another route');
   // The harmless one: a routine Chainlink aggregator swap, re-pinned and self-cleared next sweep.
   assert.equal(tierOf(harmful(null)), 'log', 'a benign aggregator swap must not wake anyone');
-  // A feed-identity result with no `harm` key at all (an older state file, a future leg) is not
-  // proven harmful, so it must not page.
-  assert.equal(tierOf(tr('alert', 'feed-identity')), 'log');
+  // A feed-identity ALERT with NO `harm` key at all is a leg nobody has classified yet, and that is
+  // precisely the case that should PAGE.
+  //
+  // This assertion used to read 'log', justified as "an older state file, a future leg". The
+  // state-file half of that reason is FALSE, and a wrong reason attached to a behaviour is how the
+  // behaviour gets "corrected" later by someone who checks the reason: `transitions.mjs`'s `emit`
+  // always sets `result: r` — the live result computed THIS sweep — and `snapshot()` persists only
+  // {status, since, pendingStatus, pendingCount, brokenPolls, brokenNext}, with no `detail` and no
+  // `result` at all. A restored state file therefore cannot produce a detail-less result; it only
+  // decides `from`. That leaves "a future leg", which is the argument FOR paging, not against.
+  assert.equal(tierOf(tr('alert', 'feed-identity')), 'page',
+    'an unclassified harm leg must page: the readdir invariant proves the signal NAME is classified and nothing proves every alert() sets the field its predicate reads');
   // And the predicate is only ever consulted on an ALERT.
   const degraded = tr('skipped', 'feed-identity');
   degraded.result.detail = { ...degraded.result.detail, harm: 'decimals' };
@@ -282,6 +291,79 @@ test('dispatch: both feed-identity tiers in ONE sweep split across the two endpo
     'the split is per-transition, not per-signal — one signal name, two endpoints, same sweep');
 });
 
+/** A tiered sink over a fetch stub, recording which URL physically received each POST. */
+const dispatchProbe = () => {
+  const posted = [];
+  const sink = createTieredWebhookSink({
+    pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+    fetchImpl: async (url, init) => { posted.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200 }; },
+  });
+  return { posted, sink };
+};
+
+// `CONDITIONAL_PAGE` decides whether an alert reaches a human, and the `readdir` coverage test
+// reaches only as far as the signal NAME. These two tests cover the payload the predicate reads and
+// the predicate itself failing — the two ways an alert can be lost that name-coverage cannot see.
+// Both assert by DISPATCH (which endpoint physically received the POST), never by set membership:
+// a later refactor of `tierOf` can satisfy a membership assertion while still demoting the signal.
+
+test('dispatch: every feed-identity harm SHAPE routes by whether it classified itself benign, not by whether it is recognised', async () => {
+  // Enumerated rather than sampled: one case under a universal name is the most expensive kind of
+  // false guarantee. `absent` and `presentUndefined` are pinned separately because that is exactly
+  // the distinction a `{...spread}` default silently collapses, and only one of them is the shape
+  // `feed-identity.mjs` can actually emit today.
+  const shapes = [
+    ['decimals', 'page', 'a mis-scaled feed LATCHES on an immutable config — SEV-1'],
+    ['denomination', 'page', 'a non-USD-quoted feed is the same latch by another route'],
+    [null, 'log', 'the aggregator swap classified itself benign LITERALLY (harm: null) and self-clears next sweep'],
+    ['absent', 'page', 'a leg that never set `harm` is unclassified, not benign — the fail-safe direction is PAGE'],
+    ['presentUndefined', 'page', '`harm: undefined` is not the explicit `null` the benign leg writes'],
+    ['some-future-harm', 'page', 'an unrecognised harm is a leg nobody has ruled on, so it must wake somebody'],
+  ];
+
+  for (const [shape, wantTier, why] of shapes) {
+    const t = feedIdentityAlert(shape === 'absent' || shape === 'presentUndefined' ? null : shape);
+    if (shape === 'absent') delete t.result.detail.harm;
+    else if (shape === 'presentUndefined') t.result.detail.harm = undefined;
+
+    const { posted, sink } = dispatchProbe();
+    await emitAll([sink], [t]);
+    const wantUrl = `https://example.invalid/${wantTier}`;
+    assert.equal(posted.length, 1, `harm shape ${JSON.stringify(shape)} must produce exactly one POST`);
+    assert.equal(posted[0].url, wantUrl, `harm shape ${JSON.stringify(shape)}: ${why}`);
+    assert.equal(posted[0].body.tier, wantTier, 'and the body must say so, for a receiver on a single shared URL');
+  }
+});
+
+test('dispatch: a tier predicate that THROWS still reaches the PAGE endpoint — it fails open, it does not delete the alert', async () => {
+  const original = CONDITIONAL_PAGE.get('feed-identity');
+  assert.equal(typeof original, 'function', 'the seeded feed-identity predicate must exist to be swapped out');
+  // Swapped in place rather than added under a new key: `CONDITIONAL_PAGE` is module-global across
+  // this whole file, and a new key is a tier entry with no backing file for the coverage test.
+  CONDITIONAL_PAGE.set('feed-identity', () => { throw new TypeError('predicate read a field that was not there'); });
+  const errs = [];
+  const realError = console.error;
+  console.error = (m) => errs.push(String(m));
+  try {
+    const { posted, sink } = dispatchProbe();
+    await emitAll([sink], [feedIdentityAlert('decimals')]);
+    // Unguarded, this is `posted.length === 0`: the throw escapes `tierOf`, escapes the sink's
+    // `emit`, and `emitAll` reports it as a skipped SINK — so the alert reaches ZERO endpoints and
+    // a bug in a predicate DELETES the page rather than mis-routing it. A `catch` that returned
+    // 'log' would send it to the log URL, which is the same silence one step later.
+    assert.equal(posted.length, 1, 'a throwing predicate must not swallow the alert — zero POSTs is the failure this test exists for');
+    assert.equal(posted[0].url, 'https://example.invalid/page', 'a spurious page costs one person attention once; a swallowed page costs the incident');
+    assert.equal(posted[0].body.tier, 'page');
+    // Loud, so the broken predicate is discoverable rather than silently paging on everything forever.
+    assert.ok(errs.some((m) => /tier predicate for feed-identity threw/.test(m)),
+      'the throw must be reported: a permanent fail-open that nobody can see is its own outage');
+  } finally {
+    console.error = realError;
+    CONDITIONAL_PAGE.set('feed-identity', original);
+  }
+  assert.equal(CONDITIONAL_PAGE.get('feed-identity'), original, 'the real predicate is restored for every test after this one');
+});
+
 test('createTieredWebhookSink routes a PAGE-tier transition to pageUrl only', async () => {
   const calls = [];
   const sink = createTieredWebhookSink({
@@ -299,7 +381,11 @@ test('createTieredWebhookSink routes a LOG-tier transition to logUrl only', asyn
     fetchImpl: async (url) => { calls.push(url); return { ok: true, status: 200 }; },
   });
   await sink.emit(tr('skipped', 'nav-backing'));
-  await sink.emit(tr('alert', 'feed-identity'));
+  // The LOG-tier feed-identity ALERT is the one that classified itself benign EXPLICITLY. This used
+  // to pass an alert with no `harm` key at all, which now pages — see the harm-shape table above.
+  const benign = tr('alert', 'feed-identity');
+  benign.result.detail = { ...benign.result.detail, swapped: true, harm: null };
+  await sink.emit(benign);
   assert.deepEqual(calls, ['https://example.invalid/log', 'https://example.invalid/log']);
 });
 
