@@ -151,8 +151,9 @@ re-checked it. Re-check this list before repeating it.
   constructor cannot observe live stake distribution). Consequence: the operator seed is *derived,
   not chosen*, and "zero capital cost to the operator" is false — say *low*, and state the number.
 - **Below 5%, the operator cannot withdraw *anything* while a non-creator member remains.**
-  `_checkCreatorGate` requires `(s − b) · 10_000 ≥ 500 · (T − b)`; for `s/T < 5%` that fraction
-  only falls as the burn grows, so every burn amount fails — one share included. The same passive
+  `_checkCreatorGate` requires `(s − b) · 10_000 ≥ 500 · (T − b)`; `(s − b)/(T − b)` falls as the
+  burn grows for ANY `s < T`, so a creator who starts below 5% fails at every burn amount — one
+  share included. The same passive
   dilution that removes proposal rights also freezes the remaining capital. By design, not a bug
   (the gate binds creator *action*, CM-2), and recoverable: a top-up, a member exit, or the last
   member leaving. Pinned in `test/audit/AuditCreatorGateTraps.t.sol`; the arithmetic is Finance's
