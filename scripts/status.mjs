@@ -3,10 +3,12 @@
 /**
  * Command center: one screen answering "where does this project stand right now?"
  *
- *     npm run cc              # the board
- *     npm run cc -- --md      # same content as markdown (paste into Obsidian / a PR / a handoff)
- *     npm run cc -- --no-gh   # skip the GitHub lookups (offline, or when gh is slow)
- *     npm run cc:web          # the same data as a live dashboard in the browser
+ *     npm run cc               # the board
+ *     npm run cc -- --md       # same content as markdown (paste into Obsidian / a PR / a handoff)
+ *     npm run cc -- --no-gh    # skip the GitHub lookups (offline, or when gh is slow)
+ *     npm run cc -- --no-ci    # keep the PR list, skip the per-head CI column (one fewer API call)
+ *     npm run cc -- --ci-jobs  # additionally CONFIRM each fail(no-runner?) — one API call per run
+ *     npm run cc:web           # the same data as a live dashboard in the browser
  *
  * This file is only the TERMINAL RENDERER. Every value comes from `collect()` in
  * scripts/lib/project-status.mjs, which the web dashboard also uses -- two renderers over one
@@ -22,6 +24,8 @@ import { collect, gateClass } from './lib/project-status.mjs';
 const argv = process.argv.slice(2);
 const MD = argv.includes('--md');
 const NO_GH = argv.includes('--no-gh');
+const NO_CI = argv.includes('--no-ci');
+const CI_JOBS = argv.includes('--ci-jobs');
 
 const TTY = process.stdout.isTTY && !MD;
 const C = TTY
@@ -43,7 +47,7 @@ const ago = (ms) => {
   return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 };
 
-const d = collect({ gh: !NO_GH });
+const d = collect({ gh: !NO_GH, ci: !NO_CI, ciJobs: CI_JOBS });
 const stamp = d.at.slice(0, 16).replace('T', ' ');
 
 if (MD) say(`# Command center — ${stamp}Z\n`);
@@ -163,13 +167,66 @@ if (d.deployments.length) {
 
 // ---------------------------------------------------------------- github
 
+// The two columns below report TWO DIFFERENT ARTIFACTS and are labelled so no reader can conflate
+// them -- four sessions in one night did. `CI run=` is the CI workflow run's own conclusion;
+// `preflight=` is the COMMIT STATUS the merge gate posted. A run that successfully posts a red has
+// conclusion=success, so reading one to answer the other reports the opposite answer.
+const ciColour = (label) => {
+  if (label === 'pass') return C.g;
+  if (label === 'none' || label === 'head?') return C.y; // absent evidence: not a pass, not a fail
+  if (label === 'pending') return C.c;
+  return C.r;
+};
+
 if (d.github.up) {
   const p = d.github.prs.length ? d.github.prs.map((x) => `#${x.number}`).join(' ') : 'none';
   const i = d.github.issues.length ? d.github.issues.map((x) => `#${x.number}`).join(' ') : 'none';
-  if (MD) say(`## GitHub\n\n- Open PRs: ${p}\n- Open issues: ${i}\n`);
-  else {
+  const ph = d.perHead;
+  if (MD) {
+    say(`## GitHub\n\n- Open PRs: ${p}\n- Open issues: ${i}\n`);
+    if (ph?.up && ph.rows.length) {
+      say(`### Per-head verification\n`);
+      say(`\`CI\` is the **CI workflow run's own conclusion**; \`preflight\` is the **posted commit status**.`);
+      say(`They are different artifacts and routinely disagree — a run that succeeds at posting a red has \`conclusion: success\`.`);
+      say(`\`none\` means no evidence exists for this head: not a pass, not a failure.`);
+      say(`\`behind\` is vs local \`${ph.baseRef}\`${ph.baseSha ? ` @ \`${ph.baseSha}\`` : ''} — \`git fetch\` to refresh; \`?\` means the head object is not fetched here.`);
+      if (ph.truncated) say(`\n> **Truncated at 50 open PRs** — this list is a subset, not all of them.`);
+      say('');
+      say('| PR | head | CI (run conclusion) | preflight (posted status) | behind | note |');
+      say('|----|------|---------------------|---------------------------|--------|------|');
+      for (const r of ph.rows) {
+        const note = [r.ci.note, r.preflight.note].filter(Boolean).join(' · ');
+        say(`| #${r.number} | \`${r.head.slice(0, 7)}\` | ${r.ci.label} | ${r.preflight.label} | ${r.behind ?? '?'} | ${note} |`);
+      }
+      say('');
+    } else if (ph && !ph.up) {
+      say(`### Per-head verification\n\nunavailable — ${ph.reason}\n`);
+    }
+  } else {
     say(`\n${C.b}GITHUB${C.x}    ${d.github.prs.length} open PR(s): ${C.d}${p}${C.x}`);
     say(`          ${d.github.issues.length} open issue(s): ${C.d}${i}${C.x}`);
+    if (ph?.up && ph.rows.length) {
+      say(`\n${C.b}PER-HEAD${C.x}  ${C.d}CI = the workflow RUN's conclusion · preflight = the POSTED COMMIT STATUS · they disagree by design${C.x}`);
+      say(`          ${C.d}none = no evidence for this head (not a pass, not a fail) · behind vs local ${ph.baseRef}${ph.baseSha ? ` @ ${ph.baseSha}` : ''}${C.x}`);
+      if (ph.truncated) say(`          ${C.y}truncated at 50 open PRs — this list is a subset, not all of them${C.x}`);
+      for (const r of ph.rows) {
+        const note = [r.ci.note, r.preflight.note].filter(Boolean).join(' · ');
+        say(
+          `          ${pad(`#${r.number}`, 5)} ${C.d}${r.head.slice(0, 7)}${C.x} ` +
+            `CI run=${ciColour(r.ci.label)}${pad(r.ci.label, 16)}${C.x} ` +
+            `preflight=${ciColour(r.preflight.label)}${pad(r.preflight.label, 9)}${C.x} ` +
+            `${C.d}behind ${pad(String(r.behind ?? '?'), 3)}${C.x}` +
+            (note ? ` ${C.d}${note.slice(0, 62)}${C.x}` : ''),
+        );
+      }
+      if (ph.jobsProbed === null) {
+        say(`          ${C.d}fail(no-runner?) is a duration heuristic — confirm with \`npm run cc -- --ci-jobs\`${C.x}`);
+      } else {
+        say(`          ${C.d}--ci-jobs: confirmed ${ph.jobsProbed} suspected run(s) against their job lists${C.x}`);
+      }
+    } else if (ph && !ph.up) {
+      say(`\n${C.b}PER-HEAD${C.x}  ${C.d}unavailable — ${ph.reason}${C.x}`);
+    }
   }
 } else if (!NO_GH && !MD) {
   say(`\n${C.b}GITHUB${C.x}    ${C.d}unavailable (gh not installed / not authenticated / offline)${C.x}`);
