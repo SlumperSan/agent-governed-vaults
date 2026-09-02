@@ -24,7 +24,7 @@ import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks
 ///     deliberately a Governance-LEVEL test, not a `Checkpoints` unit test: the property that
 ///     matters is the composition with `propose`'s `nowTs - 1` read (VO-9). Mutating `nowTs - 1`
 ///     to `nowTs` turns it red; a `Checkpoints` unit test would not notice.
-///  3. `_isSettled` (row 2, `src/Governance.sol:613`). The real question is not whether the enum
+///  3. `_isSettled` (row 2, `src/Governance.sol:634`). The real question is not whether the enum
 ///     is exhaustive but whether a proposal can sit non-settled forever and freeze `propose` —
 ///     the DoS documented at `Governance.sol:57-67`. `finalize` is permissionless and makes no
 ///     external call, so `Active` always escapes.
@@ -208,7 +208,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// Three writes land in ONE second `T`: a deposit (appends a checkpoint at `T`), the
     /// `propose` call (`createdAt == T`), and a second deposit (OVERWRITES the checkpoint at `T`,
     /// `Checkpoints.sol:23-24`). The proposal reads `pastVotingEligibleShares(voter, T - 1)`
-    /// (`Governance.sol:284-285`, `:660`), which is strictly before any of them.
+    /// (`Governance.propose:297-298`, `Governance._boundedWeight:348`), which is strictly before any of them.
     ///
     /// Mutation that turns this red: `nowTs - 1` -> `nowTs` in `Governance.propose`. That is the
     /// mutation that would make row 7 a real flash-stake finding, and it is invisible to a
@@ -268,11 +268,11 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// @notice `_isSettled` enumerating only Defeated/Executed/Expired is safe because every
     /// NON-settled status has a permissionless, external-call-free exit. The failure this row
     /// would represent is a permanent freeze: `_isSettled` gates `propose`
-    /// (`Governance.sol:278`) and `delegate` (`:494`), so a proposal stuck `Active` would block
+    /// (`Governance.sol:288`) and `delegate` (`:515`), so a proposal stuck `Active` would block
     /// every future proposal INCLUDING the RuleChange that would unstick it
     /// (`Governance.sol:57-67`).
     ///
-    /// `finalize` (`:506-558`) reads only `p.*` and `configOf[p.vault]`, is unauthenticated, and
+    /// `finalize` (`:527-579`) reads only `p.*` and `configOf[p.vault]`, is unauthenticated, and
     /// makes no external call — so a completely abandoned proposal is always resolvable by a
     /// party with no stake and no relationship to the vault.
     function test_abandonedProposalIsAlwaysSettleableByAStrangerAndUnblocksPropose() public {
@@ -305,7 +305,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// @notice The other non-settled status, `Passed`, drains too: `markExpired` is permissionless
     /// and `_refreshStatus` self-heals inside `propose`. Together with the test above this covers
     /// every status `_isSettled` returns false for (`None` is unreachable — `activeProposalOf` is
-    /// `!= 0`-guarded at `Governance.sol:277`).
+    /// `!= 0`-guarded at `Governance.sol:286`).
     function test_passedButUnexecutedProposalExpiresAndUnblocksPropose() public {
         vm.prank(honest);
         uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(""));
@@ -335,7 +335,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
         assertGt(pid2, pid, "propose is unblocked");
     }
 
-    /// @dev Proposal tuple order per src/Governance.sol:87-104.
+    /// @dev Proposal tuple order per src/Governance.sol:110-127.
     function _forWeight(uint256 pid) internal view returns (uint256 f) {
         (,,,,,,,,,,,, f,,,) = gov.proposals(pid);
     }
