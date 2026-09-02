@@ -50,6 +50,21 @@ const TICKED = /`([^`]{1,120})`/g;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
+ * Keywords and type names are NOT anchors, even though they are identifiers. Without this, the
+ * quoted fragment `allowSubVaults = false` contributes `false`, and `false` occurs on most lines
+ * of a deploy script — so a citation that had genuinely drifted resolved as correct. A junk anchor
+ * is worse than no anchor: it turns the check green for the wrong reason.
+ */
+const STOPWORDS = new Set([
+  'true', 'false', 'null', 'undefined', 'this', 'new', 'return', 'if', 'else', 'for', 'while',
+  'public', 'private', 'internal', 'external', 'view', 'pure', 'payable', 'memory', 'calldata',
+  'storage', 'constant', 'immutable', 'override', 'virtual', 'emit', 'require', 'revert',
+  'bool', 'address', 'string', 'bytes', 'bytes32', 'int', 'uint', 'uint8', 'uint16', 'uint32',
+  'uint64', 'uint128', 'uint256', 'mapping', 'struct', 'enum', 'contract', 'interface', 'library',
+  'const', 'let', 'var', 'function', 'async', 'await', 'import', 'export', 'from', 'class',
+]);
+
+/**
  * Present-tense claims that a pull request is unmerged. Deliberately narrow: the clause must name
  * a PR number AND assert openness. "#98 raised this" is a reference, not a claim, and a guard
  * that cannot tell them apart is a guard someone turns off.
@@ -63,11 +78,80 @@ const OPEN_CLAIM = [
   /\bPR\s+#(\d+)\s*\((?:still\s+)?open\)/gi,
 ];
 
+/**
+ * Claims that place work in the FUTURE, gated on a pull request. This is the direction nobody
+ * notices, because the sentence reads as appropriately cautious: "the test that makes this an
+ * enforced invariant is landing from #109" tells a reader the invariant is NOT enforced, and goes
+ * on telling them that after #109 merges. An over-claim gets challenged; an under-claim gets
+ * believed.
+ */
+const PENDING_CLAIM = [
+  /\bonce\s+#(\d+)\s+(?:lands|merges|is\s+merged)/gi,
+  /\bwhen\s+#(\d+)\s+(?:lands|merges|is\s+merged)/gi,
+  /\bafter\s+#(\d+)\s+(?:lands|merges|is\s+merged)/gi,
+  /\bpending\s+#(\d+)/gi,
+  /\bblocked\s+(?:on|by)\s+#(\d+)/gi,
+  /\bwaiting\s+(?:on|for)\s+#(\d+)/gi,
+  /\b(?:is\s+)?landing\s+(?:from|in|via)\s+(?:session\s+)?\S*#(\d+)/gi,
+  /#(\d+)\s+will\s+(?:add|fix|land|make|close|enforce)/gi,
+  /\bwill\s+(?:be\s+)?(?:fixed|closed|added|enforced)\s+(?:by|in)\s+#(\d+)/gi,
+];
+
 /** Documents that record a moment rather than assert the present. Opt OUT, never opt IN. */
 export const RECORD_MARKER = 'doc-claims: historical record';
 
 export function isHistoricalRecord(text) {
   return text.includes(RECORD_MARKER);
+}
+
+/**
+ * A RETRACTED claim is one a later block explicitly withdraws.
+ *
+ * This exists because the house rule and the guard were in direct conflict. The rule — used for
+ * every stale claim found tonight — is to leave the false sentence VISIBLE with a dated correction
+ * beneath it, because a claim that circulated needs a visible retraction rather than a silent
+ * edit. But a visible retraction necessarily RESTATES the claim, so every correction written under
+ * that rule raised this guard's hit count. Following the policy made the check noisier, which ends
+ * exactly one way: somebody turns the check off.
+ *
+ * So the convention the team already adopted organically becomes the machine-readable signal. A
+ * claim is retracted when a marker appears within `RETRACTION_WINDOW` lines after it, and the
+ * marker must carry a DATE.
+ *
+ * The date requirement is not decoration — it is what makes this safe. `**STALE**` is already used
+ * in `docs/vault/launch-readiness-gates.md` as a *status value* in the gate table ("| 2 | Testnet
+ * full lifecycle proven | **STALE** — ..."). Matching a bare `**STALE**` silenced a live citation
+ * fourteen lines away in an unrelated row, which is precisely the fail-silent direction this whole
+ * module exists to avoid; the first version of this function did exactly that and the waiver
+ * bookkeeping is what surfaced it. Every genuine retraction in this repo and vault is dated
+ * ("CORRECTED 2026-09-02", "STALE — corrected 2026-09-01 by Review117", "[superseded 2026-08-29]").
+ * A status cell is not.
+ */
+const RETRACTION = /(CORRECTED|STALE|SUPERSEDED|WITHDRAWN)\b/i;
+const RETRACTION_DATE = /\d{4}-\d{2}-\d{2}/;
+const RETRACTION_WINDOW = 14;
+
+export function retractedLines(text) {
+  const lines = text.split(NEWLINE);
+  const marks = [];
+  const inside = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (RETRACTION.test(lines[i]) && RETRACTION_DATE.test(lines[i])) marks.push(i + 1);
+  }
+  // A dated retraction is normally written as one blockquote. Everything inside that quote is
+  // part of the withdrawal — including the restatement of the false sentence, which is the whole
+  // point of the convention — however long the block runs.
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*>/.test(lines[i])) continue;
+    let end = i;
+    while (end + 1 < lines.length && /^\s*>/.test(lines[end + 1])) end++;
+    const run = lines.slice(i, end + 1);
+    if (run.some((l) => RETRACTION.test(l) && RETRACTION_DATE.test(l))) {
+      for (let j = i; j <= end; j++) inside.add(j + 1);
+    }
+    i = end;
+  }
+  return (line) => inside.has(line) || marks.some((m) => m >= line && m - line <= RETRACTION_WINDOW);
 }
 
 // ── the source tree ───────────────────────────────────────────────────────────
@@ -230,19 +314,20 @@ export function citationsIn(text) {
   };
   const lines = scan.split('\n');
 
+  // One backticked span is ONE anchor group, however many identifiers it contains. A group can be
+  // a bare name (`_mintShares`), a member (`Governance.execute`), or a code fragment the prose
+  // quoted (`PERF_FEE_BPS = 1_000`, `bool public immutable oracleAllowlistEnforced;`) — all three
+  // are the sentence naming what the line is about. The grouping is what keeps this honest:
+  // treating each identifier as its own anchor would let one quoted fragment supply a dozen
+  // chances to match, which is the "passes by luck" failure the nearest-three cap exists to stop.
   const ticked = [];
   for (const t of scan.matchAll(/`([^`\n]{1,200}(?:\n[^`\n]{0,200})?)`/g)) {
     const inner = t[1].replace(/\s*\n\s*/g, ' ');
     const at = t.index ?? 0;
-    const push = (name) => ticked.push({ name, at });
-    if (IDENTIFIER.test(inner)) push(inner);
-    const dotted = inner.match(/^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\(?\)?$/);
-    if (dotted) {
-      push(dotted[1]);
-      push(dotted[2]);
-    }
-    const called = inner.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
-    if (called) push(called[1]);
+    const names = new Set();
+    if (IDENTIFIER.test(inner)) names.add(inner);
+    else for (const w of inner.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []) if (!STOPWORDS.has(w)) names.add(w);
+    if (names.size) ticked.push({ names: [...names], at, end: at + t[0].length });
   }
 
   // Full citations first, then the bare `:N` continuations that follow one ("`VaultCore.sol:480`;
@@ -262,11 +347,15 @@ export function citationsIn(text) {
   const out = [];
   for (const s of sites) {
     const anchors = ticked
-      .map((t) => ({ name: t.name, d: Math.abs(t.at - s.at) }))
+      // The citation's OWN span is not an anchor. `` `Deploy.s.sol:77` `` would otherwise
+      // contribute `Deploy`, which is also the contract name in that file — so a citation that
+      // had genuinely drifted to another line resolved as correct against its own filename.
+      .filter((t) => !(t.at <= s.at && s.at < t.end))
+      .map((t) => ({ names: t.names, d: Math.abs(t.at - s.at) }))
       .filter((t) => t.d <= ANCHOR_WINDOW)
       .sort((a, b) => a.d - b.d)
       .slice(0, ANCHOR_MAX)
-      .map((t) => t.name);
+      .flatMap((t) => t.names);
     const line = lineOf(s.at);
     out.push({
       line,
@@ -281,15 +370,24 @@ export function citationsIn(text) {
   return out;
 }
 
-/** PR numbers a document claims are still open. */
+/**
+ * PR-state claims: `open` for "this PR has not landed", `pending` for "this work happens when
+ * that PR lands". Both are false in the same way once the PR merges, but they fail differently
+ * for a reader — the first over-states risk, the second under-states completeness.
+ */
 export function openPrClaimsIn(text) {
   const out = [];
   const lines = text.split(NEWLINE);
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
-    for (const re of OPEN_CLAIM) {
-      for (const m of line.matchAll(new RegExp(re.source, re.flags))) {
-        out.push({ line: idx + 1, pr: Number(m[1]), raw: m[0], context: line.trim().slice(0, 160) });
+    for (const [kind, set] of [
+      ['open', OPEN_CLAIM],
+      ['pending', PENDING_CLAIM],
+    ]) {
+      for (const re of set) {
+        for (const m of line.matchAll(new RegExp(re.source, re.flags))) {
+          out.push({ line: idx + 1, pr: Number(m[1]), raw: m[0], kind, context: line.trim().slice(0, 160) });
+        }
       }
     }
   }
@@ -360,7 +458,9 @@ export function checkDocs(repo, docs, opts = {}) {
       continue;
     }
 
+    const citationRetracted = retractedLines(text);
     for (const c of citationsIn(text)) {
+      if (citationRetracted(c.line)) continue;
       const candidates = index.get(c.file);
       if (!candidates) continue; // a filename in prose, or a file outside this repo
       checked++;
@@ -420,19 +520,25 @@ export function checkDocs(repo, docs, opts = {}) {
     }
 
     if (merged) {
+      const isRetracted = retractedLines(text);
       for (const claim of openPrClaimsIn(text)) {
         checked++;
+        if (isRetracted(claim.line)) continue;
         if (merged.has(claim.pr)) {
           problems.push({
-            kind: 'merged-pr-claimed-open',
+            kind: claim.kind === 'pending' ? 'merged-pr-claimed-pending' : 'merged-pr-claimed-open',
             doc,
             line: claim.line,
             raw: claim.raw,
             context: claim.context,
             detail:
-              `#${claim.pr} is merged into ${ref}; this document still asserts it is open. ` +
-              'Re-read the claim that DEPENDS on it: branch state establishes that the premise ' +
-              'is gone, not that the conclusion is safe.',
+              claim.kind === 'pending'
+                ? `#${claim.pr} is merged into ${ref}; this document still places the work in the ` +
+                  'future. An under-claim gets believed rather than challenged — a reader is told ' +
+                  'the thing is not done when it is.'
+                : `#${claim.pr} is merged into ${ref}; this document still asserts it is open. ` +
+                  'Re-read the claim that DEPENDS on it: branch state establishes that the premise ' +
+                  'is gone, not that the conclusion is safe.',
           });
         }
       }
