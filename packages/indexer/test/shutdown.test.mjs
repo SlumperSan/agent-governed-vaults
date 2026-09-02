@@ -37,6 +37,32 @@ function fakeClient(head = 30) {
   };
 }
 
+/**
+ * Wait for something the daemon actually reaches, instead of for a duration we hope is long
+ * enough. A fixed sleep here was a race: on a loaded runner the poll loop is still working
+ * through the backlog when the sleep expires, stop() then honours the abort at the next batch
+ * boundary, and the assertions red against a cursor short of head — CI run 33696190801 failed
+ * this file with lastBlock 29 on a README-only PR.
+ *
+ * The deadline is an upper bound that FAILS, and it is deliberately far above any plausible load:
+ * `node --test` has no timeout by default, so a condition that never comes true has to red the
+ * job rather than hang it forever.
+ */
+async function waitFor(condition, describe, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (condition()) return;
+    if (Date.now() >= deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${describe()}`);
+    await new Promise((r) => setTimeout(r, 2));
+  }
+}
+
+/** The completion signal these tests actually mean by "let it catch up": the cursor reached head. */
+const caughtUpTo = (daemon, block) => waitFor(
+  () => daemon.getState().lastBlock === block,
+  () => `the poll loop to drain to block ${block} (cursor is at ${daemon.getState().lastBlock})`,
+);
+
 test('catchUp checks the abort signal BETWEEN batches, so SIGTERM is honoured mid-backlog', async () => {
   const dir = await tmp();
   try {
@@ -81,9 +107,9 @@ test('stop() ends the poll loop and leaves a readable snapshot at the right curs
   const dir = await tmp();
   try {
     const cfg = resolveIndexerConfig(ENV(dir));
-    const { start, stop } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
+    const { start, stop, daemon } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
     const running = start();
-    await new Promise((r) => setTimeout(r, 60));   // let it catch up and idle
+    await caughtUpTo(daemon, 30);                   // it caught up and is idling — not "60ms elapsed"
 
     const lastBlock = await stop();
     assert.equal(lastBlock, 30);
@@ -118,9 +144,9 @@ test('the indexer heartbeats while polling, stamped with its own staleness budge
     // POLL_INTERVAL_MS=20 → floored at 30s so a fast poll cannot become a hair-trigger.
     assert.equal(cfg.heartbeatStaleMs, 30_000);
 
-    const { start, stop, heartbeat } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
+    const { start, stop, heartbeat, daemon } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
     start();
-    await new Promise((r) => setTimeout(r, 60));
+    await caughtUpTo(daemon, 30);
 
     // Beaten at boot, before the first batch: an indexer grinding through a cold-start backlog is
     // alive and must not be reported dead while it works.
