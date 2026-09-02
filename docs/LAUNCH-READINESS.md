@@ -10,7 +10,7 @@
 >
 > **Gate 0 is GO (root-only):** all five original Criticals resolved — C-1 closed at launch (`allowSubVaults = false`, confirmed on the mainnet deploy path `Deploy.s.sol:79`), C-2/C-3/C-5 fixed with tests, **C-6 resolved by the pivot**, and the external audit found no majors.
 >
-> **What still blocks GO — all operational, all need a funded Base Sepolia key:** gates **2/3/6** (testnet full-lifecycle + soak + canary must be **re-run on the pivoted tree** — the Sepolia oracle config now exists and is on-chain-verified, PR #64, so this is unblocked and just needs a key). Gate **7** is now **GO**: the drill was re-run under Docker on a real Linux engine 2026-09-02 (`4619f17a`) with steps 1 and 6 **literal** — the condition it was CONDITIONAL on — and the three runbook/Compose defects that re-run surfaced are fixed (`adafdc7c`). **Nothing security-side remains.**
+> **What still blocks GO — all operational, all need a funded Base Sepolia key:** whichever of the operational gates **2/3/6** the checklist in §1 still shows short of GO — as of 2026-09-02, gate **3** (soak) and gate **6** (canary); gate **2**'s full lifecycle was re-earned on the pivoted tree 2026-09-01. §1 is the authority here, not this sentence. The Sepolia oracle config exists and is on-chain-verified (PR #64), so the re-runs are unblocked and just need a key. Gate **7** is now **GO**: the drill was re-run under Docker on a real Linux engine 2026-09-02 (`4619f17a`) with steps 1 and 6 **literal** — the condition it was CONDITIONAL on — and the three runbook/Compose defects that re-run surfaced are fixed (`adafdc7c`). **Nothing security-side remains.**
 >
 > ---
 > *Pre-pivot narrative (retained as history — the Phase-2 remediation record). Read it for the reasoning; trust the banner above for current status.*
@@ -321,18 +321,17 @@ snapshot parser (no live snapshot in a fresh checkout). Eleven further ABI-drift
 `contracts/out` is absent; the numbers above are from a run **after** `forge build`.
 ## 6. The path to GO
 
-### Current remaining path (2026-08-29) — security done; operational only
+### Current remaining path (updated 2026-09-02) — security done; operational only
 
-Every security item below (steps 1–4, 6 of the historical list) is now closed: C-1 decided, the oracle pivoted to Chainlink-direct and on-chain-verified, and the external audit completed (owner-attested, no majors). What remains needs a **funded Base Sepolia key** and is the owner's to trigger:
+Every security item below (steps 1–4, 6 of the historical list) is now closed: C-1 decided, the oracle pivoted to Chainlink-direct and on-chain-verified, and the external audit completed (owner-attested, no majors). **Gate 7 is also closed** — the drill was re-run under Docker with steps 1 and 6 literal (#139, `4619f17a`) and the three defects that re-run surfaced are fixed (#141, `adafdc7c`), so it is no longer on this path; it was historical step 7. What remains needs a **funded Base Sepolia key** and is the owner's to trigger:
 
-1. **Re-run testnet lifecycle + soak + canary on the pivoted tree (gates 2/3/6).** Deploy the current tree to Base Sepolia with the now-verified `chainlinkOracle` config (PR #64), then run the lifecycle + the drill battery + the canary. Unblocked — needs only the key. *(Step-by-step lives in [DEPLOYMENT.md](DEPLOYMENT.md); the maintainer will hand the owner an exact command list when the key is available.)*
-2. **Close gate 7** — the restore drill is **done and PASSED** (`docs/RESTORE-DRILL.md`). What remains is re-running its steps 1/6 under a real POSIX kernel — Docker Desktop (Compose, as the runbook prints), or WSL2 alone (cheaper; the bare-metal stop/start is now documented in RUNTIME.md §8.3/§8.6, confirmed genuinely unreachable on bare-metal Windows — RESTORE-DRILL.md §9). Needs the owner to install one of the two, not a key.
-3. **Then cut `v1.0.0-launch-candidate`** and proceed to the mainnet deploy sequence (owner's key).
+1. **Re-run the operational gates the checklist in §1 still shows short of GO on the pivoted tree — as of 2026-09-02 that is gate 3 (soak drills) and gate 6 (canary).** Gate 2's lifecycle was re-earned 2026-09-01; §1 is the authority on which of 2/3/6 currently stand, and this item means whichever of them it still marks STALE. Run the drill battery and the canary against the live C-6 Chainlink-direct deployment on Base Sepolia (`chainlinkOracle` config verified in PR #64), from a checkout at current `main`. Unblocked — needs only the key. *(Step-by-step lives in [DEPLOYMENT.md](DEPLOYMENT.md); the maintainer will hand the owner an exact command list when the key is available.)*
+2. **Then cut `v1.0.0-launch-candidate`** and proceed to the mainnet deploy sequence (owner's key).
 
 Mainnet deploy itself (singletons → blessed `ChainlinkOracle` → factory with `BLESSED_ORACLES` → first vault) is the final owner-key step, gated on the above.
 
 ---
-*Historical path (retained; steps 1–4 and 6 are now DONE — see the current path above and the top banner):*
+*Historical path (retained; steps 1–4, 6 and 7 are now DONE — step 7 closed 2026-09-02, see the current path above and the top banner):*
 
 Shorter than it was, and still not short.
 
