@@ -1,0 +1,23 @@
+{
+  "note": "Waivers are self-expiring, in BOTH directions. Each names the open PR that removes the problem: once `ownedByPr` is merged into the ref, the waiver itself becomes an error and must be deleted; if a waiver stops matching anything, that is an error too. An allow-list that cannot go stale is the only kind worth having -- see scripts/lib/doc-claims.mjs.",
+  "waivers": [
+    {
+      "doc": "docs/LAUNCH-READINESS.md",
+      "citation": "Deploy.s.sol:77",
+      "ownedByPr": 113,
+      "why": "PR #113 re-points every `allowSubVaults = false` citation from Deploy.s.sol:77 to :79 and adds its own pin for them. Annotating the same four lines here would collide with that change for no gain."
+    },
+    {
+      "doc": "docs/vault/current-state.md",
+      "citation": "Deploy.s.sol:77",
+      "ownedByPr": 113,
+      "why": "Same four-line change as above."
+    },
+    {
+      "doc": "docs/vault/launch-readiness-gates.md",
+      "citation": "Deploy.s.sol:77",
+      "ownedByPr": 113,
+      "why": "Same four-line change as above."
+    }
+  ]
+}
