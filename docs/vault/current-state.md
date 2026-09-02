@@ -31,9 +31,10 @@ Every **security** gate is cleared ([[launch-readiness-gates]]):
   "audited" without that qualifier.**
 - **Gate 5 — mainnet oracle stack: GO with a named residual.** See below.
 
-What still blocks GO is operational and needs a funded key, not more code: gates **2/3/6** (testnet
-full lifecycle, soak, canary — must be re-run on the pivoted tree) and gate **7** (one recorded
-restore drill, ~30 min, no keys).
+What still blocks GO is operational and needs a funded key, not more code: whichever of the
+operational gates **2/3/6** (testnet full lifecycle, soak, canary) [[launch-readiness-gates]] and
+`docs/LAUNCH-READINESS.md` still show short of GO on the pivoted tree. **Gate 7 is closed** — GO as
+of 2026-09-02, the restore drill recorded and then re-run literally under Docker.
 
 ## The oracle, as it actually ships
 
