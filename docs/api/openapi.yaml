@@ -238,11 +238,13 @@ components:
           properties:
             pid: { type: integer }
             vault: { type: string }
-            ptype: { type: integer }
+            ptype: { type: integer, description: 0 Rebalance, 1 RuleChange, 2 ChildAllocation }
             proposer: { type: string }
-            forWeight: { type: string }
+            status: { type: string, enum: [Active, Passed, Defeated, Executed, Expired] }
+            forWeight: { type: string, description: decimal string — vote weights serialize as strings }
             againstWeight: { type: string }
             revealedWeight: { type: string }
+            revealedVoters: { type: integer }
     LeaderboardRow:
       type: object
       properties:
