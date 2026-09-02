@@ -39,12 +39,21 @@ contract AuditCallsLoopMaxBoundTest is Test {
     uint256 constant N_ASSETS = 10;
     uint256 constant N_CHILDREN = 8;
 
-    /// @dev Measured 2026-09-01 on this repo's `via_ir`, optimizer-800 build: navWad() at the
-    /// full 8x8x10 structural maximum (73 vaults, 72 descendants, 10-asset basket at every
-    /// level) cost 10,108,782 gas. Ceiling is that measurement plus ~11% headroom, as a fixed
-    /// named constant rather than a loose round number — a future bump to MAX_CHILDREN or
-    /// MAX_LOOKTHROUGH_DEPTH changes the recursion shape enough to trip this assertion, which is
-    /// the point.
+    /// @dev Measured 2026-09-01 on this repo's `via_ir`, optimizer-800 build, against
+    /// `protocol/main` @ 52d10aee: navWad() at the full 8x8x10 structural maximum (73 vaults,
+    /// 72 descendants, 10-asset basket at every level) costs 10,402,702 gas.
+    ///
+    /// This number was first recorded as 10,108,782 and went stale inside a day: merging
+    /// `protocol/main` moved it +2.9% and nothing turned red, because the only assertion was
+    /// against the ceiling, which has 7.7% of slack. `NAV_GAS_MEASURED` below is the fix — the
+    /// prose number is now itself asserted, so it cannot drift away from what the test prints.
+    uint256 constant NAV_GAS_MEASURED = 10_402_702;
+
+    /// @dev A COARSE regression fence, not a pin: a round number chosen to sit under the block
+    /// limit, ~7.7% above the real measurement. It catches a shape change (a bump to
+    /// MAX_CHILDREN or MAX_LOOKTHROUGH_DEPTH) and nothing smaller. The pin is
+    /// `NAV_GAS_MEASURED` and the 1% band asserted against it; do not read this constant as
+    /// evidence that a regression under ~797k gas would be caught.
     uint256 constant NAV_GAS_CEILING = 11_200_000;
 
     MockERC20 usdc;
@@ -235,6 +244,20 @@ contract AuditCallsLoopMaxBoundTest is Test {
         );
 
         assertLt(used, NAV_GAS_CEILING, "navWad gas regression at structural max fan-out");
+
+        // The measured number is quoted in this file's @dev comment and in
+        // docs/reviews/SLITHER-TRIAGE.md, and M-5's whole substance is how large it is. A
+        // measured number in prose is a citation like any other, so pin it: 1% is far wider than
+        // forge's run-to-run variance (there is none for a fixed build) and far narrower than the
+        // 2.9% drift that went unnoticed under the ceiling alone.
+        assertApproxEqRel(
+            used,
+            NAV_GAS_MEASURED,
+            0.01e18,
+            "navWad gas moved away from the recorded measurement - re-read the logged number "
+            "above and update NAV_GAS_MEASURED, this file's @dev comment and "
+            "docs/reviews/SLITHER-TRIAGE.md together"
+        );
 
         // Structure guards so this fixture cannot silently shrink out from under the ceiling.
         assertEq(root.childVaultCount(), N_CHILDREN, "root fan-out");

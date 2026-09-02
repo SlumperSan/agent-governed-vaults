@@ -33,11 +33,16 @@ widened run went 245 → 254 results with **no new detector class**.
   **2,000e18 shares for 1,000 USDC**), and the sibling `reentrancy-balance` row hid an outright
   theft at `AggregationRouterAdapter.executeSwap` (#101). "Dormant at launch" under
   [[root-vaults-only]] remains true as a *deployment-config* mitigation — undone by the first
-  sub-vault — not as a reason the detector was wrong. **Status:** #101 is merged; **#98 is still
-  open, so H-9 is UNFIXED on `protocol/main`** — do not cite its guard or its coverage test as
-  present.
+  sub-vault — not as a reason the detector was wrong. **Status:** #101 is merged. **As recorded on
+  2026-09-01, #98 was then unmerged and H-9 was UNFIXED on `protocol/main`** — that is why the
+  paragraph above says not to cite its guard or its coverage test as present.
+  **Corrected 2026-09-02 (FixSlitherTriage):** #98 merged 2026-09-01T22:30:54Z as `8336677f`, an
+  ancestor of `52d10aee`; `VaultCore.locked()` and
+  `test/audit/AuditReentrancyGuardCoverage.t.sol` ARE present on `protocol/main`. The original
+  claim is restated in the past tense it should have been written in rather than deleted. Whether
+  H-9's disposition changes is **not** decided here — see [[highs]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
+  `latestPrice` (`UniswapV3TwapSource.sol:282-292`), the one timestamp use with a security consequence → **H-2** (since
   FIXED; the omission is now closed).
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check
@@ -74,7 +79,7 @@ would make its row real:
   same-second depositor 9x weight, and a unit test on `push` would not notice.
 - **`_isSettled`** — every non-settled `Status` has a permissionless, external-call-free exit
   (`finalize` makes no external call; `markExpired` drains `Passed`), so the freeze DoS documented
-  at `Governance.sol:57-67` cannot be reached through this equality.
+  in `Governance`'s phase-duration hard-cap comment block cannot be reached through this equality.
 
 Out of scope but recorded: EE-8's squatter economics are a `minDepositUsdc` **launch-parameter**
 question — "bounded at 1%" is true per-exit, but the squatter's cost is one minimum deposit while

@@ -42,7 +42,7 @@ AuditCallsLoopFailClosedTest:test_deadFeedOnAZeroBalanceAssetDoesNotFreezeTheVau
 AuditCallsLoopFailClosedTest:test_donatingTheDeadFeedTokenDoesNotFreezeTheVault() (gas: 343330)
 AuditCallsLoopFailClosedTest:test_oneDeadFeedOnAFundedAssetFreezesTheWholeVault() (gas: 352518)
 AuditCallsLoopMaxBoundTest:test_childVaultsCannotBeGrownByAnUntrustedCaller() (gas: 5124490)
-AuditCallsLoopMaxBoundTest:test_navWadGasAtStructuralMaxFanOut() (gas: 10418479)
+AuditCallsLoopMaxBoundTest:test_navWadGasAtStructuralMaxFanOut() (gas: 10421902)
 AuditCallsLoopMaxBoundTest:test_registryCapsDescendantLevelsAtTwo_soLookthroughDepthThreeIsSlack() (gas: 4986916)
 AuditDepositSlippageTest:test_remediated_m15_firstTimeDepositIgnoresMinSharesOut() (gas: 160162)
 AuditDepositSlippageTest:test_remediated_m15_minSharesOutBoundsTheImmediateMint() (gas: 493191)
