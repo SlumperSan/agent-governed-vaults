@@ -624,8 +624,9 @@ SUMMARY freezes=601 kills_landed_in_write_window=6 live_OK_after=6 live_CORRUPT_
         zero_length_rung=0 mid_rotation_freezes=26
 ```
 
-The six landings caught the temp file at **18.3 MB, 28.3 MB, 33.0 MB, 57.7 MB and 59.77 MB** of
-59,855,231 — the last one **99.86% written, immediately before the rename**. In every case the
+The six landings caught the temp file at **14.2 MB, 18.3 MB, 28.3 MB, 33.0 MB, 57.7 MB and
+59.77 MB** of 59,855,231 — the largest **99.86% written, immediately before the rename**, the
+smallest less than a quarter in. In every case the
 live snapshot afterwards was `OK`, and the partial data was stranded in the `.tmp` where it
 belongs. **Atomicity of `atomicWriteFile` is proven under a kill in flight**, which §6 explicitly
 left open.
