@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Agent-Governed Vaults">
+  <title>Agent-Governed Vaults</title>
+  <!--
+    A closed ring knocked out of a solid accent tile: a vault door, and the simplest mark that
+    still reads at 16 pixels. Two tones, two shapes, and every stroke and gap is at least four
+    units of this 32-unit box, so nothing collapses when the browser halves it.
+
+    The colours are the site's accent and accent-ink tokens in both theme states. They are
+    hardcoded because an SVG loaded as a favicon is an isolated document and cannot see the page's
+    custom properties, so this file does NOT follow the wholesale assets/tokens.css swap that the
+    site's token contract describes. Anyone replacing that file must edit these four hex values
+    too. (A token name is written without its leading dashes above on purpose: a pair of hyphens
+    is not legal inside an XML comment, and an SVG that fails to parse renders as nothing at all.)
+  -->
+  <style>
+    .field { fill: #5a4ce0; }
+    .mark  { fill: none; stroke: #ffffff; stroke-width: 5; }
+    @media (prefers-color-scheme: dark) {
+      .field { fill: #8a7cf6; }
+      .mark  { stroke: #14121f; }
+    }
+  </style>
+  <rect class="field" width="32" height="32" rx="7"/>
+  <circle class="mark" cx="16" cy="16" r="9"/>
+</svg>

@@ -1,0 +1,101 @@
+# Cloudflare Pages edge headers for the public site.
+#
+# SYNTAX. Pages reads this file from the root of the served directory (`apps/site`). A rule is a
+# path pattern on its own line followed by indented `Name: value` lines; a line beginning with `#`
+# is a comment. Cloudflare documents comments only at column 0 and says nothing about indented
+# ones, so every comment here sits at column 0 and the rule block below contains header lines and
+# nothing else. Limits: 100 rules, 2,000 characters per line.
+#
+# WHY THE POLICY BELOW IS SHAPED THE WAY IT IS. `apps/site/test/site.test.mjs` asserts that this
+# site makes no external request: no `<script>` tag, no `fonts.googleapis.com`, no
+# `fonts.gstatic.com`, and `github.com` as the only permitted remote host. That test reads the
+# SOURCE. It proves the six files in the repository are clean; it cannot prove the bytes a visitor
+# receives are. The Content-Security-Policy below is the same claim expressed as something the
+# browser enforces, so the property survives an injected tag, a compromised build, or an edit that
+# reaches production without the test running.
+#
+# The policy was derived from an audit of what these pages actually load, not copied from a
+# template:
+#   - 12 `<link rel="stylesheet">` (two stylesheets across six pages) are the only subresources.
+#   - zero `<script>` tags, zero `style="..."` attributes, zero `<style>` blocks.
+#   - zero `<img>`, `<svg>`, `<iframe>`, `<form>`, `<video>`, `<object>`.
+#   - zero `url()` in either stylesheet, zero `data:` URIs anywhere.
+#   - one off-site URL in the whole site: the `<a href>` to the project repository on github.com,
+#     which is a top-level navigation and is not governed by CSP at all.
+# The favicon is the only addition to that list, and a favicon is fetched under `img-src`.
+#
+# DIRECTIVE BY DIRECTIVE.
+#
+# default-src 'none'
+#   The deny-by-default floor. Every fetch directive not named below inherits it, so script-src,
+#   font-src, connect-src, frame-src, object-src, media-src, manifest-src and worker-src are all
+#   'none' without being spelled out. This is the directive that makes "no external requests" a
+#   browser-enforced property rather than a source-code convention. A `<script>` tag added to any
+#   page does not run and a webfont added to either stylesheet does not load; the browser console
+#   names the blocked directive in both cases, so neither failure is silent.
+#
+# style-src 'self'
+#   assets/tokens.css and assets/site.css, same-origin. Deliberately no 'unsafe-inline': the pages
+#   carry no `<style>` block and no `style=` attribute, so an injected one is refused.
+#
+# img-src 'self'
+#   favicon.svg and favicon.ico. The pages reference no other image, and none may be added from a
+#   remote host.
+#
+# base-uri 'none'
+#   Every link on this site is relative. An injected `<base href="https://evil.example/">` would
+#   silently repoint all of them without needing a line of JavaScript; this refuses it.
+#
+# form-action 'none'
+#   There is no form on this site and no place to submit one. If HTML injection ever puts a form
+#   here -- a credential prompt on a page carrying the protocol's own disclaimers is the obvious
+#   abuse -- it has nowhere to POST to.
+#
+# frame-ancestors 'none'
+#   Nobody may frame these pages. The material value is not clickjacking, since there is nothing to
+#   click, but framing: the pre-launch banner and the not-an-offer disclaimer are load-bearing
+#   legal text, and a hostile page that frames this site with the banner cropped out has published
+#   the protocol's own words without its disclosures.
+#
+# X-Content-Type-Options: nosniff
+#   This origin serves .html, .css, .txt, .xml, .svg and .ico. Content sniffing is the mechanism by
+#   which a file served as one type is interpreted as another; nosniff makes the declared
+#   Content-Type binding.
+#
+# Referrer-Policy: no-referrer
+#   The only off-site link is the project repository. Without this, following it tells github.com
+#   which page a visitor was reading, and /risks or /operators is a meaningful signal about a
+#   reader that this site has no reason to disclose. Nothing here wants a referrer -- there is no
+#   analytics -- so the strictest value costs nothing.
+
+/*
+  Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+# DELIBERATELY ABSENT. Each of these is a standard header that would do nothing on this site, and a
+# header that does nothing is a claim of protection the next reader has to disprove:
+#
+#   X-Frame-Options   -- superseded by frame-ancestors in every browser that ships CSP Level 2.
+#   Permissions-Policy -- gates browser APIs that only script can call, and default-src 'none'
+#                        means no script can run.
+#   Cross-Origin-Opener-Policy, Cross-Origin-Embedder-Policy -- protect a JavaScript execution
+#                        context and a cross-origin isolation guarantee, neither of which exists.
+#   X-XSS-Protection  -- removed from every current browser; its legacy auditor introduced
+#                        vulnerabilities of its own.
+#
+# STRICT-TRANSPORT-SECURITY IS THE OWNER'S DECISION, NOT THIS FILE'S, so it is left commented out.
+# HSTS is close to irreversible: once a browser has seen the header it refuses plain HTTP for the
+# stated max-age no matter what the server later sends, and `preload` is a registry entry whose
+# removal process is measured in months. Cloudflare Pages already serves HTTPS and redirects HTTP,
+# so the residual attack this closes is narrow -- an active network attacker stripping TLS on a
+# visitor's FIRST navigation to the domain.
+#
+# The recommended ramp, if the owner wants it. Check Cloudflare SSL/TLS -> Edge Certificates first,
+# because the zone may already set HSTS and two sources will disagree:
+#   1. max-age=86400     -- one day, fully recoverable within a day
+#   2. max-age=31536000  -- one year, apex only
+#   3. add includeSubDomains only once every intended subdomain of rwally.com is HTTPS-only
+#   4. add preload only as a deliberate decision to accept the removal process
+#
+# Strict-Transport-Security: max-age=86400

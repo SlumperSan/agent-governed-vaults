@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  All six pages of the public site.
+
+  The URLs are extension-less because that is what Cloudflare Pages serves as canonical: it
+  redirects /faq.html to /faq and /index.html to /. Listing the .html forms would make every entry
+  in this file a redirect, which Search Console reports as an error against the sitemap.
+
+  No <lastmod>, <changefreq> or <priority>. Search engines ignore the latter two outright, and a
+  <lastmod> that is not updated with the page is a worse signal than none at all.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://rwally.com/</loc></url>
+  <url><loc>https://rwally.com/how-it-works</loc></url>
+  <url><loc>https://rwally.com/who-its-for</loc></url>
+  <url><loc>https://rwally.com/operators</loc></url>
+  <url><loc>https://rwally.com/risks</loc></url>
+  <url><loc>https://rwally.com/faq</loc></url>
+</urlset>
