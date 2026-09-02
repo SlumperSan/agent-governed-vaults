@@ -180,6 +180,15 @@ exercise exists to prevent.
 - **Labels and comments are removable by whoever can merge**, so a determined agent can clear its own
   blockers. This raises the cost of a bad merge from zero to deliberate; it does not make it
   impossible.
+- **Whether a conflict resolution was CORRECT.** `verdict-covers-head` catches that the reviewed
+  content changed; judging the change is a re-review, and no check can do it. The per-file "which
+  side and why" note in the PR body is the only thing that makes the choice visible, and it is a
+  convention that detects nothing on its own.
+- **A verdict that graded an older SHA than the one it was posted after.** Mode D is inferred from
+  timestamps — the head commit's `committedDate` against the verdict comment's `createdAt` — so a
+  reviewer who read stale content and posted late looks identical to one who read the head. Binding
+  a SHA into the token would close this; it was rejected because an optional attribute nobody fills
+  in is theatre, and a mandatory one changes the reviewer workflow a second time.
 - **The quality of CI itself.** `ci-matches-head` proves a green run exists for this commit. It says
   nothing about what that run checked.
 
