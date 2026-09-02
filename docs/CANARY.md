@@ -511,17 +511,35 @@ Severity Ladder rates SEV-1/2 and worth waking a human for: `nav-backing`, `shar
 `fee-routing`, `exit-liveness`, `oracle-freshness` (this is the "oracle-v2"/"oracle-health" the
 Monitoring Gap Analysis' §3 item 4 refers to — `signals/oracle-health.mjs`'s `SIGNAL` constant is
 still `'oracle-freshness'`, unchanged across the post-pivot rename). `LOG_WEBHOOK_URL` receives every
-other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and `feed-identity` — that
-signal can ALERT (§3(g)) but is deliberately not in the PAGE list: a benign aggregator-swap ALERT
-there self-clears the next sweep by design, and escalating that list further is Operations' call, not
-inferred here. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
+other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and the harmless half of
+`feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
 the two is unset — set only that one and every transition reaches the one configured URL exactly
 once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
 'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
 
+**`feed-identity` pages on HARM only.** `feed-identity` (§3(g)) is the one signal whose ALERTs are
+not all the same severity, so it routes on a predicate (`CONDITIONAL_PAGE` in `sinks.mjs`) rather
+than on its name: **PAGE** when `detail.harm` is `'decimals'` or `'denomination'`, **LOG** when it is
+`null` (the aggregator swap). The two harm cases LATCH — `ChainlinkOracle`'s cached scale and its
+USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
+freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
+legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
+Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
+live price sits inside the band, and per `Owner Decisions 2026-09-01.md` §1 that window closes for
+cbBTC at BTC $100,000 — above it `feed-identity` is the only detector there is, and `nav-backing`
+cannot substitute because it recomputes through the same mis-scaled `priceWad`. The Monitoring Gap
+Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` existed (2026-09-01,
+PR #103), so its "LOG: everything else" never ruled on this; the tier map here is the reconciliation
+and the note remains Operations' to update.
+
 **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged (plain `GET`) once per **successful**
-sweep — the same condition that gates the `ops-check` heartbeat file, so a canary that cannot reach
-the RPC neither claims to be watching nor pings as if it were. Point it at an external
+sweep that watched **at least one vault** — a canary that cannot reach the RPC, and a canary whose
+watch set is empty (no `VAULTS`, missing or unmounted indexer snapshot), are both "not watching the
+chain" and neither may tell the one off-host monitor otherwise. A sweep that finds no vaults logs
+`sweep.no_vaults` and says on stderr that the ping is being withheld, so the external check going red
+reads as the configuration problem it is. The on-host `ops-check` heartbeat file is still written in
+that state: it reports process liveness, and promoting an empty watch set to "canary dead" there is
+an Operations decision, not this package's. Point it at an external
 heartbeat-monitoring check — e.g. a Healthchecks.io-style URL (`https://hc-ping.com/<uuid>`) — so a
 dead host is noticed by something that is not itself on that host. Off by default when unset; a
 failed ping is logged, never fatal — the ping's whole purpose is to be noticed from outside this
@@ -536,7 +554,15 @@ transition through the exact sinks a real sweep uses, right after startup and be
 begins. On demand, without starting anything: `node packages/canary/src/canary-runner.mjs test-alert`
 (mirrors the existing `verify` subcommand — same env, no sweep). Both paths bypass the transition
 tracker entirely, so a self-test can never plant fake state in `CANARY_STATE_PATH` that would
-suppress a real future transition on a colliding id.
+suppress a real future transition on a colliding id. The forced tier travels as
+`detail.tier` alongside `detail.selfTest: true`, and `tierOf` honours it **only** in that pair — a
+real signal's `detail` is a bag of decoded on-chain values, and one that happened to carry a field
+named `tier` must not be able to demote its own page.
+
+> **Do not leave `CANARY_TEST_ALERT_ON_START` set in `.env`.** Compose runs the canary under
+> `restart: unless-stopped`, so it fires a synthetic PAGE on **every** automatic restart, not once.
+> Startup warns on stderr when it is set. Run the self-test, confirm both tiers arrived, unset it —
+> or use the `test-alert` subcommand, which is the same path without starting the service.
 - **Cold start sees no history.** With the default `LOG_LOOKBACK_BLOCKS=0`, the first sweep scans a
   single block, so `ModuleCallFailed`, `SliceEscrowed`, and fee outflows from *before* the canary
   started are never reported. That is deliberate — starting a monitor should not replay a backlog as
