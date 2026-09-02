@@ -162,4 +162,4 @@ so calling the deployer directly yields an unattested vault. Closes
 [#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10); see threat-model row PX-4 and
 [docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md).
 
-License: BUSL-1.1 (contracts).
+License: BUSL-1.1 — see [LICENSE](LICENSE).

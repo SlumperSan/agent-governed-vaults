@@ -1,24 +1,3 @@
-===============================================================================
-  UNFILLED - THIS FILE IS NOT YET A GRANT OF ANY RIGHTS.
-
-  This block is NOT part of the Business Source License. Delete it once every
-  [OWNER: ...] placeholder below has been replaced with a real value.
-
-  The Business Source License 1.1 is a PARAMETERISED license. Until the
-  Licensor, Licensed Work, Additional Use Grant, Change Date and Change License
-  parameters below carry real values, this file grants nothing: it names no
-  licensor to grant rights, no work to grant them over, and no date on which
-  they convert. A reader would reasonably take it for a license. It is not one.
-
-  THIS REPOSITORY MUST NOT BE MADE PUBLIC UNTIL THE PLACEHOLDERS ARE FILLED.
-  An unfilled BUSL file is worse than a missing one, because it looks like a
-  grant and is not, while the tree, the README and the public site all assert
-  that the code is "source-available under BUSL-1.1".
-
-  See the pull request that added this file for the full list of blocking
-  values and what each one decides.
-===============================================================================
-
 Business Source License 1.1
 
 License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
@@ -28,74 +7,25 @@ License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 
 Parameters
 
-Licensor:             [OWNER: legal entity name. No entity is formed yet;
-                      entity formation is an open owner item. Do not guess.
-                      Until an entity exists this may name a natural person,
-                      but that is a decision with consequences - it makes an
-                      individual the licensor of record.]
+Licensor:             Michael Huynh
 
-Licensed Work:        [OWNER: what this license covers. The tree does not
-                      currently agree with itself, so this is a decision, not
-                      a transcription:
-                        (a) CONTRACTS ONLY - matches README.md ("License:
-                            BUSL-1.1 (contracts)") and matches the tree, where
-                            SPDX BUSL-1.1 headers appear on Solidity files and
-                            on nothing else. Leaves packages/, apps/ and
-                            scripts/ with no stated license, i.e. all rights
-                            reserved by default.
-                        (b) THE WHOLE REPOSITORY, excluding the vendored paths
-                            carved out below. Broader than anything the tree
-                            currently asserts.
-                      Whichever is chosen, the carve-out below is required.
+Licensed Work:        Agent-Governed Vaults - the contents of this repository,
+                      excluding the third-party paths listed below.
+                      The Licensed Work is (c) 2026 Michael Huynh.
 
-                      EXCLUDED FROM THE LICENSED WORK IN EITHER CASE - third-
-                      party code redistributed under its own terms, which this
-                      license does not and cannot relicense:
-                        - contracts/lib/forge-std/         (Apache-2.0 OR MIT)
-                        - contracts/test/retired/vendor/FullMath.sol   (MIT)
+                      Excluded from the Licensed Work, and redistributed under
+                      their own terms, which this License does not and cannot
+                      relicense:
+                        - contracts/lib/forge-std/  (Apache-2.0 OR MIT)
+                        - contracts/test/retired/vendor/FullMath.sol  (MIT)
                         - contracts/test/retired/vendor/TickMath.sol
-                                                    (GPL-2.0-or-later)
-                      TickMath.sol in particular is copyleft. A "Licensed Work"
-                      defined as "this repository" without this carve-out would
-                      purport to relicense GPL-2.0-or-later code under BUSL-1.1.
+                          (GPL-2.0-or-later)
 
-                      The Licensed Work is (c) [OWNER: year] [OWNER: licensor]
+Additional Use Grant: None
 
-Additional Use Grant: [OWNER: the substantive choice. This clause decides what
-                      production use third parties may make of the Licensed
-                      Work before the Change Date. Insert either a grant or the
-                      literal text "None" - Covenant 2 below permits nothing
-                      else.
+Change Date:          2030-09-02
 
-                      "None" means no production use is permitted at all before
-                      the Change Date. Consider deliberately whether that is
-                      intended, given that the stated go-to-market contemplates
-                      third parties creating their own vaults through the
-                      factory. Whether deploying, or interacting with already-
-                      deployed contracts, is "use of the Licensed Work" in the
-                      copyright sense is a counsel question this file cannot
-                      settle, and the answer changes what this clause needs
-                      to say.]
-
-Change Date:          [OWNER: the date the Change License takes effect.
-                      Conventionally four years from first publication. Note
-                      that the license below independently converts on the
-                      fourth anniversary of first public distribution of a
-                      given version, whichever comes first - so a Change Date
-                      later than four years after publication has no effect.]
-
-Change License:       [OWNER: the license this converts to. Covenant 1 below
-                      binds this choice: it must be GPL Version 2.0 or any
-                      later version, or a license compatible with GPL Version
-                      2.0 "or a later version". GPL-2.0-or-later plainly
-                      qualifies. Apache-2.0 qualifies only on the reading that
-                      "or a later version" reaches GPLv3, with which Apache-2.0
-                      is compatible - it is NOT GPLv2-compatible. If Apache-2.0
-                      is chosen, that reasoning should be one counsel is
-                      comfortable with.]
-
-For information about alternative licensing arrangements for the Licensed Work,
-please contact [OWNER: contact address for commercial licensing enquiries.]
+Change License:       GPL-2.0-or-later
 
 -----------------------------------------------------------------------------
 
@@ -106,8 +36,6 @@ Source license. However, the Licensed Work will eventually be made available
 under an Open Source License, as stated in this License.
 
 -----------------------------------------------------------------------------
-
-Business Source License 1.1
 
 Terms
 
