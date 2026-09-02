@@ -57,14 +57,14 @@
 
       <article class="qa">
         <h2>Is it running anywhere yet?</h2>
-        <p>No. Not deployed to mainnet. No mainnet deployment of the current code exists, and the Base Sepolia deployment is a testnet trial with no real value at stake. An earlier Base Sepolia deployment exists in the project's history, but the contracts have changed since — the oracle, the vault core and the factory among them — so that bytecode is superseded and its lifecycle, soak and canary evidence are marked stale pending a re-run.</p>
-        <p>There are no contract addresses to publish, which is why this site publishes none. Anyone showing you an address for this protocol is not showing you this protocol.</p>
+        <p>No. Not deployed to mainnet. No mainnet deployment of the current code exists, and the Base Sepolia deployment is a testnet trial with no real value at stake. There are two Sepolia deployments and they are not interchangeable: the current one runs the code on <code>protocol/main</code> today, and an earlier one is superseded — the contracts changed after it, the oracle, the vault core and the factory among them, so its lifecycle, soak and canary evidence is marked stale pending a re-run against the current stack.</p>
+        <p>There are no mainnet addresses to publish, which is why this site publishes none. The Base Sepolia addresses are in the repository, where they can be checked against the code. Anyone showing you a mainnet address for this protocol is not showing you this protocol.</p>
       </article>
 
       <article class="qa">
         <h2>Can you rug me?</h2>
         <p>Not through the contracts. As written they are non-custodial, with no seize function, no privileged withdrawal and no admin key. An operator cannot withdraw another member's funds, and neither can anyone else. The operator's powers are the powers of any member holding the same stake: propose, and vote.</p>
-        <p>This describes source code that has not been deployed. There is no deployed bytecode against which any of it can be independently verified today.</p>
+        <p>This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
         <p>You can still lose everything — to a bug, to the market, or to a governance majority you disagree with. Those are different failure modes and they are all on the <a href="risks.html">risks page</a>.</p>
         <!-- COUNSEL: the non-custodial claim, stated as a direct answer about SOURCE and paired with the standing qualifier that nothing has been deployed. Must be re-verified against bytecode if anything is ever deployed. -->
       </article>
