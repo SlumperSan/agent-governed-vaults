@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { resolveCanaryConfig, collectSignals, buildCanary } from '../src/canary-runner.mjs';
+import { resolveCanaryConfig, collectSignals, buildCanary, EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
@@ -273,6 +273,31 @@ test('runOnce says so, loudly, when there is nothing to watch', async () => {
     const { vaults } = await canary.runOnce();
     assert.deepEqual(vaults, []);
     assert.match(err[0], /no vaults to watch/, 'an empty watch set must never look like a clean bill of health');
+  });
+});
+
+test('EMITTABLE_SIGNALS names exactly the signals a sweep can produce, and nothing else', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+    });
+    const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const { results } = await canary.runOnce();
+    assert.ok(results.length > 0, 'the fixture produced no results, so this proves nothing');
+    for (const r of results) {
+      assert.ok(
+        EMITTABLE_SIGNALS.has(r.signal),
+        `a real sweep emitted '${r.signal}', which EMITTABLE_SIGNALS does not declare — sinks.mjs ` +
+        'would have no tier for it',
+      );
+    }
   });
 });
 
