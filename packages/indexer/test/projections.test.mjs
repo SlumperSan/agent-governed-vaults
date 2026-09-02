@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps, queuedExitBacklog } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps, queuedExitBacklog, MAX_TRACKED_ADAPTERS } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -241,4 +241,30 @@ test('memberPosition reports shares and vault fraction', () => {
   assert.equal(memberPosition(s, V, A).shares, 750n);
   assert.equal(memberPosition(s, V, A).shareOfVaultBps, 7500);
   assert.equal(memberPosition(s, V, '0x' + '9'.repeat(40)).shares, 0n);
+});
+
+/**
+ * `state.adapters` is the PERSISTED adapter set: it is written into every snapshot and it is what a
+ * restart re-seeds the poller from. It is reachable by anybody — `createVault` is permissionless and
+ * `allowedAdapters` is caller-supplied — so it needs the same ceiling the poll set has.
+ *
+ * It did not have one. An earlier revision bounded only the rpc-module-local set while a comment in
+ * that module claimed the bound covered the set "persisted in the snapshot forever"; 500 hostile
+ * RebalanceExecuted in one batch left 64 polled and 500 persisted. The bound is written as a
+ * LITERAL here for the same reason as in rpc.test.mjs: `MAX_TRACKED_ADAPTERS + 1` follows the
+ * constant and would stay green if the constant were raised to 100000.
+ */
+test('the persisted adapter set is bounded at exactly 64, at and above the boundary', () => {
+  const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
+  const rebalances = (n) => Array.from({ length: n }, (_, i) => ev('RebalanceExecuted', 14, i, V, { adapter: adapterAt(i + 1), orderCount: 0n }));
+
+  assert.equal(MAX_TRACKED_ADAPTERS, 64, 'the literal these boundaries are written against');
+
+  const under = applyAll(rebalances(64));
+  assert.equal(under.adapters.size, 64, 'the 64th adapter must still be recorded');
+  assert.ok(under.adapters.has(adapterAt(64)));
+
+  const over = applyAll(rebalances(500));
+  assert.equal(over.adapters.size, 64, 'the persisted set must not grow past the ceiling');
+  assert.ok(!over.adapters.has(adapterAt(65)), 'the 65th must not be persisted');
 });

@@ -56,19 +56,29 @@ export function deserializeState(obj) {
   s.lastBlock = obj.lastBlock;
   s.lastLogIndex = obj.lastLogIndex;
   for (const [k, v] of obj.vaults) {
-    // `newVault(k)` FIRST, so a record written before a field existed resumes with that field at
-    // its zero value instead of `undefined`. Without it a counter added by a later release reads
-    // undefined out of an older snapshot, `undefined + 1` is NaN, every derived metric is NaN, and
-    // the next snapshot write persists `null` — a silent, permanent corruption of a live indexer
-    // across an upgrade. Spreading a default record makes that structural rather than a per-field
-    // `?? 0` someone must remember: adding a field to `newVault` migrates it. Same reasoning as
-    // the `?? []` on the two collections below.
+    // Restore every field of `newVault(k)` that the stored record does not carry a usable value
+    // for. A JSON round-trip can degrade a field in exactly TWO ways and no others — `JSON.stringify`
+    // OMITS a key whose value is `undefined`, and writes `null` for `NaN` and `±Infinity` — so
+    // `rec[key] == null` (loose, catching both `undefined` and `null`) is EXHAUSTIVE over the
+    // degraded shapes a snapshot can hold, not a sample of them.
+    //
+    // Spreading `{ ...newVault(k), ...v }` rescued only the ABSENT shape and was NOT the structural
+    // migration it was documented as: a key present with `null` overwrites the default, so a
+    // counter that went NaN before the snapshot was written (which is what the code shipped in #107
+    // produces, and what is on protocol/main today) resumes as `null`. `null + 1` is 1, so the
+    // counters silently restart; `Number.isFinite(null)` is false, so every derived metric is NaN;
+    // and `BigInt(null)` THROWS, so the three bigint fields crash the resume outright.
+    //
+    // `parent` legitimately defaults to `null`, so coalescing to the default is a no-op there
+    // rather than a special case.
+    const base = newVault(k);
+    const rec = { ...v };
+    for (const key of Object.keys(base)) if (rec[key] == null) rec[key] = base[key];
     s.vaults.set(k, {
-      ...newVault(k),
-      ...v,
-      totalShares: BigInt(v.totalShares),
-      idleUsdc: BigInt(v.idleUsdc),
-      capacityCapUsdc: BigInt(v.capacityCapUsdc),
+      ...rec,
+      totalShares: BigInt(rec.totalShares),
+      idleUsdc: BigInt(rec.idleUsdc),
+      capacityCapUsdc: BigInt(rec.capacityCapUsdc),
     });
   }
   for (const [k, o] of obj.operators) {

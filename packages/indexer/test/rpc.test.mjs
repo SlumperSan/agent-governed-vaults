@@ -171,27 +171,144 @@ test('a hostile adapter cannot attribute its SwapExecuted to a victim vault', as
   assert.ok(events.every((e) => e.name !== 'SwapExecuted' || e.vault !== V_LOWER));
 });
 
-test('adapter discovery is capped, and the rejected adapter is reported', async () => {
-  const overflow = MAX_TRACKED_ADAPTERS + 1;
-  const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
-  const logs = [
-    ...fixture(),
-    ...Array.from({ length: overflow }, (_, i) => L(V_LOWER, 'RebalanceExecuted', 14, i, { adapter: adapterAt(i + 1), orderCount: 0n })),
-  ];
+// -- the discovery ceiling --
+// Every count below is a LITERAL, never `MAX_TRACKED_ADAPTERS +/- 1`. A boundary written in terms
+// of the constant follows the constant wherever it goes: the earlier version of these tests stayed
+// green with the cap raised from 64 to 100000, which is the same as having no cap at all.
+const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
+const rebalances = (n, first = 1) =>
+  Array.from({ length: n }, (_, i) => L(V_LOWER, 'RebalanceExecuted', 14, i, { adapter: adapterAt(first + i), orderCount: 0n }));
+
+test('MAX_TRACKED_ADAPTERS is 64 -- the literal the boundary tests below are written against', () => {
+  assert.equal(MAX_TRACKED_ADAPTERS, 64);
+});
+
+test('the discovery ceiling admits the 64th adapter and refuses the 65th', async () => {
+  // ONE BELOW the ceiling: with 63 already discovered, the 64th still fits.
+  const under = createChainSource({ client: fakeClient([...fixture(), ...rebalances(64)], 20), addresses: ADDRESSES });
+  await under.fetchEvents(1, 20);
+  assert.equal(under.discoveredAdapters.size, 64, 'the 64th adapter must be admitted');
+  assert.ok(under.discoveredAdapters.has(adapterAt(64)), 'and it is the 64th specifically');
+
+  // AT / ONE ABOVE: a 65th presented against a full set is refused, and the set stays at exactly 64.
+  const capped = [];
+  const over = createChainSource({
+    client: fakeClient([...fixture(), ...rebalances(65)], 20), addresses: ADDRESSES,
+    onAdapterCap: (info) => capped.push(info),
+  });
+  await over.fetchEvents(1, 20);
+  assert.equal(over.discoveredAdapters.size, 64, 'the polled set is bounded at exactly 64');
+  assert.ok(!over.discoveredAdapters.has(adapterAt(65)), 'the 65th must NOT be polled');
+
+  assert.equal(capped.length, 1, 'ONE report per batch, not one per refused adapter');
+  assert.deepEqual(capped[0].dropped, [adapterAt(65)]);
+  assert.equal(capped[0].cap, 64);
+  assert.equal(capped[0].phase, 'discovery');
+});
+
+test('a batch that refuses hundreds of adapters produces ONE warn, carrying the count', async () => {
+  // The pre-fix callback fired once per adapter: 436 warn lines from a single hostile batch, which
+  // is a warn channel nobody reads.
   const capped = [];
   const src = createChainSource({
-    client: fakeClient(logs, 20), addresses: ADDRESSES, onAdapterCap: (a) => capped.push(a),
+    client: fakeClient([...fixture(), ...rebalances(500)], 20), addresses: ADDRESSES,
+    onAdapterCap: (info) => capped.push(info),
+  });
+  await src.fetchEvents(1, 20);
+  assert.equal(capped.length, 1, 'one report for the whole batch');
+  assert.equal(capped[0].dropped.length, 436, '500 presented minus 64 admitted');
+  assert.equal(capped[0].tracked, 64);
+});
+
+test('a resumed snapshot cannot reintroduce an unbounded adapter set, and says what it dropped', async () => {
+  const many = Array.from({ length: 89 }, (_, i) => adapterAt(i + 1));
+  const capped = [];
+  const src = createChainSource({
+    client: fakeClient([], 20), addresses: ADDRESSES, knownAdapters: many,
+    onAdapterCap: (info) => capped.push(info),
+  });
+  assert.equal(src.discoveredAdapters.size, 64);
+  // The resume path used to `.slice()` silently. Dropping adapters an EARLIER run was successfully
+  // indexing, with nothing in the log, is the same defect as declining to discover them silently.
+  assert.equal(capped.length, 1, 'the resume path must report, not just slice');
+  assert.equal(capped[0].phase, 'resume');
+  assert.equal(capped[0].dropped.length, 25, '89 seeded minus 64 kept');
+});
+
+// -- ADAPTER_ADDRESSES: trust established off-chain (Review107 F2, strong form) --
+
+test('a configured adapter is polled without ever being discovered on-chain', async () => {
+  // No RebalanceExecuted names it. Config alone is sufficient -- which is the point: nothing an
+  // attacker can do on a permissionless chain adds to, removes from, or reorders this set.
+  const CONFIGURED = '0x' + '9'.repeat(40);
+  const logs = [L(CONFIGURED, 'SwapExecuted', 14, 0, { vault: V_LOWER, tokenIn: ('0x' + '4'.repeat(40)), tokenOut: ('0x' + '5'.repeat(40)), amountIn: 1n, amountOut: 1n })];
+  const src = createChainSource({ client: fakeClient(logs, 20), addresses: ADDRESSES, configuredAdapters: [CONFIGURED] });
+  const events = await src.fetchEvents(1, 20);
+
+  assert.equal(events.filter((e) => e.name === 'SwapExecuted').length, 1);
+  assert.deepEqual([...src.configuredAdapters], [CONFIGURED]);
+  assert.equal(src.discoveredAdapters.size, 0, 'config is not discovery');
+  // Config says WHICH address to poll. It does not make the `vault` argument inside that
+  // address's logs true, so the attribution boundary is unchanged for configured adapters.
+  assert.equal(events[0].vault, null);
+  assert.equal(events[0].emitter, CONFIGURED);
+});
+
+test('a configured adapter is still polled when 500 hostile adapters have filled the ceiling', async () => {
+  // R3, the honest case the ceiling used to break. Adapters are per-vault and caller-supplied
+  // (VaultCore's constructor takes `allowedAdapters`; docs/DEPLOYMENT.md "Execution adapters
+  // (per-vault)"), so the distinct count scales with CREATORS. Before this, whoever arrived after
+  // the 64th slot -- honest or not -- was silently never polled again.
+  const CONFIGURED = '0x' + '9'.repeat(40);
+  const SWAP = L(CONFIGURED, 'SwapExecuted', 15, 0, { vault: V_LOWER, tokenIn: ('0x' + '4'.repeat(40)), tokenOut: ('0x' + '5'.repeat(40)), amountIn: 7n, amountOut: 7n });
+  const src = createChainSource({
+    client: fakeClient([...fixture(), ...rebalances(500), SWAP], 20), addresses: ADDRESSES,
+    configuredAdapters: [CONFIGURED],
+  });
+  const events = await src.fetchEvents(1, 20);
+
+  assert.equal(src.discoveredAdapters.size, 64, 'the ceiling still holds for discovered adapters');
+  assert.ok(src.knownAdapters.has(CONFIGURED), 'the configured adapter is never crowded out');
+  assert.equal(events.filter((e) => e.name === 'SwapExecuted' && e.emitter === CONFIGURED).length, 1,
+    'its fills are indexed regardless of how many adapters an attacker stood up first');
+});
+
+test('a configured adapter does not consume a discovery slot', async () => {
+  // If config counted against the ceiling, naming your own adapters would REDUCE how many others
+  // you could discover -- a bound that punishes the configuration it tells operators to adopt.
+  //
+  // The configured adapter here is `adapterAt(1)`, which the rebalance logs ALSO name. That is the
+  // case that matters and the one the first version of this test missed: an adapter that is both
+  // configured and seen on-chain must be counted once, as configured, and must not take a slot.
+  const src = createChainSource({
+    client: fakeClient([...fixture(), ...rebalances(64)], 20), addresses: ADDRESSES,
+    configuredAdapters: [adapterAt(1)],
   });
   await src.fetchEvents(1, 20);
 
-  assert.equal(src.knownAdapters.size, MAX_TRACKED_ADAPTERS, 'the polled set is bounded');
-  assert.deepEqual(capped, [adapterAt(overflow)], 'the adapter that did not fit is reported once');
+  assert.ok(!src.discoveredAdapters.has(adapterAt(1)), 'a configured adapter is never ALSO discovered');
+  assert.equal(src.knownAdapters.size, 64, 'no double-count: 63 discovered + 1 configured');
+  // 63 others fit, and the ceiling is still measured against discovered adapters alone: presenting
+  // adapters 2..64 leaves room, so the last of them is admitted rather than pushed out by config.
+  assert.equal(src.discoveredAdapters.size, 63);
+  assert.ok(src.discoveredAdapters.has(adapterAt(64)), 'the 64th discovered adapter still fits');
 });
 
-test('a resumed snapshot cannot reintroduce an unbounded adapter set', async () => {
-  const many = Array.from({ length: MAX_TRACKED_ADAPTERS + 25 }, (_, i) => '0x' + (i + 1).toString(16).padStart(40, '0'));
-  const src = createChainSource({ client: fakeClient([], 20), addresses: ADDRESSES, knownAdapters: many });
-  assert.equal(src.knownAdapters.size, MAX_TRACKED_ADAPTERS);
+test('a configured adapter also survives a resume that overflows the seeded set', async () => {
+  // A resumed snapshot normally CONTAINS the configured adapter (it was polled last run), so the
+  // seed must exclude it before slicing. Otherwise it consumes one of the 64 seeded slots and
+  // displaces a discovered adapter, while the union getter still shows it present -- which is why
+  // the assertions below are on `discoveredAdapters`, not on `knownAdapters`.
+  const CONFIGURED = adapterAt(1); // first in the snapshot, i.e. squarely inside the slice window
+  const src = createChainSource({
+    client: fakeClient([], 20), addresses: ADDRESSES,
+    knownAdapters: Array.from({ length: 200 }, (_, i) => adapterAt(i + 1)),
+    configuredAdapters: [CONFIGURED],
+  });
+  assert.ok(src.knownAdapters.has(CONFIGURED), 'never sliced away by a snapshot full of others');
+  assert.ok(!src.discoveredAdapters.has(CONFIGURED), 'and it does not occupy a seeded discovery slot');
+  assert.equal(src.discoveredAdapters.size, 64, '64 OTHER adapters still seeded');
+  assert.ok(src.discoveredAdapters.has(adapterAt(65)), 'the 65th seeded adapter takes the slot config vacated');
 });
 
 test('adapter resume seeding: SwapExecuted indexes even with no RebalanceExecuted in the current range', async () => {

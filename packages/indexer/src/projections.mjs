@@ -83,6 +83,25 @@ const STAT_ONLY_EVENTS = Object.freeze([
 ]);
 const STAT_ONLY_EVENT_SET = new Set(STAT_ONLY_EVENTS);
 
+/**
+ * Ceiling on the DISCOVERED execution-adapter set — the one learned from chain logs, as opposed to
+ * the one an operator names in `ADAPTER_ADDRESSES`.
+ *
+ * It lives here, in the pure core, because it has to hold in TWO places that would otherwise drift:
+ * `state.adapters` below (persisted in every snapshot, and what a restart re-seeds the poller from)
+ * and the poll set in rpc.mjs (the `address` array of every `getLogs` call). Bounding only the
+ * second, as an earlier revision did, left the first growing without limit while a comment claimed
+ * otherwise.
+ *
+ * Membership is attacker-influenceable: `createVault` is permissionless and `allowedAdapters` is
+ * caller-supplied, so anyone can get an address in here for the cost of one vault and one no-op
+ * rebalance. 64 is chosen to sit far above any deployment that has not yet needed to configure its
+ * adapters explicitly, and far below a set that would degrade a `getLogs` call. It is a
+ * LOAD-SHEDDING bound, not a trust boundary — config is the trust boundary — which is why exceeding
+ * it is reported rather than silently absorbed, and why configured adapters are exempt.
+ */
+export const MAX_TRACKED_ADAPTERS = 64;
+
 function bumpEventStat(state, e) {
   const s = state.eventStats.get(e.name) ?? { count: 0, lastBlock: 0, lastLogIndex: -1 };
   s.count += 1;
@@ -273,8 +292,12 @@ export function apply(state, e) {
     }
     case 'RebalanceExecuted':
       // Learns the adapter's address so the chain source can poll it for SwapExecuted the same
-      // way it learns a vault's address from VaultCreated (see rpc.mjs).
-      if (a.adapter) state.adapters.add(a.adapter);
+      // way it learns a vault's address from VaultCreated (see rpc.mjs). Bounded, because unlike
+      // the vault set this one is reachable by anybody (permissionless `createVault` +
+      // caller-supplied `allowedAdapters`) and it is PERSISTED in every snapshot — an unbounded
+      // one grows the state file and the resume cost without limit. An operator who needs a
+      // specific adapter indexed names it in ADAPTER_ADDRESSES, which never consults this set.
+      if (a.adapter && state.adapters.size < MAX_TRACKED_ADAPTERS) state.adapters.add(a.adapter);
       break;
     case 'Proposed': {
       const pid = Number(a.pid);
@@ -382,7 +405,18 @@ export function vaultView(state, vault) {
   // NAV, live basket balances, and proposal phase deadlines are chain-read enrichment (events
   // don't carry post-swap balances or prices) — the daemon merges those in. Everything here is
   // event-derived and deterministic.
-  return { ...v, holders: shareBook(state, vault).size, activeProposal: proposal };
+  //
+  // `exitQueuedOutstanding` is the §3.6 stranded-queue signal, computed from `state.queuedExits`
+  // rather than stored on the record (a Set on the record would spread onto this response as `{}`).
+  // It is deliberately NOT named `queuedExitBacklog` on the wire: on a response that already
+  // carries `exitQueuedCount`, a near-anagram of it with a different meaning is a trap. The
+  // "outstanding" / "count" pairing says which is a level and which is a lifetime total.
+  return {
+    ...v,
+    holders: shareBook(state, vault).size,
+    exitQueuedOutstanding: queuedExitBacklog(state, vault),
+    activeProposal: proposal,
+  };
 }
 
 /** Summary list of all known vaults — the discovery surface for agents. */
