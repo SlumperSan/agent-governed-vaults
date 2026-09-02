@@ -292,6 +292,22 @@ jobs (`contracts`, `backend`, `slither`) green — check them with `gh run view 
 **Never `gh pr checks`.** It reports runs attached to a PR without saying which commit they ran on,
 so a green from six commits ago reads as a pass.
 
+**A red is not always a failure — check the shape before you act on it.** A job that fails in
+2–3 seconds with **`steps` = 0 and no logs** did not run: that is exhausted Actions minutes or a
+runner it could not get, not your code. Tell them apart before touching anything:
+
+```bash
+gh run view <id> --json jobs --jq '.jobs[] | "\(.name) \(.conclusion) steps=\(.steps|length)"'
+```
+
+`steps=0` on every job, seconds apart, is the capacity signature ([NOW.md](NOW.md) records the
+2026-08-29 outage with exactly this tell). It is also **not something a re-run fixes** — a re-run
+reproduces it. During such a window **gate 8 cannot be earned by anybody**, on any PR: it is not
+that the candidate is bad, it is that no candidate can be evidenced. Do not merge on a local pass
+instead; `npm run gate` (~30 s warm, 9 steps) is the right thing to run and the wrong thing to
+substitute, because gate 8's whole content is *CI green at the candidate ref*. Wait for capacity and
+re-run at the same head.
+
 Measured 2026-09-01: head `bab5ee90`, run `33586340700`, `headSha bab5ee90…`, `success`,
 `contracts`/`backend`/`slither` all green. The transient Foundry-download reset the handoff mentions
 is resolved. Locally, `npm run gate` is the ~30 s mirror.
