@@ -19,7 +19,7 @@
  *                                                       over separate inputs; a preflight fixture
  *                                                       is not even accepted by classifyCi
  * 3. Absent evidence is neither a pass nor a fail    -> the `none` block
- * 4. A capacity outage looks like a code failure     -> the `no-runner` block
+ * 4. An infrastructure stop looks like a code failure -> the `no-runner` block
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -72,7 +72,7 @@ test('a conclusion we do not recognise is never reported as a pass', () => {
 
 test('the latest CI suite wins, never nodes[0] -- a re-run must not report the stale red', () => {
   // The live case this guards: during the Actions outage every head carried a 3s FAILURE. When
-  // capacity returned and sessions re-ran, each head carried BOTH the old red and the new green.
+  // runners came back and sessions re-ran, each head carried BOTH the old red and the new green.
   // Reading array order would report the stale red -- `green-belongs-to-a-commit` committed inside
   // the tool built to prevent it. Order is deliberately scrambled here: the answer must come from
   // createdAt, not from position.
@@ -94,11 +94,13 @@ test('suites belonging to other workflows never contribute to the CI verdict', (
   assert.equal(r.suites, 1, 'only CI suites are counted');
 });
 
-// ---------------------------------------------------------------- trap 4: capacity, not code
+// ---------------------------------------------------------------- trap 4: infrastructure, not code
 
-test('a failure seconds wide is flagged as a suspected runner-capacity outage', () => {
+test('a failure seconds wide is flagged as a suspected no-runner stop', () => {
   // Observed 2026-09-02 on #130 and #132: conclusion=failure, 3s and 5s wide, every job steps=0
-  // with no runner assigned. Real jobs in this repo take 400-500s.
+  // with no runner assigned. Real jobs in this repo take 400-500s. (The CAUSE that day turned out
+  // to be a billing stop, not capacity -- which is why the label says `no-runner` and leaves the
+  // reason to the annotation `--ci-jobs` fetches. Naming a cause you have not read is the error.)
   const r = classifyCi([suite('CI', 'FAILURE', 3)]);
   assert.equal(r.label, 'fail(no-runner?)');
   assert.equal(r.seconds, 3);
@@ -107,11 +109,13 @@ test('a failure seconds wide is flagged as a suspected runner-capacity outage', 
 
 test('the question mark is load-bearing: the duration alone is a heuristic, not a confirmation', () => {
   // The default label must stay interrogative. Confirming costs one API call per run (`--ci-jobs`),
-  // and the tool must never claim "capacity, not code" on a timing coincidence alone.
+  // and the tool must never claim "infrastructure, not code" on a timing coincidence alone.
+  // Nor may it guess WHICH infrastructure cause: capacity clears itself and a billing stop does
+  // not, so `--ci-jobs` reads the job annotation and quotes it rather than inferring.
   assert.ok(classifyCi([suite('CI', 'FAILURE', 3)]).label.includes('?'));
 });
 
-test('a genuine long failure is NOT excused as capacity', () => {
+test('a genuine long failure is NOT excused as infrastructure', () => {
   // Observed the same night on #124: conclusion=failure, 450s wide. Real. Mislabelling this as
   // infrastructure is how a red gets ignored, which is the more dangerous direction of trap 4.
   const r = classifyCi([suite('CI', 'FAILURE', 450)]);
