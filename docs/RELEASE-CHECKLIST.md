@@ -28,7 +28,7 @@ each of them goes stale again the moment the next merge lands.
 | --- | --- | --- | --- |
 | 1 | **#108 and #120 land.** #108 gates the mainnet deploy and has no verdict; #120 keeps a HIGH live on `main` until it lands. Both need a verdict, a rebase to `behind_by 0`, and re-green. | agents + an independent reviewer | `gh pr list --state open` shows neither; `gh run list --branch protocol/main` green at the new head SHA |
 | 2 | **Owner decides freeze-or-redeploy.** Every `contracts/src` merge invalidates the testnet deploy that gates 2, 3 and 6 rest on. Until this is decided, closing those gates is a treadmill. | **owner only** | `Decisions/freeze-or-redeploy.md` status ≠ open |
-| 3 | **Owner re-attests gate 1 against the head frozen in step 2**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 31 `contracts/src` commits behind `main`** (§1 gate 1). Attesting before the freeze re-stales the moment the next merge lands — the same trap as gates 2/3/6. | **owner only** — it is an attestation | `LAUNCH-READINESS.md` gate 1 names the frozen head |
+| 3 | **Owner re-attests gate 1 against the head frozen in step 2**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 31 `contracts/src` commits behind `main`** (§1 gate 1). Attesting before the freeze re-stales the moment the next merge lands — the same trap as gates 2/3/6. | **owner only** — gates 2/3/6 an agent can re-earn by re-running drills; gate 1 is an attestation about an external party's work product, and no agent can re-earn it | `LAUNCH-READINESS.md` gate 1 names the frozen head |
 | 4 | **Testnet redeploy at that same frozen head**, in the LAUNCH configuration (`allowSubVaults = false`). Steps 3 and 4 do not depend on each other, but both depend on step 2 and both must name the **same** commit — an audit attested to one tree and a deployment made from another puts you back where this checklist started. Needs a funded Base Sepolia key. | **owner only** (key) | `node scripts/verify-deployment-currency.mjs` exits 0 with no notes |
 | 5 | **Re-earn gates 2, 3, 6 and finish gate 7** against that new deployment. Order matters: the gate-7 drill consumes artifacts from daemons watching a live deployment, so running it before step 4 means running it twice. | agents, after step 4 | §1 rows 2/3/6/7 |
 | 6 | **Owner-only mainnet items** (§4) — including **three one-shots that cannot be undone**: the operator payout address, vault #1's fee posture (the same transaction), and `allowSubVaults = false` on the mainnet factory. | **owner only** | §4 |
@@ -46,7 +46,7 @@ here. Status column measured 2026-09-01.
 
 | Gate | Status now | What earns it | Who |
 | --- | --- | --- | --- |
-| **0** No unfixed Criticals | GO (root-only) | Holds only while `allowSubVaults = false` on the deploy path. Re-check after any redeploy: `node scripts/verify-deployment-currency.mjs` must print no `allowSubVaults` note. | agent |
+| **0** No unfixed Criticals | GO (root-only) — **and it does not cover H-8** | Holds only while `allowSubVaults = false` on the deploy path. Re-check after any redeploy: `node scripts/verify-deployment-currency.mjs` must print no `allowSubVaults` note. The row says *Critical*; H-8 is a **High** and does not breach it — see below. | agent |
 | **1** External audit | **STALE — newly found, see below** | Owner re-attests against the current head, or records a named residual for the 31-commit delta. Cannot be delegated. | **owner** |
 | **2** Testnet lifecycle | **STALE** (was GO 2026-09-01) | `node scripts/smoke-test.mjs` ten phases against a *current* deployment. Needs a funded testnet key. | owner (key) → agent |
 | **3** Soak drills | **STALE, and structurally untransferable** | `scripts/soak/` re-run against a current deployment. **Two separate defects — see below.** | owner (key) → agent |
@@ -66,15 +66,66 @@ git rev-parse b1a8ae84:contracts/src 5934ef22:contracts/src protocol/main:contra
 
 The attested tree (`b1a8ae84`, named in `LAUNCH-READINESS.md`'s header) and the deployed tree
 (`5934ef22`, `base-sepolia.json`'s `sourceCommit`) have the **identical** `contracts/src` tree hash
-`abed2e5d`. `protocol/main` is `fe05004d`. So the audit is behind `main` by exactly the same 31
-commits as the deployment, among them eight that change contracts — five of which say `SECURITY:`
-in their own subject line (oracle basket-pricing brick, Chainlink feed denomination, heartbeat and
-sane-price bounds, read-only reentrancy, nested `executeSwap`), plus a 3,849-byte `VaultCore`
-size reclaim.
+`abed2e5d`. `protocol/main` is `fe05004d`. The audit is therefore behind `main` by the same delta as
+the deployment.
+
+Measure that delta as **13 files, +458/−1083** — not as a commit count. The raw
+`b1a8ae84..protocol/main` range is 31 commits, but 14 are merges; **17 are substantive**, and a
+number that shrinks by half under `--no-merges` invites the argument rather than settling it. What
+nobody can discount:
+
+- **Four commits carry a `SECURITY:` prefix** — `cf7b4fb2` (a vault whose oracle cannot price its
+  basket: a creatable permanent brick), `2be3a456` (Chainlink feed denomination read on-chain),
+  `b5b33bf0` (heartbeat and sane-price bounds), `0e70ea69` (read-only reentrancy). A fifth,
+  `8a2afc3e`, refuses a nested `executeSwap` that sweeps the outer order's input — security in
+  substance, without the prefix.
+- **`0857d6bc` moved the entire retired oracle stack out of `src/`** — a change to the audited
+  surface itself, not merely to code within it.
+- `0811dadd` reclaimed 3,849 B of `VaultCore`.
 
 This does **not** say the tree is less safe — most of that delta is hardening that landed *after*
 the audit. It says the attestation covers a tree that is not the tree. Only the owner can re-attest.
 `LAUNCH-READINESS.md` is authoritative and is deliberately not edited by this file.
+
+### H-8: the contradiction resolves, and what is left is an owner decision
+
+[LAUNCH-READINESS.md](LAUNCH-READINESS.md) reads two ways — L18 lists H-8 among findings *"fixed +
+config-mitigated"*, while L62–65 and L370–373 call it *"the key open High for a root-only launch"*
+and *"the only open High that is reachable"*. **Both halves are locally true**, which is why it
+survived. Derived from source rather than from either sentence:
+
+- **The stake-blind quorum is genuinely FIXED.** `contracts/src/Governance.sol:553-555` — the
+  sub-five branch is now `headMajorityWithStake || forStakeMajority`, and **both** carry a stake
+  term (`p.forWeight * BPS >= quorumBps * p.snapshotTotal`, and an outright FOR stake majority).
+  L18 is right about this half.
+- **H-8(a) is unfixed BY DESIGN.** The same NatSpec, `Governance.sol:549-552`, states it outright:
+  *"What stays UNfixed here BY DESIGN: buying the 5th seat to reach the stake regime (H-8(a))…
+  mitigated at the config layer (a meaningful minimum deposit)."* L62/L372 are right about this half.
+
+**The document is not wrong in one place — it uses one label for two things, and one line dropped a
+word.** `docs/AUDIT-HANDOFF.md:19` already carries the correct form: **"H-8: partially fixed +
+config-mitigated."** `LAUNCH-READINESS.md:18` says "fixed + config-mitigated", omitting
+*partially*. **L18 is the defective line**; L62/L372 stand. That file is authoritative and is not
+edited from here — this is the finding, and it needs a PR of its own.
+
+**What the residual actually costs, in the numbers rather than in prose.**
+`SIGNER_REGIME_BELOW = 5` (`Governance.sol:82`). `contracts/config/base-mainnet.json:222` sets
+`minDepositUsdc` = `100000000` (**100 USDC**), raised from 1 USDC on 2026-08-28 for exactly this
+reason; `quorumBps` = **2500** (25%). Its own note puts the attack at *"the ~4 seats needed to flip
+the regime"* — so **≈400 USDC, or 0.8% of vault #1's 50,000 USDC cap.** The mitigation is a
+**listing constraint, not a contract floor**: the note records that no safe contract-level floor
+exists (a fraction-of-stake floor repeats M-6's liveness cliff). Nothing enforces it — a vault
+created with a low `minDepositUsdc` has no mitigation at all, and the code will not stop it.
+
+**And it does not transfer from testnet.** `contracts/config/base-sepolia.json:101` sets
+`minDepositUsdc` = 1 USDC, explicitly a smoke value. The live Sepolia vault therefore runs with the
+H-8 mitigation effectively absent — a third reason testnet evidence is not launch evidence.
+
+**Nothing in the gate set forbids an open High.** Gate 0 is scoped to *Critical*, and no other gate
+row or the audit handoff asserts a stronger claim — checked, so that it is derived rather than
+assumed either way. So H-8 does **not** put any gate into NO-GO on its face. What it does do is put
+a **known, accepted, by-design High into production**, and accepting a residual is a risk decision.
+It is in §4 as an owner item, because a documentation state cannot make it for them.
 
 ### Gate 3 carries two defects, and they need separate fixes
 
@@ -189,6 +240,7 @@ gh pr list --state open --limit 50 --json number,title,reviewDecision,mergeState
 | **#108** adapter scoped sweep | Gates the mainnet deploy. | `reviewDecision` **NONE** — no verdict at all. `mergeStateStatus` **DIRTY** (real conflicts). `behind_by 66`. |
 | **#120** indexer exit/fee/gov ABIs | A HIGH from #107 stays live on `main` until it lands. | `reviewDecision` **NONE**. `mergeStateStatus` CLEAN. `behind_by 61`. |
 | **#132** public-claims sweep (LedeFix) | §3's first three rows cannot pass without it — it is the lede fix and the drift check. | `reviewDecision` **NONE**. `behind_by 0`. Also edits `docs/LAUNCH-READINESS.md`. |
+| **#131** vault #1 agent policy (AgentPolicy) | §5's "agent policy published" row and the launch narrative both depend on it; it must be public **before** the first on-chain proposal. | `reviewDecision` **NONE**. `behind_by 0`. |
 | **#133** incident NAV reconstruction (LaunchComms) | §6 sends members to a runbook whose NAV reconciliation omitted the child look-through leg — a false shortfall mid-incident, read at the moment nothing can be paused. | `reviewDecision` **NONE**. `behind_by 0`. |
 
 The other twelve (#106, #110, #111, #112, #115, #116, #118, #122, #124, #126, #127, #128) are open,
@@ -241,8 +293,19 @@ The merge-preflight run performing the evaluation is a run on that head and is `
 it evaluates. So it blocks on itself, always.
 
 **Observed** on PR #130 at head `bcb7a4e5` (a `pull_request` trigger): first trigger reported 2
-blockers (`CI` in progress and `merge-preflight` in progress); after CI completed green, a re-run
-reported 1 — itself. **Inferred**, not observed, for the workflow's `issue_comment` trigger: there
+blockers (`CI` in progress and `merge-preflight` in progress); **after CI had completed green, a
+re-run reported exactly one blocker — itself.**
+
+Rest the finding on *that* re-run and nothing else. Two weaker readings both fail:
+
+- **A red status alone proves nothing.** Every open PR head currently carries a red
+  `merge-preflight`, but a genuinely pending CI run at the same head blocks too, and blocks
+  *correctly*. CI was in flight on several of those heads. Only the post-green re-run isolates the
+  self-block.
+- **The run's own conclusion is not the status it posts.** `gh run list` reports `merge-preflight`
+  as `conclusion: success` on these branches — because the job **succeeded at posting a red
+  status**. Read `gh api repos/{owner}/{repo}/commits/<sha>/status`, not the run conclusion. This is
+  §2.3's own rule one level up, and it has already misled one reader into calling these heads green. **Inferred**, not observed, for the workflow's `issue_comment` trigger: there
 CI has long since finished, but the preflight run is still live while it evaluates, so the same
 self-block applies. No other open PR carries the context at all, so the workflow is new and this has
 not been noticed.
@@ -323,6 +386,7 @@ transaction that registers the operator. Settle both before sending it:
 | **Re-attest gate 1** | An attestation about a private report; no agent can make it. | `LAUNCH-READINESS.md` gate 1 names the current head |
 | **Vault #1's fee posture — waived is not implementable as written** | `FeeEngine.PERF_FEE_BPS` is a `constant` (10%, `FeeEngine.sol:35`) applied unconditionally at `:88`. No per-vault override, no setter, no waiver function. The go-to-market plan's "fee waived on vault #1, for regulatory optics" **cannot be done in the contracts.** The two available routes are (a) non-collection — the operator simply never claims, but fees still accrue on-chain and the accrual is publicly visible, so the optics claim is weaker than intended and must not be stated as a waiver; or (b) an operator payout address that cannot claim — which is **permanent**, because there is no rebind. Route (b) makes this the *same* decision as the Safe row above, taken in the same transaction. | Decided and recorded **before** the operator address is registered, and whatever is chosen is described accurately on every public surface (§3) |
 | **`exitFeeDecayPeriod`: 3.5 days or 7?** | A launch parameter, immutable per vault. `contracts/config/base-mainnet.json:226` says `604800` (7 d); [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 records that 302,400 s (3.5 d) "was never what the 50 bps vault ran" and flags the contradiction as unresolved. Until it is decided **no public claim can be pinned to either figure** — and one already is (§3). | Owner decides; the value is then confirmed by reading it off the **deployed vault**, not off the config |
+| **Accept H-8(a), or raise `minDepositUsdc`** | Launching knowingly with an unfixed High. It is unfixed **by design** — there is no contract-level fix (§1) — so the only levers are the config value and acceptance. At `minDepositUsdc` = 100 USDC the regime flip costs ≈400 USDC against a 50,000 USDC cap. `minDepositUsdc` is immutable per vault, so this is decided **before** vault #1 is created, not after. | Owner records the acceptance with the number they accepted it at, or names a higher `minDepositUsdc` — and every public surface (§3) describes the governance regime accurately, since "fixed" is not what the contracts say |
 | **Ratify no-token / beachhead / anchor strategy** | A token, once issued, cannot be un-issued; a public posture cannot be un-said. | `gtm-ratify-launch-posture` ratified or overridden |
 | **Testnet redeploy** | Needs a funded Base Sepolia key. Must be in the **launch** configuration (`allowSubVaults = false`) or the re-earned evidence is again about the wrong contracts. | `verify-deployment-currency.mjs` exits 0, no notes |
 | **Mainnet deploy** | Immutable. No pause, no upgrade, no admin (§6). One shot. | `Deploy.s.sol` run with `--broadcast`; a `contracts/config/deployments/base-mainnet.json` record written and verified |
