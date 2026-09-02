@@ -24,8 +24,10 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 ## Commit-reveal
 
 - Commit `hash(support, salt)`; reveal after the commit deadline. Windows are vault-configured up
-  to hard caps: `COMMIT_HARD_CAP = 30 days`, `REVEAL_HARD_CAP = 30 days`,
-  `EXECUTION_WINDOW_HARD_CAP = 90 days`.
+  to hard caps: `COMMIT_HARD_CAP = DEFAULT_TTL - 1` (just under 72h), `REVEAL_HARD_CAP = 30 days`,
+  `EXECUTION_WINDOW_HARD_CAP = 90 days`. The commit cap is the tighter one **because of T-1**, not
+  because of C-2: a commit phase at or beyond `DEFAULT_TTL` outlives every standing default, so VO-3
+  would be dead before the reveal window opened. See [[mediums-and-lows]].
 - **Unrevealed commits are forfeit** (count as abstain) — non-revealers grief only themselves;
   the quorum denominator is not starved (VO-6). Sizing note: Kleros abandoned commit-reveal (2026)
   because voters *forget* to reveal, so reveal windows were sized generously.

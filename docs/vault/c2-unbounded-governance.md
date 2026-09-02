@@ -16,7 +16,7 @@ proposal, including the `RuleChange` that would repair the config.
 `_validateConfig` capped only `timelockDuration` (the one parameter that does not gate exits);
 `commitDuration`, `revealDuration`, `executionWindow` had floors but no ceilings, and
 `proposalCooldown` was not validated at all. `hasPendingExecution`'s `Active` branch
-(`hasPendingExecution`, `Governance.sol:626-628`) returns true for any proposal past its `commitDeadline` — **passage is
+(`hasPendingExecution`, `Governance.sol:647-649`) returns true for any proposal past its `commitDeadline` — **passage is
 irrelevant** — while `finalize` requires `block.timestamp >= revealDeadline`. So an unbounded
 `revealDuration` pins the proposal in `Active` for ~136 years. In `VaultCore` that flag is the Mode-F
 switch: `requestExit` queues (`:445`) and `settleQueuedExit` reverts `ExecutionStillPending` (`:477`),
@@ -30,6 +30,12 @@ fallback covers a *broken* module, not a correct governance answering `true` for
 `executionWindow`, and `proposalCooldown` above — the last was previously unvalidated (the same C-2
 shape, found while fixing M-6). Mode F is also decoupled from proposals that have not passed. Requires
 redeploy + re-review; landed in the corrected tree.
+
+**Later narrowed by T-1, and no longer 30 days.** `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`, set by
+the standing-default TTL rather than by this finding — see [[mediums-and-lows]]. That is strictly
+stronger for C-2 (a shorter maximum freeze), and the two exploit tests named below use 1h and 6h
+commit phases, so neither is affected. `REVEAL_HARD_CAP` and `EXECUTION_WINDOW_HARD_CAP` are
+unchanged, and the reveal phase is the one C-2's exploits actually pinned.
 
 ## Regression test
 
