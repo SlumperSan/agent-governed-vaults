@@ -43,7 +43,10 @@ function shAsync(cmd, args, timeout = 20_000) {
     let child;
     try {
       // shell:false, as everywhere else here -- see the shell policy in scripts/gate.mjs.
-      child = spawn(cmd, args, { cwd: REPO, encoding: 'utf8' });
+      // NOT `encoding: 'utf8'`: that is a spawnSync option and spawn silently ignores it, leaving
+      // the stream in buffer mode. Concatenating buffers happens to work until a chunk boundary
+      // splits a multi-byte character, and then JSON.parse throws and a head misreports.
+      child = spawn(cmd, args, { cwd: REPO });
     } catch {
       return finish(false, '');
     }
@@ -56,6 +59,7 @@ function shAsync(cmd, args, timeout = 20_000) {
       }
       finish(false, '');
     }, timeout);
+    child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (b) => {
       stdout += b;
     });
@@ -292,6 +296,9 @@ const CI_CACHE = path.join(REPO, '.cc-ci-cache.json');
  *
  * Six sessions may run `cc` against this checkout at once, so writes go through a temp file and a
  * rename, and EVERY failure degrades to a cache miss rather than breaking the board.
+ *
+ * It stores the whole verdict, `detail` prose included -- so if you reword a detail string, expect
+ * the old wording to survive one TTL rather than reaching for a debugger.
  */
 function ciCache() {
   let store = {};
