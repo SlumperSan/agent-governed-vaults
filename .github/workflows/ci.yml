@@ -80,7 +80,21 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0` is here for COMPLETE HISTORY, not for the ref. `scripts/test/doc-claims.test.mjs`
+      # reads which PRs are merged from `git log`, and a shallow log is the dangerous shape: it
+      # answers, so nothing reports it, and every merge commit the clone lacks reads as "that PR is
+      # still open" — a stale "#98 is open" would pass. The module now refuses a shallow checkout
+      # outright, so without this the job fails rather than lying; the depth is what lets it run.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # This step is here for the REF NAME, which is a separate thing from the depth. On a
+      # `pull_request` event the checkout is of the merge commit, and whether it also creates
+      # `refs/remotes/origin/<base>` is an internal detail of actions/checkout that has changed
+      # before. Naming the refspec ourselves means the gate does not depend on that detail. It was
+      # the absence of this ref that made the guard skip half of itself in CI while passing.
+      - name: Fetch the base branch the doc-claims gate resolves branch state against
+        run: git fetch --no-tags origin +refs/heads/protocol/main:refs/remotes/origin/protocol/main
       - uses: actions/setup-node@v5
         with:
           node-version: '24'

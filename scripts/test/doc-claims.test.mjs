@@ -17,7 +17,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -27,6 +29,7 @@ import {
   openPrClaimsIn,
   mergedPrNumbers,
   isHistoricalRecord,
+  isShallowRepository,
   loadWaivers,
   formatProblems,
   RECORD_MARKER,
@@ -52,8 +55,16 @@ const DOCS = markdownUnder(path.join(REPO, 'docs')).map((f) =>
 // ── the actual guard ──────────────────────────────────────────────────────────
 
 test('every live document in docs/ makes only true claims about this repository', () => {
-  const { problems, checked } = checkDocs(REPO, DOCS);
+  const { problems, checked, canCheckPrState } = checkDocs(REPO, DOCS);
   assert.ok(checked > 0, 'no claims were resolved at all — the extractor has stopped working');
+  // Asserted here rather than inferred from a green run: a shallow checkout or a missing
+  // `origin/protocol/main` used to make this test pass having checked only citations. It must be
+  // an ERROR that the branch-state half could not run, never a skip.
+  assert.ok(
+    canCheckPrState,
+    'branch state could NOT be read, so half this guard did not run. Fetch the base ref ' +
+      '(`git fetch origin protocol/main`) and un-shallow the clone (`fetch-depth: 0` in CI).'
+  );
   assert.equal(
     problems.length,
     0,
@@ -198,4 +209,212 @@ test('an expired or unused waiver is itself reported, so the list cannot go stal
     out.problems.some((p) => p.kind === 'waiver-expired'),
     'a waiver whose PR has merged must be reported'
   );
+});
+
+// ── fixtures: one negative case per problem kind ──────────────────────────────
+//
+// The corpus test above asserts the guard finds NOTHING on a clean tree. That direction alone is
+// unfalsifiable: a guard that reports nothing ever also passes it. Measured on this module before
+// these fixtures existed — disable the `kind: 'moved'` push, the only path that reports a drifted
+// citation, and the suite was still 14/14 green. Half the module (the branch-state half) had no
+// negative case at all. So every kind the module can report gets a fixture that makes it report,
+// and each fixture is paired with the near-identical input that must stay clean, so a mutation
+// cannot pass by reporting everything either.
+//
+// The fixtures are a throwaway tree in the OS temp dir, not the repo's own files: writing a probe
+// into `docs/` races the other sessions sharing this checkout, and a fixture built from real
+// source lines rots the moment that source moves — which is the defect under test.
+
+function withFixture(files, run) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'doc-claims-fixture-'));
+  try {
+    for (const [rel, body] of Object.entries(files)) {
+      const full = path.join(dir, ...rel.split('/'));
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, body);
+    }
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Two functions, so a citation can drift OUT of the one it names and INTO another. The line
+// numbers the cases below use are asserted against this literal rather than trusted, so editing
+// it cannot silently aim a fixture somewhere else.
+const WIDGET = [
+  'contract Widget {', //             1
+  '    function alpha() public {', // 2
+  '        uint256 x = 1;', //        3
+  '    }', //                         4
+  '', //                              5
+  '    function beta() public {', //  6
+  '        uint256 y = 2;', //        7
+  '    }', //                         8
+  '}', //                             9
+  '',
+].join('\n');
+
+/** Problem kinds reported for `doc`, with branch state supplied rather than read from git. */
+function kindsFor(doc, { merged = new Set(), files = {}, ...opts } = {}) {
+  return withFixture({ 'src/Widget.sol': WIDGET, 'docs/f.md': doc, ...files }, (dir) => {
+    const { problems } = checkDocs(dir, ['docs/f.md'], { sourceRoots: ['src'], merged, ...opts });
+    return problems.map((p) => p.kind);
+  });
+}
+
+test('fixture: the WIDGET fixture is shaped the way the cases below assume', () => {
+  const lines = WIDGET.split('\n');
+  assert.match(lines[2], /uint256 x/, 'line 3 is inside alpha');
+  assert.match(lines[6], /uint256 y/, 'line 7 is inside beta');
+  assert.deepEqual(symbolsAt(WIDGET, 3), ['Widget', 'alpha']);
+  assert.deepEqual(symbolsAt(WIDGET, 7), ['Widget', 'beta']);
+});
+
+test('fixture: a citation that has DRIFTED out of the symbol it names is reported `moved`', () => {
+  // The whole point of the module. Disable the `moved` push and this is the case that dies.
+  assert.deepEqual(kindsFor('`alpha` is at `Widget.sol:7`.'), ['moved']);
+  // ...and the same sentence pointing at the right line must stay silent, so "report everything"
+  // is not a way to pass.
+  assert.deepEqual(kindsFor('`alpha` is at `Widget.sol:3`.'), []);
+});
+
+test('fixture: a citation past the end of the file is reported `out-of-range`', () => {
+  assert.deepEqual(kindsFor('`alpha` is at `Widget.sol:900`.'), ['out-of-range']);
+  assert.deepEqual(kindsFor('`alpha` is at `Widget.sol:2`.'), [], 'a real line is in range');
+});
+
+test('fixture: a basename matching two files is reported `ambiguous`, never guessed at', () => {
+  const two = { 'src/a/Dup.sol': WIDGET, 'src/b/Dup.sol': WIDGET };
+  assert.deepEqual(kindsFor('`alpha` is at `Dup.sol:3`.', { files: two }), ['ambiguous']);
+  assert.deepEqual(
+    kindsFor('`alpha` is at `src/a/Dup.sol:3`.', { files: two }),
+    [],
+    'a citation that gives a path is not ambiguous'
+  );
+});
+
+test('fixture: a citation naming no symbol is reported `unanchored`, and only in strict mode', () => {
+  assert.deepEqual(kindsFor('The relevant line is Widget.sol:3 in the deploy path.'), ['unanchored']);
+  assert.deepEqual(
+    kindsFor('The relevant line is Widget.sol:3 in the deploy path.', { requireAnchor: false }),
+    [],
+    '--no-anchor reports only citations that MOVED'
+  );
+});
+
+test('fixture: a present-tense claim that a MERGED pr is open is reported', () => {
+  const merged = new Set([4242]);
+  assert.deepEqual(kindsFor('#4242 is still open, so the premise holds.', { merged }), [
+    'merged-pr-claimed-open',
+  ]);
+  assert.deepEqual(
+    kindsFor('#4243 is still open, so the premise holds.', { merged }),
+    [],
+    'a claim about a PR that really is open is not a problem'
+  );
+});
+
+test('fixture: a claim placing work AFTER a merged pr is reported `merged-pr-claimed-pending`', () => {
+  // The under-claim direction: it reads as appropriately cautious and goes on reading that way
+  // forever. Nothing challenges a sentence that says the thing is not done yet.
+  const merged = new Set([4242]);
+  assert.deepEqual(kindsFor('The invariant is enforced once #4242 lands.', { merged }), [
+    'merged-pr-claimed-pending',
+  ]);
+  assert.deepEqual(kindsFor('The invariant is enforced once #4243 lands.', { merged }), []);
+});
+
+// ── the check that could not run must FAIL, not skip ──────────────────────────
+
+test('branch state that cannot be read is a reported FAILURE, not a silent skip', () => {
+  // F1, as an executable case. Before the fix, `merged === null` skipped the branch-state half and
+  // recorded that in `canCheckPrState`, which nothing read — so in CI, where
+  // `origin/protocol/main` is absent, the corpus test passed having checked only citations.
+  const out = withFixture({ 'src/Widget.sol': WIDGET, 'docs/f.md': '#4242 is still open.\n' }, (dir) =>
+    checkDocs(dir, ['docs/f.md'], { sourceRoots: ['src'], merged: null })
+  );
+  assert.equal(out.canCheckPrState, false, 'the module knows it could not check');
+  assert.ok(
+    out.problems.some((p) => p.kind === 'pr-state-uncheckable'),
+    `and says so where the exit code sees it; got ${JSON.stringify(out.problems.map((p) => p.kind))}`
+  );
+  // A waiver is permission to leave ONE known-false claim in place, not permission to stop
+  // checking — so it must not be able to swallow this.
+  const waived = withFixture({ 'src/Widget.sol': WIDGET, 'docs/f.md': 'nothing to see\n' }, (dir) =>
+    checkDocs(dir, ['docs/f.md'], {
+      sourceRoots: ['src'],
+      merged: null,
+      waivers: [{ doc: '(repository)', citation: 'origin/protocol/main', ownedByPr: 1, why: 'test' }],
+    })
+  );
+  assert.ok(
+    waived.problems.some((p) => p.kind === 'pr-state-uncheckable'),
+    'a waiver must not be able to suppress "the check did not run"'
+  );
+});
+
+test('a shallow or absent checkout yields null merged state rather than a truncated set', () => {
+  // A TRUNCATED merged-set is the dangerous shape: it is non-null, so nothing reports it, and
+  // every merge commit the clone lacks reads as "that PR is still open". `mergedPrNumbers` must
+  // refuse rather than answer partially, so both shallowness and an absent ref return null. A
+  // directory that is not a git repo stands in for the absent ref.
+  const nowhere = withFixture({ 'src/Widget.sol': WIDGET }, (dir) => mergedPrNumbers(dir));
+  assert.equal(nowhere, null, 'no git history means "cannot check", never an empty merged set');
+  assert.equal(isShallowRepository(REPO), false, 'this checkout is complete');
+  assert.notEqual(mergedPrNumbers(REPO), null, 'and readable, so CI has no excuse either');
+});
+
+test('a SHALLOW checkout is refused, because a truncated merged set is a false-negative machine', () => {
+  // The dangerous shape is not the absent ref — that one is at least visible. It is the shallow
+  // clone: `git log` answers, so `merged` is non-null and nothing reports it, but every merge
+  // commit the clone does not have reads as "that PR is still open". This builds a real repo,
+  // clones it at depth 1, and asserts the truncation is genuine before asserting the refusal —
+  // otherwise the case would pass against a `.git/shallow` file that meant nothing.
+  const dir = mkdtempSync(path.join(tmpdir(), 'doc-claims-shallow-'));
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    const origin = path.join(dir, 'origin');
+    mkdirSync(path.join(origin, 'src'), { recursive: true });
+    git(dir, 'init', '-q', 'origin');
+    git(origin, 'config', 'user.email', 'fixture@example.invalid');
+    git(origin, 'config', 'user.name', 'fixture');
+    git(origin, 'config', 'commit.gpgsign', 'false');
+    writeFileSync(path.join(origin, 'src', 'Widget.sol'), WIDGET);
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-qm', 'feat: the squash shape (#4242)');
+    writeFileSync(path.join(origin, 'src', 'Widget.sol'), `${WIDGET}\n`);
+    git(origin, 'commit', '-qam', 'Merge pull request #4243 from x/y');
+    writeFileSync(path.join(origin, 'src', 'Widget.sol'), `${WIDGET}\n\n`);
+    git(origin, 'commit', '-qam', 'chore: an ordinary commit on top');
+
+    const deep = mergedPrNumbers(origin, 'HEAD');
+    assert.ok(deep.has(4242) && deep.has(4243), 'the complete history sees both merge shapes');
+
+    const shallow = path.join(dir, 'shallow');
+    git(dir, 'clone', '-q', '--depth', '1', `file:///${origin.split(path.sep).join('/')}`, 'shallow');
+
+    // The truncation is real, and this is exactly what makes it dangerous: the two merges are
+    // simply not there, so without the refusal below they would both read as still open.
+    assert.equal(git(shallow, 'log', '--format=%s').trim(), 'chore: an ordinary commit on top');
+    assert.equal(isShallowRepository(shallow), true, 'and git says so');
+    assert.equal(
+      mergedPrNumbers(shallow, 'HEAD'),
+      null,
+      'a shallow history must refuse rather than answer with the PRs it happens to have'
+    );
+
+    writeFileSync(path.join(shallow, 'f.md'), '#4242 is still open, so the premise holds.\n');
+    const { problems, canCheckPrState } = checkDocs(shallow, ['f.md'], {
+      ref: 'HEAD',
+      sourceRoots: ['src'],
+    });
+    assert.equal(canCheckPrState, false);
+    assert.ok(
+      problems.some((p) => p.kind === 'pr-state-uncheckable'),
+      `the shallow run must FAIL loudly, not pass this stale claim; got ${JSON.stringify(problems.map((p) => p.kind))}`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
