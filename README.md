@@ -3,21 +3,60 @@
 Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read access via x402. Base-native,
-chain-agnostic contracts, no CEX integrations.
+move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read
+access via x402. Base-native, chain-agnostic contracts, no CEX integrations.
 
-## Layout
+**Not on mainnet. The launch verdict is NO-GO** — read [Status](#status) before anything else in
+this file.
 
-| Path | What |
-| --- | --- |
-| `contracts/` | Foundry project — the protocol (immutable, no proxies). |
-| `packages/indexer/` | Chain-agnostic event projections + persistence + a runnable daemon. |
-| `packages/agent-sdk/` | Env-agnostic client: the x402 402→authorize→retry loop + typed methods. |
-| `packages/canary/` | Read-only post-launch watcher for the DEPLOYMENT §6 signals ([docs/CANARY.md](docs/CANARY.md)). |
-| `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
-| `apps/web/` | Vault Atlas — consumer app: discover, inspect governance/fees, deposit/exit. |
-| `scripts/` | Operational runners — `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
-| `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
+## Why it exists
+
+The S&P 500 tells you what five hundred companies are worth because someone writes the weights
+down and everyone can check them. Nothing tells you what autonomous agents would hold if they had
+to argue for it in public and win a vote.
+
+A vault here is one answer to that, made checkable. An agent-operator proposes a basket and a
+weighting. The members whose money it is vote the proposal up or down by commit-reveal. What
+executes is recorded on-chain next to the proposal that asked for it and the votes that carried
+it. So the holdings are not an opinion published by anyone: they are a timestamped record of what
+an operator proposed and what members were willing to fund, on contracts that cannot be edited
+afterwards.
+
+That record is exactly what it says and nothing more. It is not a claim that the conviction was
+correct, and it is not a forecast.
+
+## Status
+
+**Launch verdict: NO-GO.** The argued board is
+[docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) — nine gates, each with its evidence — and it
+is the authority whenever this section and that document disagree. What is in flight right now is
+[docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
+
+**What remains is operational, legal and calendar-bound.** Two gates are open on the board: the
+soak drills (gate 3) and the canary re-run (gate 6), both marked STALE because the evidence behind
+them was earned against contracts that have since changed. Both need a funded testnet key and a
+re-run rather than more code. The testnet lifecycle (gate 2) and the recorded restore drill
+(gate 7) were open until recently and are now GO.
+
+**On the external review — read the qualifier.** An external audit was commissioned against the
+launch tree at tag `v0.4.0-audit`. On 2026-08-29 the owner attested, having read the report, that
+it surfaced **no major issues**. The report contains sensitive material and is **held privately** —
+it is deliberately not reproduced or linked in this repository. That is an **owner attestation**,
+not something a reader here can independently verify, and neither the scope list nor the
+Low/Informational findings have been published. Do not describe this protocol as "audited" without
+that qualifier. Whether that attestation currently stands as the basis for the gate is recorded in
+gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md), not here.
+
+**Base Sepolia only — never mainnet, and the published addresses are not the current stack.** The
+full lifecycle has been run end to end on testnet — create, deposit, activate, propose, commit,
+reveal, finalize, execute, exit — and gate 2 of the board records that run and its stated limits.
+The address book committed at
+[`contracts/config/deployments/base-sepolia.json`](contracts/config/deployments/base-sepolia.json)
+is an **earlier** stack, at `sourceCommit` `5934ef22`; `contracts/src` has moved past it, notably
+the adapter fix in [#108](https://github.com/SlumperSan/agent-governed-vaults/pull/108), which
+that record's own note describes at length. Addresses for anything deployed since are **not
+published in this repository**. Take what is deployed from the gate board and `npm run cc`, not
+from this file and not from that address book.
 
 ## Contracts
 
@@ -58,6 +97,24 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
   rotation lever (residual 12, "curation immobility", in
   [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md)).
 
+This is the second oracle design. Critical finding **C-6** showed the original bespoke
+multi-source median aggregator could not be made Byzantine-safe by curation alone, so it was
+replaced rather than patched; the retired stack lives under `contracts/test/retired/` as exploit
+evidence and must not be deployed
+([docs/audit/AI-AUDIT-REPORT.md](docs/audit/AI-AUDIT-REPORT.md),
+[docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md)).
+
+`VaultFactory` was once undeployable — `new VaultCore(...)` embedded a creation code larger than
+the EIP-170 runtime cap by itself — and the fix moves that code into `VaultDeployer`'s creation
+code, which writes it into two immutable, non-executable data contracts
+([docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md),
+[#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). Attestation stays
+factory-only, so calling the deployer directly yields an unattested vault. `VaultCore` is still
+the contract closest to the cap, at **20,650 B runtime / 3,926 B of margin** against the
+24,576-byte limit — measured with `cd contracts && forge build --sizes` at `16050be0` on
+2026-09-02. Re-measure rather than quote this line; `contracts/test/Eip170.t.sol` floors the
+margin so it cannot silently regress.
+
 Internal security-review rounds plus an AI pre-audit and two adversarial re-review passes; every
 finding fixed, replaced or dispositioned ([docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md),
 [docs/audit/AI-AUDIT-REPORT.md](docs/audit/AI-AUDIT-REPORT.md)). **"Dispositioned" is not
@@ -69,12 +126,21 @@ ever enabled. Hardened with invariant/fuzz
 suites for share conservation, NAVps-non-decreasing, solvency, the cross-vault carry HWM, the
 Chainlink oracle's fail-closed guards, and governance rounds.
 
-## Agent integration
+## Layout
 
-Agents bootstrap from one free call — `GET /.well-known/x402` (pricing, routes, spec pointers) —
-then discover vaults (`GET /vaults`), read metered data, and act on-chain. See
-[docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md), [docs/api/openapi.yaml](docs/api/openapi.yaml),
-and [`/llms.txt`](llms.txt).
+| Path | What |
+| --- | --- |
+| `contracts/` | Foundry project — the protocol (immutable, no proxies). |
+| `packages/indexer/` | Chain-agnostic event projections + persistence + a runnable daemon. |
+| `packages/agent-sdk/` | Env-agnostic client: the x402 402→authorize→retry loop + typed methods. |
+| `packages/canary/` | Read-only post-launch watcher for the DEPLOYMENT §6 signals ([docs/CANARY.md](docs/CANARY.md)). |
+| `packages/reference-agent/` | Reference operator loop — read, decide, propose, act within a budget. |
+| `packages/oplog/` | Shared operational plumbing: structured logging, durability, shutdown, ops checks. |
+| `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
+| `apps/web/` | Vault Atlas — consumer app: discover, inspect governance/fees, deposit/exit. |
+| `apps/site/` | The public static site — what this is, how it works, and what can go wrong. |
+| `scripts/` | Operational runners — `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
+| `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
 
 ## Build & test
 
@@ -109,59 +175,11 @@ with `forge snapshot --nmt "testFuzz|testFork"`).
 | Run the live stack (indexer, API, web) | [docs/RUNTIME.md](docs/RUNTIME.md) |
 | Review the contracts | [docs/audit/README.md](docs/audit/README.md) |
 
-## Status
+## Agent integration
 
-**Launch verdict: NO-GO.** Every *security* gate is cleared; what remains is operational, legal
-and calendar-bound — a testnet lifecycle re-run, a soak, a canary and a recorded restore drill,
-all of which need a funded key rather than more code. The argued board is
-[docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md); what is in flight right now is
-[docs/NOW.md](docs/NOW.md) (`npm run cc` prints the computed state).
-
-**On the external audit — read the qualifier.** An external audit was commissioned against the
-launch tree at tag `v0.4.0-audit`. The owner has read the report and **attests that it surfaced no
-major issues**. The report contains sensitive material and is **held privately** — it is
-deliberately not reproduced or linked in this repository. That is an **owner attestation**, not
-something a reader here can independently verify, and neither the scope list nor the
-Low/Informational findings have been published. Do not describe this protocol as "audited"
-without that qualifier.
-
-**Deployed on Base Sepolia — testnet only, never mainnet, and that deployment is SUPERSEDED.**
-Address book at
-[`contracts/config/deployments/base-sepolia.json`](contracts/config/deployments/base-sepolia.json),
-every address verified on-chain at the time of deployment. A vault has been created, registered
-and funded with a USDC deposit priced by the live `ChainlinkOracle`; the remaining lifecycle
-phases sit behind the protocol's own observation window and governance timelocks
-([docs/TESTNET-REPORT.md](docs/TESTNET-REPORT.md)). **`contracts/src/` has changed since that
-deploy** — the record's `sourceCommit` is `5934ef22`, and `VaultCore`, `VaultFactory` and
-`ChainlinkOracle` have all moved since — so **no deployment of the current code exists on any
-network**, and the lifecycle, soak and canary evidence earned against that bytecode is marked
-STALE (gates 2/3/6 in [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md)). Re-verify with
-`git diff --stat 5934ef22..HEAD -- contracts/src` before treating any of it as current.
-
-**The oracle pivot is the most important delta for any reviewer.** Critical finding **C-6** showed
-the original bespoke multi-source median aggregator could not be made Byzantine-safe by curation
-alone, so it was **replaced rather than patched**: the launch oracle is `ChainlinkOracle`, reading
-Chainlink Data Feeds directly, and a `VaultFactory` oracle allowlist makes only blessed oracle
-instances selectable. The retired `OracleAggregator`, `PythSource` and `UniswapV3TwapSource` stack
-now lives under `contracts/test/retired/`, kept solely as the C-4/C-6 exploit evidence — it is not
-on the launch path and must not be deployed. See
-[docs/audit/AI-AUDIT-REPORT.md](docs/audit/AI-AUDIT-REPORT.md) for the finding and
-[docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md) for the handoff.
-
-**Deployability blocker cleared (Sprint 7).** `VaultFactory` once compiled to 27,241 bytes against
-the EIP-170 24,576-byte limit, because `new VaultCore(...)` embeds `VaultCore`'s entire creation
-code — so the factory was undeployable on any chain while the suite stayed green, since Foundry's
-test EVM does not enforce EIP-170. The catch: `VaultCore`'s creation code (24,731 B) is larger than
-the runtime cap *by itself*, so it cannot live in any contract's runtime. It now lives in
-`VaultDeployer`'s **creation** code, which the deployer's constructor writes into two immutable,
-non-executable data contracts; the factory pins that deployer immutably and sends it constructor
-arguments only. The factory is small and has roughly 21 kB of margin today; `VaultCore` is the
-contract closest to the cap, at **20,481 B runtime / 4,095 B of margin** (measured with
-`cd contracts && forge build --sizes` on 2026-09-01, after PR #90 reclaimed 3,849 B — an earlier
-`~283 B` figure recorded here is superseded, and `contracts/test/Eip170.t.sol` floors the margin so
-the number cannot silently regress). The trust model is unchanged — attestation is still factory-only,
-so calling the deployer directly yields an unattested vault. Closes
-[#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10); see threat-model row PX-4 and
-[docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md).
+Agents bootstrap from one free call — `GET /.well-known/x402` (pricing, routes, spec pointers) —
+then discover vaults (`GET /vaults`), read metered data, and act on-chain. See
+[docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md), [docs/api/openapi.yaml](docs/api/openapi.yaml),
+and [`/llms.txt`](llms.txt).
 
 License: BUSL-1.1 — see [LICENSE](LICENSE).
