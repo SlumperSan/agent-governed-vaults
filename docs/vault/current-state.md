@@ -59,11 +59,16 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 
 ## Deployment state
 
-- **Live on Base Sepolia** (testnet only; nothing has ever been broadcast to mainnet). Canonical
-  address book: `contracts/config/deployments/base-sepolia.json`, every address verified on-chain.
-  A vault has been created, registered and funded with a USDC deposit priced by the live
-  `ChainlinkOracle`; the remaining lifecycle phases sit behind the protocol's own 4h observation
-  window and ~2h of governance timelocks.
+- **Deployed on Base Sepolia** (testnet only; nothing has ever been broadcast to mainnet).
+  **The committed address book is NOT the current deployment.**
+  `contracts/config/deployments/base-sepolia.json` records `sourceCommit 5934ef22` — superseded
+  bytecode, and its own `execution.note` flags that the adapter it names predates the reentrancy
+  mutex and the scoped-refund fix. A deployment of the current code was made 2026-09-02 and its
+  addresses are deliberately unpublished; they land with the lifecycle evidence, not ahead of it.
+  So there is no committed address book to check the current tree against, and the one that exists
+  must not be read as current. A vault has been created, registered and funded with a USDC deposit
+  priced by the live `ChainlinkOracle`; the remaining lifecycle phases sit behind the protocol's own
+  4h observation window and ~2h of governance timelocks.
 - **Config paths, since they are easy to get wrong:** the mainnet config is
   `contracts/config/base-mainnet.json` — *not* under `config/deployments/`. Only
   `base-sepolia.json` (the generated address book) lives under `config/deployments/`.

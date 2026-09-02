@@ -61,17 +61,27 @@ is the audit surface permanently — there is no "we'll patch it later."
 page stating what changed since the internal reviews, which rounds covered what, and — more
 usefully — what internal review did **not** cover.
 
-**There IS deployed bytecode on Base Sepolia to compare against** — this paragraph originally
-said the opposite, and PR [#18](https://github.com/SlumperSan/agent-governed-vaults/pull/18)
-falsified it. The full protocol was deployed 2026-08-21 (deploy block 45,784,186, 17
-transactions, all contracts Basescan-verified; address book at
-`contracts/config/deployments/base-sepolia.json`), and a full lifecycle plus a multi-day soak
-(deposit → activate → commit/reveal governance → rebalance → both exit modes → sub-vault
-allocate/redeem) has since run against it — see [TESTNET-REPORT.md](TESTNET-REPORT.md) and
-`SOAK-REPORT.md` if present. On-chain `codesize` for every singleton matches what this tree
-builds exactly (e.g. VaultFactory 2,718 B, Governance 11,990 B). **No mainnet deployment
-exists.** The audit surface is the source at the tag above; the testnet instance is corroborating
-evidence, not the reference.
+**There is deployed bytecode on Base Sepolia, but do NOT compare this tree against the address book
+— they are different code.** Read this paragraph carefully; it has been wrong in both directions.
+
+The committed address book at `contracts/config/deployments/base-sepolia.json` records
+`sourceCommit 5934ef22`, deploy block 46,111,530, and it names a still earlier deployment at block
+45,784,186. **Neither is this tree.** `contracts/src` has moved substantially since `5934ef22` —
+`VaultCore`, `VaultFactory` and `ChainlinkOracle` among the files — and the address book's own
+`execution.note` records that the adapter it names predates both the reentrancy mutex (#101) and
+the scoped-refund fix, and carries a cross-order theft path.
+
+The codesize equality this paragraph used to assert is therefore false, and its figures were stale
+in the ordinary way as well: it cited VaultFactory 2,718 B and Governance 11,990 B, which measure
+**3,572 B** and **12,155 B** at `protocol/main` (`forge build --sizes`, 2026-09-02).
+
+A deployment of the current code does exist on Base Sepolia, made 2026-09-02, **and its addresses
+are deliberately not published** — publishing them belongs with the lifecycle evidence rather than
+ahead of it. So there is presently no committed record an auditor can diff this tree against.
+
+**No mainnet deployment exists.** The audit surface is the source at the tag above. Treat every
+testnet instance as evidence about the bytecode it actually ran, and check which commit that was
+before relying on it.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
