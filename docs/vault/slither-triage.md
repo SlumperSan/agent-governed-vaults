@@ -30,7 +30,7 @@ widened run went 245 → 254 results with **no new detector class**.
   not model this either, so the row's reasoning and the analyser's blind spot coincide. Dormant at
   launch under [[root-vaults-only]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
+  `latestPrice` (`UniswapV3TwapSource.sol:282-292`), the one timestamp use with a security consequence → **H-2** (since
   FIXED; the omission is now closed).
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check

@@ -66,7 +66,7 @@ enablers (L-1) or the zero-margin coincidences (L-2) behind larger findings.
 - **L-2** — `SHORTFALL_DUST_WAD` passes at 6 decimals with exactly zero margin (`1e12 − 1` vs `1e12`).
   **FIXED** (assert the invariant).
 - **L-3** — `BoundedCall` returns a word built from uninitialised memory for 1–31-byte returndata;
-  `VaultCore.sol:588` does not gate on `retSize`. **FIXED** (zero `ptr` / gate on `retSize`); bounded
+  `_settleExit` (`VaultCore.sol:697-699`) does not gate on `retSize`. **FIXED** (zero `ptr` / gate on `retSize`); bounded
   to Low by the `gain/10` clamp.
 - **L-4** — `minCardinality: 900` in `base-mainnet.json` is off by one (900 slots span 1798 s < 1800 s
   window → constructor reverts). Fails closed; not currently triggered. Config note.

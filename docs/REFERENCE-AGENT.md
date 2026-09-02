@@ -247,7 +247,7 @@ salt    = keccak256(account.signMessage(message))
 Every input is public and recoverable from chain state, so any process holding the same account
 derives the same salt forever. Nothing is written to disk; there is nothing to lose.
 
-The commitment matches `Governance.sol:292` exactly:
+The commitment matches `revealVote` (`Governance.sol:372`) exactly:
 
 ```
 keccak256(abi.encode(pid, msg.sender, support, salt))
