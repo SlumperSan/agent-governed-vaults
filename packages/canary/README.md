@@ -38,6 +38,7 @@ its own `CANARY_STATE_PATH`.
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 | `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
+| `src/signals/governance-watch.mjs` | signal (h): the active proposal's phase from `Governance` state against chain time, one transition key per phase, with the reveal deadline and earliest `execute` in `detail`; lifecycle events scanned for tx attribution only (Monitoring Gap Analysis G8) |
 
 ## Design notes
 
@@ -100,6 +101,6 @@ every transition, same channel, no severity. Full env reference is in
 node --test packages/canary/test/*.test.mjs
 ```
 
-247 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+284 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

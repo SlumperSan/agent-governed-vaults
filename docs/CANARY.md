@@ -427,6 +427,120 @@ proxy anywhere, so feed identity is not a capability that exists to be blind abo
 
 ---
 
+### (h) `governance-watch` — a proposal is moving, and here is when its windows close
+
+**Why it exists.** Monitoring Gap Analysis G8 (Incident Catalogue OPS-7): the design's answer to
+governance capture is *publish analysis during the reveal window*, and until this signal nothing
+said when a window had opened. A hostile proposal could move through commit into reveal overnight
+and consume the only defence window the protocol has. Operations specified it as SEV-2 — page
+during 08:00–24:00 UTC, queue overnight. **Cite the two halves to the right notes**: the SEV-2
+label comes from Monitoring Gap Analysis §3 item 5 (the Severity Ladder's SEV-2 definition
+enumerates OPS-1/2/3/5 and does not mention governance, and the Incident Catalogue's OPS-7 entry
+assigns no tier); the 08:00–24:00 UTC window is the Severity Ladder's. **The routing belongs to the
+sinks**:
+the signal is in `PAGE_SIGNALS`, so its ALERTs reach `PAGE_WEBHOOK_URL` and its recoveries and
+DETECTOR BROKEN lines reach `LOG_WEBHOOK_URL` (§5.3). This signal reports state, knows nothing about
+the time of day, and promises nothing about who responds when.
+
+**What it measures.** `vault.governance()` (immutable, so no extra env var) locates the
+`Governance` module; then `activeProposalOf(vault)`, `proposals(pid)` and `configOf(vault)`. The
+**phase** is derived from the proposal's stored deadlines against **chain time**, never the host
+clock, because two of the transitions that matter — commit→reveal and timelock→executable — are
+clock crossings that emit no event. The four lifecycle events (`Proposed`, `Finalized`,
+`Executed`, `ProposalExpired`) are scanned over the poll window for block/tx attribution only,
+using the same `MAX_LOG_SPAN_BLOCKS` plumbing as signal (e).
+
+**Shape.** One transition key per phase — `commit`, `reveal`, `tally` (reveals closed, `finalize`
+not yet called), `timelock`, `execution`, `lapsed` (passed, window closed, `markExpired` not yet
+called) — and every key is emitted every sweep: the phase the proposal is in reads ALERT, the other
+five read OK. **The six keys are not cosmetic and must not be collapsed into one:** the tracker
+emits on a status change, so a single key would produce *no line at all* on commit→reveal — the
+signal would already be `alert`, and the reveal window would open unannounced. That is the general
+masking failure of single-key signals, and it is why per-leg keys are the house pattern here
+(`nav-backing` splits composition/custody, the oracle signals split per asset). Entering a phase is one ALERT line; leaving it is one RECOVERED line saying where the
+proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
+Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
+Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
+be settled (`Governance.sol:278`), so one vault cannot have two proposals running at once however
+many proposers try. That, not the phase durations, is what bounds pages per vault per hour — and it
+is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
+true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
+but only *caps* `timelockDuration`, so a zero timelock is legal and that phase is skipped outright.
+
+The phase boundaries copy `Governance.sol`'s own `require`s and the tests pin them: commits need
+`now < commitDeadline`, reveals `commitDeadline ≤ now < revealDeadline`, `finalize` needs
+`now ≥ revealDeadline`, `execute` needs `executableAt ≤ now ≤ expiresAt` (inclusive at the top),
+`markExpired` needs `now > expiresAt`.
+
+**What `detail` carries.** `revealDeadline` (+ `…Iso`), `earliestExecuteAt` (+ `…Iso`) and
+`earliestExecuteBasis`, `executionWindowClosesAt`, the decoded `proposal` (type, proposer,
+`actionHash`, every stored timestamp, tallies) and the four `config` durations, `pid`, `phase`,
+`governance`, `modeFExitQueueing` (true from reveal start until settlement — VO-8, the reason a
+reveal-phase line matters to members and not only to voters), the window's `events` with
+block/tx, `severity: 'SEV-2'`, `incident: 'OPS-7'`, `gap: 'G8'`.
+
+**`earliestExecuteAt` is exact once the proposal has passed** (`executableAt` is stored) **and a
+lower bound before that**: `finalize` is permissionless and callable the second reveals close, so
+the floor is `revealDeadline + timelockDuration`; a late `finalize` pushes the timelock and the
+execution window later, which is why no *upper* bound is claimed for an Active proposal and why
+the floor keeps moving with the clock while the `tally` key is alert.
+
+**Tier: `PAGE_SIGNALS`, unconditionally — and here is why not `CONDITIONAL_PAGE`.** This signal has
+the shape that category exists for: one signal name covering two severities, a routine creator
+rebalance and a hostile proposal. It does not have the **discriminator**, which is what the category
+actually requires. `feed-identity` earned it because chain state says which severity you are in
+(`detail.harm`). Here all three candidate predicates fail:
+
+1. **The payload** — the axis the two severities genuinely differ on — is not on-chain until
+   `execute`. `Proposed` carries only `actionHash`, which is exactly why this signal ships
+   `payloadOnChain: false`. There is nothing to condition on.
+2. **The proposer is the wrong thing to condition on, on the merits — not because it is hard.**
+   Incident Catalogue OPS-7 opens *"An operator key signs a bad proposal, or a hostile bloc passes a
+   rebalance"*: the operator key is the **first named threat this signal exists for**. Any proposer
+   predicate — including the cheap one, a creator/operator allowlist, which needs no scoring at all
+   and is trivially available on-chain — would therefore demote exactly the case OPS-7 names first.
+   The objection is not "we cannot build it"; it is that building it blinds the primary threat.
+3. **The phase** is the wrong axis. The two arguably-less-urgent keys are `tally` and `lapsed`, and
+   both mean a governance action is *stalled* — untallied, or passed and never executed. Demoting
+   them demotes the wrong two.
+
+So paging on a routine proposal is an accepted cost, not an oversight: it is what "every occurrence
+PAGEs at SEV-2" buys when no predicate can separate routine from hostile. If a payload-publication
+location ever exists, predicate 1 becomes available and this decision should be revisited.
+
+**Threshold.** No active proposal.
+
+**Reads are pinned to `toBlock`**, the same height the log window ends at, the way `nav-backing`
+pins its legs. Unpinned, state would come from `latest` while logs stop at `head - CONFIRMATIONS`,
+so a proposal executed inside the confirmation lag would read `Executed` while its `Executed` log
+was still outside the window, and the line would attribute the settlement to the earlier `Finalized`
+transaction. Pinning also stops a `finalize`/`execute` that gets reorged out of those last blocks
+from producing a spurious ALERT→RECOVERED pair.
+
+**When it fires.** Read `detail.actionHash`, find the published payload, and check that it hashes
+to it — `execute` is permissionless and hash-gated, so the payload is the authority, not the
+caller. Publish the analysis before `revealDeadline`. A `tally` alert that stands for long means
+nobody has called `finalize`; a `lapsed` alert means a passed proposal was never executed — both
+calls are permissionless. `execution` on a `RuleChange` is the vault's config about to change.
+
+**What it does NOT check, and why: whether the payload behind `actionHash` has been published**
+(security-ops §5.3 names this as the unmonitored condition). The payload is not on-chain until
+`execute` — `Proposed` carries only its keccak — and there is no publication surface anywhere in
+this tree: the indexer folds the hash, the API has no proposal route, and the reference agent's own
+evaluator treats the payload as opaque from chain state. There is nothing for a read-only monitor to
+read. `detail.actionHash` and `detail.payloadOnChain: false` are carried so a receiver with an
+out-of-band payload source can make the comparison itself; the check lands the day a publication
+location exists.
+
+**Detector-broken branches.** A vault that does not answer `governance()`, answers `address(0)`,
+or points at a contract that does not answer `activeProposalOf()` reports DETECTOR BROKEN and
+re-asserts — a vault whose proposals cannot be seen is unmonitored, not quiet.
+
+Threat-model rows: [VO-7](THREAT-MODEL.md) (reveal-order visibility), [VO-8](THREAT-MODEL.md)
+(Mode-F from reveal start), [CM-6](THREAT-MODEL.md) (one proposal at a time).
+
+---
+
 ## 4. Signals that cannot run
 
 A DEGRADED line is not a false alarm to be tuned away — it means a check is **not covering** the
@@ -473,7 +587,19 @@ raise it or scan that range manually.
 ```
 
 The level signals (a–d) read current state and are unaffected. Only the two window-scoped event
-signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
+signals have the hole — signal (h) reads the proposal's phase from state and uses the window only
+for block/tx attribution, so **a log-window gap costs it a tx hash, never a page**. Raise
+`MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
+
+**A sweep gap is a different thing, and signal (h) is not exempt from it.** If the canary process is
+down long enough to span a whole proposal lifecycle (≥2h), every phase key was OK before and is OK
+again after, so the tracker emits **no transition at all** and the proposal is never narrated — no
+line is produced, so nothing in `detail` reaches any sink. That is not recoverable inside a
+state-poller, and it is precisely what the off-host dead-man's switch (`DEADMAN_PING_URL`, §5.3)
+exists to make visible: it tells you the canary was down, which is the cue to sweep governance by
+hand for the window it missed. The narrower case — a whole *reveal window* falling between two
+sweeps — **is** covered: `reveal` stays OK→OK and says nothing, but `commit` emits ALERT→RECOVERED
+and `tally` emits OK→ALERT naming the closed window and the un-called `finalize`.
 
 ---
 
@@ -510,7 +636,12 @@ watcher's watcher. This section is the fix in three parts.
 Severity Ladder rates SEV-1/2 and worth waking a human for: `nav-backing`, `share-conservation`,
 `fee-routing`, `exit-liveness`, `oracle-freshness` (this is the "oracle-v2"/"oracle-health" the
 Monitoring Gap Analysis' §3 item 4 refers to — `signals/oracle-health.mjs`'s `SIGNAL` constant is
-still `'oracle-freshness'`, unchanged across the post-pivot rename). `LOG_WEBHOOK_URL` receives every
+still `'oracle-freshness'`, unchanged across the post-pivot rename), and `governance-watch`, which
+§3 item 5 places here in as many words ("every occurrence PAGEs at SEV-2 during waking hours") — a
+citation of Operations' spec, not an escalation inferred here, and unconditional rather than
+`CONDITIONAL_PAGE` because no on-chain predicate separates a routine proposal from a hostile one
+(see §3(h)). **The waking-hours half is the receiver's**: nothing in this process knows the time of
+day, and no string it emits promises a response time. `LOG_WEBHOOK_URL` receives every
 other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and the harmless half of
 `feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
 the two is unset — set only that one and every transition reaches the one configured URL exactly
@@ -582,7 +713,7 @@ named `tier` must not be able to demote its own page.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 247 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 284 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 
@@ -603,6 +734,10 @@ Four guards worth knowing about:
   Chainlink's `EACAggregatorProxy`, which is not in this tree, so they are **not** pinned that way and
   the test says so rather than pretending; their runtime failure is covered instead, by a
   DETECTOR BROKEN result.
+- The same file cross-checks every `Governance` getter signal (h) reads — name, `view`-ness and the
+  full flattened **output shape** — against the compiled `Governance`, and the four lifecycle events'
+  signatures and indexed flags. Public mapping-to-struct getters flatten positionally, so a reordered
+  struct field would otherwise swap two deadlines silently.
 - `test/reader.test.mjs` asserts the chain reader exposes no send/sign/write surface, and
   `test/abis.test.mjs` asserts the ABI table declares no non-`view` function. The read-only claim is
   enforced, not just documented.
