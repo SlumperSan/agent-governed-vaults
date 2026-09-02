@@ -48,11 +48,26 @@ Three things that block reading it wrongly, each of which has cost this project 
   `preflight=` answers *"may this merge"*. Never quote one to answer the other.
 - **`none` is not a pass and not a failure.** It means no evidence exists for this head. A head with
   no run is the case the whole "green belongs to a commit" rule exists for.
-- **`fail(no-runner?)` is a suspected Actions capacity outage**, flagged from the run's duration —
-  seconds wide, when real jobs here take 400-500s. The question mark is honest: confirm it with
+- **`fail(no-runner?)` means no runner was ever allocated** — flagged from the run's duration, which
+  is seconds wide when real jobs here take 400-500s. The question mark is honest: confirm it with
   `npm run cc -- --ci-jobs`, which reads the job list and reports `fail(no-runner)` only when every
-  job ran zero steps with no runner assigned. This repo has twice misdiagnosed exhausted capacity as
-  its own code.
+  job ran zero steps with no runner assigned. This repo has twice misdiagnosed an infrastructure stop
+  as its own code.
+
+  **`--ci-jobs` also names the CAUSE, and you need it, because "no runner" has at least two causes
+  that demand opposite responses.** Capacity exhaustion clears itself, so you wait; a billing or
+  spending-limit stop never clears, so you escalate to the account owner. Nothing else in the run
+  distinguishes them — only the job's annotation, which `--ci-jobs` quotes verbatim on its own line:
+
+  ```
+  #135  bc51943 CI run=fail(no-runner)  preflight=none      behind 0
+        ↳ The job was not started because recent account payments have failed or your
+          spending limit needs to be increased. Please check the 'Billing & plans' section
+  ```
+
+  Verified 2026-09-02: what was being called an "Actions capacity outage" repo-wide was that. **Do
+  not paraphrase the annotation** — paraphrasing is precisely how "billing, escalate" became
+  "capacity, wait".
 
 Six sessions in one night each derived this by hand and the shared answer was published wrong twice.
 If you need it, run `cc`; if you need to hand it to someone, hand them the command, not the output.

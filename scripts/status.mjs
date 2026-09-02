@@ -216,13 +216,18 @@ if (d.github.up) {
             `CI run=${ciColour(r.ci.label)}${pad(r.ci.label, 16)}${C.x} ` +
             `preflight=${ciColour(r.preflight.label)}${pad(r.preflight.label, 9)}${C.x} ` +
             `${C.d}behind ${pad(String(r.behind ?? '?'), 3)}${C.x}` +
-            (note ? ` ${C.d}${note.slice(0, 62)}${C.x}` : ''),
+            (note && note.length <= 62 ? ` ${C.d}${note}${C.x}` : ''),
         );
+        // A long note is the one carrying the actionable sentence -- the GitHub annotation saying
+        // WHY no runner was allocated. Truncating it to fit a column is how "your spending limit
+        // needs to be increased" turns into "Actions capacity", which implies the opposite action
+        // (wait, rather than escalate). So it gets its own line rather than a `.slice()`.
+        if (note && note.length > 62) say(`                ${C.y}↳ ${note}${C.x}`);
       }
       if (ph.jobsProbed === null) {
-        say(`          ${C.d}fail(no-runner?) is a duration heuristic — confirm with \`npm run cc -- --ci-jobs\`${C.x}`);
+        say(`          ${C.d}fail(no-runner?) is a duration heuristic — \`npm run cc -- --ci-jobs\` confirms it AND names the cause${C.x}`);
       } else {
-        say(`          ${C.d}--ci-jobs: confirmed ${ph.jobsProbed} suspected run(s) against their job lists${C.x}`);
+        say(`          ${C.d}--ci-jobs: probed ${ph.jobsProbed} suspected run(s) — job lists, then the annotation that says why${C.x}`);
       }
     } else if (ph && !ph.up) {
       say(`\n${C.b}PER-HEAD${C.x}  ${C.d}unavailable — ${ph.reason}${C.x}`);

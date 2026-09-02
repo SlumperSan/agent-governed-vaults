@@ -253,12 +253,20 @@ function departments(vaultRoot) {
  *    `fail` and never a blank. `none` is the case the whole "green belongs to a commit" rule exists
  *    for, so it gets a name of its own.
  *
- * 4. A CAPACITY OUTAGE LOOKS EXACTLY LIKE A CODE FAILURE. A run with no runner assigned concludes
- *    `failure` in 2-3 seconds having executed zero steps. This repo has lost ~72h to Actions
- *    exhaustion twice and misdiagnosed it as its own code both times. The suite timestamps are
- *    already in this response, so a suspiciously fast failure is flagged `fail(no-runner?)` for
- *    free. The QUESTION MARK is the honest part: confirming it costs `gh run view <id> --json jobs`
- *    per run (~1.6s each), so confirmation is opt-in via `--ci-jobs`.
+ * 4. AN INFRASTRUCTURE STOP LOOKS EXACTLY LIKE A CODE FAILURE. A run with no runner assigned
+ *    concludes `failure` in 2-3 seconds having executed zero steps. This repo has lost ~72h to that
+ *    twice and misdiagnosed it as its own code both times. The suite timestamps are already in this
+ *    response, so a suspiciously fast failure is flagged `fail(no-runner?)` for free. The QUESTION
+ *    MARK is the honest part: confirming it costs `gh run view <id> --json jobs` per run (~1.6s
+ *    each), so confirmation is opt-in via `--ci-jobs`.
+ *
+ *    AND `--ci-jobs` NAMES THE CAUSE, because "no runner" is a symptom with at least two causes that
+ *    demand OPPOSITE responses: capacity exhaustion clears itself, so you wait; a billing or
+ *    spending-limit stop never clears, so you escalate to the account owner. They are
+ *    indistinguishable in every field above -- the only artifact that separates them is the job's
+ *    annotations, quoted verbatim. Verified 2026-09-02: what four sessions (and this file's own
+ *    first draft) called "Actions capacity" was actually *"recent account payments have failed or
+ *    your spending limit needs to be increased"*. Paraphrasing is exactly how that happened.
  *
  * COST. One GraphQL call covers every open PR: ~0.9s against a ~1.9s baseline, versus 2+ REST calls
  * per PR (36+ calls, ~20s) for the same answer. It is on by default because a fact behind a flag is
@@ -400,8 +408,17 @@ function perHeadCi(opts = {}) {
     };
   });
 
-  // Opt-in confirmation of trap 4. `steps=0` with no runner assigned across every job is capacity,
-  // not code; anything else is a real failure and must stop being excused as infrastructure.
+  // Opt-in confirmation of trap 4. `steps=0` with no runner assigned across every job means no
+  // runner was ever allocated; anything else is a real failure and must stop being excused as
+  // infrastructure.
+  //
+  // AND THEN NAME THE CAUSE, because "no runner" is a symptom with at least two causes that behave
+  // COMPLETELY differently: capacity exhaustion clears itself, whereas a billing/spending-limit stop
+  // never does and only the account owner can lift it. A session told "capacity" waits; a session
+  // told "billing" escalates. Verified 2026-09-02 -- what looked like a capacity outage was in fact
+  // "recent account payments have failed or your spending limit needs to be increased", and the ONLY
+  // artifact carrying that sentence is the job's annotations. One more call per probed run, on a
+  // flag that is already opt-in and already spending one.
   let probed = 0;
   if (opts.jobs) {
     for (const r of rows) {
@@ -411,8 +428,20 @@ function perHeadCi(opts = {}) {
       const jobs = jr?.jobs;
       if (!Array.isArray(jobs) || !jobs.length) continue;
       const starved = jobs.every((x) => (x.steps?.length ?? 0) === 0 && !x.runnerName);
-      r.ci.label = starved ? 'fail(no-runner)' : 'fail';
-      r.ci.note = starved ? `${jobs.length} job(s), all steps=0 runner="" — Actions capacity, not code` : `${jobs.length} job(s) ran steps — real failure`;
+      if (!starved) {
+        r.ci.label = 'fail';
+        r.ci.note = `${jobs.length} job(s) ran steps — a real failure, not infrastructure`;
+        continue;
+      }
+      r.ci.label = 'fail(no-runner)';
+      const id = jobs[0]?.databaseId;
+      const notes = id
+        ? jsonOr(sh('gh', ['api', `repos/${repo.owner}/${repo.name}/check-runs/${id}/annotations`], 20_000), null)
+        : null;
+      const why = Array.isArray(notes) ? notes.map((n) => n.message).filter(Boolean).join(' ') : '';
+      // Report the annotation VERBATIM where there is one. A paraphrase is how "billing" became
+      // "capacity" in the first place, and the two imply opposite actions.
+      r.ci.note = why || `${jobs.length} job(s), all steps=0 runner="" — no runner allocated; no annotation says why`;
     }
   }
 
