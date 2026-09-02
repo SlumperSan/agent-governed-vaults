@@ -193,6 +193,29 @@ Measured 2026-09-01: head `bab5ee90`, run `33586340700`, `headSha bab5ee90…`, 
 `contracts`/`backend`/`slither` all green. The transient Foundry-download reset the handoff mentions
 is resolved. Locally, `npm run gate` is the ~30 s mirror.
 
+#### The check that enforces this rule cannot currently pass
+
+`merge-preflight` — the workflow that automates exactly the rule above — **can never post a green
+status, on any PR, at any head.** Its `ci-matches-head` rule enumerates every workflow run for the
+head SHA and blocks on any that is not `completed`
+(`scripts/lib/verdicts.mjs:273-293`), and `runsForHead` filters by head SHA alone with no
+workflow-name exclusion (`scripts/lib/verdicts.mjs:213-216`). The merge-preflight run performing the
+evaluation is itself a run on that head, and it is `in_progress` while it evaluates. So it blocks on
+itself, always.
+
+Observed on PR #130 at head `bcb7a4e5`: first trigger reported 2 blockers (`CI` in progress and
+`merge-preflight` in progress); after CI completed green, a re-run reported 1 — itself. No other open
+PR carries the context at all, so the workflow is new and this has not been noticed.
+
+It is **advisory today**, so nothing is blocked by it. The trap is the workflow's own stated plan:
+it becomes binding the moment the owner requires the `merge-preflight` context in branch protection
+(`.github/workflows/merge-preflight.yml`, "STATUS" header). On that day **no PR can ever merge.**
+Fix this before making it required — and note that branch protection cannot be configured on the
+current GitHub plan anyway (§4), so there is time.
+
+Until then, `merge-preflight` red on a PR is **not** evidence of anything. Match `headSha` by hand,
+as §2.3 says.
+
 ### 2.4 No HIGH live on `main`
 
 Pass: #120 merged. Until then a known HIGH from #107 is live on the branch that would be deployed.
