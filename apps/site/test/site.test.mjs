@@ -52,6 +52,9 @@ const TITLE_SUFFIX = ' — Agent-Governed Vaults';
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
 
+// The site's own public host, and the ONE exemption to the rule above -- see canonicalHrefs().
+const CANONICAL_HOST = 'rwally.com';
+
 /** Phrases banned on every page, everywhere, with no exception. */
 const BANNED = [
   /\bAPY\b/i,
@@ -280,14 +283,45 @@ test('zero JavaScript: no script tags, no event handler attributes', () => {
   }
 });
 
+/**
+ * The href values exempted from the host rule below: `rel="canonical"` links pointing at this
+ * site's own public host. This is the ONLY exemption, and it exists for a reason worth writing
+ * down rather than leaving to be reconstructed.
+ *
+ * The invariant the host rule protects is that a page LOADS nothing from anywhere and NAVIGATES
+ * off-site only to the project repository. A canonical link does neither: it fetches no resource,
+ * and it is not a link a reader can follow -- it is metadata that happens to be spelled with an
+ * `href` rather than a `content` attribute, which is why `og:url` needs no exemption and this does.
+ *
+ * It also cannot be written any other way. A RELATIVE canonical would pass this check untouched
+ * and is worse than having none at all, because it cannot do the one job canonicals exist for:
+ * collapsing www/non-www, http/https and trailing-slash duplicates of a page onto one URL. An
+ * exemption that lets the correct form ship beats a check that only permits the useless form.
+ *
+ * Both halves of the exemption are load-bearing and deliberately narrow. `rel="canonical"` ONLY --
+ * any other `rel` (stylesheet, preload, icon) still fails, because those DO load. And
+ * CANONICAL_HOST ONLY -- a canonical pointing anywhere else is not exempt and still fails.
+ */
+const canonicalHrefs = (html) => {
+  const out = new Set();
+  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+    if (!/\brel\s*=\s*"canonical"/i.test(tag)) continue;
+    const href = tag.match(/\bhref\s*=\s*"([^"]*)"/i)?.[1];
+    if (href && href.toLowerCase().startsWith(`https://${CANONICAL_HOST}`)) out.add(href);
+  }
+  return out;
+};
+
 test('no external requests: the only permitted remote host is the project repository', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     assert.ok(!/fonts\.googleapis\.com/i.test(html), `${p}: references fonts.googleapis.com`);
     assert.ok(!/fonts\.gstatic\.com/i.test(html), `${p}: references fonts.gstatic.com`);
+    const exempt = canonicalHrefs(html);
     for (const m of html.matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)) {
       const v = m[1];
       if (!/^(?:https?:)?\/\//i.test(v)) continue; // relative or fragment: fine
+      if (exempt.has(v)) continue; // this page's own canonical -- loads nothing, navigates nowhere
       const host = v.replace(/^(?:https?:)?\/\//i, '').split('/')[0].toLowerCase();
       assert.equal(host, ALLOWED_HOST, `${p}: external host ${host} is not permitted`);
     }
