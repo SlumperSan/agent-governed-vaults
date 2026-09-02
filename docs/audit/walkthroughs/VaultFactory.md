@@ -25,11 +25,23 @@ choices** from `VaultParams`: usdc, basket, oracle, capacity cap, min deposit, e
 ceiling + decay, adapter allowlist. `msg.sender` becomes the vault's `creator` (the 5% gate
 binds to this identity) and its attested operator.
 
+**The oracle is the one creator choice the factory curates (C-6).** A sixth constructor argument,
+`allowedOracles_`, fixes a blessed set; `oracleAllowlistEnforced` is `allowedOracles_.length > 0`,
+and while enforced `_requireAllowedOracle` reverts `OracleNotAllowed()` for any other oracle. The
+set is immutable — no add, no remove, no owner — and an **empty** allowlist disables enforcement
+entirely (local/tests). Separately, `_requireOracleCoversBasket` calls `priceWad` for every basket
+asset and reverts `OracleMissingAsset(asset)` on a revert or a zero, so an oracle that cannot price
+*this* basket is rejected rather than deploying a permanently-bricked vault. Both gates run in
+`createVault` **and** `createChildVault`. What the allowlist does **not** do — bind an
+already-deployed vault (`VaultCore.oracle` is immutable), or prove a feed is genuine — is
+enumerated in [ChainlinkOracle.md](ChainlinkOracle.md), which also walks the launch oracle itself.
+
 ## Entry points
 
 | Function | Notes |
 | --- | --- |
-| `createVault(params)` | `_deploy` → `registry.attestVault(vault, msg.sender)` → record in `allVaults`. `_deploy` wires each vault's `subVaultRegistry` to the real registry **only when `allowSubVaults`**; otherwise `address(0)` (root-only, C-1) |
+| `createVault(params)` | `_requireAllowedOracle` (C-6) → `_deploy` → `_requireOracleCoversBasket` → `registry.attestVault(vault, msg.sender)` → record in `allVaults`. The priceability probe runs **after** `_deploy` on purpose: `VaultCore`'s constructor owns basket validity (cap, duplicates, decimals → `BadConfig`) and must diagnose a malformed basket first; this check has the last word on a different question — can this oracle actually price it. `_deploy` wires each vault's `subVaultRegistry` to the real registry **only when `allowSubVaults`**; otherwise `address(0)` (root-only, C-1) |
+| `oracleAllowlistEnforced` / `isAllowedOracle` | **Immutable, C-6 curation.** Non-empty `allowedOracles_` at construction ⇒ enforced; each entry must be non-zero and have code. Gates **vault creation only** — every deployed vault is pinned to its own immutable oracle whatever the allowlist later says (`docs/LAUNCH-READINESS.md` §4 row 12; `test/audit/AuditOracleRotation.t.sol`) |
 | `allowSubVaults` | **Immutable, C-1 launch switch.** False at launch → `createChildVault` reverts `SubVaultsDisabled` and every deployed vault is wired root-only (`subVaultRegistry = address(0)`, so `allocateToChild` reverts and `parentVault()` is `address(0)`). A funded child would otherwise have an empty electorate capturable by one dust deposit (C-1), and there is no purely-internal fix; sub-vaults are deferred to a post-launch, post-audit release. Set true only once the parent-casts-child-vote mechanism ships |
 | `vaultDeployer` | Immutable. The factory's ONLY vault construction path (#10). Named `vaultDeployer`, not `deployer`, because the singletons already use `deployer` for the account that deployed them (`registry.deployer()`) |
 | `createChildVault(params, parent)` | **Reverts `SubVaultsDisabled` unless `allowSubVaults`** (C-1, see above). When enabled: `msg.sender == parent.creator()` (L-1), **child USDC must equal parent USDC** and **child basket ⊆ parent basket** (`assetUnit != 0` check per asset) — the property that makes in-kind child redemptions always map into parent accounting and look-through pricing always resolvable (SV-7). Then `subVaultRegistry.registerChild(parent, vault, exitFeeMaxBps)` (depth + fee-stack checks live there) + attestation |
