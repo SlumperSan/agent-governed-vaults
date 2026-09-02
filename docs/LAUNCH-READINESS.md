@@ -130,7 +130,12 @@ the canary clean. Do not launch with an uncapped vault; SF-3 makes the cap optio
 says it is not.
 
 **Exit fee: `exitFeeMaxBps = 50`, decay 604,800 s (7 days) — the values `base-mainnet.json`
-`smoke.exitFeeDecayPeriod` deploys.** The protocol cap is 100 bps; 50 is the value exercised
+`smoke` carries.** Nothing mechanically carries them to mainnet: `Deploy.s.sol` deploys the
+singletons and the factory, not a vault; the only reader of `smoke.exitFeeDecayPeriod` in a deploy
+position is `scripts/smoke-test.mjs`, a Base Sepolia runner that defaults to `base-sepolia.json`;
+and mainnet vault creation is the hand-written `factory.createVault(...)` step in DEPLOYMENT §4.
+So this is the value the operator must type, held to the reference config by
+`scripts/test/config-doc-truth.test.mjs`. The protocol cap is 100 bps; 50 is the value exercised
 end-to-end in the soak, and it leaves headroom for a child vault (stacked cap 50+25=75 ≤ 100 was
 proven live, SOAK-REPORT §2). **Decay-period flag (2026-09-01):** this paragraph previously said
 302,400 s (3.5 days). That figure was never what the 50 bps vault ran: the Sepolia smoke vault
@@ -138,7 +143,7 @@ deployed from `base-sepolia.json` at 604,800 s, and only the 25 bps soak drill v
 (`scripts/soak/soak-vaults.json`) used 302,400 s. Finance flagged the contradiction (Member Cost
 and the HWM; Fee Model Sensitivities) without resolving it. Whether 3.5 d or 7 d is the intended
 launch value is an owner launch-parameter decision still open; until it is made, this document
-states the config's value because the config is what deploys, and
+states the reference config's value, because that is the value the operator is told to type, and
 `scripts/test/config-doc-truth.test.mjs` pins the two together.
 
 **Governance config: `3600/3600/0/86400`, quorum 2,500 bps root floor.** Exactly the values the
