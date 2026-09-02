@@ -30,8 +30,8 @@ widened run went 245 → 254 results with **no new detector class**.
   not model this either, so the row's reasoning and the analyser's blind spot coincide. Dormant at
   launch under [[root-vaults-only]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
-  FIXED; the omission is now closed). The per-row re-triage (2026-09-01) then found a second real
+  `UniswapV3TwapSource._observe`, the one timestamp use with a security consequence → **H-2** (since
+  FIXED, and the contract itself deleted by the Chainlink-direct pivot; the omission is closed). The per-row re-triage (2026-09-01) then found a second real
   one the class verdict had covered for: `Governance.applyStandingDefault`'s VO-3 TTL is compared
   against `block.timestamp` during the reveal phase, so the commit phase eats into it → **T-1**
   (Low, since FIXED — `COMMIT_HARD_CAP = DEFAULT_TTL - 1`). Note what "sound for `Governance`" was
