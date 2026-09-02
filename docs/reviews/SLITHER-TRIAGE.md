@@ -246,6 +246,7 @@ proposal's `T - 1` read is unmoved and that `getAt(T)` still returns the end-of-
 test on `push` would die only to a `Checkpoints` mutation and would miss the one above, which is the
 mutation that actually matters.
 
+
 ## `calls-loop`, 121 rows, 23 sites, 9 clusters (triaged 2026-09-01)
 
 `calls-loop` is the largest group in the output by a factor of four and had never been triaged row
