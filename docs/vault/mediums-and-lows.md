@@ -78,6 +78,24 @@ enablers (L-1) or the zero-margin coincidences (L-2) behind larger findings.
   `setDelegate` is locked. **Accepted asymmetry** — the standing default is the weaker, tally-only
   instrument (never counts toward quorum), so member opt-out is defensible.
 
+## From the Slither triage
+
+- **T-1** (Low, Slither `timestamp` triage) — a standing default's VO-3 TTL is measured when the
+  default is APPLIED, and `applyStandingDefault` is callable only from the reveal phase, so the
+  commit phase consumes part of the 72h and the usable life is `DEFAULT_TTL - cfg.commitDuration`.
+  `_validateConfig` bounded `commitDuration` to `[1h, 30 days]` and never related it to
+  `DEFAULT_TTL`, so a vault registered at `commitDuration >= 72h` — legal, silent, no event — had
+  every standing default provably expired before its reveal window opened, killing VO-3
+  permanently for that vault. Low: defaults never touch quorum (VO-2/K-3) and are Rebalance-only
+  (VO-4), so the consequence is direction-only; and both shipped configs use `commitDuration: 3600`,
+  so the total-kill variant was never reachable at launch. **FIXED** — `COMMIT_HARD_CAP` is now
+  `DEFAULT_TTL - 1` instead of `30 days`, making the dead configuration unrepresentable at both
+  `_validateConfig` call sites (`registerVault` and `execute`'s RuleChange branch). No runtime path
+  changed. **Deliberately NOT fixed by re-anchoring the TTL to `p.createdAt`**: that would stretch
+  the maximum staleness of an applied default to `DEFAULT_TTL + cfg.commitDuration`, and VO-3's
+  accepted disposition is precisely the upper bound on that staleness. Regression:
+  `AuditStandingDefaultTtlVsCommit.t.sol` (8 tests, 12/12 mutations caught).
+
 ## Informational
 
 I-1 (Pyth `conf` unvalidated pre-deploy), I-2 (`MODULE_CALL_GAS = 300_000` hardcoded on an immutable

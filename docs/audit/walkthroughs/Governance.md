@@ -75,7 +75,10 @@ deposits mint no shares at all (observation window), doubly defeating atomic fla
 ## Config (`GovConfig`) validation
 
 `commitDuration ≥ 1h`, `revealDuration ≥ 1h`, `executionWindow ≥ 1h`,
-`timelockDuration ≤ 30 days` (hard cap), `2500 ≤ quorumBps ≤ 10000`,
+`commitDuration < DEFAULT_TTL` (i.e. `≤ COMMIT_HARD_CAP = DEFAULT_TTL - 1`, the **T-1** bound —
+a commit phase at or beyond the 72h standing-default TTL outlives every default, so VO-3 would be
+dead before the reveal window opened), `timelockDuration ≤ 30 days` (hard cap),
+`2500 ≤ quorumBps ≤ 10000`,
 `proposalThresholdBps ≤ 10000`, `0 < concentrationCapBps ≤ 10000`. Plus SV-6 parent-floor
 inheritance — `quorumBps >= parent's quorumBps` — enforced at **both** `registerVault` and the
 RuleChange update path (G2 fix; the check is shared, `_requireParentQuorumFloor`).

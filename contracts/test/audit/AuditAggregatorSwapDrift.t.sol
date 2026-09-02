@@ -26,11 +26,17 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 /// 1. **`description()` drift is runtime-inert.** Nothing in `priceWad` reads it; it is a
 ///    construction-time misconfiguration guard only. Only `decimals()` feeds a cached value.
 ///    Pinned by `test_descriptionDriftAfterConstructionIsRuntimeInert`.
-/// 2. **The sane-price band already fail-closes on every drift with a Chainlink precedent.** The
-///    only alternative convention Chainlink actually uses is 18 decimals (its ETH-denominated
-///    feeds), which misses by ten orders of magnitude; and any shift of >= 2 decimals leaves the
-///    real launch bands. Both revert `StaleOracle` today with no new code. Pinned by the
-///    `test_backstop_*` cases.
+/// 2. **The sane-price band already fail-closes on every drift with a Chainlink precedent — at
+///    today's prices.** The only alternative convention Chainlink actually uses is 18 decimals
+///    (its ETH-denominated feeds), which misses by ten orders of magnitude; and a shift of >= 2
+///    decimals leaves the real launch bands AT THE PRICES THE BANDS WERE SET AT. Both revert
+///    `StaleOracle` today with no new code. Pinned by the `test_backstop_*` cases. But this is a
+///    property of the PRICE, not of the config: both band comparisons are exclusive, so the
+///    -2-decimal backstop lapses at `spot >= 100 * lo` (BTC $100,000 / ETH $10,000) and the
+///    +2-decimal one at `spot <= hi / 100` (ETH $1,000 / BTC $10,000). The window where both hold
+///    is `hi/100 < spot < 100*lo`, a factor of `10,000 / (hi/lo)` wide — 10x at the shipped
+///    ratio-1000 bands, the minimum the constructor allows. Pinned by the `test_expiry_*` cases
+///    in 3a (floor) and 3b (ceiling).
 /// 3. **What is left is a +/-1-decimal change** — a shape with no Chainlink convention behind it
 ///    (8 for USD feeds, 18 for ETH-denominated; never 7 or 9), and zero occurrences in an on-chain
 ///    survey of 25 real aggregator swaps across 12 proxies on Base and Ethereum mainnet (Base
@@ -48,10 +54,22 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 ///
 /// ## What would invalidate the acceptance
 ///
-/// The backstop in (2) is DEPLOYER CONFIGURATION, not a contract guarantee:
-/// `test_backstop_disappearsEntirelyWhenTheSanePriceBandIsDisabled` proves a 0/0 band lets a 100x
-/// mis-scale through in silence. `scripts/verify-chainlink-oracle.mjs` hard-fails a mainnet feed
-/// with no band, which is what keeps that from happening — do not weaken either.
+/// Three things, matching row 14's own list:
+/// - **The price moving, in either direction, with nobody touching anything.** Each direction of
+///   move lapses ONE of the two backstops in (2): up through $100,000 BTC / $10,000 ETH the floor
+///   stops catching a -2-decimal drift (`test_expiry_atBtc100k…`, `test_expiry_wethBackstop…`);
+///   down through $1,000 ETH / $10,000 BTC the ceiling stops catching a +2-decimal drift
+///   (`test_expiry_atEth1k…`, `test_expiry_cbbtcCeiling…`). The two `justBelow`/`justAbove`
+///   tests are what make those lines boundaries rather than arguments about the whole design.
+/// - **A band retune that WIDENS the band** (raises `hi/lo`) and so narrows the covered window.
+///   The literals below are a snapshot, not a binding — see the comment on them — so a retune
+///   fails nothing here; the owner memo's follow-on plan is to move these literals with the config.
+/// - **A DISABLED band**, under which even a 100x mis-scale prices in silence:
+///   `test_backstop_disappearsEntirelyWhenTheSanePriceBandIsDisabled`. The backstop in (2) is
+///   DEPLOYER CONFIGURATION, not a contract guarantee. `scripts/verify-chainlink-oracle.mjs`
+///   hard-fails a mainnet feed with no band, and its `band bounds a 2-decimal drift AT THE LIVE
+///   PRICE` check refuses a deploy whose spot is already outside the covered window — the
+///   constructor does not (it checks containment and ratio only). Do not weaken either.
 contract AuditAggregatorSwapDriftTest is Test {
     using stdStorage for StdStorage;
 
@@ -284,8 +302,7 @@ contract AuditAggregatorSwapDriftTest is Test {
 
         _swapAggregatorTo(feed, 6, spotUsd);
 
-        vm.expectRevert();
-        oracle.priceWad(CBBTC);
+        _expectStale(oracle, CBBTC); // the BAND trips, not a Panic: selector + asset, like every other revert here
     }
 
     /// WETH has the same expiry an order of magnitude lower: its floor is $100, so the -2-decimal
@@ -300,6 +317,81 @@ contract AuditAggregatorSwapDriftTest is Test {
 
         assertEq(
             oracle.priceWad(WETH), WETH_MIN_WAD, "exactly on the $100 floor, and exclusive means no revert"
+        );
+    }
+
+    // --- 3b. the SAME expiry on the ceiling: the +2-decimal backstop lapses on the way DOWN -----
+
+    /// The mirror of 3a, and the NEARER boundary for WETH. The ceiling comparison is
+    /// `priceWad_ > cfg.maxPriceWad` -- also EXCLUSIVE -- so a +2-decimal drift (x100 OVERPRICE)
+    /// is caught only while `spot > maxPriceWad / 100`, and lands exactly on the ceiling without
+    /// reverting at `spot == maxPriceWad / 100`. For WETH's $100,000 ceiling that is ETH = $1,000:
+    /// a 59% drawdown from the ~$2,440 the band was set at, a price ETH last traded through in
+    /// 2022. Below it every price for the asset reads 100x high, exits are OVERPAID out of the
+    /// remaining members' share, and nothing reverts. The row-14 register used to name only the
+    /// floor side (ETH >= $10,000, a +310% move); this side is the one a bear market reaches first.
+    ///
+    /// The spot is DERIVED from the band constant rather than typed as a fourth price, and every
+    /// assertion below compares against that constant too, so a band retune moves this boundary
+    /// with it rather than breaking the test (the owner memo's follow-on plan edits the band
+    /// literals above and expects the expiry tests to follow). NOTE the asymmetry, because it is
+    /// deliberate and not yet repaired: the §3a FLOOR tests above still hard-type their spots
+    /// (100_000 / 99_999 / 10_000), so an option-B retune fails them loudly and they must be
+    /// edited by hand. That is #92's shape, left as it is here rather than rewritten under a
+    /// review that did not ask for it.
+    ///
+    /// Mutation-checked 2026-09-01: with `>` at ChainlinkOracle's ceiling comparison changed to
+    /// `>=`, this test and the cbBTC one below FAIL (the priceWad call reverts StaleOracle), and
+    /// the "just above" test still passes -- so the pair discriminates the exclusive comparison
+    /// from an inclusive one, exactly as 3a does for the floor.
+    function test_expiry_atEth1kThePlusTwoDecimalDriftNoLongerTripsTheCeiling() public {
+        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100; // the boundary itself, derived from the band
+        // Guards the DERIVATION without pinning its VALUE: proves the division is exact, so a band
+        // whose ceiling is not a whole number of dollars could not silently test a truncated
+        // boundary. Survives a retune, which `assertEq(spotUsd, 1_000)` would not.
+        assertEq(spotUsd * 100 * 1e18, WETH_MAX_WAD, "the derived spot is exactly ceiling/100, no truncation");
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(WETH, address(feed), WETH_MIN_WAD, WETH_MAX_WAD);
+
+        _swapAggregatorTo(feed, 10, spotUsd); // 8 -> 10 decimals: a x100 mis-scale
+
+        uint256 p = oracle.priceWad(WETH);
+        // At the shipped band this is ETH quoted at $100,000 while the feed says $1,000: a 100x
+        // overprice, returned in silence. Asserted against the band constant, not against $100,000,
+        // so the assertion follows a retune instead of breaking on one.
+        assertEq(p, WETH_MAX_WAD, "the drifted price lands exactly ON the ceiling -- a 100x overprice");
+        assertFalse(p > WETH_MAX_WAD, "and the contract's comparison is exclusive, so it does not revert");
+    }
+
+    /// One dollar above the boundary the ceiling still catches it -- the boundary is a line, not
+    /// a region. Asserted by selector + asset so a Panic could not pass for the band tripping.
+    function test_expiry_justAboveTheCeilingBoundaryTheCeilingStillCatchesIt() public {
+        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100 + 1; // one dollar above the derived boundary
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(WETH, address(feed), WETH_MIN_WAD, WETH_MAX_WAD);
+
+        _swapAggregatorTo(feed, 10, spotUsd); // x100 puts it just OVER the ceiling
+
+        _expectStale(oracle, WETH);
+    }
+
+    /// cbBTC's ceiling is $1,000,000, so its +2-decimal backstop lapses at BTC = $10,000 -- an
+    /// 87% drawdown from ~$77,700. Recorded for the same reason as the WETH floor case: the two
+    /// launch assets lapse at different prices and the register should carry both, on both sides.
+    function test_expiry_cbbtcCeilingBackstopLapsesAtTenThousand() public {
+        uint256 spotUsd = CBBTC_MAX_WAD / 1e18 / 100; // derived from the band, as above
+        assertEq(
+            spotUsd * 100 * 1e18, CBBTC_MAX_WAD, "the derived spot is exactly ceiling/100, no truncation"
+        );
+        MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
+        ChainlinkOracle oracle = _oracle(CBBTC, address(feed), CBBTC_MIN_WAD, CBBTC_MAX_WAD);
+
+        _swapAggregatorTo(feed, 10, spotUsd);
+
+        assertEq(
+            oracle.priceWad(CBBTC),
+            CBBTC_MAX_WAD,
+            "exactly on the ceiling ($1,000,000 at the shipped band), and exclusive means no revert"
         );
     }
 

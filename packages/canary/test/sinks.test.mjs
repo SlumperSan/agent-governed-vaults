@@ -160,6 +160,30 @@ test('tierOf: detail.tier is honoured ONLY alongside detail.selfTest — a real 
   assert.equal(tierOf(promoted), 'log', 'and the override cannot promote a real LOG signal either');
 });
 
+test('a governance-watch ALERT reaches the PAGER, and its recovery and blind-detector lines do not', async () => {
+  // Monitoring Gap Analysis §3 item 5 is explicit that this signal pages. Asserting the ROUTE, not
+  // membership of PAGE_SIGNALS, is what stops a future tierOf() refactor from quietly demoting it:
+  // the set could stay correct while the derivation stopped consulting it.
+  const { SIGNAL: GOVERNANCE_WATCH } = await import('../src/signals/governance-watch.mjs');
+  const calls = [];
+  const sink = createTieredWebhookSink({
+    pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+    fetchImpl: async (url) => { calls.push(url); return { ok: true, status: 200 }; },
+  });
+  await sink.emit(tr('alert', GOVERNANCE_WATCH));
+  // Leaving a phase is a RECOVERED line and a blind governance detector is a DEGRADED one; both
+  // route LOG, because tierOf pages only on `to === 'alert'`. That is the package-wide rule for
+  // every signal's non-alert statuses, recorded here rather than changed.
+  await sink.emit(tr('ok', GOVERNANCE_WATCH));
+  await sink.emit(tr('skipped', GOVERNANCE_WATCH));
+  assert.deepEqual(calls, [
+    'https://example.invalid/page',
+    'https://example.invalid/log',
+    'https://example.invalid/log',
+  ]);
+  assert.equal(tierOf(tr('alert', GOVERNANCE_WATCH)), 'page');
+});
+
 test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG decision', async () => {
   const liveSignals = await signalNamesOnDisk();
   // Not a file: `canary-runner.mjs` synthesises this one when a whole vault is unreadable.

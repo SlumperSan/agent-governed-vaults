@@ -57,6 +57,9 @@ export const VAULT_VIEWS = Object.freeze([
   // live; `CREATOR_MIN_STAKE_BPS` is the protocol CONSTANT (public, so it has an auto-getter) that
   // `_checkCreatorGate` enforces — a second, independent 5% gate from Governance's own
   // `proposalThresholdBps`, which can be configured to a different value per vault.
+  // The vault's immutable governance module -- how `governance-watch` finds the Governance
+  // contract without a second env var, exactly the way `oracle` locates the oracle, and how
+  // `operator-power` finds the contract it reads `configOf` from. TWO callers, ONE read.
   view('governance', [], ['address']),
   view('capacityCapUsdc', [], ['uint256']),
   // `_deposit` requires `amountUsdc >= minDepositUsdc` (VaultCore.sol:369) BEFORE it checks the
@@ -78,26 +81,6 @@ export const VAULT_VIEWS = Object.freeze([
   view('totalVotingEligibleShares', [], ['uint256']),
 ]);
 
-/**
- * Governance — read for `signals/operator-power.mjs` only (G1). `configOf` is a mapping-to-struct
- * getter; viem flattens it to `GovConfig`'s eight fields in DECLARATION order, so field order here
- * is load-bearing (mirrors the AGGREGATOR_V3_VIEWS comment). `vaultRegistered` matters because
- * `propose()` reverts `NotRegistered()` before it ever reads `proposalThresholdBps` — an
- * unregistered vault has no live propose-gate to monitor, whatever `configOf` happens to hold.
- */
-export const GOVERNANCE_VIEWS = Object.freeze([
-  view('vaultRegistered', ['address'], ['bool']),
-  view('configOf', ['address'], [
-    { name: 'commitDuration', type: 'uint32' },
-    { name: 'revealDuration', type: 'uint32' },
-    { name: 'timelockDuration', type: 'uint32' },
-    { name: 'executionWindow', type: 'uint32' },
-    { name: 'quorumBps', type: 'uint16' },
-    { name: 'proposalThresholdBps', type: 'uint16' },
-    { name: 'concentrationCapBps', type: 'uint16' },
-    { name: 'proposalCooldown', type: 'uint32' },
-  ]),
-]);
 
 /**
  * OracleAggregator — RETIRED by the C-6 pivot (the contract now lives in contracts/test/retired/).
@@ -216,6 +199,65 @@ export const ERC20_TRANSFER_EVENT = Object.freeze(
 export const VAULT_WATCH_EVENTS = Object.freeze([
   ev('ModuleCallFailed', [{ name: 'module', type: 'bytes32', indexed: true }, addr('member', true)]),
   ev('SliceEscrowed', [addr('member', true), addr('asset', true), u256('amount')]),
+]);
+
+/**
+ * Governance — the three public getters `signals/governance-watch.mjs` reads. `proposals` and
+ * `configOf` are public mapping-to-struct getters, so viem flattens each to its struct fields in
+ * declaration order; the field ORDER below is copied from Governance.sol and pinned against the
+ * compiled ABI by test/abis.test.mjs. `Status` and `ProposalType` come back as uint8 enum indices.
+ */
+export const GOVERNANCE_VIEWS = Object.freeze([
+  // `propose()` reverts `NotRegistered()` before it ever reads `proposalThresholdBps`, so an
+  // unregistered vault has no live propose-gate for `operator-power` to monitor, whatever
+  // `configOf` happens to hold (Review115).
+  view('vaultRegistered', ['address'], ['bool']),
+  view('activeProposalOf', ['address'], ['uint256']),
+  view('proposals', ['uint256'], [
+    { name: 'vault', type: 'address' },
+    { name: 'ptype', type: 'uint8' },
+    { name: 'proposer', type: 'address' },
+    { name: 'createdAt', type: 'uint64' },
+    { name: 'commitDeadline', type: 'uint64' },
+    { name: 'revealDeadline', type: 'uint64' },
+    { name: 'executableAt', type: 'uint64' },
+    { name: 'expiresAt', type: 'uint64' },
+    { name: 'status', type: 'uint8' },
+    { name: 'actionHash', type: 'bytes32' },
+    { name: 'snapshotTotal', type: 'uint256' },
+    { name: 'memberCount', type: 'uint256' },
+    { name: 'forWeight', type: 'uint256' },
+    { name: 'againstWeight', type: 'uint256' },
+    { name: 'revealedWeight', type: 'uint256' },
+    { name: 'revealedVoterCount', type: 'uint256' },
+  ]),
+  view('configOf', ['address'], [
+    { name: 'commitDuration', type: 'uint32' },
+    { name: 'revealDuration', type: 'uint32' },
+    { name: 'timelockDuration', type: 'uint32' },
+    { name: 'executionWindow', type: 'uint32' },
+    { name: 'quorumBps', type: 'uint16' },
+    { name: 'proposalThresholdBps', type: 'uint16' },
+    { name: 'concentrationCapBps', type: 'uint16' },
+    { name: 'proposalCooldown', type: 'uint32' },
+  ]),
+]);
+
+/**
+ * Governance lifecycle events `governance-watch` scans over the poll window — for block/tx
+ * attribution only. The PHASE a proposal is in is read from `proposals(pid)` against chain time,
+ * because commit→reveal and timelock→executable are clock crossings that emit no event at all.
+ * The indexer folds these four too, but the canary must not depend on the projection being
+ * caught up to notice a proposal.
+ */
+export const GOVERNANCE_WATCH_EVENTS = Object.freeze([
+  ev('Proposed', [
+    u256('pid', true), addr('vault', true), { name: 'ptype', type: 'uint8', indexed: false },
+    addr('proposer', true), { name: 'actionHash', type: 'bytes32', indexed: false },
+  ]),
+  ev('Finalized', [u256('pid', true), { name: 'status', type: 'uint8', indexed: false }]),
+  ev('Executed', [u256('pid', true)]),
+  ev('ProposalExpired', [u256('pid', true)]),
 ]);
 
 /** ExitSettled — not folded here, but needed to tell an operator's honest exit payout from a fee leak. */

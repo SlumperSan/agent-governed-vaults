@@ -129,16 +129,34 @@ contract AuditReentrancyGuardCoverageTest is Test {
     /// The compiled ABI, decoded ONCE in `setUp`. Two reasons it lives here rather than in the
     /// test body, and the second is the load-bearing one:
     ///  - it is shared reference data, not per-test state; and
-    ///  - `forge snapshot` records the test body's gas, not `setUp`'s. Parsing a 200 KB build
-    ///    artifact costs ~130M gas and its cost moves with the artifact's byte length -- which
-    ///    changes with `VaultCore`'s bytecode AND with the artifact's compilation-order `id`
-    ///    field. Snapshotting that would put a number in `.gas-snapshot` that measures the build
-    ///    rather than the code, exactly the noise `--nmt "testFuzz|c4EndToEnd|testFork"` exists
-    ///    to keep out. Keeping it in `setUp` leaves the snapshot row small and stable without
-    ///    touching the gate's filter.
+    ///  - `forge snapshot` records the test body's gas, not `setUp`'s. Keeping the artifact read
+    ///    out of the bodies leaves both snapshot rows measuring the code rather than the build,
+    ///    which is what the gate's `--nmt "testFuzz|c4EndToEnd|testFork"` filter exists to
+    ///    protect and is why that filter did not have to be touched.
+    ///
+    /// **The read must also cost the same whatever the artifact weighs**, and that is a separate
+    /// requirement from where it lives. `out/VaultCore.sol/VaultCore.json` is not one file: a
+    /// plain `forge build` writes ~231 KB, and any build carrying `--build-info` / `--ast` --
+    /// which is what Slither drives, and Slither is the LAST step of `npm run gate` -- embeds the
+    /// `ast` and writes ~1,049 KB. That state is sticky (a later `forge build` reports
+    /// "compilation skipped" and leaves it), so anything here whose cost tracks the file's byte
+    /// length times the ABI's entry count runs out of gas on the *next* run of the gate rather
+    /// than on this one. It did: the original walk made ~330 whole-document parses and `setUp()`
+    /// failed `EvmError: OutOfGas` against the 1 MB artifact while passing against the 231 KB one.
+    /// Hence exactly three whole-document reads below, a count that does not move with the ABI.
     string[] internal abiNames;
     bool[] internal abiMutating;
     string[] internal abiSignatures;
+
+    /// `.abi[]` filtered to function entries. Both queries carry the SAME predicate, so the two
+    /// arrays are index-aligned by construction and in document order -- which is what makes the
+    /// name/mutability join sound. Filtering rather than reading `.abi[*].name` and
+    /// `.abi[*].stateMutability` is not a stylistic choice: the `constructor` entry has a
+    /// `stateMutability` and no `name`, and `error`/`event` entries have a `name` and no
+    /// `stateMutability`, so those two arrays are of different lengths (109 and 68 against 110
+    /// entries) and joining them by index would silently mis-pair.
+    string constant FN_NAMES = "$.abi[?(@.type == 'function')].name";
+    string constant FN_MUTABILITIES = "$.abi[?(@.type == 'function')].stateMutability";
 
     function setUp() public {
         string memory json = vm.readFile("out/VaultCore.sol/VaultCore.json");
@@ -199,17 +217,6 @@ contract AuditReentrancyGuardCoverageTest is Test {
     }
 
     // ── leg 1: completeness ──────────────────────────────────────────────────
-
-    /// Helper so the walk below can `try`. `parseJsonString` reverts on a missing key, and a
-    /// revert is only catchable across an external call boundary — which is also what bounds
-    /// the walk: the first index past the end of the array is the one that throws.
-    function abiField(string memory json, uint256 i, string memory field)
-        external
-        pure
-        returns (string memory)
-    {
-        return vm.parseJsonString(json, string.concat("$.abi[", vm.toString(i), "].", field));
-    }
 
     /// Every state-mutating external in the compiled ABI is accounted for by the register —
     /// nothing is guarded-by-omission. **This is the test that fails when someone adds a
@@ -331,22 +338,33 @@ contract AuditReentrancyGuardCoverageTest is Test {
 
     // ── json helpers ─────────────────────────────────────────────────────────
 
-    /// Walk `.abi[]` once, recording the name and mutability of every `type == "function"`
-    /// entry. The walk ends where `parseJsonString` first reverts on a missing index. Each
-    /// field is read exactly once — re-reading the artifact per comparison runs out of gas on
-    /// an ABI this size.
+    /// Record the name and mutability of every `type == "function"` entry in `.abi[]`, in
+    /// document order, in TWO whole-document reads — a count that does not move with the number
+    /// of ABI entries or with the artifact's byte length. See the note on `abiNames` for why
+    /// that constancy is the property under test here and not an optimisation.
+    ///
+    /// `vm.parseJson`'s bytes-returning form is used rather than `vm.parseJsonStringArray`
+    /// because the typed array cheatcodes reject any path that selects more than one JSON node
+    /// (`must return exactly one JSON value`) — which is every useful path here, filter or not.
+    /// `parseJson` encodes a multi-node selection of strings as a `string[]`, so the decode below
+    /// is exact rather than lenient. The one shape it would NOT survive is an ABI with exactly
+    /// one function, which `parseJson` would return as a bare string; `VaultCore` has 67 and
+    /// `assertGt(names.length, 0)` in the completeness leg is the backstop if that ever changes.
     function _loadAbi(string memory json) internal {
-        for (uint256 i; i < 512; ++i) {
-            string memory kind;
-            try this.abiField(json, i, "type") returns (string memory t) {
-                kind = t;
-            } catch {
-                break;
-            }
-            if (!_eq(kind, "function")) continue;
-            string memory sm = this.abiField(json, i, "stateMutability");
-            abiNames.push(this.abiField(json, i, "name"));
-            abiMutating.push(!_eq(sm, "view") && !_eq(sm, "pure"));
+        string[] memory names = abi.decode(vm.parseJson(json, FN_NAMES), (string[]));
+        string[] memory mutabilities = abi.decode(vm.parseJson(json, FN_MUTABILITIES), (string[]));
+        // Both selections share a predicate, so a length mismatch is impossible unless the
+        // engine's semantics changed underneath the join. Assert it rather than assume it: a
+        // silent mis-pairing here would report a mutating function as a view and hide exactly
+        // what this suite exists to catch.
+        assertEq(
+            names.length,
+            mutabilities.length,
+            "the ABI's function names and mutabilities did not select in step -- the join is unsound"
+        );
+        for (uint256 i; i < names.length; ++i) {
+            abiNames.push(names[i]);
+            abiMutating.push(!_eq(mutabilities[i], "view") && !_eq(mutabilities[i], "pure"));
         }
     }
 

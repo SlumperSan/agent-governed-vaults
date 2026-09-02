@@ -52,8 +52,9 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | Lifecycle propose→commit→reveal→finalize→timelock→execute | `Governance::test_fullLifecycle_passAndExecute` |
 | VO-2/K-3 quorum floor; defaults tally-only | `Governance::test_quorumFloorDefeats`, `::test_defaultCountsInTallyNeverQuorum` |
 | VO-3 default 72h TTL | `Governance::test_defaultExpiresAfter72h` |
+| VO-3 TTL vs the commit phase — usable window is `DEFAULT_TTL - commitDuration`, and `COMMIT_HARD_CAP = DEFAULT_TTL - 1` keeps it non-empty (**T-1**) | `AuditStandingDefaultTtlVsCommit::test_T1_commitPhaseLongerThanTtl_isRejectedAtRegistration`, `::test_T1_theCapIsPinnedToTheTtl`, `::test_T1_commitDurationCapBoundary_partitionsExactly`, `::test_T1_aVaultAtTheCapStillHasAUsableDefaultWindow`, `::test_T1b_commitPhaseConsumesPartOfTheTtl_bounded` |
 | VO-4 defaults structurally Rebalance-only | `Governance::test_defaultOnlyForRebalanceType` |
-| G4 default must predate proposal (`setAt < createdAt`) | verified in accepted-rows review (Area 2) — no dedicated regression test |
+| G4 default must predate proposal (`setAt < createdAt`) | `AuditStandingDefaultTtlVsCommit::test_T1_f4LowerBoundIsStrict_sameSecondDefaultIsRejected` — added 2026-09-01. This row previously read "no dedicated regression test", and it was right: flipping the strict `<` to `<=` survived all 395 tests. Found by the T-1 mutation gate; the bound itself was already correct. |
 | VO-5/G1 delegation + concentration cap on received weight only | `Governance::test_delegationCranksOntoDelegateDirection`, `::test_concentrationCapBlocksExcessDelegation`, `::test_ownWeightIsNeverConcentrationCapped`, `::test_selfVoteBeatsDelegation` |
 | VO-6 unrevealed commits forfeit | `Governance::test_unrevealedCommitIsForfeit` |
 | VO-9 flash-stake zero weight (snapshot at createdAt−1) | `Governance::test_postCreationDepositHasZeroWeight`, `GovernanceInvariant::invariant_revealedNeverExceedsSnapshot` |

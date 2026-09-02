@@ -18,7 +18,7 @@ import { emptyState } from '../../indexer/src/projections.mjs';
 import {
   mockReader, healthyVault, healthyState, chainlinkVault, log,
   VAULT, USDC, ORACLE, ASSET, REGISTRY, MEMBER, CREATOR, OPERATOR, SRC1, SRC2, SRC3, SEQ_FEED,
-  AGGREGATOR, AGGREGATOR_2,
+  AGGREGATOR, AGGREGATOR_2, GOVERNANCE, GOV_CONFIG, proposalTuple,
 } from './helpers.mjs';
 
 const NOW = 1_700_000_000;
@@ -142,10 +142,10 @@ test('a healthy deployment produces ZERO alerts across every signal', async () =
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
     [
-      'depeg-reference', 'exit-liveness', 'fee-routing', 'module-events', 'nav-backing',
-      'operator-power', 'oracle-freshness', 'share-conservation',
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'governance-watch', 'module-events',
+      'nav-backing', 'operator-power', 'oracle-freshness', 'share-conservation',
     ],
-    'all eight signals must actually have run',
+    'all nine signals must actually have run',
   );
 });
 
@@ -654,7 +654,7 @@ test('a full sweep derives the early-warning bar from ORACLE_FEED_CADENCE_SECOND
 
 // ── feed identity (signal g) is wired into the sweep ─────────────────────────
 
-test('a healthy PIVOTED sweep runs NINE signals — feed-identity, operator-power and depeg-reference included, and silent', async () => {
+test('a healthy PIVOTED sweep runs TEN signals — feed-identity, governance-watch, operator-power and depeg-reference included, and silent', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: pivotedFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
@@ -663,13 +663,13 @@ test('a healthy PIVOTED sweep runs NINE signals — feed-identity, operator-powe
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
     [
-      'depeg-reference', 'exit-liveness', 'fee-routing', 'feed-identity', 'module-events',
-      'nav-backing', 'operator-power', 'oracle-freshness', 'share-conservation',
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'feed-identity', 'governance-watch',
+      'module-events', 'nav-backing', 'operator-power', 'oracle-freshness', 'share-conservation',
     ],
   );
 });
 
-test('a RETIRED-oracle sweep still runs exactly eight signals — feed-identity has nothing to watch there', async () => {
+test('a RETIRED-oracle sweep still runs exactly nine signals — feed-identity has nothing to watch there', async () => {
   const results = await collectSignals({
     reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
     state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
@@ -678,10 +678,10 @@ test('a RETIRED-oracle sweep still runs exactly eight signals — feed-identity 
   assert.deepEqual(
     [...new Set(results.map((r) => r.signal))].sort(),
     [
-      'depeg-reference', 'exit-liveness', 'fee-routing', 'module-events', 'nav-backing',
-      'operator-power', 'oracle-freshness', 'share-conservation',
+      'depeg-reference', 'exit-liveness', 'fee-routing', 'governance-watch', 'module-events',
+      'nav-backing', 'operator-power', 'oracle-freshness', 'share-conservation',
     ],
-    'operator-power and depeg-reference are oracle-flavor-independent — they still run',
+    'operator-power, depeg-reference and governance-watch are oracle-flavor-independent — they still run',
   );
 });
 
@@ -856,4 +856,29 @@ test('CANARY_TEST_ALERT_ON_START fires the self-test once, before the sweep loop
       'the self-test must never be recorded as a real signal transition, even once the real sweep loop has also run',
     );
   });
+});
+
+// ── governance watch (signal h) is wired into the sweep ──────────────────────
+
+test('an open proposal pages exactly once from governance-watch while every other signal reads healthy', async () => {
+  const contracts = healthyFixture({
+    [GOVERNANCE]: {
+      activeProposalOf: () => 1n,
+      configOf: () => GOV_CONFIG,
+      proposals: () => proposalTuple({ createdAt: NOW - 60, commitDeadline: NOW + 3540, revealDeadline: NOW + 7140, status: 1 }),
+    },
+  });
+  const results = await collectSignals({
+    reader: mockReader({ contracts, nowSec: NOW }), state: healthyState(),
+    vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  const alerts = results.filter((r) => r.status === 'alert');
+  assert.equal(alerts.length, 1, alerts.map((r) => r.message).join('; '));
+  assert.equal(alerts[0].signal, 'governance-watch');
+  assert.equal(alerts[0].key, 'commit');
+  assert.equal(alerts[0].detail.revealDeadline, NOW + 7140);
+  assert.equal(alerts[0].detail.earliestExecuteAt, NOW + 7140 + GOV_CONFIG[2]);
+  // The sweep found Governance through the vault itself — no config carries its address.
+  assert.equal(alerts[0].detail.governance, GOVERNANCE);
+  assert.equal(baseCfg.governance, undefined);
 });

@@ -38,8 +38,9 @@ its own `CANARY_STATE_PATH`.
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 | `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
-| `src/signals/operator-power.mjs` | signal (h): the operator's own stake against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately and each against the share book its own gate reads (voting-eligible for `propose()`, raw for the exit gate) (G1) |
-| `src/signals/depeg-reference.mjs` | signal (i): a Chainlink USDC/USD reference feed read every sweep, purely informational — the vault's own oracle pins USDC at $1.00 regardless (G4) |
+| `src/signals/governance-watch.mjs` | signal (h): the active proposal's phase from `Governance` state against chain time, one transition key per phase, with the reveal deadline and earliest `execute` in `detail`; lifecycle events scanned for tx attribution only (Monitoring Gap Analysis G8) |
+| `src/signals/operator-power.mjs` | signal (i): the operator's own stake against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately and each against the share book its own gate reads (voting-eligible for `propose()`, raw for the exit gate) (G1) |
+| `src/signals/depeg-reference.mjs` | signal (j): a Chainlink USDC/USD reference feed read every sweep, purely informational — the vault's own oracle pins USDC at $1.00 regardless (G4) |
 
 ## Design notes
 
@@ -113,6 +114,6 @@ every transition, same channel, no severity. Full env reference is in
 node --test packages/canary/test/*.test.mjs
 ```
 
-318 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+347 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

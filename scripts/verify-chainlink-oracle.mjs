@@ -23,10 +23,15 @@
  *
  * ## Re-run this AFTER deploying, not only before
  *
- * The decimals check below is a COMPLETE test of the aggregator-swap-drift residual, because
- * `ChainlinkOracle` derives its cached `scale` from nothing else: if a feed still reports 8
- * decimals, a deployed oracle's cached `scale` is still correct no matter how many times the
- * aggregator was swapped underneath. This script is read-only and keyless, so it is safe to run on
+ * The decimals check below is a COMPLETE test of the aggregator-swap-drift residual AT THE
+ * SAMPLING INSTANT, because `ChainlinkOracle` derives its cached `scale` from nothing else: if a
+ * feed still reports 8 decimals WHEN YOU RUN THIS, a deployed oracle's cached `scale` is still
+ * correct no matter how many times the aggregator was swapped up to that moment. It says nothing
+ * about the interval between two runs -- a swap that drifts and is caught between them is invisible
+ * here until the next run -- so the exposure window is the cadence, and the cadence is the control.
+ * Since #103 the canary's `feed-identity` signal closes that window to one sweep by comparing live
+ * `decimals()` against the deployed oracle's cached scale; this script is the git-tracked second
+ * line. It is read-only and keyless, so it is safe to run on
  * a cadence against a live deployment -- that is the off-chain half of the accepted residual. The
  * per-feed `aggregatorPin` block makes a swap VISIBLE (reported as DRIFT, never a failure -- a swap
  * is legitimate Chainlink operation), so an operator can tell "nothing moved" apart from "it moved
