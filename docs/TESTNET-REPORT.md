@@ -1,5 +1,7 @@
 # Base Sepolia Testnet Run — Report
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the deployment this run was made against and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 **Status: ✅ COMPLETE — full green lifecycle on Base Sepolia, every phase independently verified.**
 
 The blocker that stopped the first attempt is **resolved**: the Sprint-8 merge train landed, so

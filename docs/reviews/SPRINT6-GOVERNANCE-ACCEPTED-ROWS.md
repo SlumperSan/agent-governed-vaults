@@ -1,5 +1,7 @@
 # Sprint 6 — Adversarial Pass on Deliberately-Accepted Governance Rows
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree as reviewed at Sprint 6 and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 Scope: the four governance areas whose "Accepted" tradeoffs never got an adversarial pass against
 the stated design intent, because the prior governance review (`SPRINT6-GOVERNANCE-REVIEW.md`, Agent A)
 ran **without** `docs/ARCHITECTURE.md` / `docs/THREAT-MODEL.md` (they were at a path it could not see).
