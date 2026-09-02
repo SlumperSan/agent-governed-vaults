@@ -694,6 +694,111 @@ test('the member self-service page carries no banned claim', () => {
   assert.ok(/Nothing here is an\s+offer, a solicitation, or financial advice\./.test(text), `${MEMBER_PAGE}: must carry the not-an-offer sentence`);
 });
 
+/**
+ * The body of one markdown heading on the member page, up to the next heading of any level. The
+ * three claims below are each anchored to the SECTION that has to carry them, so moving a
+ * correction out of the section a member reads under stress fails the test even though the words
+ * are still somewhere in the file.
+ * @param {string} text
+ * @param {string} heading
+ */
+function memberSection(text, heading) {
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `${MEMBER_PAGE}: heading not found: ${heading}`);
+  const rest = text.slice(start + heading.length);
+  const end = rest.search(/\n#{2,4} /);
+  return (end === -1 ? rest : rest.slice(0, end)).replace(/\s+/g, ' ');
+}
+
+/**
+ * The three claims the 2026-09-01 adversarial review found overstated, pinned in BOTH directions.
+ * A test that only asserts the corrected wording is present is satisfied by adding the correction
+ * and leaving the false sentence in place two lines above it, so each claim also asserts the exact
+ * prior phrasing is gone.
+ *
+ * Each was re-checked against `contracts/src` by symbol, not by line number:
+ *
+ *  1. `VaultCore.requestExit` reads no price on its Mode-F branch and returns nothing, so an
+ *     `eth_call` simulation returns `0x` in BOTH modes and cannot distinguish them. The queue it
+ *     accepts has no un-do: the only writer that clears `queuedExitShares` is
+ *     `VaultCore.settleQueuedExit`, which is `require(!_pendingExecution(), ExecutionStillPending())`.
+ *     `Governance.activeProposalOf` is assigned only in `Governance.propose` and never zeroed, so a
+ *     non-zero id is not Mode F either. The page previously read `0x` as "it would succeed right
+ *     now" — in front of an irrevocable action, which is the worst place for a false green light.
+ *  2. `VaultCore.cancelPending` ends in `_payOrEscrow(usdc, msg.sender, p.amountUsdc)`, and
+ *     `VaultCore._payOrEscrow` is `tryTransfer` with `claimable[to][asset] += amount` +
+ *     `SliceEscrowed` on failure. So the refund is not always a transfer, and "in full" said
+ *     nothing about which branch ran.
+ *  3. `VaultCore._settleExit` sets `feeBps = 0` when `sharesOf[member] == totalShares`, and
+ *     `VaultCore.exitFeeBpsOf` is `_exitFeeBps` alone — its own natspec says "before any
+ *     sole-holder waiver applied at settlement". The page's only worked example is a sole holder,
+ *     so its labelled fee was wrong for the exact case a first-time reader is in.
+ */
+test('the member page does not overstate the dry-run, the cancel refund or the exit fee', () => {
+  const text = readFileSync(path.join(REPO, MEMBER_PAGE), 'utf8');
+  const flat = text.replace(/\s+/g, ' ');
+
+  // ── 1. The dry-run. `0x` is the success return in both modes, in front of an irrevocable queue.
+  assert.equal(
+    flat.match(/`0x` means it would succeed/),
+    null,
+    `${MEMBER_PAGE}: "\`0x\` means it would succeed" reads a bare 0x as a green light. requestExit returns no data, so 0x is the successful simulation in Mode F too — where it means the contract will accept an irrevocable queue`,
+  );
+  const modes = memberSection(text, '## 4. Read the exit mode before you exit');
+  assert.ok(
+    /`0x` tells you only that \*\*the call would not revert\*\*/.test(modes),
+    `${MEMBER_PAGE} §4: the dry-run must say 0x means only that the call would not revert`,
+  );
+  assert.ok(
+    /returns no data, so `0x` is what a successful simulation looks like in \*\*both\*\* modes/.test(modes),
+    `${MEMBER_PAGE} §4: must say why 0x cannot distinguish the modes — requestExit returns no data`,
+  );
+  assert.ok(
+    /Re-read `hasPendingExecution` in the same breath as you send/.test(modes),
+    `${MEMBER_PAGE} §4: must send the reader back to hasPendingExecution immediately before the send`,
+  );
+  assert.ok(
+    /A non-zero proposal id is not Mode F/.test(modes),
+    `${MEMBER_PAGE} §4: activeProposalOf is assigned in Governance.propose and never zeroed, and is non-zero through the commit phase too — the page prints it beside the mode read and must say it is not the mode read`,
+  );
+
+  // ── 2. cancelPending. _payOrEscrow has a second branch that is not a transfer.
+  assert.equal(
+    flat.match(/transfers the USDC back to you, in full/),
+    null,
+    `${MEMBER_PAGE}: "transfers the USDC back to you, in full" states one of VaultCore._payOrEscrow's two branches as if it were the only one`,
+  );
+  const reclaim = memberSection(text, '### B. Reclaim a pending deposit');
+  assert.ok(
+    /only one of them is a transfer/.test(reclaim),
+    `${MEMBER_PAGE} §5-B: must say the refund has a second branch that is not a transfer`,
+  );
+  assert.ok(
+    /`claimable`/.test(reclaim) && /claimEscrowed\(address\)/.test(reclaim),
+    `${MEMBER_PAGE} §5-B: a member whose refund escrowed needs claimable/claimEscrowed HERE, not only in §5-C`,
+  );
+
+  // ── 3. The exit fee. exitFeeBpsOf is the rate; settlement waives it for a sole holder.
+  assert.equal(
+    flat.match(/The exit fee you would pay right now/),
+    null,
+    `${MEMBER_PAGE}: "the exit fee you would pay right now" labels exitFeeBpsOf as the charge. VaultCore._settleExit zeroes it when sharesOf[member] == totalShares, which is the page's own worked example`,
+  );
+  const position = memberSection(text, '## 2. Read your position');
+  assert.ok(
+    /Settlement charges zero if you hold every share of the vault/.test(position),
+    `${MEMBER_PAGE} §2: must state the sole-holder waiver beside the exitFeeBpsOf read`,
+  );
+  assert.ok(
+    /`sharesOf\(YOU\)` against `totalShares\(\)`/.test(position),
+    `${MEMBER_PAGE} §2: must give the reader the comparison that decides the waiver`,
+  );
+  assert.ok(
+    /or zero if you hold every share/.test(modes),
+    `${MEMBER_PAGE} §4: the Mode-I bullet says settlement is "less the exit fee" and carries the same claim — it must carry the same waiver`,
+  );
+});
+
 test('every surface that describes Mode F names the reveal phase as its trigger', () => {
   // The negative check alone is satisfiable by deleting the sentence. This is the positive half:
   // each of these files explains the exit modes, so each must say WHEN the window opens.

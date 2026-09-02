@@ -20,9 +20,10 @@ no undo ([INCIDENTS.md §0](INCIDENTS.md)). If a read below shows a freeze, nobo
 project — can unfreeze it, override a price, or move your funds. That is the design, and it is the
 same design that stops anyone else moving them either.
 
-Every command on this page was run on 2026-09-01 (22:28 UTC, Base Sepolia block 46266737) against
-the vault that passed launch gate 2, and the output shown is what came back. Your outputs will
-differ: they are live state.
+Every command on this page was run against the vault that passed launch gate 2, and every output
+shown is what came back: the original set on 2026-09-01 at 22:28 UTC, Base Sepolia block 46266737,
+and the `claimable` read added later to §5-B at block 46269600. Your outputs will differ, and so
+will these — they are live state, and §4 shows what happens when it moves.
 
 ---
 
@@ -139,13 +140,23 @@ Shares and NAV are 18-decimal ("WAD") integers. USDC amounts are 6-decimal integ
    ```text
    1000000000000000000 [1e18]
    ```
-7. The exit fee you would pay right now, in basis points (49 = 0.49%; it decays with tenure):
+7. Your tenure-decayed exit fee **rate**, in basis points (49 = 0.49%; it falls to zero as your
+   tenure reaches the vault's decay period). This is a rate, not the amount you will be charged —
+   see the waiver below it:
    ```bash
    cast call $VAULT "exitFeeBpsOf(address)(uint256)" $YOU --rpc-url $RPC
    ```
    ```text
    49
    ```
+   **Settlement charges zero if you hold every share of the vault.** The exit path compares your
+   whole balance with the supply and waives the fee when they are equal — line 1 against line 4,
+   `sharesOf(YOU)` against `totalShares()` — because the fee would otherwise be routed back to
+   the only member there is. The comparison is on your balance, not on the amount you exit, so a
+   sole holder exiting part of a position is waived too. `exitFeeBpsOf` never applies that waiver;
+   it reports the rate. **On the vault shown above both reads are `4e18`, so the fee this member
+   would actually pay is `0`, not `49`** — check your own line 1 against your own line 4 before
+   you subtract anything.
 8. What the vault holds, so you can price it yourself: count, then each asset by index, then the
    vault's own balance of it and the idle USDC.
    ```bash
@@ -282,8 +293,9 @@ false
 ```
 
 - **`false` — Mode I.** `requestExit(shares)` settles in the same transaction: your pro-rata
-  slice of every basket asset plus idle USDC, in kind, at current NAV, less the exit fee from §2
-  step 7. It needs the oracle, so it reverts while frozen.
+  slice of every basket asset plus idle USDC, in kind, at current NAV, less the exit fee the
+  settlement path computes — the §2 step 7 rate, or zero if you hold every share. It needs the
+  oracle, so it reverts while frozen.
 - **`true` — Mode F.** The vault has a live proposal that has reached its **reveal phase** (the
   window opens there — not when a proposal passes — and stays open through a passed proposal's
   execution window). `requestExit(shares)` **queues instead of settling**: the shares are locked,
@@ -303,8 +315,16 @@ cast call $GOV "activeProposalOf(address)(uint256)" $VAULT --rpc-url $RPC
 2
 ```
 
+**A non-zero proposal id is not Mode F.** This read only names a proposal to go and look at; it
+does not tell you the mode, in three separate ways. It is set when a proposal is created and is
+never cleared — the next proposal overwrites it and nothing zeroes it — so it keeps naming the last
+proposal long after that one executed, was defeated or expired. It is also non-zero through the
+whole commit phase, which is Mode I: the window opens at the reveal phase, not at creation and not
+at passage. `hasPendingExecution` above is the single read that decides.
+
 **Dry-run your exit without sending anything.** A `cast call` with `--from` executes the exact
-transaction as a simulation. `0x` means it would succeed right now; a revert tells you why:
+transaction as a simulation. A revert tells you why it would fail. `0x` tells you only that **the
+call would not revert** — nothing more:
 
 ```bash
 cast call $VAULT "requestExit(uint256)" 1000000000000000000 --from $YOU --rpc-url $RPC
@@ -312,6 +332,18 @@ cast call $VAULT "requestExit(uint256)" 1000000000000000000 --from $YOU --rpc-ur
 ```text
 0x
 ```
+
+**`0x` is not a green light in Mode F.** `requestExit` returns no data, so `0x` is what a
+successful simulation looks like in **both** modes; it cannot tell them apart. In Mode F what it is
+reporting is that the contract will accept the irrevocable queue described above — not that your
+exit settles. Nothing un-queues it: once the shares are queued, the only call that clears them is
+`settleQueuedExit`, and that reverts `ExecutionStillPending()` until `hasPendingExecution` reads
+`false` again. So the mode read, not the dry-run, is what decides whether sending is what you want.
+
+**Re-read `hasPendingExecution` in the same breath as you send.** It can flip to `true` between
+your read and your transaction. That is exactly what happened to the snapshot above: it read
+`false` at block 46266737 and `true` at block 46269600, with proposal 2 still the id both times. A
+dry-run you took a minute ago is not evidence about the block your transaction lands in.
 
 Revert data you may see, and what it means (selectors computed from the source and confirmed
 against the live contract):
@@ -374,11 +406,32 @@ app would make; the app is a convenience, not a gatekeeper. Dry-run any of them 
 ### B. Reclaim a pending deposit — works during a freeze
 
 The one action a freeze cannot block. It reads no oracle: it deletes your escrow record and
-transfers the USDC back to you, in full, with no fee. It only applies to a deposit still in its
-observation window (§2 step 3 shows a non-zero amount); activated shares are exited with C.
+returns the whole pending amount, with no fee deducted from it. It only applies to a deposit still
+in its observation window (§2 step 3 shows a non-zero amount); activated shares are exited with C.
 
 ```bash
 cast send $VAULT "cancelPending()" --account member --rpc-url $RPC
+```
+
+**Where that amount lands has two branches, and only one of them is a transfer.** The refund is a
+bounded token transfer, and if the transfer itself fails — the case this branch was built for is an
+address USDC has blacklisted since the deposit — the call does not revert and does not roll back.
+It credits the amount to your `claimable` balance inside the vault and emits `SliceEscrowed`
+instead. Your escrow record is still deleted and the whole amount is still yours; it is a balance
+to claim rather than USDC in your wallet. So if `cancelPending` succeeds and no USDC arrives, read
+the balance:
+
+```bash
+cast call $VAULT "claimable(address,address)(uint256)" $YOU $USDC --rpc-url $RPC
+```
+```text
+0
+```
+
+and, **only if that read is non-zero** (claiming nothing reverts), pull it out:
+
+```bash
+cast send $VAULT "claimEscrowed(address)" $USDC --account member --rpc-url $RPC
 ```
 
 ### C. Exit
