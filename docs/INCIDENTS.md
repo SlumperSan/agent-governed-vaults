@@ -149,7 +149,19 @@ disagree with internal accounting.
 
 - **Detect:** canary `nav-backing` ALERT. **Treat as a potential critical contract bug until
   proven otherwise** — this is the one signal that should never fire.
-- **Act:** (1) reproduce by hand from raw chain reads (balances × `priceWad` ÷ units + idle);
+- **Act:** (1) reproduce by hand from raw chain reads. **Read `childVaultCount()` first and do
+  not assume it is zero.** With no children, `navWad` is balances × `priceWad` ÷ units + idle ×
+  `usdcScalar`. With any child registered, `VaultCore.navWad()` adds a third leg —
+  `Σ _childValueWad(childVaults[i])` — so the two-leg formula computes a number strictly *below*
+  `navWad` and manufactures the very shortfall this signal exists to detect. Value each child as
+  the contract does: its **full** NAV including its own children, scaled by this vault’s share
+  (`fullNav(child) * sharesOf(vault) / totalShares(child)`, multiply-then-divide to match
+  `_childValueWad`’s truncation). `packages/canary/src/signals/nav-backing.mjs` implements this
+  correctly and is the reference — read its code, not its docstring header, which shows only the
+  simplified form. Do not shortcut this on the grounds that `Deploy.s.sol` passes
+  `allowSubVaults = false`: `DeployTestnet.s.sol` passes `true`, and a mainnet factory is
+  root-only only because of a constructor argument. One `childVaultCount()` read removes the
+  dependency;
   (2) rule out the innocent causes first: an RPC serving stale state (read the same values
   through a second endpoint — the soak found *three distinct* bug classes caused by
   load-balanced RPC lag, SOAK-REPORT §7), a canary bug, an unpriced donation sitting in the
