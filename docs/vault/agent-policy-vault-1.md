@@ -12,6 +12,16 @@ and exactly what its payload contains.
 > `[PER-LAUNCH VARIABLE]` are filled in at v1.1, published before the first proposal, and are the
 > only values in this document that are not already fixed by source or reference configuration.
 
+> **This is a published commitment, not an enforced constraint — read that literally.** The
+> contracts do not privilege the operator and cannot be made to. `Governance.propose` gates on
+> **stake**, not identity, so the operator proposes *qua member*, over the same
+> `proposalThresholdBps` gate as anyone else; `Governance.execute` has no `msg.sender` check at all.
+> **Nothing on-chain stops the operator, or any other member, from proposing something this policy
+> forbids.** What the chain provides is evidence, not enforcement: every proposal is permanently
+> attributed and its payload is permanently pinned by a hash, so a breach is *detectable by anyone,
+> forever*. The document's value rests entirely on that asymmetry, and nowhere else. Where a rule
+> below **is** additionally enforced by the contracts, it says so explicitly; assume the rest is not.
+
 ## Why it matters
 
 Vault #1 is founder-operated. If the founder simply traded it, the "operated by an agent policy"
@@ -36,7 +46,7 @@ rewritten until it cannot be.
 | **Oracle** | `ChainlinkOracle` — WETH from Chainlink ETH/USD `0x50015f8b17fb2C290Dde41fDc246ed0dcEE93a8b`, cbBTC from BTC/USD `0x32F587986D3fb47601157c19615d568BeD0BCabc`, both 8 dp, 3,600 s heartbeat, gated on the Base L2 sequencer uptime feed |
 | **Execution adapter** | `AggregationRouterAdapter` pinned to Uniswap `SwapRouter02` `0x2626664c2603336E57B271c5C0b26F421741e481`, selectors `exactInputSingle` and `exactInput` — address `[PER-LAUNCH VARIABLE]` |
 | **Swap route** | single-hop `exactInputSingle`, fee tier `[PER-LAUNCH VARIABLE — fixed at v1.1, per pair]` |
-| **Performance fee** | assessed on-chain, **never claimed** — see §5.6 |
+| **Performance fee** | 10 % on realised net gains, assessed and credited on-chain; a waiver has no contract mechanism and is `[OWNER DECISION PENDING]` — see §5.6 |
 
 The basket, the oracle and the adapter allowlist are **not** policy choices that could later drift.
 Each is written once in `VaultCore`'s constructor (`basketAssets`, `assetUnit`, `oracle`,
@@ -87,10 +97,15 @@ V_U   = VaultCore.idleUsdc() * 1e12
 NAV   = V_W + V_B + V_U                       // equals VaultCore.navWad()
 ```
 
-`NAV` equals `navWad()` exactly. `navWad()` also sums child-vault positions, but vault #1 has no
-children — the factory ships `allowSubVaults = false` — so that term is empty. Pending deposits are
-excluded from both (`totalPendingUsdc` enters `idleUsdc` only after `OBSERVATION_WINDOW`, 4 hours),
-so a deposit made in the last four hours before an evaluation is correctly invisible to it.
+`NAV` equals `navWad()` exactly **provided the vault has no child vaults**, because `navWad()` also
+sums child positions. Vault #1 will have none — §5.4 commits the operator never to propose a
+`ChildAllocation`, which is the only way capital reaches a child. A member should not take that on
+trust: read `VaultCore.childVaults(0)` at the evaluation block, and if it reverts the list is empty
+and the three terms above are the whole of NAV. A non-empty list is itself a finding under §5.4.
+
+Pending deposits are excluded from both (`totalPendingUsdc` enters `idleUsdc` only after
+`OBSERVATION_WINDOW`, 4 hours), so a deposit made in the last four hours before an evaluation is
+correctly invisible to it.
 
 `1e18`, `1e8` and `1e12` are `assetUnit[WETH]`, `assetUnit[cbBTC]` and `usdcScalar`, each fixed at
 construction from the token's own `decimals()`.
@@ -310,31 +325,53 @@ cannot run, because its slippage check reads the frozen oracle. A proposal opene
 therefore hold every member's exit queued until the execution window lapses, and deliver nothing.
 The operator does not do this.
 
-**5.4 No rule changes and no sub-vault proposals.** The operator opens no `RuleChange` and no
-`ChildAllocation` proposal. Vault #1 launches with `allowSubVaults = false` at the factory, so no
-child can exist; and a `RuleChange` would alter the very configuration this policy binds itself to.
-If the governance configuration should change, that is a member-initiated proposal, and this policy
-is amended under §7 to match before the operator proposes again.
+**5.4 No `RuleChange` and no `ChildAllocation` proposals.** `Governance.ProposalType` has three
+members. The operator proposes only `Rebalance`, and never the other two.
+
+A `RuleChange` would alter the very configuration this policy binds itself to. If the governance
+configuration should change, that is a member-initiated proposal, and this policy is amended under
+§7 to match before the operator proposes again.
+
+`ChildAllocation` moves capital into a sub-vault. **This commitment does not rest on sub-vaults
+being disabled, and the document deliberately does not claim they are.** `VaultFactory.allowSubVaults`
+is an `immutable` **constructor argument** — the NatSpec instructs a mainnet deploy to pass `false`
+("Pass FALSE for mainnet launch"), but that is an instruction to a deployer, not a property of
+anything that exists: no mainnet factory is deployed, and the *testnet* one on Base Sepolia was
+deployed with it **`true`** (`contracts/config/deployments/base-sepolia.json`,
+`"factory.allowSubVaults()": true`). So "sub-vaults are disabled" is not a fact this policy may
+assert. The commitment is the operator's own and holds however the factory is configured.
 
 **5.5 No unannounced rule change.** Every amendment is published under §7, dated, with at least
 seven days' notice, and always before the first proposal it authorises.
 
-**5.6 No performance fee is taken on vault #1** — and the precise form matters, because **the
-contracts implement no waiver.** `FeeEngine.PERF_FEE_BPS = 1_000` is a `constant` with no per-vault
-override, so a 10 % fee on net gains above the high-water mark **is** assessed at each exit
-(`onRealize`, `FeeAssessed`) and **is** credited to the operator's payout address
-(`onFeeCollected` → `claimableFees[payout][token]`). The waiver is that the operator never withdraws
-it. `claimFees(token)` is the only path out of that balance and it emits
-`FeesClaimed(operator, token, amount)`.
+**5.6 The performance fee — `[OWNER DECISION PENDING]`, and this section states only what is
+verifiable.**
 
-**The undertaking is: zero `FeesClaimed` events from vault #1's operator payout address, ever.** A
-member checks it by looking for that event; the credited-and-unclaimed balance stays visible in
-`FeeEngine.claimableFees(payoutAddress, token)`, which is what a waived fee looks like on-chain.
+**There is no fee waiver in the contracts.** `FeeEngine.PERF_FEE_BPS = 1_000` is a `constant`,
+applied unconditionally in `onRealize`; there is no per-vault override, no setter, and no waiver
+function anywhere in `contracts/src`. (The only waiver in the protocol is the sole-holder *exit*-fee
+waiver applied inside `VaultCore._settleExit` — a different fee, and unrelated.) So the verifiable
+facts, and the whole of what this policy asserts today:
 
-Because `claimableFees` is keyed by **address**, not by vault, this undertaking is only checkable if
-that address is never also the payout address of a vault whose fee is taken. Vault #1's operator
-payout address is therefore reserved to vault #1. Anything a member reads there belongs to this
-vault, and any withdrawal from it is a breach of this policy.
+- A 10 % fee on realised net gains above the high-water mark — net of the cross-vault loss carry —
+  is assessed at each exit (`onRealize`, `FeeAssessed`).
+- It is credited to the operator's payout address (`onFeeCollected` →
+  `claimableFees[operatorAddressOf(opId)][token]`).
+- It is claimable by **that address alone**, via `claimFees(token)`, which emits
+  `FeesClaimed(operator, token, amount)`.
+
+`Business/go-to-market.md` Bet 2 commits to the fee being **waived** on vault #1. Because no
+mechanism implements that, a waiver can only be an undertaking by the owner — either never calling
+`claimFees`, or registering a payout address that cannot call it, which `OperatorRegistry` makes
+**permanent** (it has no rebind). **That choice is the owner's and has been escalated; it is not
+made in this document, and no version of this policy asserts a waiver until it is.** When it lands,
+it arrives here as a §7 amendment, and the checkable form is the absence of `FeesClaimed` for the
+payout address.
+
+One constraint the owner's decision should carry either way, because it decides whether the outcome
+is *checkable at all*: `claimableFees` is keyed by **address, not by vault**. Unless vault #1's
+payout address is reserved to vault #1, a member cannot tell that vault's fees from any other's, and
+"never claimed" stops being an observable statement.
 
 **5.7 No claim to exclusivity, and no promise to execute.** Two facts about `Governance` bound what
 this policy can honestly say:
@@ -448,9 +485,13 @@ any period. For every event with `proposer ==` the operator address, there is a 
 passes checks 1–3. For every 16:00 UTC instant with no such event, the log entry shows `drift < 500`
 or names a §2.5 suspension (1–5) — and you can re-derive that from the chain at that block too.
 
-**Check 5 — the fee was never taken.** Filter `FeeEngine` for `FeesClaimed(address,address,uint256)`
-with the operator payout address as the indexed `operator`. **There should be none.** Read
-`FeeEngine.claimableFees(payoutAddress, USDC)` to see the credited-and-unclaimed balance.
+**Check 5 — the fee.** This policy makes no fee undertaking yet (§5.6 is
+`[OWNER DECISION PENDING]`), so there is nothing here to breach. What a member can already read:
+`FeeEngine.claimableFees(payoutAddress, token)` for the credited-and-unclaimed balance, and
+`FeesClaimed(address,address,uint256)` filtered on the payout address as the indexed `operator` for
+every withdrawal ever made from it. If a later version of this policy commits to a waiver, that is
+the event log the commitment will be checked against — and only if the payout address is reserved
+to vault #1.
 
 **Check 6 — the version.** Take the `Proposed` block timestamp, find the governing row in §7.3, and
 confirm the log entry names that version. Confirm from the repository history that the row was
@@ -477,9 +518,16 @@ member over `proposalThresholdBps` can put a proposal to the vault that this pol
 authorise and never contemplated. Members ratify every proposal; this policy only makes the
 operator's own proposals predictable.
 
-**The operator cannot execute anything alone.** Every rebalance requires a passing commit-reveal
-vote under `Governance.finalize`, and vault #1 launches small — below five members the signer regime
-in `finalize` applies rather than pure stake weighting.
+**The operator cannot rebalance alone — and "a vote" is not always live voting.** No *rebalance*
+executes without a proposal passing `Governance.finalize` (deposits, exits and fee collection are
+not votes and need none). But vault #1 launches small, which puts it in the `memberCount <
+SIGNER_REGIME_BELOW` (5) branch, and there `forWeight` **includes applied standing defaults** — a
+member's pre-declared position, valid only if it was set before the proposal existed. The
+`forStakeMajority` branch can therefore pass a rebalance on a majority of pre-declared defaults with
+**zero live reveals**. That is deliberate (a pre-declaration is a real mandate) and it only ever
+widens the passing set, but it means "members ratify each rebalance by a commit-reveal vote" is not
+a safe universal sentence for a small vault. What is safe: no rebalance executes unless a proposal
+passes.
 
 **It cannot make the vault work when the oracle stops.** A frozen feed suspends NAV, deposits, exits
 and rebalancing alike. The policy's response to a freeze is to do nothing, which is the correct
