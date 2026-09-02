@@ -104,16 +104,21 @@ evidence and must not be deployed
 ([docs/audit/AI-AUDIT-REPORT.md](docs/audit/AI-AUDIT-REPORT.md),
 [docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md)).
 
-`VaultFactory` was once undeployable — `new VaultCore(...)` embedded a creation code larger than
-the EIP-170 runtime cap by itself — and the fix moves that code into `VaultDeployer`'s creation
-code, which writes it into two immutable, non-executable data contracts
-([docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md),
-[#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). Attestation stays
-factory-only, so calling the deployer directly yields an unattested vault. `VaultCore` is still
-the contract closest to the cap, at **20,650 B runtime / 3,926 B of margin** against the
-24,576-byte limit — measured with `cd contracts && forge build --sizes` at `16050be0` on
-2026-09-02. Re-measure rather than quote this line; `contracts/test/Eip170.t.sol` floors the
-margin so it cannot silently regress.
+`VaultFactory` was once undeployable, and the fix is worth knowing before you read `VaultDeployer`.
+Writing `new VaultCore(...)` embeds `VaultCore`'s entire creation code in the caller, which put the
+factory over the EIP-170 runtime limit while the suite stayed green — Foundry's test EVM does not
+enforce that limit. That blob now lives in `VaultDeployer`'s own creation code, whose constructor
+copies it into two immutable, non-executable data contracts; `deploy` reads them back, appends the
+caller's ABI-encoded constructor arguments and `CREATE`s, so the bytes reaching `CREATE` are fixed
+at compile time. Attestation is unchanged and stays factory-only — `OperatorRegistry.attestVault`
+is callable only by the wired factory — so calling the deployer directly yields an unattested
+vault ([docs/audit/walkthroughs/VaultDeployer.md](docs/audit/walkthroughs/VaultDeployer.md),
+[#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)).
+
+`VaultCore` is the contract closest to the cap, at **20,650 B runtime / 3,926 B of margin** against
+the 24,576-byte limit — measured with `cd contracts && forge build --sizes` at `16050be0` on
+2026-09-02. Re-measure rather than quote this line; `contracts/test/Eip170.t.sol` floors the margin
+so it cannot silently regress.
 
 Internal security-review rounds plus an AI pre-audit and two adversarial re-review passes; every
 finding fixed, replaced or dispositioned ([docs/AUDIT-HANDOFF.md](docs/AUDIT-HANDOFF.md),
