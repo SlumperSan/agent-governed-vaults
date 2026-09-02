@@ -289,7 +289,9 @@ contract AuditCreatorGateTrapsTest is Test {
         vault.requestExit(rest);
         assertEq(vault.nonCreatorMemberCount(), 0, "cleared only when the last member's shares hit 0");
         assertEq(vault.sharesOf(creator), vault.totalShares(), "count == 0 <=> the creator holds every share");
-        assertTrue(_gatePasses(vault.sharesOf(creator)), "which is why the inequality alone now admits everything");
+        assertTrue(
+            _gatePasses(vault.sharesOf(creator)), "which is why the inequality alone now admits everything"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
