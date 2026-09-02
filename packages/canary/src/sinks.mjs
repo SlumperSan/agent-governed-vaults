@@ -7,7 +7,8 @@
  *            gives you a pure problem feed.
  * webhook  — plain, single-URL POST of one JSON body per transition. Kept for callers that only
  *            want one endpoint.
- * tiered webhook — PAGE vs LOG by signal (Monitoring Gap Analysis §2 G6 / §3 item 4): `sinks.mjs`
+ * tiered webhook — PAGE vs LOG by signal, and by a per-alert predicate where one signal name
+ *            covers alerts of two severities (Monitoring Gap Analysis §2 G6 / §3 item 4): `sinks.mjs`
  *            used to be console + one generic webhook, every transition, same channel, no
  *            severity — this is that gap closed. `PAGE_WEBHOOK_URL` / `LOG_WEBHOOK_URL` route to
  *            two endpoints; `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback for
@@ -31,41 +32,77 @@ export function createConsoleSink({ log = console.log, error = console.error } =
 }
 
 /**
- * Signals that PAGE on ALERT — the four "member capital wrong-priced or invariant broken" /
+ * Signals that PAGE on EVERY ALERT — the four "member capital wrong-priced or invariant broken" /
  * "flagship freeze detector" signals the Monitoring Gap Analysis §3 item 4 names explicitly:
  * "PAGE: nav-backing, share-conservation, fee-routing, exit-liveness ALERT, oracle-v2 ALERT".
  * `oracle-freshness` is the SIGNAL name `signals/oracle-health.mjs` still emits post-pivot (the
  * file was renamed, the wire name was not, so standing transition state and this map both survive
  * the rename) — it is the "oracle-v2" the note refers to.
  *
- * Deliberately NOT here even though it can ALERT: `feed-identity` (G2's on-chain half) — the note's
- * PAGE list does not include it, an aggregator-swap ALERT there self-clears on the next sweep by
- * design, and a decimals-change ALERT there is exactly the kind of thing the weekly ops review is
- * built to catch. Escalating that list is Operations' call, not something to infer here.
+ * `feed-identity` is not here because only SOME of its alerts page — see `CONDITIONAL_PAGE`.
  */
 export const PAGE_SIGNALS = new Set([
   'nav-backing', 'share-conservation', 'fee-routing', 'exit-liveness', 'oracle-freshness',
 ]);
 
 /**
- * Every OTHER signal name the runner can currently emit, spelled out on purpose rather than left
- * as "whatever isn't in PAGE_SIGNALS". A signal rename that lands in neither set fails
- * `sinks.test.mjs`'s coverage test instead of silently defaulting to LOG (or PAGE).
+ * Signals whose ALERTs page on a PREDICATE rather than on the signal name alone, because one signal
+ * name covers alerts of two genuinely different severities.
+ *
+ * `feed-identity` (G2's on-chain half, `signals/feed-identity.mjs`) is why this category exists. It
+ * emits three kinds of ALERT and they are not the same thing:
+ *
+ *   - `detail.harm === 'decimals'`     — the feed's `decimals()` no longer matches the scale
+ *     `ChainlinkOracle` cached at construction. That config is IMMUTABLE, so this LATCHES: it does
+ *     not self-clear and cannot be repaired, only evacuated. Every price served since the change is
+ *     mis-scaled — the vault is not frozen, it is silently WRONG. Severity Ladder SEV-1.
+ *   - `detail.harm === 'denomination'` — the feed no longer describes itself as USD-quoted. Same
+ *     immutability, same latch, same "NAV, deposits and exits are all wrong rather than frozen".
+ *   - `detail.harm === null` (aggregator swap) — legitimate routine Chainlink operation. It
+ *     self-clears next sweep once the pin is re-taken, and there is nothing to fix on-chain. LOG.
+ *
+ * The §3 item 4 severity map ("LOG: everything else") was written 2026-08-30, BEFORE `feed-identity`
+ * existed (2026-09-01, PR #103), so it never ruled on these. Routing all three to LOG would leave
+ * the two LATCHING ones — the ones that mean member capital is wrong-priced right now — waiting for
+ * the weekly ops review. They are not redundantly covered elsewhere either: `ChainlinkOracle`'s
+ * sane-price band catches a ±2-decimal drift only while the live price sits inside it, and per
+ * `Owner Decisions 2026-09-01.md` §1 that window CLOSES for cbBTC at BTC $100,000 (+29.5% from
+ * 2026-09-01). Above that price `feed-identity` is the only detector there is, and nav-backing
+ * cannot substitute because it recomputes through the same mis-scaled `priceWad`.
+ *
+ * Each predicate takes the transition and returns true to PAGE. It is consulted only on an ALERT.
+ * @type {Map<string, (t: import('./transitions.mjs').Transition) => boolean>}
  */
-export const LOG_SIGNALS = new Set(['feed-identity', 'module-events', 'vault-config']);
+export const CONDITIONAL_PAGE = new Map([
+  ['feed-identity', (t) => t?.result?.detail?.harm != null],
+]);
+
+/**
+ * Every OTHER signal name the runner can currently emit, spelled out on purpose rather than left as
+ * "whatever isn't in PAGE_SIGNALS". A signal that lands in NONE of the three categories fails
+ * `sinks.test.mjs`'s coverage test instead of silently defaulting to LOG (or PAGE) — and that test
+ * enumerates `src/signals/` from disk, so a brand-new signal FILE fails it too, not just a rename.
+ */
+export const LOG_SIGNALS = new Set(['module-events', 'vault-config']);
 
 /**
  * PAGE or LOG for one transition. A synthetic self-test transition (see `canary-runner.mjs`
  * `testAlert()`) forces its tier via `result.detail.tier` rather than impersonating a real signal
  * name — that keeps the routing path under test genuine without ever being able to page on a fake
- * `nav-backing` ALERT. Real transitions fall through to the signal/status derivation.
+ * `nav-backing` ALERT. That override is honoured ONLY alongside `detail.selfTest === true`: a real
+ * signal's `detail` is a bag of decoded on-chain values, and a future signal that spreads a struct
+ * field named `tier` into it must not be able to DEMOTE its own page. Real transitions fall through
+ * to the signal/status derivation.
  * @param {import('./transitions.mjs').Transition} t
  * @returns {'page'|'log'}
  */
 export function tierOf(t) {
-  const forced = t?.result?.detail?.tier;
-  if (forced === 'page' || forced === 'log') return forced;
-  return t?.to === 'alert' && PAGE_SIGNALS.has(t?.signal) ? 'page' : 'log';
+  const detail = t?.result?.detail;
+  if (detail?.selfTest === true && (detail.tier === 'page' || detail.tier === 'log')) return detail.tier;
+  if (t?.to !== 'alert') return 'log';
+  if (PAGE_SIGNALS.has(t?.signal)) return 'page';
+  const pagesWhen = CONDITIONAL_PAGE.get(t?.signal);
+  return pagesWhen?.(t) === true ? 'page' : 'log';
 }
 
 /**
