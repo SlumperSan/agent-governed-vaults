@@ -26,9 +26,9 @@ each of them goes stale again the moment the next merge lands.
 
 | # | Blocker | Whose | Proves clear when |
 | --- | --- | --- | --- |
-| 1 | **#108 and #120 land.** #108 gates the mainnet deploy and has no verdict; #120 keeps a HIGH live on `main` until it lands. Both need a verdict, a rebase to `behind_by 0`, and re-green. | agents + an independent reviewer | `gh pr list --state open` shows neither; `gh run list --branch protocol/main` green at the new head SHA |
+| 1 | **The five gating PRs land** (§2.2). **#108** gates the mainnet deploy and has no verdict; **#120** keeps a HIGH live on `main` until it lands — both also need a rebase to `behind_by 0`. **#131** (agent policy, §5), **#132** (public claims, §3) and **#133** (incident NAV, §6) are already `behind_by 0` and need verdicts only. **#133 is on the critical path in its own right**: §6's post-deposit phase is the one whose back-out line is *"you cannot stop it"*, and it sends members to a runbook that currently reports a false shortfall. | agents + an independent reviewer | `gh pr list --state open` shows none of the five; CI green on `protocol/main` at the new head SHA |
 | 2 | **Owner decides freeze-or-redeploy.** Every `contracts/src` merge invalidates the testnet deploy that gates 2, 3 and 6 rest on. Until this is decided, closing those gates is a treadmill. | **owner only** | `Decisions/freeze-or-redeploy.md` status ≠ open |
-| 3 | **Owner re-attests gate 1 against the head frozen in step 2**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 31 `contracts/src` commits behind `main`** (§1 gate 1). Attesting before the freeze re-stales the moment the next merge lands — the same trap as gates 2/3/6. | **owner only** — gates 2/3/6 an agent can re-earn by re-running drills; gate 1 is an attestation about an external party's work product, and no agent can re-earn it | `LAUNCH-READINESS.md` gate 1 names the frozen head |
+| 3 | **Owner re-attests gate 1 against the head frozen in step 2**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 13 files / +458/−1083 of `contracts/src` behind `main`** (§1 gate 1). Attesting before the freeze re-stales the moment the next merge lands — the same trap as gates 2/3/6. | **owner only** — gates 2/3/6 an agent can re-earn by re-running drills; gate 1 is an attestation about an external party's work product, and no agent can re-earn it | `LAUNCH-READINESS.md` gate 1 names the frozen head |
 | 4 | **Testnet redeploy at that same frozen head**, in the LAUNCH configuration (`allowSubVaults = false`). Steps 3 and 4 do not depend on each other, but both depend on step 2 and both must name the **same** commit — an audit attested to one tree and a deployment made from another puts you back where this checklist started. Needs a funded Base Sepolia key. | **owner only** (key) | `node scripts/verify-deployment-currency.mjs` exits 0 with no notes |
 | 5 | **Re-earn gates 2, 3, 6 and finish gate 7** against that new deployment. Order matters: the gate-7 drill consumes artifacts from daemons watching a live deployment, so running it before step 4 means running it twice. | agents, after step 4 | §1 rows 2/3/6/7 |
 | 6 | **Owner-only mainnet items** (§4) — including **three one-shots that cannot be undone**: the operator payout address, vault #1's fee posture (the same transaction), and `allowSubVaults = false` on the mainnet factory. | **owner only** | §4 |
@@ -49,9 +49,9 @@ here. Status column measured 2026-09-01.
 | **0** No unfixed Criticals | GO (root-only) — **and it does not cover H-8** | Holds only while `allowSubVaults = false` on the deploy path. Re-check after any redeploy: `node scripts/verify-deployment-currency.mjs` must print no `allowSubVaults` note. The row says *Critical*; H-8 is a **High** and does not breach it — see below. | agent |
 | **1** External audit | **STALE — newly found, see below** | Owner re-attests against the current head, or records a named residual for the 31-commit delta. Cannot be delegated. | **owner** |
 | **2** Testnet lifecycle | **STALE** (was GO 2026-09-01) | `node scripts/smoke-test.mjs` ten phases against a *current* deployment. Needs a funded testnet key. | owner (key) → agent |
-| **3** Soak drills | **STALE, and structurally untransferable** | `scripts/soak/` re-run against a current deployment. **Two separate defects — see below.** | owner (key) → agent |
+| **3** Soak drills | **STALE, and structurally untransferable** | `scripts/soak/` re-run against a current deployment. **Two of the three transfer defects land here — see below; only one is redeploy-fixable.** | owner (key) → agent |
 | **4** Live x402 settlement | GO (unaffected) | Off-chain + USDC `transferWithAuthorization`; no contract in the delta touches it. Nothing to re-earn. | — |
-| **5** Mainnet oracle config | **UNVERIFIABLE here** | The launch *parameter* file `contracts/config/base-mainnet.json` exists; the *deployment record* does not — `contracts/config/deployments/` holds only `base-sepolia.json`, because nothing is deployed to mainnet. `node scripts/verify-mainnet-config.mjs` checks the parameters; the on-chain half waits on a deploy. | owner (deploy) → agent |
+| **5** Mainnet oracle config | **GO — and re-earnable today, keyless** | `node scripts/verify-chainlink-oracle.mjs` — **26/26 pass, exit 0**, re-run 2026-09-02 against Base mainnet. Read-only, no key, no deployment: the script exists to be run *before* deploying. Anyone can re-earn this row in one command. | agent |
 | **6** Canary operational | **STALE** | `npm run start:canary` against a current deployment, transitions reconciled to drill actions. | owner (key) → agent |
 | **7** Restore drill | **CONDITIONAL — blocker now gone** | Re-run [RESTORE-DRILL.md](RESTORE-DRILL.md) steps 1 and 6 literally, plus the off-host volume backup ([RUNTIME.md](RUNTIME.md) §8.3) the drill records as never exercised. See below. | agent |
 | **8** CI green at the candidate ref | GO at `bab5ee90` | `gh run list --branch protocol/main --json headSha,conclusion` — the run whose `headSha` equals `git rev-parse protocol/main`. Never `gh pr checks`. | agent |
@@ -69,9 +69,10 @@ The attested tree (`b1a8ae84`, named in `LAUNCH-READINESS.md`'s header) and the 
 `abed2e5d`. `protocol/main` is `fe05004d`. The audit is therefore behind `main` by the same delta as
 the deployment.
 
-Measure that delta as **13 files, +458/−1083** — not as a commit count. The raw
-`b1a8ae84..protocol/main` range is 31 commits, but 14 are merges; **17 are substantive**, and a
-number that shrinks by half under `--no-merges` invites the argument rather than settling it. What
+Measure that delta as **13 files, +458/−1083** — not as a commit count. Commit counts here are a
+trap: `b1a8ae84..protocol/main` is **211** commits (136 non-merge) across the whole tree, and **31**
+(**17** non-merge) once filtered with `-- contracts/src`. Four different true numbers for one delta
+is an argument waiting to happen — quote the diffstat and skip it. What
 nobody can discount:
 
 - **Four commits carry a `SECURITY:` prefix** — `cf7b4fb2` (a vault whose oracle cannot price its
@@ -109,13 +110,25 @@ config-mitigated."** `LAUNCH-READINESS.md:18` says "fixed + config-mitigated", o
 edited from here — this is the finding, and it needs a PR of its own.
 
 **What the residual actually costs, in the numbers rather than in prose.**
-`SIGNER_REGIME_BELOW = 5` (`Governance.sol:82`). `contracts/config/base-mainnet.json:222` sets
-`minDepositUsdc` = `100000000` (**100 USDC**), raised from 1 USDC on 2026-08-28 for exactly this
-reason; `quorumBps` = **2500** (25%). Its own note puts the attack at *"the ~4 seats needed to flip
-the regime"* — so **≈400 USDC, or 0.8% of vault #1's 50,000 USDC cap.** The mitigation is a
-**listing constraint, not a contract floor**: the note records that no safe contract-level floor
-exists (a fraction-of-stake floor repeats M-6's liveness cliff). Nothing enforces it — a vault
-created with a low `minDepositUsdc` has no mitigation at all, and the code will not stop it.
+`SIGNER_REGIME_BELOW = 5` (`Governance.sol:82`); `quorumBps` = **2500** (25%); the config note puts
+the attack at *"the ~4 seats needed to flip the regime"*, so the cost is **4 × `minDepositUsdc`**.
+
+**And that is as far as the arithmetic goes, because vault #1's `minDepositUsdc` does not exist
+yet.** `grep -c minDeposit docs/LAUNCH-READINESS.md` returns **0** — the launch vault's value is
+recorded nowhere. The 100 USDC in `contracts/config/base-mainnet.json:222` sits inside that file's
+**`"smoke"`** block, whose own `capacityCapUsdc` is `1000000000` (**1,000 USDC**); against *its* cap,
+4 × 100 USDC is **40%**. The 50,000 USDC cap is `LAUNCH-READINESS.md:123`, describing a **different
+vault**. Pairing that numerator with that denominator produces a reassuring ratio out of two sources
+that never described the same vault — exactly what `base-mainnet.json:13` forbids when it says
+*"relative to its capacity"*. **An earlier revision of this file quoted ≈0.8% on that pairing. It is
+retracted; do not reintroduce it.**
+
+So the true statement is stronger than any ratio: **vault #1's entire H-8 mitigation rests on a
+parameter that has no recorded value, is immutable once set, and is set before the vault exists.**
+And the mitigation is a **listing constraint, not a contract floor** — the note records that no safe
+contract-level floor exists (a fraction-of-stake floor repeats M-6's liveness cliff). Nothing
+enforces it: a vault created with a low `minDepositUsdc` has no mitigation at all, and the code will
+not stop it.
 
 **The mitigation cannot bind anyone but us.** The only contract-level constraint is
 `require(minDepositUsdc_ > 0, BadConfig())` (`contracts/src/VaultCore.sol:252`) — **any nonzero
@@ -148,10 +161,10 @@ silently closed by a redeploy that did not touch either.
 | 2 | **Wrong topology, immutably** — the deployed factory has `allowSubVaults = true`; the flag is `immutable` (below) | **No.** A launch-configured redeploy makes gate 3's sub-vault drills *unreachable* instead. One factory cannot evidence both topologies |
 | 3 | **H-8 mitigation absent** — `contracts/config/base-sepolia.json:101` sets `minDepositUsdc` = 1 USDC, explicitly a smoke value, so the live Sepolia vault runs the H-8(a) residual essentially unmitigated | **No**, unless the redeploy also changes that value — and it is `immutable` per vault, so it means a new vault |
 
-Gate 3 carries the first two directly.
+Gate 3 carries reasons 1 and 2 directly; reason 3 is listed with them so a redeploy cannot silently close it.
 
-**Defect 1 — staleness.** The deployment is behind `main` (§2.1). A redeploy at the frozen head
-fixes it.
+**Defect 1 — staleness.** The deployment is behind `main` by 13 files / +458/−1083 of
+`contracts/src` (§2.1). A redeploy at the frozen head fixes it.
 
 **Defect 2 — the topology is immutable and it is the wrong one.**
 `VaultFactory.allowSubVaults` is `bool public immutable` (`contracts/src/VaultFactory.sol:54`, set at
@@ -248,7 +261,7 @@ vault too. `VaultCore` is not an ERC20; those selectors are declarations for an 
 
 ### 2.2 PRs that gate release
 
-Enumerated from `gh`, not from the vault. **Only 2 of the 14 open PRs gate release.**
+Enumerated from `gh`, not from the vault. **5 of the 18 open PRs gate release; 13 do not.**
 
 ```bash
 gh pr list --state open --limit 50 --json number,title,reviewDecision,mergeStateStatus
@@ -262,11 +275,12 @@ gh pr list --state open --limit 50 --json number,title,reviewDecision,mergeState
 | **#131** vault #1 agent policy (AgentPolicy) | §5's "agent policy published" row and the launch narrative both depend on it; it must be public **before** the first on-chain proposal. | `reviewDecision` **NONE**. `behind_by 0`. |
 | **#133** incident NAV reconstruction (LaunchComms) | §6 sends members to a runbook whose NAV reconciliation omitted the child look-through leg — a false shortfall mid-incident, read at the moment nothing can be paused. | `reviewDecision` **NONE**. `behind_by 0`. |
 
-The other twelve (#106, #110, #111, #112, #115, #116, #118, #122, #124, #126, #127, #128) are open,
-not gating: Slither triage docs, canary signal fixes, supply-chain pins, member docs. They are
-merge-queue work, not release work.
+The other thirteen (#106, #110, #111, #112, #115, #116, #118, #122, #124, #126, #127, #128, and
+this one) are open but not gating: Slither triage docs, canary signal fixes, supply-chain pins,
+member docs. Merge-queue work, not release work.
 
-Three facts about the fourteen older PRs that matter more than the individual rows:
+Three facts about the twelve **older** PRs (#131, #132 and #133 are current and `behind_by 0`) that
+matter more than the individual rows:
 
 - **None has a `reviewDecision`.** All fourteen read `NONE`.
 - **Every one is behind `main` by 61–104 commits.** `mergeStateStatus: CLEAN` means *no conflict*,
@@ -312,42 +326,54 @@ Measured 2026-09-01: head `bab5ee90`, run `33586340700`, `headSha bab5ee90…`, 
 `contracts`/`backend`/`slither` all green. The transient Foundry-download reset the handoff mentions
 is resolved. Locally, `npm run gate` is the ~30 s mirror.
 
-#### The check that enforces this rule cannot currently pass
+#### The check that enforces this rule has a hole in the permissive direction
 
-`merge-preflight` — the workflow that automates exactly the rule above — **can never post a green
-status, on any PR, at any head.** Three facts compose:
+`merge-preflight` automates exactly the rule above. **It does not do what its name promises**, and
+the more dangerous half is the one that lets things through.
+
+**The permissive hole — `ci-matches-head` can green a head that has no CI run at all.**
 
 1. `scripts/merge-preflight.mjs:97-100` fetches runs with `gh run list --branch <head branch>` and
-   **no `--workflow` filter** — so its own run is in the set.
-2. `scripts/lib/verdicts.mjs:213-216` — `runsForHead` narrows that set by head SHA **alone**. No
-   workflow-name exclusion anywhere.
-3. `scripts/lib/verdicts.mjs:273-293` — `ci-matches-head` pushes a blocker for every run on the head
-   that is not `completed`.
+   **no `--workflow` filter**, so the preflight's own runs are in the set.
+2. `scripts/lib/verdicts.mjs:213-216` — `runsForHead` narrows by head SHA **alone**. No
+   workflow-name exclusion anywhere; `workflowName` is fetched and never read.
+3. `scripts/lib/verdicts.mjs:273-293` — the rule blocks when the run set is empty, on each `failed`
+   run, and on each `pending` run. It never asks whether a **CI** run in particular succeeded.
 
-The merge-preflight run performing the evaluation is a run on that head and is `in_progress` while
-it evaluates. So it blocks on itself, always.
+So a head carrying one completed, successful preflight run and **no CI run** yields
+`succeeded = 1, failed = 0, pending = 0` — and **no blocker**. The rule named `ci-matches-head`
+would report green on a head with no CI. That is fail-open, and it outranks the restrictive half
+below: a gate that wrongly blocks is noticed immediately, a gate that wrongly passes is not.
 
-**Observed** on PR #130 at head `bcb7a4e5` (a `pull_request` trigger): first trigger reported 2
-blockers (`CI` in progress and `merge-preflight` in progress); **after CI had completed green, a
-re-run reported exactly one blocker — itself.**
+**The restrictive half — real, but narrower than it looks.** On the **`pull_request`** trigger the
+evaluating run is itself on the head branch at the head SHA, so it is in its own run set and blocks
+on itself. **Observed** on PR #130 at head `bcb7a4e5`: after CI had completed green, a re-run
+reported exactly one blocker — itself.
 
-Rest the finding on *that* re-run and nothing else. Two weaker readings both fail:
+**This does NOT generalise to every trigger, and the greens prove it.** On the `issue_comment`
+trigger the run is on `protocol/main` (`.github/workflows/merge-preflight.yml` checks out
+`ref: protocol/main`, and the run's `headBranch` is `protocol/main`), so `gh run list --branch <PR
+head branch>` never returns it and there is no self-block. Measured across all 18 open PRs:
+**2 green (#131, #133), 1 red (#132), 15 with no status at all.** Any claim that it "can never post
+green" is false, and a green from an `issue_comment` run is **meaningful** — reaching "no blocker
+found" required finding at least one completed, successful run at that head.
 
-- **A red status alone proves nothing.** Every open PR head currently carries a red
-  `merge-preflight`, but a genuinely pending CI run at the same head blocks too, and blocks
-  *correctly*. CI was in flight on several of those heads. Only the post-green re-run isolates the
-  self-block.
-- **The run's own conclusion is not the status it posts.** `gh run list` reports `merge-preflight`
-  as `conclusion: success` on these branches — because the job **succeeded at posting a red
-  status**. Read `gh api repos/{owner}/{repo}/commits/<sha>/status`, not the run conclusion. This is
-  §2.3's own rule one level up, and it has already misled one reader into calling these heads green. **Inferred**, not observed, for the workflow's `issue_comment` trigger: there
-CI has long since finished, but the preflight run is still live while it evaluates, so the same
-self-block applies. No other open PR carries the context at all, so the workflow is new and this has
-not been noticed.
+One `--workflow`-filter fix closes both halves at once.
 
-It is **advisory today**, so nothing is blocked by it. The trap is the workflow's own stated plan:
-it becomes binding the moment the owner requires the `merge-preflight` context in branch protection
-(`.github/workflows/merge-preflight.yml`, "STATUS" header). On that day **no PR can ever merge.**
+**How to read its status, since two natural readings mislead:**
+
+- **The run's conclusion is not the status it posts.** `gh run list` can report `merge-preflight` as
+  `conclusion: success` while the status it posted is red — the job **succeeded at posting a red
+  status**. Read `gh api repos/{owner}/{repo}/commits/<sha>/status`. This has already misled one
+  reader into calling red heads green.
+- **A red alone does not prove the self-block.** A genuinely pending CI run at the same head blocks
+  too, and blocks *correctly*. Only the post-green re-run isolates it.
+
+It is **advisory today**. The trap is the workflow's own stated rollout: it becomes binding once the
+owner requires the `merge-preflight` context in branch protection
+(`.github/workflows/merge-preflight.yml`, "STATUS" header). Fix the `--workflow` filter first — and
+fix the permissive half whether or not it is ever made binding, because that one is wrong in the
+direction nobody checks.
 Fix this before making it required — and note that branch protection cannot be configured on the
 current GitHub plan anyway (§4), so there is time.
 
@@ -443,7 +469,7 @@ transaction that registers the operator. Settle both before sending it:
 | **Re-attest gate 1** | An attestation about a private report; no agent can make it. | `LAUNCH-READINESS.md` gate 1 names the current head |
 | **Vault #1's fee posture — waived is not implementable as written** | `FeeEngine.PERF_FEE_BPS` is a `constant` (10%, `FeeEngine.sol:35`) applied unconditionally at `:88`. No per-vault override, no setter, no waiver function. The go-to-market plan's "fee waived on vault #1, for regulatory optics" **cannot be done in the contracts.** The two available routes are (a) non-collection — the operator simply never claims, but fees still accrue on-chain and the accrual is publicly visible, so the optics claim is weaker than intended and must not be stated as a waiver; or (b) an operator payout address that cannot claim — which is **permanent**, because there is no rebind. Route (b) makes this the *same* decision as the Safe row above, taken in the same transaction. | Decided and recorded **before** the operator address is registered, and whatever is chosen is described accurately on every public surface (§3) |
 | **`exitFeeDecayPeriod`: 3.5 days or 7?** | A launch parameter, immutable per vault. `contracts/config/base-mainnet.json:226` says `604800` (7 d); [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 records that 302,400 s (3.5 d) "was never what the 50 bps vault ran" and flags the contradiction as unresolved. Until it is decided **no public claim can be pinned to either figure** — and one already is (§3). | Owner decides; the value is then confirmed by reading it off the **deployed vault**, not off the config |
-| **Accept H-8(a), or raise `minDepositUsdc`** | Launching knowingly with an unfixed High. It is unfixed **by design** — there is no contract-level fix (§1) — so the only levers are the config value and acceptance. At `minDepositUsdc` = 100 USDC the regime flip costs ≈400 USDC against a 50,000 USDC cap. `minDepositUsdc` is immutable per vault, so this is decided **before** vault #1 is created, not after. | Owner records the acceptance with the number they accepted it at, or names a higher `minDepositUsdc` — and every public surface (§3) describes the governance regime accurately, since "fixed" is not what the contracts say. **The acceptance covers vault #1 only:** `VaultCore.sol:252` accepts any nonzero value and the factory is permissionless, so it cannot be extended to third-party vaults and no claim may imply it does (§3) |
+| **Set vault #1's `minDepositUsdc`, then accept H-8(a) at that number** | Launching knowingly with an unfixed High. It is unfixed **by design** — there is no contract-level fix (§1) — so the only levers are the config value and acceptance. **The value does not exist yet**: it is written down nowhere for the launch vault (§1), and it is immutable per vault, so it is chosen **before** vault #1 is created and can never be revised. The flip costs 4 × `minDepositUsdc`, and whether that is tolerable is meaningless until the cap it sits against is named too. | Owner records **both** numbers — the `minDepositUsdc` and the `capacityCapUsdc` it is relative to — and accepts the resulting ratio, or names a higher `minDepositUsdc` — and every public surface (§3) describes the governance regime accurately, since "fixed" is not what the contracts say. **The acceptance covers vault #1 only:** `VaultCore.sol:252` accepts any nonzero value and the factory is permissionless, so it cannot be extended to third-party vaults and no claim may imply it does (§3) |
 | **Ratify no-token / beachhead / anchor strategy** | A token, once issued, cannot be un-issued; a public posture cannot be un-said. | `gtm-ratify-launch-posture` ratified or overridden |
 | **Testnet redeploy** | Needs a funded Base Sepolia key. Must be in the **launch** configuration (`allowSubVaults = false`) or the re-earned evidence is again about the wrong contracts. | `verify-deployment-currency.mjs` exits 0, no notes |
 | **Mainnet deploy** | Immutable. No pause, no upgrade, no admin (§6). One shot. | `Deploy.s.sol` run with `--broadcast`; a `contracts/config/deployments/base-mainnet.json` record written and verified |
@@ -520,9 +546,10 @@ That is the complete list. Any plan that assumes more than these four is wrong.
 - **After deposits** — you cannot stop it. Publish the pre-cleared incident comms (§5) verbatim,
   point members at `requestExit`, and stop proposing. Members exit at fair value; that is the whole
   design. Do not improvise comms under time pressure — that is what staging them was for.
-  **Not ready yet:** `docs/INCIDENTS.md`'s NAV reconciliation omitted the child look-through leg, so
-  the runbook reports a false shortfall — exactly when it is being read under pressure and nothing
-  can be paused. PR #133 fixes it and gates this phase (§2.2).
+  **Not ready yet, and this is on the critical path (§verdict step 1):** `docs/INCIDENTS.md`'s NAV
+  reconciliation omitted the child look-through leg, so the runbook reports a **false shortfall** —
+  read under pressure, in the one phase whose back-out line is *"you cannot stop it"*. Do not enter
+  this phase until **PR #133** has landed.
 
 ---
 
