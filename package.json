@@ -1,6 +1,7 @@
 {
   "name": "index-vault-protocol",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "workspaces": [
     "packages/*",
     "apps/*"
