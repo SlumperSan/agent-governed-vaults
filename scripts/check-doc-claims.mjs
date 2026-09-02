@@ -17,7 +17,7 @@
 import { readdirSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkDocs, isHistoricalRecord, formatProblems } from './lib/doc-claims.mjs';
+import { checkDocs, formatProblems, commitsBehind } from './lib/doc-claims.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -49,6 +49,16 @@ const { problems, checked, skipped } = checkDocs(REPO, docs, {
   ref,
   requireAnchor: !has('--no-anchor'),
 });
+
+// Before anything else: a resolver run against a stale tree answers confidently and wrongly.
+const behind = commitsBehind(REPO, ref);
+if (behind) {
+  console.log(
+    `doc-claims: WARNING — this working tree is ${behind} commit(s) behind ${ref}.\n` +
+      '            Every answer below is about THIS tree, not that branch. A symbol added by a\n' +
+      '            merge you do not have reads as absent. Rebase, or read the results as historical.\n'
+  );
+}
 
 const kinds = problems.reduce((a, p) => ((a[p.kind] = (a[p.kind] ?? 0) + 1), a), {});
 console.log(`doc-claims: ${checked} claims resolved across ${docs.length - skipped.length} documents`);
