@@ -39,8 +39,9 @@
 #   carry no `<style>` block and no `style=` attribute, so an injected one is refused.
 #
 # img-src 'self'
-#   favicon.svg and favicon.ico. The pages reference no other image, and none may be added from a
-#   remote host.
+#   favicon.svg, favicon.ico and assets/og-card.png, all same-origin. The pages themselves carry
+#   no <img>; og-card.png is referenced by the og:image and twitter:image meta tags. No image may
+#   be added from a remote host.
 #
 # base-uri 'none'
 #   Every link on this site is relative. An injected `<base href="https://evil.example/">` would
@@ -58,7 +59,8 @@
 #   the protocol's own words without its disclosures.
 #
 # X-Content-Type-Options: nosniff
-#   This origin serves .html, .css, .txt, .xml, .svg and .ico. Content sniffing is the mechanism by
+#   This origin serves .html, .css, .txt, .xml, .svg, .ico and .png. Content sniffing is the
+#   mechanism by
 #   which a file served as one type is interpreted as another; nosniff makes the declared
 #   Content-Type binding.
 #
@@ -98,4 +100,10 @@
 #   3. add includeSubDomains only once every intended subdomain of rwally.com is HTTPS-only
 #   4. add preload only as a deliberate decision to accept the removal process
 #
-# Strict-Transport-Security: max-age=86400
+#   INDENT IT UNDER /* WHEN ENABLING. This line sits at column 0, and an uncommented line at
+#   column 0 is a PATH PATTERN, not a header -- it would define a rule named
+#   "Strict-Transport-Security: max-age=86400" carrying no headers, and do nothing at all,
+#   silently. Cloudflare ignores malformed lines rather than erroring, which is the same trap
+#   _redirects warns about. Move it inside the /* block, indented, before uncommenting:
+#
+#       Strict-Transport-Security: max-age=86400
