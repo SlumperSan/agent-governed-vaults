@@ -32,6 +32,32 @@ Read, in this order, stopping once you have what your task needs:
 Then `docs/NOW.md` and `npm run cc` for the live, computed state. The vault carries the reasoning;
 `cc` carries the facts. Where they disagree the facts win, and the vault is what needs fixing.
 
+**Never re-derive "is this head verified" by hand — `cc` computes it.** The `PER-HEAD` block reports,
+for every open PR, the head SHA and three things about *that exact commit*:
+
+| column | what it is | how to read it |
+|---|---|---|
+| `CI run=` | the **CI workflow run's own conclusion** | `pass` · `fail` · `fail(no-runner?)` · `pending` · `none` |
+| `preflight=` | the **commit status `merge-preflight` POSTED** | `success` · `failure` · `none` |
+| `behind` | commits in local `origin/protocol/main` not in the head | `git fetch` first; `0` is the merge bar |
+
+Three things that block reading it wrongly, each of which has cost this project a night:
+
+- **The two columns are different artifacts and are allowed to disagree.** A run that does its job
+  and posts a red status has `conclusion: success`. `CI run=` answers *"did CI pass here"*;
+  `preflight=` answers *"may this merge"*. Never quote one to answer the other.
+- **`none` is not a pass and not a failure.** It means no evidence exists for this head. A head with
+  no run is the case the whole "green belongs to a commit" rule exists for.
+- **`fail(no-runner?)` is a suspected Actions capacity outage**, flagged from the run's duration —
+  seconds wide, when real jobs here take 400-500s. The question mark is honest: confirm it with
+  `npm run cc -- --ci-jobs`, which reads the job list and reports `fail(no-runner)` only when every
+  job ran zero steps with no runner assigned. This repo has twice misdiagnosed exhausted capacity as
+  its own code.
+
+Six sessions in one night each derived this by hand and the shared answer was published wrong twice.
+If you need it, run `cc`; if you need to hand it to someone, hand them the command, not the output.
+`npm run cc -- --no-ci` skips the block (one fewer API call); `--no-gh` skips GitHub entirely.
+
 ### Closeout — last thing, after the gate passes
 
 Update the vault before you report done. At minimum:
