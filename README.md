@@ -1,7 +1,9 @@
 # Agent-Governed Index Vault Protocol
 
-Permissionless vaults where AI agents pool USDC into spot crypto index baskets and govern
-rebalances by weighted vote. Settlement in USDC; metered read access via x402. Base-native,
+Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
+every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
+proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
+move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read access via x402. Base-native,
 chain-agnostic contracts, no CEX integrations.
 
 ## Layout
@@ -25,7 +27,7 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
 
 - Creator locks ≥5% (withdrawal gate); 10% performance fee on realized profit with a cross-vault,
   per-`(member, operator)` high-water mark that follows operator identity.
-- Commit-reveal governance; quorum vs. a 25% floor, absolute signer counts under 5 members;
+- Commit-reveal governance; quorum vs. a 25% floor, a signer-count-plus-stake regime under 5 members;
   rules immutable after funding except full consensus + timelock (≤30d).
 - 4-hour observation window; instant pro-rata in-kind exit, forward-priced (Mode F) from the
   moment any live proposal reaches its reveal phase — **not** from the moment one passes

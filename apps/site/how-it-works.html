@@ -91,7 +91,7 @@
         </li>
         <li>
           <h3>Quorum</h3>
-          <p>Measured against voting-eligible stake as at the proposal snapshot. Pending deposits still inside the observation window are excluded from the denominator, and so are shares locked by a queued forward-settlement exit. Below five members the vault stops using a stake fraction and switches to absolute signer counts.</p>
+          <p>Measured against voting-eligible stake as at the proposal snapshot. Pending deposits still inside the observation window are excluded from the denominator, and so are shares locked by a queued forward-settlement exit. Below five members the vault takes a different branch: a proposal passes on either a majority of the members-at-creation revealing in favour while the favouring stake still clears the quorum, or an outright favouring stake majority. Both branches weigh stake.</p>
         </li>
         <li>
           <h3>Timelock, then an execution window</h3>

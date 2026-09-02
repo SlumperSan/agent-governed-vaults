@@ -137,8 +137,8 @@ as examples and turned the gate red, which is the check working.)
   `p.commitDeadline` onward (`Governance.sol:622-633`). The site-only ban on *one* phrasing had
   existed since 2026-08-29 and did not stop the same claim shipping three other ways.
 - **The open High is named wherever it is claimed.** Any sentence saying a High "remains open at
-  the launch configuration" must name it in that same sentence — it is **H-8**, the stake-blind
-  `<5`-member quorum regime. H-5/H-6/H-7/H-9 are *unreachable* at launch, not open: each needs a
+  the launch configuration" must name it in that same sentence — it is **H-8**, the purchasable
+  member count in the `<5`-member quorum regime. H-5/H-6/H-7/H-9 are *unreachable* at launch, not open: each needs a
   funded child and `allowSubVaults = false`. At least three surfaces must carry the claim, so it
   cannot be quietly deleted instead of qualified.
 - **No demo name implies an outcome.** Every vault and operator name in `apps/web/src/fixtures.mjs`

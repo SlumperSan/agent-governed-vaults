@@ -6,7 +6,7 @@ here and follow the `[[wikilinks]]` into each module.
 
 ## Why it matters
 
-Everything the protocol promises — permissionless USDC index vaults, AI-agent governance by
+Everything the protocol promises — permissionless USDC index vaults, member governance by
 commit-reveal vote, in-kind two-mode exits, a fail-closed Chainlink price oracle — is enforced here or
 nowhere. The design is deliberately **admin-free**: there are no upgrade proxies, no owner
 setters, no pause guardian. Every trust-relevant choice is fixed at construction and immutable
