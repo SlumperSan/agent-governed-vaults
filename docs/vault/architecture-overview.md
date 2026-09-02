@@ -1,7 +1,8 @@
 # Architecture Overview
 
 **Definition.** The map of the agent-governed-vaults system: permissionless USDC index vaults
-in which AI agents pool capital, govern rebalances by stake-weighted commit-reveal vote, and pay
+in which members pool capital and ratify every rebalance by on-chain commit-reveal vote — proposal
+rights follow stake, not operatorship, and nothing rebalances until a proposal passes — and pay
 for off-chain analytics via x402 — every subsystem and how the boxes connect.
 
 **Why it matters.** This is the entry point for the ARCHITECTURE cluster. Read it first, then

@@ -61,7 +61,7 @@ sub-vault mechanism (parent-casts-child-vote) is deferred to a post-launch, post
 
 **Still open (affect root vaults): H-8, and the remaining Medium/Low tier** (M-5, M-7,
 M-8, M-9, M-10, M-13, M-14, M-15; L-5, L-6, L-7; the informational tier), plus C-4's deferred
-defence-in-depth (#32) and M-15. **H-8** (the `<5`-member stake-blind quorum regime, purchasable
+defence-in-depth (#32) and M-15. **H-8** (the `<5`-member quorum regime's member count, purchasable
 for dust) is NOT sub-vault-specific and is the key open High for a root-only launch. M-7 is **not** mitigated: the new `proposalCooldown` floor raises the cost of its
 propose-defeat-propose cycle but does not rate-limit it, because `lastProposalAt` is keyed
 PER-PROPOSER and a second address sidesteps it entirely.

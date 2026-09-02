@@ -514,8 +514,15 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
       `${p} is stale relative to base-mainnet.json: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
     );
   }
-  // The small-member quorum regime flips at roughly four seats; the seat price is the minimum
-  // deposit, so the cost of capture moves with the config.
+  // What four seats BUY changed with the H-8/CM-7 remediation, while the arithmetic did not.
+  // Before it, four dust seats passed a proposal outright, because the sub-five regime was a pure
+  // head count. Now both sub-five branches weigh stake (`headMajorityWithStake` carries a stake
+  // quorum term and `forStakeMajority` is stake alone), so dust cannot pass anything on numbers.
+  // What four seats still buy is the REGIME: taking a single-member vault to five members moves it
+  // out of the signer-count branch into the pure stake rule — H-8(a), which `Governance.finalize`
+  // documents as unfixed by design and mitigated at the config layer by a meaningful minimum
+  // deposit. So the seat price is still the minimum deposit and still moves with the config; the
+  // sentence it pins had to change, and this comment is the record of why.
   const SEATS = 4;
   const capture = (SEATS * Number(BigInt(config.smoke.minDepositUsdc))) / 1e6;
   const risks = raw.get('risks.html') ?? '';
@@ -696,7 +703,12 @@ test('every surface that describes Mode F names the reveal phase as its trigger'
  * truth — so the check is that the class travels with the claim.
  */
 const OPEN_HIGH_CLAIM = /remains open at the launch configuration/i;
-const OPEN_HIGH_CLASS = /stake-blind/i;
+// The class used to be spelled "stake-blind". That descriptor is now FALSE — the H-8/CM-7
+// remediation put a stake term in both sub-five branches — so pinning it here would have required
+// every surface to keep naming the finding by behaviour the contracts no longer have. What is
+// still open, and what the sentence must name, is the purchasable member count (H-8(a)). Accept
+// the finding id too: "H-8" is the most checkable name a reader can carry to the audit report.
+const OPEN_HIGH_CLASS = /purchasable member count|\bH-8\b/i;
 
 test('the "open High at the launch configuration" claim always names the finding', () => {
   /** @type {[string, string][]} */
@@ -711,7 +723,7 @@ test('the "open High at the launch configuration" claim always names the finding
       seen++;
       assert.ok(
         OPEN_HIGH_CLASS.test(s),
-        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the stake-blind <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
+        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the purchasable member count in the <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
       );
     }
   }
