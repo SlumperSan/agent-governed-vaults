@@ -198,10 +198,16 @@ test('Governance.sol has no proposalThresholdBps floor, and govDefencesNote in b
     assert.ok(note.includes(NO_FLOOR), `${name}: govDefencesNote must state that there is no contract floor on proposalThresholdBps`);
     assert.match(note, /AuditProposalThresholdFloor\.t\.sol/, `${name}: govDefencesNote must point at the reverted-floor audit artifact`);
 
-    // Negative guard, by shape rather than by phrasing: ANY sentence that puts a lower bound next
-    // to the proposal threshold must be the one that denies it. The first version matched the two
-    // literal strings the note happened to use, so "Governance also enforces a threshold floor of
-    // 100 bps." was a false security claim the test waved through.
+    // The two literal guards the first version had. Kept, not replaced: they are whole-note, so
+    // they still catch a false claim smuggled into the same sentence as the denial, which the
+    // sentence-level guard below cannot see.
+    assert.doesNotMatch(note, /enforces a \d+ bps threshold floor/i, `${name}: govDefencesNote still claims a threshold floor the contract does not enforce`);
+    assert.doesNotMatch(note, /threshold floor,/i, `${name}: govDefencesNote still lists a threshold floor among the enforced bounds`);
+
+    // And the class guard, by shape rather than by phrasing: ANY sentence that puts a lower bound
+    // next to the proposal threshold must be the one that denies it. Matching only the two literal
+    // strings above let "Governance also enforces a threshold floor of 100 bps." through — a false
+    // security claim in the string the configs cite as their guarantee.
     // (Sentence granularity: a false claim smuggled into the same sentence as the denial would
     // still pass. Splitting on `;` as well as `.` keeps that window to one clause.)
     for (const sentence of note.split(/(?<=[.;])\s+/)) {
