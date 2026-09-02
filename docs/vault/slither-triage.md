@@ -31,7 +31,13 @@ widened run went 245 → 254 results with **no new detector class**.
   launch under [[root-vaults-only]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
   `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence → **H-2** (since
-  FIXED; the omission is now closed).
+  FIXED; the omission is now closed). The per-row re-triage (2026-09-01) then found a second real
+  one the class verdict had covered for: `Governance.applyStandingDefault`'s VO-3 TTL is compared
+  against `block.timestamp` during the reveal phase, so the commit phase eats into it → **T-1**
+  (Low, since FIXED — `COMMIT_HARD_CAP = DEFAULT_TTL - 1`). Note what "sound for `Governance`" was
+  and was not: every comparison IS outside miner tolerance, which is what the row asserted; T-1 is
+  about which clock the comparison uses, a question the class verdict never asked. See
+  [[mediums-and-lows]].
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check
   unsatisfiable and reverts a member's child-backed exit → **H-6**. Dormant at launch.
