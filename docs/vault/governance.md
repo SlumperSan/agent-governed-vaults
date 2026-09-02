@@ -54,8 +54,12 @@ included — carries zero weight.
 - **Quorum regimes** (in `finalize`): `RuleChange` = full consensus (every unit of snapshot stake
   revealed FOR, CM-8 / K-2); `<5` members at creation = the H-8 signer regime (below); otherwise
   revealed stake >= `quorumBps` of `snapshotTotal` (VO-2).
-- **Defaults count toward the tally, never toward quorum** (VO-2 / K-3), expire 72h after being set
-  (VO-3), and are structurally limited to `Rebalance` on-chain (VO-4 — not proposer-asserted text).
+- **Defaults count toward the tally, never toward quorum** (VO-2 / K-3), expire `DEFAULT_TTL` (72h)
+  after being set (VO-3), and are structurally limited to `Rebalance` on-chain (VO-4 — not
+  proposer-asserted text). The TTL is measured when the default is APPLIED, and `applyStandingDefault`
+  is reveal-phase-only, so the commit phase consumes part of it: the **usable** window is
+  `DEFAULT_TTL - cfg.commitDuration` (T-1). `COMMIT_HARD_CAP = DEFAULT_TTL - 1` is what guarantees
+  that window is never empty.
 - **Payload type is never inferred from shape** — `execute` decodes strictly per the stored
   `ProposalType`; `keccak256(payload) == actionHash` binds voters to the exact orders.
 
