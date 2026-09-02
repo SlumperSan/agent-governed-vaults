@@ -57,10 +57,14 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 
 - [walkthroughs/VaultCore.md](walkthroughs/VaultCore.md) — **critical**, holds all funds
 - [walkthroughs/Governance.md](walkthroughs/Governance.md) — **critical**, authorizes fund movement
+- [walkthroughs/ChainlinkOracle.md](walkthroughs/ChainlinkOracle.md) — **critical**, the launch
+  oracle and the only thing that prices a vault. Fails **closed**: a stale or out-of-band price
+  freezes the vault, exits included
 - [walkthroughs/OracleAggregator.md](walkthroughs/OracleAggregator.md) — **RETIRED (C-6)**, now
   `contracts/test/retired/OracleAggregator.sol`, out of production scope. Pricing is done by
   `contracts/src/oracle/ChainlinkOracle.sol` (single Chainlink feed per asset, enforced by
-  VaultFactory's blessed-oracle allowlist); it has no walkthrough yet — read the source
+  VaultFactory's blessed-oracle allowlist) — see
+  [walkthroughs/ChainlinkOracle.md](walkthroughs/ChainlinkOracle.md)
 - [walkthroughs/FeeEngine.md](walkthroughs/FeeEngine.md)
 - [walkthroughs/OperatorRegistry.md](walkthroughs/OperatorRegistry.md)
 - [walkthroughs/AggregationRouterAdapter.md](walkthroughs/AggregationRouterAdapter.md)
@@ -129,6 +133,7 @@ Cross-references:
 | --- | --- | --- | --- |
 | `VaultCore.sol` | ~850 | Shares/NAV, deposits + observation window, two-mode exits, in-kind redemption + escrow, rebalance execution, sub-vault allocate/redeem/look-through, creator gate, exit fee, capacity cap, voting-stake checkpoints | **Critical** — holds all funds |
 | `Governance.sol` | ~490 | Proposals (3 types), commit-reveal, 3 quorum regimes, standing defaults, delegation + concentration cap, timelock, execute | **Critical** — authorizes every fund movement |
+| `oracle/ChainlinkOracle.sol` | ~330 incl. NatSpec (~116 non-comment) | **THE launch oracle (C-6).** One Chainlink Data Feed per asset — no median, no quorum, no per-vault source set. L2 sequencer-uptime gate + 1h grace, per-feed heartbeat, sane-price band, feed-denomination and 8-decimals checks at construction; `scale = 10**(18 - feedDecimals)` cached. Fails **closed** — every failure is `StaleOracle(asset)`, which freezes the vault including exits. Curated by `VaultFactory`'s oracle allowlist. See [walkthroughs/ChainlinkOracle.md](walkthroughs/ChainlinkOracle.md) | **Critical** — the only price a vault has |
 | `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker. **RETIRED (C-6)** — moved to `contracts/test/retired/`, not production source. Assets are priced by `src/oracle/ChainlinkOracle.sol` | Out of production scope — was **Critical** |
 | `FeeEngine.sol` | ~130 | 10% perf fee netted against registry carry; operator fee claims per token | High |
 | `OperatorRegistry.sol` | ~150 | Operator identity, (member, operator) loss carryforward, monotone leaderboard stats | High |
@@ -287,8 +292,14 @@ to that contract.
    commit-reveal quorum math at the <5-member regime boundary (CM-7).
 3. `VaultCore._fullNavWad` recursive look-through — depth bounding, and whether any descendant
    state can misprice an ancestor's NAV (S6 E1 fix).
-4. `OracleAggregator` median robustness (lower-median, strict-majority quorum, saturating
-   staleness) and `BoundedCall`/`tryTransfer` returndata handling.
+4. **⚠ POST-PIVOT (C-6): read this item as `ChainlinkOracle`, not `OracleAggregator`.** The live
+   pricing path is `ChainlinkOracle.priceWad` — the fail-closed surface (every failure must be
+   `StaleOracle` and nothing else), the sequencer gate's `startedAt`/grace semantics, the
+   construction-time denomination and 8-decimals checks, and the cached `scale`. See
+   [walkthroughs/ChainlinkOracle.md](walkthroughs/ChainlinkOracle.md). `BoundedCall`/`tryTransfer`
+   returndata handling is unaffected by the pivot and still belongs here. *Retired item, kept as
+   the reasoning record:* `OracleAggregator` median robustness (lower-median, strict-majority
+   quorum, saturating staleness).
 5. `AggregationRouterAdapter` vs. the 2026 arbitrary-calldata exploit class (SwapNet/Aperture
    et al.) — the reason the pinned router + selector allowlist + measured-delta minOut exist.
 
