@@ -239,6 +239,14 @@ export function resolveCanaryConfig(env) {
 export const EMITTABLE_SIGNALS = new Set([
   'oracle-freshness', 'feed-identity', 'nav-backing', 'share-conservation', 'exit-liveness',
   'module-events', 'fee-routing',
+  // Added on the rebase onto `protocol/main` @ bab5ee90. RECORDED RATHER THAN QUIETLY ADDED,
+  // because it is the first data point on this list's real failure mode: `governance-watch` (#117)
+  // landed on main roughly a day after this set was written, is dispatched through `run()` below,
+  // and was not declared here. On the rebased tree that threw on EVERY sweep before this line was
+  // added -- 24 of 286 canary tests red, `sweep.failed` in the runner log, nothing monitored. Loud,
+  // which is the design working; but the cost of a declaration is that somebody must remember it,
+  // and within 24 hours nobody did.
+  'governance-watch',
   // Not a file: synthesised below when a whole vault's config is unreadable.
   'vault-config',
 ]);
