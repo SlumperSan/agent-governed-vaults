@@ -33,7 +33,8 @@
 > `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
 >
-> Treat every specific line number, size (VaultCore now ~283 B of EIP-170 margin, not 1,182),
+> Treat every specific line number, size (VaultCore's EIP-170 margin is **3,926 B** measured
+> 2026-09-02, not the 283 B or 1,182 B recorded below — re-measure, do not copy),
 > test count and "Accepted" disposition below as pre-remediation — verify against the current tree.
 
 
