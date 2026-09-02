@@ -96,7 +96,9 @@ export function main(argv = process.argv.slice(2)) {
   // point: it is the only way to get `headSha` back and check it ourselves.
   const runs = gh([
     'run', 'list', '--repo', opts.repo, '--branch', pr.data.headRefName,
-    '--limit', '30', '--json', 'headSha,status,conclusion,workflowName',
+    // databaseId so the run this is executing inside can be told apart from every other run on
+    // the same head -- see excludeSelfRun() in lib/verdicts.mjs.
+    '--limit', '30', '--json', 'headSha,status,conclusion,workflowName,databaseId',
   ]);
   if (!runs.ok) {
     process.stderr.write(`merge-preflight: cannot list runs for ${pr.data.headRefName}: ${runs.err}\n`);
@@ -133,8 +135,12 @@ export function main(argv = process.argv.slice(2)) {
     },
     comments: (pr.data.comments ?? []).map((/** @type {any} */ c) => ({ createdAt: c.createdAt, body: c.body })),
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({
-      headSha: r.headSha, status: r.status, conclusion: r.conclusion, name: r.workflowName,
+      headSha: r.headSha, status: r.status, conclusion: r.conclusion, name: r.workflowName, id: r.databaseId,
     })),
+    // Set by the Actions runner, so no YAML plumbing: under `merge-preflight.yml` this is the id
+    // of the run asking the question, and that run is in_progress until it has an answer. Unset
+    // when run by hand, where nothing is excluded.
+    selfRunId: process.env.GITHUB_RUN_ID,
     mode: opts.mode,
   });
 

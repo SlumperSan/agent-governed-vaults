@@ -168,6 +168,114 @@ test('a red run on this head blocks, and names the conclusion', () => {
   assert.doesNotMatch(skipped.blockers[0].detail, /concluded/);
 });
 
+// ---------------------------------------------------------------------------------------------
+// The self-run exclusion: the preflight must not block on the run doing the evaluating
+// ---------------------------------------------------------------------------------------------
+
+/** A PR reviewed and cleared, so the self-run is the only thing that can be blocking it. */
+const REVIEWED = [
+  { createdAt: '2026-09-02T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' },
+  { createdAt: '2026-09-02T10:00:01Z', body: '<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->' },
+];
+
+test('the evaluating run does not block itself, and only it is exempt', () => {
+  const pr = { number: 130, state: 'OPEN', headRefOid: 'bcb7a4e5', headRefName: 'docs/release-checklist' };
+  const base = { pr, comments: REVIEWED, mode: /** @type {'advisory'} */ ('advisory'), selfRunId: 33590000001 };
+
+  // Live on #130 @ bcb7a4e5, 2026-09-02: CI completed green, and the only blocker left was the
+  // preflight reporting its own in-flight run as not completed. Advisory then, so nothing was
+  // stopped; the day the context is required in branch protection it would stop every PR forever.
+  const selfOnly = evaluate({
+    ...base,
+    runs: [
+      { headSha: 'bcb7a4e5', status: 'completed', conclusion: 'success', name: 'CI', id: 33589402462 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+    ],
+  });
+  assert.deepEqual(ruleIds(selfOnly.blockers), [], 'the run asking the question is not evidence against itself');
+
+  // The exemption is by run id, one run, not by workflow: a SECOND preflight run on the same head
+  // is somebody else's run and still blocks. This is the narrowness the fix turns on — an exclusion
+  // keyed on the name 'merge-preflight' would pass the test above and silently green this one.
+  const sibling = evaluate({
+    ...base,
+    runs: [
+      { headSha: 'bcb7a4e5', status: 'completed', conclusion: 'success', name: 'CI', id: 33589402462 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000002 },
+    ],
+  });
+  assert.deepEqual(ruleIds(sibling.blockers), ['ci-matches-head']);
+  assert.equal(sibling.blockers.length, 1, 'exactly the sibling run, not both preflight runs');
+
+  // And an ordinary run still blocks while it is in flight — the whole point of ci-matches-head.
+  const ciRunning = evaluate({
+    ...base,
+    runs: [
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'CI', id: 33589402462 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+    ],
+  });
+  assert.deepEqual(ruleIds(ciRunning.blockers), ['ci-matches-head']);
+  assert.match(ciRunning.blockers[0].detail, /CI on head bcb7a4e5 is in_progress/);
+
+  // A red CI run is not exempted either, however green the preflight's own run turns out to be.
+  const ciRed = evaluate({
+    ...base,
+    runs: [
+      { headSha: 'bcb7a4e5', status: 'completed', conclusion: 'failure', name: 'CI', id: 33589402462 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+    ],
+  });
+  assert.deepEqual(ruleIds(ciRed.blockers), ['ci-matches-head']);
+  assert.match(ciRed.blockers[0].detail, /concluded failure/);
+});
+
+test('exempting the self-run is not a way to have no CI at all', () => {
+  // The fail-open shape of this fix: subtract the self-run and a head with NOTHING else on it must
+  // report "no workflow run exists", not fall through every loop and come out clear. So the
+  // subtraction happens before the emptiness check, not after it.
+  const d = evaluate({
+    pr: { number: 130, state: 'OPEN', headRefOid: 'bcb7a4e5', headRefName: 'b' },
+    comments: REVIEWED,
+    runs: [{ headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 }],
+    mode: 'advisory',
+    selfRunId: 33590000001,
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /no workflow run exists/);
+});
+
+test('GITHUB_RUN_ID arrives as a string and gh reports databaseId as a number', () => {
+  // The trap this fix dies of silently: `gh run list --json databaseId` yields a number, the
+  // workflow env var is a string, and `===` between them is false — so the exclusion never happens
+  // and the deadlock survives a passing test written with matching types.
+  const runs = [
+    { headSha: 'bcb7a4e5', status: 'completed', conclusion: 'success', name: 'CI', id: 33589402462 },
+    { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+  ];
+  const pr = { number: 130, state: 'OPEN', headRefOid: 'bcb7a4e5', headRefName: 'b' };
+  const d = evaluate({ pr, comments: REVIEWED, runs, mode: 'advisory', selfRunId: '33590000001' });
+  assert.deepEqual(ruleIds(d.blockers), [], 'string run id must match the numeric databaseId');
+});
+
+test('with no self-run id the preflight excludes nothing', () => {
+  // Run by hand, there is no self-run to subtract, and guessing which run to drop would widen the
+  // exclusion exactly where the information is thinnest. Absent an id, everything on the head
+  // counts — which is a visible deadlock at worst, never a silent pass.
+  const d = evaluate({
+    pr: { number: 130, state: 'OPEN', headRefOid: 'bcb7a4e5', headRefName: 'b' },
+    comments: REVIEWED,
+    runs: [
+      { headSha: 'bcb7a4e5', status: 'completed', conclusion: 'success', name: 'CI', id: 33589402462 },
+      { headSha: 'bcb7a4e5', status: 'in_progress', conclusion: null, name: 'merge-preflight', id: 33590000001 },
+    ],
+    mode: 'advisory',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /merge-preflight on head bcb7a4e5 is in_progress/);
+});
+
 test('a draft PR is not mergeable, whatever its verdicts say', () => {
   const d = evaluate({
     pr: { number: 1, state: 'OPEN', isDraft: true, headRefOid: 'abc', headRefName: 'b' },

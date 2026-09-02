@@ -355,8 +355,8 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
         "strict"
       ],
       "title": "a successful CI run must exist for THIS head SHA",
-      "blocksWhen": "no completed successful workflow run has headSha equal to the PR's headRefOid",
-      "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion."
+      "blocksWhen": "no completed successful workflow run has headSha equal to the PR's headRefOid, counting every run on that head except the preflight's own run",
+      "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion. The one exemption is the preflight run doing the evaluating, which is a run on the same head and is in_progress while it evaluates, so without it the check could never report green on any PR; it is excluded by run id (GITHUB_RUN_ID), never by workflow name, so a second preflight run on the same head still blocks."
     },
     {
       "id": "roster-declared",

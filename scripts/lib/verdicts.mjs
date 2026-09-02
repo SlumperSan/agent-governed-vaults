@@ -68,6 +68,7 @@
  * @property {string} status      'completed' | 'in_progress' | 'queued' | ...
  * @property {string|null} conclusion
  * @property {string} [name]
+ * @property {number|string} [id]  the run's databaseId, for the self-run exclusion below
  *
  * @typedef {object} Blocker
  * @property {string} ruleId
@@ -216,14 +217,55 @@ export function runsForHead(runs, headSha) {
 }
 
 /**
+ * The run doing the evaluating, removed from its own evidence.
+ *
+ * The preflight decides ci-matches-head from inside a workflow run that is itself a run on the PR
+ * head, and that run is necessarily `in_progress` for as long as it takes to decide — so before
+ * this, `ci-matches-head` pushed a blocker naming the preflight itself and no head could ever be
+ * clear. Seen on #130 @ bcb7a4e5 on 2026-09-02: CI completed green on the exact head, a re-run of
+ * the preflight reported one blocker, and it was "run merge-preflight on head bcb7a4e5 is
+ * in_progress, not completed". Advisory at the time, so nothing was stopped; step 1 of
+ * MERGE-POLICY.md § "Making this enforcement" would have made it unmergeable-forever for every PR.
+ *
+ * WHY BY RUN ID AND NOT BY WORKFLOW NAME. Excluding a workflow from a check is the fail-open shape
+ * this repo keeps getting bitten by, so the exclusion is exactly one run, identified by the id the
+ * runner itself reports (`GITHUB_RUN_ID`) — not a class of runs identified by a name that a rename
+ * silently changes. A second, concurrent preflight run on the same head is somebody else's run and
+ * still blocks. With no id — run by hand — nothing is excluded: a visible deadlock beats a silent
+ * pass, and guessing which run to drop would widen the exclusion precisely where the information
+ * is thinnest.
+ *
+ * Excluding only the in-flight run is enough because a BLOCKED VERDICT does not fail the job: the
+ * workflow's "Run preflight" step captures the exit code into an output and never exits non-zero,
+ * so a preflight job that reaches its steps concludes `success` whatever it decided, and a sibling
+ * preflight run that has finished lands in `succeeded`. If that step is ever changed to exit
+ * non-zero on a block, finished preflight runs start blocking each other and this reasoning must be
+ * redone. It is NOT a claim that a completed preflight run is always green: a run that never
+ * started — 33594624958, "the job was not started because recent account payments have failed" —
+ * concludes `failure` with zero steps, and blocks like any other failed run on the head, which is
+ * the right direction to be wrong in.
+ *
+ * @param {Run[]} runs
+ * @param {number|string} [selfRunId]
+ */
+export function excludeSelfRun(runs, selfRunId) {
+  if (selfRunId === undefined || selfRunId === null || selfRunId === '') return runs;
+  // GITHUB_RUN_ID is a string and gh's databaseId is a number; === between them is always false,
+  // which would leave the deadlock in place while every test written with matching types passed.
+  const self = String(selfRunId);
+  return runs.filter((r) => r.id === undefined || r.id === null || String(r.id) !== self);
+}
+
+/**
  * @param {object} input
  * @param {PullRequest} input.pr
  * @param {Comment[]} input.comments
  * @param {Run[]} input.runs
  * @param {'advisory'|'strict'} [input.mode]
+ * @param {number|string} [input.selfRunId]  the preflight's own run id, excluded from ci-matches-head
  * @returns {Decision}
  */
-export function evaluate({ pr, comments, runs, mode = 'strict' }) {
+export function evaluate({ pr, comments, runs, mode = 'strict', selfRunId }) {
   /** @type {Blocker[]} */
   const blockers = [];
   /** @type {string[]} */
@@ -270,7 +312,7 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
   }
 
   // --- ci-matches-head ------------------------------------------------------------------------
-  const mine = runsForHead(runs, pr.headRefOid);
+  const mine = excludeSelfRun(runsForHead(runs, pr.headRefOid), selfRunId);
   const succeeded = mine.filter((r) => r.status === 'completed' && r.conclusion === 'success');
   const failed = mine.filter(
     (r) => r.status === 'completed' && r.conclusion !== 'success' && r.conclusion !== 'skipped',

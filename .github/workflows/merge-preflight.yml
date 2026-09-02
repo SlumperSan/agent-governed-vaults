@@ -88,6 +88,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A BLOCKED VERDICT MUST NOT FAIL THIS STEP -- the decision is published by the next step,
+          # as a commit status, and that is load-bearing beyond tidiness. This run is itself a run on
+          # the PR head, and ci-matches-head excludes only the single IN-FLIGHT self-run, by
+          # GITHUB_RUN_ID (see excludeSelfRun in scripts/lib/verdicts.mjs). A finished preflight run
+          # is counted like any other run on that head, and reads as green only because this step
+          # does not exit non-zero. Make it fail on a block and two preflight runs on one head start
+          # blocking each other.
           set +e
           node scripts/merge-preflight.mjs "${{ steps.pr.outputs.number }}" --advisory | tee out.txt
           code=${PIPESTATUS[0]}
