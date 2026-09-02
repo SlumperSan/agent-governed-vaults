@@ -20,6 +20,7 @@ import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
   VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
   VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
+  GOVERNANCE_VIEWS, GOVERNANCE_WATCH_EVENTS,
   signatureOf,
 } from '../src/abis.mjs';
 
@@ -45,6 +46,10 @@ const feedAbi = feedBuilt ? JSON.parse(readFileSync(feedAbiPath, 'utf8')).abi ??
 const descAbiPath = join(OUT, 'ChainlinkOracle.sol/IAggregatorV3Description.json');
 const descBuilt = existsSync(descAbiPath);
 const descAbi = descBuilt ? JSON.parse(readFileSync(descAbiPath, 'utf8')).abi ?? [] : [];
+
+const govAbiPath = join(OUT, 'Governance.sol/Governance.json');
+const govBuilt = existsSync(govAbiPath);
+const govAbi = govBuilt ? JSON.parse(readFileSync(govAbiPath, 'utf8')).abi ?? [] : [];
 
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
 const EXPECTED = {
@@ -250,4 +255,39 @@ test('the feed-identity IDENTITY legs are the EACAggregatorProxy signatures, and
     CHAINLINK_FEED_IDENTITY_VIEWS.map(signatureOf).sort(),
     ['aggregator()', 'decimals()', 'description()', 'phaseId()'],
   );
+});
+
+// ── governance-watch: the getters and events it reads, against the COMPILED Governance ──
+
+test('every Governance view governance-watch reads exists on the compiled contract, as a view, with the same output shape', { skip: !govBuilt && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(govAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of GOVERNANCE_VIEWS) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `Governance has no ${sig} — the canary would read a reverting selector`);
+    assert.equal(onChain.stateMutability, 'view', `${sig} is not a view on the compiled contract`);
+    // Public mapping-to-struct getters flatten to the struct fields IN ORDER, and the decoder in
+    // signals/governance-watch.mjs indexes them positionally. A reordered field would silently
+    // swap, say, commitDeadline and revealDeadline — so the whole output shape is pinned.
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type),
+      frag.outputs.map((o) => o.type),
+      `${sig} output shape drifted from the compiled Governance`,
+    );
+  }
+});
+
+test('the governance lifecycle events exist on the compiled Governance with the same signature and indexing', { skip: !govBuilt && 'contracts/out absent' }, () => {
+  const declared = new Map(govAbi.filter((i) => i.type === 'event').map((i) => [canonical(i), i]));
+  for (const frag of GOVERNANCE_WATCH_EVENTS) {
+    const onChain = declared.get(signatureOf(frag));
+    assert.ok(onChain, `${signatureOf(frag)} is not an event on the compiled Governance`);
+    // The window scan filters on indexed `vault` / `pid`; a topic that stopped being indexed
+    // would make getLogs return nothing rather than fail.
+    assert.deepEqual(onChain.inputs.map((i) => i.indexed), frag.inputs.map((i) => i.indexed), `${frag.name}: indexed flags drifted`);
+  }
+});
+
+test('the Governance table declares only views — the read-only invariant holds for the new signal too', () => {
+  for (const frag of GOVERNANCE_VIEWS) assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view`);
 });
