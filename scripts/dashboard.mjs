@@ -17,6 +17,12 @@
  */
 import { createServer } from 'node:http';
 import { collect } from './lib/project-status.mjs';
+import { CI_STATES, describeCiState } from './lib/pr-ci-status.mjs';
+
+// render() runs in the BROWSER, inside the PAGE template below, so it cannot import the module.
+// Inject the vocabulary instead of restating it: one definition, three renderers, no drift.
+const CI_VOCAB = JSON.stringify(Object.fromEntries(CI_STATES.map((s) => [s, describeCiState(s)])));
+const CI_ORDER = JSON.stringify(CI_STATES);
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -26,6 +32,7 @@ const flag = (name, dflt) => {
 };
 const PORT = Number(flag('port', 4270));
 const NO_GH = argv.includes('--no-gh');
+const NO_CI = argv.includes('--no-ci');
 const HOST = '127.0.0.1';
 
 // Collecting shells out to git and gh, so a page that gathered on every request would hammer both
@@ -33,11 +40,22 @@ const HOST = '127.0.0.1';
 let cache = { at: 0, data: null };
 const TTL_MS = 4000;
 
-function snapshot(force = false) {
+// collect() fans out to `gh` for the per-head CI column, so it is async. In flight, requests share
+// the SAME promise rather than each starting their own fan-out.
+let inFlight = null;
+async function snapshot(force = false) {
   const now = Date.now();
   if (!force && cache.data && now - cache.at < TTL_MS) return cache.data;
-  cache = { at: now, data: collect({ gh: !NO_GH }) };
-  return cache.data;
+  if (inFlight) return inFlight;
+  inFlight = collect({ gh: !NO_GH, ci: !NO_CI })
+    .then((data) => {
+      cache = { at: Date.now(), data };
+      return data;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
 }
 
 const esc = (s) =>
@@ -185,10 +203,31 @@ function render(d){
   }
 
   // --- github
+  // Worst first, in the order the shared module defines -- two renderers, one ranking.
+  const CI_VOCAB = ${CI_VOCAB}, CI_ORDER = ${CI_ORDER};
+  const rank = (s)=>{ const i = CI_ORDER.indexOf(s); return i<0? CI_ORDER.length : i; };
+  const ciRows = [...(d.github.ci||[])].sort((a,b)=>rank(a.ci.state)-rank(b.ci.state) || b.number-a.number);
+  const prTitle = new Map((d.github.prs||[]).map(p=>[p.number, p.title||'']));
   S.push(sec('GitHub', d.github.up
     ? row('open PRs', d.github.prs.length? d.github.prs.map(p=>'#'+p.number).join(' ') : '<span class="go">none</span>')
       + row('open issues', d.github.issues.length? d.github.issues.map(i=>'#'+i.number).join(' ') : '<span class="go">none</span>')
-    : '<div class="note warn">gh unavailable (not installed, not authenticated, or offline).</div>'));
+      + (ciRows.length
+        ? '<h2 style="margin-top:14px">CI at the exact head SHA</h2>'
+          + '<div class="scroll"><table><thead><tr><th>PR</th><th>Head</th><th>CI</th><th>Detail</th></tr></thead><tbody>'
+          + ciRows.map(e=>{
+              const s = CI_VOCAB[e.ci.state] || { label: e.ci.state, tone: 'idle' };
+              return '<tr><td title="'+esc(prTitle.get(e.number)||'')+'">#'+e.number+'</td>'
+                + '<td class="mono">'+esc((e.headSha||'').slice(0,7) || '???????')+'</td>'
+                + '<td class="'+s.tone+'">'+esc(s.label)+'</td>'
+                + '<td class="muted">'+esc(e.ci.detail||'')+'</td></tr>';
+            }).join('')
+          + '</tbody></table></div>'
+          // Restated here because the board travels and the rule does not.
+          + '<div class="note muted">Read per commit (<span class="mono">gh run list --commit</span>), never '
+          + '<span class="mono">gh pr checks</span> — docs/RELEASE-CHECKLIST.md §2.3. '
+          + '<b>none</b> and <b>unknown</b> are UNVERIFIED, not passes; <b>outage</b> is a zero-step run that never executed.</div>'
+        : '')
+    : '<div class="note warn">gh unavailable (not installed, not authenticated, or offline).</div>'), 'wide'));
 
   // --- deployments
   if(d.deployments.length){
@@ -234,9 +273,16 @@ tick(); setInterval(tick, 5000);
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
   if (url.pathname === '/api/status') {
-    const body = JSON.stringify(snapshot(url.searchParams.has('force')));
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(body);
+    return snapshot(url.searchParams.has('force')).then(
+      (data) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(data));
+      },
+      (e) => {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: String(e) }));
+      }
+    );
   }
   if (url.pathname === '/') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -259,5 +305,5 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  Command center  ->  http://${HOST}:${PORT}`);
   console.log(`  refreshes every 5s · Ctrl+C to stop${NO_GH ? ' · --no-gh' : ''}\n`);
   // Warm the cache so the first page load is instant rather than waiting on git and gh.
-  snapshot(true);
+  snapshot(true).catch(() => {});
 });

@@ -6,6 +6,7 @@
  *     npm run cc              # the board
  *     npm run cc -- --md      # same content as markdown (paste into Obsidian / a PR / a handoff)
  *     npm run cc -- --no-gh   # skip the GitHub lookups (offline, or when gh is slow)
+ *     npm run cc -- --no-ci   # keep the PR list, drop the per-head CI column (~3s colder)
  *     npm run cc:web          # the same data as a live dashboard in the browser
  *
  * This file is only the TERMINAL RENDERER. Every value comes from `collect()` in
@@ -16,12 +17,21 @@
  * DESIGN RULE (lives with the collector, restated here because it governs what belongs in this
  * file): report FACTS WE COMPUTE and POINT AT the prose we cannot. Nothing is stored, so nothing
  * can go stale on its own -- if a value is wrong, its SOURCE is wrong, which is the bug you want.
+ *
+ * The CI @ HEAD block is that rule applied to the question six concurrent sessions were each
+ * answering from memory: "is this PR's CURRENT head verified?" It is asked per head SHA on every
+ * run, so it cannot be the stale hand-written green-list that docs/RELEASE-CHECKLIST.md 2.3
+ * forbids. See scripts/lib/pr-ci-status.mjs for why `none` is not a pass and `outage` is not a red.
  */
 import { collect, gateClass } from './lib/project-status.mjs';
+import { describeCiState, shortSha } from './lib/pr-ci-status.mjs';
 
 const argv = process.argv.slice(2);
 const MD = argv.includes('--md');
 const NO_GH = argv.includes('--no-gh');
+// The per-head CI column costs 1 + N `gh` calls (~2s for 18 PRs, concurrent, SHA-keyed cache).
+// `--no-ci` drops it; `--no-gh` implies it.
+const NO_CI = argv.includes('--no-ci');
 
 const TTY = process.stdout.isTTY && !MD;
 const C = TTY
@@ -43,7 +53,7 @@ const ago = (ms) => {
   return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 };
 
-const d = collect({ gh: !NO_GH });
+const d = await collect({ gh: !NO_GH, ci: !NO_CI });
 const stamp = d.at.slice(0, 16).replace('T', ' ');
 
 if (MD) say(`# Command center — ${stamp}Z\n`);
@@ -166,10 +176,50 @@ if (d.deployments.length) {
 if (d.github.up) {
   const p = d.github.prs.length ? d.github.prs.map((x) => `#${x.number}`).join(' ') : 'none';
   const i = d.github.issues.length ? d.github.issues.map((x) => `#${x.number}`).join(' ') : 'none';
-  if (MD) say(`## GitHub\n\n- Open PRs: ${p}\n- Open issues: ${i}\n`);
-  else {
+  const titleOf = new Map(d.github.prs.map((x) => [x.number, x.title ?? '']));
+  // Worst first: the rows that need a decision should not be the ones below the fold.
+  const RANK = { red: 0, outage: 1, unknown: 2, none: 3, pending: 4, green: 5 };
+  const ci = [...(d.github.ci ?? [])].sort(
+    (a, b) => (RANK[a.ci.state] ?? 9) - (RANK[b.ci.state] ?? 9) || b.number - a.number
+  );
+  const tally = ci.reduce((m, e) => ((m[e.ci.state] = (m[e.ci.state] ?? 0) + 1), m), {});
+  const tallyLine = ['green', 'red', 'outage', 'pending', 'none', 'unknown']
+    .filter((k) => tally[k])
+    .map((k) => `${tally[k]} ${k}`)
+    .join(' · ');
+
+  if (MD) {
+    say(`## GitHub\n`);
+    say(`- Open PRs: ${p}\n- Open issues: ${i}\n`);
+    if (ci.length) {
+      say(`### CI at the exact head SHA\n`);
+      say('| PR | Head | CI | Detail | Title |');
+      say('|----|------|----|--------|-------|');
+      for (const e of ci) {
+        const { label } = describeCiState(e.ci.state);
+        say(`| #${e.number} | \`${shortSha(e.headSha)}\` | ${label} | ${e.ci.detail} | ${(titleOf.get(e.number) || '').slice(0, 54)} |`);
+      }
+      say(`\n${tallyLine}.`);
+      // Restated wherever the table is pasted, because the table travels and the rule does not.
+      say(`\n> Read with \`gh run list --commit\`, never \`gh pr checks\` (docs/RELEASE-CHECKLIST.md §2.3).`);
+      say(`> \`none\` and \`unknown\` are UNVERIFIED — not passes. \`outage\` is a zero-step run that never executed.\n`);
+    }
+  } else {
     say(`\n${C.b}GITHUB${C.x}    ${d.github.prs.length} open PR(s): ${C.d}${p}${C.x}`);
     say(`          ${d.github.issues.length} open issue(s): ${C.d}${i}${C.x}`);
+    if (ci.length) {
+      say(`\n${C.b}CI @ HEAD${C.x} ${C.d}per PR, matched to the exact head SHA · ${tallyLine}${C.x}`);
+      for (const e of ci) {
+        const { label, tone } = describeCiState(e.ci.state);
+        say(
+          `          ${pad(`#${e.number}`, 5)} ${C.d}${shortSha(e.headSha)}${C.x} ` +
+            `${COLOR[tone]}${pad(label, 19)}${C.x} ${C.d}${(e.ci.detail || '').slice(0, 44)}${C.x}`
+        );
+      }
+      say(`          ${C.d}none/unknown = UNVERIFIED, not a pass · outage = 0-step run, never executed${C.x}`);
+    } else if (d.github.prs.length && !d.github.ciAsked) {
+      say(`          ${C.d}CI at head not queried (--no-ci)${C.x}`);
+    }
   }
 } else if (!NO_GH && !MD) {
   say(`\n${C.b}GITHUB${C.x}    ${C.d}unavailable (gh not installed / not authenticated / offline)${C.x}`);

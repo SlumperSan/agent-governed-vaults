@@ -29,3 +29,5 @@ skills-lock.json
 # Local pre-merge gate result (scripts/gate.mjs). Describes THIS machine last run,
 # not a property of the branch, so it is never committed.
 .gate-state.json
+# Per-head CI verdicts for `npm run cc`. Keyed by head SHA, so it cannot outlive its subject.
+.cc-ci-cache.json

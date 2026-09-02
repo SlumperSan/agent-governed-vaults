@@ -10,10 +10,11 @@
  * One collector, two renderers. A dashboard that drifts from the terminal board is worse than
  * having only one of them, because you then have to remember which is lying.
  */
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cacheTtlMs, resolvePrCi } from './pr-ci-status.mjs';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -23,6 +24,50 @@ function sh(cmd, args, timeout = 10_000) {
   // cmd.exe would reinterpret arguments (see the shell policy in scripts/gate.mjs).
   const r = spawnSync(cmd, args, { cwd: REPO, encoding: 'utf8', timeout });
   return r.status === 0 ? (r.stdout || '').trim() : '';
+}
+
+/**
+ * The async twin of `sh`, for the only part of the board that fans out: the per-head CI lookups.
+ * `spawnSync` in a loop would cost ~13s for 18 PRs and `cc` is the cold-start tool. Returns
+ * `{ ok }` separately from the output, because "gh failed" and "gh said nothing" are different
+ * facts and the CI classifier must not collapse them (see scripts/lib/pr-ci-status.mjs).
+ */
+function shAsync(cmd, args, timeout = 20_000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok, out) => {
+      if (done) return;
+      done = true;
+      resolve({ ok, out });
+    };
+    let child;
+    try {
+      // shell:false, as everywhere else here -- see the shell policy in scripts/gate.mjs.
+      child = spawn(cmd, args, { cwd: REPO, encoding: 'utf8' });
+    } catch {
+      return finish(false, '');
+    }
+    let stdout = '';
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* already gone */
+      }
+      finish(false, '');
+    }, timeout);
+    child.stdout?.on('data', (b) => {
+      stdout += b;
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      finish(false, '');
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      finish(code === 0, stdout.trim());
+    });
+  });
 }
 
 const jsonOr = (s, fallback) => {
@@ -233,12 +278,98 @@ function rightNow() {
   return { now: pick('Right now'), blocked: pick('Blocked on a human'), traps: pick('Traps that are not visible in the code') };
 }
 
+// ---------------------------------------------------------------- ci (per head SHA)
+
+const CI_CACHE = path.join(REPO, '.cc-ci-cache.json');
+
+/**
+ * A tiny on-disk cache of per-head CI verdicts.
+ *
+ * This is the ONE exemption to the "nothing is stored" rule at the top of this file, and it earns
+ * it by being keyed on the head SHA: the cached fact is a fact ABOUT that SHA, so the next push is
+ * a different key and an entry cannot outlive its subject. That is exactly the property the
+ * hand-written green-list lacked.
+ *
+ * Six sessions may run `cc` against this checkout at once, so writes go through a temp file and a
+ * rename, and EVERY failure degrades to a cache miss rather than breaking the board.
+ */
+function ciCache() {
+  let store = {};
+  try {
+    store = jsonOr(readFileSync(CI_CACHE, 'utf8'), {}) ?? {};
+  } catch {
+    /* no cache yet, or unreadable -- a miss, not an error */
+  }
+  const now = Date.now();
+  let dirty = false;
+  return {
+    get(sha) {
+      const e = store[sha];
+      if (!e || !e.ci || now - (e.at ?? 0) > cacheTtlMs(e.ci.state)) return null;
+      return e.ci;
+    },
+    put(sha, ci) {
+      store[sha] = { at: now, ci };
+      dirty = true;
+    },
+    flush() {
+      if (!dirty) return;
+      // Drop anything older than the longest TTL so the file cannot grow without bound.
+      for (const [k, v] of Object.entries(store)) {
+        if (now - (v?.at ?? 0) > 600_000) delete store[k];
+      }
+      const tmp = `${CI_CACHE}.${process.pid}.tmp`;
+      try {
+        writeFileSync(tmp, JSON.stringify(store), 'utf8');
+        renameSync(tmp, CI_CACHE);
+      } catch {
+        /* another session won the rename, or the tree is read-only -- both are fine */
+      }
+    },
+  };
+}
+
+/**
+ * Per-PR CI state, matched to the exact head SHA. The classification lives in
+ * scripts/lib/pr-ci-status.mjs (pure, tested); this only supplies `gh`.
+ *
+ * `gh run list --commit <sha>` is used deliberately instead of `gh pr checks`, which reports runs
+ * attached to a PR without saying which commit they ran on -- the rule in
+ * docs/RELEASE-CHECKLIST.md §2.3, written after a stale green passed for PR #107.
+ */
+async function prCi(prs) {
+  const cache = ciCache();
+  const rows = await resolvePrCi(prs, {
+    concurrency: 8,
+    cacheGet: (sha) => cache.get(sha),
+    cachePut: (sha, v) => cache.put(sha, v),
+    runList: async (sha) => {
+      const r = await shAsync(
+        'gh',
+        [
+          'run', 'list', '--commit', sha,
+          '--json', 'workflowName,conclusion,status,databaseId,event,createdAt,updatedAt',
+          '--limit', '40',
+        ],
+        25_000
+      );
+      return r.ok ? { ok: true, runs: jsonOr(r.out, []) } : { ok: false };
+    },
+    runJobs: async (id) => {
+      const r = await shAsync('gh', ['run', 'view', String(id), '--json', 'jobs'], 25_000);
+      return r.ok ? { ok: true, jobs: jsonOr(r.out, { jobs: [] })?.jobs ?? [] } : { ok: false };
+    },
+  });
+  cache.flush();
+  return rows;
+}
+
 // ---------------------------------------------------------------- collect
 
 /**
- * @param {{ gh?: boolean, vault?: string }} [opts]
+ * @param {{ gh?: boolean, ci?: boolean, vault?: string }} [opts]
  */
-export function collect(opts = {}) {
+export async function collect(opts = {}) {
   const useGh = opts.gh !== false;
   const vaultRoot = opts.vault ?? 'C:/Users/Micha/desktop/Obsidian Vault/Agent-Governed Vaults';
 
@@ -247,7 +378,9 @@ export function collect(opts = {}) {
   let ghUp = false;
   if (useGh) {
     // mergeable is computed asynchronously by GitHub, so it can legitimately come back UNKNOWN.
-    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,mergeable', '--limit', '40'], 20_000);
+    // headRefOid comes back from THIS call: the per-head CI lookup below therefore costs 1 + N gh
+    // invocations, not 2N. Do not "restore" a per-PR `gh pr view --json headRefOid`.
+    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,headRefOid,mergeable', '--limit', '40'], 20_000);
     const i = sh('gh', ['issue', 'list', '--state', 'open', '--json', 'number,title', '--limit', '40'], 20_000);
     if (p || i) {
       prs = jsonOr(p, []);
@@ -255,6 +388,11 @@ export function collect(opts = {}) {
       ghUp = true;
     }
   }
+
+  // The board's answer to "is this head verified?", asked per head on every run so that nobody
+  // has to keep the answer in their own head. See scripts/lib/pr-ci-status.mjs for why the five
+  // states are reported separately and why `none` is not a pass.
+  const ci = ghUp && opts.ci !== false && prs.length ? await prCi(prs) : [];
 
   return {
     at: new Date().toISOString(),
@@ -265,6 +403,6 @@ export function collect(opts = {}) {
     sprints: sprints(prs),
     departments: departments(vaultRoot),
     now: rightNow(),
-    github: { up: ghUp, prs, issues },
+    github: { up: ghUp, prs, issues, ci, ciAsked: ghUp && opts.ci !== false },
   };
 }
