@@ -52,10 +52,18 @@ allowlist. So the oracle is deployed **before** the factory:
    uptime feed, per-asset heartbeats and sane-price bounds.
 2. **Deploy the ChainlinkOracle** via
    [`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) with the
-   `ORACLE_*` env vars from that config.
+   `ORACLE_*` env vars from that config. The band values are copied by hand and nothing
+   machine-checks that the env matches the JSON (residual register row 14's `BAND-BINDING` gap) —
+   compare them yourself before broadcasting. **The band width is an owner decision (SWARM §10),
+   not a deployer default:** an aggregator-swap drift of ±2 decimals is caught only while
+   `hi/100 < spot < 100·lo`, a window `10,000 / (hi ÷ lo)` wide, so the shipped ratio-1000 bands
+   give the *least* coverage the constructor allows (10x: WETH $1,000..$10,000, cbBTC
+   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the owner
+   memo `Owner Decisions 2026-09-01` §1 the options; do not retune without that decision recorded.
 3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
    exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
-   present and answering).
+   present and answering; and the band bounds a 2-decimal drift **at the live price**, which the
+   constructor does not check — it accepts a spot inside the band but outside the covered window).
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
@@ -261,18 +269,26 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
-> **The canary watches the launch oracle, and what it does not watch is feed IDENTITY.** Since
-> #89 the `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
+> **The canary watches the launch oracle on two axes: freshness since #89, and feed IDENTITY since
+> #103.** The `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
 > directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
 > sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
 > cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
-> **Feed identity is watched too, as of #103** — the `feed-identity` signal (G2's on-chain half)
-> compares each feed's live `decimals()` against the **cached `scale` the deployed oracle actually
-> multiplies by**, read from `feedOf(asset)`, plus its denomination and its `aggregator()`. Both
-> sides come from the chain, so there is nothing to pin and nothing that can go stale. That is a
-> stronger check than the recurring script below, which tests Chainlink's 8-decimal *convention*
-> rather than the number this oracle uses — **the canary now continuously re-runs the two
-> construction-time proofs an immutable contract can never re-run itself.**
+> The `feed-identity` signal (G2's on-chain half, [CANARY.md](CANARY.md) §3(g)) compares each
+> feed's live `decimals()` against the **cached `scale` the deployed oracle actually multiplies
+> by**, read from `feedOf(asset)`, re-runs the constructor's USD-denomination predicate against the
+> live `description()`, and reads which `aggregator()` / `phaseId()` is behind the proxy. The two
+> **harm** legs (decimals, denomination) compare chain against chain, so they have nothing to pin
+> and nothing that can go stale; only the **identity** leg (aggregator, phaseId) keeps a remembered
+> value, pinned on first sight into the canary's own state. Note the routing, because it decides
+> who sees it: `feed-identity` is the one signal whose ALERTs are not all one severity, so since
+> #121 it routes on a predicate (`CONDITIONAL_PAGE` in `packages/canary/src/sinks.mjs`) — it
+> **PAGES** when `detail.harm` is `'decimals'` or `'denomination'`, the two latching cases where
+> every price is silently wrong, and **LOGS** when `harm` is `null`, the benign aggregator swap
+> that self-clears next sweep. That is a stronger check than the
+> recurring script below, which tests Chainlink's 8-decimal *convention* rather than the number
+> this oracle uses — **the canary now continuously re-runs the two construction-time proofs an
+> immutable contract can never re-run itself.**
 >
 > What the recurring check below still adds, and why it is not redundant: a **git-tracked** pin
 > (the canary pins on first sight, so a benign swap during canary downtime is adopted silently on
@@ -322,6 +338,7 @@ can:
 | Exit liveness | any `requestExit` reverting for a non-gate reason (H-1 regression sentinel) |
 | Fee routing | any USDC leaving a vault to an operator address outside the FeeEngine claim flow |
 | Module-call failures | `ModuleCallFailed` and `SliceEscrowed` events (a creator-chosen module or a basket token misbehaving) |
+| Governance watch | a proposal entering any phase — commit, reveal, awaiting finalize, timelock, executable, lapsed — with the reveal deadline and earliest `execute` in `detail` ([CANARY.md §3(h)](CANARY.md)) |
 
 ## 8. Mainnet gate
 

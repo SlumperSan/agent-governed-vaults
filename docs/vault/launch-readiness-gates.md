@@ -21,7 +21,7 @@ safety, and both are NO-GO.
 
 | # | Gate | Verdict |
 |---|---|---|
-| 0 | No known unfixed Critical vulnerabilities | **GO (root-only)** — C-1 closed at launch by [[root-vaults-only]] (`allowSubVaults = false`, confirmed on `Deploy.s.sol:77`); C-2/C-3/C-5 fixed with executed evidence; **C-6 resolved by [[chainlink-direct-pivot]]** — the median was removed, not patched — plus the factory oracle-gate. Re-enabling sub-vaults reopens C-1. |
+| 0 | No known unfixed Critical vulnerabilities | **GO (root-only)** — C-1 closed at launch by [[root-vaults-only]] (`allowSubVaults = false`, confirmed on `Deploy.s.sol:79`); C-2/C-3/C-5 fixed with executed evidence; **C-6 resolved by [[chainlink-direct-pivot]]** — the median was removed, not patched — plus the factory oracle-gate. Re-enabling sub-vaults reopens C-1. |
 | 1 | External audit completed, findings remediated | **GO on OWNER ATTESTATION** — not on independent verification. An audit was commissioned at `v0.4.0-audit`; the owner has read the report and attests it surfaced **no major issues**. The report is **held privately** and is deliberately not in the repo. The scope list and the Low/Informational findings have **not** been published, and gate 1 says *findings remediated*, not *no criticals* — so do not describe this protocol as "audited" without that qualifier. |
 | 2 | Testnet full lifecycle proven | **STALE** — the Base Sepolia deployment is now superseded bytecode; must be redeployed and re-run. |
 | 3 | Soak drills (Mode-F + sub-vault) | **STALE** — drills exercised exactly the paths the remediation touched; re-run against the corrected contracts. |

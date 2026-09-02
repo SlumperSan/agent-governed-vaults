@@ -25,6 +25,35 @@ export const FEE_ENGINE = A('8');
 export const SRC1 = A('a');
 export const SRC2 = A('b');
 export const SRC3 = A('c');
+/** The vault's immutable Governance module, as `vault.governance()` reports it. */
+export const GOVERNANCE = `0x${'90'.repeat(18)}0005`;
+export const PROPOSER = A('d');
+
+/**
+ * A `configOf(vault)` tuple in Governance.GovConfig field order: 1h commit, 1h reveal, 1h
+ * timelock, 1-day execution window, then the four non-timing fields. Matches base-sepolia.json's
+ * shape closely enough that the derived deadlines read like a real vault's.
+ */
+export const GOV_CONFIG = Object.freeze([3600, 3600, 3600, 86400, 2500, 500, 5000, 3600]);
+
+/**
+ * A `proposals(pid)` tuple in Governance.Proposal field order. `status` is the enum index
+ * (1 Active, 2 Passed, 3 Defeated, 4 Executed, 5 Expired); `ptype` likewise (0 Rebalance).
+ * Every test builds its proposal from this so the FIELD ORDER — which viem flattens positionally
+ * and which the decoder in signals/governance-watch.mjs depends on — is pinned in one place.
+ */
+export function proposalTuple({
+  vault = VAULT, ptype = 0, proposer = PROPOSER, createdAt = 0, commitDeadline = 0, revealDeadline = 0,
+  executableAt = 0, expiresAt = 0, status = 1, actionHash = `0x${'ab'.repeat(32)}`,
+  snapshotTotal = 500_000000000000000000n, memberCount = 2n, forWeight = 0n, againstWeight = 0n,
+  revealedWeight = 0n, revealedVoterCount = 0n,
+} = {}) {
+  return [
+    vault, ptype, proposer, BigInt(createdAt), BigInt(commitDeadline), BigInt(revealDeadline),
+    BigInt(executableAt), BigInt(expiresAt), status, actionHash, snapshotTotal, memberCount,
+    forWeight, againstWeight, revealedWeight, revealedVoterCount,
+  ];
+}
 
 // ChainlinkOracle fixtures (the LIVE oracle). Deliberately not built from A(), so they can never
 // collide with the `0x9999…`-style throwaway addresses the existing tests use inline.
@@ -137,6 +166,7 @@ export function healthyVault(overrides = {}) {
       feeEngine: FEE_ENGINE,
       creator: CREATOR,
       operatorRegistry: REGISTRY,
+      governance: GOVERNANCE,
       basketLength: 1n,
       basketAssets: () => ASSET,
       assetUnit: (a) => (lc(a) === lc(ASSET) ? 1_000000000000000000n : 0n),
@@ -157,6 +187,12 @@ export function healthyVault(overrides = {}) {
     [REGISTRY]: {
       operatorOf: () => 7n,
       operatorAddressOf: () => OPERATOR,
+    },
+    // Registered, quiet: no proposal has ever been opened. governance-watch reads OK on this.
+    [GOVERNANCE]: {
+      activeProposalOf: () => 0n,
+      configOf: () => GOV_CONFIG,
+      proposals: () => proposalTuple({ status: 0 }),
     },
   };
 

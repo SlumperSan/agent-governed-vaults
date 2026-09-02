@@ -240,12 +240,16 @@ when one fires. Reuses `RPC_URL`, `CHAIN_ID`, `CHAIN_NAME`, `CONFIRMATIONS`, `ST
 | `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
 | `CANARY_STATE_PATH` | | `./data/canary-state.json` | its OWN transition state — never the indexer's |
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence; named apart from the indexer's `POLL_INTERVAL_MS` |
-| `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
+| `PAGE_WEBHOOK_URL` | | — | POST one JSON body per **PAGE-tier** transition — the wake-a-human set (docs/CANARY.md §5.3) |
+| `LOG_WEBHOOK_URL` | | — | POST one JSON body per **LOG-tier** transition — everything else |
+| `ALERT_WEBHOOK_URL` | | — | back-compat fallback for whichever of the two above is unset; set only this and behaviour is pre-tiering |
+| `DEADMAN_PING_URL` | | — | off-host dead-man's switch, `GET` once per successful sweep that watched **at least one vault** (docs/CANARY.md §5.3) |
+| `CANARY_TEST_ALERT_ON_START` | | off | `1`/`true`: fire the alert self-test at startup. **Fires on every restart** — see docs/CANARY.md §5.3 |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
 | `ORACLE_MIN_MARGIN` | | `0` | retired-oracle deployments only — alert when fresh sources minus quorum <= this |
 | `ORACLE_FEED_CADENCE_SECONDS` | | — | `ChainlinkOracle` only — `addr:seconds` feed cadences that drive the derived early-warning bar (docs/CANARY.md §3a) |
 | `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | `ChainlinkOracle` only — manual override of that bar; unset lets it derive from the cadence above |
-| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2) |
+| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line (distinct from the heartbeat FILE in §8.2). Non-negotiable per security-ops.md §5.2; set `0` to explicitly opt out |
 | `SNAPSHOT_BACKUPS` / `SNAPSHOT_BACKUP_INTERVAL_MS` | | `3` / `300000` | backup ring for the canary state file too (§8.3) |
 | `HEARTBEAT_DIR` | | dirname of `STATE_PATH` | where `canary.heartbeat.json` is written (§8.2) |
 | `LOG_FORMAT` / `LOG_LEVEL` | | | as above (§8.1) |
@@ -424,6 +428,7 @@ Events worth knowing:
 | `starting` / `listening` | all | boot, with the resolved config on the line |
 | `batch.indexed` (via `indexer.progress`) | indexer | a block range was folded and snapshotted |
 | `poll.failed` / `sweep.failed` | indexer, canary | one cycle failed; it will retry |
+| `sweep.no_vaults` | canary | the canary is UP and watching **nothing** — the dead-man ping is withheld until this clears |
 | `snapshot.reload_failed` | api | serving **stale-but-valid** state — see the incident table |
 | `http.rate_limited` | api | a free route returned 429 |
 | `canary.transition` | canary | a signal changed state — **the** line to page on |
@@ -431,8 +436,9 @@ Events worth knowing:
 | `shutdown.begin` / `.step` / `.complete` | all | a clean stop, hook by hook |
 | `shutdown.timeout` / `.forced` | all | a stop that did **not** finish cleanly |
 
-Alert transitions are also delivered to `ALERT_WEBHOOK_URL` as structured JSON if set — the log is
-not the only path (see [CANARY.md](CANARY.md)).
+Transitions are also delivered as structured JSON to `PAGE_WEBHOOK_URL` / `LOG_WEBHOOK_URL` by
+severity tier (`ALERT_WEBHOOK_URL` is the single-endpoint fallback), and each body carries its own
+`tier` field — the log is not the only path (see [CANARY.md](CANARY.md) §5.3).
 
 ### 8.2 Heartbeats and `ops-check`
 

@@ -64,7 +64,9 @@ can never mint against a stale valuation they observed 4 hours earlier.
 - **Creator 5% is a *withdrawal gate*, not a solvency condition** (`CREATOR_MIN_STAKE_BPS = 500`).
   Creator redemptions revert if they would take creator share below 5% while ≥1 non-creator member
   remains. Passive dilution below 5% by others' deposits is allowed and merely freezes creator
-  withdrawals until restored (CM-2).
+  withdrawals until restored (CM-2). "Freezes" is literal: below 5% no burn amount passes, and
+  past 95% external fill the cap blocks the restoring top-up — see `docs/NOW.md` traps and
+  `test/audit/AuditCreatorGateTraps.t.sol`.
 - **Capacity cap is OPTIONAL.** `capacityCapUsdc == 0` opts out (uncapped); `isCapped()` reports
   which. When set, deposits above cap revert.
 - `MAX_BASKET_ASSETS = 10` bounds NAV-loop gas (E8).

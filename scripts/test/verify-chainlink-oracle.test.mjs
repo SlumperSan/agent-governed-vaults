@@ -15,8 +15,10 @@ import { bandBoundsTwoDecimalDrift, compareAggregatorPin, isUsdQuoted } from '..
 // So detection lives here. The rule this file pins: a swap is a NOTICE, never a failure. Hard
 // failing on it would reproduce on-chain-freeze semantics in the deploy gate — blocking a correct
 // deployment for an event Chainlink performs on purpose. The safety verdict stays with the
-// separate `decimals() == 8` check, which is a COMPLETE test of the residual regardless of how
-// many swaps happened.
+// separate `decimals() == 8` check, which is a COMPLETE test of the residual AT THE SAMPLING
+// INSTANT regardless of how many swaps happened by then -- and says nothing about the interval
+// between two runs, which is why the cadence (and, since #103, the canary's feed-identity signal)
+// is the actual control.
 //
 // Real values below, read from Base mainnet 2026-08-30 (`aggregator()` / `phaseId()` on the
 // ETH/USD proxy 0x50015f8b…3a8b, the launch WETH feed).
