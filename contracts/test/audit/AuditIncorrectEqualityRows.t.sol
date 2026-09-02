@@ -24,7 +24,7 @@ import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks
 ///     deliberately a Governance-LEVEL test, not a `Checkpoints` unit test: the property that
 ///     matters is the composition with `propose`'s `nowTs - 1` read (VO-9). Mutating `nowTs - 1`
 ///     to `nowTs` turns it red; a `Checkpoints` unit test would not notice.
-///  3. `_isSettled` (row 2, `src/Governance.sol:613`). The real question is not whether the enum
+///  3. `_isSettled` (row 2, `src/Governance.sol:634`). The real question is not whether the enum
 ///     is exhaustive but whether a proposal can sit non-settled forever and freeze `propose` —
 ///     the DoS documented at `Governance.sol:57-67`. `finalize` is permissionless and makes no
 ///     external call, so `Active` always escapes.
@@ -226,11 +226,11 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// Three writes land in ONE second `T`: a deposit (appends a checkpoint at `T`), the
     /// `propose` call (`createdAt == T`), and a second deposit (OVERWRITES the checkpoint at `T`,
     /// `Checkpoints.sol:23-24`). The vote's weight is read at `createdAt - 1`
-    /// (`Governance._boundedWeight:338`), and the quorum denominators at `nowTs - 1`
-    /// (`Governance.propose:287`, `:288`, `:304`) — all strictly before any of the three writes.
+    /// (`Governance._boundedWeight:348`), and the quorum denominators at `nowTs - 1`
+    /// (`Governance.propose:297`, `:298`, `:314`) — all strictly before any of the three writes.
     ///
     /// Mutations that turn this red, both verified:
-    ///   - `p.createdAt - 1` -> `p.createdAt` in `Governance._boundedWeight` (`:338`), the read
+    ///   - `p.createdAt - 1` -> `p.createdAt` in `Governance._boundedWeight` (`:348`), the read
     ///     that actually prices a vote: `9000e18 != 1000e18`.
     ///   - `Checkpoints.push:23` `==` -> `<=` (always overwrite): `9000e18 != 1000e18` on
     ///     assertion (a), so this test discriminates on the `Checkpoints` side too.
@@ -295,11 +295,11 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// @notice `_isSettled` enumerating only Defeated/Executed/Expired is safe because every
     /// NON-settled status has a permissionless, external-call-free exit. The failure this row
     /// would represent is a permanent freeze: `_isSettled` gates `propose`
-    /// (`Governance.sol:278`) and `delegate` (`:494`), so a proposal stuck `Active` would block
+    /// (`Governance.sol:288`) and `delegate` (`:515`), so a proposal stuck `Active` would block
     /// every future proposal INCLUDING the RuleChange that would unstick it
     /// (`Governance.sol:57-67`).
     ///
-    /// `finalize` (`:506-558`) reads only `p.*` and `configOf[p.vault]`, is unauthenticated, and
+    /// `finalize` (`:527-579`) reads only `p.*` and `configOf[p.vault]`, is unauthenticated, and
     /// makes no external call — so a completely abandoned proposal is always resolvable by a
     /// party with no stake and no relationship to the vault.
     function test_abandonedProposalIsAlwaysSettleableByAStrangerAndUnblocksPropose() public {
@@ -332,7 +332,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// @notice The other non-settled status, `Passed`, drains too: `markExpired` is permissionless
     /// and `_refreshStatus` self-heals inside `propose`. Together with the test above this covers
     /// every status `_isSettled` returns false for (`None` is unreachable — `activeProposalOf` is
-    /// `!= 0`-guarded at `Governance.sol:277`).
+    /// `!= 0`-guarded at `Governance.sol:286`).
     function test_passedButUnexecutedProposalExpiresAndUnblocksPropose() public {
         vm.prank(honest);
         uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(""));
@@ -364,7 +364,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
 
     /// @notice The third leg of `_isSettled`, `Executed`, pinned directly. The two tests above
     /// drain `Active` and `Passed`; neither ever executes a proposal, so dropping
-    /// `s == Status.Executed` from `_isSettled` (`Governance.sol:613`) left them both GREEN.
+    /// `s == Status.Executed` from `_isSettled` (`Governance.sol:634`) left them both GREEN.
     ///
     /// A `RuleChange` executes entirely inside `Governance` — no vault machinery, no adapter — so
     /// it is the cheapest honest way to reach `Executed`. Mutation that turns this red: delete
@@ -487,7 +487,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
         assertEq(usdc.balanceOf(alice) - wBefore, 1_000_000 * USDC_1, "fully decayed tenure pays no exit fee");
     }
 
-    /// @dev Proposal tuple order per src/Governance.sol:87-104.
+    /// @dev Proposal tuple order per src/Governance.sol:110-127.
     function _forWeight(uint256 pid) internal view returns (uint256 f) {
         (,,,,,,,,,,,, f,,,) = gov.proposals(pid);
     }

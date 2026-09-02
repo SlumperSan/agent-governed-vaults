@@ -56,7 +56,9 @@ binding** — several audit fixes could only be afforded by first *shrinking* ot
   exit during staleness is exactly the stale-price exit the breaker prevents.
 - **Shares are non-transferable** in this design (EE-7).
 - **Creator 5% is a withdrawal gate, not a solvency condition** (CM-2): `_checkCreatorGate` binds
-  creator *action* while non-creator members remain; evaluated at Mode-F **queue** time (L-1).
+  creator *action* while non-creator members remain; evaluated at Mode-F **queue** time (L-1). Two
+  consequences — a sub-5% creator can withdraw nothing, and past 95% external fill a top-up can
+  never restore 5% — are by design and pinned in `test/audit/AuditCreatorGateTraps.t.sol`.
 - **NAV uses internal accounting only** — a token donation cannot mint free shares (EE-1).
 
 ## Security findings that live here
