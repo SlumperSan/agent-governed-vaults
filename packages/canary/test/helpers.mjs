@@ -157,8 +157,15 @@ export function healthyVault(overrides = {}) {
       // fixture reads OK on signals/operator-power.mjs (G1). Everyone else holds nothing, matching
       // the pre-existing behaviour every other signal's fixture already assumed.
       sharesOf: (a) => (lc(a) === lc(CREATOR) ? 100_000000000000000000n : 0n),
+      // Governance gates on VOTING-ELIGIBLE stake, not the raw book (Governance.sol:287-291).
+      // With no queued Mode-F exits the two agree, which is the healthy default; a fixture that
+      // wants them to diverge overrides these two alone and leaves sharesOf/totalShares intact,
+      // exactly as a real queued exit does.
+      votingEligibleShares: (a) => (lc(a) === lc(CREATOR) ? 100_000000000000000000n : 0n),
+      totalVotingEligibleShares: () => 500_000000000000000000n,
       governance: () => GOVERNANCE,
       capacityCapUsdc: () => 0n, // uncapped by default
+      minDepositUsdc: () => 1_000000n, // $1.00, the dust/rounding-inflation floor
       nonCreatorMemberCount: () => 1n, // MEMBER, per healthyState()'s share book
       CREATOR_MIN_STAKE_BPS: () => 500n,
     },

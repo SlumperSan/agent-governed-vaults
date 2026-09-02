@@ -169,6 +169,24 @@ test('every Governance view operator-power.mjs reads exists on the compiled cont
       onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
       `${sig} return shape drifted — operator-power.mjs would mis-decode configOf's fields`,
     );
+    // NAMES, not just types. `quorumBps`, `proposalThresholdBps` and `concentrationCapBps` are
+    // three ADJACENT uint16s in GovConfig: swapping any two of them is type-identical, so the
+    // shape assertion above passes unchanged while `operator-power.mjs` — which reads slot 5 BY
+    // POSITION — starts monitoring `quorumBps` (2500 at launch) as if it were the propose gate.
+    // A test titled "with the same field order" has to actually check the order (Review115 F9).
+    // `abis.mjs`'s `view()` helper auto-names an unnamed output `o0`, `o1`, … — a positional
+    // placeholder, not a claim about the source — and Solidity returns '' for a genuinely unnamed
+    // return value. Both normalize to '' so this compares REAL names only, and a fragment that
+    // names nothing (vaultRegistered) simply asserts the compiled one names nothing either.
+    const realNames = (outs) => outs.map((o) => (/^o\d+$/.test(o.name ?? '') ? '' : (o.name ?? '')));
+    assert.deepEqual(
+      realNames(onChain.outputs), realNames(frag.outputs),
+      `${sig} field ORDER or naming drifted — operator-power.mjs reads configOf's fields positionally`,
+    );
+    assert.deepEqual(
+      onChain.inputs.map((i) => i.type), frag.inputs.map((i) => i.type),
+      `${sig} argument shape drifted`,
+    );
   }
 });
 

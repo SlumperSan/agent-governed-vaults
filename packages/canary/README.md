@@ -38,7 +38,7 @@ its own `CANARY_STATE_PATH`.
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 | `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
-| `src/signals/operator-power.mjs` | signal (h): the operator's own `sharesOf(creator) / totalShares` against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately (G1) |
+| `src/signals/operator-power.mjs` | signal (h): the operator's own stake against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately and each against the share book its own gate reads (voting-eligible for `propose()`, raw for the exit gate) (G1) |
 | `src/signals/depeg-reference.mjs` | signal (i): a Chainlink USDC/USD reference feed read every sweep, purely informational — the vault's own oracle pins USDC at $1.00 regardless (G4) |
 
 ## Design notes
@@ -72,9 +72,10 @@ every transition, same channel, no severity. Full env reference is in
 [docs/CANARY.md](../../docs/CANARY.md); the shape of it:
 
 - **Tiered webhooks.** `PAGE_WEBHOOK_URL` gets only ALERT transitions on `nav-backing`,
-  `share-conservation`, `fee-routing`, `exit-liveness`, `oracle-freshness` — the signals Operations'
-  Severity Ladder puts at SEV-1/2 and worth waking for. `LOG_WEBHOOK_URL` gets everything else:
-  recoveries, every DEGRADED/DETECTOR BROKEN line, and the self-clearing half of `feed-identity`.
+  `share-conservation`, `fee-routing`, `exit-liveness`, `oracle-freshness`, `depeg-reference` — the
+  signals Operations' Severity Ladder puts at SEV-1/2 and worth waking for. `LOG_WEBHOOK_URL` gets
+  everything else: recoveries, every DEGRADED/DETECTOR BROKEN line, the self-clearing half of
+  `feed-identity`, and `operator-power`'s early-warning bar.
   `ALERT_WEBHOOK_URL` is the backwards-compatible
   fallback for whichever of the two is unset; set only that one and behaviour is exactly what it was
   before tiering existed.
@@ -83,6 +84,16 @@ every transition, same channel, no severity. Full env reference is in
   aggregator-swap ALERT self-clears next sweep and LOGs. `sinks.mjs`'s `CONDITIONAL_PAGE` keys that
   on `detail.harm != null`. Above BTC $100,000 the sane-price band stops catching a −2-decimal drift
   (`Owner Decisions 2026-09-01.md` §1), and this is then the only detector.
+- **`operator-power` pages on its CRITICAL bar only.** Its WARN (1.5x) and ALERT (1.1x) bars both
+  ride one `alert()` status, so it emits under two fixed transition keys, `early-warning` and
+  `critical`, and `CONDITIONAL_PAGE` keys on `detail.bar === 'critical'`. Two keys because transition
+  state is tracked by STATUS alone: one result going WARN → CRITICAL is `alert` → `alert` and emits
+  nothing, so on the ordinary dilution path the "decision needed now" line would never be delivered.
+  Bounded at one page per vault per crossing of the 1.1x bar.
+- **`depeg-reference` pages.** The vault prices member capital at a par that no longer holds, and the
+  only remedy is a time-ordered human de-list decision — "informational" describes the contract's
+  response, not the responder's. Its two blind branches (dead feed, non-positive answer) are
+  `detectorBroken` and stay LOG.
 - **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep **that
   watched at least one vault** — an empty watch set is not "watching", so the ping is withheld and
   the external check goes red rather than reporting a canary that watches nothing. `ops-check`
@@ -102,6 +113,6 @@ every transition, same channel, no severity. Full env reference is in
 node --test packages/canary/test/*.test.mjs
 ```
 
-247 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+318 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

@@ -255,11 +255,20 @@ Watch continuously; page on any breach. Every row below is implemented in `packa
 as a service — see **[CANARY.md](CANARY.md)** for thresholds, tuning, and the response to each:
 
 ```bash
-RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json npm run start:canary
+RPC_URL=… CHAIN_ID=8453 OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json   PAGE_WEBHOOK_URL=… LOG_WEBHOOK_URL=… DEADMAN_PING_URL=… npm run start:canary
 ```
 
+**`CHAIN_ID` is not optional in practice.** It defaults to 8453, but the `depeg-reference` signal
+only takes the verified Base mainnet USDC/USD feed as its default when `CHAIN_ID` was set on purpose
+— an unset one is never read as "this is mainnet", because that would hand a Sepolia deployment a
+mainnet address with no code behind it. Left unset, that signal reports `skipped` with the reason.
+
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
-(no key, never sends). `docker compose up` starts it alongside the indexer and API.
+(no key, never sends). `docker compose up` starts it alongside the indexer and API. Alerts are
+**tiered**: `PAGE_WEBHOOK_URL` takes the wake-a-human ALERTs, `LOG_WEBHOOK_URL` everything else, and
+`ALERT_WEBHOOK_URL` remains the single-endpoint fallback. Which signal is on which tier, and why, is
+[CANARY.md §5.3](CANARY.md) — including the two added by G1/G4: `operator-power` pages on its
+CRITICAL bar only (its 1.5x early warning logs), and `depeg-reference` pages.
 
 > **The canary watches the launch oracle, and what it does not watch is feed IDENTITY.** Since
 > #89 the `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
