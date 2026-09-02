@@ -3,13 +3,20 @@
 # no fund movement. The canary is additionally read-only against the chain — it never sends.
 #
 #   docker build -t vault-runtime .
-#   docker run --env-file .env vault-runtime npm run start:indexer
-#   docker run --env-file .env -p 8402:8402 vault-runtime npm run start:api
-#   docker run --env-file .env vault-runtime npm run start:canary
+#   docker run --env-file .env vault-runtime node packages/indexer/src/index-runner.mjs
+#   docker run --env-file .env -p 8402:8402 vault-runtime node apps/api/src/serve.mjs
+#   docker run --env-file .env vault-runtime node packages/canary/src/canary-runner.mjs
 #
-# Two operational commands ship in the same image and need no env at all:
-#   docker run -v vault-state:/data vault-runtime node packages/oplog/src/ops-check.mjs --dir=/data
-#   docker run -v vault-state:/data vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+# RUN NODE DIRECTLY, NOT `npm run start:*`. npm would be PID 1, and npm does not forward SIGTERM:
+# `docker stop` kills npm, node never sees the signal, and no shutdown hook runs. Measured A/B in
+# docs/RESTORE-DRILL.md §10 finding 7; the reasoning is spelled out in docker-compose.yml.
+#
+# Two operational commands ship in the same image and need no env at all. Compose namespaces its
+# volume as `<project>_vault-state`, and `docker run -v` CREATES a volume it cannot find rather
+# than failing — so resolve the real name first with
+# `docker volume ls --filter name=vault-state` (docs/RUNTIME.md §8.3):
+#   docker run -v <project>_vault-state:/data:ro vault-runtime node packages/oplog/src/ops-check.mjs --dir=/data
+#   docker run -v <project>_vault-state:/data:ro vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
 FROM node:24-slim
 
 WORKDIR /app
@@ -27,6 +34,8 @@ COPY apps ./apps
 ENV STATE_PATH=/data/indexer-state.json
 VOLUME /data
 
-# Default to the API; override the command to run the indexer.
+# Default to the API; override the command to run the indexer. `node` and not `npm run start:api`
+# for the PID 1 / SIGTERM reason at the top of this file — compose overrides this CMD, but anyone
+# running the image directly inherits it, and it must not teach the broken pattern.
 EXPOSE 8402
-CMD ["npm", "run", "start:api"]
+CMD ["node", "apps/api/src/serve.mjs"]

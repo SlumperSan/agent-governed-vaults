@@ -147,6 +147,14 @@ and carry a **healthcheck** that reads that service's own heartbeat file (§8.2)
 is up but wedged — the failure a restart policy never notices — shows as `unhealthy` in
 `docker compose ps`. Each also has a `stop_grace_period` long enough for its shutdown hooks (§8.6).
 
+Every service's `command:` is the **exec-form array running `node` directly**, so `node` is PID 1
+and receives Docker's SIGTERM. `command: npm run start:*` puts **npm** at PID 1, and npm does not
+forward the signal — the hooks §8.6 describes then never run, and `stop_grace_period` becomes dead
+configuration. The compose file carries the measurement; do not "simplify" those lines back to npm.
+
+The volume Compose creates is named **`<project>_vault-state`**, not `vault-state` — see §8.3
+before pointing any `docker run` at it.
+
 Production notes:
 - Put the API behind TLS (a reverse proxy). `CORS=1` is required if the browser front end is served
   from a different origin than the API.
@@ -518,12 +526,31 @@ Defaults give 15 minutes. `SNAPSHOT_BACKUPS=0` disables the ring; writes stay at
 
 **Inspect before you act.** `verify` loads a state file and reports it without starting a poller
 and without an RPC — it needs no environment at all, which matters because whoever is verifying a
-snapshot after a crash has none of the six indexer variables set:
+snapshot after a crash has none of the six indexer variables set.
+
+**Bare metal** (Linux/macOS, or Windows via WSL2) — the state files are where `STATE_PATH` /
+`CANARY_STATE_PATH` put them:
 
 ```bash
 node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
 node packages/canary/src/canary-runner.mjs  verify ./data/canary-state.json
 ```
+
+**Docker (Compose)** — there is **no `./data` on the host**; the state lives in the named volume
+(see the ⚠ box under *Restore procedure* below for why that distinction is dangerous). Run `verify`
+inside a throwaway container that Compose attaches to the right volume for you:
+
+```bash
+docker compose run --rm --no-deps indexer node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+docker compose run --rm --no-deps indexer node packages/canary/src/canary-runner.mjs  verify /data/canary-state.json
+```
+
+`run --rm` because the container is disposable, and `--no-deps` so Compose starts nothing else
+alongside it — the whole point is to inspect a stack you have deliberately stopped. Both commands
+work whether the services are up or down, and both mount the same volume the services do, because
+Compose resolves it from `docker-compose.yml` rather than from a name you typed.
+
+Either form prints the same report:
 
 ```
 snapshot ./data/indexer-state.json: OK
@@ -540,12 +567,27 @@ Exit 0 if usable, 1 if not. Each backup is parsed and reported with **its own** 
 so "restore from which one?" is answerable at a glance, and a corrupt rung is flagged individually
 rather than poisoning the rest.
 
-**Restore procedure** (indexer snapshot; the canary's is identical with its own paths):
+**Restore procedure** (indexer snapshot; the canary's is identical with its own paths).
+
+> ⚠ **Every step below is given in BOTH forms — Docker and bare metal — and you must not mix
+> them.** Under Compose the state files live in the `vault-state` **named volume**: there is no
+> `./data` directory on the host at all. Running the bare-metal `verify` of step 2 against a
+> perfectly healthy Compose stack prints
+> `UNUSABLE — no snapshot at ./data/indexer-state.json — a fresh indexer would start from
+> START_BLOCK`, `backups none on disk`, and **exits 1** — while the live file and a full 3-rung
+> ring are sitting safely in the volume. That reads as total loss and points at the multi-hour
+> rebuild-from-`START_BLOCK` path at the bottom of this section, for nothing. Measured, on a
+> healthy stack, in `docs/RESTORE-DRILL.md` §10 finding 6. **Pick your column at step 1 and stay
+> in it.**
 
 1. **Stop the writer.** Nothing else may be writing while you swap files.
    ```bash
    docker compose stop indexer
    ```
+   Look for `shutdown.begin` → `shutdown.step … ok:true` → `shutdown.complete` in
+   `docker compose logs indexer`; the stop also takes a final snapshot, which is why step 2 says to
+   read the cursors rather than assume `.1`. **No `shutdown.complete` means the hooks did not run
+   and there was no final snapshot** — §8.6 has the two reasons that happens.
    **Bare-metal equivalent (Linux/macOS):** `kill -TERM $(cat /path/to/indexer.pid)`, or Ctrl-C in
    the foreground terminal — either delivers a real `SIGTERM`/`SIGINT` that the process's shutdown
    hooks (§8.6) observe. **Bare-metal Windows cannot do this.** Confirmed empirically
@@ -559,22 +601,49 @@ rather than poisoning the rest.
    real Linux kernel, so `kill -TERM` works there exactly as on Linux/macOS above) to exercise this
    step at all.
 2. **Verify the candidates** and pick a rung by its printed cursor, not by its number. `.1` is
-   usually the one you want, but a clean shutdown takes a final snapshot, which can push the ring
-   along by one — so read the `lastBlock` and `vaults=` on each rung rather than assuming.
+   usually the one you want, but a clean shutdown takes a final snapshot, which **can** push the
+   ring along by one — so read the `lastBlock` and `vaults=` on each rung rather than assuming.
+   *Can*, not *does*: the snapshot always happens, but **rotation is spaced by
+   `SNAPSHOT_BACKUP_INTERVAL_MS`** and is a separate step from the write, so a stop that lands
+   inside that window leaves the ring exactly where it was. Both were observed on 2026-09-02 —
+   the shutdown snapshot advanced the live file's `lastBlock` well past `.1`, and `.1` did not
+   move. Which is precisely why you read the cursors.
    ```bash
+   # Docker (Compose)
+   docker compose run --rm --no-deps indexer node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+   ```
+   ```bash
+   # Bare metal (Linux/macOS, or Windows via WSL2)
    node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
    ```
 3. **Keep the bad file.** It is the only evidence of what went wrong, and it is what the ring is
    about to overwrite.
    ```bash
+   # Docker (Compose) — single quotes, so $(date) runs INSIDE the container, not in your shell
+   docker compose run --rm --no-deps indexer sh -c 'mv /data/indexer-state.json /data/indexer-state.json.bad-$(date +%s)'
+   ```
+   ```bash
+   # Bare metal
    mv ./data/indexer-state.json ./data/indexer-state.json.bad-$(date +%s)
    ```
+   The `.bad-<epoch>` suffix is deliberate: `listBackups` only walks `.1`…`.N`, so the evidence file
+   never consumes a ring slot.
 4. **Put the backup in place** — copy, do not move, so the ring stays intact if step 5 fails.
    ```bash
+   # Docker (Compose)
+   docker compose run --rm --no-deps indexer cp /data/indexer-state.json.1 /data/indexer-state.json
+   ```
+   ```bash
+   # Bare metal
    cp ./data/indexer-state.json.1 ./data/indexer-state.json
    ```
 5. **Verify the restored file** and note the cursor it will resume from.
    ```bash
+   # Docker (Compose)
+   docker compose run --rm --no-deps indexer node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+   ```
+   ```bash
+   # Bare metal
    node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
    ```
 6. **Start the writer.** It resumes from `lastBlock + 1` and re-indexes the gap; the projection is
@@ -601,17 +670,74 @@ rather than poisoning the rest.
 > that is currently firing, and nothing else. If the alternative is a stale cursor causing an event
 > scan gap, delete it.
 
-In Docker the files live in the `vault-state` volume. Reach them with a throwaway container:
+**The canary's procedure is the same six steps with its own service and paths** — substitute
+`canary` for `indexer`, `/data/canary-state.json` (bare metal: `./data/canary-state.json`) for the
+snapshot path, and `packages/canary/src/canary-runner.mjs` for the runner. Its `verify` is under
+"Inspect before you act" above.
+
+#### The volume name is `<project>_vault-state`, not `vault-state`
+
+Compose namespaces every volume with the project name — which defaults to the directory name, so a
+checkout in `x402/` gives `x402_vault-state`. **`docker run -v <name>:/data` does not check: given
+a name that does not exist it silently CREATES an empty volume and mounts that.** A command naming
+the bare `vault-state` therefore reads a brand-new empty directory and reports whatever "empty"
+looks like — for the off-host backup below, an **87-byte archive containing one entry, `./`, exit
+0** (`docs/RESTORE-DRILL.md` §10 finding 8). Ask Docker for the real name first:
 
 ```bash
-docker run --rm -v vault-state:/data vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+docker volume ls --filter name=vault-state --format '{{.Name}}'
 ```
 
-Back the volume up off-host as well — the ring protects against a bad write, not a dead disk:
+Everything under *Restore procedure* above uses `docker compose run`, which resolves the namespaced
+name from `docker-compose.yml` for you and cannot get this wrong. **A raw `docker run` cannot**, so
+where one is unavoidable, resolve the name into a variable and **gate on it**:
 
 ```bash
-docker run --rm -v vault-state:/data -v "$PWD":/backup alpine tar czf /backup/vault-state-$(date +%F).tar.gz -C /data .
+VOL="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}_vault-state"
+docker volume inspect "$VOL" >/dev/null || { echo "no such volume: $VOL" >&2; exit 1; }
 ```
+
+`docker volume inspect` **fails with exit 1 and creates nothing** — that is the whole reason it
+comes first. Never let the `docker run` be the thing that discovers the name is wrong.
+
+That expansion covers the two ways the project gets its name; **if you invoked Compose with an
+explicit `-p <project>`, neither applies** — set `VOL=<project>_vault-state` by hand, or take it
+from the `docker volume ls` above, which is always right.
+
+Read a state file with a throwaway container (the `docker compose run` form above is preferred; use
+this when you are not standing in the repo):
+
+```bash
+docker run --rm -v "$VOL":/data:ro vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+```
+
+**Back the volume up off-host as well** — the ring protects against a bad write, not a dead disk.
+`docker compose run` is deliberately *not* used here: it would create the volume too, and a backup
+must never invent its own source.
+
+```bash
+VOL="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}_vault-state"
+docker volume inspect "$VOL" >/dev/null || { echo "backup ABORTED — no such volume: $VOL" >&2; exit 1; }
+ARCHIVE="vault-state-$(date +%F).tar.gz"
+docker run --rm -v "$VOL":/data:ro -v "$PWD":/backup alpine tar czf "/backup/$ARCHIVE" -C /data .
+tar tzf "$ARCHIVE" | wc -l    # sanity: more than 1 entry, or the volume was empty
+```
+
+Mounted `:ro` because a backup has no business writing to its source. The final `tar tzf` is the
+second belt: the `inspect` gate catches a *missing* volume, the entry count catches an *existing
+but empty* one — the two ways this command can succeed at nothing.
+
+**Restoring it** into a fresh volume (verified end-to-end, `docs/RESTORE-DRILL.md` §10 finding 8):
+
+```bash
+docker volume create vault-state-restored
+docker run --rm -v vault-state-restored:/data -v "$PWD":/backup alpine tar xzf "/backup/$ARCHIVE" -C /data
+docker run --rm -v vault-state-restored:/data vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
+docker run --rm -v vault-state-restored:/data vault-runtime node packages/canary/src/canary-runner.mjs  verify /data/canary-state.json
+```
+
+Both must print `OK` and exit 0. `docker volume create` here is correct and intended — this is the
+one place a new volume is the goal.
 
 ### 8.4 Rate limits and request caps
 
@@ -714,9 +840,20 @@ finish, so the process cannot outlive its own shutdown.
 Compose sets `stop_grace_period` per service (indexer 45s, api 30s, canary 60s) so Docker waits for
 the hooks instead of `SIGKILL`ing through them.
 
+**This only works because `node` is PID 1 in every container** (`docker-compose.yml` uses the
+exec-form `command: ["node", …]`). Until 2026-09-02 those lines read `command: npm run start:*`,
+which made **npm** PID 1 — and npm does not forward SIGTERM. Every stop killed npm in ~1s, node
+never saw the signal, none of the hooks in the table above ran, and the grace periods were dead
+configuration. It was invisible because nothing errored: the shutdown lines were simply absent.
+`docs/RESTORE-DRILL.md` §10 finding 7 has the A/B. If you ever change a `command:` line, re-check
+that `docker compose stop <svc>` still prints `shutdown.complete`, and use the **array** form —
+`command: node …` as a plain string is run via `/bin/sh -c`, which puts `sh` at PID 1 and
+reintroduces exactly the same bug.
+
 ```bash
 docker compose restart indexer      # clean stop, clean resume from the snapshot
 docker compose down                 # stops all three cleanly; the volume survives
+docker compose exec indexer cat /proc/1/cmdline   # sanity: must start with `node`, never `npm`/`sh`
 ```
 
 **Bare-metal equivalent (Linux/macOS, or Windows via WSL2):** `kill -TERM <pid>` (or Ctrl-C in the
