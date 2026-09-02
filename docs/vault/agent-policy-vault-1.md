@@ -116,6 +116,13 @@ one when `drift >= 500`.
 correlated majors, and so that a deposit is deployed rather than left idle: on a full 50,000 USDC
 vault, 500 bps is 2,500 USDC.
 
+Three ordinary things move `drift`, and the trigger treats them identically because it measures the
+vault's state rather than the cause: **prices move**; **a deposit lands** (`idleUsdc` rises once the
+4-hour observation window elapses); and **a member exits** — `_settleExit` decrements `assetBalance`
+and `idleUsdc` in the member's own proportions, which can leave the remaining vault off-target. An
+exit can therefore trigger a rebalance with no price movement at all. That is intended: the rule is
+a statement about where the vault stands, never about why.
+
 ### 2.5 Suspensions — the five states in which no proposal is opened
 
 Each is a state of the chain at the evaluation block, checkable by the same `eth_call`:
@@ -136,7 +143,7 @@ Each is a state of the chain at the evaluation block, checkable by the same `eth
    proposalThresholdBps * pastTotalVotingEligibleShares(t-1)`. The operator then *cannot* propose
    (`BelowProposalThreshold`). The operator undertakes to hold at least `proposalThresholdBps` of
    voting-eligible stake — 5 % at the reference configuration, which is also
-   `CREATOR_MIN_STAKE_BPS` — and to publish a notice under §7 within 24 h if it does not.
+   `CREATOR_MIN_STAKE_BPS` — and to publish a notice in the §7.2 log within 24 h if it does not (the log, not the §7.1 amendment procedure — this is an operational notice, not a rule change).
 
 5. **Empty vault.** `NAV == 0`. Weights are undefined; there is nothing to rebalance.
 
@@ -202,6 +209,14 @@ under-fund.
 Legs are emitted in the order shown. A leg with `amountIn == 0` is omitted — the adapter rejects
 `amountIn == 0` and `minAmountOut == 0` outright (`BadOrder`).
 
+**Shape A's `a_B` is the remainder, not a second deficit.** Both deficits sum to `V_U` exactly, so
+computing `a_B` independently as `(NAV/2 - V_B) / 1e12` would usually agree — but each floor division
+loses up to one USDC unit, and the two would then not sum to `idleUsdc`. `a_B = idleUsdc - a_W`
+spends the idle balance exactly and is single-valued. A member recomputing `a_B` the other way and
+finding a one-unit difference has found rounding, not a breach. `a_W`'s `min()` is a guard that
+never binds (`D_W <= V_U` whenever both assets are below target); it is written down so the
+expression has one reading rather than two.
+
 ### 4.2 Slippage bound
 
 For every leg, with **`K = 100` basis points (1.00 %)**:
@@ -248,11 +263,29 @@ stands. That is the intended failure — see §9 for what it costs while it is p
   durations are read from `Governance.configOf(vault)` at that block. The 86,400 s allowance covers
   latency in the permissionless `finalize` call, which fixes the execution window's real start. A
   proposal that cannot execute inside its window cannot execute late.
-- **`routeData`** = `exactInputSingle` calldata with `tokenIn`, `tokenOut` and `amountIn` equal to
-  the order's own fields, `fee` the tier named in §1, `recipient` the adapter's address,
-  `amountOutMinimum` equal to the order's `minAmountOut`, `sqrtPriceLimitX96 = 0`. The adapter pins
-  the router immutably and allows only these two selectors, so `routeData` cannot choose its own
-  target.
+- **`routeData`** = calldata for exactly this signature, one of the two the adapter allows
+  (`contracts/config/base-mainnet.json` · `routerAllowedSignatures`):
+
+  ```
+  exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))
+  ```
+
+  The struct's seven fields, in that order, are
+  `(tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, sqrtPriceLimitX96)`. SwapRouter02's
+  version carries **no** `deadline` field — the order's own `deadline` is enforced by the adapter,
+  not by the router. The policy fixes every one of them:
+
+  | Field | Value |
+  | --- | --- |
+  | `tokenIn`, `tokenOut`, `amountIn` | the order's own fields |
+  | `fee` | the tier named in §1 for that pair |
+  | `recipient` | the adapter's address — it measures its own balance delta and forwards the proceeds |
+  | `amountOutMinimum` | the order's `minAmountOut` |
+  | `sqrtPriceLimitX96` | `0` |
+
+  So `routeData` is reproducible byte-for-byte from the order and §1. The adapter pins the router
+  immutably and checks `allowedSelector[bytes4(routeData[0:4])]`, so `routeData` cannot choose its
+  own target whatever it encodes.
 
 ---
 
