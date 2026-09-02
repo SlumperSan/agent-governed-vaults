@@ -331,38 +331,46 @@ contract AuditAggregatorSwapDriftTest is Test {
     /// remaining members' share, and nothing reverts. The row-14 register used to name only the
     /// floor side (ETH >= $10,000, a +310% move); this side is the one a bear market reaches first.
     ///
-    /// The spot is DERIVED from the band constant rather than typed as a fourth price, so that a
-    /// band retune moves this boundary with it (the owner memo's follow-on plan edits the band
-    /// literals above and expects the expiry tests to follow).
+    /// The spot is DERIVED from the band constant rather than typed as a fourth price, and every
+    /// assertion below compares against that constant too, so a band retune moves this boundary
+    /// with it rather than breaking the test (the owner memo's follow-on plan edits the band
+    /// literals above and expects the expiry tests to follow). NOTE the asymmetry, because it is
+    /// deliberate and not yet repaired: the §3a FLOOR tests above still hard-type their spots
+    /// (100_000 / 99_999 / 10_000), so an option-B retune fails them loudly and they must be
+    /// edited by hand. That is #92's shape, left as it is here rather than rewritten under a
+    /// review that did not ask for it.
     ///
     /// Mutation-checked 2026-09-01: with `>` at ChainlinkOracle's ceiling comparison changed to
     /// `>=`, this test and the cbBTC one below FAIL (the priceWad call reverts StaleOracle), and
     /// the "just above" test still passes -- so the pair discriminates the exclusive comparison
     /// from an inclusive one, exactly as 3a does for the floor.
     function test_expiry_atEth1kThePlusTwoDecimalDriftNoLongerTripsTheCeiling() public {
-        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100; // $1,000: the boundary itself, derived from the band
-        assertEq(spotUsd, 1_000, "sanity: the WETH ceiling boundary is $1,000");
+        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100; // the boundary itself, derived from the band
+        // Guards the DERIVATION without pinning its VALUE: proves the division is exact, so a band
+        // whose ceiling is not a whole number of dollars could not silently test a truncated
+        // boundary. Survives a retune, which `assertEq(spotUsd, 1_000)` would not.
+        assertEq(spotUsd * 100 * 1e18, WETH_MAX_WAD, "the derived spot is exactly ceiling/100, no truncation");
         MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
         ChainlinkOracle oracle = _oracle(WETH, address(feed), WETH_MIN_WAD, WETH_MAX_WAD);
 
         _swapAggregatorTo(feed, 10, spotUsd); // 8 -> 10 decimals: a x100 mis-scale
 
         uint256 p = oracle.priceWad(WETH);
-        assertEq(p, WETH_MAX_WAD, "the drifted price lands exactly ON the ceiling");
+        // At the shipped band this is ETH quoted at $100,000 while the feed says $1,000: a 100x
+        // overprice, returned in silence. Asserted against the band constant, not against $100,000,
+        // so the assertion follows a retune instead of breaking on one.
+        assertEq(p, WETH_MAX_WAD, "the drifted price lands exactly ON the ceiling -- a 100x overprice");
         assertFalse(p > WETH_MAX_WAD, "and the contract's comparison is exclusive, so it does not revert");
-        assertEq(
-            p, 100_000e18, "ETH priced at $100,000 while the feed says $1,000 -- 100x overprice, no revert"
-        );
     }
 
     /// One dollar above the boundary the ceiling still catches it -- the boundary is a line, not
     /// a region. Asserted by selector + asset so a Panic could not pass for the band tripping.
     function test_expiry_justAboveTheCeilingBoundaryTheCeilingStillCatchesIt() public {
-        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100 + 1; // $1,001
+        uint256 spotUsd = WETH_MAX_WAD / 1e18 / 100 + 1; // one dollar above the derived boundary
         MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
         ChainlinkOracle oracle = _oracle(WETH, address(feed), WETH_MIN_WAD, WETH_MAX_WAD);
 
-        _swapAggregatorTo(feed, 10, spotUsd); // 100,100e18 > the 100,000e18 ceiling
+        _swapAggregatorTo(feed, 10, spotUsd); // x100 puts it just OVER the ceiling
 
         _expectStale(oracle, WETH);
     }
@@ -371,8 +379,10 @@ contract AuditAggregatorSwapDriftTest is Test {
     /// 87% drawdown from ~$77,700. Recorded for the same reason as the WETH floor case: the two
     /// launch assets lapse at different prices and the register should carry both, on both sides.
     function test_expiry_cbbtcCeilingBackstopLapsesAtTenThousand() public {
-        uint256 spotUsd = CBBTC_MAX_WAD / 1e18 / 100; // $10,000, derived from the band
-        assertEq(spotUsd, 10_000, "sanity: the cbBTC ceiling boundary is $10,000");
+        uint256 spotUsd = CBBTC_MAX_WAD / 1e18 / 100; // derived from the band, as above
+        assertEq(
+            spotUsd * 100 * 1e18, CBBTC_MAX_WAD, "the derived spot is exactly ceiling/100, no truncation"
+        );
         MockAggregatorV3 feed = new MockAggregatorV3(8, int256(spotUsd * 1e8), block.timestamp);
         ChainlinkOracle oracle = _oracle(CBBTC, address(feed), CBBTC_MIN_WAD, CBBTC_MAX_WAD);
 
@@ -381,7 +391,7 @@ contract AuditAggregatorSwapDriftTest is Test {
         assertEq(
             oracle.priceWad(CBBTC),
             CBBTC_MAX_WAD,
-            "exactly on the $1,000,000 ceiling, and exclusive means no revert"
+            "exactly on the ceiling ($1,000,000 at the shipped band), and exclusive means no revert"
         );
     }
 
