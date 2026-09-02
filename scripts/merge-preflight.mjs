@@ -12,7 +12,7 @@
  *
  * WHY THIS EXISTS. On 2026-09-01 four PRs — #92, #98, #107 and #109 — merged across review verdicts
  * that were never addressed, putting two HIGHs on `protocol/main`. `gh pr merge` does not read
- * comments, so nothing connected a verdict to mergeability. The three failure modes and the rules
+ * comments, so nothing connected a verdict to mergeability. The four failure modes and the rules
  * that answer them are documented in `scripts/lib/verdicts.mjs` and specified in
  * `scripts/lib/merge-policy.json`, which is the single source of truth this reads.
  *
