@@ -93,7 +93,13 @@ binding** — several audit fixes could only be afforded by first *shrinking* ot
 ## Size — EIP-170
 
 VaultCore is the **only** contract meaningfully near the cap, though far less so since PR #90
-(2026-09-01) reclaimed 3,806 B. Current margin is **~4,095 B**, up from ~283 B.
+(2026-09-01). Current margin is **3,926 B** — runtime 20,650 B against the 24,576 B cap, measured
+with `forge build --sizes` at `protocol/main` on 2026-09-02, up from ~283 B before #90.
+
+> **Re-measure rather than copy that number.** It was recorded here as 4,095 B until 2026-09-02,
+> which **overstated** the true margin by 169 B — the dangerous direction, since a change sized
+> against it can overshoot the cap. Nothing guards this figure: `.sol` is outside the claims
+> guard's `PUBLIC_EXT`, and a wrong byte count has no claim *shape* for it to match in `.md`.
 
 > Reconciliation (three docs, three points in time): the LAUNCH-READINESS table's **1,014 B**
 > predates M-15's `deposit(uint256,uint256)` overload, which spent **731 B** → ~283 B left; the

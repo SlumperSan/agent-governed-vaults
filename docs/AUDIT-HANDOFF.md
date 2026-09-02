@@ -76,9 +76,8 @@ The codesize equality this paragraph used to assert is therefore false, and its 
 in the ordinary way as well: it cited VaultFactory 2,718 B and Governance 11,990 B, which measure
 **3,572 B** and **12,155 B** at `protocol/main` (`forge build --sizes`, 2026-09-02).
 
-A deployment of the current code does exist on Base Sepolia, made 2026-09-02, **and its addresses
-are deliberately not published** — publishing them belongs with the lifecycle evidence rather than
-ahead of it. So there is presently no committed record an auditor can diff this tree against.
+**There is presently no committed record an auditor can diff this tree against.** The address book
+is the only one, and it describes an earlier deployment. Do not substitute it.
 
 **No mainnet deployment exists.** The audit surface is the source at the tag above. Treat every
 testnet instance as evidence about the bytecode it actually ran, and check which commit that was
