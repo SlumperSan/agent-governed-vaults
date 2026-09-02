@@ -41,7 +41,9 @@ widened run went 245 → 254 results with **no new detector class**.
   `test/audit/AuditReentrancyGuardCoverage.t.sol` ARE present on `protocol/main`. The original
   claim is restated in the past tense it should have been written in rather than deleted. Whether
   H-9's disposition changes is **not** decided here — it was re-derived separately and
-  mutation-verified at `c3c789ba`, an ancestor of `52d10aee`; see [[highs]].
+  mutation-verified at `c3c789ba` (an ancestor of `52d10aee`) against
+  `test/audit/AuditLookThroughReadOnlyReentrancy.t.sol` and
+  `test/audit/AuditReentrancyGuardCoverage.t.sol`; see [[highs]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
   `latestPrice` (`UniswapV3TwapSource.sol:282-292`), the one timestamp use with a security consequence → **H-2** (since
   FIXED; the omission is now closed).
