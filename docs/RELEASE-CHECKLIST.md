@@ -11,22 +11,25 @@ by the owner against `bab5ee90`" is.
 it. Reasoning about the gates lives there; live facts (head SHA, CI, `behind_by`) live in
 `npm run cc` and `gh` and are deliberately not written down anywhere.
 
-**Measured 2026-09-01 against `protocol/main` @ `bab5ee90`.** Every status below is a measurement
+**Measured 2026-09-01 local / `2026-09-02T04:00Z` against `protocol/main` @ `bab5ee90`.** (Both
+stamps given because the repo dates in local time and the Obsidian vault dates in UTC — the same
+measurement appears under either date.) Every status below is a measurement
 with a re-run command next to it. Re-run before trusting any of it.
 
 ---
 
 ## Current verdict — **NO-GO**
 
-Six things stand between here and a mainnet deploy. In dependency order — each blocks the ones
-below it, so this is the shortest path, not a wish list:
+Six things stand between here and a mainnet deploy, in dependency order — the shortest path, not a
+wish list. **Step 2 is the hinge:** steps 3, 4 and 5 must each name the one commit it freezes, or
+each of them goes stale again the moment the next merge lands.
 
 | # | Blocker | Whose | Proves clear when |
 | --- | --- | --- | --- |
 | 1 | **#108 and #120 land.** #108 gates the mainnet deploy and has no verdict; #120 keeps a HIGH live on `main` until it lands. Both need a verdict, a rebase to `behind_by 0`, and re-green. | agents + an independent reviewer | `gh pr list --state open` shows neither; `gh run list --branch protocol/main` green at the new head SHA |
 | 2 | **Owner decides freeze-or-redeploy.** Every `contracts/src` merge invalidates the testnet deploy that gates 2, 3 and 6 rest on. Until this is decided, closing those gates is a treadmill. | **owner only** | `Decisions/freeze-or-redeploy.md` status ≠ open |
-| 3 | **Owner re-attests gate 1**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 31 `contracts/src` commits behind `main`** (§1 gate 1). | **owner only** — it is an attestation | `LAUNCH-READINESS.md` gate 1 names a commit that is `protocol/main`'s head |
-| 4 | **Testnet redeploy at the frozen head, in the LAUNCH configuration** (`allowSubVaults = false`). Needs a funded Base Sepolia key. | **owner only** (key) | `node scripts/verify-deployment-currency.mjs` exits 0 with no notes |
+| 3 | **Owner re-attests gate 1 against the head frozen in step 2**, or accepts a named residual. The audited tree and the deployed tree are the same tree, and **both are 31 `contracts/src` commits behind `main`** (§1 gate 1). Attesting before the freeze re-stales the moment the next merge lands — the same trap as gates 2/3/6. | **owner only** — it is an attestation | `LAUNCH-READINESS.md` gate 1 names the frozen head |
+| 4 | **Testnet redeploy at that same frozen head**, in the LAUNCH configuration (`allowSubVaults = false`). Steps 3 and 4 do not depend on each other, but both depend on step 2 and both must name the **same** commit — an audit attested to one tree and a deployment made from another puts you back where this checklist started. Needs a funded Base Sepolia key. | **owner only** (key) | `node scripts/verify-deployment-currency.mjs` exits 0 with no notes |
 | 5 | **Re-earn gates 2, 3, 6 and finish gate 7** against that new deployment. Order matters: the gate-7 drill consumes artifacts from daemons watching a live deployment, so running it before step 4 means running it twice. | agents, after step 4 | §1 rows 2/3/6/7 |
 | 6 | **Owner-only mainnet items** — operator payout Safe, launch posture, branch protection (§4). | **owner only** | §4 |
 
@@ -165,8 +168,10 @@ Three facts about all fourteen that matter more than the individual rows:
 - **None has a `reviewDecision`.** All fourteen read `NONE`.
 - **Every one is behind `main` by 61–104 commits.** `mergeStateStatus: CLEAN` means *no conflict*,
   not *up to date*. Their green checks were earned on a base 61–104 commits stale, so no merge is
-  admissible on that green — each needs a rebase and a re-run first. Seven are `DIRTY` with real
-  conflicts: #108, #110, #111, #115, #118, #124, #126.
+  admissible on that green — each needs a rebase and a re-run first. Seven were `DIRTY` with real
+  conflicts on two separate reads 2026-09-01: #108, #110, #111, #115, #118, #124, #126. Re-read
+  rather than trusting that list — GitHub computes `mergeStateStatus` lazily, so a first query can
+  answer `UNKNOWN` and settle only afterwards.
 - **#124 is red** (`backend` FAILURE). #124 is the doc-citation guard — the check that resolves
   every `file:line` citation in `docs/` against the repo. **Until it lands green, nothing verifies
   the citations in this file.** That is the guard for this artifact, and it is currently off.
