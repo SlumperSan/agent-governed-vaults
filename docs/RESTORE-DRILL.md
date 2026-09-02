@@ -2,6 +2,19 @@
 
 **Date:** 2026-08-30 · **Chain:** Base Sepolia (84532) · **Tree:** `132f837e` · **Gate:** [7 — ops runbook exercised](LAUNCH-READINESS.md)
 
+> **Correction added 2026-09-02 — read this before the verdict below.** Everything from here to §9
+> is the record of the 2026-08-30 run and its 2026-09-01 corroboration, and is left exactly as it
+> was written. **Its "gate 7 stays CONDITIONAL" verdict no longer describes the gate.** The
+> condition it named — steps 1 and 6 run literally as `docker compose stop/start` — was met on
+> **2026-09-02** in **§10** below (#139, `4619f17a`), the three runbook and Compose defects that
+> re-run surfaced were fixed in **#141 (`adafdc7c`)**, and the gate row moved to **GO** in
+> **#143 (`16050be0`)**. Where this
+> report and [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §1 disagree about gate 7's status, the gate
+> row wins; this report is evidence, not the verdict. Note also that §10.1 records **2 of 6 steps
+> literal** for that run, for the opposite reason — steps 2–5 name host paths that do not exist
+> under the Compose deployment, which is finding 6. That is a statement about that run, not a
+> reopening of the gate.
+
 Sprint 13 shipped the backup ring and the `verify` subcommands with tests, and the Sprint-12 soak
 restarted services freely. Neither is a restore. This drill takes the procedure in
 [`RUNTIME.md` §8.3](RUNTIME.md) and executes it as written against **real artifacts produced by
