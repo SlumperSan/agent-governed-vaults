@@ -14,8 +14,8 @@ import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks
 /// enough that they should not rest on prose alone, and each test below is chosen so that the
 /// mutation which would make its row real turns it red:
 ///
-///  1. `ts == 0` (rows 1/4/9/11 — `navPerShareWad:342`, `convertToAssets:1035`, `_mintShares:445`,
-///     `convertToShares:1028`). The classic ERC-4626 inflation attack needs a NAV a donor can move.
+///  1. `ts == 0` (rows 1/4/9/11 — `navPerShareWad:377`, `convertToAssets:1086`, `_mintShares:480`,
+///     `convertToShares:1079`). The classic ERC-4626 inflation attack needs a NAV a donor can move.
 ///     `navWad()` reads only internal accounting (EE-1), so donation is inert — and the reverse
 ///     shape, `totalShares == 0` with residual NAV, is unreachable because the last exiter is by
 ///     construction the sole holder, whose pro-rata legs are exact identities. Mutating `navWad`
@@ -150,10 +150,10 @@ contract AuditIncorrectEqualityRowsTest is Test {
     /// `totalShares` can only reach 0 through the sole-holder exit, and that exit is EXACT.
     ///
     /// `memberShares == ts` (row 13) makes `feeBps = 0`, so `keepBps = BPS` and `burnKeep == tsBps`
-    /// — both pro-rata legs collapse to identities (`VaultCore.sol:591-597`, `:614`) and nothing is
+    /// — both pro-rata legs collapse to identities (`VaultCore.sol:626-632`, `:649`) and nothing is
     /// floored away. The vault therefore never reaches `totalShares == 0` while still holding NAV,
-    /// which is what makes the 1:1 re-open at `_mintShares:445` and the `WAD` answer at
-    /// `navPerShareWad:342` correct rather than merely conventional.
+    /// which is what makes the 1:1 re-open at `_mintShares:480` and the `WAD` answer at
+    /// `navPerShareWad:377` correct rather than merely conventional.
     ///
     /// Also pins row 13 in the direction that matters: the sole holder pays no exit fee, so the
     /// fee cannot be stranded in a vault with zero shares (EE-8/EE-9).
@@ -192,11 +192,11 @@ contract AuditIncorrectEqualityRowsTest is Test {
         assertEq(v.idleUsdc(), 0, "idle accounting fully drained");
         assertEq(v.navWad(), 0, "NAV is exactly zero, not dust");
         assertEq(v.holderCount(), 0, "and no holders remain");
-        assertEq(v.navPerShareWad(), 1e18, "navPerShareWad:342 returns WAD on an empty vault");
+        assertEq(v.navPerShareWad(), 1e18, "navPerShareWad:377 returns WAD on an empty vault");
 
         // Re-opening therefore prices at 1:1 against a genuinely empty vault, not against residue.
         _joinAndMint(v, carol, 1_000 * USDC_1);
-        assertEq(v.sharesOf(carol), 1_000 * USDC_1 * SCALAR, "_mintShares:445 re-opens at 1:1");
+        assertEq(v.sharesOf(carol), 1_000 * USDC_1 * SCALAR, "_mintShares:480 re-opens at 1:1");
         assertEq(v.navPerShareWad(), 1e18, "and NAVps is back at par");
     }
 
