@@ -301,6 +301,37 @@ test('EMITTABLE_SIGNALS names exactly the signals a sweep can produce, and nothi
   });
 });
 
+test('the undeclared-name guard actually THROWS on a real dispatch site — the sweep aborts, it does not route to LOG', async () => {
+  // Review126 F1: deleting the `run()` guard from `canary-runner.mjs` left the whole suite green,
+  // so the headline runtime protection of this PR was pinned by nothing. The forward test above
+  // iterates EMITTED RESULTS and is structurally blind to this: a signal that returns `[]` on the
+  // healthy fixture emits nothing to check.
+  //
+  // Removing a name from the declaration is the same thing to `run()` as adding an undeclared
+  // dispatch site, and it is the only one of the two a test can stage without editing the source
+  // under test. `nav-backing` is dispatched unconditionally for every vault.
+  assert.ok(EMITTABLE_SIGNALS.has('nav-backing'), 'the name this test undeclares must start declared');
+  EMITTABLE_SIGNALS.delete('nav-backing');
+  try {
+    await assert.rejects(
+      () => collectSignals({
+        reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
+        state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+      }),
+      /dispatched but not declared in EMITTABLE_SIGNALS/,
+      'an undeclared dispatch must abort the sweep loudly, never emit a signal nobody gave a tier',
+    );
+  } finally {
+    EMITTABLE_SIGNALS.add('nav-backing');
+  }
+  // And the guard is not a blanket refusal: the same call with the declaration restored succeeds.
+  const results = await collectSignals({
+    reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  assert.ok(results.some((r) => r.signal === 'nav-backing'), 'restoring the declaration restores the dispatch');
+});
+
 // ── the off-host dead-man's switch (Monitoring Gap Analysis G6) ──────────────
 //
 // The dead-man ping exists because `ops-check` runs on the SAME HOST as the canary: host death
