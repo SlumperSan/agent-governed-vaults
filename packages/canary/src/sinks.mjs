@@ -60,6 +60,33 @@ export function createConsoleSink({ log = console.log, error = console.error } =
  */
 export const PAGE_SIGNALS = new Set([
   'nav-backing', 'share-conservation', 'fee-routing', 'exit-liveness', 'oracle-freshness',
+  // Added with signal (h). A CITATION, not an escalation: Monitoring Gap Analysis §3 item 5
+  // specifies governance-watch as "every occurrence PAGEs at SEV-2 during waking hours" in as many
+  // words. The waking-hours half is the RECEIVER's; nothing in this process knows the time of day.
+  //
+  // WHY UNCONDITIONAL, and not CONDITIONAL_PAGE below. It has the two-severities-one-name shape —
+  // a routine creator rebalance is not an incident and this does page on it — but it has no
+  // DISCRIMINATOR, which is what CONDITIONAL_PAGE actually requires. feed-identity qualifies
+  // because chain state tells you which severity you are in (`detail.harm`). Here the axis is
+  // routine vs hostile proposal, and all three candidate predicates fail: (1) the PAYLOAD, the axis
+  // they truly differ on, is not on-chain until `execute` — `Proposed` carries only `actionHash`,
+  // which is why this signal ships `payloadOnChain: false`; (2) the PROPOSER is the wrong axis on
+  // the MERITS, not because scoring is hard — Incident Catalogue OPS-7 names "an operator key signs
+  // a bad proposal" as its FIRST threat, so any proposer predicate, including the cheap
+  // creator/operator allowlist that needs no scoring at all, would demote precisely the case this
+  // signal exists for; (3) the
+  // PHASE is the wrong axis — `tally` means a proposal sits untallied and `lapsed` means a passed
+  // one was never executed, both stalled governance actions someone must act on, so demoting them
+  // demotes the wrong two. Paging on a routine proposal is the accepted cost of having no
+  // discriminator, not an oversight.
+  //
+  // VOLUME. The tracker emits on change and tierOf gates on `to === 'alert'`, so this is one page
+  // per phase ENTRY — 4 per lifecycle, at most 6 when `finalize` is late and the proposal lapses.
+  // The 4-6 RECOVERED lines route LOG. Six keys x every sweep is NOT six pages. Per vault per hour
+  // the bound is CM-6 (one active proposal at a time, plus the proposal cooldown), not the phase
+  // durations: `_validateConfig` floors commit, reveal and executionWindow at 1 hour but only CAPS
+  // `timelockDuration`, so a zero timelock is legal and that phase is skipped entirely.
+  'governance-watch',
   'depeg-reference',
 ]);
 

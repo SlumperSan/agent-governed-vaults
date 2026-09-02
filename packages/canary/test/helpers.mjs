@@ -22,10 +22,38 @@ export const CREATOR = A('5');
 export const MEMBER = A('6');
 export const OPERATOR = A('7');
 export const FEE_ENGINE = A('8');
-export const GOVERNANCE = A('9');
 export const SRC1 = A('a');
 export const SRC2 = A('b');
 export const SRC3 = A('c');
+/** The vault's immutable Governance module, as `vault.governance()` reports it. */
+export const GOVERNANCE = `0x${'90'.repeat(18)}0005`;
+export const PROPOSER = A('d');
+
+/**
+ * A `configOf(vault)` tuple in Governance.GovConfig field order: 1h commit, 1h reveal, 1h
+ * timelock, 1-day execution window, then the four non-timing fields. Matches base-sepolia.json's
+ * shape closely enough that the derived deadlines read like a real vault's.
+ */
+export const GOV_CONFIG = Object.freeze([3600, 3600, 3600, 86400, 2500, 500, 5000, 3600]);
+
+/**
+ * A `proposals(pid)` tuple in Governance.Proposal field order. `status` is the enum index
+ * (1 Active, 2 Passed, 3 Defeated, 4 Executed, 5 Expired); `ptype` likewise (0 Rebalance).
+ * Every test builds its proposal from this so the FIELD ORDER — which viem flattens positionally
+ * and which the decoder in signals/governance-watch.mjs depends on — is pinned in one place.
+ */
+export function proposalTuple({
+  vault = VAULT, ptype = 0, proposer = PROPOSER, createdAt = 0, commitDeadline = 0, revealDeadline = 0,
+  executableAt = 0, expiresAt = 0, status = 1, actionHash = `0x${'ab'.repeat(32)}`,
+  snapshotTotal = 500_000000000000000000n, memberCount = 2n, forWeight = 0n, againstWeight = 0n,
+  revealedWeight = 0n, revealedVoterCount = 0n,
+} = {}) {
+  return [
+    vault, ptype, proposer, BigInt(createdAt), BigInt(commitDeadline), BigInt(revealDeadline),
+    BigInt(executableAt), BigInt(expiresAt), status, actionHash, snapshotTotal, memberCount,
+    forWeight, againstWeight, revealedWeight, revealedVoterCount,
+  ];
+}
 
 /**
  * Chainlink USDC/USD reference feed — `signals/depeg-reference.mjs` (G4). resolveCanaryConfig
@@ -146,6 +174,7 @@ export function healthyVault(overrides = {}) {
       feeEngine: FEE_ENGINE,
       creator: CREATOR,
       operatorRegistry: REGISTRY,
+      governance: GOVERNANCE,
       basketLength: 1n,
       basketAssets: () => ASSET,
       assetUnit: (a) => (lc(a) === lc(ASSET) ? 1_000000000000000000n : 0n),
@@ -182,14 +211,19 @@ export function healthyVault(overrides = {}) {
       operatorOf: () => 7n,
       operatorAddressOf: () => OPERATOR,
     },
-    // Governance smoke defaults from contracts/config/base-mainnet.json's `smoke.gov` block —
-    // 500 bps proposalThresholdBps, the same "500 bps at launch" figure CREATOR_MIN_STAKE_BPS
-    // carries, so the default fixture's two operator-power legs agree (thresholdsDiffer: false).
+    // Registered, quiet: no proposal has ever been opened, so `governance-watch` reads OK.
+    // `vaultRegistered` is `operator-power`'s: `propose()` reverts NotRegistered before it
+    // reads any threshold. `configOf` uses the shared GOV_CONFIG rather than a second inline
+    // literal -- its proposalThresholdBps is 500 bps, the same figure CREATOR_MIN_STAKE_BPS
+    // carries, so the default fixture's two operator-power legs still agree
+    // (thresholdsDiffer: false). Asserted at resolution time, not assumed.
     [GOVERNANCE]: {
       vaultRegistered: () => true,
-      configOf: () => [3600, 3600, 86400, 86400, 2500, 500, 4000, 21600],
+      activeProposalOf: () => 0n,
+      configOf: () => GOV_CONFIG,
+      proposals: () => proposalTuple({ status: 0 }),
     },
-    // A healthy $1.00 reading, 8 decimals, comfortably inside the 0.995..1.005 band — so
+    // A healthy $1.00 reading, 8 decimals, comfortably inside the 0.995..1.005 band -- so
     // signals/depeg-reference.mjs (G4) reads OK by default across every fixture in this package.
     [USDC_USD_FEED]: {
       latestRoundData: () => [1n, 100_000000n, 1_699_999_990n, 1_699_999_990n, 1n],
