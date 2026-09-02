@@ -1,0 +1,112 @@
+# Publishes the merge-preflight decision as a commit status on the PR's head SHA.
+#
+# WHY A COMMIT STATUS AND NOT A CHECK RUN. The decision changes when a *comment* is posted, not when
+# code is pushed — a verdict arriving is the whole event this exists to notice. A `pull_request`
+# workflow does not re-run on a comment, so a PR that legitimately failed ("no verdicts yet") would
+# stay failed with nothing able to clear it. `issue_comment` runs the workflow file from the DEFAULT
+# BRANCH and cannot attach a check run to the PR's head, but it can POST a commit status to any SHA.
+# Branch protection matches required checks by context string and does not care which produced it,
+# so `merge-preflight` is requireable either way.
+#
+# STATUS: this workflow makes the decision VISIBLE. It does not make it BINDING. Until the owner
+# requires the `merge-preflight` context in branch protection with enforce_admins on, a red status
+# here does not stop `gh pr merge`. See docs/reviews/MERGE-POLICY.md § Making this enforcement.
+#
+# It runs in --advisory during rollout: Modes A and C and stale-CI are caught with no convention
+# change, while Mode B waits for reviewers to emit REVIEW-ROSTER / REVIEW-VERDICT tokens. Switching
+# to --strict is step 3 of that section, and is a one-word edit here.
+name: merge-preflight
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  # `gh run list` hits GET /repos/{o}/{r}/actions/runs. Declaring a permissions block sets every
+  # unlisted scope to none, so without this the script exits 2 ("could not determine") and the
+  # ci-matches-head rule -- the one that exists because of #107's stale green -- silently never
+  # evaluates. That would be a check reporting on a rule it did not run.
+  actions: read
+  statuses: write
+
+jobs:
+  preflight:
+    # Two filters. issue_comment fires for plain issues too, and only pull requests carry
+    # `issue.pull_request`. And it fires for EVERY comment in the repository -- this repo ran out of
+    # Actions minutes for ~72h on 2026-08-29 -- so a comment only re-runs the preflight when it could
+    # actually change the decision: a token, or a prose verdict the block-only heuristic might read.
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && (
+        contains(github.event.comment.body, 'REVIEW-') ||
+        contains(github.event.comment.body, 'REJECT') ||
+        contains(github.event.comment.body, 'ACCEPT')))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # issue_comment checks out the default branch, which is what we want: the policy and the
+          # script must be the ones on protocol/main, never a version the PR under test supplies.
+          ref: protocol/main
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+
+      # Until this PR merges, protocol/main has no preflight script. Without this guard the job
+      # would post a red `merge-preflight` status derived from a module-not-found error, which is
+      # a false alarm indistinguishable from a real block. It also covers the reverse case: someone
+      # removing the script from main should silence this workflow, not make every PR look blocked.
+      - name: Is the preflight present on the default branch?
+        id: have
+        run: |
+          if [ -f scripts/merge-preflight.mjs ]; then echo "have=true" >> "$GITHUB_OUTPUT"
+          else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::merge-preflight is not on protocol/main yet; posting no status."; fi
+
+      - name: Resolve PR number
+        id: pr
+        if: steps.have.outputs.have == 'true'
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request)   n='${{ github.event.pull_request.number }}' ;;
+            issue_comment)  n='${{ github.event.issue.number }}' ;;
+            *)              n='${{ github.event.inputs.pr }}' ;;
+          esac
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Run preflight
+        id: check
+        if: steps.have.outputs.have == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node scripts/merge-preflight.mjs "${{ steps.pr.outputs.number }}" --advisory | tee out.txt
+          code=${PIPESTATUS[0]}
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # Exit 2 (could not determine) is deliberately NOT a pass — see the script header.
+          case "$code" in
+            0) echo "state=success"     >> "$GITHUB_OUTPUT"; echo "desc=no blocker found"        >> "$GITHUB_OUTPUT" ;;
+            1) echo "state=failure"     >> "$GITHUB_OUTPUT"; echo "desc=blocked, see the job log" >> "$GITHUB_OUTPUT" ;;
+            *) echo "state=error"       >> "$GITHUB_OUTPUT"; echo "desc=could not determine"      >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Publish commit status on the PR head
+        if: steps.have.outputs.have == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh pr view "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" --json headRefOid -q .headRefOid)
+          gh api -X POST "repos/${{ github.repository }}/statuses/$sha" \
+            -f state='${{ steps.check.outputs.state }}' \
+            -f context='merge-preflight' \
+            -f description='${{ steps.check.outputs.desc }}' \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

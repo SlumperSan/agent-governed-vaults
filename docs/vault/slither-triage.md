@@ -39,7 +39,7 @@ widened run went 245 → 254 results with **no new detector class**.
   the opposite and was correct when written; #98 landed between that branch and this one.
 - **`timestamp`** — **superseded 2026-09-01: triaged row by row, and one of the thirty is real.**
   The old bullet was sound for `Governance` and `Checkpoints` as far as it went, and its only stated
-  gap (`UniswapV3TwapSource.sol:255` → **H-2**) is doubly closed: H-2 was fixed, and that contract
+  gap (`UniswapV3TwapSource._observe`, cited by line number at the time → **H-2**) is doubly closed: H-2 was fixed, and that contract
   has since been pruned from the tree. The gap it never named was the one that mattered — it asked
   whether the windows are wide enough to survive miner skew (they are; the smallest shipped window
   is an hour) and never asked whether the two comparisons on either side of a deadline **agree about
@@ -47,10 +47,12 @@ widened run went 245 → 254 results with **no new detector class**.
   the timeline exactly, including the Mode I / Mode F seam that makes **EE-10** true
   (`hasPendingExecution` uses `<= p.expiresAt`, the same comparison `execute` uses). That is now
   pinned by tests rather than argued. **The real one is T-1:** `applyStandingDefault` is callable
-  only in the reveal phase, so `Governance.sol:470`'s TTL check runs no earlier than
+  only in the reveal phase, so `Governance.applyStandingDefault:491`'s TTL check runs no earlier than
   `createdAt + commitDuration` — a standing default's usable life is `DEFAULT_TTL - commitDuration`,
-  and `_validateConfig` bounds `commitDuration` to `[1h, 30 days]` without ever relating it to the
-  72h TTL, so `commitDuration >= 72h` silently kills VO-3 for that vault. **Low** (defaults never
+  and `_validateConfig` bounded `commitDuration` to `[1h, 30 days]` without ever relating it to the
+  72h TTL, so `commitDuration >= 72h` silently killed VO-3 for that vault. **FIXED on `protocol/main`
+  @ `bab5ee90` (`bf34b1ff`): `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`, making that config
+  unrepresentable; regression `AuditStandingDefaultTtlVsCommit.t.sol`.** **Low** (defaults never
   count toward quorum) and **not reachable at launch** (both shipped configs use 3600). Also
   measured: **13 of the 30 rows list no timestamp comparison at all** — established by ablating the
   seeds and re-counting, not by arguing each row. Full table in
@@ -90,7 +92,7 @@ would make its row real:
   same-second depositor 9x weight, and a unit test on `push` would not notice.
 - **`_isSettled`** — every non-settled `Status` has a permissionless, external-call-free exit
   (`finalize` makes no external call; `markExpired` drains `Passed`), so the freeze DoS documented
-  at `Governance.sol:57-67` cannot be reached through this equality.
+  in `Governance`'s phase-duration hard-cap comment block cannot be reached through this equality.
 
 Out of scope but recorded: EE-8's squatter economics are a `minDepositUsdc` **launch-parameter**
 question — "bounded at 1%" is true per-exit, but the squatter's cost is one minimum deposit while
