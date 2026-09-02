@@ -12,7 +12,7 @@
  *
  * WHY THIS EXISTS. On 2026-09-01 four PRs — #92, #98, #107 and #109 — merged across review verdicts
  * that were never addressed, putting two HIGHs on `protocol/main`. `gh pr merge` does not read
- * comments, so nothing connected a verdict to mergeability. The four failure modes and the rules
+ * comments, so nothing connected a verdict to mergeability. The five failure modes and the rules
  * that answer them are documented in `scripts/lib/verdicts.mjs` and specified in
  * `scripts/lib/merge-policy.json`, which is the single source of truth this reads.
  *
@@ -85,7 +85,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const pr = gh([
     'pr', 'view', opts.pr, '--repo', opts.repo,
-    '--json', 'number,state,isDraft,headRefName,headRefOid,comments,commits',
+    '--json', 'number,state,isDraft,headRefName,headRefOid,baseRefName,comments,commits',
   ]);
   if (!pr.ok) {
     process.stderr.write(`merge-preflight: cannot read PR #${opts.pr}: ${pr.err}\n`);
@@ -103,6 +103,21 @@ export function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  // Mode E: how far the branch's merge-base has fallen behind its base branch. `gh pr view` does
+  // not report it -- mergeStateStatus only says BEHIND when the repo already requires up-to-date
+  // branches, which is the setting we are trying to argue for -- so ask the compare API directly.
+  // `--jq` so we get back the one integer rather than the full compare payload, which carries every
+  // changed file and can run to megabytes on a branch this far along.
+  const cmp = gh([
+    'api', `repos/${opts.repo}/compare/${pr.data.baseRefName}...${pr.data.headRefName}`,
+    '--jq', '.behind_by',
+  ]);
+  if (!cmp.ok) {
+    const where = `${pr.data.baseRefName}...${pr.data.headRefName}`;
+    process.stderr.write(`merge-preflight: cannot compare ${where}: ${cmp.err}\n`);
+    return 2;
+  }
+
   const decision = evaluate({
     pr: {
       number: pr.data.number,
@@ -113,6 +128,8 @@ export function main(argv = process.argv.slice(2)) {
       // When the head commit landed. A merge/conflict-resolution commit gets a fresh committer
       // date, which is exactly the Mode D signal: content changed after a verdict was written.
       headCommittedDate: (pr.data.commits ?? []).at(-1)?.committedDate,
+      baseRefName: pr.data.baseRefName,
+      behindBy: cmp.data,
     },
     comments: (pr.data.comments ?? []).map((/** @type {any} */ c) => ({ createdAt: c.createdAt, body: c.body })),
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({

@@ -11,7 +11,7 @@
  * addressed, landing two HIGHs on `protocol/main`. Nothing mechanically connected a verdict to
  * mergeability: `gh pr merge` does not read comments, and the review pattern is a convention.
  *
- * It was four distinct failure modes, and a defence against one is useless against the others:
+ * It was five distinct failure modes, and a defence against one is useless against the others:
  *
  *   - **Mode A — merged over a REJECT already standing in writing.** #107 by 8 minutes, #92 by 29.
  *     Not a visibility problem: a *policy* one. The standing self-merge rule had no clause about an
@@ -27,6 +27,10 @@
  *     *when* a merge happens relative to a review; D is about *what a review can see at all*. A
  *     conflict resolution is an edit nobody reviews — a PR diff shows the merged RESULT and never
  *     the CHOICE — so a defect can enter after a correct verdict and ship under it.
+ *   - **Mode E — the base moved under the verdict.** D's mirror: D is "the content changed under
+ *     the verdict", E is "the world the content describes changed under it". #119 held a valid
+ *     ACCEPT on an UNMOVED head while `main` moved beneath it and falsified two sentences the PR
+ *     adds. Nothing about the PR changed, so no rule keyed to the PR can see it.
  *
  * So the enforceable property is a conjunction, not an interval: **the declared complement of
  * reviewers has reported, and every report is resolved, on the content that would actually merge**
@@ -54,6 +58,8 @@
  * @property {string} state       'OPEN' | 'MERGED' | 'CLOSED'
  * @property {string} headRefOid  the commit CI must have run on
  * @property {string} [headCommittedDate]  ISO; when the head commit landed, for Mode D
+ * @property {number} [behindBy]  commits the branch is behind its base, for Mode E
+ * @property {string} [baseRefName]
  * @property {string} [headRefName]
  * @property {boolean} [isDraft]
  *
@@ -93,10 +99,33 @@ const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdic
  */
 const LEGACY_REJECT_RE = /^#{1,6}\s+.*\breview\b.*\bREJECT\b/i;
 
+/**
+ * The same heading shape, but either verdict. This does NOT clear anything — it answers only
+ * "has anyone reviewed this at all", which Mode E needs as its denominator on PRs that predate the
+ * token. Using it to raise `base-current` is still block-only, so the asymmetry holds.
+ *
+ * Found by running the tool against #112: an ACCEPTed PR 43 commits behind `main` reported CLEAR,
+ * because its ACCEPT is prose and a token-only gate cannot see it — the exact case Mode E exists
+ * for, missed by the rule meant to catch it.
+ */
+const LEGACY_VERDICT_RE = /^#{1,6}\s+.*\breview\b.*\b(?:REJECT|ACCEPT)\b/i;
+
 
 /** Exported so a test can pin it byte-for-byte against merge-policy.json, which is the single
  * source of truth for the rules. Two copies of a rule is how the doc and the enforcement drift. */
 export const LEGACY_REJECT_PATTERN = LEGACY_REJECT_RE.source;
+
+/** Likewise pinned against the policy file. */
+export const LEGACY_VERDICT_PATTERN = LEGACY_VERDICT_RE.source;
+
+/**
+ * Comments that look like a review verdict of EITHER kind. Never clears; only supplies Mode E's
+ * denominator on PRs written before the token existed.
+ * @param {Comment[]} comments
+ */
+export function parseLegacyVerdicts(comments) {
+  return comments.filter((c) => LEGACY_VERDICT_RE.test(firstHeadingLine(c.body)));
+}
 
 /** @param {string} body */
 function firstHeadingLine(body) {
@@ -298,6 +327,32 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
           `itself — the diff shows the result, never which side was chosen.`,
       });
     }
+  }
+
+  // --- base-current (Mode E) — both modes -----------------------------------------------------
+  // Mode D's mirror. Mode D is "the content changed under the verdict"; this is "the world the
+  // content describes changed under the verdict". A PR can carry a genuine, current, unstale ACCEPT
+  // on an UNMOVED head and still be wrong to merge, because `main` moved beneath it.
+  //
+  // Live on #119, 2026-09-01: it held a valid ACCEPT against `d9293c23`, then #121 merged and
+  // inverted the canary tier semantics in `sinks.mjs`. Two sentences #119 *adds* became false
+  // against merged main — while `merge-tree` stayed clean (they touch different files), CI stayed
+  // green on the reviewed head, and the verdict stayed untouched. `verdict-covers-head` cannot see
+  // it, because the branch head never moved.
+  //
+  // `behindBy > 0` means the branch's merge-base is not the base branch's tip, so any verdict on it
+  // was computed against a base that no longer exists. Gated on a verdict existing: without one the
+  // other rules already block, and reporting base drift there would be noise.
+  const reviewed = Object.keys(latest).length > 0 || parseLegacyVerdicts(comments).length > 0;
+  if (typeof pr.behindBy === 'number' && pr.behindBy > 0 && reviewed) {
+    blockers.push({
+      ruleId: 'base-current',
+      detail:
+        `the branch is ${pr.behindBy} commit(s) behind ${pr.baseRefName ?? 'the base branch'}, so every ` +
+        `verdict on it was computed against a base that has since moved. Merge the base in — which ` +
+        `also re-runs CI against the content that would really land — and have the reviewer ` +
+        `re-confirm. This cannot tell you WHETHER the moved base falsifies anything; only a re-read can.`,
+    });
   }
 
   // --- roster rules (Mode B) — strict only ----------------------------------------------------

@@ -12,7 +12,7 @@ that were never addressed, putting two HIGHs onto `protocol/main`. Nothing mecha
 verdict to mergeability: `gh pr merge` does not read comments, and the review pattern in
 `docs/SWARM.md` §3 is a convention.
 
-It was **four distinct failure modes, and a defence against one is useless against the others.**
+It was **five distinct failure modes, and a defence against one is useless against the others.**
 
 | mode | what happened | the PRs | the rule that answers it |
 |---|---|---|---|
@@ -20,6 +20,7 @@ It was **four distinct failure modes, and a defence against one is useless again
 | **B — race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-declared` + `roster-resolved` |
 | **C — orientation** | pushed to a branch whose PR had already merged | #107's fixer pass, rescued by hand as [#120] | `pr-open` |
 | **D — invisibility** | the reviewed content was replaced *after* a correct verdict | a keep-ours resolution on #117 would have re-introduced the list #121 exists to abolish | `verdict-covers-head` |
+| **E — staleness** | the *base* moved under a verdict whose head never did | #119's valid ACCEPT was falsified by #121 merging, with its own branch untouched | `base-current` |
 
 Three consequences worth stating plainly, because each one defeats an obvious design:
 
@@ -64,6 +65,41 @@ re-review, and no check can do it. Two related traps, both seen the same night:
 gate, because it detects nothing by itself: **when a PR resolves a non-trivial conflict, its body
 should state, per conflicted file, which side was taken and why.** That converts an invisible edit
 into a claim someone can check.
+
+### Mode E is Mode D's mirror, and it defeats every rule keyed to the PR
+
+Mode D is *"the content changed under the verdict"*. Mode E is *"the world the content describes
+changed under it"*. A PR can carry a **genuine, current, unstale ACCEPT on an unmoved head** and
+still be wrong to merge.
+
+The live instance, 2026-09-01: #119 held a valid ACCEPT against `d9293c23`. #121 then merged and
+inverted the canary tier semantics in `sinks.mjs`, making two sentences #119 *adds* false against
+merged `main`. Everything that a PR-keyed check can see stayed correct — `merge-tree` clean (they
+touch different files), CI green on the reviewed head, the verdict untouched, **the branch head never
+moved**. `verdict-covers-head` cannot see it, because nothing about the PR changed.
+
+`base-current` reads `behind_by` from the compare API — `gh pr view`'s `mergeStateStatus` only
+reports `BEHIND` once the repository *already* requires up-to-date branches, which is the setting
+this argues for, so it cannot be the detector for its own absence. It fires only once the PR has been
+reviewed at all: with no review the other rules already block, and reporting base drift there would
+be noise.
+
+**"Reviewed at all" deliberately includes a *prose* verdict of either kind**, and that widening was
+forced by running the tool rather than reasoning about it. The first version gated on a verdict
+*token*, and against **#112** — an ACCEPTed PR **43 commits behind `main`**, sitting on the owner's
+desk to merge — it reported **CLEAR**, because #112's ACCEPT is prose and a token-only gate cannot
+see it. That is precisely the case Mode E exists for, missed by the rule written to catch it. Reading
+a prose ACCEPT to *raise* a blocker keeps the asymmetry intact: prose still never clears anything.
+
+**The enforcement half is a branch-protection setting, not more script.** "Require branches to be up
+to date before merging" (`strict=true` on `required_status_checks`) makes every advance of
+`protocol/main` force each open PR to re-integrate — which moves its head, which trips
+`verdict-covers-head`, which forces a re-verdict. The two rules compose into the property you
+actually want. Its cost is a rebase treadmill proportional to how often the base moves, which here is
+often, so it is a deliberate decision — § Making this enforcement, step 1.
+
+**What it cannot tell you is whether the moved base actually falsifies anything.** That is a re-read.
+`base-current` only establishes that nobody has looked since the ground shifted.
 
 ### The compounding factor
 
@@ -201,15 +237,23 @@ exercise exists to prevent.
   reviewer who read stale content and posted late looks identical to one who read the head. Binding
   a SHA into the token would close this; it was rejected because an optional attribute nobody fills
   in is theatre, and a mandatory one changes the reviewer workflow a second time.
+- **Whether a moved base actually falsifies the PR.** `base-current` establishes only that nobody has
+  looked since the ground shifted. Deciding whether #121 broke #119's sentences is a re-read.
 - **The quality of CI itself.** `ci-matches-head` proves a green run exists for this commit. It says
-  nothing about what that run checked.
+  nothing about what that run checked — and note that a green run on an unmoved head was *also*
+  computed against the old base, so Mode E degrades that evidence too.
 
 ## Making this enforcement
 
 These need the repository owner. An agent cannot set branch protection, and should not try.
 
 1. **Require the check.** Settings → Branches → `protocol/main` → *Require status checks to pass
-   before merging*, and add the context **`merge-preflight`**.
+   before merging*, and add the context **`merge-preflight`**. **Also tick *Require branches to be up
+   to date before merging*** in the same box — that one is the enforcement half of Mode E, and it is
+   easy to miss because it looks like a formality. Without it, a PR keeps a stale-but-unmoved verdict
+   against a `main` that has moved on; with it, every advance of `main` forces a re-integration and
+   therefore a re-verdict. Its cost is a rebase treadmill proportional to how often `main` moves,
+   which in this swarm is often — so it is a real trade, not a default.
 2. **Include administrators.** Tick *Do not allow bypassing the above settings* (`enforce_admins`).
    Without it, branch protection is bypassed by exactly the account that does the merging, and the
    policy reads as real while being advisory for the only identity that matters.
@@ -270,7 +314,8 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
     "The legacy prose heuristic may only ADD a blocker, never remove one. Its fragility is therefore bounded to false alarms, which a reviewer clears by posting a token.",
     "The latest verdict per reviewer wins. Verdicts arrive out of band and a REJECT must be clearable, or no fixer pass could ever land.",
     "The reviewer count is whatever the roster declares. It is never a hardcoded N: most PRs get one review, and a gate demanding two would be routed around.",
-    "A verdict grades content, not a pull request. If the head moves after a verdict is posted, what merges is not what was reviewed -- and the dangerous case is a conflict resolution, because the diff shows the result and never the choice."
+    "A verdict grades content, not a pull request. If the head moves after a verdict is posted, what merges is not what was reviewed -- and the dangerous case is a conflict resolution, because the diff shows the result and never the choice.",
+    "A verdict is valid only against the base it was computed on. A PR can carry a genuine, current, unstale ACCEPT on an unmoved head and still be wrong to merge, because the base moved beneath it."
   ],
   "rules": [
     {
@@ -330,13 +375,25 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "title": "every rostered reviewer must have posted a verdict",
       "blocksWhen": "any name in the roster has no REVIEW-VERDICT token",
       "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'."
+    },
+    {
+      "id": "base-current",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "a verdict is only valid against the base it was computed on",
+      "blocksWhen": "the branch is behind its base branch and the PR has been reviewed at all (a verdict token, or a prose verdict heading of either kind)",
+      "why": "Mode E, and Mode D's mirror: D is 'the content changed under the verdict', E is 'the world the content describes changed under it'. Seen live on 2026-09-01: #119 held a valid ACCEPT against d9293c23, then #121 merged and inverted the canary tier semantics in sinks.mjs, making two sentences #119 ADDS false against merged main -- while merge-tree stayed clean (they touch different files), CI stayed green on the reviewed head, and the verdict stayed untouched. The branch head never moved, so verdict-covers-head cannot see it and no rule keyed to the PR alone can. Read from the compare API's behind_by, because gh pr view's mergeStateStatus only reports BEHIND once the repository already requires up-to-date branches -- the very setting this argues for. It detects that a verdict was computed against a base that no longer exists; it cannot tell you WHETHER the moved base falsifies anything, which is a re-read. The enforcement half is GitHub's 'Require branches to be up to date before merging' (strict=true on required_status_checks), which makes every base advance force a re-integration and therefore a re-verdict."
     }
   ],
   "legacyProseHeuristic": {
     "pattern": "^#{1,6}\\s+.*\\breview\\b.*\\bREJECT\\b",
     "appliedTo": "the first non-empty line of a comment, with markdown bold markers stripped",
     "direction": "block-only",
-    "evidence": "Validated against every comment on PRs #90-#120 on 2026-09-01: 15 matches, 15 correct. It catches all 13 real verdict headings and correctly skips '## Fixer pass -- Review92-B findings' and '## Fixer pass -- Review109 findings', both of which quote the word REJECT in their bodies and which a naive body grep flags as verdicts."
+    "evidence": "Validated against every comment on PRs #90-#120 on 2026-09-01: 15 matches, 15 correct. It catches all 13 real verdict headings and correctly skips '## Fixer pass -- Review92-B findings' and '## Fixer pass -- Review109 findings', both of which quote the word REJECT in their bodies and which a naive body grep flags as verdicts.",
+    "verdictPattern": "^#{1,6}\\s+.*\\breview\\b.*\\b(?:REJECT|ACCEPT)\\b",
+    "verdictPatternPurpose": "The same heading shape but either verdict. It NEVER clears -- it answers only 'has anyone reviewed this at all', which base-current needs as its denominator on PRs predating the token, so raising a blocker from it is still block-only. Added after running the tool against #112: an ACCEPTed PR 43 commits behind main reported CLEAR, because its ACCEPT is prose and a token-only gate cannot see it -- the exact case Mode E exists for, missed by the rule meant to catch it."
   },
   "enforcement": {
     "today": "convention. scripts/merge-preflight.mjs is a preflight an orchestrator runs; nothing compels it to.",
@@ -346,7 +403,8 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
     "ghApi": [
       "gh api -X PUT repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/required_status_checks -f strict=true -f 'contexts[]=merge-preflight'",
       "gh api -X POST repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/enforce_admins"
-    ]
+    ],
+    "requireUpToDateBranches": "The 'strict=true' already present in the gh api line below IS GitHub's 'Require branches to be up to date before merging', and it is the enforcement half of Mode E: it makes every advance of protocol/main force each open PR to re-integrate, which moves its head and therefore trips verdict-covers-head, forcing a re-verdict. Its cost is a rebase treadmill proportional to how often the base moves, which in this swarm is often -- so it is a deliberate owner decision, not a default. Without it, base-current still reports the drift; nothing compels anyone to act on it."
   },
   "conventions": {
     "statePerFileResolutions": "When a PR resolves a non-trivial conflict, the PR body should state, per conflicted file, WHICH SIDE was taken and WHY. This detects nothing by itself. It is the only thing that makes an otherwise invisible edit into a claim a reviewer can check, and it is a CONVENTION -- do not describe it as a gate. Note also that 'the conflict is only .gas-snapshot, so regenerate it' is not a general strategy: #115 and #117 conflicted on real content."

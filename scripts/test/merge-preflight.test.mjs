@@ -17,7 +17,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evaluate, parseLegacyRejects, latestPerReviewer, LEGACY_REJECT_PATTERN } from '../lib/verdicts.mjs';
+import {
+  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer,
+  LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN,
+} from '../lib/verdicts.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -332,17 +335,75 @@ test('Mode D: a head commit newer than the verdict invalidates it', () => {
   assert.deepEqual(ruleIds(adv.blockers), ['verdict-covers-head']);
 });
 
+test('Mode E: a valid, unstale verdict on an UNMOVED head is still stale if the base moved', () => {
+  // #119, live on 2026-09-01: a valid ACCEPT against d9293c23, then #121 merged and inverted the
+  // canary tier semantics, falsifying two sentences #119 ADDS. merge-tree clean (different files),
+  // CI green on the reviewed head, verdict untouched, branch head NEVER MOVED.
+  const comments = [
+    { createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' },
+    { createdAt: '2026-09-01T23:00:00Z', body: ['reviewed', '<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->'].join('\n') },
+  ];
+  const pr = (behindBy) => ({
+    number: 119, state: 'OPEN', headRefOid: 'd9293c23', headRefName: 'fix/aggregator-drift-review-repairs',
+    baseRefName: 'protocol/main',
+    // The head is OLDER than the verdict, so verdict-covers-head is satisfied — deliberately, to
+    // prove base-current is doing the work here and not Mode D leaking in.
+    headCommittedDate: '2026-09-01T21:00:00Z',
+    behindBy,
+  });
+  const base = { comments, runs: greenOn('d9293c23'), mode: /** @type {'strict'} */ ('strict') };
+
+  assert.equal(evaluate({ ...base, pr: pr(0) }).clear, true, 'up to date: clear');
+  const stale = evaluate({ ...base, pr: pr(1) });
+  assert.equal(stale.clear, false, 'one commit behind: the verdict was computed against a base that moved');
+  assert.deepEqual(ruleIds(stale.blockers), ['base-current']);
+  assert.match(stale.blockers[0].detail, /1 commit\(s\) behind protocol\/main/);
+
+  // Both modes, like Mode D — it needs only a verdict token.
+  assert.deepEqual(ruleIds(evaluate({ ...base, pr: pr(43), mode: 'advisory' }).blockers), ['base-current']);
+
+  // Gated on a verdict EXISTING. With none, roster-declared already blocks and base drift is noise.
+  const noVerdict = evaluate({ pr: pr(43), comments: [], runs: greenOn('d9293c23'), mode: 'strict' });
+  assert.deepEqual(ruleIds(noVerdict.blockers), ['roster-declared'], 'no verdict: base drift is not reported as its own blocker');
+
+  // And the honest limit: with no behindBy available the rule cannot fire at all.
+  assert.equal(evaluate({ ...base, pr: pr(undefined) }).clear, true, 'no behindBy: Mode E is not checked, not silently passed as checked');
+});
+
+test('#112: a PROSE ACCEPT counts as "reviewed" for Mode E, or the rule misses its own case', () => {
+  // Found by running the tool, not by reasoning about it. #112 is ACCEPTed, 43 commits behind main
+  // and on the owner's desk to merge — and the first version of base-current reported CLEAR,
+  // because #112's ACCEPT is prose and the gate required a TOKEN. Reading a prose ACCEPT to RAISE a
+  // blocker keeps the asymmetry: prose still never clears anything.
+  const prose = [{ createdAt: '2026-09-01T23:30:46Z', body: ['## Adversarial review — ACCEPT', '', 'all four SHAs re-resolved'].join('\n') }];
+  assert.equal(parseLegacyVerdicts(prose).length, 1, 'a prose ACCEPT is a review, even though it is not a clearance');
+  assert.equal(parseLegacyRejects(prose).length, 0, 'and it is still not a REJECT');
+
+  const pr = { number: 112, state: 'OPEN', headRefOid: '6c534f0a', headRefName: 'chore/supply-chain-pins', baseRefName: 'protocol/main', behindBy: 43 };
+  const d = evaluate({ pr, comments: prose, runs: greenOn('6c534f0a'), mode: 'advisory' });
+  assert.deepEqual(ruleIds(d.blockers), ['base-current']);
+  assert.match(d.blockers[0].detail, /43 commit/);
+
+  // Up to date, same prose ACCEPT: clear. So it is the base drift doing the work, not the heading.
+  assert.equal(evaluate({ pr: { ...pr, behindBy: 0 }, comments: prose, runs: greenOn('6c534f0a'), mode: 'advisory' }).clear, true);
+
+  // A comment that is not a verdict at all does not make a stale base blockable on its own.
+  const notAReview = [{ createdAt: '2026-09-01T23:30:46Z', body: ['## Fixer pass — addressed', '', 'quotes the word ACCEPT'].join('\n') }];
+  assert.equal(evaluate({ pr, comments: notAReview, runs: greenOn('6c534f0a'), mode: 'advisory' }).clear, true);
+});
+
 // ---------------------------------------------------------------------------------------------
 // One source of truth: code, policy and doc cannot drift
 // ---------------------------------------------------------------------------------------------
 
-test('the heuristic in verdicts.mjs is byte-identical to the one merge-policy.json publishes', () => {
+test('the heuristics in verdicts.mjs are byte-identical to the ones merge-policy.json publishes', () => {
   assert.equal(LEGACY_REJECT_PATTERN, POLICY.legacyProseHeuristic.pattern);
+  assert.equal(LEGACY_VERDICT_PATTERN, POLICY.legacyProseHeuristic.verdictPattern);
 });
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  const emitted = ['base-current', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
   assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
