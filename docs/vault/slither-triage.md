@@ -56,7 +56,11 @@ widened run went 245 → 254 results with **no new detector class**.
   count toward quorum) and **not reachable at launch** (both shipped configs use 3600). Also
   measured: **13 of the 30 rows list no timestamp comparison at all** — established by ablating the
   seeds and re-counting, not by arguing each row. Full table in
-  [SLITHER-TRIAGE](../reviews/SLITHER-TRIAGE.md).
+  [SLITHER-TRIAGE](../reviews/SLITHER-TRIAGE.md). Kept from the `protocol/main` version of this
+  bullet, because it is a different distinction from the boundary-second one above: note what
+  "sound for `Governance`" was and was not — every comparison IS outside miner tolerance, which
+  is what the row asserted; T-1 is about **which clock** the comparison uses, a question the
+  class verdict never asked. See [[mediums-and-lows]].
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check
   unsatisfiable and reverts a member's child-backed exit → **H-6**. Dormant at launch.
