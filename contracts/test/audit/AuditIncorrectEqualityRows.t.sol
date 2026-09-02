@@ -236,7 +236,7 @@ contract AuditIncorrectEqualityRowsTest is Test {
     ///     assertion (a), so this test discriminates on the `Checkpoints` side too.
     ///
     /// Deliberately NOT claimed: mutating the three `nowTs - 1` reads in `Governance.propose`
-    /// (`:287`, `:288`, `:304`) leaves this test GREEN. Those feed `snapshotTotal` and
+    /// (`Governance.propose:297`, `:298`, `:314`) leaves this test GREEN. Those feed `snapshotTotal` and
     /// `memberCount` (the quorum denominators), which this test never reads — it asserts on the
     /// FOR-weight, which comes from `_boundedWeight`. An earlier revision of this comment named
     /// that mutation; it was wrong, and PR #106's review caught it.

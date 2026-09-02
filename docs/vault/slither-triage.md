@@ -37,7 +37,7 @@ widened run went 245 → 254 results with **no new detector class**.
   `protocol/main`** — its guard and coverage test are present (the coverage test's artifact-parse
   cost is under repair, Review98-B Finding 0).
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource._observe`, the one timestamp use with a security consequence → **H-2** (since
+  `latestPrice` (`UniswapV3TwapSource.sol:282-292`), the one timestamp use with a security consequence → **H-2** (since
   FIXED, and the contract itself deleted by the Chainlink-direct pivot; the omission is closed). The per-row re-triage (2026-09-01) then found a second real
   one the class verdict had covered for: `Governance.applyStandingDefault`'s VO-3 TTL is compared
   against `block.timestamp` during the reveal phase, so the commit phase eats into it → **T-1**
