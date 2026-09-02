@@ -395,6 +395,27 @@ export function openPrClaimsIn(text) {
 }
 
 /**
+ * How far the working tree is behind `ref`, or null when that cannot be determined.
+ *
+ * This resolver answers "does the cited line still say what the document claims". Run against a
+ * tree that is behind the branch, it answers confidently and wrongly — which is the exact failure
+ * it exists to prevent, committed by the tool itself. It cost a real one: a symbol introduced by
+ * #121 was reported absent because the worktree predated the merge, and that became a false claim
+ * in a note. So the CLI says so before it says anything else.
+ */
+export function commitsBehind(repo, ref = 'origin/protocol/main') {
+  try {
+    const out = execFileSync('git', ['-C', repo, 'rev-list', '--count', `HEAD..${ref}`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return Number(out.trim());
+  } catch {
+    return null;
+  }
+}
+
+/**
  * PR numbers merged into `ref`, read from git history — offline, no `gh`. Covers merge commits
  * ("Merge pull request #92 from ...") and squashes ("... (#98)"). Returns null when the ref is
  * absent from this checkout, which the caller must treat as "cannot check", never as "clean".
