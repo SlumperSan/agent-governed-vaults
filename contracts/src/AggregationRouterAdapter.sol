@@ -27,11 +27,24 @@ interface IERC20Balance {
 ///    would be a new external surface on a contract many vaults share, guarding value that is
 ///    never the protocol's. Donating to this address is burning.
 ///  - A `tokenOut` donation landing DURING the route is measured inside `outBefore..balanceOf`
-///    and is therefore over-delivered to the caller. That is not a defect and is not "fixed"
-///    here: the caller (`VaultCore.executeRebalance`) credits its own measured `tokenOut`
-///    delta, so the surplus becomes vault assets, and its `received >= o.minAmountOut` check
-///    can only be helped by a larger delta. A donation before the call is excluded by
-///    `outBefore` outright.
+///    and is therefore over-delivered to the caller. A donation BEFORE the call is excluded by
+///    `outBefore` outright. Not clamped here — a clamp would strand the surplus instead of
+///    banking it, and the surplus becomes vault assets when `VaultCore.executeRebalance` credits
+///    its own measured `tokenOut` delta.
+///
+///    State the residual COMPLETELY, because it is easy to state too favourably. "A larger delta
+///    can only help `received >= o.minAmountOut`" is true but is NOT the bound that matters: a
+///    mid-route pusher could otherwise top a shortfall up to exactly `minAmountOut` and force
+///    through a swap that should have reverted. The real bound is `MinOutTooLow` in
+///    `VaultCore.executeRebalance` — oracle-priced, pre-execution, `MAX_REBALANCE_SLIPPAGE_BPS`,
+///    and no donation can move it.
+///
+///    And the surplus is net-positive in VALUE, not neutral in EFFECT. It is the only
+///    unprivileged write into `navWad()`'s inputs, and `_deposit` gates on `navWad()` against
+///    `capacityCapUsdc` — so an over-delivery can close a capped vault to further deposits.
+///    Low as an attack (it needs a governance-chosen route to reach the pusher, and burns value
+///    >= the vault's headroom, which becomes the members'), but do not re-derive this row as
+///    "strictly beneficial": that argument never considered the cap.
 ///
 /// Venue-agnostic posture (C-2): this contract is one adapter behind IExecutionAdapter —
 /// other chains/venues implement the same interface; VaultCore knows only the interface.
@@ -94,9 +107,13 @@ contract AggregationRouterAdapter is IExecutionAdapter {
         );
 
         // Read BEFORE the pull, so the refund below tracks what actually ARRIVED for this order
-        // rather than what the order claimed: on a fee-on-transfer `tokenIn`, snapshotting after
-        // the pull would refund `amountIn` worth of a balance that only grew by `amountIn - fee`,
-        // which is the whole-balance sweep again in a smaller costume.
+        // rather than what the order claimed. The ordering is load-bearing, and the failure it
+        // prevents is an UNDER-refund, not an over-refund: snapshotted AFTER the pull, `inBefore`
+        // would already contain this order's own input, so `inAfter - inBefore` would measure
+        // only what the route consumed — a non-positive number. The saturating floor would then
+        // collapse EVERY refund to 0 and strand the unspent input here on every partial fill.
+        // (Executed: moving this line below the `safeTransferFrom` fails all of
+        // test/audit/AuditAdapterScopedSweep.t.sol, each with `refund == 0`.)
         uint256 inBefore = IERC20Balance(order.tokenIn).balanceOf(address(this));
 
         order.tokenIn.safeTransferFrom(msg.sender, address(this), order.amountIn);
@@ -114,7 +131,11 @@ contract AggregationRouterAdapter is IExecutionAdapter {
 
         // Refund THIS order's own unspent input, measured as the adapter's `tokenIn` balance
         // delta ACROSS THE ROUTE — never `balanceOf(tokenIn)`, which was the whole balance.
-        // Same shape, and the same reason, as `VaultCore.sol:880-888` (S6 Finding 3 / E3):
+        // Same shape, and the same reason, as the "Finding 3 (S6)" / threat-model-E3 refund block
+        // in `VaultCore.executeRebalance` — find it by its expression, `spent = inBefore - inAfter`,
+        // never by a line number (Rules/proof-cites-symbol-and-branch: this citation shipped as
+        // `VaultCore.sol:880-888`, was correct when written, and a merge moved the block +51 lines
+        // onto unrelated natspec without anything going red):
         // `spent = (inBefore + amountIn) - inAfter`, `refund = amountIn - spent`, which reduces
         // to `inAfter - inBefore`. TWO clauses, closing TWO different attacks — neither is
         // redundant with the other:

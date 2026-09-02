@@ -23,7 +23,10 @@ pragma solidity 0.8.26;
 // cross-order theft unreachable; it did not make it impossible, and it left the donation
 // untouched. Donate `d` units of `tokenIn` to the adapter and the next vault leg is refunded
 // its own unspent input PLUS `d`. `VaultCore.executeRebalance` then computes, over ITS OWN
-// balances (`VaultCore.sol:882-884`):
+// balances, in the `Finding 3 (S6)` block of `VaultCore.executeRebalance` (locate it by the
+// expression `spent = inBefore - inAfter`, never by a line number — see
+// Rules/proof-cites-symbol-and-branch; this cited `VaultCore.sol:882-884` until a merge moved
+// the block +51 lines onto an unrelated `@param`, with nothing going red):
 //
 //     uint256 spent = inBefore - inAfter;      // = pull - d
 //
@@ -37,14 +40,15 @@ pragma solidity 0.8.26;
 // repeatable, and because `VaultCore.isAllowedAdapter` is CONSTRUCTOR-ONLY it is permanent for
 // every vault ever built against that bytecode. That is what made it a mainnet-deploy gate.
 //
-// THE FIX is the shape the vault next door already carries (`VaultCore.sol:880-888`, S6
+// THE FIX is the shape the vault next door already carries (`VaultCore.executeRebalance`, S6
 // Finding 3 / threat-model row E3): refund this order's own balance delta,
 // `refund = min(amountIn, inAfter - inBefore)`.
 //
 // HARNESS NOTE. These tests drive `executeRebalance` with `vm.prank(address(gov))` against a
 // `StubGovernance`, rather than running a commit/reveal/finalize proposal. `executeRebalance`'s
 // only coupling to governance is the `msg.sender == address(governance)` check on its first
-// line; everything under test here is the accounting block at :880-888. The full proposal path
+// line; everything under test here is that same `spent = inBefore - inAfter` accounting block.
+// The full proposal path
 // is already exercised by `Execution.t.sol::test_e2e_governedRebalance…` and
 // `DirectPoolAdapter.t.sol::test_governedRebalanceThroughDirectPoolAdapter`, which prove a
 // different claim (that governance and the venue abstraction work); repeating it here would
@@ -109,6 +113,49 @@ contract PushBackCounterparty is ICounterparty {
             amount = 0; // one shot
             token.transfer(adapter, amt);
         }
+    }
+}
+
+/// @dev A fee-on-transfer `tokenIn`. Deliberately LOCAL to this file rather than a mode added to
+/// the shared `MockERC20`: a new branch in a mock every suite uses would move gas rows across the
+/// whole snapshot and bury this PR's own +961/+1,158 in noise. `mint` is fee-free so a stranded
+/// balance can be placed exactly; every real transfer burns 1%.
+contract MockFeeOnTransferERC20 {
+    string public name = "FOT";
+    uint8 public constant decimals = 6;
+    uint256 public constant FEE_BPS = 100; // 1%
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        totalSupply += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        return _move(msg.sender, to, amount);
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(allowance[from][msg.sender] >= amount, "allow");
+        allowance[from][msg.sender] -= amount;
+        return _move(from, to, amount);
+    }
+
+    /// @dev The sender is debited the FULL amount; the recipient is credited `amount - fee`.
+    function _move(address from, address to, uint256 amount) internal returns (bool) {
+        require(balanceOf[from] >= amount, "bal");
+        uint256 fee = amount * FEE_BPS / 10_000;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount - fee;
+        totalSupply -= fee;
+        return true;
     }
 }
 
@@ -289,8 +336,13 @@ contract AuditAdapterScopedSweepTest is Test {
     /// refunds the griefer its own 1 unit of unspent input at most, never the pool it donated.
     /// Donating to this adapter is burning, which is the property the natspec now states.
     ///
-    /// MUTATION: drop `- inBefore` from the refund and the griefer walks away with
-    /// `DONATION + 1` and the adapter is emptied.
+    /// MUTATION: RESTORE `protocol/main`'s adapter (both clauses gone,
+    /// `refund = balanceOf(tokenIn)`) and the griefer walks away with `DONATION + 1`, emptying
+    /// the adapter. Naming the narrower single-clause mutation here would be WRONG, and was:
+    /// dropping only `- inBefore` while KEEPING the clamp leaves this test PASSING, because the
+    /// clamp caps the sweep at `amountIn == 1`. It is the two clauses TOGETHER that this test
+    /// discriminates; `test_midRoutePushBackIsCappedAtAmountIn` is the clamp's own single-clause
+    /// test, and `test_adapterRefundNeverIncludesPreExistingBalance` is `- inBefore`'s.
     function test_griefersOneUnitOrderCannotExtractTheDonation() public {
         _donate(DONATION);
 
@@ -383,8 +435,10 @@ contract AuditAdapterScopedSweepTest is Test {
     /// The adapter-level statement of the same invariant, with no vault in the picture: a
     /// caller is never handed `tokenIn` that was already sitting in the adapter.
     ///
-    /// MUTATION: drop `- inBefore` and `refund excludes the pre-existing balance` fails at
-    /// `1,001e6 != 600e6`.
+    /// MUTATION: drop `- inBefore` (keeping the clamp) and `refund excludes the pre-existing
+    /// balance` fails at `1,000e6 != 600e6` — clamped to `amountIn`, NOT the `1,001e6` an
+    /// unclamped sweep would return. This is the single-clause test for `- inBefore`: it is one
+    /// of the three that the narrow mutation kills.
     function test_adapterRefundNeverIncludesPreExistingBalance() public {
         _donate(DONATION);
 
@@ -397,5 +451,121 @@ contract AuditAdapterScopedSweepTest is Test {
 
         assertEq(usdc.balanceOf(caller), AMOUNT_IN - PULL, "refund excludes the pre-existing balance");
         assertEq(usdc.balanceOf(address(adapter)), DONATION, "pre-existing balance untouched");
+    }
+
+    // ── 8. the THIRD guard on the refund line: the saturating floor ──────────
+    //
+    // Added after review. The PR body claimed "both clauses are load-bearing and each has its
+    // own executing test". There are THREE guards on those two lines, and the third —
+    // `inAfter > inBefore ? … : 0` — had NO test: it could be deleted and all 7 tests here
+    // stayed green. Both reviewers found this independently, and the second initially recorded
+    // the branch as UNREACHABLE before constructing the case below. Reachability is the point:
+    // an unreachable guard invites a later "prove it dead from coverage" deletion.
+
+    /// A `tokenIn` whose balance SHRINKS across the route, which is what drives `inAfter` BELOW
+    /// `inBefore` and makes the saturating floor do work.
+    ///
+    /// The mechanism is that the adapter approves the router for `order.amountIn` — what the
+    /// order CLAIMED — not the smaller amount that actually arrived after the transfer fee. An
+    /// honest router pulling its full approval therefore eats the difference out of whatever was
+    /// already stranded here:
+    ///
+    ///     stranded (minted fee-free)                =  1,000e6  -> inBefore = 1,000e6
+    ///     caller sends amountIn = 10,000e6, 1% fee  -> adapter gets 9,900e6, holds 10,900e6
+    ///     adapter approves the router for amountIn  = 10,000e6
+    ///     honest router pulls the full 10,000e6     -> inAfter  =    900e6  <  inBefore
+    ///
+    /// MUTATION: `uint256 refund = inAfter - inBefore;` (drop the ternary) and this test fails
+    /// with `panic: arithmetic underflow or overflow (0x11)` INSIDE `executeSwap` — i.e. every
+    /// such leg reverts. No other test in the repo fails under that mutation.
+    function test_saturatingFloorIsReachableWithAFeeOnTransferTokenIn() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20();
+        uint256 stranded = 1_000 * USDC_1;
+        uint256 amountIn = 10_000 * USDC_1;
+
+        fot.mint(address(adapter), stranded); // fee-free: places the stranded balance exactly
+
+        address caller = makeAddr("fotCaller");
+        fot.mint(caller, amountIn);
+
+        IExecutionAdapter.SwapOrder memory o = IExecutionAdapter.SwapOrder({
+            tokenIn: address(fot),
+            tokenOut: address(weth),
+            amountIn: amountIn,
+            minAmountOut: MIN_OUT,
+            deadline: block.timestamp + 1 hours,
+            // an HONEST router that pulls its full approval
+            routeData: abi.encodeCall(FixtureRouter.route, (address(fot), address(weth), amountIn, DELIVER))
+        });
+
+        vm.startPrank(caller);
+        fot.approve(address(adapter), type(uint256).max);
+        uint256 amountOut = adapter.executeSwap(o); // must NOT revert
+        vm.stopPrank();
+
+        assertEq(amountOut, DELIVER, "output is the measured tokenOut delta");
+        assertEq(weth.balanceOf(caller), DELIVER, "caller received the output");
+        assertEq(fot.balanceOf(caller), 0, "refund saturated to 0 - nothing was owed back");
+        // 1,000e6 stranded + 9,900e6 arrived - 10,000e6 pulled = 900e6. The fee came out of the
+        // stranded donation, which is the donor's loss and never the protocol's.
+        assertEq(fot.balanceOf(address(adapter)), 900 * USDC_1, "balance fell across the route");
+    }
+
+    // ── 9. the clamp ON its threshold, not 500e6 away from it ────────────────
+
+    /// Added after review. `test_midRoutePushBackIsCappedAtAmountIn` drives a route delta of
+    /// 1,500e6 against a 1,000e6 cap — 500e6 clear of the boundary. The boundary is
+    /// `delta == amountIn + 1`, and nothing sat on it, so a ONE-UNIT weakening of the predicate
+    /// re-opened the exact DoS this PR exists to close, with the whole suite green.
+    ///
+    /// Pushing `PULL + 1` makes `refund_raw = AMOUNT_IN - PULL + (PULL + 1) = AMOUNT_IN + 1`,
+    /// so the clamp binds by EXACTLY one unit and exactly one unit strands.
+    ///
+    /// MUTATION: `if (refund > order.amountIn + 1) refund = order.amountIn;` — a plausible
+    /// off-by-one — and this test fails with `panic: arithmetic underflow or overflow (0x11)`
+    /// inside `executeRebalance`, because the vault is refunded `amountIn + 1` for an
+    /// `amountIn` order. Before this test, that mutation survived the entire suite.
+    function test_clampBindsAtExactlyAmountInPlusOne() public {
+        uint256 pushed = PULL + 1; // => refund_raw == AMOUNT_IN + 1, one unit over the cap
+        PushBackCounterparty cp = new PushBackCounterparty();
+        cp.arm(usdc, address(adapter), pushed);
+        router.setCounterparty(address(cp));
+
+        uint256 idleBefore = vault.idleUsdc();
+        uint256 vaultUsdcBefore = usdc.balanceOf(address(vault));
+
+        _rebalance(_order(AMOUNT_IN, PULL, DELIVER));
+
+        assertEq(usdc.balanceOf(address(vault)), vaultUsdcBefore, "vault got back exactly what it sent");
+        assertEq(vault.idleUsdc(), idleBefore, "spent == 0; nothing to underflow");
+        assertEq(usdc.balanceOf(address(vault)), vault.idleUsdc(), "real USDC matches internal idle");
+        assertEq(usdc.balanceOf(address(adapter)), 1, "the clamp bound by exactly one unit");
+        assertEq(vault.navWad(), _expectedNavWad(), "NAV is idle + basket, unchanged by the push");
+    }
+
+    // ── 10. the tokenOut half of "never its whole balance" ───────────────────
+
+    /// Added after review. The thesis of this fix is a PRINCIPLE — the adapter pays out only what
+    /// it measured for THIS order — and the contract enforces it on BOTH payout legs:
+    /// `amountOut = balanceOf(tokenOut) - outBefore` as well as the refund. Only the refund leg
+    /// had a test, so the `tokenOut` leg could regress to a whole-balance sweep silently.
+    ///
+    /// If it ever did, a `tokenOut` donation would become claimable by any caller — the exact
+    /// mirror of the griefer-recovery leg this PR closes on the `tokenIn` side — and worse,
+    /// `require(amountOut >= order.minAmountOut)` could be satisfied by the adapter's stale
+    /// balance rather than by the route, which would stop EX-3 being a measured-delta check.
+    ///
+    /// MUTATION: delete `- outBefore` from the `amountOut` assignment and this test fails — the
+    /// vault credits `donation + DELIVER` instead of `DELIVER`.
+    function test_preExistingTokenOutIsNotSweptIntoTheOrdersOutput() public {
+        uint256 donation = 5e18; // wETH pushed at the shared adapter by a stranger
+        weth.mint(address(adapter), donation);
+
+        _rebalance(_order(AMOUNT_IN, PULL, DELIVER));
+
+        assertEq(vault.assetBalance(address(weth)), DELIVER, "vault credits only the route delta");
+        assertEq(weth.balanceOf(address(vault)), DELIVER, "and physically holds only that");
+        assertEq(weth.balanceOf(address(adapter)), donation, "the tokenOut donation strands, unclaimed");
+        assertEq(vault.navWad(), _expectedNavWad(), "NAV is idle + basket; the donation is not in it");
     }
 }
