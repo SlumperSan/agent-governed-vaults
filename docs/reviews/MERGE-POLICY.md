@@ -242,6 +242,14 @@ exercise exists to prevent.
 - **The quality of CI itself.** `ci-matches-head` proves a green run exists for this commit. It says
   nothing about what that run checked — and note that a green run on an unmoved head was *also*
   computed against the old base, so Mode E degrades that evidence too.
+- **A red posted by a `pull_request`-triggered run does not clear itself when CI later goes green.**
+  Both workflows start on the same push, so the preflight evaluates while CI is still `in_progress`,
+  reports `ci-matches-head` correctly — CI genuinely is not green yet — and posts red. Nothing
+  re-runs the preflight when CI completes: there is no `workflow_run` / `check_suite` trigger, so
+  the status stays stale until an `issue_comment` or `workflow_dispatch` run re-evaluates it. That
+  is a *missing trigger*, not a wrong answer, and it is why a pushed head can sit red beside a green
+  CI. It is separate from the self-inclusion defect that `runsForHead` now closes, and it survives
+  that fix. **Read a red here before assuming it, especially after the `--strict` flip.**
 
 ## Making this enforcement
 
@@ -355,8 +363,8 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
         "strict"
       ],
       "title": "a successful CI run must exist for THIS head SHA",
-      "blocksWhen": "no completed successful workflow run has headSha equal to the PR's headRefOid",
-      "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion."
+      "blocksWhen": "no completed successful workflow run OTHER THAN THIS GATE'S OWN has headSha equal to the PR's headRefOid",
+      "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion,workflowName. The gate's own runs are then excluded by workflowName, because merge-preflight.mjs lists runs by branch with no --workflow filter and a pull_request-triggered preflight run carries the PR head's SHA: it blocked on its own in_progress run, and -- the permissive half -- counted its own COMPLETED run as a green, because a run that succeeds at posting a red commit status still concludes 'success'. That one miscount defeated this rule's catch-all, so a head with NO CI would have passed the rule named for matching CI to the head. Latent while ci.yml had a bare pull_request: trigger and no paths: filter; armed by any routine 'skip CI for docs-only changes'. After the exclusion this rule no longer depends on ci.yml's trigger config at all."
     },
     {
       "id": "roster-declared",
