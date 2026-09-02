@@ -101,7 +101,8 @@ Order matters, and it is the order below.
    (non-positive, rejected *before* the cast); `updatedAt == 0` (unset / incomplete round);
    `updatedAt > block.timestamp` (a future stamp is never "fresh"); `updatedAt < minUpdated`
    (**stale past the heartbeat**, where `minUpdated` saturates at 0 so a heartbeat larger than the
-   clock cannot underflow-panic out of the `StaleOracle` contract); and a `catch` on any revert.
+   clock cannot underflow-panic and escape as something other than `StaleOracle`); and a `catch` on
+   any revert.
 5. **Decimals normalisation** — `priceWad_ = uint256(answer) * cfg.scale`, with
    `scale = 10**(18 - feedDecimals)` cached at construction. With the constructor's 8-decimals pin
    this is always `× 1e10`.
@@ -136,6 +137,12 @@ NAV-reading path in a consuming vault reverts with it: `navWad`, `deposit`, `req
 `settleQueuedExit`, rebalance execution. **A member holding shares cannot get out until the price
 is trustworthy again.** There is no hatch, no admin unfreeze, and no timeout — `VaultCore.oracle`
 is immutable and no governance path touches it.
+
+Scope it precisely rather than over-claiming: `navWad` prices only the assets a vault actually
+holds, so an unpriceable asset freezes **the vaults holding it** — which is why the regression is
+named `VaultCore::test_staleOracleFreezesDepositsAndExits_whenBasketHeld`. Within such a vault the
+freeze is total, and note that `_deposit` reads `navWad()` **unconditionally**, before the capacity
+branch and on both the pending and immediate paths, so an uncapped vault is no less frozen.
 
 On the launch oracle a freeze has exactly **four** causes:
 
