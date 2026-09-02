@@ -167,7 +167,8 @@ Both #101 reviewers reached this independently and neither was asked for it. A w
 does not need a nested call to be dangerous — it just needs a balance. Anyone `transfer`s `d` units
 of `tokenIn` to the shared adapter. The next vault leg is refunded its own unspent input **plus
 `d`**, and `VaultCore.executeRebalance` computes `spent = inBefore - inAfter` over ITS OWN balances
-(`VaultCore.sol:882-884`), which **underflows — `Panic(0x11)`** — as soon as `d` exceeds what the
+(the `Finding 3 (S6)` block in `VaultCore.executeRebalance` — locate it by its expression,
+`spent = inBefore - inAfter`, never by a line number), which **underflows — `Panic(0x11)`** — as soon as `d` exceeds what the
 route actually pulled. Note the threshold is `d > pull`, not `d > 0`; below it the same defect is
 quieter and still real, silently over-crediting `idleUsdc` by `d`. The griefer then recovers the
 donation with a 1-unit order, so the cost is gas and it is repeatable — and because
@@ -175,28 +176,54 @@ donation with a 1-unit order, so the cost is gas and it is repeatable — and be
 that bytecode, with no repointing path.
 
 **Fixed by scoping the refund to this order's own delta**, `refund = min(amountIn, inAfter -
-inBefore)` — the shape `VaultCore.sol:880-888` already carried (S6 Finding 3 / E3). Two clauses,
+inBefore)` — the shape `VaultCore.executeRebalance` already carried (S6 Finding 3 / E3). Two clauses,
 two attacks: `- inBefore` excludes a pre-existing donation (and makes the reentrant theft above
 *impossible* rather than merely blocked), and the `min(…, amountIn)` clamp bounds a counterparty
-that pushes `tokenIn` back mid-route. Both clauses have their own executing test.
+that pushes `tokenIn` back mid-route.
 
-Reproduced in `test/audit/AuditAdapterScopedSweep.t.sol` — 7 tests, **5 of which fail against
-`protocol/main`'s adapter**, two with `panic: arithmetic underflow or overflow (0x11)` inside
-`executeRebalance` (401 units donated against a 400-unit route, the reviewers' own figure). It is a
-separate file from `test/AdapterReentrancy.t.sol` on purpose: that file is #101's record for the
-nested-sweep mechanism, this finding needs no reentrancy at all, and reproducing it needs a
-vault-level harness.
+**Three guards, not two, and each now has its own executing test.** This row previously said "both
+clauses", which undercounted the line it was describing: the saturating floor
+`inAfter > inBefore ? … : 0` is a third guard, it is *live* code (the adapter approves the router
+for `order.amountIn` rather than for what a fee-on-transfer `tokenIn` actually delivered, so a full
+pull can drive the balance below `inBefore`), and it had **zero** coverage — it could be deleted
+with the whole suite green. Both #108 reviewers found that independently.
 
-**The live Base Sepolia adapter `0xf3e08c8b…a9b1` predates this fix and cannot be repointed.**
+Reproduced in `test/audit/AuditAdapterScopedSweep.t.sol` — 10 tests, **7 of which fail against
+`protocol/main`'s adapter**, three with `panic: arithmetic underflow or overflow (0x11)` inside
+`executeRebalance` (401 units donated against a 400-unit route, the reviewers' own figure). The
+three that pass on main are the honest-path regressions plus the `tokenOut` guard, whose leg main
+already had correct. It is a separate file from `test/AdapterReentrancy.t.sol` on purpose: that file
+is #101's record for the nested-sweep mechanism, this finding needs no reentrancy at all, and
+reproducing it needs a vault-level harness.
+
+**The live Base Sepolia adapter `0xf3e08c8b…a9b1` predates BOTH #101 and this fix, and cannot be
+repointed** — `sourceCommit 5934ef22` has no `_lock`/`nonReentrant` at all, so it carries the
+cross-order theft (a loss of funds) as well as the donation DoS (a revert). See `docs/DEPLOYMENT.md`
+§3 for the full consequence list.
 
 **The `reentrancy-balance` count does not move.** Slither does not model the mutex for this
 detector, so it still reports **8** after the fix. Expect that; it is not a failed fix. The total
-went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-events` on the two
-adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
+went **227 → 225** on 2026-09-01, measured at `29b1b470`: the two rows that cleared are
+`reentrancy-events` on the two adapters, which Slither *does* suppress once a guard is present.
+
+**That 225 is a historical measurement, not the current total.** A clean run on the rebased tree
+(`bab5ee90` merged in) reports **236**, and both #108 reviewers independently measured 236 as well.
+The growth is not this change: only 3 of the 236 rows mention `AggregationRouterAdapter` at all, and
+the delta tracks `calls-loop`, which is emitted per entry-point call path and grew with #98. One
+reviewer measured 236 on `protocol/main` @ `52d10aee` too and found the **per-detector tallies
+`diff`-identical** between main and this head — which is the claim that actually matters here, and
+it is the one to cite. Do not read a bare total as a verdict on a branch: quote the per-detector
+diff, or quote nothing. Adapter runtime cost of the two
 guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B. The
 scoped refund then took `AggregationRouterAdapter` **1,839 → 1,981 B** (+142); `DirectPoolAdapter`
 is untouched at 2,210 B.
-`VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
+`VaultCore` is untouched by this change — and it is *byte-identical* to `protocol/main`, not merely
+the same length: `contracts/src/VaultCore.sol` has an empty diff against main, under an unchanged
+`foundry.toml`. Measured on the rebased tree (`bab5ee90` merged in): **20,650 B, 3,926 B of EIP-170
+margin**, `sha256(deployedBytecode.object) = a5278797b781ea5a3888491da9933dab05999cbd678b4ca442208059ded7ceb4`.
+The `20,481 B / 4,095 B` this line carried until now was measured before #98 and is stale; the same
+stale pair is still shipped in `docs/LAUNCH-READINESS.md` and `docs/vault/contracts-index.md`, which
+are **not** this PR's to correct — flagged so they are not lost.
 
 ## Running it
 
