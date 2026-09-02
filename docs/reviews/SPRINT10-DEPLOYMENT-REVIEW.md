@@ -1,5 +1,7 @@
 # Sprint 10 Security Review — the EIP-170 deployment split
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree as reviewed at Sprint 10 and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 Adversarial review of every contract line that changed since the Sprint-6 internal reviews.
 This closes the gap that [AUDIT-HANDOFF.md](../AUDIT-HANDOFF.md) and
 [audit/README.md](../audit/README.md) both flagged in Sprint 7: *"`VaultDeployer.sol` post-dates
