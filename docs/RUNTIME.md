@@ -677,32 +677,58 @@ snapshot path, and `packages/canary/src/canary-runner.mjs` for the runner. Its `
 
 #### The volume name is `<project>_vault-state`, not `vault-state`
 
-Compose namespaces every volume with the project name — which defaults to the directory name, so a
-checkout in `x402/` gives `x402_vault-state`. **`docker run -v <name>:/data` does not check: given
-a name that does not exist it silently CREATES an empty volume and mounts that.** A command naming
-the bare `vault-state` therefore reads a brand-new empty directory and reports whatever "empty"
-looks like — for the off-host backup below, an **87-byte archive containing one entry, `./`, exit
-0** (`docs/RESTORE-DRILL.md` §10 finding 8). Ask Docker for the real name first:
+Compose namespaces every volume with the project name — and the project name is the directory name
+**after normalisation**: lower-cased, with everything outside `[a-z0-9_-]` stripped. A checkout in
+`x402/` gives `x402_vault-state`, but one in `Gate7.Fixer_DIR/` gives `gate7fixer_dir_vault-state`.
+Do not reconstruct that name by hand. **`docker run -v <name>:/data` does not check: given a name
+that does not exist it silently CREATES an empty volume and mounts that.** A command naming the
+bare `vault-state` therefore reads a brand-new empty directory and reports whatever "empty" looks
+like — for the off-host backup below, an **87-byte archive containing one entry, `./`, exit 0**
+(`docs/RESTORE-DRILL.md` §10 finding 8).
+
+Ask Docker which volume **Compose** created, by the labels Compose stamps on the ones it makes:
 
 ```bash
-docker volume ls --filter name=vault-state --format '{{.Name}}'
+docker volume ls --filter label=com.docker.compose.volume=vault-state \
+                 --format '{{.Label "com.docker.compose.project"}}  {{.Name}}'
 ```
+
+> ⚠ **Not `--filter name=vault-state`.** `name=` is a **substring** match, so as soon as you have
+> run the restore at the end of this section it also returns `vault-state-restored` — and every
+> gate below passes just as happily on the wrong one: `docker volume inspect` succeeds, the `:ro`
+> mount is satisfied, and the `tar tzf | wc -l` belt reports twelve entries. You get a plausible
+> archive of stale state, which is exactly the silent success this subsection exists to close.
+> The label filter cannot make that mistake: the restore target is created with
+> `docker volume create`, outside Compose, so it carries no Compose labels at all.
 
 Everything under *Restore procedure* above uses `docker compose run`, which resolves the namespaced
 name from `docker-compose.yml` for you and cannot get this wrong. **A raw `docker run` cannot**, so
-where one is unavoidable, resolve the name into a variable and **gate on it**:
+where one is unavoidable, resolve the name from those labels into a variable and **gate on it** —
+on there being exactly one candidate, and on that candidate existing:
 
 ```bash
-VOL="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}_vault-state"
+VOL=$(docker volume ls -q --filter label=com.docker.compose.volume=vault-state)
+[ "$(printf '%s\n' "$VOL" | grep -c .)" -eq 1 ] || { printf 'not exactly one candidate:\n%s\n' "$VOL" >&2; exit 1; }
 docker volume inspect "$VOL" >/dev/null || { echo "no such volume: $VOL" >&2; exit 1; }
 ```
 
 `docker volume inspect` **fails with exit 1 and creates nothing** — that is the whole reason it
 comes first. Never let the `docker run` be the thing that discovers the name is wrong.
 
-That expansion covers the two ways the project gets its name; **if you invoked Compose with an
-explicit `-p <project>`, neither applies** — set `VOL=<project>_vault-state` by hand, or take it
-from the `docker volume ls` above, which is always right.
+**A tripped count gate has not guessed; it is asking you to choose.** Zero candidates means no
+Compose project on this host has ever brought this stack up. More than one means more than one copy
+of it is running — or that someone restored into a *second Compose project*, which does carry the
+labels. The display command above prints the project beside each name, so name the project you want
+and the ambiguity is gone:
+
+```bash
+VOL=$(docker volume ls -q --filter label=com.docker.compose.volume=vault-state \
+                          --filter label=com.docker.compose.project=<project>)
+```
+
+This reads back what Compose actually did instead of predicting it, so it holds however the project
+got its name — `-p`, `COMPOSE_PROJECT_NAME`, a top-level `name:` in the compose file, or the
+normalised directory name.
 
 Read a state file with a throwaway container (the `docker compose run` form above is preferred; use
 this when you are not standing in the repo):
@@ -716,7 +742,8 @@ docker run --rm -v "$VOL":/data:ro vault-runtime node packages/indexer/src/index
 must never invent its own source.
 
 ```bash
-VOL="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}_vault-state"
+VOL=$(docker volume ls -q --filter label=com.docker.compose.volume=vault-state)
+[ "$(printf '%s\n' "$VOL" | grep -c .)" -eq 1 ] || { printf 'backup ABORTED — not exactly one candidate:\n%s\n' "$VOL" >&2; exit 1; }
 docker volume inspect "$VOL" >/dev/null || { echo "backup ABORTED — no such volume: $VOL" >&2; exit 1; }
 ARCHIVE="vault-state-$(date +%F).tar.gz"
 docker run --rm -v "$VOL":/data:ro -v "$PWD":/backup alpine tar czf "/backup/$ARCHIVE" -C /data .
@@ -725,7 +752,9 @@ tar tzf "$ARCHIVE" | wc -l    # sanity: more than 1 entry, or the volume was emp
 
 Mounted `:ro` because a backup has no business writing to its source. The final `tar tzf` is the
 second belt: the `inspect` gate catches a *missing* volume, the entry count catches an *existing
-but empty* one — the two ways this command can succeed at nothing.
+but empty* one — the two ways this command can succeed at nothing. Note what neither belt catches,
+and why the label filter above is doing the real work: against the **wrong but populated** volume
+every belt here passes, and you carry home a healthy-looking archive of stale state.
 
 **Restoring it** into a fresh volume (verified end-to-end, `docs/RESTORE-DRILL.md` §10 finding 8):
 
@@ -737,7 +766,11 @@ docker run --rm -v vault-state-restored:/data vault-runtime node packages/canary
 ```
 
 Both must print `OK` and exit 0. `docker volume create` here is correct and intended — this is the
-one place a new volume is the goal.
+one place a new volume is the goal. Because it is created outside Compose it carries none of the
+`com.docker.compose.*` labels, which is why the discovery above can never hand you this volume by
+mistake even though its name contains `vault-state`. Leaving it on the host is therefore safe; if
+you would rather not, remove it by exact name (`docker volume rm vault-state-restored`) and **never
+with `docker volume prune`**, which deletes every unused volume on the host, not just yours.
 
 ### 8.4 Rate limits and request caps
 
@@ -845,15 +878,21 @@ exec-form `command: ["node", …]`). Until 2026-09-02 those lines read `command:
 which made **npm** PID 1 — and npm does not forward SIGTERM. Every stop killed npm in ~1s, node
 never saw the signal, none of the hooks in the table above ran, and the grace periods were dead
 configuration. It was invisible because nothing errored: the shutdown lines were simply absent.
-`docs/RESTORE-DRILL.md` §10 finding 7 has the A/B. If you ever change a `command:` line, re-check
-that `docker compose stop <svc>` still prints `shutdown.complete`, and use the **array** form —
-`command: node …` as a plain string is run via `/bin/sh -c`, which puts `sh` at PID 1 and
-reintroduces exactly the same bug.
+`docs/RESTORE-DRILL.md` §10 finding 7 has the A/B. The invariant is about the **program, not the
+syntax**: whatever a `command:` line looks like, PID 1 has to end up being `node`. Keep the array
+form, because it states the argv literally with nothing to mis-quote — but do not keep it in the
+belief that it is holding a shell back. Compose normalises a string `command:` to the same argv
+list the array form gives: `docker compose config` prints an identical list for
+`command: node x.mjs` and `command: ["node", "x.mjs"]`, and `/proc/1/cmdline` reads `node …` for
+both (measured on Compose v5.4.0 against `node:24-slim`, 2026-09-02). Nothing inserts `/bin/sh`.
+So if you ever change one of those lines, check the process and the behaviour rather than the
+punctuation: `docker compose stop <svc>` must still print `shutdown.complete`, and PID 1 must
+still be `node`.
 
 ```bash
 docker compose restart indexer      # clean stop, clean resume from the snapshot
 docker compose down                 # stops all three cleanly; the volume survives
-docker compose exec indexer cat /proc/1/cmdline   # sanity: must start with `node`, never `npm`/`sh`
+docker compose exec indexer cat /proc/1/cmdline   # sanity: must be `node`, never `npm`
 ```
 
 **Bare-metal equivalent (Linux/macOS, or Windows via WSL2):** `kill -TERM <pid>` (or Ctrl-C in the

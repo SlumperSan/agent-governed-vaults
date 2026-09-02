@@ -26,8 +26,15 @@
 # `shutdown.step … ok:true` -> `shutdown.complete`. The `stop_grace_period` values below are only
 # real configuration with node here; under npm they were dead config.
 #
-# The ARRAY form matters too: the string form `command: node packages/…` is run through
-# `/bin/sh -c`, which makes **sh** PID 1 and reproduces the same bug with a different process.
+# KEEP THE ARRAY FORM, but keep it for the right reason. It states the argv literally, with no
+# quoting or word-splitting step between what is written here and what runs. What it is NOT doing
+# is keeping a shell out: Compose normalises a string `command:` to the same argv list the array
+# form gives — `docker compose config` prints an identical list for `command: node x.mjs` and
+# `command: ["node", "x.mjs"]`, and `/proc/1/cmdline` in the running container reads `node …` for
+# both (measured on Compose v5.4.0 against node:24-slim, 2026-09-02). No `/bin/sh` is inserted
+# either way. (Dockerfile `CMD` in *shell* form is the thing that genuinely wraps in `/bin/sh -c`;
+# a Compose `command:` string is not that.) So the invariant to preserve here is about the
+# PROGRAM, not the syntax: PID 1 must be `node`. npm was the entire defect.
 #
 # No `init: true`. An init buys signal forwarding and zombie reaping; node as PID 1 needs neither.
 # All three services install their own SIGTERM/SIGINT handlers (`createShutdown().install()`,

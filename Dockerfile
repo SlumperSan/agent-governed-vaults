@@ -13,8 +13,10 @@
 #
 # Two operational commands ship in the same image and need no env at all. Compose namespaces its
 # volume as `<project>_vault-state`, and `docker run -v` CREATES a volume it cannot find rather
-# than failing — so resolve the real name first with
-# `docker volume ls --filter name=vault-state` (docs/RUNTIME.md §8.3):
+# than failing — so resolve the real name first, by Compose's own labels rather than by name
+# (`--filter name=` is a substring match and also returns `vault-state-restored`; the full gated
+# form, and why it matters, are in docs/RUNTIME.md §8.3):
+#   docker volume ls -q --filter label=com.docker.compose.volume=vault-state
 #   docker run -v <project>_vault-state:/data:ro vault-runtime node packages/oplog/src/ops-check.mjs --dir=/data
 #   docker run -v <project>_vault-state:/data:ro vault-runtime node packages/indexer/src/index-runner.mjs verify /data/indexer-state.json
 FROM node:24-slim
