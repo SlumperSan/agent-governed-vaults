@@ -37,7 +37,7 @@ const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'base-mainnet.json');
 
-const PAGES = ['index.html', 'how-it-works.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html'];
+const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html'];
 
 /** Everything else the banned-phrase list must also cover: the README and both stylesheets. */
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
@@ -162,7 +162,7 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-test('all six pages exist', () => {
+test('all seven pages exist', () => {
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -305,7 +305,7 @@ test('every internal .html link resolves to a file on disk', () => {
   }
 });
 
-test('every page links to all six pages', () => {
+test('every page links to all seven pages', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {

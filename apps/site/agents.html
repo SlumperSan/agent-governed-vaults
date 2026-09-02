@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The agent path — Agent-Governed Vaults</title>
+<meta name="description" content="How an autonomous agent reads this protocol and acts on it: one free discovery call, metered reads over x402, and state changes sent straight to the contracts. Not deployed to mainnet.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="pre-launch">
+  <div class="wrap">
+    <span class="tag">Pre-launch</span>
+    <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="agents.html" aria-current="page">Agents</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="risks.html">Risks</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero">
+    <div class="wrap">
+      <p class="eyebrow">The machine-readable path</p>
+      <h1>Every page here is for a person. This one is not.</h1>
+      <p class="lede">An agent does not need the rest of this site. It needs one free call that describes the interface, a way to pay for reads, and the contract addresses. That is the whole integration surface, and it is documented rather than negotiated.</p>
+      <p class="lede-note">This describes source code and a published interface. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="llms.txt">llms.txt</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/AGENT-QUICKSTART.md">Quickstart</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/api/openapi.yaml">OpenAPI spec</a>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Bootstrap</p>
+      <h2>One free call, then everything else follows from it.</h2>
+      <p>Discovery is unmetered on purpose. An agent should be able to learn what a service costs before it has spent anything, and it should learn it from the service rather than from a blog post that has since drifted.</p>
+      <dl class="rows">
+        <div>
+          <dt>Free</dt>
+          <dd><code>GET /.well-known/x402</code> returns pricing, the route list, and pointers to the specs. <code>GET /health</code> is free as well. Nothing else is.</dd>
+        </div>
+        <div>
+          <dt>Metered</dt>
+          <dd>Reads over the projected index state — the vault list, a single vault, the operator leaderboard. Each returns <code>402</code> with a <code>PAYMENT-REQUIRED</code> header naming the scheme, asset, amount, recipient and nonce.</dd>
+        </div>
+        <div>
+          <dt>Payment</dt>
+          <dd>Build an EIP-3009 <code>TransferWithAuthorization</code> for that quote, sign it EIP-712 with the agent's own wallet, and retry with a <code>PAYMENT-SIGNATURE</code> header. The response carries a <code>PAYMENT-RESPONSE</code> receipt. A facilitator verifies and settles on-chain; the API server holds no keys.</dd>
+        </div>
+        <div>
+          <dt>Acting</dt>
+          <dd>The metered API is read-only. Every state change — deposit, activate, propose, commit, reveal, exit — goes straight to the contracts. The API is a convenience for reading, never a path to authority.</dd>
+        </div>
+      </dl>
+      <p class="tight">There is no key to request, no allowlist to join, and nothing on this site to sign up for. An agent that can sign an EIP-712 message and send a transaction has everything it needs.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">What an agent can and cannot do</p>
+      <h2>Membership is bought, not granted.</h2>
+      <!-- COUNSEL: the agent-capability description. Deliberately enumerated rather than stated as a blanket negative, and it draws the same line the operators page draws: proposal rights follow stake, and operatorship confers no governance authority. -->
+      <dl class="rows">
+        <div>
+          <dt>Deposit</dt>
+          <dd>Permissionless. The contracts gate on amount alone — a minimum deposit and a capacity cap — and screen nobody. Any address meeting those can join. Vault #1 will screen at the front end, which is a different thing and binds nothing on-chain.</dd>
+        </div>
+        <div>
+          <dt>Propose</dt>
+          <dd>Follows stake, not identity. A member holding more than the vault's proposal threshold may open a proposal; an operator holding no shares may not. There is no operator check in the governance contract at all.</dd>
+        </div>
+        <div>
+          <dt>Vote</dt>
+          <dd>Commit then reveal, with the salt derived rather than stored. An agent that loses its memory between the two phases can still reveal, because the salt is re-derivable from a signature it can reproduce.</dd>
+        </div>
+        <div>
+          <dt>Exit</dt>
+          <dd>Always available to the holder, pro-rata and in kind. While a proposal is pending the exit is queued and priced after that proposal executes, which is a delay rather than a denial.</dd>
+        </div>
+      </dl>
+      <div class="note note--warn">
+        <span class="label">The gate that will surprise an integrator first</span>
+        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately checks its balance will read zero, and that is correct rather than a failure.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Reference client</p>
+      <h2>There is a working agent in the repository.</h2>
+      <p>It reads the metered API and the chain, decides whether to join, vote or exit, and prints the exact calls it would make. It is dry-run by default and cannot sign without an explicit environment gate.</p>
+      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as product code. It sits outside the scope of the contract security review, and running it live is what exposed two launch-class bugs in it — one gate that could never admit a new operator, and a deposit path that set no token allowance and therefore reverted in every configuration as shipped. Both are fixed with regression tests. Both were invisible to mocks.</p>
+      <div class="actions">
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/REFERENCE-AGENT.md">Reference agent</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Before you point anything at this</p>
+      <h2>Read the risks page too.</h2>
+      <p class="tight">An autonomous integrator is exactly the reader most likely to skip it, and the failure modes are not ones a retry loop recovers from. A stale price feed freezes every function that reads NAV, exits included. A bug cannot be patched, because the contracts cannot be changed. Nobody makes anyone whole, and there is no guarantee of any outcome.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="risks.html">All fifteen named risks</a>
+        <a class="btn" href="how-it-works.html">The mechanism in full</a>
+        <a class="btn" href="faq.html">Questions</a>
+        <a class="btn" href="who-its-for.html">Who it is for</a>
+        <a class="btn" href="operators.html">Operators</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="risks.html">Risks</a></li>
+          <li><a href="faq.html">Questions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+      </div>
+      <div>
+        <h2>Standing facts</h2>
+        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+      </div>
+    </div>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+  </div>
+</footer>
+
+</body>
+</html>
