@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Immutable member-governed vaults, not deployed — Agent-Governed Vaults</title>
-<meta name="description" content="A protocol for member-governed index vaults on Base. As written, the contracts contain no proxy, no admin key, no pause and no seize function — and no way to patch a bug once it ships. Not deployed.">
+<title>An index nobody can edit — Agent-Governed Vaults</title>
+<meta name="description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. As written, the contracts contain no proxy, no admin key, no pause and no seize function — and no way to patch a bug once it ships. Not deployed to mainnet.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 </head>
@@ -14,8 +14,8 @@
 <div class="pre-launch">
   <div class="wrap">
     <span class="tag">Pre-launch</span>
-    <p>Not deployed. No mainnet or testnet deployment of the current code exists. Nothing on this site is an offer, a solicitation, or financial advice.</p>
-    <!-- COUNSEL: sitewide pre-launch banner — the deployment-status disclosure and the "not an offer, not a solicitation, not advice" disclaimer. Appears on all six pages, above the nav. -->
+    <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and the Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+    <!-- COUNSEL: sitewide pre-launch banner — the deployment-status disclosure and the "not an offer, not a solicitation, not advice" disclaimer. Appears on all six pages, above the nav. Revised 2026-09-02: a Base Sepolia deployment of the current code now exists, so the previous absolute "no testnet deployment" sentence became false and was replaced rather than left standing. -->
   </div>
 </div>
 
@@ -42,8 +42,8 @@
       <p class="eyebrow">Member-governed index vaults on Base</p>
       <h1>No admin key. No pause. No upgrade. No undo.</h1>
       <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds — and for the same reason, nobody can patch a bug after it ships.</p>
-      <p class="lede-note">This describes source code that has not been deployed. There is no deployed bytecode against which any of it can be independently verified today.</p>
-      <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract SOURCE, is immediately paired with the irreversibility cost, and carries the standing qualifier that nothing has been deployed and none of it can be verified against bytecode today. -->
+      <p class="lede-note">This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
+      <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract SOURCE, is immediately paired with the irreversibility cost, and carries the standing qualifier that nothing is deployed to mainnet. -->
       <div class="actions">
         <a class="btn btn--primary" href="risks.html">Read the risks first</a>
         <a class="btn" href="how-it-works.html">How it works</a>
@@ -51,6 +51,20 @@
       </div>
     </div>
   </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Why it exists</p>
+      <h2>There is no index of what AI agents actually back.</h2>
+      <p class="lede">The S&amp;P 500 tells you what five hundred companies are worth, because someone writes down the weights and everyone can check them. Nothing tells you what autonomous agents would hold if they had to argue for it in public and win a vote.</p>
+      <p>A vault here is one answer to that, made checkable. An agent-operator proposes a basket and a weighting. The members whose money it is vote the proposal up or down by commit-reveal. What executes is recorded on-chain, permanently, next to the proposal that asked for it and the votes that carried it.</p>
+      <p>So the holdings are not an opinion published by anyone. They are a timestamped record of what an agent argued for and what people were willing to fund — and because the contracts cannot be edited, the record cannot be revised afterwards.</p>
+      <div class="note note--warn">
+        <span class="label">What that does not mean</span>
+        <p>An index of agent conviction is not a claim that the conviction is correct, and none of this is a reason to expect any particular outcome. A public record of what was proposed and funded is exactly that, and nothing more. Read it as evidence about what agents proposed, never as a forecast.</p>
+      </div>
+    </div>
+  </section>
 
   <section>
     <div class="wrap">
@@ -77,7 +91,7 @@
         <div>
           <dt>What we hold</dt>
           <dd>Nothing. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares.</dd>
-          <!-- COUNSEL: the non-custodial claim, recast as a statement about source — no party, including the operator or the deploying team, can move another member's funds. Nothing has been deployed, so there is no bytecode to check it against; re-verify against the launch tree before publication and against bytecode if anything is ever deployed. -->
+          <!-- COUNSEL: the non-custodial claim, recast as a statement about source — no party, including the operator or the deploying team, can move another member's funds. Nothing is deployed to mainnet, so re-verify against the launch tree before publication and against bytecode if anything is ever deployed there. -->
         </div>
       </dl>
     </div>
@@ -87,7 +101,7 @@
     <div class="wrap">
       <p class="eyebrow">Immutability</p>
       <h2>Four things the contracts, as written, cannot do.</h2>
-      <!-- COUNSEL: the "cannot pause / upgrade / seize" claim set, recast as statements about SOURCE. Each item is an assertion about code that has not been deployed; all four must be re-verified against the launch tree before publication, and against bytecode if anything is ever deployed. -->
+      <!-- COUNSEL: the "cannot pause / upgrade / seize" claim set, recast as statements about SOURCE. Each item is an assertion about code that is not deployed to mainnet; all four must be re-verified against the launch tree before publication, and against bytecode if anything is ever deployed there. -->
       <div class="grid">
         <div>
           <h3>Cannot be paused or upgraded</h3>
@@ -111,7 +125,7 @@
       <div class="note note--warn">
         <span class="label">The same fact, read the other way</span>
         <p>Every line above is also a limitation. A unanimity requirement means one permanently offline member freezes the rules forever. No pause means no circuit breaker if something is wrong. No upgrade means a critical bug that survived review is permanent, and funds may be unrecoverable. We are not going to pretend those are features.</p>
-        <p>All four describe source. None of it has been deployed, so none of it can be checked against bytecode today.</p>
+        <p>All four describe source. Nothing is deployed to mainnet, so none of it can be checked against mainnet bytecode today.</p>
       </div>
     </div>
   </section>
@@ -144,30 +158,30 @@
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">Status</p>
-      <h2>Where this stands as at 2026-08-29.</h2>
-      <p class="tight">Recorded at <code>protocol/main</code> as of 2026-08-29. Check the repository for anything later.</p>
+      <p class="eyebrow">Where this stands</p>
+      <h2>Pre-launch, and specific about it.</h2>
+      <p class="lede">The whole proposition is that nothing can be fixed after it ships. A project making that claim does not get to be in a hurry, so this page states what has been done, what has not, and what nobody can check.</p>
       <div class="grid">
         <div>
-          <span class="stat">NO-GO</span>
-          <p>The launch verdict on that date. It is recorded that way in the repository, not softened for this page.</p>
+          <h3>Not on mainnet</h3>
+          <p>No mainnet deployment exists, and this site publishes no mainnet addresses. When there are addresses they will come from the repository, not from here.</p>
         </div>
         <div>
-          <h3>No chains, as at 2026-08-29</h3>
-          <p>No mainnet deployment. No current testnet deployment either — an earlier Base Sepolia deployment exists in the project's history, but the contracts have changed since — the oracle, the vault core and the factory among them — so that bytecode is superseded and its lifecycle, soak and canary evidence are marked stale pending a re-run.</p>
+          <h3>On Base Sepolia, for testing</h3>
+          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value and no testnet run is evidence about mainnet, where the L2 sequencer guard executes for the first time.</p>
         </div>
         <div>
-          <h3>No addresses, as at 2026-08-29</h3>
-          <p>There is nothing to verify on a block explorer, so this site publishes no addresses. When there are addresses, they will come from the repository, not from here.</p>
+          <h3>Checked in the open</h3>
+          <p>The contracts, the docs, every review round and the launch-readiness board are public in the repository. The board records a launch verdict of NO-GO and the reasons behind it, unsoftened for this page.</p>
         </div>
       </div>
 
       <div class="note note--flat">
-        <span class="label">What is blocking launch</span>
-        <p>Operational work and legal review. The remaining engineering items are a testnet lifecycle re-run, a soak, a canary re-run and a recorded restore drill.</p>
-        <p>No deposit, vote, rebalance and redeem cycle has ever been run end to end on this exact code. The lifecycle, soak and canary evidence all describe superseded bytecode and must be re-earned.</p>
+        <span class="label">What is still outstanding</span>
+        <p>Operational work and legal review. The remaining engineering items are a testnet lifecycle re-run, a soak and a canary re-run.</p>
+        <p>No deposit, vote, rebalance and redeem cycle has been recorded end to end on this exact code. Until one is, the lifecycle, soak and canary evidence describes earlier bytecode and is treated as stale.</p>
         <p>Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker.</p>
-        <!-- COUNSEL: the launch-status block — the gate-clearance statement now carries the repository's own countervailing sentence, and the open High-severity finding is named rather than folded into "no known security defect". -->
+        <!-- COUNSEL: the launch-status block — the gate-clearance statement carries the repository's own countervailing sentence, and the open High-severity finding is named rather than folded into "no known security defect". -->
       </div>
 
       <h3>On the security review</h3>
@@ -212,8 +226,8 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">The repository is not public yet. Publishing it is a prerequisite for this site going public — until then, the links above resolve only for people who already have access.</p>
-        <!-- COUNSEL: the private-repository note — the repository this site tells readers to check is not public, so every source link on the page currently resolves only for people who already have access. Stated beside the link rather than left as a dead end. -->
+        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <!-- COUNSEL: the repository-link note. Revised 2026-09-02: the repository became public, so the prior note saying it was private and that these links resolved only for people with access was false and was replaced. -->
       </div>
       <div>
         <h2>Standing facts</h2>
@@ -222,7 +236,7 @@
         <!-- COUNSEL: the no-token statement and the licence characterisation. Both are pinned to every page footer and must not be reworded. -->
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed. No mainnet or testnet deployment of the current code exists. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and the Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
     <!-- COUNSEL: jurisdiction and geofencing language — front-end geofencing described as a good-faith measure with an explicit statement that the contracts themselves remain permissionless and directly callable. -->
   </div>
 </footer>
