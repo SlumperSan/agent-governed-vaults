@@ -45,7 +45,7 @@ function markdownUnder(dir) {
 const base = path.resolve(root);
 const docs = markdownUnder(base).map((f) => path.relative(REPO, f).split(path.sep).join('/'));
 
-const { problems, checked, skipped } = checkDocs(REPO, docs, {
+const { problems, checked, skipped, canCheckPrState } = checkDocs(REPO, docs, {
   ref,
   requireAnchor: !has('--no-anchor'),
 });
@@ -63,6 +63,11 @@ if (behind) {
 const kinds = problems.reduce((a, p) => ((a[p.kind] = (a[p.kind] ?? 0) + 1), a), {});
 console.log(`doc-claims: ${checked} claims resolved across ${docs.length - skipped.length} documents`);
 if (skipped.length) console.log(`            ${skipped.length} skipped as historical records`);
+// The half that ran and the half that did not are reported separately. A summary line that says
+// only "N claims resolved" reads as a clean bill when half the check never executed.
+console.log(
+  `            branch-state half: ${canCheckPrState ? 'CHECKED' : 'NOT RUN — reported as a failure below'}`
+);
 if (!problems.length) {
   console.log('doc-claims: OK');
   process.exit(0);

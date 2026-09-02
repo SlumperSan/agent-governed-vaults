@@ -416,11 +416,49 @@ export function commitsBehind(repo, ref = 'origin/protocol/main') {
 }
 
 /**
+ * A shallow clone truncates `git log`, and a TRUNCATED merged-set is worse than an absent one.
+ * Absent is reported; truncated is not — every merge commit the clone does not have reads as
+ * "that PR is still open", so a stale "#98 is open" passes. That is the silent direction this
+ * module exists to close, arriving through the environment rather than through the code. So a
+ * shallow repository is "cannot check", exactly like a missing ref.
+ */
+export function isShallowRepository(repo) {
+  try {
+    const out = execFileSync('git', ['-C', repo, 'rev-parse', '--is-shallow-repository'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim() === 'true';
+  } catch {
+    return false; // not a git repo at all — the `git log` below reports that as the absent ref
+  }
+}
+
+/**
+ * Why branch state cannot be read, as a sentence, or null when it can. Kept next to
+ * `mergedPrNumbers` so the two cannot disagree about what "cannot check" means.
+ */
+export function prStateBlocker(repo, ref = 'origin/protocol/main') {
+  if (isShallowRepository(repo)) {
+    return (
+      `this checkout is SHALLOW, so \`git log ${ref}\` is truncated and every merge it is ` +
+      'missing reads as "still open" — run `git fetch --unshallow` (in CI: `fetch-depth: 0`)'
+    );
+  }
+  if (mergedPrNumbers(repo, ref) === null) {
+    return `\`${ref}\` is not in this checkout — run \`git fetch origin ${ref.replace(/^origin\//, '')}\``;
+  }
+  return null;
+}
+
+/**
  * PR numbers merged into `ref`, read from git history — offline, no `gh`. Covers merge commits
  * ("Merge pull request #92 from ...") and squashes ("... (#98)"). Returns null when the ref is
- * absent from this checkout, which the caller must treat as "cannot check", never as "clean".
+ * absent from this checkout OR when the checkout is shallow, either of which the caller must
+ * treat as "cannot check", never as "clean".
  */
 export function mergedPrNumbers(repo, ref = 'origin/protocol/main') {
+  if (isShallowRepository(repo)) return null;
   let log;
   try {
     log = execFileSync('git', ['-C', repo, 'log', '--format=%s', ref], {
@@ -463,14 +501,48 @@ export function loadWaivers(repo, file = 'scripts/doc-claims-waivers.json') {
 }
 
 export function checkDocs(repo, docs, opts = {}) {
-  const { ref = 'origin/protocol/main', requireAnchor = true, sourceRoots, waivers = loadWaivers(repo) } = opts;
+  const {
+    ref = 'origin/protocol/main',
+    requireAnchor = true,
+    sourceRoots,
+    waivers = loadWaivers(repo),
+    merged = mergedPrNumbers(repo, ref),
+  } = opts;
   const index = indexSources(repo, sourceRoots);
-  const merged = mergedPrNumbers(repo, ref);
   const waiverHits = new Map(waivers.map((w) => [w, 0]));
   const sourceCache = new Map();
   const problems = [];
   const skipped = [];
   let checked = 0;
+
+  // A check that could not run is a FAILURE, never a pass. Before this, `merged === null` skipped
+  // the entire branch-state half and `canCheckPrState` recorded that fact in a field no caller
+  // read — so in CI, where the ref is absent, the gate passed having checked only citations. The
+  // module knew it could not run the check and said so where nobody was listening. This is that
+  // flag, consumed: it becomes a problem, so the corpus test goes red and the CLI exits non-zero.
+  //
+  // The trap this deliberately avoids is `if (!merged) return;`. That greens CI at the cost of
+  // making the branch-state half a permanent silent no-op in the ONE place the gate runs, which
+  // is verbatim the defect this module exists to close, committed inside it. Do not reintroduce
+  // it, and do not add a flag that suppresses this: a suppression flag ends up in the CI
+  // invocation and the check is off again with nothing to show for it.
+  //
+  // It is reported OUTSIDE the waiver stage on purpose: a waiver is a permission to leave one
+  // known-false claim in place, not a permission to stop checking.
+  const unwaivable = [];
+  if (merged === null) {
+    unwaivable.push({
+      kind: 'pr-state-uncheckable',
+      doc: '(repository)',
+      line: 0,
+      raw: ref,
+      context: 'no branch-state claim in any document below was checked in this run',
+      detail:
+        `${prStateBlocker(repo, ref) ?? `\`${ref}\` could not be read`}. Until it can be read, ` +
+        'every "#N is open" and "once #N lands" in these documents is UNCHECKED — and so is ' +
+        'waiver expiry, which is decided by the same merged set.',
+    });
+  }
 
   for (const doc of docs) {
     const text = readFileSync(path.join(repo, doc), 'utf8');
@@ -566,7 +638,7 @@ export function checkDocs(repo, docs, opts = {}) {
     }
   }
   // Waivers apply last, so the report still knows what they are hiding.
-  const kept = [];
+  const kept = [...unwaivable];
   for (const p of problems) {
     const w = waivers.find((x) => x.doc === p.doc && x.citation === p.raw);
     if (w) waiverHits.set(w, waiverHits.get(w) + 1);
