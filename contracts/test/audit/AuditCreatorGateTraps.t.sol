@@ -14,8 +14,8 @@ import {MockERC20, MockOracle, StubGovernance, StubFeeEngine, StubRegistry} from
 /// a 50k cap".
 ///
 ///  A. **The withdrawal-gate trap.** `_checkCreatorGate` requires
-///     `(s - b) * 10_000 >= 500 * (T - b)`. For `s/T < 5%` the fraction `(s-b)/(T-b)` is
-///     strictly DECREASING in `b`, so EVERY burn amount fails: a diluted creator cannot
+///     `(s - b) * 10_000 >= 500 * (T - b)`. The fraction `(s-b)/(T-b)` is strictly DECREASING
+///     in `b` for ANY `s < T`, so once `s/T < 5%` EVERY burn amount fails: a diluted creator cannot
 ///     withdraw even one share while a non-creator member remains. Dilution is passive (member
 ///     deposits grow `totalShares`), so the creator can arrive here without acting. They have
 ///     simultaneously lost proposal rights (the trap NOW.md already listed) and had their
@@ -157,6 +157,43 @@ contract AuditCreatorGateTrapsTest is Test {
         }
     }
 
+    /// The gate compares with `>=`, so the burn that lands EXACTLY on 5% must be ADMITTED and the
+    /// next unit must not. Nothing else in this file executes that branch: `_maxBurn()` integer-
+    /// floors, so the burn every other test hands to `requestExit` sits strictly INSIDE the gate,
+    /// and `>=` could be weakened to `>` with all of them still green. A threshold test that is
+    /// not exactly on the threshold pins nothing.
+    ///
+    /// The deposits are chosen so the division is exact. With `c = 1,000e18` and `t = 10,006e18`,
+    /// `(c·10,000 − 500·t) = 4,997,000e18` is divisible by `9,500`, giving `maxBurn = 526e18` and
+    /// `(1,000−526)·10,000 == 500·(10,006−526)` — i.e. `4,740,000 == 4,740,000`, dead on the line.
+    /// (9,006 = 19 · 474 is what makes the remainder vanish: the gate's denominator is 9,500.)
+    function test_A_theGateAdmitsExactlyTheBoundaryBurnAndNotOneUnitMore() public {
+        _join(creator, 1_000 * USDC_1);
+        _join(alice, 9_006 * USDC_1);
+
+        uint256 c = vault.sharesOf(creator);
+        uint256 t = vault.totalShares();
+        uint256 burn = _maxBurn();
+        assertEq(burn, 526 * USDC_1 * WAD_PER_USDC, "the arithmetic these deposits were chosen for");
+        // ON the threshold, not near it: after this burn the gate's two sides are exactly equal,
+        // so the comparison operator itself is what decides the call.
+        assertEq((c - burn) * BPS, GATE_BPS * (t - burn), "the burn lands exactly on 5%, not inside it");
+
+        // One unit above the boundary: refused.
+        _expectGate(burn + 1);
+
+        // One unit below: admitted (strictly inside the gate).
+        uint256 snap = vm.snapshotState();
+        vm.prank(creator);
+        vault.requestExit(burn - 1);
+        vm.revertToState(snap);
+
+        // Exactly ON the boundary: admitted. This is the assertion that dies if `>=` becomes `>`.
+        vm.prank(creator);
+        vault.requestExit(burn);
+        assertEq(_creatorBps(), GATE_BPS, "and the creator is left at exactly the floor");
+    }
+
     /// Below 5% is a plateau, not a cliff: EXACTLY 5% also admits no withdrawal, because any
     /// burn takes the fraction below. The boundary case above 5% is `VaultCore.t.sol`
     /// `test_creatorCanExitPartiallyDownTo5Pct`.
@@ -186,7 +223,10 @@ contract AuditCreatorGateTrapsTest is Test {
     }
 
     /// Capital is locked, not spent: each member exit raises the creator's fraction passively,
-    /// and once every non-creator member has left the gate no longer binds at all.
+    /// and once every non-creator member has left the creator can take everything out.
+    ///
+    /// What this does NOT show is that `nonCreatorMemberCount > 0` is doing the work — see
+    /// `test_A_memberCountTracksNonCreatorHoldersSoTheGuardCannotLiftEarly` for why no test can.
     function test_A_creatorRecoversEverythingOnceMembersAreGone() public {
         _join(creator, 500 * USDC_1);
         _join(alice, 12_000 * USDC_1);
@@ -210,6 +250,46 @@ contract AuditCreatorGateTrapsTest is Test {
         vm.prank(creator);
         vault.requestExit(creatorShares);
         assertEq(vault.totalShares(), 0, "creator recovered everything");
+    }
+
+    /// `nonCreatorMemberCount > 0` is a SHORT-CIRCUIT, not a second rule, and it is worth being
+    /// explicit that no test can prove otherwise: once the creator holds every share `s == T`, so
+    /// the inequality reads `(T − b)·10,000 ≥ 500·(T − b)`, i.e. `(T − b)·9,500 ≥ 0`, which is true
+    /// for every `b`. Deleting the guard is therefore semantically inert while the counter is
+    /// correct, and a mutation that deletes it kills nothing — not a gap in the tests.
+    ///
+    /// What IS load-bearing is the counter's bookkeeping, because a counter that reached zero while
+    /// a non-creator member still held shares would lift the gate on exactly the state the
+    /// inequality refuses. `_mintShares` counts a non-creator only on `0 → positive` and
+    /// `_settleExit` uncounts only on `positive → 0`; this pins both ends of that, and in
+    /// particular that a PARTIAL member exit leaves the creator gated.
+    function test_A_memberCountTracksNonCreatorHoldersSoTheGuardCannotLiftEarly() public {
+        _join(creator, 1_000 * USDC_1);
+        _join(alice, 19_000 * USDC_1);
+        assertEq(vault.nonCreatorMemberCount(), 1, "one non-creator holder");
+
+        // A PARTIAL member exit must not clear the count while alice still holds shares.
+        uint256 half = vault.sharesOf(alice) / 2;
+        vm.prank(alice);
+        vault.requestExit(half);
+        assertGt(vault.sharesOf(alice), 0, "alice still holds shares");
+        assertEq(vault.nonCreatorMemberCount(), 1, "a partial exit must not clear the count");
+        assertLt(vault.sharesOf(creator), vault.totalShares(), "and the creator is not the sole holder");
+
+        // The creator is at 1,000 / 10,500 = 9.5%, comfortably above the floor, so the gate is not
+        // vacuous here — a full exit is refused by the inequality, and the guard is what would
+        // wave it through if the count had wrongly reached zero.
+        assertGt(_creatorBps(), GATE_BPS, "1,000 / 10,500 = 9.5%");
+        _expectGate(vault.sharesOf(creator));
+        assertFalse(_gatePasses(vault.sharesOf(creator)), "the inequality refuses a full creator exit");
+
+        // Only a FULL member exit clears it, and only then is the creator the sole holder.
+        uint256 rest = vault.sharesOf(alice);
+        vm.prank(alice);
+        vault.requestExit(rest);
+        assertEq(vault.nonCreatorMemberCount(), 0, "cleared only when the last member's shares hit 0");
+        assertEq(vault.sharesOf(creator), vault.totalShares(), "count == 0 <=> the creator holds every share");
+        assertTrue(_gatePasses(vault.sharesOf(creator)), "which is why the inequality alone now admits everything");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -276,12 +356,36 @@ contract AuditCreatorGateTrapsTest is Test {
 
     /// The note's practical rule: seed the full 5%-of-cap on day one and the race never
     /// starts. Outsiders fill the remaining 95% and the creator sits at exactly 5%.
+    ///
+    /// The point is the CONTRAST with `test_B_pastNinetyFivePercentFillTopUpCannotReachFivePercent`,
+    /// so it is asserted rather than illustrated: same full vault, same closed cap, but the creator
+    /// ends AT the floor instead of at 480 bps below it — which is why the next member exit frees
+    /// their capital instead of leaving them at the point of no return.
     function test_B_seedingFivePercentOfCapRemovesTheRace() public {
         _join(creator, 2_500 * USDC_1); // $2,500 at 50k
         _join(alice, 40_000 * USDC_1);
         _join(bob, 7_500 * USDC_1);
+        assertEq(vault.capacityCapUsdc(), CAP, "the cap this arithmetic is about");
         assertEq(_navUsdc(), CAP, "full");
         assertEq(_creatorBps(), GATE_BPS, "5% held with no top-up and no monitoring");
+
+        // The race cannot start from here: the vault is closed, so no further outsider deposit can
+        // dilute the creator at all.
+        vm.prank(alice);
+        vm.expectRevert(VaultCore.CapacityExceeded.selector);
+        vault.deposit(10 * USDC_1);
+
+        // At exactly 5% the creator is on trap A's plateau — no burn is admitted...
+        _expectGate(1);
+        // ...but unlike trap B they are AT the floor, not below it, so the first member exit lifts
+        // them above it and the capital is free again. That is what "the race never starts" means.
+        vm.prank(bob);
+        vault.requestExit(5_000 * USDC_1 * WAD_PER_USDC); // T: 50,000 -> 45,000
+        assertGt(_creatorBps(), GATE_BPS, "2,500 / 45,000 = 5.55%: above the floor");
+        uint256 burn = _maxBurn();
+        assertGt(burn, 0, "and a withdrawal is admitted again");
+        vm.prank(creator);
+        vault.requestExit(burn);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
