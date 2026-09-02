@@ -322,6 +322,31 @@ instead; `npm run gate` (~30 s warm, 9 steps) is the right thing to run and the 
 substitute, because gate 8's whole content is *CI green at the candidate ref*. Wait for capacity and
 re-run at the same head.
 
+**During an outage, every push trades a verified head for an unverifiable one — and you should
+still make that trade for a falsehood.** A branch sitting on a green from before the cutover has
+evidence; push once and it has none until runners return. That asymmetry tempts people to sit on a
+verified head that carries something they know is wrong. **Do not.** The rule, in order:
+
+1. **Fix the falsehood. Lose the green. Record why** — in the commit message, so the missing green
+   reads as a decision rather than an oversight.
+2. A verified green over a known-false claim is the worse artifact of the two. Gate 8 is
+   re-earnable in one CI run; a false claim shipped on a public surface is not re-earnable at all
+   (§3).
+3. The trade only costs something if you *hold* a green. A head that is already unverifiable loses
+   nothing by moving, so batch the rest of the outage's edits onto it freely.
+
+Demonstrated 2026-09-02: PR #132 held a verified green whose tree carried a live falsehood in
+`base-mainnet.json`'s `minDepositNote` — the note the whole H-8 mitigation rests on (§1) — and took
+the unverifiable head with the correction. That was right.
+
+**And do not keep a hand-written list of which branches are green.** It is stale the moment anyone
+pushes, which during an outage is exactly when people reach for one. Query per head instead:
+
+```bash
+gh pr view <n> --json headRefOid --jq .headRefOid
+gh run list --commit <sha> --json workflowName,conclusion
+```
+
 Measured 2026-09-01: head `bab5ee90`, run `33586340700`, `headSha bab5ee90…`, `success`,
 `contracts`/`backend`/`slither` all green. The transient Foundry-download reset the handoff mentions
 is resolved. Locally, `npm run gate` is the ~30 s mirror.
