@@ -37,6 +37,33 @@
  * Every guard below is negative, so every one of them enumerates public surfaces from the
  * filesystem and matches by SHAPE, not by one phrasing.
  *
+ * ## SCOPE: THIS FILE GUARDS THE REPOSITORY ONLY. THE OTHER HALF IS UNGUARDED.
+ *
+ * State this plainly rather than let it be inferred, because a check scoped to one store does not
+ * fail on the other — it passes, which reads identically to being safe.
+ *
+ * The project's claim-bearing prose lives in TWO stores. This repo is one. The other is the
+ * Obsidian vault, which holds the counsel pack, the ToS draft, the outreach templates, the website
+ * copy and the go-to-market hooks — by volume the most claim-dense prose in the project, and the
+ * half with the highest consequence. It has no CI, and several agent sessions edit it live.
+ *
+ * That gap is not hypothetical. The sweep that produced this file ran over the repo and therefore
+ * could not see `Business/Legal/Product Description for Counsel.md`, which carried three of the
+ * exact defects fixed here plus a §4-forbidden exit claim — in the document that seeds the
+ * securities memo. Two peers found it by hand. This file structurally could not have.
+ *
+ * DO NOT "FIX" THIS BY POINTING THE WALK AT THE VAULT. That was tried: an Ops5 sweep of the vault's
+ * claim-bearing stores returned **181 hits**, and the large majority were not defects at all — they
+ * were guardrails quoting a banned phrase IN ORDER TO BAN IT (`core-claims-doc` §4's forbidden
+ * list, `incident-comms` §0's rules, the placement packets' do-not-say sections, dated correction
+ * banners). A regex cannot tell *asserting* a claim from *prohibiting* one, so a naive widening
+ * reds on its own rulebook, and the predictable next move — relaxing patterns until it goes quiet —
+ * manufactures a green. A vault-side check needs its own design: either explicitly fenced guardrail
+ * sections, or the honest acceptance that it emits a READ LIST, not a verdict.
+ *
+ * So the vault is a NAMED open item, tracked in `Rules/claims-surface-spans-two-stores.md`, and not
+ * a silent one. Anyone extending this file: widen the store only together with that design.
+ *
  * ## What is deliberately NOT banned
  *
  * The product is called the Agent-Governed Index Vault Protocol. Banning `agent-governed` would red
