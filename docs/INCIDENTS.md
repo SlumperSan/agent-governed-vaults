@@ -104,11 +104,13 @@ permanently, and every NAV path keeps answering. Accepted as residual register *
 - **Detect:** the canary's `feed-identity` signal (`docs/CANARY.md` §3(g), shipped in #103) is the
   first thing that fires: every sweep it compares the feed's live `decimals()` against the cached
   `scale` in `feedOf(asset)`, so a drifted swap is a latching ALERT before any price is wrong.
-  **It will not page you.** Since #109 `feed-identity` is in the canary's LOG tier, not the PAGE
-  tier (`packages/canary/src/sinks.mjs` `LOG_SIGNALS`), deliberately — a benign aggregator swap
-  also ALERTs there and self-clears the next sweep. So this incident arrives on
-  `LOG_WEBHOOK_URL`, and somebody has to be reading it; if only `ALERT_WEBHOOK_URL` is set,
-  everything lands on that one URL. The weekly
+  **This incident pages** (since #121): `feed-identity` routes on a predicate rather than on its
+  name — `CONDITIONAL_PAGE` in `packages/canary/src/sinks.mjs` pages when `detail.harm` is
+  `'decimals'` or `'denomination'`, and logs when it is `null`. A decimals mismatch is exactly the
+  `'decimals'` case, so it reaches `PAGE_WEBHOOK_URL`. **A `DRIFT` notice alone does not page** —
+  a bare aggregator swap carries `harm === null` and goes to `LOG_WEBHOOK_URL`, which is the
+  intended asymmetry, not a gap. (If only `ALERT_WEBHOOK_URL` is set, both land on that one URL.)
+  See `docs/CANARY.md` §4. The weekly
   `node scripts/verify-chainlink-oracle.mjs --strict` reporting **FAIL** on `decimals() == 8` is
   the second, git-tracked line. Nothing on-chain detects this. Do not expect
   the other signals to help: `oracle-freshness` asks whether the price is FRESH, not whether it is
