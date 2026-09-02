@@ -117,9 +117,19 @@ the regime"* — so **≈400 USDC, or 0.8% of vault #1's 50,000 USDC cap.** The 
 exists (a fraction-of-stake floor repeats M-6's liveness cliff). Nothing enforces it — a vault
 created with a low `minDepositUsdc` has no mitigation at all, and the code will not stop it.
 
-**And it does not transfer from testnet.** `contracts/config/base-sepolia.json:101` sets
-`minDepositUsdc` = 1 USDC, explicitly a smoke value. The live Sepolia vault therefore runs with the
-H-8 mitigation effectively absent — a third reason testnet evidence is not launch evidence.
+**The mitigation cannot bind anyone but us.** The only contract-level constraint is
+`require(minDepositUsdc_ > 0, BadConfig())` (`contracts/src/VaultCore.sol:252`) — **any nonzero
+value is accepted**, and the field is `immutable` (`:82`). `VaultFactory.createVault`
+(`VaultFactory.sol:178`) has **no access control**: it checks only that the oracle is on the curated
+allowlist and that the oracle covers the basket. So anyone may create a vault on this factory with
+`minDepositUsdc = 1`, and in that vault the H-8(a) regime flip costs about **4 USDC**.
+
+That does not change vault #1's posture — the 100 USDC / ≈400 USDC / 0.8%-of-cap figures above stand.
+It changes **what may ever be said in public about vaults in general**, so it is a claims boundary
+as much as a risk item: see §3.
+
+This is also the third of the three reasons testnet evidence does not transfer — enumerated
+below, because they need separate fixes.
 
 **Nothing in the gate set forbids an open High.** Gate 0 is scoped to *Critical*, and no other gate
 row or the audit handoff asserts a stronger claim — checked, so that it is derived rather than
@@ -127,12 +137,21 @@ assumed either way. So H-8 does **not** put any gate into NO-GO on its face. Wha
 a **known, accepted, by-design High into production**, and accepting a residual is a risk decision.
 It is in §4 as an owner item, because a documentation state cannot make it for them.
 
-### Gate 3 carries two defects, and they need separate fixes
+### Three reasons testnet evidence does not transfer — and a redeploy fixes only the first
 
-Keep these apart. A redeploy fixes the first and **cannot** fix the second.
+Keep these enumerated. Collapsing them into "the testnet is stale" is how the second and third get
+silently closed by a redeploy that did not touch either.
 
-**Defect 1 — staleness.** The deployment is 31 `contracts/src` commits behind `main` (§2.1). A
-redeploy at the frozen head fixes it.
+| # | Reason | Fixed by a redeploy? |
+| --- | --- | --- |
+| 1 | **Stale tree** — the deployment is behind `main` by 13 files / +458−1083 (§2.1) | **Yes**, at the frozen head |
+| 2 | **Wrong topology, immutably** — the deployed factory has `allowSubVaults = true`; the flag is `immutable` (below) | **No.** A launch-configured redeploy makes gate 3's sub-vault drills *unreachable* instead. One factory cannot evidence both topologies |
+| 3 | **H-8 mitigation absent** — `contracts/config/base-sepolia.json:101` sets `minDepositUsdc` = 1 USDC, explicitly a smoke value, so the live Sepolia vault runs the H-8(a) residual essentially unmitigated | **No**, unless the redeploy also changes that value — and it is `immutable` per vault, so it means a new vault |
+
+Gate 3 carries the first two directly.
+
+**Defect 1 — staleness.** The deployment is behind `main` (§2.1). A redeploy at the frozen head
+fixes it.
 
 **Defect 2 — the topology is immutable and it is the wrong one.**
 `VaultFactory.allowSubVaults` is `bool public immutable` (`contracts/src/VaultFactory.sol:54`, set at
@@ -339,7 +358,8 @@ is already public, so this binds `README.md`, `llms.txt`, `docs/` and `apps/web/
 | A drift check exists and is green | LedeFix ships a repo check that reds when any of the seven surfaces drifts from the canonical sentence. Run it; do not read it. | LedeFix |
 | The check covers *every* approved sentence | The drift check is keyed by claim id across all claims in `core-claims-doc.md`, not just the lede. | `gtm-claims-pipeline` — **sequenced strictly after LedeFix**; both edit the same files |
 | Every PROOF field re-verified, not sampled | **Every** claim's PROOF in `core-claims-doc.md` re-read against current `contracts/src`. Sampling is not enough: of the first handful anyone has actually checked, **two came back stale** (the §1.4 exit-fee decay, and the §1.3/§5 operator-exclusivity claim below). A hit rate like that on a sample is an argument for the full sweep, not for confidence. | `gtm-claims-pipeline` |
-| Agent policy published | Vault #1's deterministic rebalance policy exists and is public **before** the first on-chain proposal, so proposals are checkable against it. | `gtm-agent-policy-published` (AgentPolicy) |
+| Agent policy published | Vault #1's deterministic rebalance policy exists and is public **before** the first on-chain proposal, so proposals are checkable against it. | `gtm-agent-policy-published` (AgentPolicy) — **PR #131**, open |
+| **No governance-security claim travels from vault #1 to vaults in general** | See below — this is a boundary on what may be said, not a task that completes. | §3 standing rule |
 
 `core-claims-doc.md` is LedeFix's file; nothing else writes to it while that task is open.
 
@@ -362,6 +382,27 @@ contracts rather than taken on report:
 
 Resolving these is LedeFix's; noticing that this section does not pass without them is this
 checklist's.
+
+### The claims boundary: vault #1 is not "the protocol"
+
+H-8's mitigation is a **configuration value with no contract floor** (§1). `VaultCore.sol:252`
+accepts any nonzero `minDepositUsdc`, and `VaultFactory.createVault` (`:178`) is permissionless — it
+gates on the curated oracle allowlist and nothing else. So a third party can stand up a vault on
+**this same factory** with `minDepositUsdc = 1`, where the H-8(a) regime flip costs roughly 4 USDC.
+
+Every governance-security property that rests on `minDepositUsdc` is therefore a property of **vault
+#1's configuration**, never of the protocol, the factory, or "vaults." Two consequences that bind
+copy:
+
+- A sentence like *"a governance attack costs ~400 USDC"* is true of vault #1 and **false of the
+  next vault someone deploys.** Any such claim must name the vault and its `minDepositUsdc`, or not
+  be made.
+- The same holds in reverse for reassurance: nothing about vault #1's settings can be offered as
+  evidence about a third-party vault a reader might find on the factory.
+
+This is a standing boundary, not a task. It does not complete — it constrains every surface §3
+covers, and it is the kind of claim that is *individually defensible and collectively false*, which
+is exactly the failure mode a single falsifiable public claim represents here.
 
 ---
 
@@ -386,7 +427,7 @@ transaction that registers the operator. Settle both before sending it:
 | **Re-attest gate 1** | An attestation about a private report; no agent can make it. | `LAUNCH-READINESS.md` gate 1 names the current head |
 | **Vault #1's fee posture — waived is not implementable as written** | `FeeEngine.PERF_FEE_BPS` is a `constant` (10%, `FeeEngine.sol:35`) applied unconditionally at `:88`. No per-vault override, no setter, no waiver function. The go-to-market plan's "fee waived on vault #1, for regulatory optics" **cannot be done in the contracts.** The two available routes are (a) non-collection — the operator simply never claims, but fees still accrue on-chain and the accrual is publicly visible, so the optics claim is weaker than intended and must not be stated as a waiver; or (b) an operator payout address that cannot claim — which is **permanent**, because there is no rebind. Route (b) makes this the *same* decision as the Safe row above, taken in the same transaction. | Decided and recorded **before** the operator address is registered, and whatever is chosen is described accurately on every public surface (§3) |
 | **`exitFeeDecayPeriod`: 3.5 days or 7?** | A launch parameter, immutable per vault. `contracts/config/base-mainnet.json:226` says `604800` (7 d); [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 records that 302,400 s (3.5 d) "was never what the 50 bps vault ran" and flags the contradiction as unresolved. Until it is decided **no public claim can be pinned to either figure** — and one already is (§3). | Owner decides; the value is then confirmed by reading it off the **deployed vault**, not off the config |
-| **Accept H-8(a), or raise `minDepositUsdc`** | Launching knowingly with an unfixed High. It is unfixed **by design** — there is no contract-level fix (§1) — so the only levers are the config value and acceptance. At `minDepositUsdc` = 100 USDC the regime flip costs ≈400 USDC against a 50,000 USDC cap. `minDepositUsdc` is immutable per vault, so this is decided **before** vault #1 is created, not after. | Owner records the acceptance with the number they accepted it at, or names a higher `minDepositUsdc` — and every public surface (§3) describes the governance regime accurately, since "fixed" is not what the contracts say |
+| **Accept H-8(a), or raise `minDepositUsdc`** | Launching knowingly with an unfixed High. It is unfixed **by design** — there is no contract-level fix (§1) — so the only levers are the config value and acceptance. At `minDepositUsdc` = 100 USDC the regime flip costs ≈400 USDC against a 50,000 USDC cap. `minDepositUsdc` is immutable per vault, so this is decided **before** vault #1 is created, not after. | Owner records the acceptance with the number they accepted it at, or names a higher `minDepositUsdc` — and every public surface (§3) describes the governance regime accurately, since "fixed" is not what the contracts say. **The acceptance covers vault #1 only:** `VaultCore.sol:252` accepts any nonzero value and the factory is permissionless, so it cannot be extended to third-party vaults and no claim may imply it does (§3) |
 | **Ratify no-token / beachhead / anchor strategy** | A token, once issued, cannot be un-issued; a public posture cannot be un-said. | `gtm-ratify-launch-posture` ratified or overridden |
 | **Testnet redeploy** | Needs a funded Base Sepolia key. Must be in the **launch** configuration (`allowSubVaults = false`) or the re-earned evidence is again about the wrong contracts. | `verify-deployment-currency.mjs` exits 0, no notes |
 | **Mainnet deploy** | Immutable. No pause, no upgrade, no admin (§6). One shot. | `Deploy.s.sol` run with `--broadcast`; a `contracts/config/deployments/base-mainnet.json` record written and verified |
