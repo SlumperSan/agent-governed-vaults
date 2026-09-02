@@ -759,7 +759,10 @@ named `tier` must not be able to demote its own page.
   a plain mock, and one duplicate `eth_call` per asset is a cheaper price than coupling them. Against
   the retired aggregator a sweep is
   `O(vaults × basket assets × oracle sources)`, and signal (g) does not run at all. Signal (h) adds
-  roughly five fixed reads per vault (plus two more against Governance when it applies) and signal
+  **twelve** fixed reads per vault (plus two more against Governance when it applies), issued as two
+  batched `Promise.all`s of seven and five — three of the twelve being the voting-eligible pair and
+  `minDepositUsdc`, added when the propose gate was corrected to the book it actually reads, and the
+  exit-liveness/oracle signals already read the vault separately for their own reasons — and signal
   (i) adds two reads **against the SAME reference feed address for every vault**, deliberately not
   shared across vaults for the same testability-over-one-fewer-`eth_call` reason signal (g) does not
   share `feedOf` with signal (a). The default 30s cadence is comfortable for a handful of vaults on a
