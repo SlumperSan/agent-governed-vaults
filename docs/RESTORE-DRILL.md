@@ -735,7 +735,10 @@ Surfaced by the scale work: with 200 known vaults the public RPC rejected every 
 `Invalid parameters were provided to the RPC method`, and the indexer **never advanced and never
 wrote a snapshot** — a permanent `poll.failed` loop, not a degraded mode. At 7 vaults it is fine.
 Not a restore finding and out of scope here, but it is a hard ceiling on vault count that should
-be its own issue.
+be its own issue. **Checked against current `protocol/main` (`0c196581`, after #120):** that PR
+adds `MAX_TRACKED_ADAPTERS` to bound the discovered *adapter* set, but the *vault* set feeding the
+same filter (`rpc.mjs`, `const vaults = new Set([...knownVaults]…)`) is still unbounded, so this
+finding stands on the current tree.
 
 **11. A crash leaves an orphaned `.tmp` that nothing ever cleans up.** Each of the six landed
 kills left a `<state>.tmp` of up to 59.77MB behind. Nothing removes it on the next start. It does
