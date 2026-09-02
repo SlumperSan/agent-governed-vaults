@@ -25,6 +25,9 @@ function contractEvents() {
     'OperatorRegistry.sol/OperatorRegistry.json',
     'SubVaultRegistry.sol/SubVaultRegistry.json',
     'VaultFactory.sol/VaultFactory.json',
+    'FeeEngine.sol/FeeEngine.json',
+    'AggregationRouterAdapter.sol/AggregationRouterAdapter.json',
+    'DirectPoolAdapter.sol/DirectPoolAdapter.json',
   ];
   const names = new Set();
   for (const rel of contracts) {
