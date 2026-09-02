@@ -2,8 +2,8 @@
 
 > Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
-> proposes as a member and holds no on-chain authority over a deployed vault — nothing rebalances
-> until a proposal passes. Settlement in USDC; metered read access via x402 (EIP-3009 on Base).
+> proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
+> or move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read access via x402 (EIP-3009 on Base).
 > Chain-agnostic, immutable contracts. This file orients AI agents integrating the protocol.
 
 ## Start here (agents)

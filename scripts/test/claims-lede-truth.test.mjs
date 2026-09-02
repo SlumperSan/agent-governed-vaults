@@ -305,6 +305,48 @@ test('no public surface describes the sub-five regime as stake-blind', () => {
 const ONCHAIN_MEMBER_GATE =
   /\b(?:contracts?|protocol|vault|on-chain)\b[^.]{0,80}\b(?:allowlist|allow-list|whitelist)s?\b[^.]{0,40}\b(?:members?|depositors?|participants?|users?|deposits?)\b|\b(?:members?|depositors?|participants?)\b[^.]{0,40}\b(?:allowlist|allow-list|whitelist)s?\b|\b(?:approved|vetted|permitted)\s+(?:members?|depositors?|participants?)\b/gi;
 
+// ---------------------------------------------------------------------------------------------
+// Guard 6 — the operator's powerlessness must be ENUMERATED, never claimed as a universal.
+//
+// The first version of this branch's own lede said the operator "holds no on-chain authority over
+// a deployed vault". That is attackable, and Ops5 caught it: `FeeEngine.onFeeCollected` /
+// `onFeeCollectedAsset` credit `claimableFees[registry.operatorAddressOf(opId)]`, and `claimFees`
+// pays `claimableFees[msg.sender]` out to the caller. The operator address therefore holds a real,
+// unilateral, on-chain right that nobody else has — the 10% performance fee. It is an ECONOMIC
+// right, not a governance one, and the distinction is sound, but a universal negative invites a
+// reader to find the one exception and they will find it in one transaction.
+//
+// So: enumerate. "operatorship confers no authority to vote, execute, pause, reprice, or move
+// member funds" is unattackable and no longer than the sentence it replaces.
+// ---------------------------------------------------------------------------------------------
+const OPERATOR_UNIVERSAL = [
+  /\b(?:no|zero)\s+(?:privileged|special)\s+(?:on-chain\s+)?(?:power|authority|rights?|control)\b/gi,
+  /\b(?:holds?|has|have|with)\s+no\s+on-chain\s+(?:power|authority|rights?|control)\b/gi,
+  /\boperators?\s+(?:holds?|has|have)\s+no\s+(?:power|authority|rights?|control)\b/gi,
+];
+
+test('the operator\'s lack of power is enumerated, never claimed as a universal', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of OPERATOR_UNIVERSAL) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    'The operator IS the sole recipient of the 10% performance fee:\n' +
+      '  FeeEngine.onFeeCollected -> claimableFees[registry.operatorAddressOf(opId)][token] += amt\n' +
+      '  FeeEngine.claimFees      -> pays claimableFees[msg.sender][token] to msg.sender\n' +
+      'That is an economic right, not a governance one — but it IS an on-chain right nobody else\n' +
+      'has, so a universal negative ("no privileged power", "holds no on-chain authority") is\n' +
+      'falsifiable in one transaction. ENUMERATE instead:\n' +
+      '  "operatorship confers no authority to vote, execute, pause, reprice, or move member funds"\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
 test('no public surface claims the contracts screen who may deposit', () => {
   const hits = [];
   for (const { file, text } of surfacesWithText()) {

@@ -10,8 +10,8 @@ Sprint 1 artifact 1.1. Companion: [THREAT-MODEL.md](THREAT-MODEL.md). Decisions 
 
 Permissionless vaults in which members pool USDC into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
-proposes as a member and holds no on-chain authority over a deployed vault — nothing rebalances
-until a proposal passes. Settlement asset is USDC. Off-chain metered access (analytics,
+proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
+move member funds — nothing rebalances until a proposal passes. Settlement asset is USDC. Off-chain metered access (analytics,
 leaderboard, signal feeds) is paid via x402; **x402 never appears in the contract layer** (§9).
 
 ```
