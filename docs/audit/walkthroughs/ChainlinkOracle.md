@@ -302,9 +302,12 @@ Read from `contracts/config/base-mainnet.json` and `contracts/config/base-sepoli
   forbids doing both.
 - **A price sitting inside the deviation band reads as fresh.** A Chainlink feed updates on its
   heartbeat **or** a deviation-threshold move, so a price up to roughly the deviation band stale is
-  legitimately "fresh" to this contract. This is a bounded, inherent-to-Chainlink NAV arb; the
-  vault-side defence is M-15's `minSharesOut` / `minValueOut`, and E7/EE-5 is the same residual seen
-  from `VaultCore`.
+  legitimately "fresh" to this contract. This is a bounded, inherent-to-Chainlink NAV arb; E7/EE-5
+  is the same residual seen from `VaultCore`. **Read the vault-side defence from `VaultCore`, not
+  from this file's NatSpec**, which names `minSharesOut`/`minValueOut` as a pair: only
+  `deposit(amountUsdc, minSharesOut)` exists, it is enforced on the **immediate** path only
+  (`SlippageExceeded`, M-15), and `VaultCore`'s own M-15 note records that exit has **no
+  `minValueOut` overload** — the byte budget did not allow it. Row 13 says the same thing.
 - **No freeze alerting today.** LAUNCH-READINESS §4 row 2 records that the canary's
   `oracle-freshness` signal has **not** been ported and emits `skipped` on a launch vault, so
   nothing alerts on the freeze described above. Operational gap, recorded here so it is not
