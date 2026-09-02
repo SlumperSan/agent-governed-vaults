@@ -434,14 +434,21 @@ function perHeadCi(opts = {}) {
         continue;
       }
       r.ci.label = 'fail(no-runner)';
-      const id = jobs[0]?.databaseId;
-      const notes = id
-        ? jsonOr(sh('gh', ['api', `repos/${repo.owner}/${repo.name}/check-runs/${id}/annotations`], 20_000), null)
-        : null;
-      const why = Array.isArray(notes) ? notes.map((n) => n.message).filter(Boolean).join(' ') : '';
-      // Report the annotation VERBATIM where there is one. A paraphrase is how "billing" became
-      // "capacity" in the first place, and the two imply opposite actions.
-      r.ci.note = why || `${jobs.length} job(s), all steps=0 runner="" — no runner allocated; no annotation says why`;
+      // Every starved job, not `jobs[0]` -- that is the same `nodes[0]` shape excluded from
+      // classifyCi above, and it would report ONE job's cause as the whole run's. Today all three
+      // jobs carry the same billing annotation, but a run starved for two different reasons must not
+      // be summarised by whichever job sorted first. Deduped, so the common case stays one line.
+      const seen = new Set();
+      for (const j of jobs) {
+        if (!j?.databaseId) continue;
+        const notes = jsonOr(sh('gh', ['api', `repos/${repo.owner}/${repo.name}/check-runs/${j.databaseId}/annotations`], 20_000), null);
+        if (Array.isArray(notes)) for (const n of notes) if (n?.message) seen.add(n.message.trim());
+      }
+      // Report the annotation VERBATIM. A paraphrase is how "billing, escalate" became "capacity,
+      // wait" in the first place, and the two imply opposite actions.
+      r.ci.note = seen.size
+        ? [...seen].join(' | ')
+        : `${jobs.length} job(s), all steps=0 runner="" — no runner allocated; no annotation says why`;
     }
   }
 
@@ -492,7 +499,10 @@ export function collect(opts = {}) {
   let ghUp = false;
   if (useGh) {
     // mergeable is computed asynchronously by GitHub, so it can legitimately come back UNKNOWN.
-    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,mergeable', '--limit', '40'], 20_000);
+    // --limit 50 to match the per-head query's `first: 50`. At 40 the two lists silently disagreed
+    // between 41 and 50 open PRs -- two counts of "the open PRs" in one screen, which is the class
+    // of divergence this board exists to remove.
+    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,mergeable', '--limit', '50'], 20_000);
     const i = sh('gh', ['issue', 'list', '--state', 'open', '--json', 'number,title', '--limit', '40'], 20_000);
     if (p || i) {
       prs = jsonOr(p, []);
