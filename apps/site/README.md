@@ -1,12 +1,20 @@
 # apps/site — public marketing site
 
-Six static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
-`how-it-works.html`, `who-its-for.html`, `operators.html`, `risks.html`, `faq.html`.
+Seven static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
+`how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `risks.html`,
+`faq.html`.
 
 No build step. No framework. **Zero JavaScript** — there is not a single `<script>` tag, so "works
 with JavaScript disabled" is true by construction rather than by testing. No external requests of
 any kind: no webfonts, no CDN, no analytics, no trackers, no remote images. System font stacks only.
-The only off-site link anywhere is the project's own GitHub repository.
+The only off-site link a reader can follow is the project's own GitHub repository.
+
+Two kinds of absolute URL do appear in each `<head>`, and neither is a request or a link: the social
+preview tags (`og:`/`twitter:`), which are `content` attributes, and each page's own
+`rel="canonical"`, which points at this site's public host `rwally.com`. A canonical fetches nothing
+and navigates nowhere; it is metadata that happens to be spelled with an `href`. It is the single
+exemption to the no-external-host rule below, and it is written down in the test beside the code
+that grants it.
 
 There is deliberately **no `package.json` in this directory**. `apps/*` is an npm workspace glob and
 adding one changes what `npm ci` installs at the root.
@@ -67,17 +75,19 @@ add a marker with it.
 ## The claims test is what stops a banned claim from shipping
 
 `test/site.test.mjs` runs in `npm run test:backend` and therefore in `npm run gate` and in CI. Prose
-has no compiler; that file is the compiler. It asserts, across all six pages:
+has no compiler; that file is the compiler. It asserts, across all seven pages:
 
 - **Absence** of banned claim phrases — word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
-  The same list is applied to this README and to both stylesheets, not only to the six pages.
+  The same list is applied to this README and to both stylesheets, not only to the seven pages.
 - **Presence** of the two exact pre-launch banner strings and the two exact footer strings, exactly
   one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
   ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
-  checks against `fonts.googleapis.com` and `fonts.gstatic.com`.
+  checks against `fonts.googleapis.com` and `fonts.gstatic.com`. Exactly one exemption:
+  `rel="canonical"` pointing at `rwally.com`, which loads no resource and is not a link a reader can
+  follow. Any other `rel` still fails, and so does a canonical pointing at any other host.
 - No raw hex colour in `site.css`, and the full token set present in `tokens.css`. `site.css` may not
   set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch`.
 - Every internal `.html` link resolves to a file on disk.
@@ -131,14 +141,14 @@ have legitimate uses for several words on the `BANNED` list, so that list is *no
 as examples and turned the gate red, which is the check working.)
 
 - **Mode F opens at the reveal phase, not at passage.** Five phrasings that place the trigger at
-  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the six pages,
+  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the seven pages,
   and each of those three files must positively name the reveal phase — otherwise the ban is
   satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
-  `p.commitDeadline` onward (`Governance.sol:622-633`). The site-only ban on *one* phrasing had
+  `p.commitDeadline` onward (`Governance.sol:648-659`). The site-only ban on *one* phrasing had
   existed since 2026-08-29 and did not stop the same claim shipping three other ways.
 - **The open High is named wherever it is claimed.** Any sentence saying a High "remains open at
-  the launch configuration" must name it in that same sentence — it is **H-8**, the stake-blind
-  `<5`-member quorum regime. H-5/H-6/H-7/H-9 are *unreachable* at launch, not open: each needs a
+  the launch configuration" must name it in that same sentence — it is **H-8**, the purchasable
+  member count in the `<5`-member quorum regime. H-5/H-6/H-7/H-9 are *unreachable* at launch, not open: each needs a
   funded child and `allowSubVaults = false`. At least three surfaces must carry the claim, so it
   cannot be quietly deleted instead of qualified.
 - **No demo name implies an outcome.** Every vault and operator name in `apps/web/src/fixtures.mjs`
