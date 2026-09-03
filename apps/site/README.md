@@ -1,7 +1,8 @@
 # apps/site — public marketing site
 
-Six static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
-`how-it-works.html`, `who-its-for.html`, `operators.html`, `risks.html`, `faq.html`.
+Seven static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
+`how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `risks.html`,
+`faq.html`.
 
 No build step. No framework. **Zero JavaScript** — there is not a single `<script>` tag, so "works
 with JavaScript disabled" is true by construction rather than by testing. No external requests of
@@ -67,11 +68,11 @@ add a marker with it.
 ## The claims test is what stops a banned claim from shipping
 
 `test/site.test.mjs` runs in `npm run test:backend` and therefore in `npm run gate` and in CI. Prose
-has no compiler; that file is the compiler. It asserts, across all six pages:
+has no compiler; that file is the compiler. It asserts, across all seven pages:
 
 - **Absence** of banned claim phrases — word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
-  The same list is applied to this README and to both stylesheets, not only to the six pages.
+  The same list is applied to this README and to both stylesheets, not only to the seven pages.
 - **Presence** of the two exact pre-launch banner strings and the two exact footer strings, exactly
   one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
   ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
@@ -131,7 +132,7 @@ have legitimate uses for several words on the `BANNED` list, so that list is *no
 as examples and turned the gate red, which is the check working.)
 
 - **Mode F opens at the reveal phase, not at passage.** Five phrasings that place the trigger at
-  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the six pages,
+  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the seven pages,
   and each of those three files must positively name the reveal phase — otherwise the ban is
   satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
   `p.commitDeadline` onward (`Governance.sol:622-633`). The site-only ban on *one* phrasing had
