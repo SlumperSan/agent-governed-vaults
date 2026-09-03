@@ -37,9 +37,8 @@ deployment fix**:
 VaultCore's whole *creation* code in its own runtime, and the sum does not fit — the initcode
 measures **22,391 B** against a 24,576 B runtime cap (2026-09-02), leaving 2,185 B for a factory
 whose own logic is 3,572 B. (This sentence said the creation code was 24,731 B and exceeded the cap
-*by itself*. True when written; the figure has since moved below the cap and the comparison with
-it.) — `VaultFactory` measured 27,241 B and was
-undeployable on any chain.
+*by itself*. True when written; the figure has since moved below the cap, and the comparison with
+it went too.) `VaultFactory` measured 27,241 B and was undeployable on any chain.
 
 ---
 

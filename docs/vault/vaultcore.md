@@ -115,7 +115,8 @@ with `forge build --sizes` at `protocol/main` on 2026-09-02, up from ~283 B befo
 > them. That ~283 B was the live figure until #90 reclaimed the budget. It is not the live figure
 > now, and this blockquote asserted that it was until 2026-09-02.
 >
-> The 1,182 B figure was cited to `AUDIT-HANDOFF.md`; that document no longer carries it.
+> The 1,182 B figure was cited to `AUDIT-HANDOFF.md`, which still names it — as history, in the
+> banner at the top of that file, alongside 283 B. Neither is a live figure in either document.
 
 This is why **H-5, H-6 and the exit-side `minValueOut`** remained unfixed (H-9 was in this list and is fixed in code as of 2026-09-01; PR #90 has since removed the size wall itself) — they land in
 VaultCore and several would not fit even alone. Any future VaultCore fix likely requires moving
