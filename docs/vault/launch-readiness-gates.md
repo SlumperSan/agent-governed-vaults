@@ -39,7 +39,7 @@ Root vaults only (the cheapest risk reduction — see [[root-vaults-only]]); fir
 a per-feed heartbeat and sane-price band per asset; first baskets **WETH + cbBTC** (majors only —
 cbETH was dropped because Base publishes no cbETH/USD feed). The "each asset needs five price
 sources" line described the retired aggregator and no longer applies. EIP-170: `VaultCore` runs with
-**~4,095 B** of margin since PR #90 (2026-09-01), up from **~283 B** — corrected 2026-08-30; the 1,014 B previously recorded here predates M-15's
+**3,926 B** of margin as of 2026-09-02, up from **~283 B** before PR #90 — corrected 2026-08-30; the 1,014 B previously recorded here predates M-15's
 deposit overload, which spent 731 B. `VaultFactory` (~21,004 B spare) and `ChainlinkOracle`
 (~23,044 B spare) are **not** size-constrained, contrary to what earlier notes assumed.
 
@@ -50,8 +50,8 @@ attestation, gate 1) · `base-mainnet.json.chainlinkOracle` populated and on-cha
 **remaining:** re-run on the pivoted tree whichever of the operational gates 2/3/6 the source
 document still shows short of GO (they need a funded key). Gate 7 is closed — the restore drill is
 recorded and re-run literally under Docker. H-5/H-6 stay deferred with the sub-vault (H-9 was fixed in code 2026-09-01)
-feature — and with `VaultCore` at ~283 B of margin, anything VaultCore-shaped is now effectively
-closed.
+feature — and with `VaultCore` at 3,926 B of margin, size is no longer what closes anything
+VaultCore-shaped. The remaining reason is the sub-vault dormancy, not the byte budget.
 
 ## Links
 
