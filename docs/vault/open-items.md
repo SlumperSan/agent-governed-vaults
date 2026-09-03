@@ -4,7 +4,7 @@ The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Ever
 
 ## Why it matters
 
-Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
+Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gate 0 root-only (C-6 resolved by the Chainlink pivot), gate 1 on owner attestation. The launch is still NO-GO, but on the OPERATIONAL gates (3/6, soak + canary), which need a funded testnet key. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
 
 ## Launch-blocking
 

@@ -241,7 +241,9 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > post-audit feature. To enable sub-vaults you must deploy a factory with `allowSubVaults = true`,
 > which is only appropriate once that mechanism has shipped and been audited. See
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The protocol is
-> **NO-GO for mainnet** until the full remediation + external audit completes, in any case.
+> **NO-GO for mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key); the
+> security gates are cleared and the external audit is complete on owner attestation. Enabling
+> sub-vaults is additionally gated on the post-launch look-through mechanism shipping and being audited.
 >
 > **This is not a ban on testnet sub-vault drills** — the Base Sepolia drills already run
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the

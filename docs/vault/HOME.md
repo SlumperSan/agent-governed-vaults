@@ -7,7 +7,7 @@
 **Repo:** `github.com/SlumperSan/agent-governed-vaults` (private) · **base:** `protocol/main`
 **One-liner:** permissionless USDC index vaults whose members ratify every rebalance by
 on-chain commit-reveal vote — proposal rights follow stake, not operatorship — with x402-metered
-off-chain access. **Launch verdict:** NO-GO (external audit pending; C-6 open).
+off-chain access. **Launch verdict:** NO-GO — for OPERATIONAL reasons only (the soak and canary gates need a funded testnet key). Every security gate is cleared: gate 0 GO (root-only, C-6 resolved by the Chainlink pivot), gate 1 GO on owner attestation. See [[launch-readiness-gates]].
 
 ## Conventions (for consistency across the graph)
 

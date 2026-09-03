@@ -49,8 +49,10 @@ buckets, so any "N passing tests" figure must carry the qualifier:
 
 Four of five original Criticals are closed with executed evidence (`AuditRootVaultsOnly`,
 `Governance::test_phaseDurationHardCapsEnforced`, `AuditAggregatorDecodeBrick`, `AuditVoteAfterExit`).
-**C-4/C-6 keep gate 0 NO-GO.** The leading resolution is [[chainlink-direct-pivot]] — consume
-Chainlink Data Feeds directly, deleting most of the oracle-finding class.
+**C-4/C-6 kept gate 0 NO-GO at the time of this re-verification.** They have since been resolved by
+[[chainlink-direct-pivot]] — consuming Chainlink Data Feeds directly deleted most of the oracle-finding
+class — and gate 0 is now **GO (root-only)** per LAUNCH-READINESS.md. This section records the
+re-verification state before the pivot; read it as history.
 
 ## Links
 

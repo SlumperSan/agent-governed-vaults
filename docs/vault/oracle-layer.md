@@ -39,7 +39,7 @@ the blessed set, and members see it at deposit time.
   NOT-DEPLOYABLE (#41). Freezes are deliberately **more** likely now (E2/E6): a quiet TWAP pool
   withholds (H-2) rather than quoting a stale tick as fresh.
 
-## Audit C-6 — the Byzantine bound (OPEN)
+## Audit C-6 — the Byzantine bound (RESOLVED by the Chainlink-direct pivot)
 
 Phase-2 re-verification quantified that "5 sources / quorum 3" is a **fault-tolerance** floor
 (sound against benign withholdings), **not** a Byzantine one. Because `k` falls to the quorum via
