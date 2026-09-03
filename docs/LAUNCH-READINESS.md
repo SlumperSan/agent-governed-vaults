@@ -153,7 +153,9 @@ proposal is executable immediately, so members have **no post-passage window in 
 The justification this line used to carry — "defensible *because* Mode-F exists" — was **false and
 is withdrawn**: Mode-F does not let a member exit ahead of the swap, it QUEUES the request from
 reveal start and prices it at post-execution NAV, so it is the opposite of a veto window. The real
-protection is the vote and the reveal-phase window, not a grace period after passage. Recorded
+protection is the vote and the COMMIT-phase window — `hasPendingExecution` turns true at
+`commitDeadline`, so the last moment a member can still take a Mode-I exit at a known price is
+before reveals open, not after passage. Recorded
 plainly on the public site rather than buried (apps/site/how-it-works.html). A higher-quorum variant (5,000)
 was exercised live on vault B. Child quorum floors inherit (SV-6).
 

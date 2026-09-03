@@ -148,6 +148,48 @@ test('no markdown file in the repo states a decay period other than the one the 
   assert.ok(claims >= LAUNCH_DOCS.length, `only ${claims} decay-period claims matched across ${files.length} markdown files; the patterns have stopped recognising the form the docs use`);
 });
 
+/**
+ * The governance tuple, bound to the config.
+ *
+ * WHY THIS EXISTS. On 2026-09-03 `smoke.gov.timelockDuration` went 86400 -> 0 (an owner decision).
+ * Two live statements survived the change and CI could not see either, because nothing bound this
+ * field to anything:
+ *   - `base-mainnet.json`'s OWN `govNote`, twelve lines below the value, still read "this sets a
+ *     non-zero timelockDuration ... mainnet capital wants a day to react" — the config annotating
+ *     itself with the opposite of its own value;
+ *   - `docs/vault/go-to-market-plan.md` still carried "Zero timelock is defensible *because* Mode-F
+ *     exits exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
+ * Both are in LAUNCH_DOCS or the config itself, so binding the tuple would have caught the second
+ * and the self-consistency check catches the first.
+ */
+test('every launch doc states the governance tuple the mainnet config carries', () => {
+  const g = mainnet.smoke.gov;
+  const tuple = `\`${g.commitDuration}/${g.revealDuration}/${g.timelockDuration}/${g.executionWindow}\``;
+  for (const doc of LAUNCH_DOCS) {
+    assert.ok(
+      read(doc).includes(tuple),
+      `${doc} does not state the config's governance tuple ${tuple} ` +
+        `(commitDuration/revealDuration/timelockDuration/executionWindow from base-mainnet.json). ` +
+        `If a gov value changed, this doc is now stale.`
+    );
+  }
+});
+
+test("base-mainnet.json's govNote does not contradict its own timelockDuration", () => {
+  const g = mainnet.smoke.gov;
+  const note = String(mainnet.smoke.govNote ?? '');
+  // The note quotes the withdrawn wording deliberately; only flag it ASSERTING a non-zero delay.
+  const assertsNonZero = /this sets a non-zero timelockDuration/i.test(note)
+    || /mainnet capital wants a day to react(?![^.]*withdrawn)/i.test(note);
+  if (g.timelockDuration === 0) {
+    assert.ok(
+      !assertsNonZero,
+      `smoke.gov.timelockDuration is 0 but govNote asserts a non-zero timelock. ` +
+        `The config would be annotating itself with the opposite of its own value.`
+    );
+  }
+});
+
 test('every launch doc states the exitFeeMaxBps the mainnet config carries', () => {
   const bps = mainnet.smoke.exitFeeMaxBps;
   for (const doc of LAUNCH_DOCS) {

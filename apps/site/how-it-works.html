@@ -112,7 +112,7 @@
         <li>
           <h3>Timelock, then an execution window</h3>
           <p>A passed proposal waits out the vault's timelock, then becomes executable for a bounded window. The protocol caps any timelock at 30 days. The adapter performs the swap when it executes.</p>
-          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap &mdash; it queues you and prices you after it. The protection you have is the vote itself and the reveal-phase window, not a post-passage grace period. This is a deliberate choice by the operator, recorded here rather than buried.</p>
+          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap &mdash; it queues you and prices you after it. The protection you have is the vote itself and the commit-phase window &mdash; exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
         </li>
         <li>
           <h3>Exits queue from the moment reveals open</h3>
