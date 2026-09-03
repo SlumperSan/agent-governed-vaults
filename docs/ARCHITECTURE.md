@@ -8,8 +8,10 @@ Sprint 1 artifact 1.1. Companion: [THREAT-MODEL.md](THREAT-MODEL.md). Decisions 
 
 ## 1. System overview
 
-Permissionless vaults in which AI agents pool USDC into spot crypto index baskets and govern
-rebalances by stake-weighted vote. Settlement asset is USDC. Off-chain metered access (analytics,
+Permissionless vaults in which members pool USDC into spot crypto index baskets and ratify
+every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
+proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
+move member funds — nothing rebalances until a proposal passes. Settlement asset is USDC. Off-chain metered access (analytics,
 leaderboard, signal feeds) is paid via x402; **x402 never appears in the contract layer** (§9).
 
 ```
@@ -181,7 +183,7 @@ redeemer carries their own execution cost.
 | Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). HWM per `(member, operator)` — see §7. |
 | Proposal rights scale with stake | Governance, against the same voting-eligible stake measure as quorum. |
 | Quorum: participating stake, 25% protocol floor | Governance. Denominator = voting-eligible stake at the proposal snapshot (excludes pending deposits §5 and locked Mode-F shares §4.4). Standing defaults never count in the quorum numerator (K-3 accepted). |
-| <5 members: absolute signer counts | Governance switches quorum to N-of-M signers below the threshold. The 5-member boundary itself is a manipulation surface — threat model CM-7. |
+| <5 members: signer count plus stake | Below the threshold `finalize` passes on either a majority of the members-at-creation revealing FOR while the FOR stake also clears the quorum, or an outright FOR stake majority — both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface — threat model CM-7. |
 | Rules immutable after funding except full consensus + timelock | VaultCore config setters gated on a Governance flag reachable only by 100% of voting-eligible stake + timelock. One permanently offline member ⇒ rules frozen forever (K-2, accepted as intended). |
 | Per-vault capacity cap | VaultCore: deposits revert above cap. **Optional** — `capacityCapUsdc == 0` opts out (uncapped); `isCapped()` reports which. |
 

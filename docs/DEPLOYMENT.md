@@ -14,9 +14,12 @@ unwired registry cannot be fixed after the fact).
 
 > ✅ **Unblocked (Sprint 7).** `VaultFactory` was 27,241 bytes of runtime code against the
 > EIP-170 24,576-byte cap, so §1 reverted on-chain and nothing in this runbook could be executed
-> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). VaultCore's
-> creation code is larger than the runtime cap all by itself, so it now lives in `VaultDeployer`
-> — deployed first, then pinned immutably by the factory. The factory is 2,718 B and
+> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). Any contract that
+> writes `new VaultCore(...)` embeds VaultCore's whole creation code in its own runtime, and the sum
+> does not fit: 22,391 B of initcode (2026-09-02) leaves 2,185 B under the cap, against a factory
+> whose own logic measures 3,572 B. So the creation code lives in `VaultDeployer`
+> — deployed first, then pinned immutably by the factory. The factory measures **3,572 B**
+> (2026-09-02; recorded here as 2,718 B until then — re-measure, do not copy) and
 > `forge build --sizes` passes. **§1 gained a sixth singleton**; the wiring order is otherwise
 > unchanged.
 
@@ -171,6 +174,32 @@ allowlist makes it non-selectable there anyway).
 
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
+
+   > ⚠ **The live Base Sepolia adapter `0xf3e08c8b00281750d531a48473d053009038a9b1` predates
+   > BOTH #101 and the scoped-refund fix, and CANNOT BE REPOINTED.** Its recorded
+   > `sourceCommit` is `5934ef22`, which contains **no `_lock` / `nonReentrant` at all** and
+   > `8a2afc3e` (#101's mutex) is **not** an ancestor of it — check with
+   > `git merge-base --is-ancestor 8a2afc3e 5934ef22`. So it carries **two** exploits of one
+   > root cause, not one, and the second is the more serious:
+   >
+   > 1. **The donation DoS** (a revert). Anyone can `transfer` USDC to that address and the next
+   >    `executeRebalance` leg through it reverts `Panic(0x11)`.
+   > 2. **#101's cross-order theft** (a LOSS OF FUNDS). With no mutex, a counterparty reached
+   >    through the route re-enters with a 1-unit order and the nested whole-balance sweep hands
+   >    it the outer order's in-flight `tokenIn` — the attack
+   >    `test/AdapterReentrancy.t.sol::test_nestedSwapCannotSweepTheOuterOrdersInput` exists to
+   >    prove, unguarded on that address. Reachability on Sepolia is LOW (governance chooses
+   >    `routeData`, so the hostile counterparty must be routed to), but low is a different
+   >    statement from the consequence list, and this record's job is to state the latter.
+   >
+   > Both are described in [the walkthrough](audit/walkthroughs/AggregationRouterAdapter.md).
+   > `VaultCore.isAllowedAdapter` is populated in the constructor and never written again, so the
+   > existing testnet vaults — including the smoke vault
+   > `0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f` — cannot be pointed at a fixed adapter. **The
+   > soak therefore runs against the old shape**, and a rebalance failure there may be this and
+   > not the soak's own subject. Fixing it on Sepolia means a fresh adapter *and* fresh vaults;
+   > that is a redeploy decision, not part of the contract fix. Mainnet must deploy the fixed
+   > bytecode — this is the constructor-only immutability that made the finding a deploy gate.
 
 ## 4. Create a vault
 

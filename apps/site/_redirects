@@ -1,0 +1,22 @@
+# Cloudflare Pages redirects for the public site.
+#
+# THIS FILE DEFINES NO RULES, AND THAT IS THE FINDING. It exists so the next person looks here,
+# reads why, and does not spend an afternoon rediscovering it.
+#
+# THE www -> APEX REDIRECT CANNOT BE EXPRESSED HERE. Pages matches the source column on PATH ONLY.
+# Cloudflare's own `_redirects` documentation lists "Domain-level redirects" as unsupported and
+# gives `workers.example.com/* workers.example.com/blog/:splat 301` as an example of a line that
+# does not work. Invalid lines are ignored rather than reported, so a hostname rule written here
+# would look correct in review, deploy without error, and silently do nothing -- which is worse
+# than not writing it. Redirecting `www.rwally.com` to `rwally.com` is a zone-level Bulk Redirect
+# in the Cloudflare dashboard; the steps are in the pull request that added this file and in
+# Cloudflare's "Redirecting www to domain apex" guide.
+#
+# NO CANONICALIZATION RULE IS NEEDED EITHER. Pages already redirects HTML pages to their
+# extension-less counterparts: `/faq.html` to `/faq`, and `/index.html` to `/`. Those are the
+# canonical URLs, and they are what sitemap.xml lists. Restating that behaviour as a rule here
+# would add a line to maintain that changes nothing.
+#
+# IF A RULE IS EVER ADDED: one per line, `from  to  status`, source is a path, and the file is
+# capped at 2,000 static and 100 dynamic redirects. Put the reason for the rule in a comment above
+# it -- a redirect nobody can explain is a redirect nobody can safely delete.

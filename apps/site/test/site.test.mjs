@@ -37,13 +37,13 @@ const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'base-mainnet.json');
 
-const PAGES = ['index.html', 'how-it-works.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html'];
+const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html'];
 
 /** Everything else the banned-phrase list must also cover: the README and both stylesheets. */
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 
 // The exact strings the spec pins. Any drift in punctuation or dashes is a failure, by design.
-const BANNER_STATUS = 'Not deployed. No mainnet or testnet deployment of the current code exists.';
+const BANNER_STATUS = 'Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
@@ -51,6 +51,9 @@ const TITLE_SUFFIX = ' — Agent-Governed Vaults';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
+
+// The site's own public host, and the ONE exemption to the rule above -- see isExemptCanonical().
+const CANONICAL_HOST = 'rwally.com';
 
 /** Phrases banned on every page, everywhere, with no exception. */
 const BANNED = [
@@ -162,7 +165,7 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-test('all six pages exist', () => {
+test('all seven pages exist', () => {
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -280,12 +283,67 @@ test('zero JavaScript: no script tags, no event handler attributes', () => {
   }
 });
 
+/**
+ * The href values exempted from the host rule below: `rel="canonical"` links pointing at this
+ * site's own public host. This is the ONLY exemption, and it exists for a reason worth writing
+ * down rather than leaving to be reconstructed.
+ *
+ * The invariant the host rule protects is that a page LOADS nothing from anywhere and NAVIGATES
+ * off-site only to the project repository. A canonical link does neither: it fetches no resource,
+ * and it is not a link a reader can follow -- it is metadata that happens to be spelled with an
+ * `href` rather than a `content` attribute, which is why `og:url` needs no exemption and this does.
+ *
+ * It also cannot be written any other way. A RELATIVE canonical would pass this check untouched
+ * and is worse than having none at all, because it cannot do the one job canonicals exist for:
+ * collapsing www/non-www, http/https and trailing-slash duplicates of a page onto one URL. An
+ * exemption that lets the correct form ship beats a check that only permits the useless form.
+ *
+ * Both halves of the exemption are load-bearing and deliberately narrow. `rel="canonical"` ONLY --
+ * any other `rel` (stylesheet, preload, icon) still fails, because those DO load. And
+ * CANONICAL_HOST ONLY -- a canonical pointing anywhere else is not exempt and still fails.
+ *
+ * TWO WAYS THIS WAS WRONG WHEN FIRST WRITTEN, BOTH FOUND IN REVIEW, BOTH WORTH RECORDING:
+ *
+ * It matched the host with `startsWith('https://rwally.com')`, so `https://rwally.com.attacker.
+ * example/x` prefixed it and was exempt. The host is now parsed with `new URL` and compared for
+ * EQUALITY. Never re-narrow this to a string prefix: a prefix of a hostname is a different
+ * hostname, and the attacker picks the suffix.
+ *
+ * It exempted href VALUES rather than the tags carrying them, so any `src` or `href` anywhere on
+ * the page that happened to equal an exempted value inherited the exemption -- including a
+ * `rel="stylesheet"`, which does load. Composed with the prefix bug, a stylesheet pulling from a
+ * foreign host passed this gate green. The exempt canonical tags are now REMOVED from the markup
+ * before the scan, so the exemption cannot spread past the tag it was written for.
+ *
+ * The shape of the mistake, since it will recur: an exemption narrowed by describing it in a
+ * comment rather than by encoding it. Both sentences above were in the file, and both were false
+ * as implemented. Test the exemption's edges with a probe, not with prose.
+ */
+const isExemptCanonical = (tag) => {
+  if (!/\brel\s*=\s*"canonical"/i.test(tag)) return false;
+  const href = tag.match(/\bhref\s*=\s*"([^"]*)"/i)?.[1];
+  if (!href) return false;
+  let u;
+  try {
+    u = new URL(href);
+  } catch {
+    return false; // relative or malformed: not exempt, and the host rule ignores it anyway
+  }
+  return u.protocol === 'https:' && u.host.toLowerCase() === CANONICAL_HOST;
+};
+
+/** The markup with the exempt canonical tags removed, so the scan below never sees them. */
+const withoutExemptCanonicals = (html) =>
+  html.replace(/<link\b[^>]*>/gi, (tag) => (isExemptCanonical(tag) ? ' ' : tag));
+
 test('no external requests: the only permitted remote host is the project repository', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     assert.ok(!/fonts\.googleapis\.com/i.test(html), `${p}: references fonts.googleapis.com`);
     assert.ok(!/fonts\.gstatic\.com/i.test(html), `${p}: references fonts.gstatic.com`);
-    for (const m of html.matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)) {
+    // Scan the markup with the exempt canonical tags removed, rather than skipping matching
+    // href VALUES: a value-scoped skip leaks the exemption to any other tag carrying the same URL.
+    for (const m of withoutExemptCanonicals(html).matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)) {
       const v = m[1];
       if (!/^(?:https?:)?\/\//i.test(v)) continue; // relative or fragment: fine
       const host = v.replace(/^(?:https?:)?\/\//i, '').split('/')[0].toLowerCase();
@@ -305,7 +363,7 @@ test('every internal .html link resolves to a file on disk', () => {
   }
 });
 
-test('every page links to all six pages', () => {
+test('every page links to all seven pages', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {
@@ -514,8 +572,15 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
       `${p} is stale relative to base-mainnet.json: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
     );
   }
-  // The small-member quorum regime flips at roughly four seats; the seat price is the minimum
-  // deposit, so the cost of capture moves with the config.
+  // What four seats BUY changed with the H-8/CM-7 remediation, while the arithmetic did not.
+  // Before it, four dust seats passed a proposal outright, because the sub-five regime was a pure
+  // head count. Now both sub-five branches weigh stake (`headMajorityWithStake` carries a stake
+  // quorum term and `forStakeMajority` is stake alone), so dust cannot pass anything on numbers.
+  // What four seats still buy is the REGIME: taking a single-member vault to five members moves it
+  // out of the signer-count branch into the pure stake rule — H-8(a), which `Governance.finalize`
+  // documents as unfixed by design and mitigated at the config layer by a meaningful minimum
+  // deposit. So the seat price is still the minimum deposit and still moves with the config; the
+  // sentence it pins had to change, and this comment is the record of why.
   const SEATS = 4;
   const capture = (SEATS * Number(BigInt(config.smoke.minDepositUsdc))) / 1e6;
   const risks = raw.get('risks.html') ?? '';
@@ -633,7 +698,7 @@ const repoProse = new Map(REPO_PROSE.map((f) => [f, readFileSync(path.join(REPO,
 /**
  * Mode F opens when a live proposal reaches its REVEAL phase, not when a proposal passes:
  * `VaultCore.requestExit` queues on `Governance.hasPendingExecution`, which returns true from
- * `p.commitDeadline` onward (`Governance.sol:622-633`). Every phrasing below puts the trigger at
+ * `p.commitDeadline` onward (`Governance.sol:648-659`). Every phrasing below puts the trigger at
  * passage instead, which understates the window in which a member's exit can be trapped, and hides
  * that a DEFEATED proposal still queued the exits requested while it was live.
  *
@@ -656,7 +721,7 @@ test('no surface places the Mode-F trigger at proposal passage instead of reveal
       assert.equal(
         hit,
         null,
-        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:626-628)`,
+        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:653)`,
       );
     }
   }
@@ -696,7 +761,12 @@ test('every surface that describes Mode F names the reveal phase as its trigger'
  * truth — so the check is that the class travels with the claim.
  */
 const OPEN_HIGH_CLAIM = /remains open at the launch configuration/i;
-const OPEN_HIGH_CLASS = /stake-blind/i;
+// The class used to be spelled "stake-blind". That descriptor is now FALSE — the H-8/CM-7
+// remediation put a stake term in both sub-five branches — so pinning it here would have required
+// every surface to keep naming the finding by behaviour the contracts no longer have. What is
+// still open, and what the sentence must name, is the purchasable member count (H-8(a)). Accept
+// the finding id too: "H-8" is the most checkable name a reader can carry to the audit report.
+const OPEN_HIGH_CLASS = /purchasable member count|\bH-8\b/i;
 
 test('the "open High at the launch configuration" claim always names the finding', () => {
   /** @type {[string, string][]} */
@@ -711,7 +781,7 @@ test('the "open High at the launch configuration" claim always names the finding
       seen++;
       assert.ok(
         OPEN_HIGH_CLASS.test(s),
-        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the stake-blind <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
+        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the purchasable member count in the <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
       );
     }
   }
@@ -748,4 +818,24 @@ test('no demo vault or operator name implies an outcome', async () => {
       );
     }
   }
+});
+
+/**
+ * `llms.txt` is the file written to orient autonomous agents, and it lives at the repository root.
+ * Cloudflare Pages serves `apps/site`, so the root copy is not reachable at the public origin --
+ * `https://rwally.com/llms.txt` would 404, which is the one URL an agent is most likely to try.
+ *
+ * The site therefore carries a copy. Two copies of a claim-bearing file is a drift hazard, so this
+ * pins them byte-identical rather than trusting anyone to update both. Edit the root file; this
+ * test tells you to copy it across.
+ */
+test('apps/site/llms.txt is byte-identical to the repository root copy', () => {
+  const site = readFileSync(path.join(SITE, 'llms.txt'), 'utf8');
+  const root = readFileSync(path.join(REPO, 'llms.txt'), 'utf8');
+  assert.equal(
+    site,
+    root,
+    'apps/site/llms.txt has drifted from the root llms.txt. The root file is the source: ' +
+      'copy it across rather than editing the site copy — cp llms.txt apps/site/llms.txt',
+  );
 });
