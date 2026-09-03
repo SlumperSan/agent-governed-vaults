@@ -38,12 +38,14 @@ test-blindness for the reachable dimensions.
 
 ## The qualified test buckets
 
-The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit now span three
-buckets, so any "N passing tests" figure must carry the qualifier:
+The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit span three
+buckets, so any "N passing tests" figure must carry the qualifier. These buckets are as of this
+re-verification (pre-pivot); C-6 has since been resolved — see Consequence below:
 
 1. **Unreachable at launch by configuration** — the sub-vault suite; `AuditRootVaultsOnly` (C-1).
 2. **Config-mitigated residual** — `AuditQuorumRegimeDust` (H-8 attack a).
-3. **Live open finding** — `AuditC4EndToEnd` (C-6).
+3. **Was a live open finding at the re-verification** — `AuditC4EndToEnd` (C-6), since RESOLVED by
+   the Chainlink-direct pivot; the test is retained as retired-aggregator exploit evidence.
 
 ## Consequence
 
