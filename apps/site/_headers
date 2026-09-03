@@ -9,14 +9,14 @@
 # WHY THE POLICY BELOW IS SHAPED THE WAY IT IS. `apps/site/test/site.test.mjs` asserts that this
 # site makes no external request: no `<script>` tag, no `fonts.googleapis.com`, no
 # `fonts.gstatic.com`, and `github.com` as the only permitted remote host. That test reads the
-# SOURCE. It proves the six files in the repository are clean; it cannot prove the bytes a visitor
+# SOURCE. It proves the seven files in the repository are clean; it cannot prove the bytes a visitor
 # receives are. The Content-Security-Policy below is the same claim expressed as something the
 # browser enforces, so the property survives an injected tag, a compromised build, or an edit that
 # reaches production without the test running.
 #
 # The policy was derived from an audit of what these pages actually load, not copied from a
 # template:
-#   - 12 `<link rel="stylesheet">` (two stylesheets across six pages) are the only subresources.
+#   - 14 `<link rel="stylesheet">` (two stylesheets across seven pages) are the only subresources.
 #   - zero `<script>` tags, zero `style="..."` attributes, zero `<style>` blocks.
 #   - zero `<img>`, `<svg>`, `<iframe>`, `<form>`, `<video>`, `<object>`.
 #   - zero `url()` in either stylesheet, zero `data:` URIs anywhere.
