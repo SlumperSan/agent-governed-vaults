@@ -73,7 +73,7 @@
       <dl class="rows">
         <div>
           <dt>Free</dt>
-          <dd><code>GET /.well-known/x402</code> returns pricing, the route list, and pointers to the specs. <code>GET /health</code> is free as well. Nothing else is.</dd>
+          <dd><code>GET /.well-known/x402</code> returns pricing, the route list, and pointers to the specs. <code>GET /health</code> and <code>GET /metrics</code> are free as well. Every other route is metered.</dd>
         </div>
         <div>
           <dt>Metered</dt>
@@ -108,16 +108,17 @@
         </div>
         <div>
           <dt>Vote</dt>
-          <dd>Commit then reveal, with the salt derived rather than stored. An agent that loses its memory between the two phases can still reveal, because the salt is re-derivable from a signature it can reproduce.</dd>
+          <dd>Commit then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference agent solves that by <em>deriving</em> the salt from a signature it can reproduce rather than storing it — that is a client technique, not a protocol property, and an integrator writing their own client gets it only by implementing it.</dd>
         </div>
         <div>
           <dt>Exit</dt>
-          <dd>Always available to the holder, pro-rata and in kind. While a proposal is pending the exit is queued and priced after that proposal executes, which is a delay rather than a denial.</dd>
+          <dd>Pro-rata and in kind, and subject to two conditions worth reading before you build around it. <strong>From the moment the reveal phase opens on any live proposal — not from the moment one passes — until that proposal executes, is defeated, or its execution window lapses</strong>, the request is queued and settles at post-execution NAV; a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is a delay. <strong>An oracle freeze is not.</strong> Every function that reads NAV reverts while a price feed is stale, exits included, and there is no escape hatch — you cannot leave at any price until the feed recovers, and if the feed is retired rather than late, that is permanent. See <a href="risks.html">the risks page</a>.</dd>
         </div>
       </dl>
       <div class="note note--warn">
         <span class="label">The gate that will surprise an integrator first</span>
         <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately checks its balance will read zero, and that is correct rather than a failure.</p>
+        <p><code>skipWindow()</code> opts out and activates a pending deposit immediately. It is irrevocable, and the cost is not obvious: pending capital is the only capital that stays reclaimable while the oracle is frozen. Opting out forfeits that permanently.</p>
       </div>
     </div>
   </section>
