@@ -390,8 +390,9 @@ marks in via `entryMarks` if you keep durable history.
 
 ### Everything else
 
-- **Forward pricing.** Exiting while a passed-but-unexecuted rebalance exists settles at
-  *post*-rebalance NAV, and the shares lock until `settleQueuedExit`. The agent reports this loudly
+- **Forward pricing.** Exiting while a pending execution exists — any active proposal past reveal
+  start, or a passed one in its window, of any type — settles at *post*-execution NAV, and the
+  shares lock until someone calls `settleQueuedExit` (it is not automatic). The agent reports this loudly
   but cannot avoid it — the price it gets is not the price it sees.
 - **Non-transferable shares.** Exiting is the only way out. There is no secondary market to sell
   into if the policy is wrong.

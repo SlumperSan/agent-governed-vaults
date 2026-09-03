@@ -1076,7 +1076,7 @@ function renderExit(x) {
       ${modeF ? noticeHtml({
         tone: 'critical',
         title: 'This exit will be queued, and it cannot be cancelled.',
-        body: 'A proposal in this vault is past its commit deadline. Your redemption is queued now and settles later — inside the transaction that executes the proposal, at the NAV at that moment. Nobody can show you that price today. If the proposal expires unexecuted it settles then instead, at whatever NAV applies. You carry the outcome either way.',
+        body: 'A proposal in this vault is past its commit deadline. Your redemption is queued now and settles later — NOT on its own: once execution is no longer pending (the proposal executes, is defeated, or expires), someone must call settleQueuedExit, and anyone can. It settles at the NAV at that moment; nobody can show you that price today. You carry the outcome either way.',
       }) + noticeHtml({
         tone: 'critical',
         title: 'Your shares stop voting the moment you queue.',
@@ -1094,7 +1094,7 @@ function renderExit(x) {
         <div class="row"><div>Vault</div><div class="v" style="font-family:var(--sans)">${esc(v.name)}</div></div>
         <div class="row"><div>Shares redeemed</div><div class="v">${esc(wadExact(burn, { maxFrac: 6 }))}</div></div>
         <div class="row"><div>Exit fee</div><div class="v">${bpsPct(pv.feeBps)}</div></div>
-        <div class="row"><div>Settles</div><div class="v" style="font-family:var(--sans)">${modeF ? 'Later — on execution' : modeUnknown ? 'Unresolved' : 'Immediately'}</div></div>
+        <div class="row"><div>Settles</div><div class="v" style="font-family:var(--sans)">${modeF ? 'Later — needs settleQueuedExit' : modeUnknown ? 'Unresolved' : 'Immediately'}</div></div>
       </div>
       ${hard ? `<div class="fld" style="margin-top:14px">
         <label for="etyped">Type <strong>QUEUE</strong> to confirm you accept an irrevocable exit at an unknown price</label>

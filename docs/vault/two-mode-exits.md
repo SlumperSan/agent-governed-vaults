@@ -10,13 +10,15 @@ no dilution on remainers — which is *why* swing pricing is not needed in v1.
 
 ## Mode I vs Mode F (commitment C-4)
 
-- **Mode I (instant):** no passed-but-unexecuted rebalance exists → the request settles in the
+- **Mode I (instant):** no pending execution exists → the request settles in the
   same transaction at current NAV. The common path; this is what "instant exit at pro-rata NAV"
   means.
-- **Mode F (forward):** a rebalance has passed its vote but not yet executed → the request is
-  queued and settles at **post-execution NAV**. Queued requests are irrevocable and settle
-  automatically in the rebalance-execution transaction. Queueing starts at **vote passage**, not
-  timelock expiry ([[governance-commit-reveal]], VO-8).
+- **Mode F (forward):** the vault has a pending execution → the request is queued and settles at
+  **post-execution NAV**. Queued requests are irrevocable and do **not** settle automatically:
+  `settleQueuedExit(member)` must be called, and anyone can call it, once no execution is pending.
+  Queueing starts at the active proposal's **reveal start** (`Governance.hasPendingExecution`, true
+  from `commitDeadline`) — before the vote is tallied, and for **any** proposal type, not only a
+  rebalance ([[governance-commit-reveal]], VO-8).
 
 Between request and settlement in Mode F, shares stay outstanding (still earn/lose with the vault,
 still count in `totalSupply`) but are **locked**: non-transferable and excluded from voting-

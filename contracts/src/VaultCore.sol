@@ -529,9 +529,14 @@ contract VaultCore {
     // ───────────────────────────── redemptions ────────────────────────────────
 
     /// @notice Request redemption of `shares`. Two-mode settlement (C-4, resolves K-1):
-    /// Mode I — no passed-but-unexecuted rebalance ⇒ settles now at current NAV, in kind.
-    /// Mode F — rebalance passed and pending ⇒ queued, settles at post-execution NAV.
-    /// Queued shares stay outstanding but are locked: no voting eligibility, irrevocable.
+    /// Mode I — no pending execution ⇒ settles now at current NAV, in kind.
+    /// Mode F — a pending execution exists ⇒ queued, settles at post-execution NAV. The trigger is
+    ///   `governance.hasPendingExecution` (see IGovernance): true from the active proposal's reveal
+    ///   start, for ANY proposal type, not only a passed rebalance. Queuing is therefore what
+    ///   PREVENTS a pre-execution exit, not a hatch that grants one.
+    /// Queued shares stay outstanding but are locked: no voting eligibility, irrevocable. They do
+    ///   NOT settle as a side effect of execution — `settleQueuedExit` is a separate call anyone
+    ///   can make once no execution is pending.
     /// @param shares share amount to redeem (≤ balance; one queued exit per member at a time)
     /// @dev M-15 note: unlike `deposit`, exit has no `minValueOut` overload. The byte budget did
     /// not fit both, and the deposit side is the primary user-side defence (the C-4/H-1/H-2
@@ -565,8 +570,9 @@ contract VaultCore {
     }
 
     /// @dev The bounded read both pending-execution callers share: `gov`'s opinion of whether
-    /// `vault` has a passed-but-unexecuted rebalance. Any failure — revert, OOG, short return —
-    /// reads as false, which is the liveness-preserving answer for both callers (H-1).
+    /// `vault` has a pending execution (any active proposal past reveal start, or a passed one in
+    /// its window — see IGovernance). Any failure — revert, OOG, short return — reads as false,
+    /// which is the liveness-preserving answer for both callers (H-1).
     function _hasPendingExecution(address gov, address vault) internal view returns (bool) {
         (bool ok, uint256 word, uint256 retSize) =
             gov.boundedStaticCall(abi.encodeCall(IGovernance.hasPendingExecution, (vault)), MODULE_CALL_GAS);
