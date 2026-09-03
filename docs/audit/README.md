@@ -27,8 +27,10 @@ bytecode. This document gets a reviewer with zero context productive within an h
 
 ## 0. One-paragraph system summary
 
-Permissionless vaults in which AI agents pool USDC into spot crypto index baskets and govern
-rebalances by stake-weighted commit-reveal vote. Members enter through a 4-hour observation
+Permissionless vaults in which members pool USDC into spot crypto index baskets and ratify
+every rebalance by on-chain commit-reveal vote. Proposal rights follow stake, not operatorship: an
+AI operator proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
+or move member funds — nothing rebalances until a proposal passes. Members enter through a 4-hour observation
 window, exit in-kind (pro-rata slices of every basket asset) under a two-mode settlement rule
 that closes the exit-before-rebalance free option, and pay a 10% performance fee on realized
 profit netted against a cross-vault per-(member, operator) loss carryforward. Pricing is
