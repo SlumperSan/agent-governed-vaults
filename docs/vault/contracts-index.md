@@ -27,8 +27,9 @@ what makes constructor validation load-bearing and what shapes nearly every secu
   SF-1 mechanism-diversity argument. There is no `IPriceSource` layer on the launch path.
 - [[vaultfactory]] — permissionless canonical deployment + attestation; carries the C-1
   `allowSubVaults=false` launch gate ([[root-vaults-only]]).
-- [[vaultdeployer]] — the factory's one construction path; exists solely because VaultCore's
-  creation code exceeds EIP-170.
+- [[vaultdeployer]] — the factory's one construction path; exists because VaultCore's creation code
+  (22,391 B, re-measured 2026-09-03) plus a factory's own logic exceeds EIP-170. The blob alone is
+  under the 24,576 B cap; this line claimed otherwise until 2026-09-03.
 - [[subvaultregistry]] — parent/child edges, depth cap, fee stacking, quorum inheritance.
   **DORMANT-AT-LAUNCH** (sub-vaults disabled).
 - [[feeengine]] — 10% performance fee on realized profit, high-water-mark carry via registry.

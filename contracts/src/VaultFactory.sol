@@ -53,8 +53,17 @@ contract VaultFactory {
     /// code is retained, not deleted, so a future factory can enable it once the mechanism ships.
     bool public immutable allowSubVaults;
     /// @dev The factory's ONLY vault construction path, pinned at construction (#10). See
-    /// VaultDeployer: it exists because VaultCore's creation code alone exceeds EIP-170, and it
+    /// VaultDeployer: VaultCore's creation code is under EIP-170 by itself, but not once a
+    /// factory's own logic is added — which is why construction lives there rather than here. It
     /// holds no authority of its own — attestation stays factory-gated in OperatorRegistry.
+    ///
+    /// This said "VaultCore's creation code alone exceeds EIP-170" until 2026-09-03. That was the
+    /// same figure #151 corrected one file away in VaultDeployer.sol, and it survived here because
+    /// the correction was applied to the instance in view rather than to every instance of the
+    /// shape. VaultDeployer's corrected paragraph predicted exactly this: "nothing walks `.sol` for
+    /// stale figures, which is how the old one lasted." Something does now —
+    /// scripts/test/contracts-size-truth.test.mjs resolves this sentence against the build
+    /// artifact on every run, so it cannot go stale again without going red.
     IVaultDeployer public immutable vaultDeployer;
 
     /// @dev C-6 launch remediation (audit finding C-6, "curated oracle"). A vault's oracle is

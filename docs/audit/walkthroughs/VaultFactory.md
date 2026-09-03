@@ -4,8 +4,11 @@
 
 > **Sprint 7 change (#10).** The factory no longer writes `new VaultCore(...)`. It encodes
 > the constructor arguments and calls `vaultDeployer.deploy(...)`, an immutable address pinned
-> at construction. This was forced by EIP-170 — VaultCore's creation code alone exceeds the
-> runtime cap, so the factory could not be deployed at all (27,241 B). Read
+> at construction. This was forced by EIP-170: a factory that inlines VaultCore's creation code
+> could not be deployed at all (27,241 B against a 24,576 B cap). Note the reason is the SUM, not
+> the blob alone — VaultCore's creation code is **22,391 B** (re-measured 2026-09-03), which is
+> under the cap by itself. This line said "creation code alone exceeds the runtime cap" until then,
+> the same figure #151 corrected in `VaultDeployer.sol`. Read
 > [VaultDeployer.md](VaultDeployer.md) alongside this file; **the trust chain is unchanged**,
 > it just has one more link: factory → its one pinned deployer → VaultCore creation code.
 
