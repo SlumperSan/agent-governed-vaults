@@ -5,8 +5,16 @@
   "agentDepositNote": "Drill 5: WHOLE USDC, not base units. policy.join.depositUsdc in the reference agent is denominated in dollars (its shipped default is \"25\"), unlike every other amount in this file. 1 = the smoke vault minimum of 1.00 USDC. Passing base units here made the agent request a million-dollar deposit and its capacity gate correctly refused.",
 
   "smokeVault": {
-    "address": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330",
-    "note": "The Sprint-9 vault. Basket [WETH, LINK]. Fully exited at the end of Sprint-9 (0 shares, 0 NAV), so drills 2 and 5 must re-deposit into it. Host for drill 2 (sub-vault) and drill 5 (agent execute mode)."
+    "address": "0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98",
+    "note": "The smoke vault of the CURRENT deployment (sourceCommit 8a0e1155), created in block 46,307,218 by factory 0xc1cb7824...9743. Basket [WETH, LINK] read on-chain from basketAssets(0..1). Genuinely fully exited - totalShares() reads 0 - so drills 2 and 5 must re-deposit into it. Host for drill 2 (sub-vault) and drill 5 (agent execute mode). Every field here was read from Base Sepolia on 2026-09-03, not carried over.",
+    "onChain2026-09-03": {
+      "oracle()": "0x3a8bD8A6599c3FdD0b3A269E0142e6b468ddd935",
+      "isAllowedAdapter(0x68be942c...)": true,
+      "totalShares()": "0",
+      "basketLength()": 2,
+      "codesize": 20650
+    },
+    "replaced": "0x97025d1c60a24ce3811dcb3be4529c5e1c6a6330 - the Sprint-9 vault, pinned here until 2026-09-03. It had to go for three independent reasons, each read on-chain rather than inferred: its oracle() is 0xEc1976579Af27b3dF5fd103390acAb22E4b566F4, the CUSTOM OracleAggregator that the C-6 pivot retired; isAllowedAdapter is FALSE for both the current adapter and the retired one, and isAllowedAdapter is constructor-only, so drill 2 could not have executed a rebalance through it at all; and its codesize is 23,016 B, from the generation BEFORE the deployment this file's address book describes. Its note also claimed 'Fully exited at the end of Sprint-9 (0 shares, 0 NAV)' while totalShares() read 4e18. That is the specific hazard worth naming: .json IS inside the claims guard's PUBLIC_EXT, but the guard matches claim SHAPES, and no shape can know that a number disagrees with a chain. Nothing re-derives this file - so re-read it against chain when the deployment changes."
   },
 
   "vaultB": {

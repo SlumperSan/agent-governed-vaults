@@ -1,8 +1,9 @@
 {
   "chainName": "base-sepolia",
   "chainId": 84532,
-  "deployedAt": "2026-09-02T20:57:15Z",
+  "deployedAt": "2026-09-02T20:57:14Z",
   "deployBlock": 46307173,
+  "deployedAtNote": "Block 46,307,173's own timestamp, read with `cast block`. An earlier draft recorded 20:57:15Z from the runner's wall clock, one second later.",
   "startBlock": 46307173,
   "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
   "sourceCommit": "8a0e1155",
