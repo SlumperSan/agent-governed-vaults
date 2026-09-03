@@ -38,19 +38,23 @@ test-blindness for the reachable dimensions.
 
 ## The qualified test buckets
 
-The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit now span three
-buckets, so any "N passing tests" figure must carry the qualifier:
+The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit span three
+buckets, so any "N passing tests" figure must carry the qualifier. These buckets are as of this
+re-verification (pre-pivot); C-6 has since been resolved — see Consequence below:
 
 1. **Unreachable at launch by configuration** — the sub-vault suite; `AuditRootVaultsOnly` (C-1).
 2. **Config-mitigated residual** — `AuditQuorumRegimeDust` (H-8 attack a).
-3. **Live open finding** — `AuditC4EndToEnd` (C-6).
+3. **Was a live open finding at the re-verification** — `AuditC4EndToEnd` (C-6), since RESOLVED by
+   the Chainlink-direct pivot; the test is retained as retired-aggregator exploit evidence.
 
 ## Consequence
 
 Four of five original Criticals are closed with executed evidence (`AuditRootVaultsOnly`,
 `Governance::test_phaseDurationHardCapsEnforced`, `AuditAggregatorDecodeBrick`, `AuditVoteAfterExit`).
-**C-4/C-6 keep gate 0 NO-GO.** The leading resolution is [[chainlink-direct-pivot]] — consume
-Chainlink Data Feeds directly, deleting most of the oracle-finding class.
+**C-4/C-6 kept gate 0 NO-GO at the time of this re-verification.** They have since been resolved by
+[[chainlink-direct-pivot]] — consuming Chainlink Data Feeds directly deleted most of the oracle-finding
+class — and gate 0 is now **GO (root-only)** per LAUNCH-READINESS.md. This section records the
+re-verification state before the pivot; read it as history.
 
 ## Links
 

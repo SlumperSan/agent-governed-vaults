@@ -32,12 +32,14 @@ pressure.
 only says what is being investigated. Every claim carries a tx hash or a `cast` command the
 reader can run. Never state a recovery time you cannot evidence.
 
-> **Pre-remediation caveat — this playbook describes the intended posture, and the tree does not
-> yet fully meet it.** A remediation pass on 2026-08-27 closed twelve findings, including
-> **C-3 (#31) and C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
-> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is still open**, as are
-> four Highs, and no external audit has happened — so the protocol remains **NO-GO for mainnet**
-> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) gates 0 and 1).
+> **Caveat — this playbook describes the intended posture; read the launch board for current gate
+> status.** A remediation pass on 2026-08-27 closed twelve findings, including **C-3 (#31) and
+> C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
+> ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
+> root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
+> owner attestation — so gates 0 and 1 are **GO**. The protocol remains **NO-GO for mainnet on the
+> OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on security
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
 > Read it before relying on any "the contract's own defences are the response" line here.

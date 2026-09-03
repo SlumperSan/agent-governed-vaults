@@ -16,7 +16,7 @@ A green board measures the tests you wrote, and the tests you wrote encode the f
 imagined — five Criticals sat under 189 passing tests, a clean soak, and a verified deployment. And
 the remediation **invalidated the evidence**: six contracts changed bytecode, so the testnet
 deployment, soak, and canary results now describe *superseded* contracts. Only gates 0 and 1 speak to
-safety, and both are NO-GO.
+safety, and both are now **GO** (gate 0 root-only, gate 1 owner-attested); the launch stays NO-GO on the OPERATIONAL gates 3/6 (soak + canary), which need a funded testnet key.
 
 ## The nine gates
 

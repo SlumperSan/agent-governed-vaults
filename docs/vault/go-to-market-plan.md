@@ -1,6 +1,6 @@
 # Go-to-Market Plan
 
-The shape of the first mainnet launch once GO is reached: what ships, at what size, with which parameters, and how it scales from there. Everything here is contingent on clearing gate 0 (C-6) and gate 1 (external audit).
+The shape of the first mainnet launch once GO is reached: what ships, at what size, with which parameters, and how it scales from there. The security gates are cleared — gate 0 is GO (root-only, C-6 resolved by the Chainlink pivot) and gate 1 is GO on owner attestation — so what remains contingent is the OPERATIONAL gates 3/6 (soak + canary), which need a funded testnet key.
 
 ## Why it matters
 
