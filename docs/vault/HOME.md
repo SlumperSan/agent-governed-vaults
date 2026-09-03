@@ -5,8 +5,9 @@
 > Read this first to orient; follow links to drill in. Kept current as work lands.
 
 **Repo:** `github.com/SlumperSan/agent-governed-vaults` (private) · **base:** `protocol/main`
-**One-liner:** permissionless USDC index vaults, governed by AI agents via commit-reveal weighted
-vote, x402-metered off-chain access. **Launch verdict:** NO-GO (external audit pending; C-6 open).
+**One-liner:** permissionless USDC index vaults whose members ratify every rebalance by
+on-chain commit-reveal vote — proposal rights follow stake, not operatorship — with x402-metered
+off-chain access. **Launch verdict:** NO-GO (external audit pending; C-6 open).
 
 ## Conventions (for consistency across the graph)
 
