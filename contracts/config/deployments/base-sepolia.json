@@ -76,7 +76,10 @@
   },
 
   "verifiedWiring": {
-    "note": "Read from Base Sepolia with cast on 2026-09-03 against the addresses above.",
+    "note": "Read from Base Sepolia with cast on 2026-09-03 against the addresses above. The three REVERSE-direction edges are listed first and deliberately: they are the ones that catch a mis-wired deployment, since a forward read can agree with a book that is itself wrong. An earlier draft of this record dropped them, which removed evidence without removing any check - scripts/soak/deployment.mjs builds wiringExpectations from `singletons`, not from this block, so the soak's nine checks were unaffected either way.",
+    "registry.factory()": "0xC1cb782471e506c71ae91feB91AdCEFc34A99743",
+    "gov.subVaultRegistry()": "0x014Df06a968400410756eCcaA74efD6a2d892715",
+    "routerAdapter.router()": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
     "factory.registry()": "0x0A71bB7b1a7EC2Ae085D9D1d7CC79768cc60D6B3",
     "factory.governance()": "0xD963f553e3eCd1872aF1622b3e4664f133A51805",
     "factory.feeEngine()": "0xA489E30EbC53fF1633f16a4561d391f1407C88e2",
@@ -96,6 +99,7 @@
     "createdInBlock": 46307218,
     "runtimeCodesize": 20650,
     "totalSharesAfterExit": "0",
-    "note": "The vault the ten-phase lifecycle ran against. Fully exited - totalShares() reads 0 on-chain - so it holds no funds and is retained as evidence, not as a live vault. Per-phase transactions: docs/evidence/testnet-lifecycle-run.json."
+    "isAllowedAdapter(0x68be942c...)": true,
+    "note": "The vault the ten-phase lifecycle ran against. Fully exited - totalShares() reads 0 on-chain - so it holds no funds and is retained as evidence, not as a live vault. VaultCore.isAllowedAdapter is constructor-only, and this vault is bound to the CURRENT adapter (read back on-chain), which is the point of the redeploy. Per-phase transactions: docs/evidence/testnet-lifecycle-run.json."
   }
 }

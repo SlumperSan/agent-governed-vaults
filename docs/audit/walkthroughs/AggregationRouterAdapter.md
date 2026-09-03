@@ -76,8 +76,9 @@ after review, when both reviewers showed it could be deleted with the suite gree
 `0x68be942cab962ac8f9064b45489f35fbd6f617d5`, deployed at `sourceCommit 8a0e1155`, and it carries
 BOTH #101 and this fix — `git merge-base --is-ancestor 8a2afc3e 8a0e1155` and
 `git merge-base --is-ancestor 29996eaf 8a0e1155` both succeed. Neither the cross-order theft nor
-the donation DoS is reachable on it, and the soak now runs against the fixed shape rather than the
-old one.
+the donation DoS is reachable on it. The soak has **not** been re-run against it yet — gate 3 is
+still STALE and needs the owner's funded key — but when it runs it will run against this fixed
+shape rather than the old one.
 
 *What this replaced, kept because the constraint it turns on is permanent:* the previous adapter
 `0xf3e08c8b…a9b1` (`sourceCommit 5934ef22`) had no `_lock`/`nonReentrant` at all and carried the

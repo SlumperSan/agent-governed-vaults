@@ -180,7 +180,9 @@ allowlist makes it non-selectable there anyway).
    > carries **both** fixes. Checked by ancestry rather than asserted — both of these succeed:
    > `git merge-base --is-ancestor 8a2afc3e 8a0e1155` (#101's mutex) and
    > `git merge-base --is-ancestor 29996eaf 8a0e1155` (#108's scoped refund). Neither the donation
-   > DoS nor the cross-order theft is reachable on it, and the soak runs against the fixed shape.
+   > DoS nor the cross-order theft is reachable on it. The soak has **not** been re-run yet (gate 3
+   > is still STALE and needs the owner's key); when it is, it will run against this fixed shape
+   > rather than the old one.
    >
    > **The constraint that forced the redeploy has not gone away.** `VaultCore.isAllowedAdapter`
    > is populated in the constructor and never written again, so vaults are permanently bound to
