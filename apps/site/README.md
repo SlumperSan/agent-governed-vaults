@@ -144,7 +144,7 @@ as examples and turned the gate red, which is the check working.)
   passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the seven pages,
   and each of those three files must positively name the reveal phase — otherwise the ban is
   satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
-  `p.commitDeadline` onward (`Governance.sol:622-633`). The site-only ban on *one* phrasing had
+  `p.commitDeadline` onward (`Governance.sol:648-659`). The site-only ban on *one* phrasing had
   existed since 2026-08-29 and did not stop the same claim shipping three other ways.
 - **The open High is named wherever it is claimed.** Any sentence saying a High "remains open at
   the launch configuration" must name it in that same sentence — it is **H-8**, the purchasable
