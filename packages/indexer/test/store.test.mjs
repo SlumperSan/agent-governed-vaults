@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { applyAll, vaultView, leaderboard } from '../src/projections.mjs';
+import { applyAll, apply, vaultView, leaderboard, queuedExitBacklog, modeFExitRateBps } from '../src/projections.mjs';
 import { serializeState, deserializeState, saveSnapshot, loadSnapshot, resumeCursor } from '../src/store.mjs';
 import { createIndexerDaemon } from '../src/daemon.mjs';
 
@@ -145,4 +145,43 @@ test('daemon is a no-op when caught up (no re-scan of empty ranges)', async () =
   } finally {
     await rm(path, { force: true });
   }
+});
+
+/**
+ * `state.queuedExits` is the ONLY durable state this feature added, and it is what makes the
+ * Mode-F discriminator exact rather than approximate. Deleting it from either serializer used to
+ * leave the whole suite green: the sole mention of it in the test tree was a `delete` in a fixture.
+ *
+ * If it stops round-tripping, nothing throws. Every post-restart `ExitSettled` for a member who
+ * queued BEFORE the restart is silently misclassified Mode-I, `modeFExitRateBps` under-reports,
+ * and `queuedExitBacklog` reads 0 -- so the stranded-queue signal inverts to "all clear", which is
+ * the failure mode where a silent bug is worse than a loud one.
+ */
+test('queuedExits survives a serialize -> deserialize -> settle cycle', () => {
+  const s0 = applyAll([
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('DepositActivated', 2, 0, V, { member: A, sharesMinted: 100n }),
+    ev('DepositActivated', 2, 1, V, { member: B, sharesMinted: 100n }),
+    ev('ExitQueued', 3, 0, V, { member: A, shares: 50n }),
+    ev('ExitQueued', 3, 1, V, { member: B, shares: 50n }),
+  ]);
+  assert.equal(queuedExitBacklog(s0, V), 2);
+
+  // Through JSON, not just through the two functions -- a Set that serialized as `{}` would
+  // survive an in-memory round-trip and be lost on disk.
+  const json = JSON.parse(JSON.stringify(serializeState(s0)));
+  assert.deepEqual(json.queuedExits, [[V, [A, B]]], 'the Set must reach disk as an array of members');
+
+  const s1 = deserializeState(json);
+  assert.equal(queuedExitBacklog(s1, V), 2, 'the backlog resumed');
+
+  // The discriminator still works across the restart: A queued before it, C never did.
+  apply(s1, ev('ExitSettled', 4, 0, V, { member: A, sharesBurned: 50n }));
+  assert.equal(s1.vaults.get(V).modeFSettledCount, 1, 'a member queued BEFORE the restart is Mode-F');
+  assert.equal(queuedExitBacklog(s1, V), 1, 'and leaves the backlog');
+
+  apply(s1, ev('ExitSettled', 4, 1, V, { member: A, sharesBurned: 1n }));
+  assert.equal(s1.vaults.get(V).modeFSettledCount, 1, 'a second settle for the same member is Mode-I');
+  assert.equal(s1.vaults.get(V).exitSettledCount, 2);
+  assert.equal(modeFExitRateBps(s1, V), 5000);
 });
