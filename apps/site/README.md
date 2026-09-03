@@ -7,7 +7,14 @@ Seven static HTML pages describing the Agent-Governed Vaults protocol: `index.ht
 No build step. No framework. **Zero JavaScript** — there is not a single `<script>` tag, so "works
 with JavaScript disabled" is true by construction rather than by testing. No external requests of
 any kind: no webfonts, no CDN, no analytics, no trackers, no remote images. System font stacks only.
-The only off-site link anywhere is the project's own GitHub repository.
+The only off-site link a reader can follow is the project's own GitHub repository.
+
+Two kinds of absolute URL do appear in each `<head>`, and neither is a request or a link: the social
+preview tags (`og:`/`twitter:`), which are `content` attributes, and each page's own
+`rel="canonical"`, which points at this site's public host `rwally.com`. A canonical fetches nothing
+and navigates nowhere; it is metadata that happens to be spelled with an `href`. It is the single
+exemption to the no-external-host rule below, and it is written down in the test beside the code
+that grants it.
 
 There is deliberately **no `package.json` in this directory**. `apps/*` is an npm workspace glob and
 adding one changes what `npm ci` installs at the root.
@@ -78,7 +85,9 @@ has no compiler; that file is the compiler. It asserts, across all seven pages:
   ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
-  checks against `fonts.googleapis.com` and `fonts.gstatic.com`.
+  checks against `fonts.googleapis.com` and `fonts.gstatic.com`. Exactly one exemption:
+  `rel="canonical"` pointing at `rwally.com`, which loads no resource and is not a link a reader can
+  follow. Any other `rel` still fails, and so does a canonical pointing at any other host.
 - No raw hex colour in `site.css`, and the full token set present in `tokens.css`. `site.css` may not
   set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch`.
 - Every internal `.html` link resolves to a file on disk.
