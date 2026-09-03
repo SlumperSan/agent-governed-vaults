@@ -65,9 +65,10 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
   `contracts/config/deployments/base-sepolia.json` records `sourceCommit 5934ef22` — superseded
   bytecode, and its own `execution.note` flags that the adapter it names predates the reentrancy
   mutex and the scoped-refund fix. **There is no committed address book that matches the current
-  tree**, and the one that exists must not be read as current. A vault has been created, registered and funded with a USDC deposit
-  priced by the live `ChainlinkOracle`; the remaining lifecycle phases sit behind the protocol's own
-  4h observation window and ~2h of governance timelocks.
+  tree**, and the one that exists must not be read as current. Vaults have been created, registered, funded, activated, governed and
+  exited on Base Sepolia — `docs/SOAK-REPORT.md` §5 records a full loop with a transaction hash for
+  every phase, including a Mode-F exit. This bullet said the remaining phases still sat behind the
+  4h window and ~2h of timelocks; that was true when written and has not been since.
 - **Config paths, since they are easy to get wrong:** the mainnet config is
   `contracts/config/base-mainnet.json` — *not* under `config/deployments/`. Only
   `base-sepolia.json` (the generated address book) lives under `config/deployments/`.
@@ -81,8 +82,10 @@ Earlier figures were 4,095 B after #90 and ~283 B before it. The 4,095 B was cor
 — earlier notes recorded 1,014 B (LAUNCH-READINESS §5) and 1,182 B (the H-5/H-6 notes), both of
 which predate M-15's deposit overload spending 731 B. `VaultFactory` (~21,004 B spare) and
 `ChainlinkOracle` (~23,044 B spare) are **not** tight, contrary to what earlier notes assumed.
-Anything `VaultCore`-shaped is now effectively closed — which is the real reason H-5/H-6 stay
-deferred, over and above the sub-vault dormancy.
+3,926 B is real headroom, not the ~283 B that once closed anything `VaultCore`-shaped. **Size is
+therefore no longer the reason H-5/H-6 stay deferred** — the sub-vault dormancy is, and #40's
+escrow-degradation design decision still does not exist. This paragraph asserted the opposite until
+2026-09-02, which mattered because it made a fixable class look permanently closed.
 
 ## Launch shape once GO is reached
 

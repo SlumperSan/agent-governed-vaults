@@ -34,7 +34,8 @@
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
 >
 > Treat every specific line number, size (VaultCore's EIP-170 margin is **3,926 B** measured
-> 2026-09-02, not the 283 B or 1,182 B recorded below — re-measure, do not copy),
+> 2026-09-02; the 283 B and 1,182 B figures that circulated in earlier notes are history, not
+> this document — re-measure, never copy),
 > test count and "Accepted" disposition below as pre-remediation — verify against the current tree.
 
 

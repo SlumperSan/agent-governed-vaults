@@ -49,7 +49,7 @@ all four are now fixed, so the exploitable path is closed [only when at most one
 adversarial].
 The mint-time NAV bound it suggested as defence-in-depth is **deferred**, not shipped — it needs
 VaultCore bytes (only **1,014 B** of EIP-170 headroom remained on the merged tree at the time —
-**~283 B at the time of writing; 4,095 B since PR #90**, see §5) and touches the
+**~283 B at the time of writing; 3,926 B today**, see §5) and touches the
 deposit path, which is not a place to add unreviewed logic; it lands in the VaultCore-headroom
 sprint (#40, #32). A second layer over an already-closed path, not the fix.
 
@@ -251,7 +251,7 @@ Every gate below was executed in this session; none is quoted from a previous ru
 | Contract | Runtime | Margin |
 | --- | --- | --- |
 | `VaultCore` | 23,562 | **1,014** |
-| `Governance` | 12,051 | 12,525 |
+| `Governance` | 12,155 | 12,421 |
 | `UniswapV3TwapSource` | 5,169 | 19,407 |
 | `VaultFactory` | 2,818 | 21,758 |
 | `OracleAggregator` | 1,215 | 23,361 |
@@ -263,7 +263,7 @@ inline at every call site), reaching 1,518; then M-2 spent 504 on the escrow rou
 affordable only because M-11 came first.**
 
 > **⚠ CORRECTION, 2026-08-30 — the table above is a dated record, not the current tree.**
-> `VaultCore`'s live EIP-170 margin is **4,095 B** since PR #90 (2026-09-01). It was **283 B**
+> `VaultCore`'s live EIP-170 margin is **3,926 B**, measured 2026-09-02. It was 4,095 B after PR #90 (2026-09-01) and #98 has since spent bytes. It was **283 B**
 > when this note was written — measured 2026-08-30 and recorded in the
 > knowledge vault; not re-measured in this edit, since `forge build --sizes` cannot run while the
 > tree does not build — see PR #82), not the 1,014 B recorded here (nor the 1,182 B
@@ -271,12 +271,12 @@ affordable only because M-11 came first.**
 > `deposit(uint256,uint256)` overload landed after this battery ran and spent **731 B**. The record
 > above is left intact deliberately — it is what the battery measured at this ref — but any
 > decision about whether a `VaultCore` change *fits* must use the CURRENT margin, and that is now
-> **4,095 B**, not 283 B.
+> **3,926 B**, not 283 B.
 >
 > **⚠ SECOND CORRECTION, 2026-09-01 — this block contradicted itself and the second half was
 > stale.** It opened with 4,095 B and then told the reader to size changes against 283 B, which was
 > true only between 2026-08-30 and PR #90. Re-measured on this branch with
-> `cd contracts && forge build --sizes`: **`VaultCore` runtime 20,481 B, margin 4,095 B.** So the
+> `cd contracts && forge build --sizes`: **`VaultCore` runtime 20,650 B, margin 3,926 B** (2026-09-02; it read 20,481 / 4,095 on 2026-08-30, before #98). So the
 > sentence that followed — "at that margin, anything `VaultCore`-shaped is effectively closed,
 > which reshapes the H-5/H-6 deferral: it is now a size wall as much as a sub-vault-dormancy
 > choice" — **no longer holds. The size wall is gone; the dormancy is not.** H-5/H-6/H-9 stay
@@ -295,7 +295,7 @@ affordable only because M-11 came first.**
 
 **H-5, H-6, H-9 and M-15 remained unfixed for this reason at the time of this battery** — they all
 land in `VaultCore`, and several would not fit even alone. *(Superseded on every count by
-2026-09-01: M-15 landed; PR #90 reclaimed the margin to 4,095 B, so size is no longer the reason;
+2026-09-01: M-15 landed; PR #90 reclaimed the margin (3,926 B as of 2026-09-02), so size is no longer the reason;
 and **H-9 is now fixed** by the read-only-reentrancy guard, at a cost of 169 B, which fits
 comfortably in that reclaimed margin. What keeps H-5/H-6 out of scope is that `allowSubVaults =
 false` makes them unreachable at launch — see the correction block above — together with the
