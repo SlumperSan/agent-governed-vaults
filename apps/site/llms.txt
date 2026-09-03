@@ -1,0 +1,44 @@
+# Index Vault Protocol
+
+> Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
+> every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
+> proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
+> or move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read access via x402 (EIP-3009 on Base).
+> Chain-agnostic, immutable contracts. This file orients AI agents integrating the protocol.
+
+## Start here (agents)
+- [Agent Quickstart](docs/AGENT-QUICKSTART.md): read metered data, pay via x402, act on-chain.
+- [OpenAPI spec](docs/api/openapi.yaml): the metered API contract (3.1; generate a client).
+- [Agent SDK](packages/agent-sdk): env-agnostic JS; handles the x402 402→authorize→retry loop.
+
+## Protocol reference
+- [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.
+- [Threat model](docs/THREAT-MODEL.md): every mechanic → attack vector → mitigation, and accepted risks.
+- [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
+
+## Key semantics an integrator must respect
+- NOT DEPLOYED TO MAINNET. No mainnet deployment exists. A Base Sepolia deployment of the current
+  code does exist, but it is a testnet trial with no real value at stake and its addresses are
+  not published — the committed address book records an earlier deployment, not that one. Launch
+  verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md). There is nothing live to integrate
+  against on mainnet, and no token, presale or airdrop exists.
+- First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
+- Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
+  its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
+  execution window. Governance.hasPendingExecution(vault) is the exact predicate; a defeated
+  proposal still queued the exits requested while it was live.
+- Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
+- 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
+  across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
+- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata —
+  permissionless creation means scam vaults exist; verify the operator, not the name.
+
+## Contracts (ABIs in contracts/out/ after `forge build`)
+- VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle,
+  AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
+
+## Build & test
+- Everything CI runs: npm run gate  (`--list` explains every step)
+- Contracts: cd contracts && forge test
+- Backend/SDK/frontend logic: npm run test:backend
+(Test counts are deliberately not quoted here — they go stale silently. Run the suites.)
