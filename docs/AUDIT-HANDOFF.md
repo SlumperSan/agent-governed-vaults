@@ -63,22 +63,35 @@ is the audit surface permanently — there is no "we'll patch it later."
 page stating what changed since the internal reviews, which rounds covered what, and — more
 usefully — what internal review did **not** cover.
 
-**There is deployed bytecode on Base Sepolia, but do NOT compare this tree against the address book
-— they are different code.** Read this paragraph carefully; it has been wrong in both directions.
+**There is deployed bytecode on Base Sepolia, and as of 2026-09-03 the committed address book
+describes it.** Read this paragraph carefully; it has been wrong in both directions, and the
+correction below is deliberately narrow.
 
 The committed address book at `contracts/config/deployments/base-sepolia.json` records
-`sourceCommit 5934ef22`, deploy block 46,111,530, and it names a still earlier deployment at block
-45,784,186. **Neither is this tree.** `contracts/src` has moved substantially since `5934ef22` —
-`VaultCore`, `VaultFactory` and `ChainlinkOracle` among the files — and the address book's own
-`execution.note` records that the adapter it names predates both the reentrancy mutex (#101) and
-the scoped-refund fix, and carries a cross-order theft path.
+`sourceCommit 8a0e1155`, deploy block 46,307,173, factory
+`0xc1cb782471e506c71ae91feb91adcefc34a99743`. **That is this tree, with one stated exception.**
+Between `8a0e1155` and `protocol/main` the only changed file under `contracts/src/` is
+`VaultDeployer.sol`, and the change (#151) is NatSpec text — no statement, no opcode. `VaultCore`,
+`VaultFactory`, `Governance`, `FeeEngine`, `OperatorRegistry`, `SubVaultRegistry` and
+`ChainlinkOracle` are all blob-identical, as is `contracts/foundry.toml`.
 
-The codesize equality this paragraph used to assert is therefore false, and its figures were stale
-in the ordinary way as well: it cited VaultFactory 2,718 B and Governance 11,990 B, which measure
-**3,572 B** and **12,155 B** at `protocol/main` (`forge build --sizes`, 2026-09-02).
+**The exception, because it is the kind of thing an auditor should hear from us rather than
+discover.** `foundry.toml` sets no `bytecode_hash`, so solc's default `ipfs` metadata applies and
+the CBOR trailer hashes source text — a comment-only edit changes it. So the deployed
+`VaultDeployer` differs from a `protocol/main` build in its trailer bytes alone, at the same 938 B.
+It does **not** differ in the `VaultCore` creation code it carries, so vaults produced by this
+deployment are byte-identical to what this tree builds; the on-chain vault runtime is 20,650 B. To
+reproduce the deployed bytecode trailer-for-trailer, build at `8a0e1155`, not at HEAD.
 
-**There is presently no committed record an auditor can diff this tree against.** The address book
-is the only one, and it describes an earlier deployment. Do not substitute it.
+Two prior errors this paragraph made are worth keeping visible. It asserted a codesize equality
+that was false, and it cited VaultFactory 2,718 B and Governance 11,990 B, which measure **3,572 B**
+and **12,155 B** at `protocol/main` (`forge build --sizes`, 2026-09-02). Re-measure rather than
+copy: nothing walks `.sol` or a byte count for staleness.
+
+The adapter warning that used to sit here is retired. The live adapter is
+`0x68be942cab962ac8f9064b45489f35fbd6f617d5` and it carries **both** the #101 reentrancy mutex and
+the #108 scoped refund — established by ancestry against `8a0e1155`, not asserted. The earlier
+adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft path, is superseded.
 
 **No mainnet deployment exists.** The audit surface is the source at the tag above. Treat every
 testnet instance as evidence about the bytecode it actually ran, and check which commit that was

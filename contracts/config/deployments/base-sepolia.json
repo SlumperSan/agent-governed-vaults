@@ -1,28 +1,55 @@
 {
   "chainName": "base-sepolia",
   "chainId": 84532,
-  "deployedAt": "2026-08-29T00:00:00Z",
-  "deployBlock": 46111530,
-  "startBlock": 46111530,
+  "deployedAt": "2026-09-02T20:57:15Z",
+  "deployBlock": 46307173,
+  "startBlock": 46307173,
   "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
-  "sourceCommit": "5934ef22",
+  "sourceCommit": "8a0e1155",
   "rpc": "https://sepolia.base.org",
   "explorer": "https://sepolia.basescan.org",
-  "note": "C-6 PIVOT REDEPLOY (2026-08-29). This is the Chainlink-direct stack: DeployTestnet.s.sol now deploys a ChainlinkOracle (one genuine Chainlink feed per asset) seeded into the factory oracle allowlist, replacing the retired custom OracleAggregator. Every address below was verified INDEPENDENTLY ON-CHAIN via cast (feedOf/priceWad on the oracle, and factory.registry()/governance()/feeEngine()/subVaultRegistry()/vaultDeployer() wiring reads) — NOT taken from the deploy log, whose printed per-tx summary was label-scrambled again (the run-latest.json contractName<->address map was correct this time, and agrees with the on-chain reads recorded here). Live oracle reads at verification: priceWad(WETH)=~$2,431.77, priceWad(LINK)=~$11.31, priceWad(USDC)=$1.00. Prior custom-oracle deployment (deployBlock 45784186) is in git history.",
+  "note": "CURRENT Base Sepolia deployment, replacing the 2026-08-29 C-6 pivot deploy (sourceCommit 5934ef22, factory 0x72767FAD..., deployBlock 46111530), which is retained in git history and is NO LONGER the live instance. Deployed from sourceCommit 8a0e1155 in a single block - all 11 receipts landed in 46307173. Every address below was read back INDEPENDENTLY ON-CHAIN with cast (feedOf/priceWad on the oracle; factory registry()/governance()/feeEngine()/subVaultRegistry()/vaultDeployer() wiring reads) rather than taken from the deploy log, whose printed per-tx summary has been label-scrambled on previous runs. Live oracle reads at verification (2026-09-03): priceWad(WETH)=~$2,406.20, priceWad(LINK)=~$11.26, priceWad(USDC)=$1.00. The full ten-phase lifecycle ran against THIS deployment and passed; the per-phase transaction table is docs/evidence/testnet-lifecycle-run.json.",
+
+  "bytecodeCurrency": {
+    "claim": "Vault bytecode produced by this deployment is current with protocol/main. VaultDeployer's own runtime is not, in its metadata trailer only.",
+    "basis": "Between sourceCommit 8a0e1155 and protocol/main the ONLY changed file under contracts/src/ is VaultDeployer.sol, and that change (#151, commit 00e44896) is NatSpec text alone - no statement, no opcode. contracts/src/VaultCore.sol is blob-identical at 99a4636870ef, as are VaultFactory.sol, Governance.sol, FeeEngine.sol, OperatorRegistry.sol, SubVaultRegistry.sol and oracle/ChainlinkOracle.sol; contracts/foundry.toml is blob-identical at e460dcd52ed2, so compiler version, via_ir and optimizer_runs are unchanged.",
+    "qualifier": "foundry.toml sets no bytecode_hash, so the solc default `ipfs` metadata mode applies and the CBOR trailer hashes the source text. A NatSpec-only edit therefore DOES change the VaultDeployer trailer: the deployed VaultDeployer at 0x5BFc2B9a... differs from a protocol/main build in those trailer bytes and nowhere else, at the same 938 B runtime size. It does NOT change the VaultCore creation code that VaultDeployer carries, because VaultCore.sol is byte-identical - so the vaults this deployment produces are byte-identical to what protocol/main builds. Corroborated on-chain: the smoke vault runtime is 20,650 B.",
+    "reproduce": "git checkout 8a0e1155 && cd contracts && forge build --sizes. Per scripts/verify-deployment-reproducibility.mjs, only the pinned sourceCommit is guaranteed to reproduce a deployment bytecode trailer-for-trailer; HEAD is not.",
+    "codesizeCorroboration": {
+      "measuredAt": "2026-09-03",
+      "how": "`cast codesize <addr>` against Base Sepolia, compared with `forge build --sizes` at protocol/main. 9 of 9 equal.",
+      "READ THIS BEFORE USING THE TABLE": "Equal size is CORROBORATION, NOT PROOF of equal bytecode. The CBOR metadata trailer is fixed-length, so a contract whose trailer differs - which is exactly the VaultDeployer case above - still reports an identical codesize. A codesize table gives a false all-clear on precisely the difference it is most often reached for. The load-bearing argument for currency is the source-blob identity in `basis`, not these numbers; they are recorded because they would have caught a WRONG contract, which is a different and also useful failure.",
+      "onChainEqualsBuilt": {
+        "VaultCore (via the smoke vault)": 20650,
+        "VaultDeployer": 938,
+        "VaultFactory": 3572,
+        "Governance": 12155,
+        "FeeEngine": 2902,
+        "OperatorRegistry": 2219,
+        "SubVaultRegistry": 1605,
+        "ChainlinkOracle": 1532,
+        "AggregationRouterAdapter": 1981
+      },
+      "vaultCoreCreationCodeBytes": 22391,
+      "vaultCoreCreationCodeNote": "Below the 24,576 B runtime cap on its own - which is why the VaultDeployer NatSpec was corrected in #151. VaultDeployer still exists because a factory carrying this 22,391 B blob PLUS its own logic does not fit."
+    }
+  },
 
   "singletons": {
-    "OperatorRegistry": "0xd702E688110CB2B2503bEBc2087D984C4Ab18307",
-    "SubVaultRegistry": "0x075Cd3455A5CE0f828f4D3B6B3A124313930eeE0",
-    "FeeEngine": "0xfC04958049B28f2990076a9841e1dc7d5cC113A9",
-    "Governance": "0xcd9B2E37D14c57362f005355757bfa6Db450C206",
-    "VaultDeployer": "0x891633092Cff72f6566785C9c9B6b574c178e036",
-    "VaultFactory": "0x72767FAD4C8254D20Fc06e4a47DFd16683AAFD0A"
+    "OperatorRegistry": "0x0A71bB7b1a7EC2Ae085D9D1d7CC79768cc60D6B3",
+    "SubVaultRegistry": "0x014Df06a968400410756eCcaA74efD6a2d892715",
+    "FeeEngine": "0xA489E30EbC53fF1633f16a4561d391f1407C88e2",
+    "Governance": "0xD963f553e3eCd1872aF1622b3e4664f133A51805",
+    "VaultDeployer": "0x5BFc2B9af09CC4C727321735A0f0fbd6fD09a81A",
+    "VaultFactory": "0xc1cb782471e506c71ae91feb91adcefc34a99743"
   },
 
   "oracle": {
-    "ChainlinkOracle": "0x6371E14C0682882e75E8382caf0216545B1f43C6",
+    "ChainlinkOracle": "0x3a8bd8a6599c3fdd0b3a269e0142e6b468ddd935",
     "maxStalenessSeconds": 86400,
-    "note": "C-6 launch model: ONE genuine Chainlink Data Feed per asset (no multi-source median/quorum). deployment.mjs reads each asset's single `feed` as a one-element source set. USDC is pinned to $1 inside the oracle. The oracle is the sole entry in the factory's oracle allowlist (oracleAllowlistEnforced=true, isAllowedOracle(oracle)=true, verified on-chain).",
+    "note": "C-6 launch model: ONE genuine Chainlink Data Feed per asset (no multi-source median/quorum). deployment.mjs reads the single `feed` of each asset as a one-element source set. USDC is pinned to $1 inside the oracle and is deliberately absent from `assets` (the constructor rejects listing it twice). This oracle is the sole entry in the factory oracle allowlist - oracleAllowlistEnforced()=true and isAllowedOracle(oracle)=true, both read on-chain. There is no maxStalenessSeconds() getter on ChainlinkOracle (calling it reverts); staleness is a per-asset heartbeat, and the 86400 recorded here is the configured testnet bound from contracts/config/base-sepolia.json, not a chain read.",
+    "sequencerUptimeFeed": "0x0000000000000000000000000000000000000000",
+    "sequencerUptimeFeedNote": "address(0) BY DESIGN on this testnet - read back on-chain. ChainlinkOracle skips the sequencer guard off a configured sequencer chain, so the guard has NOT executed against a live feed here and its first real execution is still mainnet. That is the standing limit on how far any Base Sepolia run can carry gate 5, and this redeploy does not change it.",
     "assets": {
       "WETH": {
         "token": "0x4200000000000000000000000000000000000006",
@@ -38,11 +65,10 @@
   },
 
   "execution": {
-    "AggregationRouterAdapter": "0xf3e08c8b00281750d531a48473d053009038a9b1",
+    "AggregationRouterAdapter": "0x68be942cab962ac8f9064b45489f35fbd6f617d5",
     "router": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
     "routerName": "Uniswap SwapRouter02 (Base Sepolia)",
-    "note": "PREDATES BOTH #101 (the reentrancy mutex) AND THE SCOPED-REFUND FIX (2026-09-01), AND IS NOT REPOINTABLE. Deployed from sourceCommit 5934ef22, whose executeSwap ended `leftover = balanceOf(tokenIn); safeTransfer(msg.sender, leftover)` - the adapter's WHOLE balance - and which contains NO _lock/nonReentrant at all (verify: `git merge-base --is-ancestor 8a2afc3e 5934ef22` returns non-zero, i.e. #101's mutex commit is not an ancestor). It therefore carries TWO exploits of one root cause, and this note previously listed only the first. (1) DONATION DoS, a revert: anyone can transfer USDC to this address and the next VaultCore.executeRebalance leg through it reverts Panic(0x11) at `spent = inBefore - inAfter` whenever the donation exceeds what the route pulled. (2) #101's CROSS-ORDER THEFT, a loss of funds: with no mutex a counterparty reached through the route re-enters with a 1-unit order and the nested whole-balance sweep pays it the outer order's in-flight tokenIn - the attack test/AdapterReentrancy.t.sol::test_nestedSwapCannotSweepTheOuterOrdersInput proves. Reachability is low on Sepolia because governance chooses routeData, but low reachability is not the same statement as the consequence list. VaultCore.isAllowedAdapter is constructor-only, so every vault created against this adapter - including the smoke vault 0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f - is permanently bound to it. The soak runs against this old shape: a rebalance failure there may be this finding rather than the soak's own subject. Redeploying means a NEW adapter AND new vaults. Mainnet must deploy the fixed bytecode."
-
+    "note": "CARRIES BOTH ADAPTER SECURITY FIXES - the substantive difference from the retired adapter at 0xf3e08c8b..., whose record here warned of two live exploits of one root cause. Both are established by ancestry against this deployment sourceCommit 8a0e1155 rather than asserted: `git merge-base --is-ancestor 8a2afc3e 8a0e1155` succeeds, so the #101 nested-executeSwap mutex is present; `git merge-base --is-ancestor 29996eaf 8a0e1155` succeeds, so the #108 scoped refund is present - the adapter refunds the delta of this order rather than its whole balance. That retires BOTH the donation DoS (anyone transfers USDC to the adapter and the next VaultCore.executeRebalance leg reverts Panic(0x11) at `spent = inBefore - inAfter`) and the cross-order theft (a nested 1-unit order sweeping the in-flight tokenIn of the outer order). VaultCore.isAllowedAdapter is still constructor-only, so every vault created against this adapter is permanently bound to it, and repointing still means a new adapter AND new vaults. Mainnet must deploy this fixed bytecode."
   },
 
   "infrastructure": {
@@ -50,16 +76,26 @@
   },
 
   "verifiedWiring": {
-    "registry.factory()": "0x72767FAD4C8254D20Fc06e4a47DFd16683AAFD0A",
-    "gov.subVaultRegistry()": "0x075Cd3455A5CE0f828f4D3B6B3A124313930eeE0",
-    "factory.registry()": "0xd702E688110CB2B2503bEBc2087D984C4Ab18307",
-    "factory.governance()": "0xcd9B2E37D14c57362f005355757bfa6Db450C206",
-    "factory.feeEngine()": "0xfC04958049B28f2990076a9841e1dc7d5cC113A9",
-    "factory.subVaultRegistry()": "0x075Cd3455A5CE0f828f4D3B6B3A124313930eeE0",
-    "factory.vaultDeployer()": "0x891633092Cff72f6566785C9c9B6b574c178e036",
+    "note": "Read from Base Sepolia with cast on 2026-09-03 against the addresses above.",
+    "factory.registry()": "0x0A71bB7b1a7EC2Ae085D9D1d7CC79768cc60D6B3",
+    "factory.governance()": "0xD963f553e3eCd1872aF1622b3e4664f133A51805",
+    "factory.feeEngine()": "0xA489E30EbC53fF1633f16a4561d391f1407C88e2",
+    "factory.subVaultRegistry()": "0x014Df06a968400410756eCcaA74efD6a2d892715",
+    "factory.vaultDeployer()": "0x5BFc2B9af09CC4C727321735A0f0fbd6fD09a81A",
     "factory.oracleAllowlistEnforced()": true,
     "factory.isAllowedOracle(ChainlinkOracle)": true,
-    "factory.allowSubVaults()": true,
-    "routerAdapter.router()": "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"
+    "factory.allowSubVaults()": true
+  },
+
+  "allowSubVaultsNote": "allowSubVaults() is TRUE here and that is INTENTIONAL, not drift. The mainnet launch parameter is FALSE - Deploy.s.sol wires root-only, which is what closes C-1 (docs/LAUNCH-READINESS.md gate 0). Sub-vaults stay enabled on this testnet because the gate-3 soak battery includes the SV-7 look-through drill, which needs a child vault to exercise; gate 3 already records that the sub-vault drills run on testnet and that none are deployed on mainnet. Do not `correct` this to false - that would delete the only environment the look-through drill can run in. Same shape as the sequencerUptimeFeed asymmetry above.",
+
+  "operatorPayoutNote": "The smoke vault below was created by the deployer EOA, so ITS operator payout identity is that EOA. This sets NO precedent for a production vault. VaultCore.creator is immutable, OperatorRegistry cannot rebind it, and createVault takes no payout parameter - the payout address is msg.sender, permanently. Mainnet vault #1 must therefore be created BY THE SAFE, not by a script from an EOA.",
+
+  "smokeVault": {
+    "address": "0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98",
+    "createdInBlock": 46307218,
+    "runtimeCodesize": 20650,
+    "totalSharesAfterExit": "0",
+    "note": "The vault the ten-phase lifecycle ran against. Fully exited - totalShares() reads 0 on-chain - so it holds no funds and is retained as evidence, not as a live vault. Per-phase transactions: docs/evidence/testnet-lifecycle-run.json."
   }
 }

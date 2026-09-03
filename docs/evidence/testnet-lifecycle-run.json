@@ -1,0 +1,58 @@
+{
+  "title": "Base Sepolia full lifecycle - ten phases against the current deployment",
+  "why": "The gate-2 lifecycle evidence had lived only in scripts/.smoke-state.json, which is gitignored (.gitignore:8) because the runner rewrites it on every run and it carries local absolute paths. The claim was therefore true and uncitable, and the earlier run it recorded had already been overwritten once. This file is the tracked, transcribed record. Precedent: docs/evidence/x402-live-run.json.",
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "rpc": "https://sepolia.base.org",
+  "explorer": "https://sepolia.basescan.org",
+  "ranAt": "2026-09-03T02:59Z",
+  "sourceCommit": "8a0e1155",
+  "deployment": "contracts/config/deployments/base-sepolia.json",
+  "factory": "0xc1cb782471e506c71ae91feb91adcefc34a99743",
+  "vault": "0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98",
+  "signer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "proposalId": 1,
+
+  "verification": {
+    "method": "Every row below was re-read from Base Sepolia with `cast receipt <tx> blockNumber|status|gasUsed` on 2026-09-03, AFTER the run, rather than transcribed from the runner state file. The two USDC amounts were decoded from the Transfer logs of the deposit and exit receipts, not read from the runner.",
+    "allTenStatusTrue": true,
+    "firstBlock": 46307218,
+    "lastBlock": 46318032,
+    "independentChecks": [
+      "vault totalShares() == 0 - the position is fully unwound",
+      "vault runtime codesize == 20650 B",
+      "vault creator() == 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35 (the deployer EOA)",
+      "oracle priceWad(WETH) ~ $2,406.20 and priceWad(LINK) ~ $11.26 - healthy, inside the configured bands",
+      "factory oracleAllowlistEnforced() == true and isAllowedOracle(0x3a8bd8a6...) == true"
+    ]
+  },
+
+  "roundTrip": {
+    "depositedUsdcUnits": "5000000",
+    "returnedUsdcUnits": "5000000",
+    "exact": true,
+    "settlementMode": "I",
+    "evidence": "The deposit receipt carries exactly one USDC Transfer, 0x0f806... -> vault, 5000000 units. The exit receipt carries exactly one USDC Transfer, vault -> 0x0f806..., 5000000 units. Both decoded from the receipts named below.",
+    "feeNote": "No performance fee was taken, and that is arithmetic rather than a waiver: PERF_FEE_BPS applies to a gain, the no-op rebalance produced none, so the fee base was zero. A vault that gains DOES pay the 10% fee unconditionally - see docs/LAUNCH-READINESS.md and the fee discussion in docs/vault/fees-and-carry.md. Do not read this exact round trip as evidence that the fee can be waived."
+  },
+
+  "phases": [
+    {"n": 1,  "phase": "createVault",  "tx": "0x797dc3be5bac603c225d147257ef508bcb92ff7edb4721ea712038d77511bc78", "block": 46307218, "status": "success", "gasUsed": 4611156},
+    {"n": 2,  "phase": "registerGov",  "tx": "0xe1cb3898f35cad9656e50df73f652d2ae688da99be820747452f0c9c5d8cf338", "block": 46307220, "status": "success", "gasUsed": 84342},
+    {"n": 3,  "phase": "deposit",      "tx": "0x5351d2f31d02370cd776343f4aea3a652777d780f23398f91f6a193795e947e7", "block": 46307223, "status": "success", "gasUsed": 161341},
+    {"n": 4,  "phase": "activate",     "tx": "0xf40c41cedba71053fd030939c736b9610eedc1aa4f2b13cf0bdf8816adde8707", "block": 46314424, "status": "success", "gasUsed": 330134},
+    {"n": 5,  "phase": "propose",      "tx": "0x4babbdb26b64c30bd087933b6397d46d180f76a7092d08247ef829ad6513c148", "block": 46314426, "status": "success", "gasUsed": 274584},
+    {"n": 6,  "phase": "commit",       "tx": "0xf771aa5a07923f0254162911cadf578a0dc2081e37a65e166ca5c0f59bd0865c", "block": 46314428, "status": "success", "gasUsed": 78124},
+    {"n": 7,  "phase": "reveal",       "tx": "0xc8f5685b2ee6daea66290ebaa35108b49448b97561335448e8c70b3ad0784aba", "block": 46316228, "status": "success", "gasUsed": 170884},
+    {"n": 8,  "phase": "finalize",     "tx": "0x7f0fa05cbe7f0d94b9073da49261f6fc11cb723e58084a91cebb558c1d38dd04", "block": 46318028, "status": "success", "gasUsed": 49869},
+    {"n": 9,  "phase": "execute",      "tx": "0xeaadebe6f96ff333991437e6afcb9df48908f5ee48a92949028a49a2b0697108", "block": 46318030, "status": "success", "gasUsed": 46356},
+    {"n": 10, "phase": "exit",         "tx": "0x8506d0bf3ad941df87bd41576d75c8442dbc3bd85bb693769fbf06dd2eda4d87", "block": 46318032, "status": "success", "gasUsed": 198297}
+  ],
+
+  "limits": [
+    "ONE vault, ONE member, ONE no-op rebalance. Multi-vault aggregation, sub-vault look-through, Mode-F queue/blocked/settle and adversarial-adapter coverage are gate 3, and this run is not evidence for any of them.",
+    "The sequencer guard did NOT execute. Base Sepolia leaves sequencerUptimeFeed at address(0) by design, so ChainlinkOracle skips the guard; its first real execution is still mainnet.",
+    "The rebalance was a no-op, so the execution adapter moved no funds. The adapter carries both the #101 mutex and the #108 scoped refund (see the deployment record), but neither fix was exercised by this run.",
+    "This run re-earns gate 2 on the current tree. It does NOT move gate 3 or gate 6 - those need the soak drills and the canary observation to actually run, and both remain owner-gated on a funded key."
+  ]
+}

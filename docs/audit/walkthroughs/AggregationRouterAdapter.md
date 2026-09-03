@@ -72,11 +72,19 @@ carries THREE guards (`- inBefore`, the `min(…, amountIn)` clamp, and the satu
 `inAfter > inBefore ? … : 0` floor) and each has its own executing test; the floor's was added
 after review, when both reviewers showed it could be deleted with the suite green.
 
-**The live Base Sepolia adapter (`0xf3e08c8b…a9b1`) predates BOTH #101 and this fix** — its
-`sourceCommit 5934ef22` has no `_lock`/`nonReentrant` whatsoever — so it carries the cross-order
-theft (a LOSS OF FUNDS) as well as the donation DoS (a revert). Because `isAllowedAdapter` is
-constructor-only the existing testnet vaults cannot be repointed at a fixed one. The soak therefore
-runs against the old shape. See `docs/DEPLOYMENT.md` §3 for the full consequence list.
+**Retired 2026-09-03 by redeploy.** The live Base Sepolia adapter is now
+`0x68be942cab962ac8f9064b45489f35fbd6f617d5`, deployed at `sourceCommit 8a0e1155`, and it carries
+BOTH #101 and this fix — `git merge-base --is-ancestor 8a2afc3e 8a0e1155` and
+`git merge-base --is-ancestor 29996eaf 8a0e1155` both succeed. Neither the cross-order theft nor
+the donation DoS is reachable on it, and the soak now runs against the fixed shape rather than the
+old one.
+
+*What this replaced, kept because the constraint it turns on is permanent:* the previous adapter
+`0xf3e08c8b…a9b1` (`sourceCommit 5934ef22`) had no `_lock`/`nonReentrant` at all and carried the
+cross-order theft (a LOSS OF FUNDS) as well as the donation DoS (a revert). Because
+`isAllowedAdapter` is constructor-only, the vaults created against it could not be repointed — a
+fixed adapter required new vaults, which is exactly what the redeploy did. That constraint still
+holds for the current adapter. See `docs/DEPLOYMENT.md` §3.
 
 ## Trust position
 

@@ -137,7 +137,7 @@ test('the committed base-sepolia address book parses and is chain-84532', () => 
     assert.equal(a.sources[0], a.underlyingFeed, `${a.symbol} source === underlying feed`);
   }
   // The oracle resolves to the deployed ChainlinkOracle in the factory allowlist.
-  assert.equal(d.aggregator, '0x6371E14C0682882e75E8382caf0216545B1f43C6');
+  assert.equal(d.aggregator, '0x3a8bd8a6599c3fdd0b3a269e0142e6b468ddd935');
 });
 
 // ── freeze-safety classifier (drill 4) ────────────────────────────────────────
