@@ -205,7 +205,7 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding to its d
 
 ## Invariants proven (Foundry)
 
-128 tests, incl. these invariant suites (256 runs × 16k calls each):
+445 tests (2026-09-03), incl. these invariant suites (256 runs × 16k calls each):
 - `Σ member shares == totalShares` across every path (VaultCore + system-level with children)
 - **NAVps non-decreasing for remaining members across any redemption** (§4.6) — proven with and
   without sub-vaults present
@@ -260,7 +260,7 @@ To prevent doc/code confusion during review, these are described in ARCHITECTURE
 ## Build & test
 
 ```bash
-cd contracts && forge build && forge test -vvv     # 128 tests
+cd contracts && forge build && forge test -vvv     # 445 tests (2026-09-03)
 forge snapshot --check --nmt "testFuzz"            # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 forge build --sizes                                # EIP-170 gate
 slither . --filter-paths "^lib/|^test/|^script/"   # static analysis (triaged: reviews/SLITHER-TRIAGE.md)

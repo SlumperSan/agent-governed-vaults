@@ -299,7 +299,7 @@ to that contract.
 ```bash
 cd contracts
 forge build
-forge test                                   # 128 tests, incl. 6 invariant/fuzz suites
+forge test                                   # 445 tests (2026-09-03), incl. invariant/fuzz suites
 forge snapshot --check --nmt "testFuzz"      # gas regression gate (fuzz gas is corpus-dependent, so not gated)
 slither . --filter-paths "lib|test|script"   # triaged: docs/reviews/SLITHER-TRIAGE.md
 ```

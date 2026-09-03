@@ -143,7 +143,7 @@ Our equivalents, in order of preference:
 
 1. **`npm run gate` failures** — the CI mirror. Unambiguous, fast, and authoritative.
 2. **Slither output** — `cd contracts && slither . --filter-paths "^lib/|^test/|^script/" --json -`.
-   312 results today, grouped by detector. Advisory in CI, which means nobody has triaged them.
+   236 results (measured 2026-09-03), grouped by detector. Advisory in CI, which means nobody has triaged them.
 3. **`forge build --sizes` margins** — EIP-170 headroom is the binding constraint on several
    deferred features. A byte freed is a feature unblocked.
 4. **Named findings** in `docs/LAUNCH-READINESS.md` and `docs/NOW.md`.
