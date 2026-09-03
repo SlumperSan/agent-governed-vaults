@@ -95,10 +95,17 @@ contract Eip170Test is Test {
 
     /// VaultCore's EIP-170 margin is not slack — it is the budget that decides whether a known
     /// fix can be deployed at all. H-5 and H-6 are confirmed High findings whose remediations
-    /// were deferred for one reason: at **289 B** of margin they did not fit (both together
-    /// measure +1,016 B; the figure was 283 B when the deferral was recorded, and #97 returned 6).
-    /// Reclaiming duplicated call shapes took the margin to **4,095 B**, measured on the merged
-    /// tree — not the 4,132 B this PR was written against, which predates #97.
+    /// were deferred for one reason: at the **289 B** of margin the tree then had they did not fit
+    /// (both together measure +1,016 B; the figure was 283 B when the deferral was recorded, and
+    /// #97 returned 6). Reclaiming duplicated call shapes bought that back.
+    ///
+    /// Current margin is **3,926 B** — VaultCore 20,650 B runtime against the 24,576 B cap,
+    /// measured with `forge build --sizes` at `protocol/main` `16050be0` on 2026-09-02. Earlier
+    /// figures recorded here (4,132 B pre-#97, then 4,095 B on the merged tree) are superseded and
+    /// are kept only in this sentence, so nobody re-derives a stale one. **Re-measure rather than
+    /// copy this number.** No guard checks it: `.sol` is outside `PUBLIC_EXT` in
+    /// `scripts/test/claims-lede-truth.test.mjs`, so a stale figure here goes unnoticed until a
+    /// person reads it — which is how the 4,095 B survived.
     ///
     /// This guards that budget rather than the cap: `forge build --sizes` already fails at the
     /// cap, but by then the next fix has already been deferred.

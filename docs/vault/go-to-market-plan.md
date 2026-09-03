@@ -37,7 +37,7 @@ Deployer EOA has **no post-wiring authority** (no owner functions exist); operat
 
 ## Gate to GO
 
-Not yet. `v1.0.0-launch-candidate` is deliberately **not cut**. The path runs through [[open-items]]: settle C-6, commission the external audit, rebuild the mainnet config, re-run the STALE operational gates, record a restore drill.
+Not yet. `v1.0.0-launch-candidate` is deliberately **not cut**. The path runs through [[open-items]] — read the live list there rather than re-listing it here; as of 2026-09-02 what remains is re-running the STALE operational gates on the pivoted tree. The restore drill (gate 7) is done and that gate is GO.
 
 ## Links
 
