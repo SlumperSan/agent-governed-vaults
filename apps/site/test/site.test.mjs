@@ -52,6 +52,9 @@ const TITLE_SUFFIX = ' — Agent-Governed Vaults';
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
 
+// The site's own public host, and the ONE exemption to the rule above -- see isExemptCanonical().
+const CANONICAL_HOST = 'rwally.com';
+
 /** Phrases banned on every page, everywhere, with no exception. */
 const BANNED = [
   /\bAPY\b/i,
@@ -280,12 +283,67 @@ test('zero JavaScript: no script tags, no event handler attributes', () => {
   }
 });
 
+/**
+ * The href values exempted from the host rule below: `rel="canonical"` links pointing at this
+ * site's own public host. This is the ONLY exemption, and it exists for a reason worth writing
+ * down rather than leaving to be reconstructed.
+ *
+ * The invariant the host rule protects is that a page LOADS nothing from anywhere and NAVIGATES
+ * off-site only to the project repository. A canonical link does neither: it fetches no resource,
+ * and it is not a link a reader can follow -- it is metadata that happens to be spelled with an
+ * `href` rather than a `content` attribute, which is why `og:url` needs no exemption and this does.
+ *
+ * It also cannot be written any other way. A RELATIVE canonical would pass this check untouched
+ * and is worse than having none at all, because it cannot do the one job canonicals exist for:
+ * collapsing www/non-www, http/https and trailing-slash duplicates of a page onto one URL. An
+ * exemption that lets the correct form ship beats a check that only permits the useless form.
+ *
+ * Both halves of the exemption are load-bearing and deliberately narrow. `rel="canonical"` ONLY --
+ * any other `rel` (stylesheet, preload, icon) still fails, because those DO load. And
+ * CANONICAL_HOST ONLY -- a canonical pointing anywhere else is not exempt and still fails.
+ *
+ * TWO WAYS THIS WAS WRONG WHEN FIRST WRITTEN, BOTH FOUND IN REVIEW, BOTH WORTH RECORDING:
+ *
+ * It matched the host with `startsWith('https://rwally.com')`, so `https://rwally.com.attacker.
+ * example/x` prefixed it and was exempt. The host is now parsed with `new URL` and compared for
+ * EQUALITY. Never re-narrow this to a string prefix: a prefix of a hostname is a different
+ * hostname, and the attacker picks the suffix.
+ *
+ * It exempted href VALUES rather than the tags carrying them, so any `src` or `href` anywhere on
+ * the page that happened to equal an exempted value inherited the exemption -- including a
+ * `rel="stylesheet"`, which does load. Composed with the prefix bug, a stylesheet pulling from a
+ * foreign host passed this gate green. The exempt canonical tags are now REMOVED from the markup
+ * before the scan, so the exemption cannot spread past the tag it was written for.
+ *
+ * The shape of the mistake, since it will recur: an exemption narrowed by describing it in a
+ * comment rather than by encoding it. Both sentences above were in the file, and both were false
+ * as implemented. Test the exemption's edges with a probe, not with prose.
+ */
+const isExemptCanonical = (tag) => {
+  if (!/\brel\s*=\s*"canonical"/i.test(tag)) return false;
+  const href = tag.match(/\bhref\s*=\s*"([^"]*)"/i)?.[1];
+  if (!href) return false;
+  let u;
+  try {
+    u = new URL(href);
+  } catch {
+    return false; // relative or malformed: not exempt, and the host rule ignores it anyway
+  }
+  return u.protocol === 'https:' && u.host.toLowerCase() === CANONICAL_HOST;
+};
+
+/** The markup with the exempt canonical tags removed, so the scan below never sees them. */
+const withoutExemptCanonicals = (html) =>
+  html.replace(/<link\b[^>]*>/gi, (tag) => (isExemptCanonical(tag) ? ' ' : tag));
+
 test('no external requests: the only permitted remote host is the project repository', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     assert.ok(!/fonts\.googleapis\.com/i.test(html), `${p}: references fonts.googleapis.com`);
     assert.ok(!/fonts\.gstatic\.com/i.test(html), `${p}: references fonts.gstatic.com`);
-    for (const m of html.matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)) {
+    // Scan the markup with the exempt canonical tags removed, rather than skipping matching
+    // href VALUES: a value-scoped skip leaks the exemption to any other tag carrying the same URL.
+    for (const m of withoutExemptCanonicals(html).matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)) {
       const v = m[1];
       if (!/^(?:https?:)?\/\//i.test(v)) continue; // relative or fragment: fine
       const host = v.replace(/^(?:https?:)?\/\//i, '').split('/')[0].toLowerCase();
