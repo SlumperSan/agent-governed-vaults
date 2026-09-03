@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps, queuedExitBacklog, MAX_TRACKED_ADAPTERS } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -145,6 +145,94 @@ test('standing default counts in tally but not quorum (revealedWeight)', () => {
   assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
 });
 
+test('a queued exit settled by its own member is counted as Mode-F', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 100n }),
+  ]);
+  assert.equal(vaultView(s, V).exitQueuedCount, 1);
+  assert.equal(vaultView(s, V).exitSettledCount, 1);
+  assert.equal(vaultView(s, V).modeFSettledCount, 1);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'one queued, one settled == 100% Mode-F');
+  assert.equal(queuedExitBacklog(s, V), 0, 'the queue entry was consumed by the settlement');
+});
+
+test('an ExitSettled with no queue entry for that member is Mode I, not Mode-F', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 100n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 3, 0, V, { member: B, sharesBurned: 100n }), // B never queued -> Mode I
+    ev('ExitSettled', 4, 0, V, { member: A, sharesBurned: 100n }), // A queued -> Mode F
+  ]);
+  assert.equal(vaultView(s, V).exitSettledCount, 2);
+  assert.equal(vaultView(s, V).modeFSettledCount, 1, "B's instant exit must not be attributed to the queue");
+  assert.equal(modeFExitRateBps(s, V), 5000, 'one of two settled exits went through the queue');
+});
+
+test('modeFExitRateBps is null for an unknown vault or a vault with no settled exits', () => {
+  const unknown = '0x' + '9'.repeat(40);
+  const s = applyAll([ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n })]);
+  assert.equal(modeFExitRateBps(s, unknown), null);
+  assert.equal(modeFExitRateBps(s, V), null, 'no ExitSettled yet');
+});
+
+test('modeFExitRateBps is a partition and can never exceed 10000, backlog is reported separately', () => {
+  // Three members queue; only one settles. The old counts-over-counts shortcut read this as 300%.
+  // VaultCore permits ONE queued exit per member (requestExit: ExitAlreadyQueued), so three queue
+  // entries mean three distinct members — and two of them are still stranded (§3.6).
+  const C = '0x' + '7'.repeat(40);
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 2, V, { member: C, sharesMinted: 100n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 3, 0, V, { member: B, shares: 100n }),
+    ev('ExitQueued', 4, 0, V, { member: C, shares: 100n }),
+    ev('ExitSettled', 5, 0, V, { member: A, sharesBurned: 100n }),
+  ]);
+  assert.equal(vaultView(s, V).exitQueuedCount, 3);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'the ONE settled exit was a Mode-F one: 100%, never 300%');
+  assert.ok(modeFExitRateBps(s, V) <= 10000, 'a partition can never exceed 100%');
+  assert.equal(queuedExitBacklog(s, V), 2, 'B and C are still stranded in the queue');
+});
+
+test('stat-only events (SliceEscrowed, EscrowClaimed, ModuleCallFailed, FeeAssessed, FeeCredited, '
+  + 'FeesClaimed, VaultRegistered, Committed, SwapExecuted) are counted with a last-seen cursor, not dropped', () => {
+  const s = emptyState();
+  apply(s, ev('SliceEscrowed', 1, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 10n }));
+  apply(s, ev('SliceEscrowed', 2, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 5n }));
+  apply(s, ev('EscrowClaimed', 3, 0, V, { member: A, asset: '0x' + '3'.repeat(40), amount: 10n }));
+  apply(s, ev('ModuleCallFailed', 4, 0, V, { module: '0x' + '0'.repeat(64), member: A }));
+  apply(s, ev('FeeAssessed', 5, 0, V, { member: A, netGain: 100n, fee: 10n }));
+  apply(s, ev('FeeCredited', 6, 0, V, { opId: 1, token: A, amount: 10n }));
+  apply(s, ev('FeesClaimed', 7, 0, V, { operator: A, token: A, amount: 10n }));
+  apply(s, ev('VaultRegistered', 8, 0, V, {
+    config: { commitDuration: 3600, revealDuration: 3600, timelockDuration: 0, executionWindow: 3600, quorumBps: 2500, proposalThresholdBps: 0, concentrationCapBps: 5000, proposalCooldown: 0 },
+  }));
+  apply(s, ev('Committed', 9, 0, V, { pid: 1, voter: A }));
+  apply(s, ev('SwapExecuted', 10, 0, V, { tokenIn: A, tokenOut: B, amountIn: 100n, amountOut: 99n }));
+
+  assert.equal(s.eventStats.get('SliceEscrowed').count, 2);
+  assert.equal(s.eventStats.get('SliceEscrowed').lastBlock, 2);
+  assert.equal(s.eventStats.get('EscrowClaimed').count, 1);
+  assert.equal(s.eventStats.get('ModuleCallFailed').count, 1);
+  assert.equal(s.eventStats.get('FeeAssessed').count, 1);
+  assert.equal(s.eventStats.get('FeeCredited').count, 1);
+  assert.equal(s.eventStats.get('FeesClaimed').count, 1);
+  assert.equal(s.eventStats.get('VaultRegistered').count, 1);
+  assert.equal(s.eventStats.get('Committed').count, 1);
+  assert.equal(s.eventStats.get('SwapExecuted').lastLogIndex, 0);
+});
+
+test('RebalanceExecuted learns the adapter address into state.adapters', () => {
+  const ADAPTER = '0x' + '7'.repeat(40);
+  const s = applyAll([ev('RebalanceExecuted', 1, 0, V, { adapter: ADAPTER, orderCount: 3n })]);
+  assert.ok(s.adapters.has(ADAPTER));
+  assert.equal(s.eventStats.get('RebalanceExecuted').count, 1);
+});
+
 test('memberPosition reports shares and vault fraction', () => {
   const s = applyAll([
     ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 750n }),
@@ -153,4 +241,30 @@ test('memberPosition reports shares and vault fraction', () => {
   assert.equal(memberPosition(s, V, A).shares, 750n);
   assert.equal(memberPosition(s, V, A).shareOfVaultBps, 7500);
   assert.equal(memberPosition(s, V, '0x' + '9'.repeat(40)).shares, 0n);
+});
+
+/**
+ * `state.adapters` is the PERSISTED adapter set: it is written into every snapshot and it is what a
+ * restart re-seeds the poller from. It is reachable by anybody — `createVault` is permissionless and
+ * `allowedAdapters` is caller-supplied — so it needs the same ceiling the poll set has.
+ *
+ * It did not have one. An earlier revision bounded only the rpc-module-local set while a comment in
+ * that module claimed the bound covered the set "persisted in the snapshot forever"; 500 hostile
+ * RebalanceExecuted in one batch left 64 polled and 500 persisted. The bound is written as a
+ * LITERAL here for the same reason as in rpc.test.mjs: `MAX_TRACKED_ADAPTERS + 1` follows the
+ * constant and would stay green if the constant were raised to 100000.
+ */
+test('the persisted adapter set is bounded at exactly 64, at and above the boundary', () => {
+  const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
+  const rebalances = (n) => Array.from({ length: n }, (_, i) => ev('RebalanceExecuted', 14, i, V, { adapter: adapterAt(i + 1), orderCount: 0n }));
+
+  assert.equal(MAX_TRACKED_ADAPTERS, 64, 'the literal these boundaries are written against');
+
+  const under = applyAll(rebalances(64));
+  assert.equal(under.adapters.size, 64, 'the 64th adapter must still be recorded');
+  assert.ok(under.adapters.has(adapterAt(64)));
+
+  const over = applyAll(rebalances(500));
+  assert.equal(over.adapters.size, 64, 'the persisted set must not grow past the ceiling');
+  assert.ok(!over.adapters.has(adapterAt(65)), 'the 65th must not be persisted');
 });

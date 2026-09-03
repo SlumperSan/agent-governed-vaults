@@ -19,7 +19,8 @@ work it describes.
 ## Right now
 
 - **Launch is NO-GO, but no longer for security reasons.** Every security gate is cleared. What
-  remains is operational (testnet re-runs, a restore drill), legal, and calendar-bound.
+  remains is operational (the soak and canary re-runs — the restore drill is done and gate 7 is
+  **GO** as of 2026-09-02), legal, and calendar-bound.
 - **The smoke lifecycle is RUNNING on Base Sepolia** (resumed 2026-09-01). It was parked at
   `activate` for three days on a mistyped keystore password, not a missing one — see "Blocked on a
   human" below, which was wrong about this. Past `activate` (5e18 shares minted), `propose` and
@@ -72,10 +73,20 @@ re-checked it. Re-check this list before repeating it.
    fabricated staleness events on a healthy oracle until #94 fixed it, so an older tree produces a
    soak result that is worse than useless. Start it **after** the smoke lifecycle finishes: track B
    drives the smoke vault.
-3. ~~**Recorded restore drill** — gate 7.~~ **DONE 2026-08-30** — `docs/RESTORE-DRILL.md`. The
-   restore genuinely works on both state files. Gate 7 stays CONDITIONAL for one reason: steps 1
-   and 6 of the runbook are `docker compose stop/start` and **there is no Docker on this machine**,
-   so they were substituted. **Closing the row now needs Docker, not a key.**
+3. ~~**Recorded restore drill** — gate 7.~~ **DONE. Gate 7 is GO as of 2026-09-02 and nothing here
+   is blocked on a human any more.** The drill was recorded Docker-free on 2026-08-30 and
+   re-confirmed 2026-09-01 (`docs/RESTORE-DRILL.md` §5–6 and its §9 addendum), then **re-run under
+   Docker on a real Linux engine** — Docker Desktop 4.88.1, server 29.7.2, OSType `linux` — with
+   **steps 1 and 6 literal** (`docker compose stop/start`), which was the one condition the row was
+   CONDITIONAL on: #139 (`4619f17a`), recorded in `docs/RESTORE-DRILL.md` §10. That run also closed
+   four of the five gaps §6 had listed as untested (aged rung, off-host tar, atomicity under a kill
+   in flight, production scale) and surfaced three defects in the printed procedure, all fixed in
+   #141 (`adafdc7c`) — RUNTIME.md §8.3 now carries both a Docker and a bare-metal column, every
+   Compose `command:` runs `node` at PID 1 so SIGTERM actually reaches the shutdown hooks, and the
+   off-host tar resolves the Compose-namespaced volume instead of silently creating an empty one.
+   **The Docker/WSL2 install instructions that stood here are obsolete and have been removed.** The
+   residuals that remain are named in the gate 7 row of `docs/LAUNCH-READINESS.md` and belong to
+   other gates, not to this one.
 4. **Launch parameter: `proposalThresholdBps = 500`.** Keep it or lower it — immutable per vault
    once shipped. See the trap below.
 
@@ -87,6 +98,21 @@ re-checked it. Re-check this list before repeating it.
   implemented, measured, and reverted — `test/audit/AuditProposalThresholdFloor.t.sol` — because a
   constructor cannot observe live stake distribution). Consequence: the operator seed is *derived,
   not chosen*, and "zero capital cost to the operator" is false — say *low*, and state the number.
+- **Below 5%, the operator cannot withdraw *anything* while a non-creator member remains.**
+  `_checkCreatorGate` requires `(s − b) · 10_000 ≥ 500 · (T − b)`; `(s − b)/(T − b)` falls as the
+  burn grows for ANY `s < T`, so a creator who starts below 5% fails at every burn amount — one
+  share included. The same passive
+  dilution that removes proposal rights also freezes the remaining capital. By design, not a bug
+  (the gate binds creator *action*, CM-2), and recoverable: a top-up, a member exit, or the last
+  member leaving. Pinned in `test/audit/AuditCreatorGateTraps.t.sol`; the arithmetic is Finance's
+  (`Operator Capital Requirement.md`, "Dilution is passive, and the gate math is one-directional").
+- **Past 95% external fill, the top-up can never reach 5% again.** The capacity cap binds the
+  operator's deposit too, so once outsiders hold more than 95% of cap, even filling the vault to
+  cap leaves the operator short (`K = C − E < 0.05 · C`; at a 50k cap, once outsiders hold >
+  $47,500, $2,500 is unreachable). Recovery is a member exit or an NAV drawdown reopening
+  headroom — nothing the operator controls. By design, not a bug: the cap is a cap. The top-up
+  must *lead* the fill, not chase it, which is why the seed is 5%-of-cap on day one. Same test
+  file; same Finance note, "The cap race".
 - **This is a shared worktree.** Never `git add -A`; it has already swept another session's work
   into a PR. Commit named paths only.
 - **`OperatorRegistry` attestation has no rebind**, so the operator payout address is permanent.

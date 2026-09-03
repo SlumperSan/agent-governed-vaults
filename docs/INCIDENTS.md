@@ -91,6 +91,57 @@ wrong price.
   `detail.resumesAtSec`, the exact second pricing resumes. A freeze it cannot attribute is still
   paged, with the gap named. See [CANARY.md](CANARY.md) §3(a).
 
+## 1a. Aggregator-swap drift — a silent MISPRICING, with no freeze to warn you
+
+The opposite failure to §1, and the more dangerous one, because nothing reverts. Chainlink swaps
+the aggregator behind a configured `EACAggregatorProxy` as routine operation and the new aggregator
+reports a different `decimals()`. `ChainlinkOracle` read decimals **once**, in its constructor, and
+cached `scale = 10**(18 - decimals)`. Every price for that asset is then wrong by a power of ten,
+permanently, and every NAV path keeps answering. Accepted as residual register **row 14** in
+[LAUNCH-READINESS.md](LAUNCH-READINESS.md) §4 — read that row before acting, especially its
+"what would invalidate this row".
+
+- **Detect:** the canary's `feed-identity` signal (`docs/CANARY.md` §3(g), shipped in #103) is the
+  first thing that fires: every sweep it compares the feed's live `decimals()` against the cached
+  `scale` in `feedOf(asset)`, so a drifted swap is a latching ALERT before any price is wrong.
+  **This incident pages** (since #121): `feed-identity` routes on a predicate rather than on its
+  name — `CONDITIONAL_PAGE` in `packages/canary/src/sinks.mjs` pages when `detail.harm` is
+  `'decimals'` or `'denomination'`, and logs when it is `null`. A decimals mismatch is exactly the
+  `'decimals'` case, so it reaches `PAGE_WEBHOOK_URL`. **A `DRIFT` notice alone does not page** —
+  a bare aggregator swap carries `harm === null` and goes to `LOG_WEBHOOK_URL`, which is the
+  intended asymmetry, not a gap. (If only `ALERT_WEBHOOK_URL` is set, both land on that one URL.)
+  See `docs/CANARY.md` §4. The weekly
+  `node scripts/verify-chainlink-oracle.mjs --strict` reporting **FAIL** on `decimals() == 8` is
+  the second, git-tracked line. Nothing on-chain detects this. Do not expect
+  the other signals to help: `oracle-freshness` asks whether the price is FRESH, not whether it is
+  RIGHT (`docs/CANARY.md` §3(a) says so and points at §3(g)), and `nav-backing` recomputes NAV
+  through the same `priceWad`, so a uniform mis-scale cancels exactly and that signal stays silent.
+  **A `DRIFT` notice with a passing decimals check is the benign case**: the aggregator moved and
+  re-checked clean. Update the `aggregatorPin` in the chain config and move on.
+- **Confirm before acting**, because a FAIL is also what a broken RPC looks like. Re-run against a
+  second provider, then read the feed directly:
+  `cast call <feed> "decimals()(uint8)"` and `cast call <feed> "aggregator()(address)"`.
+- **Act:** there is **no on-chain lever.** The oracle's config is immutable, `VaultCore.oracle` is
+  immutable, `Governance` has no oracle surface, and the factory allowlist gates creation only
+  (row 12). Tell members to exit, and say plainly that the vault is still *quoting* prices — this
+  is the incident where "the canary is quiet" and "the protocol is fine" come apart.
+- **Exits under drift:** on a vault with **no sub-vaults** — the launch shape, since `Deploy.s.sol`
+  sets `allowSubVaults = false` — a member still exits whole. `_settleExit` sizes the in-kind slice
+  pro-rata from `assetBalance` and only *values* it through the oracle
+  (`test_harmModel_driftDoesNotRobAnExitingMember`). **With children present this is unproven**:
+  `childValTotalWad` is oracle-derived and enters the *sizing* of the cash leg. Do not tell a
+  member with a sub-vault parent that their exit is unaffected.
+- **The dangerous direction is the one that does not freeze.** An under-statement mints excess
+  shares to a new depositor (C-4's shape). So the first action is to stop directing new deposits at
+  the vault, before any comms go out.
+- **Comms template:** "The Chainlink price feed for \<asset\> changed its reported precision at
+  \<time\> (verify: \<cast command\>). The vault's pricing for that asset is wrong by a factor of
+  \<n\> and cannot be corrected on-chain — the configuration is immutable by design. Deposits to
+  this vault should stop immediately. Existing members can exit; the payout is sized from the
+  vault's own holdings, not from the price. Pending (unactivated) deposits can be reclaimed at any
+  time with `cancelPending()`."
+- **Cannot do:** re-scale, repoint the feed, pause, or re-deploy the oracle for an existing vault.
+
 ## 2. `nav-backing` divergence (composition or custody)
 
 The canary's NAV recomputation disagrees with the vault's own `navWad`, or token balances

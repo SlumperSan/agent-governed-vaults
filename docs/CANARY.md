@@ -4,6 +4,11 @@ The canary watches a deployed vault set and **stays silent while healthy**. It p
 signal *transition* (OK→ALERT, ALERT→OK, OK→DEGRADED), so anything it says is worth reading. It is
 the runnable form of the signal table in [DEPLOYMENT.md §6](DEPLOYMENT.md).
 
+"Silent while healthy" is a claim about transition lines specifically. By default the canary also
+prints an hourly "still watching" heartbeat line (§5) — a deliberate exception, not a contradiction:
+without it a dead canary and a healthy protocol produce the identical observation (nothing), which
+is exactly the operational blind spot the dead-man's switch in §5.3 closes.
+
 It is **strictly read-only**: a viem *public* client, `eth_call` / `eth_getLogs` /
 `eth_blockNumber` / `eth_getBlockByNumber` and nothing else. There is no wallet client, no account,
 and no key anywhere in `packages/canary`. It reads the indexer's snapshot but never writes it — its
@@ -25,7 +30,11 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `OPERATOR_REGISTRY_ADDRESS` | | — | enables the fee-routing signal |
 | `EXTRA_OPERATOR_ADDRESSES` | | — | extra operator addresses to treat as prohibited fee destinations |
 | `CANARY_STATE_PATH` | | `./data/canary-state.json` | transition state, so a restart does not re-page. Also holds the aggregator identities `feed-identity` pins on first sight; see §3(g) |
-| `ALERT_WEBHOOK_URL` | | — | POST one JSON body per transition |
+| `PAGE_WEBHOOK_URL` | | — | POST one JSON body per PAGE-tier transition; see §5.3 |
+| `LOG_WEBHOOK_URL` | | — | POST one JSON body per LOG-tier transition; see §5.3 |
+| `ALERT_WEBHOOK_URL` | | — | back-compat fallback for whichever of the two above is unset; see §5.3 |
+| `DEADMAN_PING_URL` | | — | off-host dead-man's switch, pinged once per successful sweep; see §5.3 |
+| `CANARY_TEST_ALERT_ON_START` | | off | `1`/`true`: fire the alert self-test once at startup; see §5.3 |
 | `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS` — compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
@@ -33,8 +42,8 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `ORACLE_FEED_CADENCE_SECONDS` | | — | **`ChainlinkOracle` deployments only** — `addr:seconds` pairs giving each feed's own publish cadence, sourced from `contracts/config/*.json`'s `feedCadenceSeconds`. Drives the derived early-warning bar below; see §3(a) |
 | `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | **`ChainlinkOracle` deployments only** — MANUAL override of the early-warning bar (% of heartbeat), which otherwise alerts once a feed's answer has aged past it, *before* the breaker trips. Unset = DERIVED per asset from `ORACLE_FEED_CADENCE_SECONDS`; see §3(a) |
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
-| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback |
-| `HEARTBEAT_MS` | | `0` (off) | periodic "still watching" line, so silence is provably alive |
+| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap — the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
+| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2 — set `0` to explicitly opt out |
 
 **Signals (c) and (d) need the indexer projection.** With `VAULTS` alone and no snapshot they report
 DEGRADED, not OK — see §4.
@@ -418,6 +427,120 @@ proxy anywhere, so feed identity is not a capability that exists to be blind abo
 
 ---
 
+### (h) `governance-watch` — a proposal is moving, and here is when its windows close
+
+**Why it exists.** Monitoring Gap Analysis G8 (Incident Catalogue OPS-7): the design's answer to
+governance capture is *publish analysis during the reveal window*, and until this signal nothing
+said when a window had opened. A hostile proposal could move through commit into reveal overnight
+and consume the only defence window the protocol has. Operations specified it as SEV-2 — page
+during 08:00–24:00 UTC, queue overnight. **Cite the two halves to the right notes**: the SEV-2
+label comes from Monitoring Gap Analysis §3 item 5 (the Severity Ladder's SEV-2 definition
+enumerates OPS-1/2/3/5 and does not mention governance, and the Incident Catalogue's OPS-7 entry
+assigns no tier); the 08:00–24:00 UTC window is the Severity Ladder's. **The routing belongs to the
+sinks**:
+the signal is in `PAGE_SIGNALS`, so its ALERTs reach `PAGE_WEBHOOK_URL` and its recoveries and
+DETECTOR BROKEN lines reach `LOG_WEBHOOK_URL` (§5.3). This signal reports state, knows nothing about
+the time of day, and promises nothing about who responds when.
+
+**What it measures.** `vault.governance()` (immutable, so no extra env var) locates the
+`Governance` module; then `activeProposalOf(vault)`, `proposals(pid)` and `configOf(vault)`. The
+**phase** is derived from the proposal's stored deadlines against **chain time**, never the host
+clock, because two of the transitions that matter — commit→reveal and timelock→executable — are
+clock crossings that emit no event. The four lifecycle events (`Proposed`, `Finalized`,
+`Executed`, `ProposalExpired`) are scanned over the poll window for block/tx attribution only,
+using the same `MAX_LOG_SPAN_BLOCKS` plumbing as signal (e).
+
+**Shape.** One transition key per phase — `commit`, `reveal`, `tally` (reveals closed, `finalize`
+not yet called), `timelock`, `execution`, `lapsed` (passed, window closed, `markExpired` not yet
+called) — and every key is emitted every sweep: the phase the proposal is in reads ALERT, the other
+five read OK. **The six keys are not cosmetic and must not be collapsed into one:** the tracker
+emits on a status change, so a single key would produce *no line at all* on commit→reveal — the
+signal would already be `alert`, and the reveal window would open unannounced. That is the general
+masking failure of single-key signals, and it is why per-leg keys are the house pattern here
+(`nav-backing` splits composition/custody, the oracle signals split per asset). Entering a phase is one ALERT line; leaving it is one RECOVERED line saying where the
+proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
+Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
+Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
+be settled (`Governance.sol:278`), so one vault cannot have two proposals running at once however
+many proposers try. That, not the phase durations, is what bounds pages per vault per hour — and it
+is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
+true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
+but only *caps* `timelockDuration`, so a zero timelock is legal and that phase is skipped outright.
+
+The phase boundaries copy `Governance.sol`'s own `require`s and the tests pin them: commits need
+`now < commitDeadline`, reveals `commitDeadline ≤ now < revealDeadline`, `finalize` needs
+`now ≥ revealDeadline`, `execute` needs `executableAt ≤ now ≤ expiresAt` (inclusive at the top),
+`markExpired` needs `now > expiresAt`.
+
+**What `detail` carries.** `revealDeadline` (+ `…Iso`), `earliestExecuteAt` (+ `…Iso`) and
+`earliestExecuteBasis`, `executionWindowClosesAt`, the decoded `proposal` (type, proposer,
+`actionHash`, every stored timestamp, tallies) and the four `config` durations, `pid`, `phase`,
+`governance`, `modeFExitQueueing` (true from reveal start until settlement — VO-8, the reason a
+reveal-phase line matters to members and not only to voters), the window's `events` with
+block/tx, `severity: 'SEV-2'`, `incident: 'OPS-7'`, `gap: 'G8'`.
+
+**`earliestExecuteAt` is exact once the proposal has passed** (`executableAt` is stored) **and a
+lower bound before that**: `finalize` is permissionless and callable the second reveals close, so
+the floor is `revealDeadline + timelockDuration`; a late `finalize` pushes the timelock and the
+execution window later, which is why no *upper* bound is claimed for an Active proposal and why
+the floor keeps moving with the clock while the `tally` key is alert.
+
+**Tier: `PAGE_SIGNALS`, unconditionally — and here is why not `CONDITIONAL_PAGE`.** This signal has
+the shape that category exists for: one signal name covering two severities, a routine creator
+rebalance and a hostile proposal. It does not have the **discriminator**, which is what the category
+actually requires. `feed-identity` earned it because chain state says which severity you are in
+(`detail.harm`). Here all three candidate predicates fail:
+
+1. **The payload** — the axis the two severities genuinely differ on — is not on-chain until
+   `execute`. `Proposed` carries only `actionHash`, which is exactly why this signal ships
+   `payloadOnChain: false`. There is nothing to condition on.
+2. **The proposer is the wrong thing to condition on, on the merits — not because it is hard.**
+   Incident Catalogue OPS-7 opens *"An operator key signs a bad proposal, or a hostile bloc passes a
+   rebalance"*: the operator key is the **first named threat this signal exists for**. Any proposer
+   predicate — including the cheap one, a creator/operator allowlist, which needs no scoring at all
+   and is trivially available on-chain — would therefore demote exactly the case OPS-7 names first.
+   The objection is not "we cannot build it"; it is that building it blinds the primary threat.
+3. **The phase** is the wrong axis. The two arguably-less-urgent keys are `tally` and `lapsed`, and
+   both mean a governance action is *stalled* — untallied, or passed and never executed. Demoting
+   them demotes the wrong two.
+
+So paging on a routine proposal is an accepted cost, not an oversight: it is what "every occurrence
+PAGEs at SEV-2" buys when no predicate can separate routine from hostile. If a payload-publication
+location ever exists, predicate 1 becomes available and this decision should be revisited.
+
+**Threshold.** No active proposal.
+
+**Reads are pinned to `toBlock`**, the same height the log window ends at, the way `nav-backing`
+pins its legs. Unpinned, state would come from `latest` while logs stop at `head - CONFIRMATIONS`,
+so a proposal executed inside the confirmation lag would read `Executed` while its `Executed` log
+was still outside the window, and the line would attribute the settlement to the earlier `Finalized`
+transaction. Pinning also stops a `finalize`/`execute` that gets reorged out of those last blocks
+from producing a spurious ALERT→RECOVERED pair.
+
+**When it fires.** Read `detail.actionHash`, find the published payload, and check that it hashes
+to it — `execute` is permissionless and hash-gated, so the payload is the authority, not the
+caller. Publish the analysis before `revealDeadline`. A `tally` alert that stands for long means
+nobody has called `finalize`; a `lapsed` alert means a passed proposal was never executed — both
+calls are permissionless. `execution` on a `RuleChange` is the vault's config about to change.
+
+**What it does NOT check, and why: whether the payload behind `actionHash` has been published**
+(security-ops §5.3 names this as the unmonitored condition). The payload is not on-chain until
+`execute` — `Proposed` carries only its keccak — and there is no publication surface anywhere in
+this tree: the indexer folds the hash, the API has no proposal route, and the reference agent's own
+evaluator treats the payload as opaque from chain state. There is nothing for a read-only monitor to
+read. `detail.actionHash` and `detail.payloadOnChain: false` are carried so a receiver with an
+out-of-band payload source can make the comparison itself; the check lands the day a publication
+location exists.
+
+**Detector-broken branches.** A vault that does not answer `governance()`, answers `address(0)`,
+or points at a contract that does not answer `activeProposalOf()` reports DETECTOR BROKEN and
+re-asserts — a vault whose proposals cannot be seen is unmonitored, not quiet.
+
+Threat-model rows: [VO-7](THREAT-MODEL.md) (reveal-order visibility), [VO-8](THREAT-MODEL.md)
+(Mode-F from reveal start), [CM-6](THREAT-MODEL.md) (one proposal at a time).
+
+---
+
 ## 4. Signals that cannot run
 
 A DEGRADED line is not a false alarm to be tuned away — it means a check is **not covering** the
@@ -464,15 +587,31 @@ raise it or scan that range manually.
 ```
 
 The level signals (a–d) read current state and are unaffected. Only the two window-scoped event
-signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
+signals have the hole — signal (h) reads the proposal's phase from state and uses the window only
+for block/tx attribution, so **a log-window gap costs it a tx hash, never a page**. Raise
+`MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
+
+**A sweep gap is a different thing, and signal (h) is not exempt from it.** If the canary process is
+down long enough to span a whole proposal lifecycle (≥2h), every phase key was OK before and is OK
+again after, so the tracker emits **no transition at all** and the proposal is never narrated — no
+line is produced, so nothing in `detail` reaches any sink. That is not recoverable inside a
+state-poller, and it is precisely what the off-host dead-man's switch (`DEADMAN_PING_URL`, §5.3)
+exists to make visible: it tells you the canary was down, which is the cue to sweep governance by
+hand for the window it missed. The narrower case — a whole *reveal window* falling between two
+sweeps — **is** covered: `reveal` stays OK→OK and says nothing, but `commit` emits ALERT→RECOVERED
+and `tally` emits OK→ALERT naming the closed window and the un-called `finalize`.
 
 ---
 
 ## 5. Operating notes
 
-- **Silence is the healthy state**, which makes "is it alive?" a fair question. Set `HEARTBEAT_MS`
-  (e.g. `3600000`) for an hourly one-line summary of vault count, signals tracked, and how many are
-  not OK.
+- **Silence is the healthy state**, which makes "is it alive?" a fair question. `HEARTBEAT_MS`
+  defaults to `3600000` (one hour) precisely so this question always has an answer — without it, a
+  dead canary and a healthy protocol are the same observation (nothing). Set `HEARTBEAT_MS=0` to opt
+  back out. The heartbeat line is a "still watching" summary of vault count, signals tracked, and
+  how many are not OK; it always goes to stdout via the console sink, never to a webhook, and is
+  unrelated to the dead-man's switch below (which is off-host and pings something you do not
+  control the uptime of).
 - **Restarts do not re-page.** Transition state persists to `CANARY_STATE_PATH` (atomic
   write-temp-then-rename, same discipline as the indexer snapshot). Delete that file to force a fresh
   report of everything currently wrong. That file also holds the aggregator identities `feed-identity`
@@ -480,9 +619,81 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
   the canary was down is never narrated. The decimals and denomination checks in that signal need no
   pin and are unaffected. `node packages/canary/src/canary-runner.mjs verify` prints the pin count.
 - **A paging outage is not a monitoring outage.** A webhook that throws, times out, or returns 500 is
-  logged and stepped over; the sweep continues.
+  logged and stepped over; the sweep continues. §5.3 below is what stops that fact from being
+  discovered for the first time during a real incident.
 - **One broken vault does not blind the others.** A signal that errors becomes a DEGRADED result for
   that vault and the sweep carries on.
+
+### 5.3 Sinks, severity tiers, and the dead-man's switch
+
+Closes the Monitoring Gap Analysis' G6: "no paging tiers, no off-host dead-man's switch. Undetected:
+a dead host, overnight (~8h)." `sinks.mjs` used to be console + one generic webhook — every
+transition, same channel, no severity — and `ops-check` (`packages/oplog`), the thing that notices a
+dead canary, runs **on the same host as the canary**, so host death silenced both the watcher and the
+watcher's watcher. This section is the fix in three parts.
+
+**Tiered webhooks.** `PAGE_WEBHOOK_URL` receives only ALERT transitions on the signals Operations'
+Severity Ladder rates SEV-1/2 and worth waking a human for: `nav-backing`, `share-conservation`,
+`fee-routing`, `exit-liveness`, `oracle-freshness` (this is the "oracle-v2"/"oracle-health" the
+Monitoring Gap Analysis' §3 item 4 refers to — `signals/oracle-health.mjs`'s `SIGNAL` constant is
+still `'oracle-freshness'`, unchanged across the post-pivot rename), and `governance-watch`, which
+§3 item 5 places here in as many words ("every occurrence PAGEs at SEV-2 during waking hours") — a
+citation of Operations' spec, not an escalation inferred here, and unconditional rather than
+`CONDITIONAL_PAGE` because no on-chain predicate separates a routine proposal from a hostile one
+(see §3(h)). **The waking-hours half is the receiver's**: nothing in this process knows the time of
+day, and no string it emits promises a response time. `LOG_WEBHOOK_URL` receives every
+other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and the harmless half of
+`feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
+the two is unset — set only that one and every transition reaches the one configured URL exactly
+once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
+'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
+
+**`feed-identity` pages on HARM only.** `feed-identity` (§3(g)) is the one signal whose ALERTs are
+not all the same severity, so it routes on a predicate (`CONDITIONAL_PAGE` in `sinks.mjs`) rather
+than on its name: **PAGE** when `detail.harm` is `'decimals'` or `'denomination'`, **LOG** when it is
+`null` (the aggregator swap). The two harm cases LATCH — `ChainlinkOracle`'s cached scale and its
+USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
+freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
+legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
+Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
+live price sits inside the band, and per `Owner Decisions 2026-09-01.md` §1 that window closes for
+cbBTC at BTC $100,000 — above it `feed-identity` is the only detector there is, and `nav-backing`
+cannot substitute because it recomputes through the same mis-scaled `priceWad`. The Monitoring Gap
+Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` existed (2026-09-01,
+PR #103), so its "LOG: everything else" never ruled on this; the tier map here is the reconciliation
+and the note remains Operations' to update.
+
+**Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged (plain `GET`) once per **successful**
+sweep that watched **at least one vault** — a canary that cannot reach the RPC, and a canary whose
+watch set is empty (no `VAULTS`, missing or unmounted indexer snapshot), are both "not watching the
+chain" and neither may tell the one off-host monitor otherwise. A sweep that finds no vaults logs
+`sweep.no_vaults` and says on stderr that the ping is being withheld, so the external check going red
+reads as the configuration problem it is. The on-host `ops-check` heartbeat file is still written in
+that state: it reports process liveness, and promoting an empty watch set to "canary dead" there is
+an Operations decision, not this package's. Point it at an external
+heartbeat-monitoring check — e.g. a Healthchecks.io-style URL (`https://hc-ping.com/<uuid>`) — so a
+dead host is noticed by something that is not itself on that host. Off by default when unset; a
+failed ping is logged, never fatal — the ping's whole purpose is to be noticed from outside this
+process, so a delivery failure here must not be the thing that crashes the last line of defence.
+**Provisioning the external account is a human task**, not something this package can do (no key, no
+signup flow, by design); this is only the code path that pings whatever URL you give it.
+
+**Alert self-test.** security-ops.md §5.3: "a webhook that 500s is logged and skipped, by design.
+Something must test the alert path end-to-end on a schedule, or the first real page is also the
+first test." `CANARY_TEST_ALERT_ON_START=1` fires one synthetic PAGE-tier and one synthetic LOG-tier
+transition through the exact sinks a real sweep uses, right after startup and before the sweep loop
+begins. On demand, without starting anything: `node packages/canary/src/canary-runner.mjs test-alert`
+(mirrors the existing `verify` subcommand — same env, no sweep). Both paths bypass the transition
+tracker entirely, so a self-test can never plant fake state in `CANARY_STATE_PATH` that would
+suppress a real future transition on a colliding id. The forced tier travels as
+`detail.tier` alongside `detail.selfTest: true`, and `tierOf` honours it **only** in that pair — a
+real signal's `detail` is a bag of decoded on-chain values, and one that happened to carry a field
+named `tier` must not be able to demote its own page.
+
+> **Do not leave `CANARY_TEST_ALERT_ON_START` set in `.env`.** Compose runs the canary under
+> `restart: unless-stopped`, so it fires a synthetic PAGE on **every** automatic restart, not once.
+> Startup warns on stderr when it is set. Run the self-test, confirm both tiers arrived, unset it —
+> or use the `test-alert` subcommand, which is the same path without starting the service.
 - **Cold start sees no history.** With the default `LOG_LOOKBACK_BLOCKS=0`, the first sweep scans a
   single block, so `ModuleCallFailed`, `SliceEscrowed`, and fee outflows from *before* the canary
   started are never reported. That is deliberate — starting a monitor should not replay a backlog as
@@ -502,7 +713,7 @@ signals have the hole. Raise `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 226 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 284 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 
@@ -523,6 +734,10 @@ Four guards worth knowing about:
   Chainlink's `EACAggregatorProxy`, which is not in this tree, so they are **not** pinned that way and
   the test says so rather than pretending; their runtime failure is covered instead, by a
   DETECTOR BROKEN result.
+- The same file cross-checks every `Governance` getter signal (h) reads — name, `view`-ness and the
+  full flattened **output shape** — against the compiled `Governance`, and the four lifecycle events'
+  signatures and indexed flags. Public mapping-to-struct getters flatten positionally, so a reordered
+  struct field would otherwise swap two deadlines silently.
 - `test/reader.test.mjs` asserts the chain reader exposes no send/sign/write surface, and
   `test/abis.test.mjs` asserts the ABI table declares no non-`view` function. The read-only claim is
   enforced, not just documented.

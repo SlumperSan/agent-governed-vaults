@@ -42,7 +42,7 @@ reference for what is signal vs. noise.
 | `unused-return` | **By design.** (a) The `boundedCall` results are intentionally best-effort (H-1): the `ok` flag is checked where liveness needs it and the rest ignored — a failing bookkeeping module must not block an exit. (b) `IExecutionAdapter.executeSwap`'s return is ignored because output is measured from the vault's OWN balance delta (EX-3), never the adapter's word. (c) `getReserves`/`latestRoundData` ignore fields the caller doesn't need (timestamp / round metadata). |
 | `incorrect-equality` | **Safe.** All flagged `==` are on share counts / status enums / `totalShares == 0` first-deposit and sole-holder checks — exact-value comparisons, not balance-of equality that a donation could grief (NAV never reads `balanceOf`, EE-1). **+1 in Sprint 10** (newly visible, `src/lib/Checkpoints.sol#23`): `h.arr[len-1].ts == uint64(block.timestamp)` in `push`. The strict equality is the point of the line — it detects "a checkpoint already exists for this exact second" and overwrites it instead of appending a duplicate (the standard OZ `Checkpoints` idiom). A range or `>=` comparison here would corrupt history, not harden it. |
 | `uninitialized-local` | **Safe.** `k`, `perfFee`, `childValTotalWad` are accumulators intentionally relying on Solidity's zero-default before being summed. |
-| `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource.sol:255`, the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), so the omission is closed. |
+| `timestamp` | **Accepted (K-4 / by design)** for `Governance` and `Checkpoints`. The protocol uses `block.timestamp` as its only clock (commitment C-2, no block numbers); governance/staleness windows are minutes-to-days, far outside miner tolerance (~±15s). **+1 in Sprint 10:** `Checkpoints.push` same-second overwrite. **AI-audit correction (§4.5):** this row predated Sprint 11 and omitted `UniswapV3TwapSource._observe` (`UniswapV3TwapSource.sol:255` as it then stood), the one timestamp use with a security consequence (**H-2**). H-2 has since been **FIXED** (the constructor now requires `maxObservationAge <= window/20`; regression `AuditTwapRealCostModel.t.sol`), and the contract itself no longer exists — the Chainlink-direct pivot (C-6) deleted `UniswapV3TwapSource.sol`, so that citation is history, not a location. The omission is closed. **Per-row re-triage correction (2026-09-01):** the class verdict answered "is every comparison outside miner tolerance?" (yes) and never asked "is each comparison against the right clock?". One is not — `Governance.applyStandingDefault` measures the VO-3 standing-default TTL against `block.timestamp`, but it is callable only from the reveal phase, so the commit phase consumes part of the 72h and `commitDuration >= DEFAULT_TTL` (legal until now) killed VO-3 outright for that vault. **T-1, Low, FIXED** in the PR that added this sentence: `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`. Regression `AuditStandingDefaultTtlVsCommit.t.sol`. |
 | `calls-loop`, `costly-loop`, `cache-array-length`, `cyclomatic-complexity` | **Accepted for the basket loop** (capped at 10). **AI-audit correction (§4.5):** the "~237k gas" bound was measured on a 1-child/1-grandchild fixture (6 `priceWad` calls); the caps actually permit ~730 calls at the `MAX_CHILDREN` fan-out, so `navWad` is bounded in *shape* but unbounded in *cost* (**M-5**, ~12M gas at 8×8 vaults). M-5's fan-out requires sub-vaults, which are **disabled at launch** (root vaults only, C-1 gate), so at launch `navWad` loops only over the basket (≤10) and the original bound holds; M-5 is deferred with the sub-vault feature. The `NavGas.t.sol` sub-vault assertion is a fixture bound, not a proof of the worst case. |
 | `low-level-calls` | **By design.** `AggregationRouterAdapter.executeSwap` — the pinned-router call behind the selector allowlist + measured-delta minOut (EX-3). **+3 in Sprint 10** (newly visible): `SafeTransferLib.safeTransfer` / `safeTransferFrom` / `safeApprove`, each a `token.call(abi.encodeWithSelector(...))`. The low-level form is the whole point — it tolerates non-standard ERC-20s that return nothing or malformed data instead of reverting on them (H-2), which a high-level call cannot do. Every one checks `ok` and validates the return payload. Reviewed in SPRINT1; before Sprint 10 the analyser had never actually seen them (banner above), and now that it has, it reports exactly these three by-design sites and nothing more. |
 | `missing-inheritance` | **Cosmetic.** Interface-shaped contracts that don't formally `is` the interface; ABIs match. Sprint 7 added one instance: `VaultDeployer` vs `IVaultDeployer` (declared inside `VaultFactory.sol`). Same disposition — the single `deploy(bytes) returns (address)` selector matches, and `Eip170::test_factoryPinsItsDeployerImmutably` plus every factory-path test exercise the call across the interface. |
@@ -120,15 +120,28 @@ can only *shrink* the outer call's measured delta, which fails closed on `Slippa
 extraction was constructed.
 
 **Guarded anyway**, because non-reentrancy is a property of the `IExecutionAdapter` contract, not of
-any one caller — see the next row for what the same shape costs when the adapter *does* sweep.
-`test_directPoolAdapterRefusesNestedSwap` pins it.
+any one caller — see the next row for what the same shape cost when the sibling adapter *did* sweep
+its whole balance (it no longer does). `test_directPoolAdapterRefusesNestedSwap` pins it.
 
-### `AggregationRouterAdapter.executeSwap` — 1 row — REAL, fixed
+**Checked again 2026-09-01 while scoping the aggregation adapter's sweep, and still clean:**
+`DirectPoolAdapter` transfers the FULL `order.amountIn` to the pair and moves only its own measured
+`amountOut`. It has no `balanceOf(tokenIn)` sweep and no refund leg at all, so the donation DoS
+below has no purchase on it. It also therefore has no refund path for a pair that consumes less
+than `amountIn` — not reachable through an honest V2 pair, which always takes the whole transferred
+balance, and deliberately left alone.
 
-The trailing "sweep unspent input back to the caller" returns `balanceOf(tokenIn)` — the adapter's
+### `AggregationRouterAdapter.executeSwap` — 1 row — REAL, fixed TWICE (#101, then the scoped refund)
+
+The trailing "sweep unspent input back to the caller" returned `balanceOf(tokenIn)` — the adapter's
 **whole** balance, including another order's in-flight input — to that call's `msg.sender`, and
 `safeApprove(router, 0)` revokes the outer call's approval. Both were written assuming the adapter
 only ever handles one order at a time; nothing enforced it.
+
+> **This row said "fixed" after #101 and that was one fix short.** #101's `nonReentrant` closed the
+> *reentrant* half. It made the theft **unreachable**, not impossible, and it left a second, purely
+> non-reentrant exploit of the same root cause untouched — see **The donation DoS** below. The row is
+> corrected rather than deleted: recording a finding as closed when only one of its two mechanisms
+> was addressed is the failure mode worth keeping visible.
 
 **The attacker is not the router.** The router stays honest: pinned immutable (EX-2), selector
 allowlisted (EX-1). The attacker is a **counterparty reached through the route** — the maker side of
@@ -148,12 +161,69 @@ realised", not an open drain. It is **not** bounded for the published `IExecutio
 abstraction, which promises no such thing to any other integrator. Fixed with a `nonReentrant`
 mutex of the same shape as `VaultCore._lock`.
 
+#### The donation DoS — same root cause, no reentrancy, and it gated the mainnet deploy
+
+Both #101 reviewers reached this independently and neither was asked for it. A whole-balance sweep
+does not need a nested call to be dangerous — it just needs a balance. Anyone `transfer`s `d` units
+of `tokenIn` to the shared adapter. The next vault leg is refunded its own unspent input **plus
+`d`**, and `VaultCore.executeRebalance` computes `spent = inBefore - inAfter` over ITS OWN balances
+(the `Finding 3 (S6)` block in `VaultCore.executeRebalance` — locate it by its expression,
+`spent = inBefore - inAfter`, never by a line number), which **underflows — `Panic(0x11)`** — as soon as `d` exceeds what the
+route actually pulled. Note the threshold is `d > pull`, not `d > 0`; below it the same defect is
+quieter and still real, silently over-crediting `idleUsdc` by `d`. The griefer then recovers the
+donation with a 1-unit order, so the cost is gas and it is repeatable — and because
+`VaultCore.isAllowedAdapter` is **constructor-only**, it is permanent for every vault built against
+that bytecode, with no repointing path.
+
+**Fixed by scoping the refund to this order's own delta**, `refund = min(amountIn, inAfter -
+inBefore)` — the shape `VaultCore.executeRebalance` already carried (S6 Finding 3 / E3). Two clauses,
+two attacks: `- inBefore` excludes a pre-existing donation (and makes the reentrant theft above
+*impossible* rather than merely blocked), and the `min(…, amountIn)` clamp bounds a counterparty
+that pushes `tokenIn` back mid-route.
+
+**Three guards, not two, and each now has its own executing test.** This row previously said "both
+clauses", which undercounted the line it was describing: the saturating floor
+`inAfter > inBefore ? … : 0` is a third guard, it is *live* code (the adapter approves the router
+for `order.amountIn` rather than for what a fee-on-transfer `tokenIn` actually delivered, so a full
+pull can drive the balance below `inBefore`), and it had **zero** coverage — it could be deleted
+with the whole suite green. Both #108 reviewers found that independently.
+
+Reproduced in `test/audit/AuditAdapterScopedSweep.t.sol` — 10 tests, **7 of which fail against
+`protocol/main`'s adapter**, three with `panic: arithmetic underflow or overflow (0x11)` inside
+`executeRebalance` (401 units donated against a 400-unit route, the reviewers' own figure). The
+three that pass on main are the honest-path regressions plus the `tokenOut` guard, whose leg main
+already had correct. It is a separate file from `test/AdapterReentrancy.t.sol` on purpose: that file
+is #101's record for the nested-sweep mechanism, this finding needs no reentrancy at all, and
+reproducing it needs a vault-level harness.
+
+**The live Base Sepolia adapter `0xf3e08c8b…a9b1` predates BOTH #101 and this fix, and cannot be
+repointed** — `sourceCommit 5934ef22` has no `_lock`/`nonReentrant` at all, so it carries the
+cross-order theft (a loss of funds) as well as the donation DoS (a revert). See `docs/DEPLOYMENT.md`
+§3 for the full consequence list.
+
 **The `reentrancy-balance` count does not move.** Slither does not model the mutex for this
 detector, so it still reports **8** after the fix. Expect that; it is not a failed fix. The total
-went **227 → 225** on 2026-09-01: the two rows that cleared are `reentrancy-events` on the two
-adapters, which Slither *does* suppress once a guard is present. Adapter runtime cost of the two
-guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B.
-`VaultCore` is untouched at 20,481 B (4,095 B of EIP-170 margin).
+went **227 → 225** on 2026-09-01, measured at `29b1b470`: the two rows that cleared are
+`reentrancy-events` on the two adapters, which Slither *does* suppress once a guard is present.
+
+**That 225 is a historical measurement, not the current total.** A clean run on the rebased tree
+(`bab5ee90` merged in) reports **236**, and both #108 reviewers independently measured 236 as well.
+The growth is not this change: only 3 of the 236 rows mention `AggregationRouterAdapter` at all, and
+the delta tracks `calls-loop`, which is emitted per entry-point call path and grew with #98. One
+reviewer measured 236 on `protocol/main` @ `52d10aee` too and found the **per-detector tallies
+`diff`-identical** between main and this head — which is the claim that actually matters here, and
+it is the one to cite. Do not read a bare total as a verdict on a branch: quote the per-detector
+diff, or quote nothing. Adapter runtime cost of the two
+guards: `AggregationRouterAdapter` 1,806 → 1,839 B, `DirectPoolAdapter` 2,165 → 2,210 B. The
+scoped refund then took `AggregationRouterAdapter` **1,839 → 1,981 B** (+142); `DirectPoolAdapter`
+is untouched at 2,210 B.
+`VaultCore` is untouched by this change — and it is *byte-identical* to `protocol/main`, not merely
+the same length: `contracts/src/VaultCore.sol` has an empty diff against main, under an unchanged
+`foundry.toml`. Measured on the rebased tree (`bab5ee90` merged in): **20,650 B, 3,926 B of EIP-170
+margin**, `sha256(deployedBytecode.object) = a5278797b781ea5a3888491da9933dab05999cbd678b4ca442208059ded7ceb4`.
+The `20,481 B / 4,095 B` this line carried until now was measured before #98 and is stale; the same
+stale pair is still shipped in `docs/LAUNCH-READINESS.md` and `docs/vault/contracts-index.md`, which
+are **not** this PR's to correct — flagged so they are not lost.
 
 ## Running it
 

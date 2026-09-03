@@ -14,9 +14,12 @@ unwired registry cannot be fixed after the fact).
 
 > ✅ **Unblocked (Sprint 7).** `VaultFactory` was 27,241 bytes of runtime code against the
 > EIP-170 24,576-byte cap, so §1 reverted on-chain and nothing in this runbook could be executed
-> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). VaultCore's
-> creation code is larger than the runtime cap all by itself, so it now lives in `VaultDeployer`
-> — deployed first, then pinned immutably by the factory. The factory is 2,718 B and
+> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). Any contract that
+> writes `new VaultCore(...)` embeds VaultCore's whole creation code in its own runtime, and the sum
+> does not fit: 22,391 B of initcode (2026-09-02) leaves 2,185 B under the cap, against a factory
+> whose own logic measures 3,572 B. So the creation code lives in `VaultDeployer`
+> — deployed first, then pinned immutably by the factory. The factory measures **3,572 B**
+> (2026-09-02; recorded here as 2,718 B until then — re-measure, do not copy) and
 > `forge build --sizes` passes. **§1 gained a sixth singleton**; the wiring order is otherwise
 > unchanged.
 
@@ -52,10 +55,18 @@ allowlist. So the oracle is deployed **before** the factory:
    uptime feed, per-asset heartbeats and sane-price bounds.
 2. **Deploy the ChainlinkOracle** via
    [`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) with the
-   `ORACLE_*` env vars from that config.
+   `ORACLE_*` env vars from that config. The band values are copied by hand and nothing
+   machine-checks that the env matches the JSON (residual register row 14's `BAND-BINDING` gap) —
+   compare them yourself before broadcasting. **The band width is an owner decision (SWARM §10),
+   not a deployer default:** an aggregator-swap drift of ±2 decimals is caught only while
+   `hi/100 < spot < 100·lo`, a window `10,000 / (hi ÷ lo)` wide, so the shipped ratio-1000 bands
+   give the *least* coverage the constructor allows (10x: WETH $1,000..$10,000, cbBTC
+   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the owner
+   memo `Owner Decisions 2026-09-01` §1 the options; do not retune without that decision recorded.
 3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
    exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
-   present and answering).
+   present and answering; and the band bounds a 2-decimal drift **at the live price**, which the
+   constructor does not check — it accepts a spot inside the band but outside the covered window).
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
@@ -164,6 +175,32 @@ allowlist makes it non-selectable there anyway).
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
 
+   > ⚠ **The live Base Sepolia adapter `0xf3e08c8b00281750d531a48473d053009038a9b1` predates
+   > BOTH #101 and the scoped-refund fix, and CANNOT BE REPOINTED.** Its recorded
+   > `sourceCommit` is `5934ef22`, which contains **no `_lock` / `nonReentrant` at all** and
+   > `8a2afc3e` (#101's mutex) is **not** an ancestor of it — check with
+   > `git merge-base --is-ancestor 8a2afc3e 5934ef22`. So it carries **two** exploits of one
+   > root cause, not one, and the second is the more serious:
+   >
+   > 1. **The donation DoS** (a revert). Anyone can `transfer` USDC to that address and the next
+   >    `executeRebalance` leg through it reverts `Panic(0x11)`.
+   > 2. **#101's cross-order theft** (a LOSS OF FUNDS). With no mutex, a counterparty reached
+   >    through the route re-enters with a 1-unit order and the nested whole-balance sweep hands
+   >    it the outer order's in-flight `tokenIn` — the attack
+   >    `test/AdapterReentrancy.t.sol::test_nestedSwapCannotSweepTheOuterOrdersInput` exists to
+   >    prove, unguarded on that address. Reachability on Sepolia is LOW (governance chooses
+   >    `routeData`, so the hostile counterparty must be routed to), but low is a different
+   >    statement from the consequence list, and this record's job is to state the latter.
+   >
+   > Both are described in [the walkthrough](audit/walkthroughs/AggregationRouterAdapter.md).
+   > `VaultCore.isAllowedAdapter` is populated in the constructor and never written again, so the
+   > existing testnet vaults — including the smoke vault
+   > `0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f` — cannot be pointed at a fixed adapter. **The
+   > soak therefore runs against the old shape**, and a rebalance failure there may be this and
+   > not the soak's own subject. Fixing it on Sepolia means a fresh adapter *and* fresh vaults;
+   > that is a redeploy decision, not part of the contract fix. Mainnet must deploy the fixed
+   > bytecode — this is the constructor-only immutability that made the finding a deploy gate.
+
 ## 4. Create a vault
 
 ```solidity
@@ -261,6 +298,67 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API.
 
+> **The canary watches the launch oracle on two axes: freshness since #89, and feed IDENTITY since
+> #103.** The `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
+> directly: `priceWad(asset)` is ground truth and a revert *is* the incident, attributed to the
+> sequencer, the heartbeat, the sane-price band, an unlisted asset or a dead feed. A detector that
+> cannot run is reported `DETECTOR BROKEN` and re-asserted on a backoff rather than going quiet.
+> The `feed-identity` signal (G2's on-chain half, [CANARY.md](CANARY.md) §3(g)) compares each
+> feed's live `decimals()` against the **cached `scale` the deployed oracle actually multiplies
+> by**, read from `feedOf(asset)`, re-runs the constructor's USD-denomination predicate against the
+> live `description()`, and reads which `aggregator()` / `phaseId()` is behind the proxy. The two
+> **harm** legs (decimals, denomination) compare chain against chain, so they have nothing to pin
+> and nothing that can go stale; only the **identity** leg (aggregator, phaseId) keeps a remembered
+> value, pinned on first sight into the canary's own state. Note the routing, because it decides
+> who sees it: `feed-identity` is the one signal whose ALERTs are not all one severity, so since
+> #121 it routes on a predicate (`CONDITIONAL_PAGE` in `packages/canary/src/sinks.mjs`) — it
+> **PAGES** when `detail.harm` is `'decimals'` or `'denomination'`, the two latching cases where
+> every price is silently wrong, and **LOGS** when `harm` is `null`, the benign aggregator swap
+> that self-clears next sweep. That is a stronger check than the
+> recurring script below, which tests Chainlink's 8-decimal *convention* rather than the number
+> this oracle uses — **the canary now continuously re-runs the two construction-time proofs an
+> immutable contract can never re-run itself.**
+>
+> What the recurring check below still adds, and why it is not redundant: a **git-tracked** pin
+> (the canary pins on first sight, so a benign swap during canary downtime is adopted silently on
+> restart), and the deprecation **announcement**, which is off-chain by nature and remains a weekly
+> human item — up to 7 days of exposure, by choice, per the gap analysis's own build-vs-buy call.
+
+### 7a. Recurring feed check — run this on a cadence, not only before deploying
+
+```bash
+node scripts/verify-chainlink-oracle.mjs
+```
+
+Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
+**weekly, and after any Chainlink feed announcement** — with
+`--strict`, so an aggregator swap exits non-zero instead of scrolling past as a notice nobody
+reads. Two things it catches that nothing on-chain
+can:
+
+- **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
+  configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
+  `scale = 10**(18 - decimals)` once, at construction, from a value that lives on the *aggregator*.
+  The script's `decimals() == 8` check is a complete test of that residual **at the sampling
+  instant**: if a feed reports 8 when you run it, the cached scale was correct however many swaps
+  had happened by then. It says nothing about the interval between runs — a swap that drifts and
+  reverts between two weekly runs is invisible — so the exposure window is the run interval, and
+  the cadence is the control. Each
+  feed's `aggregatorPin` in the config makes the swap itself **visible** — reported as a `DRIFT`
+  notice, never a failure, because a swap is legitimate. A `DRIFT` line alongside a passing decimals
+  check is the reassuring outcome: it moved, and it re-checked clean. Update the pin and move on.
+- **A `FAIL` on decimals is the alarming outcome** and needs the [INCIDENTS.md §1a](INCIDENTS.md)
+  response (residual register **row 14**), not a config edit:
+  every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
+  it (the vault's oracle is `immutable` — row 12), and members should be told to exit. **On a vault with
+  no sub-vaults, exits still settle correctly under drift** — `_settleExit` sizes the in-kind
+  slice pro-rata from `assetBalance` and only *values* it through the oracle, which is what
+  `test_harmModel_driftDoesNotRobAnExitingMember` demonstrates. That is the shape the proof
+  covers, and it is the launch shape (`Deploy.s.sol` sets `allowSubVaults = false`). **With
+  children present it is unproven**: `childValTotalWad` is oracle-derived and enters the *sizing*
+  of the cash leg, not only its valuation. Do not tell a member with a sub-vault parent that
+  their exit is unaffected.
+
 | Signal | Alert condition |
 | --- | --- |
 | Oracle health | any basket asset whose `priceWad` reverts `StaleOracle` — aged past its heartbeat, outside its sane-price band, feed dead or unlisted — or the L2 sequencer down / inside its grace period ([CANARY.md §3(a)](CANARY.md)) |
@@ -269,6 +367,7 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 | Exit liveness | any `requestExit` reverting for a non-gate reason (H-1 regression sentinel) |
 | Fee routing | any USDC leaving a vault to an operator address outside the FeeEngine claim flow |
 | Module-call failures | `ModuleCallFailed` and `SliceEscrowed` events (a creator-chosen module or a basket token misbehaving) |
+| Governance watch | a proposal entering any phase — commit, reveal, awaiting finalize, timelock, executable, lapsed — with the reveal deadline and earliest `execute` in `detail` ([CANARY.md §3(h)](CANARY.md)) |
 
 ## 8. Mainnet gate
 
