@@ -57,7 +57,7 @@ they control pass `MIN_SOURCES`, `MIN_MEDIAN`, the strict-majority rule, and M-1
 **Gate 0 is GO (root-only)** — C-6 is resolved in code by the Chainlink-direct pivot and the factory
 oracle allowlist (verified on-chain), and the external audit (gate 1) is complete on owner attestation.
 What remains is a mainnet DEPLOY step, not an open Critical: the deploy config must populate `allowedOracles_` with the real
-blessed-oracle addresses and (b) the external audit. Absent Chainlink, C-6 is a config/curation
+blessed-oracle addresses. Absent Chainlink, C-6 is a config/curation
 requirement: `quorum ≥ 2a + 1`, genuinely independent sources, no single actor controlling ≥ 2.
 
 ## Regression test

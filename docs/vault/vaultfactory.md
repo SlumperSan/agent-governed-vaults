@@ -66,8 +66,9 @@ unchanged.
   the C-6 remediation, alongside the safe oracle (#49). See [[chainlink-direct-pivot]]. Regression:
   `AuditOracleAllowlist.t.sol`. Mainnet deployment is guarded by `Deploy.s.sol` (PR #53) which
   **reverts if the `BLESSED_ORACLES` allowlist is empty**, preventing accidental unsafe deploys. Gate 0
-  stays NO-GO until the config is populated with real addresses and the external audit clears — the
-  *mechanism* is now complete.
+  is **GO (root-only)**: the *mechanism* is complete and the external audit (gate 1) is complete on
+  owner attestation. The mainnet deploy must still populate the allowlist with real addresses — a
+  deploy step, not an open Critical.
 
 The child path also enforces same-USDC and basket-subset-of-parent, so in-kind child redemptions
 always map into parent accounting and look-through pricing (SV-7) is always possible.
