@@ -120,8 +120,12 @@ Stated plainly because it post-dates the rest of this document. At v0.1.0-rc1 th
 ([#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). `forge test` was green
 throughout — Foundry's test EVM does not enforce EIP-170 — so only `forge build --sizes` caught it.
 
-The governing constraint, and the reason the obvious fixes do not work: **VaultCore's creation
-code (24,731 B) is larger than the runtime cap itself.** Any contract holding
+The governing constraint, and the reason the obvious fixes do not work: **any contract holding
+VaultCore's creation code carries that whole blob in its own runtime.** (This paragraph read
+"the creation code (24,731 B) is larger than the runtime cap itself" until 2026-09-02. That was
+true when written and is not now — the initcode measures **22,391 B**, below the 24,576 B cap. The
+conclusion survives by the sum rather than by that comparison: a factory carrying 22,391 B has
+2,185 B left, and VaultFactory's own logic measures 3,572 B.) Any contract holding
 `new VaultCore(...)` is therefore over the cap before its own logic; a minimal helper doing
 nothing else measured 25,100 B, and the entire `optimizer_runs` ladder from 800 down to 50 buys
 only 229 B.
