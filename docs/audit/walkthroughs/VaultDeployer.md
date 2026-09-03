@@ -6,11 +6,16 @@ and §"Deployment shape" in [AUDIT-HANDOFF.md](../../AUDIT-HANDOFF.md).
 
 ## Why this contract exists at all
 
-Not a design choice — an EIP-170 forced move. `VaultCore`'s **creation code is 24,731 B**,
-which is larger than the 24,576 B runtime cap *by itself*. Solidity embeds a callee's full
-creation code in the caller's runtime code, so **any** contract containing the expression
-`new VaultCore(...)` is over the cap before it emits a single opcode of its own. That is why
-`VaultFactory` measured 27,241 B and could not be deployed to any chain.
+Not a design choice — an EIP-170 forced move. Solidity embeds a callee's full creation code in the
+caller's runtime code, so **any** contract containing the expression `new VaultCore(...)` carries
+that whole blob, and the sum does not fit: `VaultCore`'s creation code measures **22,391 B**
+(2026-09-02), leaving 2,185 B under the 24,576 B cap for a factory whose own logic is 3,572 B. That
+is why `VaultFactory` measured 27,241 B and could not be deployed to any chain.
+
+This paragraph read "the creation code is 24,731 B, which is larger than the runtime cap *by
+itself*" until 2026-09-02. That was true when written; the figure has since moved below the cap and
+the comparison went with it. **Re-measure rather than copy either number** — nothing guards a byte
+count.
 
 The consequences worth internalizing before reviewing:
 
