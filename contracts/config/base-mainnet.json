@@ -218,7 +218,7 @@
   },
 
   "smoke": {
-    "capacityCapUsdc": "1000000000",
+    "capacityCapUsdc": "50000000000",
     "minDepositUsdc": "100000000",
     "minDepositNote": "H-8 (2026-08-28): raised from 1 USDC to 100 USDC. The `<5`-member signer quorum regime weighs stake in BOTH branches since H-8/CM-7 (`headMajorityWithStake` carries a stake-quorum term; `forStakeMajority` is a stake test outright), so dust members can no longer pass a proposal on numbers alone. What remains purchasable is the MEMBER COUNT: the regime is selected by head count, so it is only Sybil-resistant when acquiring the ~4 seats needed to flip the regime (H-8(a)) or to grief a small vault into ungovernability costs a materially non-trivial sum. `minDepositUsdc` is the per-seat cost. There is NO safe contract-level floor for this (a fraction-of-stake floor repeats M-6's liveness cliff; an absolute floor equal to the deposit minimum is what an attacker already pays), so it is a documented LISTING constraint: set minDepositUsdc high enough, relative to capacity, that manufacturing dust members is expensive. See AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.",
     "depositUsdc": "250000000",
@@ -227,7 +227,7 @@
     "gov": {
       "commitDuration": 3600,
       "revealDuration": 3600,
-      "timelockDuration": 86400,
+      "timelockDuration": 0,
       "executionWindow": 86400,
       "quorumBps": 2500,
       "proposalThresholdBps": 500,
