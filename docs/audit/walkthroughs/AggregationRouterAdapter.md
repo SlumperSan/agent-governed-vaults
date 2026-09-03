@@ -20,11 +20,63 @@ hardening below exists because of that history (EX-1..EX-3, RESEARCH-SPRINT1).
 | No trusted slippage | `minAmountOut > 0` is mandatory; enforced HERE on the **measured tokenOut balance delta**, never on router return values or calldata-embedded params (EX-3) |
 | No stale execution | `deadline` enforced here, `block.timestamp`-compared (C-2) |
 | No approval residue | Approve exactly `amountIn` pre-swap, **revoke to 0 after** — no cross-transaction approval remains for a router upgrade to abuse (EX-2) |
-| No stranded partials | Unspent `tokenIn` is swept back to the caller after the swap |
+| No stranded partials | **This order's own** unspent `tokenIn` is refunded after the swap — `refund = min(amountIn, inAfter - inBefore)`, never `balanceOf(tokenIn)` |
+| No nested measurement | `nonReentrant` mutex, same shape as `VaultCore._lock` — a nested `executeSwap` would otherwise revoke the outer call's router approval mid-route |
 
-Call sequence: pull `amountIn` from caller → approve router → snapshot `tokenOut` balance →
-`router.call(routeData)` (must succeed) → measure delta → `require(delta ≥ minAmountOut)` →
-revoke approval → send output + leftover input back to caller.
+Call sequence: snapshot `tokenIn` balance → pull `amountIn` from caller → approve router →
+snapshot `tokenOut` balance → `router.call(routeData)` (must succeed) → measure the `tokenOut`
+delta → `require(delta ≥ minAmountOut)` → compute the `tokenIn` refund as this order's own
+balance delta, clamped at `amountIn` → revoke approval → send output, then the refund, to the
+caller.
+
+## The refund is scoped to the order, and why that is not a detail
+
+`executeSwap` used to end by sweeping `balanceOf(tokenIn)` — the adapter's **whole** balance —
+to whoever called. Both halves of that were exploitable, and only one was closed by the
+`nonReentrant` guard:
+
+- **Cross-order theft (closed by the mutex, #101).** A counterparty reached through the route
+  re-enters with a 1-unit order; the nested sweep hands it the outer order's unspent input.
+  600e6 USDC on a 1,000 USDC partial fill.
+- **Donation DoS (closed by the scoping, this change).** No reentrancy required. Anyone
+  `transfer`s `d` units of `tokenIn` to the shared adapter. The next vault leg is refunded its
+  own unspent input plus `d`, and `VaultCore.executeRebalance` — which computes
+  `spent = inBefore - inAfter` over **its own** balances — underflows to `Panic(0x11)` whenever
+  `d` exceeds what the route actually pulled. The griefer then recovers `d` with a 1-unit order,
+  so the cost is gas and it is repeatable. `VaultCore.isAllowedAdapter` is **constructor-only**,
+  so every vault built against that bytecode is affected permanently, with no repointing path.
+
+The refund is now this order's own delta, the shape `VaultCore.executeRebalance` already carried
+(find it by its expression, `spent = inBefore - inAfter`, not by a line number) (S6
+Finding 3 / threat-model row E3 — *"never from a whole-vault balance-vs-accounting comparison"*).
+Two clauses, two attacks, and each has its own executing test:
+
+- `inAfter - inBefore` excludes `tokenIn` that was already sitting in the adapter. It is also
+  what makes the cross-order theft **impossible** rather than merely unreachable: there is no
+  longer a sum for a nested call to walk off with.
+- The `min(…, amountIn)` clamp bounds a counterparty that **pushes** `tokenIn` at the adapter
+  mid-route. Without it the same `Panic(0x11)` is reachable from inside the call.
+
+`inBefore` is snapshotted **before** the `safeTransferFrom`, not after, so a fee-on-transfer
+`tokenIn` cannot re-open the channel: snapshotting after would refund `amountIn` against a
+balance that only grew by `amountIn - fee`.
+
+The mutex stays. It is defence in depth against a different attacker: a nested call's
+`safeApprove(router, 0)` would still revoke the outer call's approval mid-route, and
+non-reentrancy is what the `IExecutionAdapter` abstraction promises every other integrator.
+
+Evidence: `contracts/test/audit/AuditAdapterScopedSweep.t.sol` (10 tests, each naming the
+mutation that kills it). Seven of the ten fail against `protocol/main`'s adapter — three of them
+with `panic: arithmetic underflow or overflow (0x11)` inside `executeRebalance`. The refund line
+carries THREE guards (`- inBefore`, the `min(…, amountIn)` clamp, and the saturating
+`inAfter > inBefore ? … : 0` floor) and each has its own executing test; the floor's was added
+after review, when both reviewers showed it could be deleted with the suite green.
+
+**The live Base Sepolia adapter (`0xf3e08c8b…a9b1`) predates BOTH #101 and this fix** — its
+`sourceCommit 5934ef22` has no `_lock`/`nonReentrant` whatsoever — so it carries the cross-order
+theft (a LOSS OF FUNDS) as well as the donation DoS (a revert). Because `isAllowedAdapter` is
+constructor-only the existing testnet vaults cannot be repointed at a fixed one. The soak therefore
+runs against the old shape. See `docs/DEPLOYMENT.md` §3 for the full consequence list.
 
 ## Trust position
 
@@ -56,3 +108,27 @@ accounting.
 - A creator who allowlists a bad router+selector set at creation builds a vault whose
   rebalances can fail or leak slippage — visible on-chain pre-deposit; PX-3-class "read the
   config" risk, not a protocol control.
+- **A `tokenIn` donation stays stranded here forever.** There is no rescue function and adding
+  one would be new external surface on a contract many vaults share, guarding value that is
+  never the protocol's. Donating to this address is burning.
+- **A `tokenOut` donation landing DURING the route is over-delivered to the caller.** Deliberate:
+  `outBefore` is snapshotted inside the call, so the surplus rides out with `amountOut` — and
+  `VaultCore.executeRebalance` credits *its own* measured `tokenOut` delta, so the surplus becomes
+  vault assets. A donation *before* the call is excluded by `outBefore` outright (pinned by
+  `AuditAdapterScopedSweep::test_preExistingTokenOutIsNotSweptIntoTheOrdersOutput`). Do not "fix"
+  this into a clamp; a clamp would strand the surplus instead of banking it.
+
+  **Two corrections to how this row used to justify itself**, because a "do not re-report" entry's
+  whole function is to stop the next person looking, and it must therefore be complete:
+
+  1. *"`received >= minAmountOut` can only be helped by a larger delta"* is true but is **not the
+     bound that matters** — a mid-route pusher could otherwise top a shortfall up to exactly
+     `minAmountOut` and force through a swap that should have reverted `SwapSlippage`. The real
+     bound is **`MinOutTooLow`** in `VaultCore.executeRebalance`: oracle-priced, checked
+     pre-execution against `MAX_REBALANCE_SLIPPAGE_BPS`, and no donation can move it.
+  2. The surplus is net-positive in **value**, not neutral in **effect**. It is the only
+     unprivileged write into `navWad()`'s inputs, and `_deposit` gates `navWad()` against
+     `capacityCapUsdc` — so a sufficiently large over-delivery can **close a capped vault to
+     further deposits**. LOW as an attack (it needs a governance-chosen route to reach the pusher,
+     and burns value >= the vault's headroom, which becomes the members'), but it is not "strictly
+     beneficial", and the earlier wording never considered the cap.

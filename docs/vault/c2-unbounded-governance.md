@@ -31,6 +31,12 @@ fallback covers a *broken* module, not a correct governance answering `true` for
 shape, found while fixing M-6). Mode F is also decoupled from proposals that have not passed. Requires
 redeploy + re-review; landed in the corrected tree.
 
+**Later narrowed by T-1, and no longer 30 days.** `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`, set by
+the standing-default TTL rather than by this finding — see [[mediums-and-lows]]. That is strictly
+stronger for C-2 (a shorter maximum freeze), and the two exploit tests named below use 1h and 6h
+commit phases, so neither is affected. `REVEAL_HARD_CAP` and `EXECUTION_WINDOW_HARD_CAP` are
+unchanged, and the reveal phase is the one C-2's exploits actually pinned.
+
 ## Regression test
 
 `Governance.t.sol::test_phaseDurationHardCapsEnforced` pins the fix. The original exploit lived in

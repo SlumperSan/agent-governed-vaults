@@ -56,7 +56,9 @@ binding** — several audit fixes could only be afforded by first *shrinking* ot
   exit during staleness is exactly the stale-price exit the breaker prevents.
 - **Shares are non-transferable** in this design (EE-7).
 - **Creator 5% is a withdrawal gate, not a solvency condition** (CM-2): `_checkCreatorGate` binds
-  creator *action* while non-creator members remain; evaluated at Mode-F **queue** time (L-1).
+  creator *action* while non-creator members remain; evaluated at Mode-F **queue** time (L-1). Two
+  consequences — a sub-5% creator can withdraw nothing, and past 95% external fill a top-up can
+  never restore 5% — are by design and pinned in `test/audit/AuditCreatorGateTraps.t.sol`.
 - **NAV uses internal accounting only** — a token donation cannot mint free shares (EE-1).
 
 ## Security findings that live here
@@ -91,12 +93,30 @@ binding** — several audit fixes could only be afforded by first *shrinking* ot
 ## Size — EIP-170
 
 VaultCore is the **only** contract meaningfully near the cap, though far less so since PR #90
-(2026-09-01) reclaimed 3,806 B. Current margin is **~4,095 B**, up from ~283 B.
+(2026-09-01). Current margin is **3,926 B** — runtime 20,650 B against the 24,576 B cap, measured
+with `forge build --sizes` at `protocol/main` on 2026-09-02, up from ~283 B before #90.
 
-> Reconciliation (three docs, three points in time): the LAUNCH-READINESS table's **1,014 B**
-> predates M-15's `deposit(uint256,uint256)` overload, which spent **731 B** → ~283 B left; the
-> AUDIT-HANDOFF **1,182 B** is an earlier intermediate value (before M-11 returned bytes and M-2
-> spent them). The overload is present in the current source (`:358`), so ~283 B is the live figure.
+> **Re-measure rather than copy that number.** It was recorded here as 4,095 B until 2026-09-02,
+> which **overstated** the true margin by 169 B — the dangerous direction, since a change sized
+> against it can overshoot the cap.
+>
+> Two causes, and the first is the ordinary one. **4,095 B was correct when it was taken**; #98
+> then spent bytes, which `docs/reviews/SLITHER-TRIAGE.md` records against the same pair. A figure
+> measured once is a fact with an expiry date, and nothing here carried the date.
+>
+> **The second cause is why it survived the expiry.** Nothing guards a byte count: `.sol` is
+> outside the claims guard's `PUBLIC_EXT`, and in `.md` a wrong number has no claim *shape* to
+> match. The guards catch what a sentence asserts, never what it measures.
+
+> **Reconciliation — ALL FIGURES BELOW ARE HISTORY. The live margin is the 3,926 B above.**
+> Three documents recorded three points in time before PR #90: the LAUNCH-READINESS table's
+> **1,014 B** predates M-15's `deposit(uint256,uint256)` overload, which spent **731 B**, leaving
+> ~283 B; **1,182 B** is an earlier intermediate value, before M-11 returned bytes and M-2 spent
+> them. That ~283 B was the live figure until #90 reclaimed the budget. It is not the live figure
+> now, and this blockquote asserted that it was until 2026-09-02.
+>
+> The 1,182 B figure was cited to `AUDIT-HANDOFF.md`, which still names it — as history, in the
+> banner at the top of that file, alongside 283 B. Neither is a live figure in either document.
 
 This is why **H-5, H-6 and the exit-side `minValueOut`** remained unfixed (H-9 was in this list and is fixed in code as of 2026-09-01; PR #90 has since removed the size wall itself) — they land in
 VaultCore and several would not fit even alone. Any future VaultCore fix likely requires moving
