@@ -44,14 +44,17 @@ function fakeClient(head = 30) {
  * boundary, and the assertions red against a cursor short of head — CI run 33696190801 failed
  * this file with lastBlock 29 on a README-only PR.
  *
- * The deadline is an upper bound that FAILS, and it is deliberately far above any plausible load:
- * `node --test` has no timeout by default, so a condition that never comes true has to red the
- * job rather than hang it forever.
+ * The deadline is an upper bound that FAILS, and it is deliberately far above any plausible load.
+ * A deadline is not enough on its own: throwing here skips the rest of the test body, so whatever
+ * shuts the indexer down has to run in a `finally`. Otherwise the poll loop's re-arming sleep
+ * keeps the event loop alive and the timeout hangs the runner instead of redding it — `node --test`
+ * has no default timeout and ci.yml sets no `timeout-minutes`, so that costs six hours, not 12
+ * seconds. Every caller below shuts down unconditionally for exactly this reason.
  */
 async function waitFor(condition, describe, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    if (condition()) return;
+    if (await condition()) return;
     if (Date.now() >= deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${describe()}`);
     await new Promise((r) => setTimeout(r, 2));
   }
@@ -105,11 +108,14 @@ test('catchUp with no signal still drains to the head (existing behaviour unchan
 
 test('stop() ends the poll loop and leaves a readable snapshot at the right cursor', async () => {
   const dir = await tmp();
+  /** @type {null | (() => Promise<number>)} */
+  let stop = null;
   try {
     const cfg = resolveIndexerConfig(ENV(dir));
-    const { start, stop, daemon } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
-    const running = start();
-    await caughtUpTo(daemon, 30);                   // it caught up and is idling — not "60ms elapsed"
+    const built = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
+    stop = built.stop;
+    const running = built.start();
+    await caughtUpTo(built.daemon, 30);             // it caught up and is idling — not "60ms elapsed"
 
     const lastBlock = await stop();
     assert.equal(lastBlock, 30);
@@ -121,6 +127,10 @@ test('stop() ends the poll loop and leaves a readable snapshot at the right curs
     assert.equal(report.counts.vaults, 1, 'the vault it indexed survived the shutdown');
     assert.equal(report.resumeFrom, 31);
   } finally {
+    // Unconditional: an assertion or a timeout above must not leave the poll loop running (see
+    // waitFor). Calling it twice on the happy path is harmless — the abort is idempotent and the
+    // final save just rewrites the state we already read.
+    await stop?.();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -139,14 +149,18 @@ test('stop() is safe before start() — a process killed during boot still write
 
 test('the indexer heartbeats while polling, stamped with its own staleness budget', async () => {
   const dir = await tmp();
+  /** @type {null | (() => Promise<number>)} */
+  let stop = null;
   try {
     const cfg = resolveIndexerConfig(ENV(dir));
     // POLL_INTERVAL_MS=20 → floored at 30s so a fast poll cannot become a hair-trigger.
     assert.equal(cfg.heartbeatStaleMs, 30_000);
 
-    const { start, stop, heartbeat, daemon } = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
-    start();
-    await caughtUpTo(daemon, 30);
+    const built = await buildIndexer(cfg, { log: () => {}, logger: {}, client: fakeClient(30) });
+    stop = built.stop;
+    const heartbeat = built.heartbeat;
+    built.start();
+    await caughtUpTo(built.daemon, 30);
 
     // Beaten at boot, before the first batch: an indexer grinding through a cold-start backlog is
     // alive and must not be reported dead while it works.
@@ -154,15 +168,22 @@ test('the indexer heartbeats while polling, stamped with its own staleness budge
     assert.equal(boot.service, 'indexer');
     assert.equal(boot.staleAfterMs, 30_000);
 
-    // And it keeps advancing as it polls. The 1s floor on writes is why this waits: a fast
-    // catch-up ticks far quicker than that and must not turn into a write per batch.
-    await new Promise((r) => setTimeout(r, 1100));
-    const later = await readHeartbeatFile(heartbeat.path);
+    // And it keeps advancing as it polls. This takes about a second because of the 1s floor on
+    // writes — a fast catch-up ticks far quicker than that and must not turn into a write per
+    // batch — but it waits for the beat ITSELF to advance rather than for a duration chosen to be
+    // longer than the floor. A fixed sleep here has the same defect as the one above: its margin
+    // is whatever is left over after everything else on a loaded runner.
+    let later = boot;
+    await waitFor(
+      async () => { later = await readHeartbeatFile(heartbeat.path); return later.ts > boot.ts; },
+      () => `the heartbeat to advance past its boot beat at ${boot.ts} (still ${later.ts})`,
+    );
     await stop();
     assert.ok(later.ts > boot.ts, 'the beat keeps advancing while polling');
     assert.equal(later.detail.lastBlock, 30);
     assert.equal(later.detail.vaults, 1);
   } finally {
+    await stop?.();                                 // unconditional — see waitFor
     await rm(dir, { recursive: true, force: true });
   }
 });
