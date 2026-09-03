@@ -108,7 +108,7 @@ contract Governance is IGovernance {
         uint32 executionWindow;
         uint16 quorumBps; // ≥ 2500
         uint16 proposalThresholdBps; // stake required to propose (CM-6)
-        uint16 concentrationCapBps; // max delegate weight incl. own (VO-5)
+        uint16 concentrationCapBps; // cap on RECEIVED (delegated) weight; a delegate's own weight is never capped (F1/VO-5)
         uint32 proposalCooldown; // per-proposer (CM-6)
     }
 
@@ -143,7 +143,7 @@ contract Governance is IGovernance {
     mapping(uint256 => mapping(address => bool)) public revealedOf;
     mapping(uint256 => mapping(address => bool)) public revealedSupportOf; // valid iff revealedOf
     mapping(uint256 => mapping(address => bool)) public defaultApplied;
-    mapping(uint256 => mapping(address => uint256)) public delegateAccrued; // incl. own weight
+    mapping(uint256 => mapping(address => uint256)) public delegateAccrued; // RECEIVED weight only; excludes the delegate's own reveal (F1)
 
     mapping(address => GovConfig) public configOf; // per vault
     mapping(address => bool) public vaultRegistered;
@@ -429,9 +429,10 @@ contract Governance is IGovernance {
         emit DelegatedRevealed(pid, delegator, del, weight);
     }
 
-    /// @dev Concentration cap (VO-5): a delegate's accrued weight — own reveal plus all cranked
-    /// delegations — may not exceed concentrationCapBps of the snapshot total. Checked at tally
-    /// accrual, i.e. re-checked at vote time, not just at delegation time.
+    /// @dev Concentration cap (VO-5): a delegate's accrued RECEIVED weight — the sum of all
+    /// cranked delegations, NOT the delegate's own reveal (F1: own weight is never capped) — may
+    /// not exceed concentrationCapBps of the snapshot total. Checked at tally accrual, i.e.
+    /// re-checked at vote time, not just at delegation time.
     function _accrueDelegate(uint256 pid, address delegate_, uint256 weight, Proposal storage p) internal {
         uint256 accrued = delegateAccrued[pid][delegate_] + weight;
         require(
