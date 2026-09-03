@@ -28,7 +28,9 @@ an entire class of criticals.
 
 Construction goes through `_deploy`, which ABI-encodes VaultCore's constructor tuple and calls
 `vaultDeployer.deploy(...)` (see [[vaultdeployer]] — the factory can't `new VaultCore(...)` because
-that blob exceeds EIP-170). A failing VaultCore constructor bubbles its own revert unchanged.
+the blob **plus the factory's own logic** exceeds EIP-170; the blob alone is 22,391 B, under the
+24,576 B cap. Re-measured 2026-09-03). A failing VaultCore constructor bubbles its own revert
+unchanged.
 
 ## Security findings that live here
 
@@ -78,8 +80,9 @@ Mode I.
 
 ## Size — EIP-170
 
-Runtime ~2,818 B; margin ~21,758 B. (Historically VaultFactory was 2,665 B **over** the cap because
-it embedded VaultCore's creation code inline — the reason [[vaultdeployer]] exists.)
+Runtime **3,572 B**; margin **21,004 B** (`forge build --sizes`, 2026-09-03; this row read
+~2,818 B / ~21,758 B until then). Historically VaultFactory was 2,665 B **over** the cap because it
+embedded VaultCore's creation code inline — the reason [[vaultdeployer]] exists.
 
 ## Links
 
