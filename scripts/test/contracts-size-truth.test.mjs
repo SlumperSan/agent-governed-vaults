@@ -6,9 +6,9 @@
  *
  * `claims-lede-truth.test.mjs` matches banned claim SHAPES. That works because a claim like "the
  * agent votes" has a shape. **A bare byte count does not.** `24,731 B` is just a number; no regex
- * can know it is wrong. So the shape guard cannot catch this class, and adding `.sol` to its
- * `PUBLIC_EXT` — which this change also does — does not by itself close the hole that produced the
- * defect below.
+ * can know it is wrong. So the shape guard cannot catch this class — and widening its `PUBLIC_EXT`
+ * to `.sol` (a separate, larger change, not made here) would not close this hole either, because
+ * the hole is the number, not the file type. This guard resolves the number instead.
  *
  * The defect, twice. `VaultDeployer.sol` asserted VaultCore's creation code was 24,731 B and
  * "larger than the 24,576 B runtime cap all by itself". Re-measured, it is 22,391 B — under the
@@ -39,6 +39,11 @@
  * code carries `type(VaultCore).creationCode` (initcode is capped at 49,152 B by EIP-3860, so it
  * fits there)" — a comparative against a cap that this guard does NOT resolve. `.sol` NatSpec uses
  * "this contract's" constantly. That is a real gap, not a hypothetical one.
+ *
+ * A SECOND LIMITATION in the supersession exemption: it keys off a frame anywhere in the ±160-char
+ * window, so a NEW false comparative authored within ~160 chars AFTER a legitimate retraction frame
+ * would be wrongly exempted. That is inherent to a proximity exemption; the common case — a single
+ * claim drifting stale on its own — is still caught, and the probe test pins the rubber-stamp edges.
  *
  * BUILD DEPENDENCY. This reads `contracts/out/`, so it FAILS LOUD when the artifact is missing
  * rather than skipping — a skip here is indistinguishable from a pass, and `npm run test:backend`
