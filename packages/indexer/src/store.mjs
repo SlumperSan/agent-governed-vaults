@@ -8,7 +8,7 @@
 
 import { readFile, writeFile, rename, mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { emptyState } from './projections.mjs';
+import { emptyState, newVault } from './projections.mjs';
 import { createRotatingWriter, listBackups } from '../../oplog/src/durable.mjs';
 
 const VERSION = 1;
@@ -45,6 +45,7 @@ export function serializeState(state) {
     activeProposal: mapEntries(state.activeProposal),
     eventStats: mapEntries(state.eventStats),
     adapters: [...state.adapters],
+    queuedExits: mapEntries(state.queuedExits, (members) => [...members]),
   };
 }
 
@@ -55,11 +56,29 @@ export function deserializeState(obj) {
   s.lastBlock = obj.lastBlock;
   s.lastLogIndex = obj.lastLogIndex;
   for (const [k, v] of obj.vaults) {
+    // Restore every field of `newVault(k)` that the stored record does not carry a usable value
+    // for. A JSON round-trip can degrade a field in exactly TWO ways and no others — `JSON.stringify`
+    // OMITS a key whose value is `undefined`, and writes `null` for `NaN` and `±Infinity` — so
+    // `rec[key] == null` (loose, catching both `undefined` and `null`) is EXHAUSTIVE over the
+    // degraded shapes a snapshot can hold, not a sample of them.
+    //
+    // Spreading `{ ...newVault(k), ...v }` rescued only the ABSENT shape and was NOT the structural
+    // migration it was documented as: a key present with `null` overwrites the default, so a
+    // counter that went NaN before the snapshot was written (which is what the code shipped in #107
+    // produces, and what is on protocol/main today) resumes as `null`. `null + 1` is 1, so the
+    // counters silently restart; `Number.isFinite(null)` is false, so every derived metric is NaN;
+    // and `BigInt(null)` THROWS, so the three bigint fields crash the resume outright.
+    //
+    // `parent` legitimately defaults to `null`, so coalescing to the default is a no-op there
+    // rather than a special case.
+    const base = newVault(k);
+    const rec = { ...v };
+    for (const key of Object.keys(base)) if (rec[key] == null) rec[key] = base[key];
     s.vaults.set(k, {
-      ...v,
-      totalShares: BigInt(v.totalShares),
-      idleUsdc: BigInt(v.idleUsdc),
-      capacityCapUsdc: BigInt(v.capacityCapUsdc),
+      ...rec,
+      totalShares: BigInt(rec.totalShares),
+      idleUsdc: BigInt(rec.idleUsdc),
+      capacityCapUsdc: BigInt(rec.capacityCapUsdc),
     });
   }
   for (const [k, o] of obj.operators) {
@@ -82,10 +101,15 @@ export function deserializeState(obj) {
     });
   }
   for (const [k, pid] of obj.activeProposal) s.activeProposal.set(k, pid);
-  // Both absent on a snapshot written before these fields existed — default to empty rather than
-  // throwing, so an older snapshot still resumes cleanly (only these two collections were added).
+  // Absent on a snapshot written before these fields existed — default to empty rather than
+  // throwing, so an older snapshot still resumes cleanly. VERSION deliberately stays at 1: the
+  // guard on line 53 rejects any snapshot whose version is not exactly VERSION, so bumping it
+  // would make every existing snapshot UNLOADABLE (loadSnapshot rethrows, the daemon dies on
+  // restart, verifySnapshot reports UNUSABLE) — the opposite of a migration. These defaults ARE
+  // the migration; the added fields are all additive and zero-valued.
   for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
   for (const a of obj.adapters ?? []) s.adapters.add(a);
+  for (const [k, members] of obj.queuedExits ?? []) s.queuedExits.set(k, new Set(members));
   return s;
 }
 

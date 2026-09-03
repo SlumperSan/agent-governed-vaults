@@ -9,6 +9,30 @@
        not a fix.
    The craft budget here is typography, spacing and hairlines. There are no
    images and no webfonts, so rhythm has to do the work.
+
+   TWO CONVENTIONS ADDED IN THE 2026-09-02 TYPOGRAPHY PASS.
+
+   1. COLOUR CARRIES RANK, NOT DECORATION.
+      Running prose is --ink wherever it appears, including inside the card
+      grid, the numbered steps, the callouts and table bodies. Those five were
+      --muted, which made them read as asides. On a site whose argument IS the
+      qualifications, a qualification set in grey is a qualification the design
+      is hedging. --muted now carries the lede, the tracked all-caps
+      micro-labels and the footer; --faint carries only the standing "this is
+      source, not deployed bytecode" note, which genuinely is subordinate to
+      the claim directly above it. No token VALUE changed in that pass, only
+      which token is used where, so every contrast comment in tokens.css still
+      describes the colour it sits beside.
+
+   2. RULES END WHERE THE TEXT ENDS.
+      A hairline that runs three hundred pixels past the last word advertises
+      an empty column. Every ruled block is sized so its rule stops at the
+      measure: the key/value rows size their value column with a grid track
+      rather than a max-width on the dd, so the rule lands on the text edge
+      whatever the system font turns out to be. The page therefore carries
+      three widths on purpose and nothing in between: a prose measure near 62
+      characters, a ruled measure near 94, and the full container for the card
+      grids and the wider tables.
    =========================================================================== */
 
 *,
@@ -17,7 +41,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-padding-top: 24px;
+  scroll-padding-top: 32px;
 }
 
 body {
@@ -63,23 +87,32 @@ body {
 a { color: var(--accent); text-underline-offset: 3px; }
 a:hover { text-decoration-thickness: 2px; }
 
-p { max-width: 68ch; }
+p { max-width: 68ch; text-wrap: pretty; }
+
+li, dd { text-wrap: pretty; }
 
 strong { font-weight: 600; color: var(--ink); }
 
+/* overflow-wrap: anywhere, not break-word: it also shrinks the min-content
+   width, which is what keeps a long contract path inside a narrow table cell
+   or a stacked key/value label instead of widening the page. */
 code, .mono, .num {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: .9375em;
+  overflow-wrap: anywhere;
 }
 
+/* Tracked all-caps at eleven pixels is the hardest thing on this site to read.
+   It takes --muted rather than --faint for that reason. */
 .eyebrow {
   font-family: var(--mono);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: .16em;
-  color: var(--faint);
-  margin: 0 0 14px;
+  letter-spacing: .15em;
+  color: var(--muted);
+  margin: 0 0 12px;
+  max-width: 52ch;
 }
 
 .lede {
@@ -97,8 +130,8 @@ code, .mono, .num {
   line-height: 1.55;
   color: var(--faint);
   max-width: 62ch;
-  margin: 14px 0 0;
-  padding-top: 14px;
+  margin: 18px 0 0;
+  padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -127,11 +160,18 @@ code, .mono, .num {
   text-decoration: none;
 }
 
-/* ------------------------------------------------------------- pre-launch bar */
+/* ------------------------------------------------------------- pre-launch bar
+
+   This band is a legal disclosure, so it is set to be read rather than
+   tolerated: full --ink at the body size, a two-pixel rule under it, and the
+   same horizontal padding as the masthead so the two read as one header block.
+   In dark the band colour separates less from the ground than the cream does
+   in light, which is why the weight lives in the rule and the padding rather
+   than in the fill. Nothing here may recess it; there is a test for that. */
 
 .pre-launch {
   background: var(--warn-soft);
-  border-bottom: 1px solid var(--warn);
+  border-bottom: 2px solid var(--warn);
   color: var(--ink);
 }
 
@@ -140,8 +180,8 @@ code, .mono, .num {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 10px 18px;
-  padding-top: 14px;
-  padding-bottom: 14px;
+  padding-top: 15px;
+  padding-bottom: 15px;
 }
 
 .pre-launch .tag {
@@ -154,14 +194,14 @@ code, .mono, .num {
   color: var(--warn);
   border: 1px solid var(--warn);
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 4px 11px;
 }
 
 .pre-launch p {
   margin: 0;
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.5;
-  max-width: 82ch;
+  max-width: 86ch;
 }
 
 /* -------------------------------------------------------------------- masthead */
@@ -228,7 +268,7 @@ code, .mono, .num {
 main { display: block; }
 
 .hero {
-  padding: clamp(48px, 7vw, 88px) 0 clamp(36px, 5vw, 60px);
+  padding: clamp(52px, 7vw, 96px) 0 clamp(40px, 5vw, 64px);
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
@@ -237,21 +277,21 @@ h1 {
   font-family: var(--display);
   font-weight: 400;
   font-size: clamp(1.9rem, 1.1rem + 3.4vw, 3.4rem);
-  line-height: 1.08;
+  line-height: 1.06;
   letter-spacing: -.028em;
-  margin: 0 0 24px;
+  margin: 0 0 26px;
   max-width: 19ch;
   text-wrap: balance;
 }
 
 .hero--plain {
-  padding: clamp(40px, 5vw, 64px) 0 clamp(28px, 3vw, 40px);
+  padding: clamp(44px, 5vw, 72px) 0 clamp(32px, 3vw, 44px);
 }
 
 .hero--plain h1 { max-width: 22ch; }
 
 section {
-  padding: clamp(40px, 5vw, 68px) 0;
+  padding: clamp(44px, 5.5vw, 76px) 0;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -261,9 +301,9 @@ h2 {
   font-family: var(--display);
   font-weight: 400;
   font-size: clamp(1.45rem, 1.2rem + 1.1vw, 2.05rem);
-  line-height: 1.18;
+  line-height: 1.16;
   letter-spacing: -.02em;
-  margin: 0 0 20px;
+  margin: 0 0 24px;
   max-width: 26ch;
   text-wrap: balance;
 }
@@ -271,10 +311,11 @@ h2 {
 h3 {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   line-height: 1.35;
   letter-spacing: -.005em;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  text-wrap: balance;
 }
 
 h4 {
@@ -283,33 +324,39 @@ h4 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .12em;
-  color: var(--faint);
+  color: var(--muted);
   margin: 0 0 6px;
 }
 
 .stack > * + * { margin-top: 18px; }
 
-/* --------------------------------------------------------------- hairline grid */
+/* --------------------------------------------------------------- hairline grid
+
+   The cell rules are box-shadows clipped by the container rather than a 1px
+   grid gap showing a coloured container through. The gap version paints the
+   container colour into whatever part of a row the cards do not fill, so any
+   card count that is not a multiple of the resolved column count leaves a
+   solid block sitting in the layout. Shadows just stop, so a ragged last row
+   ends cleanly and the page bodies can gain or lose a card freely. */
 
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-  gap: 1px;
-  background: var(--line);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   overflow: hidden;
-  margin: 0;
+  margin: 28px 0 0;
 }
 
 .grid > * {
-  background: var(--surface);
-  padding: 24px 22px;
+  padding: 26px 24px;
   margin: 0;
+  box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line);
 }
 
-.grid p { margin: 0; font-size: 14.5px; color: var(--muted); max-width: 42ch; }
-.grid p + p { margin-top: 10px; }
+.grid p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink); max-width: 46ch; }
+.grid p + p { margin-top: 12px; }
 
 .grid .stat {
   font-family: var(--mono);
@@ -318,18 +365,26 @@ h4 {
   line-height: 1.1;
   color: var(--ink);
   display: block;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
-/* --------------------------------------------------------------- key/value rows */
+/* --------------------------------------------------------------- key/value rows
 
-.rows { margin: 0; border-top: 1px solid var(--line); }
+   The value track, not a max-width on the dd, sets the measure. That is the
+   whole trick: the row rule then terminates on the text edge under any system
+   font, instead of running on past a measure capped in ch. */
+
+.rows {
+  margin: 28px 0 0;
+  max-width: 94ch;
+  border-top: 1px solid var(--line);
+}
 
 .rows > div {
   display: grid;
-  grid-template-columns: minmax(150px, 250px) 1fr;
-  gap: 6px 36px;
-  padding: 16px 0;
+  grid-template-columns: minmax(8.5rem, 14rem) minmax(0, 1fr);
+  gap: 6px 40px;
+  padding: 17px 0;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -339,14 +394,18 @@ h4 {
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: .08em;
-  color: var(--faint);
-  line-height: 1.7;
+  color: var(--muted);
+  /* An absolute line box equal to the value's 16px x 1.6, so the label and the
+     first line of its value sit on one baseline by construction rather than by
+     a padding figure tuned to one platform's fonts. */
+  line-height: 1.6rem;
 }
 
-.rows dd { margin: 0; max-width: 62ch; }
+.rows dd { margin: 0; }
 
 @media (max-width: 660px) {
-  .rows > div { grid-template-columns: 1fr; gap: 4px; }
+  .rows > div { grid-template-columns: 1fr; gap: 2px; }
+  .rows dt { line-height: 1.5; }
 }
 
 /* ---------------------------------------------------------------------- steps */
@@ -354,7 +413,7 @@ h4 {
 ol.steps {
   list-style: none;
   counter-reset: step;
-  margin: 0;
+  margin: 28px 0 0;
   padding: 0;
   max-width: 74ch;
 }
@@ -363,7 +422,7 @@ ol.steps > li {
   counter-increment: step;
   position: relative;
   margin-left: 16px;
-  padding: 0 0 30px 40px;
+  padding: 0 0 32px 40px;
   border-left: 1px solid var(--line);
 }
 
@@ -373,7 +432,7 @@ ol.steps > li::before {
   content: counter(step);
   position: absolute;
   left: -17px;
-  top: -4px;
+  top: -3px;
   width: 33px;
   height: 33px;
   border-radius: 999px;
@@ -387,28 +446,35 @@ ol.steps > li::before {
   justify-content: center;
 }
 
-ol.steps p { margin: 0; color: var(--muted); }
-ol.steps p + p { margin-top: 8px; }
+ol.steps p { margin: 0; }
+ol.steps p + p { margin-top: 10px; }
 
-/* -------------------------------------------------------------------- callouts */
+/* -------------------------------------------------------------------- callouts
+
+   These carry the honest-limitation passages, so they are set as part of the
+   argument: full --ink at the body size, with the coloured rule doing the
+   marking. Only the label is tinted. A callout whose text is greyed out reads
+   as a footnote the reader may skip, which is the wrong instruction for a
+   paragraph that exists to tell someone how they lose money. */
 
 .note {
   border-left: 3px solid var(--line);
-  padding: 2px 0 2px 20px;
-  margin: 22px 0;
-  color: var(--muted);
-  max-width: 70ch;
+  padding: 4px 0 4px 22px;
+  margin: 30px 0;
+  color: var(--ink);
+  max-width: 72ch;
 }
 
 .note p { margin: 0; }
-.note p + p { margin-top: 10px; }
+.note p + p { margin-top: 12px; }
 .note .label {
   display: block;
   font-family: var(--mono);
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .12em;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .note--crit { border-left-color: var(--crit); }
@@ -417,7 +483,7 @@ ol.steps p + p { margin-top: 8px; }
 .note--warn .label { color: var(--warn); }
 .note--good { border-left-color: var(--good); }
 .note--good .label { color: var(--good); }
-.note--flat .label { color: var(--faint); }
+.note--flat .label { color: var(--muted); }
 
 /* ---------------------------------------------------------------------- panels */
 
@@ -432,14 +498,45 @@ ol.steps p + p { margin-top: 8px; }
 .panel > :first-child { margin-top: 0; }
 .panel > :last-child { margin-bottom: 0; }
 
-/* ---------------------------------------------------------------------- tables */
+/* ---------------------------------------------------------------------- tables
+
+   width: fit-content is what stops the two-column reference table from being
+   stretched across the whole container with a canyon between the parameter and
+   its value. A table of long prose still reaches max-width and scrolls.
+
+   The four background layers are a scroll affordance with no script behind it.
+   Layers one and two are covers in the surface colour attached to the content,
+   so they travel out of view as the reader scrolls; layers three and four are
+   hairline ledges pinned to the container. A ledge is therefore only visible
+   on a side that still has table left to reveal. The ledge colour is --line
+   rather than a shadow because --line is the one token defined to read against
+   --surface in both themes -- a shadow tuned for light disappears in dark, and
+   an affordance that works in one theme only is the failure this pass exists
+   to remove. */
 
 .tablewrap {
-  overflow-x: auto;
+  width: fit-content;
+  /* A floor as well as a ceiling. Without the floor the two-column reference
+     table shrinks to the table's own 480px minimum and reads as a shrunken
+     thing beside a 68-character paragraph; 36rem puts it on roughly the same
+     measure as the prose. On a phone the floor resolves to 100% instead, so
+     the wrapper still fills the column and the table scrolls inside it. */
+  min-width: min(100%, 36rem);
   max-width: 100%;
+  margin: 28px 0 0;
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, var(--surface) 45%, transparent),
+    linear-gradient(to left, var(--surface) 45%, transparent),
+    linear-gradient(to right, var(--line), transparent),
+    linear-gradient(to left, var(--line), transparent);
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-repeat: no-repeat;
+  background-size: 36px 100%, 36px 100%, 18px 100%, 18px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
 
 table {
@@ -456,14 +553,14 @@ caption {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .14em;
-  color: var(--faint);
+  color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
 
 th, td {
   text-align: left;
   vertical-align: top;
-  padding: 13px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -478,15 +575,15 @@ thead th {
 }
 
 tbody th { font-weight: 600; color: var(--ink); }
-tbody td { color: var(--muted); }
+tbody td { color: var(--ink); font-variant-numeric: tabular-nums; }
 tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 
 /* --------------------------------------------------------------------- risks */
 
-.risk { padding: 30px 0; border-top: 1px solid var(--line); max-width: 78ch; }
+.risk { padding: 34px 0; border-top: 1px solid var(--line); max-width: 90ch; }
 .risk:first-of-type { border-top: 0; padding-top: 0; }
-.risk h2 { font-size: clamp(1.25rem, 1.15rem + .4vw, 1.45rem); max-width: 42ch; margin-bottom: 14px; }
-.risk .rows { border-top: 0; }
+.risk h2 { font-size: clamp(1.25rem, 1.15rem + .4vw, 1.45rem); max-width: 44ch; margin-bottom: 6px; }
+.risk .rows { border-top: 0; margin-top: 18px; }
 .risk .rows > div:last-child { border-bottom: 0; padding-bottom: 0; }
 
 .severity {
@@ -497,25 +594,29 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   letter-spacing: .12em;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 2px 9px;
-  margin-bottom: 10px;
+  padding: 3px 10px;
+  margin-bottom: 12px;
   color: var(--muted);
 }
 
 .severity--accepted { border-color: var(--crit); color: var(--crit); }
 .severity--mitigated { border-color: var(--good); color: var(--good); }
 
-/* ------------------------------------------------------------------ index list */
+/* ------------------------------------------------------------------ index list
 
-.jump { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 40px; }
-.jump li { break-inside: avoid; margin: 0 0 2px; }
-.jump a { display: block; padding: 8px 0; font-size: 14.5px; min-height: 24px; }
+   A column WIDTH rather than a column count, so the fifteen-item contents list
+   fills the container at desktop widths instead of running two long columns
+   down the left of an empty page. */
+
+.jump { list-style: none; margin: 24px 0 0; padding: 0; columns: 19rem; column-gap: 48px; }
+.jump li { break-inside: avoid; margin: 0; }
+.jump a { display: block; padding: 9px 0; font-size: 15px; min-height: 24px; }
 
 @media (max-width: 620px) { .jump { columns: 1; } }
 
 /* ------------------------------------------------------------------------- qa */
 
-.qa { border-top: 1px solid var(--line); padding: 28px 0; max-width: 76ch; }
+.qa { border-top: 1px solid var(--line); padding: 30px 0; max-width: 78ch; }
 .qa:first-of-type { border-top: 0; }
 .qa h2 {
   font-family: var(--sans);
@@ -525,8 +626,8 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   max-width: 56ch;
   margin-bottom: 12px;
 }
-.qa p { color: var(--muted); }
-.qa p + p { margin-top: 12px; }
+.qa p { margin: 0 0 12px; }
+.qa p:last-child { margin-bottom: 0; }
 
 /* -------------------------------------------------------------------- actions */
 
@@ -534,7 +635,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 32px;
+  margin-top: 34px;
 }
 
 .btn {
@@ -548,6 +649,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   color: var(--ink);
   font-size: 15px;
   font-weight: 500;
+  line-height: 1.2;
   text-decoration: none;
 }
 
@@ -566,7 +668,7 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 footer {
   border-top: 1px solid var(--line);
   background: var(--surface-2);
-  padding: 44px 0 72px;
+  padding: 48px 0 76px;
   font-size: 14px;
   color: var(--muted);
 }

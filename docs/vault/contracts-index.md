@@ -6,7 +6,7 @@ here and follow the `[[wikilinks]]` into each module.
 
 ## Why it matters
 
-Everything the protocol promises — permissionless USDC index vaults, AI-agent governance by
+Everything the protocol promises — permissionless USDC index vaults, member governance by
 commit-reveal vote, in-kind two-mode exits, a fail-closed Chainlink price oracle — is enforced here or
 nowhere. The design is deliberately **admin-free**: there are no upgrade proxies, no owner
 setters, no pause guardian. Every trust-relevant choice is fixed at construction and immutable
@@ -61,16 +61,19 @@ remediation. Current margins (post-M-15; see [[vaultcore]] for the reconciliatio
 
 | Contract | Runtime | Margin |
 | --- | --- | --- |
-| VaultCore | ~20,481 B | **~4,095 B** (was ~24,293 B / ~283 B before PR #90) |
+| VaultCore | **20,650 B** | **3,926 B** (was ~24,293 B / ~283 B before PR #90) |
 | ChainlinkOracle | ~1,532 B | ~23,044 B |
-| Governance | ~12,051 B | ~12,525 B |
+| Governance | **12,155 B** | **12,421 B** |
 | VaultFactory | ~3,572 B | ~21,004 B |
 
 > **Only `VaultCore` is size-constrained.** Prior sessions treated `VaultFactory` and
-> `ChainlinkOracle` as tight; the 2026-08-30 measurement says otherwise — 21,004 B and 23,044 B
-> spare respectively. *(Figures as recorded on 2026-08-30, not re-measured here:
-> `forge build --sizes` cannot run while the tree does not build.)* `VaultCore`'s ~283 B, by contrast, means anything `VaultCore`-shaped is now
-> effectively closed. `UniswapV3TwapSource` and `OracleAggregator` are no longer in the deployable
+> `ChainlinkOracle` as tight; measurement says otherwise — 21,004 B and 23,044 B spare
+> respectively. *(VaultCore and Governance re-measured with `forge build --sizes` at
+> `protocol/main` on 2026-09-02; the other two rows carry their 2026-08-30 figures. **Re-measure
+> rather than copy any of these** — no guard walks this table, which is how the previous VaultCore
+> and Governance rows went stale.)* `VaultCore`'s 3,926 B is real headroom rather than the ~283 B
+> that once closed anything `VaultCore`-shaped, but H-5/H-6 remain deferred for the reasons in
+> [[vaultcore]]. `UniswapV3TwapSource` and `OracleAggregator` are no longer in the deployable
 > set (retired to `contracts/test/retired/`), so their sizes are dropped from this table.
 
 ## Links

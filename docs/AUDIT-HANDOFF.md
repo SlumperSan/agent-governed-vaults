@@ -33,7 +33,9 @@
 > `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
 >
-> Treat every specific line number, size (VaultCore now ~283 B of EIP-170 margin, not 1,182),
+> Treat every specific line number, size (VaultCore's EIP-170 margin is **3,926 B** measured
+> 2026-09-02; the 283 B and 1,182 B figures that circulated in earlier notes are history, not
+> this document — re-measure, never copy),
 > test count and "Accepted" disposition below as pre-remediation — verify against the current tree.
 
 
@@ -61,17 +63,26 @@ is the audit surface permanently — there is no "we'll patch it later."
 page stating what changed since the internal reviews, which rounds covered what, and — more
 usefully — what internal review did **not** cover.
 
-**There IS deployed bytecode on Base Sepolia to compare against** — this paragraph originally
-said the opposite, and PR [#18](https://github.com/SlumperSan/agent-governed-vaults/pull/18)
-falsified it. The full protocol was deployed 2026-08-21 (deploy block 45,784,186, 17
-transactions, all contracts Basescan-verified; address book at
-`contracts/config/deployments/base-sepolia.json`), and a full lifecycle plus a multi-day soak
-(deposit → activate → commit/reveal governance → rebalance → both exit modes → sub-vault
-allocate/redeem) has since run against it — see [TESTNET-REPORT.md](TESTNET-REPORT.md) and
-`SOAK-REPORT.md` if present. On-chain `codesize` for every singleton matches what this tree
-builds exactly (e.g. VaultFactory 2,718 B, Governance 11,990 B). **No mainnet deployment
-exists.** The audit surface is the source at the tag above; the testnet instance is corroborating
-evidence, not the reference.
+**There is deployed bytecode on Base Sepolia, but do NOT compare this tree against the address book
+— they are different code.** Read this paragraph carefully; it has been wrong in both directions.
+
+The committed address book at `contracts/config/deployments/base-sepolia.json` records
+`sourceCommit 5934ef22`, deploy block 46,111,530, and it names a still earlier deployment at block
+45,784,186. **Neither is this tree.** `contracts/src` has moved substantially since `5934ef22` —
+`VaultCore`, `VaultFactory` and `ChainlinkOracle` among the files — and the address book's own
+`execution.note` records that the adapter it names predates both the reentrancy mutex (#101) and
+the scoped-refund fix, and carries a cross-order theft path.
+
+The codesize equality this paragraph used to assert is therefore false, and its figures were stale
+in the ordinary way as well: it cited VaultFactory 2,718 B and Governance 11,990 B, which measure
+**3,572 B** and **12,155 B** at `protocol/main` (`forge build --sizes`, 2026-09-02).
+
+**There is presently no committed record an auditor can diff this tree against.** The address book
+is the only one, and it describes an earlier deployment. Do not substitute it.
+
+**No mainnet deployment exists.** The audit surface is the source at the tag above. Treat every
+testnet instance as evidence about the bytecode it actually ran, and check which commit that was
+before relying on it.
 
 > **Reviewers start at [audit/README.md](audit/README.md)** — the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
@@ -109,8 +120,12 @@ Stated plainly because it post-dates the rest of this document. At v0.1.0-rc1 th
 ([#10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). `forge test` was green
 throughout — Foundry's test EVM does not enforce EIP-170 — so only `forge build --sizes` caught it.
 
-The governing constraint, and the reason the obvious fixes do not work: **VaultCore's creation
-code (24,731 B) is larger than the runtime cap itself.** Any contract holding
+The governing constraint, and the reason the obvious fixes do not work: **any contract holding
+VaultCore's creation code carries that whole blob in its own runtime.** (This paragraph read
+"the creation code (24,731 B) is larger than the runtime cap itself" until 2026-09-02. That was
+true when written and is not now — the initcode measures **22,391 B**, below the 24,576 B cap. The
+conclusion survives by the sum rather than by that comparison: a factory carrying 22,391 B has
+2,185 B left, and VaultFactory's own logic measures 3,572 B.) Any contract holding
 `new VaultCore(...)` is therefore over the cap before its own logic; a minimal helper doing
 nothing else measured 25,100 B, and the entire `optimizer_runs` ladder from 800 down to 50 buys
 only 229 B.
