@@ -196,10 +196,12 @@ already had correct. It is a separate file from `test/AdapterReentrancy.t.sol` o
 is #101's record for the nested-sweep mechanism, this finding needs no reentrancy at all, and
 reproducing it needs a vault-level harness.
 
-**The live Base Sepolia adapter `0xf3e08c8b…a9b1` predates BOTH #101 and this fix, and cannot be
-repointed** — `sourceCommit 5934ef22` has no `_lock`/`nonReentrant` at all, so it carries the
-cross-order theft (a loss of funds) as well as the donation DoS (a revert). See `docs/DEPLOYMENT.md`
-§3 for the full consequence list.
+**Retired 2026-09-03 by redeploy.** The live Base Sepolia adapter is now
+`0x68be942cab962ac8f9064b45489f35fbd6f617d5` (`sourceCommit 8a0e1155`), which carries BOTH #101 and
+this fix, so neither the cross-order theft nor the donation DoS is reachable on it. The previous
+adapter `0xf3e08c8b…a9b1` (`sourceCommit 5934ef22`) had no `_lock`/`nonReentrant` at all and
+carried both; because `isAllowedAdapter` is constructor-only it could not be repointed, so the fix
+required new vaults — which the redeploy created. See `docs/DEPLOYMENT.md` §3.
 
 **The `reentrancy-balance` count does not move.** Slither does not model the mutex for this
 detector, so it still reports **8** after the fix. Expect that; it is not a failed fix. The total

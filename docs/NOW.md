@@ -21,12 +21,14 @@ work it describes.
 - **Launch is NO-GO, but no longer for security reasons.** Every security gate is cleared. What
   remains is operational (the soak and canary re-runs — the restore drill is done and gate 7 is
   **GO** as of 2026-09-02), legal, and calendar-bound.
-- **The smoke lifecycle is RUNNING on Base Sepolia** (resumed 2026-09-01). It was parked at
-  `activate` for three days on a mistyped keystore password, not a missing one — see "Blocked on a
-  human" below, which was wrong about this. Past `activate` (5e18 shares minted), `propose` and
-  `commitVote`; the remaining phases sit behind ~2h of protocol timelocks (1h commit, 1h reveal),
-  then finalize → execute → exit. Idempotent and resumable at every step, and the commit salt is
-  persisted *before* the commit transaction is sent, so a reveal is never stranded.
+- **The smoke lifecycle is DONE on Base Sepolia and its evidence is committed** (2026-09-03).
+  The stack was redeployed 2026-09-02 at `sourceCommit 8a0e1155` and the full ten-phase lifecycle
+  ran against it and passed — vault `0xb940d71b…3c98`, exact 5,000,000-unit USDC round trip,
+  `totalShares() == 0`. The record no longer lives only in the gitignored `scripts/.smoke-state.json`:
+  the address book is [`contracts/config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json)
+  and the per-phase transaction table is
+  [`docs/evidence/testnet-lifecycle-run.json`](evidence/testnet-lifecycle-run.json), every row
+  re-read from chain with `cast receipt` after the run. Gate 2 is GO on the current tree.
 - **CI is back.** Actions minutes were exhausted 2026-08-29 and returned **2026-09-01** as predicted:
   `backend`, `contracts` and `slither` all run for real again, 5–6 minutes each, and pass. The tell
   for the outage window was a **2-second red with zero steps and no logs** — if you ever see that
@@ -49,13 +51,17 @@ These need a decision or a machine capability. **Two entries stood here for days
 which is the more useful lesson: *"needs a key"* had become a habit rather than a fact, and nobody
 re-checked it. Re-check this list before repeating it.
 
-1. ~~**Resume the smoke lifecycle**~~ — **DONE 2026-09-01, and it PASSED. Launch gate 2 is EARNED.**
-   All ten phases green on the pivoted tree against the live C-6 deployment: createVault →
-   registerGov → deposit → activate → propose → commit → reveal → finalize → execute → exit.
+1. ~~**Resume the smoke lifecycle**~~ — **DONE, re-run on the CURRENT tree 2026-09-03, and it
+   PASSED. Launch gate 2 is EARNED and now CITABLE.** All ten phases green against a fresh
+   deployment (`sourceCommit 8a0e1155`, factory `0xc1cb7824…9743`): createVault → registerGov →
+   deposit → activate → propose → commit → reveal → finalize → execute → exit, blocks
+   46,307,218 → 46,318,032, every one `status: true` re-read from chain after the run.
    **The exit settled Mode I for exactly 5,000,000 USDC units — an exact round trip — and left
-   `totalShares() == 0`**, confirmed by an independent `cast call` after the run. Vault
-   `0x4d60…1a0f`, proposal 1; run record kept at `scripts/.smoke-state.json`. 2h 0m wall clock,
-   almost all of it the 1h commit + 1h reveal timelocks.
+   `totalShares() == 0`**, both decoded from the receipts' own USDC `Transfer` logs. Vault
+   `0xb940d71b…3c98`, proposal 1. The run record was previously kept only at the gitignored
+   `scripts/.smoke-state.json`, which the runner overwrites; it is now transcribed into the tracked
+   [`docs/evidence/testnet-lifecycle-run.json`](evidence/testnet-lifecycle-run.json).
+   *(The 2026-09-01 run against the retired deployment, vault `0x4d60…1a0f`, is superseded.)*
 
    **It was never blocked.** The password file was already at `%USERPROFILE%\.soak.pw`, the deployer
    already held 0.5897 ETH, and the observation window had elapsed **78 hours** earlier — the

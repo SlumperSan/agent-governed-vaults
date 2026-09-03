@@ -43,8 +43,16 @@ go green on a procedure that was 4/6 followed literally. §5 states exactly what
 
 - **Chain:** live Base Sepolia via `https://base-sepolia-rpc.publicnode.com`. Read-only — the
   drill holds **no key**, funds **no account**, and sends **no transaction**.
-- **Deployment:** the C-6 pivot address book, `contracts/config/deployments/base-sepolia.json`
-  (factory `0x72767FAD…FD0A`, deploy block 46,111,530).
+- **Deployment:** the C-6 pivot address book as it stood at drill time,
+  `contracts/config/deployments/base-sepolia.json` (factory `0x72767FAD…FD0A`, deploy block
+  46,111,530).
+  > **That deployment was replaced on 2026-09-02** (current: factory `0xc1cb7824…9743`, deploy
+  > block 46,307,173, `sourceCommit 8a0e1155`). Every address, `START_BLOCK` and log transcript in
+  > this document is a **verbatim record of the drill as it ran**, against the deployment live at
+  > the time, and is deliberately left unedited — rewriting them would falsify the evidence. Read
+  > them as history. Nothing in this drill depends on which deployment it pointed at: the subject
+  > is snapshot durability and the restore procedure, not the contracts. Copy `START_BLOCK` and
+  > `FACTORY_ADDRESS` from the current address book, not from this file.
 - **State dir:** a dedicated `./data-drill/`, never the repo's `./data/`. This is a shared
   worktree; the drill deliberately could not touch another session's state.
 - **Deviation from production defaults, stated up front:** `SNAPSHOT_BACKUP_INTERVAL_MS=20000`

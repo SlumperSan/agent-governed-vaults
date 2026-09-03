@@ -47,16 +47,24 @@ Low/Informational findings have been published. Do not describe this protocol as
 that qualifier. Whether that attestation currently stands as the basis for the gate is recorded in
 gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md), not here.
 
-**Base Sepolia only — never mainnet, and the published addresses are not the current stack.** The
-full lifecycle has been run end to end on testnet — create, deposit, activate, propose, commit,
-reveal, finalize, execute, exit — and gate 2 of the board records that run and its stated limits.
-The address book committed at
+**Base Sepolia only — never mainnet.** The full lifecycle has been run end to end on testnet —
+create, deposit, activate, propose, commit, reveal, finalize, execute, exit — and gate 2 of the
+board records that run and its stated limits. The address book committed at
 [`contracts/config/deployments/base-sepolia.json`](contracts/config/deployments/base-sepolia.json)
-is an **earlier** stack, at `sourceCommit` `5934ef22`; `contracts/src` has moved past it, notably
-the adapter fix in [#108](https://github.com/SlumperSan/agent-governed-vaults/pull/108), which
-that record's own note describes at length. Addresses for anything deployed since are **not
-published in this repository**. Take what is deployed from the gate board and `npm run cc`, not
-from this file and not from that address book.
+now describes the **current** deployment, at `sourceCommit` `8a0e1155`, and the per-phase
+transaction table for the run against it is
+[`docs/evidence/testnet-lifecycle-run.json`](docs/evidence/testnet-lifecycle-run.json). That
+deployment carries the adapter fix in
+[#108](https://github.com/SlumperSan/agent-governed-vaults/pull/108) and the mutex in
+[#101](https://github.com/SlumperSan/agent-governed-vaults/pull/101); the earlier stack at
+`5934ef22`, which predated both, is superseded and lives in git history.
+
+One qualifier, because "current" is narrower than it sounds: the only `contracts/src/` change
+between `8a0e1155` and `protocol/main` is a NatSpec-only edit to `VaultDeployer.sol`, and with
+solc's default `ipfs` metadata that still changes `VaultDeployer`'s own bytecode trailer. The
+**vaults** it produces are byte-identical to a `protocol/main` build, because `VaultCore.sol` is
+unchanged. The address book's `bytecodeCurrency` block states this precisely. Nothing here is
+deployed to mainnet, and the gate board remains the authority on what is proven.
 
 ## Contracts
 

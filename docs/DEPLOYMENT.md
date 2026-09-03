@@ -175,31 +175,33 @@ allowlist makes it non-selectable there anyway).
 2. **AggregationRouterAdapter**: `new AggregationRouterAdapter(router, allowedSelectors[])` pinned
    to the chain's 0x/1inch router with only the swap selectors allow-listed (EX-1..3).
 
-   > ⚠ **The live Base Sepolia adapter `0xf3e08c8b00281750d531a48473d053009038a9b1` predates
-   > BOTH #101 and the scoped-refund fix, and CANNOT BE REPOINTED.** Its recorded
-   > `sourceCommit` is `5934ef22`, which contains **no `_lock` / `nonReentrant` at all** and
-   > `8a2afc3e` (#101's mutex) is **not** an ancestor of it — check with
-   > `git merge-base --is-ancestor 8a2afc3e 5934ef22`. So it carries **two** exploits of one
-   > root cause, not one, and the second is the more serious:
+   > ✅ **Resolved 2026-09-03 by redeploy.** The live Base Sepolia adapter is
+   > `0x68be942cab962ac8f9064b45489f35fbd6f617d5`, deployed at `sourceCommit 8a0e1155`, and it
+   > carries **both** fixes. Checked by ancestry rather than asserted — both of these succeed:
+   > `git merge-base --is-ancestor 8a2afc3e 8a0e1155` (#101's mutex) and
+   > `git merge-base --is-ancestor 29996eaf 8a0e1155` (#108's scoped refund). Neither the donation
+   > DoS nor the cross-order theft is reachable on it. The soak has **not** been re-run yet (gate 3
+   > is still STALE and needs the owner's key); when it is, it will run against this fixed shape
+   > rather than the old one.
    >
-   > 1. **The donation DoS** (a revert). Anyone can `transfer` USDC to that address and the next
-   >    `executeRebalance` leg through it reverts `Panic(0x11)`.
-   > 2. **#101's cross-order theft** (a LOSS OF FUNDS). With no mutex, a counterparty reached
-   >    through the route re-enters with a 1-unit order and the nested whole-balance sweep hands
-   >    it the outer order's in-flight `tokenIn` — the attack
-   >    `test/AdapterReentrancy.t.sol::test_nestedSwapCannotSweepTheOuterOrdersInput` exists to
-   >    prove, unguarded on that address. Reachability on Sepolia is LOW (governance chooses
-   >    `routeData`, so the hostile counterparty must be routed to), but low is a different
-   >    statement from the consequence list, and this record's job is to state the latter.
+   > **The constraint that forced the redeploy has not gone away.** `VaultCore.isAllowedAdapter`
+   > is populated in the constructor and never written again, so vaults are permanently bound to
+   > the adapter they were created against. That is why fixing this on Sepolia required a fresh
+   > adapter *and* fresh vaults rather than a repoint, and it is why the finding was a deploy gate
+   > in the first place. Mainnet must deploy the fixed bytecode; there is no repair after the fact.
    >
+   > *What was here before, retained because the consequence list is the record:* the previous
+   > adapter `0xf3e08c8b00281750d531a48473d053009038a9b1` (`sourceCommit 5934ef22`) contained no
+   > `_lock` / `nonReentrant` at all, and so carried **two** exploits of one root cause — (1) the
+   > **donation DoS**, a revert: anyone could `transfer` USDC to that address and the next
+   > `executeRebalance` leg through it reverted `Panic(0x11)`; and (2) **#101's cross-order
+   > theft**, a LOSS OF FUNDS: with no mutex, a counterparty reached through the route re-entered
+   > with a 1-unit order and the nested whole-balance sweep handed it the outer order's in-flight
+   > `tokenIn`, which `test/AdapterReentrancy.t.sol::test_nestedSwapCannotSweepTheOuterOrdersInput`
+   > proves. Reachability was low (governance chooses `routeData`), but low reachability is a
+   > different statement from the consequence list. The smoke vault of that era,
+   > `0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f`, was bound to it and was superseded with it.
    > Both are described in [the walkthrough](audit/walkthroughs/AggregationRouterAdapter.md).
-   > `VaultCore.isAllowedAdapter` is populated in the constructor and never written again, so the
-   > existing testnet vaults — including the smoke vault
-   > `0x4d60e49d451117b9ab8f9fb9be56454ab7f01a0f` — cannot be pointed at a fixed adapter. **The
-   > soak therefore runs against the old shape**, and a rebalance failure there may be this and
-   > not the soak's own subject. Fixing it on Sepolia means a fresh adapter *and* fresh vaults;
-   > that is a redeploy decision, not part of the contract fix. Mainnet must deploy the fixed
-   > bytecode — this is the constructor-only immutability that made the finding a deploy gate.
 
 ## 4. Create a vault
 
@@ -391,20 +393,29 @@ forever; `HEAD` keeps moving. The two drift apart the first time a relevant path
 (`chore/prune-retired-oracle-stack`) moved five files out of `contracts/src/` into
 `contracts/test/retired/` and rewrote `ChainlinkOracle.sol`'s import of one of them.
 `ChainlinkOracle.sol` itself did not move and its logic did not change, but its compiled metadata
-trailer did — found only because a reviewer went looking after the fact. Measured on 2026-09-01,
-against the live Base Sepolia deployment
-(`0x6371E14C0682882e75E8382caf0216545B1f43C6`, recorded in
-[`contracts/config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json)):
+trailer did — found only because a reviewer went looking after the fact. Measured on 2026-09-01
+against what was then the live Base Sepolia deployment
+(`ChainlinkOracle` at `0x6371E14C0682882e75E8382caf0216545B1f43C6`, at `sourceCommit 5934ef22`).
+**That deployment has since been replaced** — the current record pins `sourceCommit 8a0e1155` with
+the oracle at `0x3a8bd8a6599c3fdd0b3a269e0142e6b468ddd935` — so the addresses and commits in the
+two bullets below are the worked example, not the current instance. The mechanism they demonstrate
+is unchanged and is exactly why the procedure that follows exists:
 
 - Building `ChainlinkOracle` at `protocol/main` and masking its two immutable slots (`usdc`,
   `sequencerUptimeFeed` — the only non-deterministic bytes a fresh build can never match, since
   they are baked in at construction, not compile time) still leaves a **32-byte divergence in the
   trailing CBOR metadata** (the IPFS hash) against the deployed runtime code. Everything else —
   every opcode, all 1,532 bytes of runtime length — is identical.
-- Building at the commit the deployment record pins as **`sourceCommit`** (`5934ef22` —
-  [`config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json))
+- Building at the commit that deployment record pinned as **`sourceCommit`** (`5934ef22`)
   reproduces the deployed runtime bytecode **byte-for-byte, including the trailer**. Zero bytes
-  differ, not even under masking.
+  differ, not even under masking. The same rule applies to the current record: build at
+  `8a0e1155`, read from
+  [`config/deployments/base-sepolia.json`](../contracts/config/deployments/base-sepolia.json),
+  never at `HEAD`. On the current deployment the divergence has a second cause worth naming,
+  because it is the least obvious one: the only `contracts/src/` change between `8a0e1155` and
+  `protocol/main` is a **comment-only** edit to `VaultDeployer.sol` (#151), and since the trailer
+  hashes source text, that alone moves `VaultDeployer`'s trailer while leaving every opcode and
+  its 938 B length untouched. A metadata divergence does not imply a code difference.
 
 So the finding is a **documentation gap, not a code defect**: nothing on-chain is wrong, the
 deployed contract behaves exactly as its source says, and it can still be source-verified — the
@@ -429,10 +440,11 @@ whatever `main` happens to be when you get around to it.
    `script/DeployTestnet.s.sol` builds them from `config/base-sepolia.json`'s `chainlinkOracle`
    block (`assets[].asset` / `.feed` / `.heartbeatSeconds` / `.minPriceWad` / `.maxPriceWad`,
    `usdcPin`, `sequencerUptimeFeed`), in that array order — read that script's `_deployOracle`
-   helper at the pinned commit if the shape has since changed. (As of
-   this writing the `chainlinkOracle` block's *values* are unchanged since `5934ef22` — only
-   explanatory notes were added — so today's committed config still reconstructs the right
-   arguments; that was checked, not assumed, and may not stay true forever.) Alternatively, skip
+   helper at the pinned commit if the shape has since changed. (As of this writing the
+   `chainlinkOracle` block's *values* are unchanged since `5934ef22`, and the whole file is
+   blob-identical between the currently pinned `8a0e1155` and `protocol/main` at
+   `b91cb18f9725` — so today's committed config still reconstructs the right arguments; that was
+   checked, not assumed, and may not stay true forever.) Alternatively, skip
    manual reconstruction and pass `--guess-constructor-args` (see `forge verify-contract --help`)
    to have `forge` extract them from the on-chain creation transaction directly.
 4. **Verify from the pinned-commit worktree**, not your working tree, so the compiler sees that

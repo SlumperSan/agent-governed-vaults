@@ -61,11 +61,15 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 ## Deployment state
 
 - **Deployed on Base Sepolia** (testnet only; nothing has ever been broadcast to mainnet).
-  **The committed address book is NOT the current deployment.**
-  `contracts/config/deployments/base-sepolia.json` records `sourceCommit 5934ef22` — superseded
-  bytecode, and its own `execution.note` flags that the adapter it names predates the reentrancy
-  mutex and the scoped-refund fix. **There is no committed address book that matches the current
-  tree**, and the one that exists must not be read as current. Vaults have been created, registered, funded, activated, governed and
+  **The committed address book now IS the current deployment**, as of 2026-09-03.
+  `contracts/config/deployments/base-sepolia.json` records `sourceCommit 8a0e1155`, deploy block
+  46,307,173, factory `0xc1cb7824…9743`, and the adapter it names carries both the reentrancy mutex
+  (#101) and the scoped-refund fix (#108). The ten-phase lifecycle transaction table for the run
+  against it is `docs/evidence/testnet-lifecycle-run.json`. One qualifier, stated in the book's
+  `bytecodeCurrency` block: the sole `contracts/src/` change since `8a0e1155` is a NatSpec-only
+  edit to `VaultDeployer.sol`, which under solc's default `ipfs` metadata changes that contract's
+  bytecode trailer but not its opcodes and not the `VaultCore` creation code it carries — so the
+  vaults are byte-identical to a `protocol/main` build. Vaults have been created, registered, funded, activated, governed and
   exited on Base Sepolia — `docs/SOAK-REPORT.md` §5 records a full loop with a transaction hash for
   every phase, including a Mode-F exit. This bullet said the remaining phases still sat behind the
   4h window and ~2h of timelocks; that was true when written and has not been since.
