@@ -205,6 +205,7 @@ components:
       properties:
         vault: { type: string }
         creator: { type: string }
+        usdc: { type: string, description: the vault's USDC token address }
         operatorId: { type: integer }
         totalShares: { type: string, description: WAD, decimal string }
         idleUsdc: { type: string }
@@ -214,6 +215,36 @@ components:
         parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
         depth: { type: integer, description: 0 root … 2 grandchild }
         holders: { type: integer }
+        exitQueuedCount: { type: integer, description: lifetime ExitQueued events (Mode-F exit requests) }
+        exitSettledCount: { type: integer, description: lifetime ExitSettled events (Mode-F + Mode-I) }
+        exitQueuedOutstanding:
+          type: integer
+          description: >-
+            queued Mode-F exits not yet settled — a LEVEL that rises and falls, not a lifetime
+            total (contrast exitQueuedCount, which only ever rises). This is the stranded-queue
+            signal: a value that stays high while exitSettledCount does not move means members are
+            queued and not being paid out.
+        modeFSettledCount:
+          type: integer
+          description: >-
+            of exitSettledCount, the settlements that resolved a queued Mode-F exit. The Mode-F
+            share in basis points is modeFSettledCount * 10000 / exitSettledCount, and is a
+            partition, so it never exceeds 10000. UNDEFINED when exitSettledCount is 0 — compute
+            the share only when there is at least one settled exit.
+        activeProposal:
+          type: [object, 'null']
+          description: >-
+            the vault's currently active governance proposal, or null when there is none.
+          properties:
+            pid: { type: integer }
+            vault: { type: string }
+            ptype: { type: integer, description: 0 Rebalance, 1 RuleChange, 2 ChildAllocation }
+            proposer: { type: string }
+            status: { type: string, enum: [Active, Passed, Defeated, Executed, Expired] }
+            forWeight: { type: string, description: decimal string — vote weights serialize as strings }
+            againstWeight: { type: string }
+            revealedWeight: { type: string }
+            revealedVoters: { type: integer }
     LeaderboardRow:
       type: object
       properties:

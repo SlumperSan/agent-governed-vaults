@@ -39,6 +39,13 @@ measured deltas** (EX-3), never trusting the quote or any external return value,
    to audit; confirm the leftover-input story (none should exist here because the full
    `amountIn` goes to the pair).
 
+   **Confirmed 2026-09-01** while scoping the sibling adapter's refund: there is no
+   `balanceOf(tokenIn)` sweep and no refund leg at all, so the donation DoS that forced
+   [AggregationRouterAdapter](AggregationRouterAdapter.md) to scope its refund has no purchase
+   here. The corollary is the open end of the same story and is deliberately left alone: a pair
+   that consumed **less** than `amountIn` would strand the remainder in the adapter. Not
+   reachable through an honest V2 pair, which always takes the whole transferred balance.
+
 ## Accepted risks here (do not re-report)
 
 - Ordinary V2 MEV exposure bounded by `minAmountOut` (EX-2 residual, as with the router

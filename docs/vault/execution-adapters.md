@@ -21,15 +21,23 @@ concrete proof of the venue abstraction (C-2).
 - **`minAmountOut` and `deadline` enforced HERE on measured balance deltas** — never trusted from
   router return values or calldata-embedded slippage params (EX-3). `minAmountOut > 0` is mandatory,
   never optional.
-- **Approvals are per-swap and revoked after; leftovers swept back to the caller.**
+- **Approvals are per-swap and revoked after; THIS ORDER'S OWN unspent input is refunded to the
+  caller** — `refund = min(amountIn, inAfter - inBefore)`, measured across the route. Never the
+  adapter's whole `tokenIn` balance: that sweep was a cross-order theft *and* a donation DoS that
+  underflowed `VaultCore.executeRebalance` to `Panic(0x11)`. See
+  [the walkthrough](../audit/walkthroughs/AggregationRouterAdapter.md).
+- **A `nonReentrant` mutex on every adapter**, same shape as `VaultCore._lock` — non-reentrancy is
+  a property of the `IExecutionAdapter` contract, not of any one caller.
 
 ## AggregationRouterAdapter
 
 - `router` immutable; `allowedSelector[bytes4]` allowlist fixed at construction (EX-1) —
   `routeData`'s selector must be on it.
-- `executeSwap`: pull `tokenIn`, approve `router`, `router.call(routeData)`, measure
-  `tokenOut` delta, require `>= minAmountOut`, revoke approval, sweep unspent `tokenIn` back. Partial
-  fills never strand funds.
+- `executeSwap`: snapshot `tokenIn` balance, pull `tokenIn`, approve `router`,
+  `router.call(routeData)`, measure `tokenOut` delta, require `>= minAmountOut`, compute the
+  `tokenIn` refund as this order's own balance delta clamped at `amountIn`, revoke approval, send
+  output then refund. Partial fills never strand the caller's funds; a donation made to the adapter
+  by someone else stays stranded there and is nobody's to sweep.
 
 ## DirectPoolAdapter
 
