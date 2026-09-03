@@ -1,6 +1,6 @@
 # Launch readiness — mainnet go/no-go
 
-**VERDICT: NO-GO — but every SECURITY gate is now cleared; the only remaining blockers are OPERATIONAL, and all of them need a funded Base Sepolia key.** (Current tree `protocol/main` @ `b1a8ae84`, verified green 2026-08-29: forge **319/319**, backend 551 pass / 2 skip, fmt / sizes / gas snapshot all pass.)
+**VERDICT: NO-GO — but every SECURITY gate is now cleared; the only remaining blockers are OPERATIONAL, and all of them need a funded Base Sepolia key.** (Current tree `protocol/main` @ `88a62fb4`, verified green 2026-09-03: forge **434 pass / 0 fail / 11 skip** (445 total, 57 suites; the 11 skips are the sequencer-fork tests, which need a fork RPC), backend **976 tests — 974 pass / 2 skip**, fmt / sizes / gas snapshot all pass. The 2026-08-29 numbers this line carried — forge 319/319, backend 551/2 at `b1a8ae84` — were correct then; the suite has grown since.)
 >
 > ### 2026-08-29 — post-audit + post-pivot update (supersedes the pre-pivot narrative below)
 > Two things changed since the paragraphs further down were written; where they conflict, this block wins.
