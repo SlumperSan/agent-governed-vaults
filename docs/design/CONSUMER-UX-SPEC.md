@@ -247,7 +247,8 @@ Phase 2  REVEAL  [SIGN]  ← the forfeit risk
 ### 3.3 Exit — Mode I (instant) and Mode F (forward-priced)
 
 The hard part: whether an exit settles instantly or *later at a different price* depends on
-whether a passed-but-unexecuted rebalance exists (§4.4), which the user did not cause and may not
+whether the vault has a pending execution (§4.4) — `Governance.hasPendingExecution`, true from the
+active proposal's reveal start and for any proposal type — which the user did not cause and may not
 know about. And the default payout is **a basket of tokens, not USDC** (§4.5).
 
 ```
@@ -258,7 +259,7 @@ Entry (both modes)
   • Exit flow first resolves the mode from chain state:
 
 MODE I — instant (common path)
-  • Condition: no passed-but-unexecuted rebalance (§4.4).
+  • Condition: no pending execution — hasPendingExecution is false (§4.4).
   • Preview an ITEMIZED "what you'll receive": in-kind pro-rata slice of EVERY basket
     asset + share of idle USDC, MINUS the exit fee (§4.5). Show per-asset amounts.
   • Exit-fee line: current fee = feeMax·max(0,1 − tenure/decay) (§4.6). Show the exact
@@ -268,20 +269,23 @@ MODE I — instant (common path)
     settlement. Done.
 
 MODE F — forward-priced  ← S-2, irreversible
-  • Condition: a rebalance has passed its vote but not executed (§4.4).
+  • Condition: the vault has a pending execution — hasPendingExecution is true, i.e. the active
+    proposal is past its reveal start (of ANY type, not only a rebalance) (§4.4).
   • The confirm must carry TWO distinct warnings in one screen:
-      (1) "This exit is QUEUED and IRREVOCABLE. It settles LATER, in the rebalance
-           execution transaction, at a price we cannot show you now (post-rebalance
-           NAV). You will bear the rebalance outcome." (§4.4, VO-8)
+      (1) "This exit is QUEUED and IRREVOCABLE. It settles LATER — not in the execution
+           transaction; someone must call settleQueuedExit once execution is no longer
+           pending — at a price we cannot show you now (post-execution NAV). You will
+           bear the outcome." (§4.4, VO-8)
       (2) "Your shares LOSE VOTING ELIGIBILITY the moment you queue (§4.4/EE-10).
            You cannot vote on or influence the rebalance you're exiting ahead of."
   • Offer the honest alternative: "Or wait until after execution to exit in Mode I at a
     known price" — help the user choose deliberately (VO-8 is the subtlest economic
     seam; the UX must not hide it).
-  • [SIGN] queue exit. State becomes "Exit queued — settles on execution" in portfolio.
-  • Settlement is automatic in the execution tx; if the proposal expires unexecuted,
-    the queued exit settles at then-current NAV (EE-10) — reflect both outcomes in the
-    queued-exit state copy.
+  • [SIGN] queue exit. State becomes "Exit queued — settleable once execution clears" in portfolio.
+  • Settlement is NOT automatic: once hasPendingExecution goes false (the proposal executed, was
+    defeated, or expired), anyone may call settleQueuedExit(member) and it settles at then-current
+    NAV (EE-10). The UI should offer the user that call and not imply it happens on its own —
+    reflect every outcome in the queued-exit state copy.
 
 Cash-redemption note
   • A USDC-cash exit path "may be offered later" (§4.5) and is the ONLY path subject to

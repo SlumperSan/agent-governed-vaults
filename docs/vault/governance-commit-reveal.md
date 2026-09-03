@@ -65,8 +65,12 @@ arrival). Re-checked at tally time against the snapshot, not just at delegation 
 ## Timelock
 
 Post-vote, vault-configurable, `TIMELOCK_HARD_CAP = 30 days`. **Mode-F redemption queueing begins
-at vote passage, not at timelock expiry** — so exit-before-execution is always available (VO-8),
-the subtlest economic seam in the design.
+at the active proposal's reveal start** (`Governance.hasPendingExecution`, true from
+`commitDeadline`), not at vote passage and not at timelock expiry — and for any proposal type, not
+only a rebalance. So an exit taken from reveal start onward does not escape the pending action: it
+is queued and forward-priced (VO-8). That is available whenever the oracle is healthy; a stale-feed
+or downed-sequencer freeze reverts the exit path for a basket-holding vault (SF-2/K-4). The subtlest
+economic seam in the design.
 
 ## Module-call safety
 
@@ -77,7 +81,7 @@ member liveness (MO-1).
 
 ## Links
 
-- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at passage) · [[nav-and-shares]]
+- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at reveal start) · [[nav-and-shares]]
   (eligible-stake snapshot) · [[fees-and-carry]] · [[sub-vaults]]
 - Contracts: [[governance]] · [[vaultcore]]
 - Security: [[c2-unbounded-governance]] · [[c5-vote-after-exit]] · [[threat-model-commitments]]

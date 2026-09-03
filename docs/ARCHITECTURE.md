@@ -105,13 +105,16 @@ never mint against a stale valuation they observed 4 hours earlier.
 
 Shares burn at **settlement**, never at request.
 
-- **Mode I (instant):** no passed-but-unexecuted rebalance exists → the request settles in the
+- **Mode I (instant):** no pending execution exists → the request settles in the
   same transaction at current NAV. This is the common path and is what "instant exit at
   pro-rata NAV" means here.
-- **Mode F (forward):** a rebalance has passed its vote but not yet executed → the request is
-  queued and settles at **post-execution NAV**. This closes the free option of exiting at
-  pre-rebalance prices while knowing the rebalance outcome. Queued requests are irrevocable and
-  settle automatically in the rebalance-execution transaction.
+- **Mode F (forward):** the vault has a pending execution → the request is
+  queued and settles at **post-execution NAV**. The trigger is `Governance.hasPendingExecution`,
+  which is true from the active proposal's **reveal start** (before any tally) and for **any**
+  proposal type — not only a passed rebalance. This closes the free option of exiting at
+  pre-execution prices while knowing the outcome. Queued requests are irrevocable and do **not**
+  settle as a side effect of execution: `settleQueuedExit(member)` is an ordinary call that anyone
+  can make once no execution is pending.
 
 Between request and settlement in Mode F, the shares remain outstanding (still earn/lose with
 the vault, still count in `totalSupply`) but are **locked**: non-transferable and excluded from
@@ -220,7 +223,8 @@ per-vault opt-out does not exist at the contract level.
 - **Delegation:** permitted; a delegate's aggregate received weight is capped at a
   vault-configured fraction of eligible stake (concentration cap).
 - **Timelock:** post-vote, vault-configurable, 30-day protocol hard cap. Mode-F redemption
-  queueing (§4.4) begins at vote passage, not at timelock expiry.
+  queueing (§4.4) begins at the active proposal's **reveal start** (`hasPendingExecution`, true
+  from `commitDeadline`), well before the vote is tallied and long before timelock expiry.
 
 ## 9. x402 boundary
 

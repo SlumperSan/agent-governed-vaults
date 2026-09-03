@@ -348,8 +348,9 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
 
       return {
         available: true,
-        // A passed-but-unexecuted rebalance turns an exit into Mode F: forward-priced at
-        // POST-rebalance NAV (ARCHITECTURE §4.4). Never plan an exit without checking this.
+        // A pending execution turns an exit into Mode F: forward-priced at POST-execution NAV
+        // (ARCHITECTURE §4.4). This is true from any active proposal's reveal start, for any
+        // proposal type — not only a passed rebalance. Never plan an exit without checking it.
         hasPendingExecution: pendingExec.ok ? Boolean(pendingExec.value) : null,
         activePid: pid,
         proposal,
