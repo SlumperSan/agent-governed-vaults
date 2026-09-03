@@ -115,7 +115,8 @@ export function demoGovernance(nowSec) {
       revealed: null,
     },
     [DEMO_VAULTS.helios]: {
-      // A passed-but-unexecuted rebalance: this is what turns an exit into Mode F (§4.4).
+      // This vault has a pending execution, which is what turns an exit into Mode F (§4.4) —
+      // here a passed-but-unexecuted rebalance, but any active proposal past reveal start does it.
       hasPendingExecution: true,
       activePid: DEMO_PID,
       proposal: {

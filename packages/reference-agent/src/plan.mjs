@@ -128,7 +128,7 @@ export function plan({ world, config, entryMarks = new Map(), log }) {
           reason:
             exit.reason +
             (exit.modeF
-              ? ' — WARNING: a passed-but-unexecuted rebalance exists, so this exit is Mode F: shares lock and settle at POST-rebalance NAV, not the price seen now (ARCHITECTURE §4.4)'
+              ? ' — WARNING: the vault has a pending execution (any proposal past its reveal start), so this exit is Mode F: shares lock and settle at POST-execution NAV, not the price seen now, and settleQueuedExit must be called afterwards (ARCHITECTURE §4.4)'
               : ' — Mode I: instant, in-kind pro-rata basket'),
         });
         log.decide(`${short} EXIT — ${exit.reason}${exit.modeF ? ' [MODE F: forward-priced]' : ''}`);
