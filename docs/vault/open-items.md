@@ -8,8 +8,9 @@ Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. Th
 
 ## Launch-blocking
 
-> **⚠ Items 1–3 are CLOSED** (corrected 2026-08-30). They are kept here because the reasoning is
-> still worth reading; the live list is items 4–6 plus [docs/NOW.md](../NOW.md).
+> **⚠ Items 1–3 are CLOSED** (corrected 2026-08-30) and **item 6 is CLOSED** (2026-09-02, gate 7).
+> They are kept here because the reasoning is still worth reading; the live list is items 4 and 5
+> plus [docs/NOW.md](../NOW.md).
 
 1. ~~**C-6 — settle the oracle mechanism.**~~ **DONE.** `ChainlinkOracle` shipped
    ([[chainlink-direct-pivot]]) *and* the factory oracle-gate landed (#50), so the retired
@@ -25,8 +26,8 @@ Gate 0 and gate 1 are the only rows that speak to safety, and both are NO-GO. Th
    the retired aggregator and no longer applies. The file is at `contracts/config/base-mainnet.json`
    — note the path: only `base-sepolia.json` lives under `config/deployments/`.
 4. **Re-run testnet lifecycle + soak + canary (gates 2, 3, 6).** STALE — earned against superseded bytecode. Redeploy testnet, re-run drills against the corrected contracts. See [[audit-reverification]].
-5. **VaultCore-headroom sprint (issue #40).** H-5/H-6/H-9 and M-15's exit-side need `VaultCore` bytes that do not exist (**~4,095 B** of margin since PR #90, up from ~283 B — corrected 2026-08-30; the 1,014 B previously recorded predates M-15's deposit overload, which spent 731 B, so this is *tighter* than the note claimed, not looser). Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
-6. **One recorded restore drill (gate 7).** ~30 min, no keys, doable anytime — CONDITIONAL until performed.
+5. **VaultCore-headroom sprint (issue #40).** H-5/H-6 and M-15's exit-side once needed `VaultCore` bytes that did not exist. **They now fit**: the margin is **3,926 B** (2026-09-02), up from ~283 B before PR #90. What still defers them is the sub-vault dormancy and #40's absent escrow-degradation design decision, not the byte budget. This entry read "bytes that do not exist" and called the budget *tighter* than earlier notes claimed; both were true against ~283 B and are backwards against 3,926 B. Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
+6. ~~**One recorded restore drill (gate 7).**~~ **DONE — gate 7 is GO as of 2026-09-02.** Recorded Docker-free 2026-08-30, then re-run under a real Linux Docker engine with steps 1 and 6 literal (`docker compose stop/start`) in #139 (`4619f17a`), `docs/RESTORE-DRILL.md` §10; the three runbook/Compose defects that re-run surfaced are fixed in #141 (`adafdc7c`). The residuals the drill named are in the gate 7 row of [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) and belong to other gates.
 
 ## Open Highs / not-mitigated
 

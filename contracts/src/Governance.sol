@@ -65,11 +65,26 @@ contract Governance is IGovernance {
     /// stays true, so `requestExit` queues Mode-F and `settleQueuedExit` reverts — every exit in
     /// the vault is frozen, permanently, with no admin and no upgrade path to undo it.
     /// Confirmed by `test/audit/AuditExecutionWindowFreeze.t.sol` and `AuditDosExitLiveness.t.sol`.
-    uint256 public constant COMMIT_HARD_CAP = 30 days;
+    uint256 public constant DEFAULT_TTL = 72 hours; // standing-default expiry
+    /// @dev T-1: the commit cap is set by `DEFAULT_TTL`, not by the C-2 concern above.
+    /// `applyStandingDefault` is callable only from `commitDeadline`, and it measures the TTL
+    /// against `block.timestamp`, so the reveal window opens `commitDuration` into a standing
+    /// default's 72h life. At `commitDuration >= DEFAULT_TTL` every default is provably expired
+    /// before it can ever be applied and VO-3 is silently, permanently dead for that vault —
+    /// exactly the "a config disables its own defence" shape `_validateConfig` exists to prevent
+    /// (M-6). Making that unrepresentable narrows the legal commit phase from 30 days to just
+    /// under 72h, deliberately: a standing default must outlive the commit phase. It is strictly
+    /// stronger for C-2 too (a shorter maximum freeze), and the two exploit tests named above use
+    /// 1h and 6h commit phases, so neither is affected. Both shipped configs use 3600.
+    uint256 public constant COMMIT_HARD_CAP = DEFAULT_TTL - 1;
     uint256 public constant REVEAL_HARD_CAP = 30 days;
     uint256 public constant EXECUTION_WINDOW_HARD_CAP = 90 days;
-    uint256 public constant DEFAULT_TTL = 72 hours; // standing-default expiry
-    uint256 public constant SIGNER_REGIME_BELOW = 5; // <5 members ⇒ absolute signer counts
+    /// Selects the sub-five quorum regime in `finalize`. Below this many members at creation the
+    /// quorum test is the OR of a head majority that also clears the stake quorum and an outright
+    /// FOR stake majority — both branches weigh stake, and neither is the absolute signer count
+    /// this was before the H-8/CM-7 remediation. The boundary is still chosen by `pastHolderCount`,
+    /// a head count, so a bought seat still flips the regime (H-8(a), left open by design).
+    uint256 public constant SIGNER_REGIME_BELOW = 5;
 
     enum ProposalType {
         Rebalance, // routine — the only type standing defaults apply to (VO-4)
@@ -429,8 +444,12 @@ contract Governance is IGovernance {
     // ─────────────────────────── standing defaults ────────────────────────────
 
     /// @notice Declare a standing absentee vote for future ROUTINE REBALANCE proposals on
-    /// `vault`. Expires 72h after being set (VO-3); only applies to proposals created AFTER it
-    /// was set (G4). Counts toward tallies, never toward quorum (VO-2/K-3).
+    /// `vault`. Expires `DEFAULT_TTL` (72h) after being set (VO-3); only applies to proposals
+    /// created AFTER it was set (G4). Counts toward tallies, never toward quorum (VO-2/K-3).
+    /// @dev T-1: the TTL is measured when the default is APPLIED, and a default cannot be applied
+    /// before the reveal phase opens, so the commit phase consumes part of the 72h. The usable
+    /// window is `DEFAULT_TTL - cfg.commitDuration`, not the full `DEFAULT_TTL` — refresh
+    /// accordingly. `COMMIT_HARD_CAP = DEFAULT_TTL - 1` guarantees that window is never empty.
     /// @param vault the vault the default applies to
     /// @param support the pre-declared direction
     function setStandingDefault(address vault, bool support) external {
@@ -447,8 +466,15 @@ contract Governance is IGovernance {
 
     /// @notice Apply a member's standing default to an active ROUTINE REBALANCE tally during
     /// the reveal phase. Permissionless crank. Defaults count toward the tally, NEVER toward
-    /// quorum (VO-2/K-3), expire 72h after being set (VO-3), and are structurally limited to
-    /// the Rebalance proposal type on-chain (VO-4 — the type is not proposer-asserted text).
+    /// quorum (VO-2/K-3), expire `DEFAULT_TTL` after being set (VO-3), and are structurally
+    /// limited to the Rebalance proposal type on-chain (VO-4 — not proposer-asserted text).
+    /// @dev T-1: because the earliest this is callable is `p.commitDeadline`, the TTL below is
+    /// never evaluated earlier than `p.createdAt + cfg.commitDuration`. `COMMIT_HARD_CAP` is
+    /// therefore pinned to `DEFAULT_TTL - 1` so a default set immediately before the proposal is
+    /// still live when the reveal window opens. The TTL is deliberately NOT re-anchored to
+    /// `p.createdAt`: that would stretch the maximum staleness of an applied default to
+    /// `DEFAULT_TTL + cfg.commitDuration`, and VO-3's accepted disposition is precisely the
+    /// upper bound on that staleness (docs/THREAT-MODEL.md, SPRINT6-GOVERNANCE-ACCEPTED-ROWS §2).
     /// @param pid the proposal id (must be a Rebalance in its reveal phase)
     /// @param member the non-participating member whose default should be applied
     function applyStandingDefault(uint256 pid, address member) external {

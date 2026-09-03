@@ -1,8 +1,10 @@
 # Governance (Commit-Reveal)
 
-**Definition.** The stake-weighted proposal system in [[governance]]: agents commit a hashed vote,
-reveal it after a deadline, and a passing proposal executes after a timelock — the only route to
-`executeRebalance` and to config changes on a [[vaultcore]].
+**Definition.** The proposal system in [[governance]]: members commit a hashed vote, reveal it
+after a deadline, and a passing proposal executes after a timelock — the only route to
+`executeRebalance` and to config changes on a [[vaultcore]]. Weighting is stake-based only at five
+or more members; below `SIGNER_REGIME_BELOW` (5) `finalize` takes a signer-count-plus-stake branch,
+and a `RuleChange` needs full consensus — three regimes, not one.
 
 **Why it matters.** Governance capture is the master risk: whoever controls the vote controls the
 rebalance calldata. The oracle slippage bound (H-4) is what stops capture from becoming a *drain*,
@@ -24,8 +26,10 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 ## Commit-reveal
 
 - Commit `hash(support, salt)`; reveal after the commit deadline. Windows are vault-configured up
-  to hard caps: `COMMIT_HARD_CAP = 30 days`, `REVEAL_HARD_CAP = 30 days`,
-  `EXECUTION_WINDOW_HARD_CAP = 90 days`.
+  to hard caps: `COMMIT_HARD_CAP = DEFAULT_TTL - 1` (just under 72h), `REVEAL_HARD_CAP = 30 days`,
+  `EXECUTION_WINDOW_HARD_CAP = 90 days`. The commit cap is the tighter one **because of T-1**, not
+  because of C-2: a commit phase at or beyond `DEFAULT_TTL` outlives every standing default, so VO-3
+  would be dead before the reveal window opened. See [[mediums-and-lows]].
 - **Unrevealed commits are forfeit** (count as abstain) — non-revealers grief only themselves;
   the quorum denominator is not starved (VO-6). Sizing note: Kleros abandoned commit-reveal (2026)
   because voters *forget* to reveal, so reveal windows were sized generously.
@@ -39,7 +43,7 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 - Denominator = **voting-eligible stake at the proposal snapshot**, which *excludes* pending
   deposits and Mode-F-locked shares ([[two-mode-exits]]). Registered parent vaults are excluded
   too (GA-1). `QUORUM_FLOOR_BPS = 2_500` (25% protocol floor).
-- **< 5 members → absolute signer counts** (`SIGNER_REGIME_BELOW = 5`). The signer regime was
+- **< 5 members → signer count plus stake** (`SIGNER_REGIME_BELOW = 5`). The signer regime was
   hardened (H-8): the FOR side must also clear the stake quorum (blocks near-zero-stake sybils
   passing via head count) and passes on outright FOR-stake majority (blocks dust holders locking
   out a dominant member). Regime-flip residual (buy the 5th seat) is a **listing constraint**:
@@ -47,7 +51,7 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 
 ## Standing defaults
 
-Count toward tally, **never quorum**; expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
+Count toward tally, and **never toward quorum at five or more members** (that branch counts `revealedWeight` only, VO-2/K-3). Below `SIGNER_REGIME_BELOW` they DO bear on passage: `finalize`'s sub-five branch tests `forWeight`, which includes applied standing defaults, so a Rebalance can pass on a >50% pre-declared-default majority with **zero live reveals**. `Governance.finalize` names this asymmetry as intended, not overlooked — defaults are Rebalance-only, must predate the proposal, and only ever widen the passing set. Expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
 only for Rebalance proposals; must predate the proposal (`setAt < createdAt`, G4 fix). Offline
 agents auto-abstain otherwise (K-3, **ACCEPTED**).
 

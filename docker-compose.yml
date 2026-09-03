@@ -15,10 +15,36 @@
 # `restart: unless-stopped` never notices on its own, goes unhealthy here.
 #
 # `node` is the only interpreter available: node:24-slim ships neither curl nor wget.
+#
+# PID 1 IS `node`, NOT `npm`, AND THAT IS LOAD-BEARING. Every `command:` below is the exec-form
+# array of exactly what `npm run start:*` runs (see package.json). `command: npm run start:x` makes
+# **npm** PID 1, and npm does not forward SIGTERM to its child: `docker compose stop` killed npm,
+# node never saw the signal, and every shutdown hook that §8.6 of docs/RUNTIME.md promises
+# silently never ran. Measured A/B on this image, same volume, same signal, same grace
+# (docs/RESTORE-DRILL.md §10 finding 7): npm as PID 1 -> stop returns in ~1s with only
+# `npm error signal SIGTERM` and no shutdown lines at all; node as PID 1 -> `shutdown.begin` ->
+# `shutdown.step … ok:true` -> `shutdown.complete`. The `stop_grace_period` values below are only
+# real configuration with node here; under npm they were dead config.
+#
+# KEEP THE ARRAY FORM, but keep it for the right reason. It states the argv literally, with no
+# quoting or word-splitting step between what is written here and what runs. What it is NOT doing
+# is keeping a shell out: Compose normalises a string `command:` to the same argv list the array
+# form gives — `docker compose config` prints an identical list for `command: node x.mjs` and
+# `command: ["node", "x.mjs"]`, and `/proc/1/cmdline` in the running container reads `node …` for
+# both (measured on Compose v5.4.0 against node:24-slim, 2026-09-02). No `/bin/sh` is inserted
+# either way. (Dockerfile `CMD` in *shell* form is the thing that genuinely wraps in `/bin/sh -c`;
+# a Compose `command:` string is not that.) So the invariant to preserve here is about the
+# PROGRAM, not the syntax: PID 1 must be `node`. npm was the entire defect.
+#
+# No `init: true`. An init buys signal forwarding and zombie reaping; node as PID 1 needs neither.
+# All three services install their own SIGTERM/SIGINT handlers (`createShutdown().install()`,
+# packages/oplog/src/shutdown.mjs), so PID 1's missing default signal disposition is covered, and
+# none of them spawns a child process, so there are no orphans to reap. An init would only insert
+# another process between Docker and the one whose shutdown we care about.
 services:
   indexer:
     build: .
-    command: npm run start:indexer
+    command: ["node", "packages/indexer/src/index-runner.mjs"]
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json
@@ -38,7 +64,7 @@ services:
 
   api:
     build: .
-    command: npm run start:api
+    command: ["node", "apps/api/src/serve.mjs"]   # node, not npm — see the PID 1 note above
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json
@@ -62,11 +88,15 @@ services:
   # Post-launch canary (docs/CANARY.md). Read-only against the chain: no key, no wallet, no
   # transaction — it only reads. It mounts the shared volume because two of its signals compare
   # the indexer's projection against chain state; it reads that snapshot and never writes it.
-  # Silent while healthy: one line per signal transition, nothing otherwise. Set ALERT_WEBHOOK_URL
-  # in .env to also POST each transition.
+  # Silent while healthy: one line per signal transition, nothing otherwise. Set PAGE_WEBHOOK_URL /
+  # LOG_WEBHOOK_URL in .env to also POST each transition, split by severity tier (or the single
+  # ALERT_WEBHOOK_URL fallback for both), and DEADMAN_PING_URL for the off-host dead-man's switch —
+  # `restart: unless-stopped` below restarts a CRASHED canary, but only something not on this host
+  # notices a dead host. Do NOT leave CANARY_TEST_ALERT_ON_START set in .env: this service restarts
+  # automatically and the self-test fires on every one of those restarts (docs/CANARY.md §5.3).
   canary:
     build: .
-    command: npm run start:canary
+    command: ["node", "packages/canary/src/canary-runner.mjs"]   # node, not npm — see above
     env_file: .env
     environment:
       STATE_PATH: /data/indexer-state.json        # the indexer snapshot (read-only to this service)

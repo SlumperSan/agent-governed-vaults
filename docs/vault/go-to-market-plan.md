@@ -12,7 +12,7 @@ Because the protocol is immutable per vault, go-to-market is expressed almost en
 - **Oracle: Chainlink-direct — shipped, and the launch default** ([[chainlink-direct-pivot]]). The custom aggregator is non-selectable via the factory oracle-gate and has been moved out of `contracts/src/` to `contracts/test/retired/`. C-6 is settled.
 - **First `capacityCapUsdc`: 50,000 USDC.** Large enough that a 10% performance fee on plausible returns pays for operations; small enough that a total-loss event — the honest worst case for a fresh immutable protocol — is survivable and compensable.
 - **First baskets: WETH + cbBTC — majors only.** Chainlink-direct requires each asset to have a genuine Chainlink **ASSET/USD** feed on Base, which is a reasonable bound for a spot index of majors and is what sets the universe. **cbETH was dropped**: Base publishes only `CBETH / ETH`, and the oracle constructor now rejects a non-USD denomination. The old `$1e-6` TWAP quantization constraint no longer applies — that was a property of the retired source.
-- **Exit fee:** `exitFeeMaxBps = 50`, decay 302,400 s (3.5 days) — the value exercised end-to-end in the soak.
+- **Exit fee:** `exitFeeMaxBps = 50`, decay 604,800 s (7 days) — the values `base-mainnet.json` `smoke` carries. Nothing mechanically deploys them to mainnet: `Deploy.s.sol` creates no vault, the only reader of `smoke.exitFeeDecayPeriod` in a deploy position is `scripts/smoke-test.mjs` (a Base Sepolia runner defaulting to `base-sepolia.json`), and mainnet vault creation is the hand-written `factory.createVault(...)` step in DEPLOYMENT §4 — so this is the value the operator must type. 50 bps was exercised end-to-end in the soak. This line previously said 302,400 s (3.5 days); that decay was only ever run by the 25 bps soak drill vaults (`scripts/soak/soak-vaults.json`), while the 50 bps smoke vault ran 604,800 s. 3.5 d vs 7 d is an open owner launch-parameter decision; until it is made the doc states what the reference config carries, pinned by `scripts/test/config-doc-truth.test.mjs`.
 - **Governance config:** `3600/3600/0/86400`, quorum 2,500 bps root floor — the values the soak ran through five full rounds. Zero timelock is defensible *because* Mode-F exits exist.
 - **Oracle freshness:** a per-feed **heartbeat** sized to the Chainlink feed's own publishing cadence, plus a per-asset **sane-price band**, plus the L2 sequencer gate with its 3,600 s grace period. The old `maxObservationAge ≤ window/20` constraint was a TWAP property and no longer applies.
 
@@ -37,7 +37,7 @@ Deployer EOA has **no post-wiring authority** (no owner functions exist); operat
 
 ## Gate to GO
 
-Not yet. `v1.0.0-launch-candidate` is deliberately **not cut**. The path runs through [[open-items]]: settle C-6, commission the external audit, rebuild the mainnet config, re-run the STALE operational gates, record a restore drill.
+Not yet. `v1.0.0-launch-candidate` is deliberately **not cut**. The path runs through [[open-items]] — read the live list there rather than re-listing it here; as of 2026-09-02 what remains is re-running the STALE operational gates on the pivoted tree. The restore drill (gate 7) is done and that gate is GO.
 
 ## Links
 

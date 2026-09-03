@@ -4,10 +4,17 @@ pragma solidity 0.8.26;
 import {VaultCore} from "./VaultCore.sol";
 
 /// @title VaultDeployer — the factory's one and only vault construction path
-/// @notice Exists for one reason: EIP-170. `VaultCore`'s creation code is 24,731 B, which is
-/// larger than the 24,576 B runtime cap all by itself, so ANY contract that writes
-/// `new VaultCore(...)` embeds a blob that cannot fit in a deployable contract. VaultFactory
-/// was 2,665 B over the cap for exactly this reason (#10).
+/// @notice Exists for one reason: EIP-170. A contract that writes `new VaultCore(...)` embeds
+/// VaultCore's entire creation code in its own runtime, and that is what put VaultFactory
+/// 2,665 B over the 24,576 B cap (#10).
+///
+/// This paragraph used to justify the design by claiming VaultCore's creation code exceeded the
+/// runtime cap *by itself*, at 24,731 B. **Re-measured 2026-09-02 at `protocol/main` with
+/// `forge build --sizes`, it is 22,391 B — below the cap.** The claim was true when written and
+/// is not the reason any more; the reason is the sum. A factory carrying a 22,391 B blob plus its
+/// own logic does not fit, which is the same conclusion by arithmetic that survives. Re-measure
+/// rather than copy either number: nothing walks `.sol` for stale figures, which is how the old
+/// one lasted.
 ///
 /// The fix keeps the bytes compile-time-embedded — they are never supplied by a caller. This
 /// contract's own CREATION code carries `type(VaultCore).creationCode` (initcode is capped at

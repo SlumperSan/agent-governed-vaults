@@ -52,8 +52,9 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | Lifecycle propose→commit→reveal→finalize→timelock→execute | `Governance::test_fullLifecycle_passAndExecute` |
 | VO-2/K-3 quorum floor; defaults tally-only | `Governance::test_quorumFloorDefeats`, `::test_defaultCountsInTallyNeverQuorum` |
 | VO-3 default 72h TTL | `Governance::test_defaultExpiresAfter72h` |
+| VO-3 TTL vs the commit phase — usable window is `DEFAULT_TTL - commitDuration`, and `COMMIT_HARD_CAP = DEFAULT_TTL - 1` keeps it non-empty (**T-1**) | `AuditStandingDefaultTtlVsCommit::test_T1_commitPhaseLongerThanTtl_isRejectedAtRegistration`, `::test_T1_theCapIsPinnedToTheTtl`, `::test_T1_commitDurationCapBoundary_partitionsExactly`, `::test_T1_aVaultAtTheCapStillHasAUsableDefaultWindow`, `::test_T1b_commitPhaseConsumesPartOfTheTtl_bounded` |
 | VO-4 defaults structurally Rebalance-only | `Governance::test_defaultOnlyForRebalanceType` |
-| G4 default must predate proposal (`setAt < createdAt`) | verified in accepted-rows review (Area 2) — no dedicated regression test |
+| G4 default must predate proposal (`setAt < createdAt`) | `AuditStandingDefaultTtlVsCommit::test_T1_f4LowerBoundIsStrict_sameSecondDefaultIsRejected` — added 2026-09-01. This row previously read "no dedicated regression test", and it was right: flipping the strict `<` to `<=` survived all 395 tests. Found by the T-1 mutation gate; the bound itself was already correct. |
 | VO-5/G1 delegation + concentration cap on received weight only | `Governance::test_delegationCranksOntoDelegateDirection`, `::test_concentrationCapBlocksExcessDelegation`, `::test_ownWeightIsNeverConcentrationCapped`, `::test_selfVoteBeatsDelegation` |
 | VO-6 unrevealed commits forfeit | `Governance::test_unrevealedCommitIsForfeit` |
 | VO-9 flash-stake zero weight (snapshot at createdAt−1) | `Governance::test_postCreationDepositHasZeroWeight`, `GovernanceInvariant::invariant_revealedNeverExceedsSnapshot` |
@@ -85,6 +86,8 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | Deadline enforcement | `Execution::test_adapterEnforcesDeadline` |
 | C-2 venue abstraction (2 structurally different adapters) | `DirectPoolAdapter::test_governedRebalanceThroughDirectPoolAdapter`, `::test_directAdapterRejectsTokenNotInPair` |
 | E3 fix: leftover sweep from per-swap delta | fix verified in S6 review; escrow non-absorption covered indirectly by `SystemInvariant::invariant_parentSolvency` / `VaultCoreInvariant::invariant_solvency` — no dedicated regression test |
+| Adapter refunds this order's own delta, not its whole balance (donation DoS + cross-order sweep) | `AuditAdapterScopedSweep::test_donationCannotBrickTheVaultsRebalance`, `::test_donationBelowThePullDoesNotDriftTheVaultsAccounting`, `::test_griefersOneUnitOrderCannotExtractTheDonation`, `::test_partialFillRefundsExactlyAmountInMinusSpent`, `::test_routerPullingNothingRefundsTheWholeOrder`, `::test_midRoutePushBackIsCappedAtAmountIn`, `::test_adapterRefundNeverIncludesPreExistingBalance`, `::test_saturatingFloorIsReachableWithAFeeOnTransferTokenIn`, `::test_clampBindsAtExactlyAmountInPlusOne`, `::test_preExistingTokenOutIsNotSweptIntoTheOrdersOutput` — **7 of the 10 fail against `protocol/main`'s adapter**, three with `Panic(0x11)`. The last three were added after review: the refund line carries **three** guards and only two had tests, the clamp's threshold test sat 500e6 clear of the boundary (so `> amountIn + 1` survived the whole suite), and the `tokenOut` payout leg had no test at all (so deleting `- outBefore` survived it too) |
+| Adapter non-reentrancy (interface-level invariant) | `AdapterReentrancy::test_nestedSwapCannotSweepTheOuterOrdersInput`, `::test_lockReleasesAfterASwallowedNestedRevert`, `::test_lockReleasesAfterAnOuterRevert`, `::test_directPoolAdapterRefusesNestedSwap`, `::test_partialFillRefundsUnspentInput` |
 | End-to-end governed rebalance + Mode-F settle | `Execution::test_e2e_governedRebalance_modeFExitSettlesAtPostNav` |
 
 ## Sub-vaults (SV-1..7, E1/E4/E5/E8, GA-1)
@@ -132,7 +135,10 @@ contain.
 
 1. **MO-3 settle-time non-recheck** and **G4 lower-bound** have review-verified fixes but no
    dedicated regression tests.
-2. **E3 sweep** is covered only indirectly through solvency invariants.
+2. **E3 sweep** (the VaultCore-side refund) is covered only indirectly through solvency
+   invariants. The *adapter*-side counterpart of the same lesson — the whole-balance sweep in
+   `AggregationRouterAdapter` — now has a dedicated, discriminating regression file
+   (`test/audit/AuditAdapterScopedSweep.t.sol`); it was an open gap until 2026-09-01.
 3. Accepted residuals (EE-5/E7 latency arb, G3 carry farming, K-4 induced staleness cost,
    VO-7 tally visibility) are deliberately untested — they are economic/design bounds, not
    code properties.

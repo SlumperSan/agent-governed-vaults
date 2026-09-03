@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.26;
 
-// H-8 regression — the `<5`-member quorum regime is stake-blind and its boundary is purchasable
-// for dust. `holderCount` increments for ANY address with `sharesOf > 0` regardless of size, and it
+// H-8 regression — the `<5`-member quorum regime WAS stake-blind, and its boundary IS still
+// purchasable for dust. The stake-blindness was remediated under H-8/CM-7: both branches of the
+// sub-five quorum test in `finalize` now carry a stake term. The purchasable boundary was left open
+// by design and is mitigated at the config layer by a meaningful `minDepositUsdc`. The paragraphs
+// that follow state the finding as filed, against the pre-remediation code; the tests below pin the
+// remediated behaviour (h8b, h8c) and the surviving residual (h8a).
+//
+// `holderCount` increments for ANY address with `sharesOf > 0` regardless of size, and it
 // alone selects the quorum regime (`memberCount < SIGNER_REGIME_BELOW`) and is the signer-regime
 // denominator (`revealedVoterCount * 2 > memberCount`). The proposer picks the block, so membership
 // can be arranged before a proposal. Two independent, opposite attacks follow (AI-AUDIT-REPORT H-8):

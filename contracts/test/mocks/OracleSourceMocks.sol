@@ -200,6 +200,14 @@ contract MockAggregatorV3 is IAggregatorV3 {
         _description = description_;
     }
 
+    /// @dev Change `decimals()` AFTER construction, the way a real Chainlink `EACAggregatorProxy`
+    /// would if the aggregator swapped behind it reported a different precision. No genuine feed has
+    /// ever been observed doing this (see AuditAggregatorSwapDrift.t.sol for the on-chain survey);
+    /// the setter exists to prove what {ChainlinkOracle} does if one ever did.
+    function setDecimals(uint8 decimals_) external {
+        _decimals = decimals_;
+    }
+
     function description() external view returns (string memory) {
         return _description;
     }
