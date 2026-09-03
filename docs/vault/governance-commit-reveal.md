@@ -81,7 +81,7 @@ member liveness (MO-1).
 
 ## Links
 
-- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at passage) · [[nav-and-shares]]
+- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at reveal start) · [[nav-and-shares]]
   (eligible-stake snapshot) · [[fees-and-carry]] · [[sub-vaults]]
 - Contracts: [[governance]] · [[vaultcore]]
 - Security: [[c2-unbounded-governance]] · [[c5-vote-after-exit]] · [[threat-model-commitments]]

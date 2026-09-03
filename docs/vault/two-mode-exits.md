@@ -69,7 +69,7 @@ escape hatch, since any exit-during-staleness *is* the stale-price exit the brea
 ## Links
 
 - [[architecture-overview]] · [[nav-and-shares]] (NAV, forward pricing on entry) ·
-  [[governance-commit-reveal]] (Mode-F queue at passage) · [[fees-and-carry]] (perf fee vs exit
+  [[governance-commit-reveal]] (Mode-F queue at reveal start) · [[fees-and-carry]] (perf fee vs exit
   fee) · [[oracle-layer]] (breaker freezes exits) · [[execution-adapters]]
 - Contracts: [[vaultcore]] · [[safetransferlib]]
 - Security: [[c4-depressed-price-theft]] · [[threat-model-commitments]]
