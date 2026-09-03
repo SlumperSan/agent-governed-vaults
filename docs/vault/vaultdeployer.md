@@ -5,9 +5,11 @@ on-chain data and `CREATE`s new vaults from it. `contracts/src/VaultDeployer.sol
 
 ## Why it matters
 
-It exists for exactly one reason: **EIP-170**. VaultCore's creation code is 24,731 B — larger than
-the 24,576 B runtime cap all by itself — so *any* contract that writes `new VaultCore(...)` embeds a
-blob that cannot fit in a deployable contract. [[vaultfactory]] was 2,665 B over the cap for this
+It exists for exactly one reason: **EIP-170**. *Any* contract that writes `new VaultCore(...)`
+embeds VaultCore's whole creation code in its own runtime, and the sum does not fit: the initcode
+measures **22,391 B** (2026-09-02), leaving 2,185 B under the 24,576 B cap for a factory whose own
+logic is 3,572 B. This paragraph said the creation code was 24,731 B and exceeded the cap *by
+itself*; that was true when written and the figure has since moved below the cap. [[vaultfactory]] was 2,665 B over the cap for this
 reason (#10). Splitting the creation code into a dedicated deployer is what made the factory
 deployable at all. It is the newest contract in the package (Sprint 7).
 
