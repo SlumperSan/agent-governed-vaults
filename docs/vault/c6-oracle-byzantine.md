@@ -8,7 +8,7 @@ adversarial sources plus one withholding honest leg seize the lower median and r
 
 Critical, and **new** (Phase-2 re-verification, issue #48). It re-opens C-4's measured 88.9% theft
 under a config that passes **every** constructor check. Because the tier is config/curation-
-conditional an auditor may re-rate to High — but **gate 0 does not clear while it is open**. It was
+conditional an auditor may re-rate to High. While C-6 was open it held gate 0 — it has since been **RESOLVED** by the Chainlink-direct pivot (see Status below), and gate 0 is now GO (root-only). C-6 was
 surfaced by the pass that replaced the report's *inference* ("fixing C-3/H-1/H-2/M-1 removes C-4's
 trigger") with an executed end-to-end test driving a **real** `OracleAggregator` into a deposit.
 
@@ -40,7 +40,7 @@ they control pass `MIN_SOURCES`, `MIN_MEDIAN`, the strict-majority rule, and M-1
 
 ## Status
 
-**OPEN** at launch, but the remediation **mechanism is now complete in code**. Two parts:
+**RESOLVED at the root-only launch** by the Chainlink-direct pivot — the remediation is complete in code and gate 0 is GO (root-only). Two parts:
 
 1. **The safe oracle** — [[chainlinkoracle]] / [[chainlink-direct-pivot]] (PR #49): an additive
    `IOracleAggregator` that prices each asset from ONE Chainlink Data Feed — no median, no quorum, no
