@@ -32,9 +32,9 @@
       "timelockDuration": 0,
       "executionWindow": 86400,
       "quorumBps": 5000,
-      "proposalThresholdBps": 0,
-      "concentrationCapBps": 10000,
-      "proposalCooldown": 0
+      "proposalThresholdBps": 100,
+      "concentrationCapBps": 4000,
+      "proposalCooldown": 3600
     }
   },
 
