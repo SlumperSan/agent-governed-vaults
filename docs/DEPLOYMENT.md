@@ -14,8 +14,10 @@ unwired registry cannot be fixed after the fact).
 
 > ✅ **Unblocked (Sprint 7).** `VaultFactory` was 27,241 bytes of runtime code against the
 > EIP-170 24,576-byte cap, so §1 reverted on-chain and nothing in this runbook could be executed
-> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). VaultCore's
-> creation code is larger than the runtime cap all by itself, so it now lives in `VaultDeployer`
+> ([issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)). Any contract that
+> writes `new VaultCore(...)` embeds VaultCore's whole creation code in its own runtime, and the sum
+> does not fit: 22,391 B of initcode (2026-09-02) leaves 2,185 B under the cap, against a factory
+> whose own logic measures 3,572 B. So the creation code lives in `VaultDeployer`
 > — deployed first, then pinned immutably by the factory. The factory measures **3,572 B**
 > (2026-09-02; recorded here as 2,718 B until then — re-measure, do not copy) and
 > `forge build --sizes` passes. **§1 gained a sixth singleton**; the wiring order is otherwise
