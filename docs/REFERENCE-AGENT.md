@@ -331,24 +331,36 @@ node --test packages/reference-agent/test/*.test.mjs
 
 ## 7. Risks and honest limitations
 
-**This is a demonstration of protocol integration. It is not financial advice, it is not audited,
-and it has never run against a deployed contract.** Do not point it at funds you would mind losing.
+**This is a demonstration of protocol integration. It is not financial advice, and it sits outside
+the scope of the contract security review.** Do not point it at funds you would mind losing.
 
-### It has never touched a real chain
+### It has run live, and that is the reason to be careful with it
 
-The contracts are not deployed — [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10)
-(`VaultFactory` over the EIP-170 size cap) blocks it, as [RUNTIME.md](RUNTIME.md) records. So:
+This section previously said the opposite — that the contracts were not deployed, that
+[issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) blocked it, and that no
+transaction this agent constructs had ever been mined. **All three are false.** Issue #10 is closed,
+the protocol has been deployed to Base Sepolia, and the agent ran its full loop there in execute
+mode — join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
+priced on its own, and settle, every phase with a transaction hash. See
+[SOAK-REPORT.md](SOAK-REPORT.md) §5.
+
+**The live run is what makes the warning above stronger, not weaker.** It surfaced two launch-class
+bugs that no amount of mock testing had found: `requireProvenOperator: false` was inert, so no
+configuration could ever admit a zero-track-record operator; and execute-mode deposits set no ERC-20
+allowance, so the agent's headline action reverted `TransferFromFailed` in every possible
+configuration, as shipped. Both are fixed with regression tests. Both were found only by running it.
+
+What is still true about the demo path:
 
 - The **API half is real**: the demo seeds a snapshot by folding synthetic events through the
   actual [`projections.mjs`](../packages/indexer/src/projections.mjs) and writing it with the actual
   `store.mjs`, then serves it from the actual `serve.mjs`. The x402 402 → authorize → retry loop,
   the projections, and the route handlers are all genuinely exercised. Only the *events* are
   synthetic.
-- The **chain half is stubbed**. Every value the stub reader produces is marked `[stub-chain]` in
-  the narrative. Pass `--rpc` and the same code paths run against a real node — but that
-  combination has never been executed, because there is nothing to execute it against.
-- Execute mode is tested **against mocks only**. No transaction this agent constructs has ever been
-  mined.
+- The **chain half is stubbed in the demo**. Every value the stub reader produces is marked
+  `[stub-chain]` in the narrative. Pass `--rpc` and the same code paths run against a real node.
+- The shipped CLI **cannot sign** — `run.mjs` hard-codes dry-run. The soak drill constructed the
+  agent directly, and the `AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS` gate is required regardless.
 
 ### The oracle-freeze trigger detects, it does not warn
 
