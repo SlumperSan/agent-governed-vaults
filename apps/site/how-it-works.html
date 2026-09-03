@@ -112,6 +112,7 @@
         <li>
           <h3>Timelock, then an execution window</h3>
           <p>A passed proposal waits out the vault's timelock, then becomes executable for a bounded window. The protocol caps any timelock at 30 days. The adapter performs the swap when it executes.</p>
+          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap &mdash; it queues you and prices you after it. The protection you have is the vote itself and the commit-phase window &mdash; exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
         </li>
         <li>
           <h3>Exits queue from the moment reveals open</h3>
@@ -163,7 +164,7 @@
       <div class="note note--warn">
         <span class="label">Why Mode F exists, and what it costs you</span>
         <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it — a free option paid for by everyone who stayed. Closing it has a price you pay directly: you can be right about disliking a rebalance and still carry its execution.</p>
-        <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window — 48 hours in the reference configuration, and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
+        <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window — 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
         <p>If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. Settlement is not automatic in that case — <code>settleQueuedExit</code> has to be called, and anyone can call it.</p>
         <!-- COUNSEL: the Mode-F recurrence disclosure — the exit-queue window can be re-opened indefinitely at the cost of gas by a single minimum-deposit holder, and the per-proposer cooldown does not rate-limit it. Named as an accepted unmitigated finding (M-7). -->
       </div>
@@ -250,7 +251,7 @@
           <tbody>
             <tr><th scope="row">Commit duration</th><td>1 hour</td></tr>
             <tr><th scope="row">Reveal duration</th><td>1 hour</td></tr>
-            <tr><th scope="row">Timelock</th><td>24 hours</td></tr>
+            <tr><th scope="row">Timelock</th><td>0 hours &mdash; none</td></tr>
             <tr><th scope="row">Execution window</th><td>24 hours</td></tr>
             <tr><th scope="row">Quorum</th><td>25% of voting-eligible stake</td></tr>
             <tr><th scope="row">Proposal threshold</th><td>5% of voting-eligible stake</td></tr>

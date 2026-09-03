@@ -148,6 +148,93 @@ test('no markdown file in the repo states a decay period other than the one the 
   assert.ok(claims >= LAUNCH_DOCS.length, `only ${claims} decay-period claims matched across ${files.length} markdown files; the patterns have stopped recognising the form the docs use`);
 });
 
+/**
+ * The governance tuple, bound to the config.
+ *
+ * WHY THIS EXISTS. On 2026-09-03 `smoke.gov.timelockDuration` went 86400 -> 0 (an owner decision).
+ * Two live statements survived the change and CI could not see either, because nothing bound this
+ * field to anything:
+ *   - `base-mainnet.json`'s OWN `govNote`, twelve lines below the value, still read "this sets a
+ *     non-zero timelockDuration ... mainnet capital wants a day to react" — the config annotating
+ *     itself with the opposite of its own value;
+ *   - `docs/vault/go-to-market-plan.md` still carried "Zero timelock is defensible *because* Mode-F
+ *     exits exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
+ * Both are in LAUNCH_DOCS or the config itself, so binding the tuple would have caught the second
+ * and the self-consistency check catches the first.
+ */
+test('every launch doc states the governance tuple the mainnet config carries', () => {
+  const g = mainnet.smoke.gov;
+  const tuple = `\`${g.commitDuration}/${g.revealDuration}/${g.timelockDuration}/${g.executionWindow}\``;
+  for (const doc of LAUNCH_DOCS) {
+    assert.ok(
+      read(doc).includes(tuple),
+      `${doc} does not state the config's governance tuple ${tuple} ` +
+        `(commitDuration/revealDuration/timelockDuration/executionWindow from base-mainnet.json). ` +
+        `If a gov value changed, this doc is now stale.`
+    );
+  }
+});
+
+/**
+ * The config's own annotation may not contradict the value it annotates.
+ *
+ * The note deliberately QUOTES the withdrawn wording so the record survives, so a naive match
+ * false-positives on the correction itself. Attributed quotations live inside single quotes;
+ * strip them and test only what the note asserts in its OWN voice.
+ *
+ * The first version of this guard shipped INERT: it was written through a shell heredoc, which
+ * turned every intended \b into a literal U+0008 backspace, so the patterns could never match
+ * prose and the assertion was vacuous — it passed on the exact defect it was written for. It is
+ * written from a file now, and the probe below fails loudly if it ever goes inert again. A guard
+ * that cannot fail is worse than no guard, because it reads as coverage.
+ */
+function govNoteAssertsNonZeroTimelock(note) {
+  const asserted = String(note ?? '').replace(/'[^']*'/g, ' ');
+  return /\bnon-zero\s+timelock/i.test(asserted)
+    || /\bwants?\s+a\s+day\s+to\s+react\b/i.test(asserted)
+    || /\bsets?\s+a\s+(?:non-?zero\s+)?(?:timelock|delay)\b/i.test(asserted);
+}
+
+test("base-mainnet.json's govNote does not contradict its own timelockDuration", () => {
+  const g = mainnet.smoke.gov;
+  if (g.timelockDuration !== 0) return; // only the zero case can be contradicted this way
+  assert.ok(
+    !govNoteAssertsNonZeroTimelock(mainnet.smoke.govNote),
+    'smoke.gov.timelockDuration is 0 but govNote asserts a non-zero timelock in its own voice '
+      + '(attributed quotations are excluded). The config would be annotating itself with the '
+      + 'opposite of its own value.'
+  );
+});
+
+test('probe: the govNote guard is live, and tolerates the correction it must tolerate', () => {
+  // The verbatim wording that shipped as the Round-1 defect, asserted in the note's own voice.
+  const defect = 'Unlike base-sepolia.json this sets a non-zero timelockDuration: a testnet '
+    + 'smoke run wants zero delay, mainnet capital wants a day to react to a passed proposal.';
+  assert.equal(
+    govNoteAssertsNonZeroTimelock(defect),
+    true,
+    'the guard is INERT: it no longer catches the verbatim defect it was written for. Check for '
+      + 'literal U+0008 bytes where \\b was intended.'
+  );
+
+  // The same wording ATTRIBUTED as a quotation must be tolerated, or the correction trips it.
+  const corrected = 'timelockDuration is 0 here. This note previously read "Unlike base-sepolia'
+    + ".json this sets a non-zero timelockDuration ... mainnet capital wants a day to react to a "
+    + "passed proposal', which is the opposite of the value it annotates; it is withdrawn.";
+  assert.equal(
+    govNoteAssertsNonZeroTimelock(corrected.replace('"', "'")),
+    false,
+    'the guard false-positives on an attributed quotation of the withdrawn wording'
+  );
+
+  // And the note the config actually ships must pass.
+  assert.equal(
+    govNoteAssertsNonZeroTimelock(mainnet.smoke.govNote),
+    false,
+    'the shipped govNote trips the guard'
+  );
+});
+
 test('every launch doc states the exitFeeMaxBps the mainnet config carries', () => {
   const bps = mainnet.smoke.exitFeeMaxBps;
   for (const doc of LAUNCH_DOCS) {

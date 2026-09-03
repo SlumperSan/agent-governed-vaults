@@ -148,8 +148,15 @@ states the reference config's value, because that is the value the operator is t
 
 **Governance config: `3600/3600/0/86400`, quorum 2,500 bps root floor.** Exactly the values the
 soak ran through five full rounds. The 1-hour commit/reveal floors are contract minimums; the
-zero timelock is defensible *because* Mode-F exists — a member who dislikes a passed proposal
-exits at post-execution NAV rather than needing a veto window. A higher-quorum variant (5,000)
+zero timelock is an OWNER DECISION (2026-09-03), taken with the consequence stated: a passed
+proposal is executable immediately, so members have **no post-passage window in which to leave**.
+The justification this line used to carry — "defensible *because* Mode-F exists" — was **false and
+is withdrawn**: Mode-F does not let a member exit ahead of the swap, it QUEUES the request from
+reveal start and prices it at post-execution NAV, so it is the opposite of a veto window. The real
+protection is the vote and the COMMIT-phase window — `hasPendingExecution` turns true at
+`commitDeadline`, so the last moment a member can still take a Mode-I exit at a known price is
+before reveals open, not after passage. Recorded
+plainly on the public site rather than buried (apps/site/how-it-works.html). A higher-quorum variant (5,000)
 was exercised live on vault B. Child quorum floors inherit (SV-6).
 
 **Oracle staleness: 3,600 s per asset — not tighter.** The "tight (minutes)" advice in
