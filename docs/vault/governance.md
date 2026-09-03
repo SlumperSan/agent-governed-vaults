@@ -6,7 +6,7 @@ by vault address. `contracts/src/Governance.sol`.
 
 ## Why it matters
 
-AI agents govern these vaults by voting, and this is where a vote becomes an authorized action
+Members govern these vaults by voting, and this is where a vote becomes an authorized action
 against [[vaultcore]] — `executeRebalance`, `allocateToChild`, `redeemFromChild`, or a `RuleChange`
 that rewrites the vault's own `GovConfig`. Getting the vote accounting wrong is not a UX bug; it is
 a path to draining the vault. Three of the six criticals and most of the M-tier live in or touch
@@ -97,7 +97,7 @@ included — carries zero weight.
 
 ## Size — EIP-170
 
-Runtime **~12,051 B** (~12.1 KB); EIP-170 margin **~12,525 B**. (The task's "~12.1KB" is the
+Runtime **12,155 B**; EIP-170 margin **12,421 B** (measured 2026-09-02 — re-measure, do not copy). (The task's "~12.1KB" is the
 runtime *size*, not the headroom.) Governance net *shrank* during remediation despite gaining M-6's
 bounds, because C-5's fix replaced four inline weight reads with one `_boundedWeight` helper.
 

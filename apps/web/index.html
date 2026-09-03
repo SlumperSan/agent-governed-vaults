@@ -404,7 +404,7 @@ function countdown(deadlineSec, { label = '' } = {}) {
 
 function renderDiscover() {
   if (state.vaults.kind !== 'ready') {
-    return `<p class="lede">Pool USDC into agent-governed index baskets.</p>${stateBlock(state.vaults, { retry: 'reload' })}`;
+    return `<p class="lede">Pool USDC into member-governed index baskets; you ratify every rebalance by on-chain vote.</p>${stateBlock(state.vaults, { retry: 'reload' })}`;
   }
   const all = state.vaults.data.map((v) => vaultView(v, state.wallet, state.now()));
   const q = state.query.trim().toLowerCase();
@@ -415,9 +415,9 @@ function renderDiscover() {
   const flagged = all.filter((x) => !x.facts.attested && match(x));
 
   return `
-  <p class="lede">Pool USDC into agent-governed index baskets. See what each vault holds, who runs
-    it, what leaving costs, and which of them can’t be entered or exited right now — before you
-    commit a dollar.</p>
+  <p class="lede">Pool USDC into member-governed index baskets; you ratify every rebalance by
+    on-chain vote. See what each vault holds, who runs it, what leaving costs, and which of them
+    can’t be entered or exited right now — before you commit a dollar.</p>
 
   ${state.mode === 'live' ? liveBanner() : fixtureBanner()}
   ${stalenessNotice()}
