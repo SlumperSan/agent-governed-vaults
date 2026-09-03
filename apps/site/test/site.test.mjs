@@ -698,7 +698,7 @@ const repoProse = new Map(REPO_PROSE.map((f) => [f, readFileSync(path.join(REPO,
 /**
  * Mode F opens when a live proposal reaches its REVEAL phase, not when a proposal passes:
  * `VaultCore.requestExit` queues on `Governance.hasPendingExecution`, which returns true from
- * `p.commitDeadline` onward (`Governance.sol:622-633`). Every phrasing below puts the trigger at
+ * `p.commitDeadline` onward (`Governance.sol:648-659`). Every phrasing below puts the trigger at
  * passage instead, which understates the window in which a member's exit can be trapped, and hides
  * that a DEFEATED proposal still queued the exits requested while it was live.
  *
@@ -721,7 +721,7 @@ test('no surface places the Mode-F trigger at proposal passage instead of reveal
       assert.equal(
         hit,
         null,
-        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:626-628)`,
+        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:653)`,
       );
     }
   }
