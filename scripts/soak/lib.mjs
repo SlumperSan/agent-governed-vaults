@@ -21,15 +21,20 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { classifyCallError } from '../../packages/canary/src/call-error.mjs';
 
-export const ROOT = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..',
-);
+// fileURLToPath, not `new URL(...).pathname`: a checkout path containing a space arrives here
+// percent-encoded, so the raw pathname yields a directory that does not exist and every drill
+// dies at load resolving the address book under it.
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
 const CAST = process.env.CAST ?? 'cast';
 
-/** Tokenize SOAK_SIGNER_ARGS respecting double quotes (Windows paths contain spaces). */
+/**
+ * Tokenize SOAK_SIGNER_ARGS respecting double quotes, so a quoted argument containing spaces —
+ * a `--keystore` or `--password-file` path, say — survives as one token instead of splitting.
+ */
 export function tokenize(s) {
   const out = [];
   const re = /"([^"]*)"|(\S+)/g;
