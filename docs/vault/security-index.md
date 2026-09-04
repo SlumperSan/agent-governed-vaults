@@ -17,7 +17,7 @@ custom aggregator is non-selectable via the VaultFactory oracle allowlist) and C
 root-only. **Gate 1 is GO on owner attestation:** the owner commissioned an external audit against
 the launch tree and attests no major issues; the report is held privately — the basis of this row is
 that attestation, not independent inspection by this file. What still blocks GO is operational: the
-soak and canary gates (3/6), which need a funded testnet key. The 2026-08-25 AI pre-audit referenced
+soak and canary gates (3/6), which need the five-drill soak re-run against the current deployment (the owner holds the runbook). The 2026-08-25 AI pre-audit referenced
 above carried no liability, no attestation, and satisfied no audit gate — it was findings to fix
 before the paid engagement, which has since happened.
 
