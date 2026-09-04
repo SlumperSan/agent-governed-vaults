@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
@@ -776,7 +777,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -801,4 +802,106 @@ test('a stale lock from a crashed drill is broken rather than waited on forever'
   const got = withSendLock(() => 'proceeded');
   assert.equal(got, 'proceeded', 'a dead holder must not block the rest of the soak');
   assert.equal(fs.existsSync(LOCK), false);
+});
+
+// ─────────── transport is not a verdict (drill 3's false PASS) ───────────
+
+test('classifyCallError: only a recognised revert is evidence about the contract', () => {
+  // drill3-modef asserted `!attempt.ok` to prove settleQueuedExit was REFUSED while a rebalance
+  // was pending (EE-10/K-1). A rate limit also yields `ok:false`, so the assertion PASSED on a
+  // 429 and the drill persisted the 429 text as `revertedWith` — a security invariant recorded as
+  // proven because the network was busy. These are the two claims that must never be conflated.
+  for (const err of [
+    'server returned an error response: error code 3: execution reverted, data: "0x88cce429"',
+    'Error: execution reverted',
+    'reverted: ExecutionPending()',
+  ]) {
+    assert.equal(classifyCallError(err), 'revert', `should be a contract verdict: ${err}`);
+  }
+
+  for (const err of [
+    'error sending request: 429 Too Many Requests',
+    'Error: operation timed out',
+    'ECONNRESET',
+    'getaddrinfo ENOTFOUND base-sepolia-rpc.publicnode.com',
+    'max retries exceeded',
+    'error sending request: 503 Service Unavailable',
+  ]) {
+    assert.equal(classifyCallError(err), 'transport', `must NOT be read as a contract verdict: ${err}`);
+  }
+});
+
+test('classifyCallError: a revert whose text also mentions a transport-ish token is still a revert', () => {
+  // The order matters. A revert reason containing "timeout" or a 429-like number must not be
+  // demoted to missing evidence, or a real finding disappears.
+  assert.equal(classifyCallError('execution reverted, data: "0x429" timeout'), 'revert');
+  assert.equal(classifyCallError('reverted: DeadlineTimeout()'), 'revert');
+});
+
+test('classifyCallError is fail-safe for the drill: an unknown string is NOT a revert', () => {
+  // Unknown wording must not satisfy an assertion that a refusal was observed. Erring toward
+  // "transport" makes drill 3 fail loudly (UNPROVEN) rather than pass quietly.
+  assert.equal(classifyCallError('something nobody has seen before'), 'transport');
+});
+
+// ───────── budget exhaustion is terminal, and must say so (drill 5) ─────────
+
+test('budgetExhaustedFailure fires the moment the cap is gone, and names the real cause', () => {
+  // The 2026-09-04 run verbatim: cap hit at tick 5 of 40, then 35 more ticks against a blind
+  // agent before failing with "vote:commit: not satisfied after 40 ticks" — a governance symptom
+  // standing in for a harness budget cause.
+  const msg = budgetExhaustedFailure(
+    { enabled: true, spentUsdc: '0.25', capUsdc: '0.25', remainingUsdc: '0', paidReads: 25 },
+    5, 40, 'vote:commit',
+  );
+  assert.ok(msg, 'an exhausted cap must stop the poll, not be waited out');
+  assert.match(msg, /tick 5\/40/);
+  assert.match(msg, /HARNESS BUDGET failure, NOT evidence about governance/);
+  assert.match(msg, /SOAK_AGENT_CAP_USDC/, 'the operator needs the lever named');
+  // The arithmetic must be derived, not asserted: $0.25 over 5 ticks is $0.05/tick, so 40 ticks
+  // needs $2.00. Stating the shortfall is what turns a failure into a decision.
+  assert.match(msg, /\$0\.050 per tick/);
+  assert.match(msg, /40 ticks needs about \$2\.00/);
+});
+
+test('budgetExhaustedFailure keeps quiet while budget remains, or when payments are off', () => {
+  assert.equal(
+    budgetExhaustedFailure(
+      { enabled: true, spentUsdc: '0.10', capUsdc: '0.25', remainingUsdc: '0.15', paidReads: 10 },
+      3, 40, 'vote:commit',
+    ),
+    null,
+    'must not abort a run that can still perceive',
+  );
+  assert.equal(
+    budgetExhaustedFailure(
+      { enabled: false, spentUsdc: '0', capUsdc: '0', remainingUsdc: '0', paidReads: 0 },
+      3, 40, 'vote:commit',
+    ),
+    null,
+    'payments disabled means the cap is irrelevant, not exhausted',
+  );
+  assert.equal(budgetExhaustedFailure(undefined, 3, 40, 'x'), null, 'no budget surface, no claim');
+});
+
+test('tryCall WIRES the classifier — a failed cast carries kind, not just ok:false', () => {
+  // THE WIRING, not the classifier. Mutation showed that stripping `kind` from `tryCall` changed
+  // no test: the classifier was well covered and drill 3's assert was well reasoned, but nothing
+  // pinned the connection between them. A `kind`-keyed guard wired to a producer that never sets
+  // `kind` is exactly how the freeze-safety probe shipped inert.
+  //
+  // CAST is read at module load, so a child process with it pointed at a binary that does not
+  // exist makes every call fail at the transport layer — no RPC, no network, no transaction.
+  const src = `
+    process.env.CAST = 'definitely-not-a-real-binary-${'x'.repeat(8)}';
+    const { tryCall } = await import(${JSON.stringify(new URL('../soak/lib.mjs', import.meta.url).href)});
+    const r = tryCall('0x0000000000000000000000000000000000000000', 'foo()');
+    console.log(JSON.stringify({ ok: r.ok, kind: r.kind, hasErr: typeof r.err === 'string' }));
+  `;
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], { encoding: 'utf8' });
+  const r = JSON.parse(out.trim().split('\n').pop());
+  assert.equal(r.ok, false, 'a missing binary must fail the call');
+  assert.equal(r.hasErr, true);
+  assert.equal(r.kind, 'transport',
+    'tryCall must classify the failure — without `kind` drill 3\'s revert assertion is unguarded');
 });

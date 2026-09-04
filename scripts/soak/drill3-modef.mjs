@@ -233,8 +233,16 @@ function stepProveSettleBlocked() {
   const attempt = tryCall(state.vault, 'settleQueuedExit(address)', state.signer);
   assert(!attempt.ok,
     'settleQueuedExit succeeded while execution was still pending — EE-10/K-1 violated');
-  log(`settleQueuedExit correctly refused while pending: ${attempt.err}`);
-  state.steps.proveSettleBlocked = { done: true, revertedWith: attempt.err };
+  // `!ok` alone does NOT prove the contract refused it. A rate limit, a timeout or an unreachable
+  // RPC also produces `ok:false`, so the assertion above was satisfiable by a 429 — a security
+  // invariant PASSING because the network was busy, and then persisted to the state file as
+  // `revertedWith: "...429 Too Many Requests..."` where it reads like evidence. Only a recognised
+  // REVERT is evidence about the contract; anything else means this step did not run.
+  assert(attempt.kind === 'revert',
+    `settleQueuedExit did not revert — the call failed for a NON-CONTRACT reason (${attempt.kind}), `
+      + `so EE-10/K-1 is UNPROVEN, not proven: ${attempt.err}`);
+  log(`settleQueuedExit correctly reverted while pending: ${attempt.err}`);
+  state.steps.proveSettleBlocked = { done: true, revertedWith: attempt.err, kind: attempt.kind };
   save();
 }
 

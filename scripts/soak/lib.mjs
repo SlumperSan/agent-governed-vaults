@@ -125,12 +125,87 @@ export function call(to, sig, ...args) {
 }
 export const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
-/** Read-only call that may legitimately revert. Never throws. */
+// REDUNDANT WITH THE TERNARY BELOW, and kept only as documentation of what "transport" means in
+// practice. Trace it: if REVERTED matches, this cannot fire; if it does not, both paths already
+// return 'transport'. Deleting it changes no behaviour and no test. It is labelled rather than
+// removed because in a file whose whole subject is that this classification is security-relevant,
+// a decorative regex reading as load-bearing logic is its own hazard.
+const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
+/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
+const REVERTED = /execution reverted|revert(ed)?:/i;
+
+/**
+ * Classify a failed `cast` call. ONLY a recognised revert is evidence about the contract; anything
+ * else is missing evidence and must be recorded as such.
+ *
+ * This exists because a drill asserted `!result.ok` to prove a call was REFUSED, and `ok:false` is
+ * also what a rate limit produces — so a 429 satisfied a security assertion. "It failed" and "the
+ * contract refused it" are different claims, and only one of them is a finding.
+ *
+ * @param {string} err
+ * @returns {'revert'|'transport'}
+ */
+export function classifyCallError(err) {
+  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
+  return REVERTED.test(err) ? 'revert' : 'transport';
+}
+
+/**
+ * Is a paid-perception agent permanently blind, and if so what should the operator be told?
+ *
+ * The reference agent perceives through PAID x402 reads. Once its session spend cap is exhausted
+ * it can no longer read the vault list or the leaderboard, so it reports "perception gaps" and
+ * "no action warranted" on every subsequent tick — forever. No later tick can satisfy the goal.
+ *
+ * On 2026-09-04 drill 5 hit the cap at tick 5 of 40 and then polled a blind agent for the
+ * remaining 35 ticks — 17.5 minutes — before failing with "vote:commit: not satisfied after 40
+ * ticks", which names a GOVERNANCE symptom for a HARNESS BUDGET cause. That misattribution is the
+ * defect; the wasted ticks are just how long it took to arrive at it.
+ *
+ * Pure, and in lib.mjs rather than in the drill, because the drill executes at import and so
+ * anything defined there cannot be tested.
+ *
+ * @param {{enabled:boolean,spentUsdc:string,capUsdc:string,remainingUsdc:string,paidReads:number}|undefined} spend
+ * @param {number} tick 1-based tick just completed
+ * @param {number} maxTicks
+ * @param {string} label
+ * @returns {string|null} the failure message, or null to keep polling
+ */
+export function budgetExhaustedFailure(spend, tick, maxTicks, label) {
+  if (!spend?.enabled) return null;
+
+  // BLIND IS NOT THE SAME AS ZERO. The budget refuses a read when `spent + price > cap`, so an
+  // agent holding $0.004 against a $0.01 read is ALREADY permanently blind while `remainingUsdc`
+  // still reads positive. Testing `=== 0` would have polled that agent for the full window with
+  // the misleading failure this function exists to replace; the 2026-09-04 run landed on exactly
+  // zero only because its reads happened to divide the cap evenly.
+  //
+  // The average price paid so far is the best floor available from `summary()` — it exposes no
+  // per-read price — and it is the right shape: if what remains cannot buy an average read, the
+  // next perception is already refused.
+  const remaining = Number(spend.remainingUsdc);
+  const avgRead = spend.paidReads > 0 ? Number(spend.spentUsdc) / spend.paidReads : 0;
+  if (remaining > 0 && !(avgRead > 0 && remaining < avgRead)) return null;
+
+  const perTick = Number(spend.spentUsdc) / Math.max(tick, 1);
+  return `${label}: the agent exhausted its x402 session spend cap at tick ${tick}/${maxTicks} `
+    + `($${spend.spentUsdc} of $${spend.capUsdc} spent, $${spend.remainingUsdc} left, `
+    + `${spend.paidReads} paid reads averaging $${avgRead.toFixed(3)}). It perceives through `
+    + `paid reads, so from here it is BLIND and no further tick can satisfy the goal — this is a `
+    + `HARNESS BUDGET failure, NOT evidence about governance or the contracts. The cap must cover the `
+    + `whole poll window: this phase burned ~$${perTick.toFixed(3)} per tick, so ${maxTicks} ticks needs `
+    + `about $${(perTick * maxTicks).toFixed(2)}. Raise it deliberately via SOAK_AGENT_CAP_USDC (it is a `
+    + `spend limit on an agent that signs, so it is the operator's call, not a default to quietly `
+    + `widen), or lower SOAK_MAX_TICKS.`;
+}
+
+/** Read-only call that may legitimately revert. Never throws. Carries `kind` on failure. */
 export function tryCall(to, sig, ...args) {
   try {
     return { ok: true, lines: call(to, sig, ...args) };
   } catch (e) {
-    return { ok: false, err: String(e.message).split('\n').slice(0, 2).join(' ') };
+    const err = String(e.message).split('\n').slice(0, 2).join(' ');
+    return { ok: false, err, kind: classifyCallError(err) };
   }
 }
 
@@ -139,7 +214,8 @@ export function staticCallAs(from, to, sig, ...args) {
   try {
     return { ok: true, out: cast(['call', to, sig, ...args.map(String), '--from', from, '--rpc-url', RPC]) };
   } catch (e) {
-    return { ok: false, err: String(e.message).split('\n').slice(0, 2).join(' ') };
+    const err = String(e.message).split('\n').slice(0, 2).join(' ');
+    return { ok: false, err, kind: classifyCallError(err) };
   }
 }
 
@@ -334,3 +410,4 @@ export const TOPIC = {
   DepositPending: () => keccakOf('DepositPending(address,uint256,uint64)'),
   DepositActivated: () => keccakOf('DepositActivated(address,uint256,uint256)'),
 };
+
