@@ -14,11 +14,32 @@ description: The visual and motion system for the rwally.com redesign — dark c
 
 ## The security envelope — non-negotiable, enforced by `_headers`
 
-The current CSP is `default-src 'none'`. The new one may relax exactly one directive:
+The current CSP is `default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none';
+form-action 'none'; frame-ancestors 'none'`. The new one makes five relaxations and no others: it
+adds `script-src 'self'`, `font-src 'self'`, `connect-src 'self'` and `worker-src 'self'` (each
+previously `'none'` by inheritance from `default-src`) and widens `img-src` with `data:`. Nothing
+else moves:
 
 ```
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 ```
+
+### CSP traps in this exact stack (checked against the installed packages)
+
+- `@react-three/drei` ships hardcoded CDN defaults: `Gltf` (draco decoders from
+  `www.gstatic.com`), `Ktx2` and `MatcapTexture` (`cdn.jsdelivr.net`), `Cloud` and `NormalTexture`
+  (`rawcdn.githack.com`), `FaceLandmarker` (`storage.googleapis.com`) and `<Environment preset>`
+  (HDRIs from `githack.com`). Under this CSP each fails loudly at runtime. Use drei helpers that
+  take a local path, or pass a same-origin path prop; the hero field needs none of these.
+- `motion` core (`animate`, `motion.*`) sets styles through the CSSOM and is fine. Its View
+  Transitions helper injects a `<style>` element and is blocked by `style-src 'self'`; do not use
+  it. `gsap` has the same problem only in `GSDevTools`, a dev-only plugin.
+- `@fontsource-variable/newsreader` and `@fontsource-variable/ibm-plex-sans` expose only axis
+  entries (`index.css`, `wght.css`, `opsz.css` or `wdth.css`, `standard.css`, and their italics) and
+  no per-subset entry; each ships every script subset (18 and 36 files in `files/`, measured). To
+  ship Latin only, write the `@font-face` yourself against `files/<family>-latin-wght-normal.woff2`
+  (and the italic file). `@fontsource/ibm-plex-mono` is a static face, not a variable one, and does
+  have `latin-400.css` and `latin-500.css`.
 
 Consequences a component author must design around:
 
@@ -30,8 +51,12 @@ Consequences a component author must design around:
   is out; if a library demands it, pick another library.
 - **WebGL is allowed** (`worker-src 'self'`, no eval). Three.js / R3F ship as bundled modules.
 - **Still zero third parties.** No `preconnect`, no `<link rel=stylesheet href=https://…>`.
-- The build output is what the guards test. `apps/site/test/site.test.mjs` will be re-pointed at
-  `apps/site-next/dist/`; until then, run it against `dist/` by hand.
+- The guards do NOT test the build output today: `site.test.mjs` reads a hardcoded list of seven
+  prose `.html` files and `claims-lede-truth` walks source by extension, and a client-rendered
+  `dist/index.html` has no prose to test. Until a prerender step exists, the rendered-DOM check in
+  `visual-verify-loop` step 4 is the substitute. One forward collision to plan for: `site.test.mjs`
+  asserts that `tokens.css` uses system font stacks only, and this skill prescribes Newsreader and
+  IBM Plex; re-pointing that test means rewriting that assertion, not deleting it.
 
 ## Tokens
 
