@@ -1026,3 +1026,156 @@ test('votableNow rejects at the EXACT commit deadline, matching commitVote', () 
   assert.equal(votableNow(p, { now: 1000, snapshotWeight: 5n }).votable, false, 'now === deadline is CLOSED');
   assert.equal(votableNow(p, { now: 999, snapshotWeight: 5n }).votable, true, 'one second earlier is open');
 });
+
+// ───────── the launcher wiring: run-soak.ps1 must actually start the companion ─────────
+//
+// The votability gate taught drill 5 to say "no votable round" instead of stalling for 40 ticks,
+// and the message it prints names drill5-gov-companion.mjs. Nothing started that script, so the
+// diagnostic was correct and the run still could not proceed.
+//
+// These are text-and-order pins over the PowerShell, not execution: CI runs on ubuntu-latest and
+// run-soak.ps1 is PowerShell, so no node test can run it. What they CAN catch is the defect that
+// actually happens here — a launcher edit that drops a step, reorders one, or leaves a claim about
+// the launcher standing in a file nobody thought to update.
+
+const SOAK_DIR = path.join(LIB_ROOT, 'scripts', 'soak');
+const RUN_SOAK = fs.readFileSync(path.join(SOAK_DIR, 'run-soak.ps1'), 'utf8');
+const DRILL5 = fs.readFileSync(path.join(SOAK_DIR, 'drill5-agent-execute.mjs'), 'utf8');
+
+/** Index of the first match, asserting the anchor still exists rather than silently yielding -1. */
+const anchorAt = (re, what) => {
+  const m = re.exec(RUN_SOAK);
+  assert.ok(m, `run-soak.ps1 no longer contains ${what} — this test lost its anchor`);
+  return m.index;
+};
+
+const PS_JOIN = /New-NodeStep 'scripts\/soak\/drill5-agent-execute\.mjs' 'join'/;
+const PS_ACTIVATE = /New-NodeStep 'scripts\/soak\/drill5-agent-execute\.mjs' 'activate'/;
+const PS_COMPANION = /Start-Process[^\n]*drill5-gov-companion\.mjs/;
+const PS_VOTE = /New-NodeStep 'scripts\/soak\/drill5-agent-execute\.mjs'\s*$/m;
+const PS_WAIT = /\$comp\.WaitForExit\(\)/;
+
+test('run-soak.ps1 starts the governance companion, between drill 5 activating and voting', () => {
+  // The ordering is FORCED, not a preference: drill5-gov-companion.mjs refuses to propose until
+  // the agent holds shares (voting weight snapshots at createdAt-1), and drill 5's vote phase
+  // refuses to tick until a votable round exists. Each is the other's precondition, so the only
+  // sequence satisfying both puts the companion between activate and vote.
+  const iJoin = anchorAt(PS_JOIN, "drill 5's join step");
+  const iActivate = anchorAt(PS_ACTIVATE, "drill 5's activate step");
+  const iComp = anchorAt(PS_COMPANION, 'the companion launch');
+  const iVote = anchorAt(PS_VOTE, "drill 5's phase-less vote+exit step");
+  const iWait = anchorAt(PS_WAIT, 'the wait for the companion');
+  assert.ok(iJoin < iActivate, 'join must precede activate');
+  assert.ok(iActivate < iComp, 'the companion cannot propose before the agent holds shares');
+  assert.ok(iComp < iVote, 'drill 5 has nothing to vote on until the companion has raised a round');
+  assert.ok(iVote < iWait, 'the companion settles the agent exit, so track B waits for it LAST');
+});
+
+test('run-soak.ps1 waits for the round to exist before drill 5 goes looking for it', () => {
+  // Backgrounding the companion and immediately running drill 5 loses a race that the vote gate
+  // would report as a governance problem. The launcher waits on the companion's own state file,
+  // which records steps.propose.done only after the proposal id is confirmed on chain.
+  const region = RUN_SOAK.slice(
+    anchorAt(PS_COMPANION, 'the companion launch'),
+    anchorAt(PS_VOTE, "drill 5's phase-less vote+exit step"),
+  );
+  assert.match(region, /Test-Path '\$compState'/, 'the wait must key on the companion state file');
+  assert.match(region, /steps\.propose\.done/, 'propose is the step drill 5 depends on');
+  assert.match(region, /AddMinutes\(\d+\)/, 'an unbounded wait would hang track B on a dead companion');
+
+  // And $compState must resolve the way drill5-gov-companion.mjs does — SOAK_STATE_DIR, else
+  // <repo>/scripts/soak — or the launcher watches a file nobody writes and always times out.
+  assert.match(RUN_SOAK, /\$compStateDir = if \(\$env:SOAK_STATE_DIR\) \{ \$env:SOAK_STATE_DIR \} else \{ Join-Path \$Root 'scripts\\soak' \}/);
+  assert.match(RUN_SOAK, /\$compState = Join-Path \$compStateDir '\.state-drill5gov\.json'/);
+});
+
+test('a companion that cannot raise a round is logged, and never masks drill 5', () => {
+  const region = RUN_SOAK.slice(
+    anchorAt(PS_COMPANION, 'the companion launch'),
+    anchorAt(PS_VOTE, "drill 5's phase-less vote+exit step"),
+  );
+  // `exit $LASTEXITCODE` is how New-NodeStep abandons a track. This region must not use it:
+  // drill 5's own round-availability diagnostic is the evidence that belongs on the record.
+  assert.doesNotMatch(region, /exit \$LASTEXITCODE/, 'the launcher must not abort track B here');
+  assert.match(region, /HasExited/, 'a dead companion must be detected, not waited out');
+  assert.match(region, /running drill 5 anyway/, 'say plainly that drill 5 still runs');
+});
+
+test('the companion logs beside the other drills, and its pid is in the file -Stop reads', () => {
+  // "must not outlive the run" reduces to exactly this. run-soak.ps1 has no automatic
+  // password-file wipe — it PRINTS a Remove-Item for the operator — and Start-Process detaches the
+  // companion, so killing track B's powershell would not reach it. The pid-file entry is the
+  // whole guarantee.
+  assert.match(RUN_SOAK, /Join-Path \$LogDir 'gov-companion\.log'/);
+  assert.match(RUN_SOAK, /Join-Path \$LogDir 'gov-companion\.err\.log'/);
+  assert.match(RUN_SOAK, /Add-Content -Path '\$PidFile' -Value \('gov-companion='/);
+  assert.match(RUN_SOAK, /if \(\$Stop\) \{[\s\S]*?Get-Content \$PidFile[\s\S]*?Stop-Process/,
+    '-Stop must still be the thing that reads the pid file');
+});
+
+test('the x402 session cap covers a whole poll window, and launcher and drill agree on it', () => {
+  // Derived, not asserted. The 2026-09-04 run spent $0.25 by tick 5 of 40, so a tick costs $0.05
+  // and the 40-tick window needs $2.00 — the same arithmetic budgetExhaustedFailure prints.
+  const OBSERVED_SPEND = 0.25;
+  const OBSERVED_TICK = 5;
+  const WINDOW_TICKS = 40;
+  const needed = (OBSERVED_SPEND / OBSERVED_TICK) * WINDOW_TICKS;
+  assert.equal(needed, 2, 'the observed rate must still work out to $2.00 for 40 ticks');
+
+  const inDrill = /SOAK_AGENT_CAP_USDC \?\? '([0-9.]+)'/.exec(DRILL5);
+  assert.ok(inDrill, 'drill 5 must still carry a default cap');
+  const inPs1 = /\$env:SOAK_AGENT_CAP_USDC = '([0-9.]+)'/.exec(RUN_SOAK);
+  assert.ok(inPs1, 'run-soak.ps1 must state the cap rather than inherit it silently');
+
+  assert.equal(Number(inPs1[1]), Number(inDrill[1]),
+    'a launcher that sets a different cap than the drill defaults to is two answers to one question');
+  assert.ok(Number(inDrill[1]) >= needed,
+    `cap $${inDrill[1]} does not cover ${WINDOW_TICKS} ticks at the observed rate ($${needed.toFixed(2)})`);
+  assert.match(RUN_SOAK, /if \(-not \$env:SOAK_AGENT_CAP_USDC\)/, 'an operator override must survive');
+  assert.match(RUN_SOAK, /Write-Host "  SOAK_AGENT_CAP_USDC = /, 'the operator has to SEE the cap');
+});
+
+test('drill 5 documents SOAK_AGENT_CAP_USDC among its optional env', () => {
+  const doc = DRILL5.slice(0, DRILL5.indexOf('*/'));
+  assert.match(doc, /Env \(optional\)[\s\S]*?SOAK_AGENT_CAP_USDC/,
+    'a knob a failure message tells the operator to set must be listed where they look for knobs');
+});
+
+// The NEGATIVE guard, and the one that matters most. A positive list can only ever require too
+// little; a negative guard must enumerate from the filesystem, because the stale claim arrives in
+// the file nobody added to a list. Same reasoning as config-doc-truth.test.mjs's header.
+//
+// Text is normalized first: the claim this replaces lived across two string concatenations
+// ("...run-soak.ps1 does\n' + '  not start it."), so matching raw source would miss it.
+const CLAIM_SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'lib', 'out', 'cache', 'broadcast', 'coverage', 'logs', 'data']);
+const CLAIM_EXTS = ['.md', '.mjs', '.js', '.ps1', '.json', '.txt', '.html'];
+const NOT_STARTED_SHAPES = [
+  /run-soak(\.ps1)?\s+(does not|doesn.t|will not|won.t|cannot|can.t|never)\s+(start|launch|run)/i,
+  /(not|never)\s+(started|launched|run)\s+by\s+run-soak/i,
+];
+
+test('no file still claims run-soak.ps1 does not start the companion', () => {
+  const files = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!CLAIM_SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name));
+      } else if (CLAIM_EXTS.some((e) => entry.name.endsWith(e))) {
+        files.push(path.join(dir, entry.name));
+      }
+    }
+  })(LIB_ROOT);
+  assert.ok(files.length > 50, `the walker found only ${files.length} files — it is not walking the repo`);
+
+  const offenders = [];
+  for (const file of files) {
+    if (path.resolve(file) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) continue;
+    const normalized = fs.readFileSync(file, 'utf8')
+      .replace(/\\n/g, ' ').replace(/['"`+]/g, ' ').replace(/\s+/g, ' ');
+    for (const shape of NOT_STARTED_SHAPES) {
+      const m = shape.exec(normalized);
+      if (m) offenders.push(`${path.relative(LIB_ROOT, file)}: "${m[0]}"`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'run-soak.ps1 starts drill5-gov-companion.mjs — these say otherwise');
+});
