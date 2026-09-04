@@ -27,17 +27,40 @@ widened run went 245 → 254 results with **no new detector class**.
 - **`reentrancy-*`** — sound for same-contract reentrancy, incomplete for cross-contract: a
   `VaultCore`'s public views are read as an oracle by its *parent* mid-mutation, and a per-contract
   mutex is definitionally no defence against a different contract reading it → **H-9**. Slither does
-  not model this either, so the row's reasoning and the analyser's blind spot coincide. Dormant at
-  launch under [[root-vaults-only]].
-- **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
-  `UniswapV3TwapSource._observe`, the one timestamp use with a security consequence → **H-2** (since
-  FIXED, and the contract itself deleted by the Chainlink-direct pivot; the omission is closed). The per-row re-triage (2026-09-01) then found a second real
-  one the class verdict had covered for: `Governance.applyStandingDefault`'s VO-3 TTL is compared
-  against `block.timestamp` during the reveal phase, so the commit phase eats into it → **T-1**
-  (Low, since FIXED — `COMMIT_HARD_CAP = DEFAULT_TTL - 1`). Note what "sound for `Governance`" was
-  and was not: every comparison IS outside miner tolerance, which is what the row asserted; T-1 is
-  about which clock the comparison uses, a question the class verdict never asked. See
-  [[mediums-and-lows]].
+  not model this either, so the row's reasoning and the analyser's blind spot coincide.
+  **Corrected again 2026-09-01:** "false positive" is disproved for this class twice over — #98
+  gave H-9 the executing test it had been filed without (a parent prices a mid-swap child and mints
+  **2,000e18 shares for 1,000 USDC**), and the sibling `reentrancy-balance` row hid an outright
+  theft at `AggregationRouterAdapter.executeSwap` (#101). "Dormant at launch" under
+  [[root-vaults-only]] remains true as a *deployment-config* mitigation — undone by the first
+  sub-vault — not as a reason the detector was wrong. **Status (updated 2026-09-01, ccf4b401):** #101 and
+  **#98 are both merged, so H-9 is FIXED on `protocol/main`** — `VaultCore.locked()` and
+  `AuditReentrancyGuardCoverage.t.sol` are present and may now be cited. The line this replaces said
+  the opposite and was correct when written; #98 landed between that branch and this one.
+- **`timestamp`** — **superseded 2026-09-01: triaged row by row, and one of the thirty is real.**
+  The old bullet was sound for `Governance` and `Checkpoints` as far as it went, and its only stated
+  gap (`latestPrice` (`UniswapV3TwapSource.sol:282-292`) → **H-2**) is doubly closed: H-2 was fixed, and that contract
+  has since been pruned from the tree. The gap it never named was the one that mattered — it asked
+  whether the windows are wide enough to survive miner skew (they are; the smallest shipped window
+  is an hour) and never asked whether the two comparisons on either side of a deadline **agree about
+  the boundary second**. They do, everywhere: every deadline with two or more comparisons partitions
+  the timeline exactly, including the Mode I / Mode F seam that makes **EE-10** true
+  (`hasPendingExecution` uses `<= p.expiresAt`, the same comparison `execute` uses). That is now
+  pinned by tests rather than argued. **The real one is T-1:** `applyStandingDefault` is callable
+  only in the reveal phase, so `Governance.applyStandingDefault:491`'s TTL check runs no earlier than
+  `createdAt + commitDuration` — a standing default's usable life is `DEFAULT_TTL - commitDuration`,
+  and `_validateConfig` bounded `commitDuration` to `[1h, 30 days]` without ever relating it to the
+  72h TTL, so `commitDuration >= 72h` silently killed VO-3 for that vault. **FIXED on `protocol/main`
+  @ `bab5ee90` (`bf34b1ff`): `COMMIT_HARD_CAP` is now `DEFAULT_TTL - 1`, making that config
+  unrepresentable; regression `AuditStandingDefaultTtlVsCommit.t.sol`.** **Low** (defaults never
+  count toward quorum) and **not reachable at launch** (both shipped configs use 3600). Also
+  measured: **13 of the 30 rows list no timestamp comparison at all** — established by ablating the
+  seeds and re-counting, not by arguing each row. Full table in
+  [SLITHER-TRIAGE](../reviews/SLITHER-TRIAGE.md). Kept from the `protocol/main` version of this
+  bullet, because it is a different distinction from the boundary-second one above: note what
+  "sound for `Governance`" was and was not — every comparison IS outside miner tolerance, which
+  is what the row asserted; T-1 is about **which clock** the comparison uses, a question the
+  class verdict never asked. See [[mediums-and-lows]].
 - **`divide-before-multiply`** — correct for the payout legs, but "rounds in the vault's favour" was
   generalized to "safe"; the same pattern at `:557` is what makes `:576`'s shortfall dust check
   unsatisfiable and reverts a member's child-backed exit → **H-6**. Dormant at launch.
@@ -47,11 +70,43 @@ module addresses; a zero `governance` makes `_pendingExecution` return `false` p
 masking a mis-wired vault as "always Mode I." The canonical factory always wires real modules, so this
 bites only a hand-rolled deployment.
 
+## `incorrect-equality` x13 — triaged per row, 2026-09-01
+
+The one-line "Safe" that used to cover this detector reached the right verdict on the wrong
+evidence: it cited "NAV never reads `balanceOf`, EE-1" as though that argument covered all thirteen
+rows, when only four of them (`ts == 0`) are about NAV at all — and said nothing about the three
+whose invariant is the share-accounting identity, nor about the one (`Governance._isSettled`) whose
+real risk is a permanent-freeze DoS rather than a donation. Same shape as the `reentrancy-balance`
+line #101 disproved, so every row now carries its own argument.
+
+**Tally: REAL 0 · BENIGN-BY-DESIGN 10 · STYLE 3.** Nothing needs a fix. Per-row table in
+[SLITHER-TRIAGE.md](../reviews/SLITHER-TRIAGE.md#incorrect-equality-thirteen-rows-triaged-2026-09-01).
+
+The three arguments that were load-bearing enough to execute now do, in
+`contracts/test/audit/AuditIncorrectEqualityRows.t.sol`, each verified against the mutation that
+would make its row real:
+
+- **`ts == 0`** (`_mintShares`, `navPerShareWad`, both `convertTo*`) — `totalShares == 0` implies
+  `navWad() == 0`, because the last exiter is by construction the sole holder and their pro-rata
+  legs collapse to identities; and donation cannot move NAV (EE-1 checked for these rows, not
+  cited). Mutating `navWad` to read `balanceOf` turns it red.
+- **`Checkpoints.push`'s same-second overwrite** — still the OZ idiom, and it cannot backfill a
+  vote because governance reads `createdAt - 1`. Pinned at the **Governance** level, not as a
+  `Checkpoints` unit test: mutating `p.createdAt - 1` to `p.createdAt` in `_boundedWeight` buys a
+  same-second depositor 9x weight, and a unit test on `push` would not notice.
+- **`_isSettled`** — every non-settled `Status` has a permissionless, external-call-free exit
+  (`finalize` makes no external call; `markExpired` drains `Passed`), so the freeze DoS documented
+  in `Governance`'s phase-duration hard-cap comment block cannot be reached through this equality.
+
+Out of scope but recorded: EE-8's squatter economics are a `minDepositUsdc` **launch-parameter**
+question — "bounded at 1%" is true per-exit, but the squatter's cost is one minimum deposit while
+the prize is up to 1% of a recently-topped-up whale's whole exit.
+
 ## Rows checked and found correct
 
-`unused-return`, `incorrect-equality` (including the load-bearing same-second `Checkpoints.push`
-overwrite), `uninitialized-local`, `low-level-calls`, `assembly` (all six sites reviewed opcode by
-opcode), `too-many-digits`, `missing-inheritance`. The Sprint-10 anchor fix is genuinely good work.
+`unused-return`, `uninitialized-local`, `low-level-calls`, `assembly` (all six sites reviewed opcode
+by opcode), `too-many-digits`, `missing-inheritance`. The Sprint-10 anchor fix is genuinely good
+work.
 
 ## Links
 
