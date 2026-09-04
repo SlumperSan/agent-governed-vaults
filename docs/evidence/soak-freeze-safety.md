@@ -30,13 +30,18 @@ The probe is a **static call** (`cast call … --from <member>`). It signs nothi
 needs no key, which is deliberate: a freeze-safety check that had to transact would be unable to
 run during the very condition it exists to observe.
 
-Two other soak vaults — `0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98` and
-`0xa576189710dc28958e3cb857e8ef5f530d4f54a0` — were probed in the same samples and returned
+The probed vault is **soak-B**, a root vault with a single-asset basket (drill 1's second vault and
+drill 3's Mode-F host). Two others were probed in the same samples: the **smoke vault**
+`0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98` (root, two-asset basket) and its **child sub-vault**
+`0xa576189710dc28958e3cb857e8ef5f530d4f54a0` (single-asset basket, `parentVault()` = the smoke
+vault). All three roles read from chain on 2026-09-04 via `parentVault()` and `basketLength()`, so
+this record is cross-referenceable against `scripts/soak/soak-vaults.json` without them. They
+returned
 `n/a-no-pending` (revert selector `0xda7557bc`), the honest result for a vault with nothing to
 cancel. Those rows are **not** counted as passes: `summarizeFreezeSafety` counts them separately
 and they can never raise `demonstrated`.
 
-## Why the count stops at 31 and not at 42
+## Why the count stops at 31 and not at 54
 
 The pending deposit was **activated when its observation window closed** at approximately
 `02:08Z`, after which `pendingDeposit` reads `0` and the probe correctly returns
@@ -53,8 +58,8 @@ committed rather than only the verdict.
 It did **not** come from the soak harness running normally. The running soak was the *pre-fix*
 sampler, and its own series (`data/oracle-series.jsonl`) recorded `freezeSafety: []` in every one
 of its samples for the whole run. This series came from a **second sampler started by hand** with
-the vault list supplied explicitly, alongside the running one, in the ~40 minutes remaining before
-the observation window closed.
+the vault list supplied explicitly, alongside the running one, in the time remaining before the
+observation window closed — which turned out to be the 32.7 minutes of probing recorded above.
 
 So what this record establishes is that **the property holds**, measured on a live deployment. What
 it does not establish is that the *harness* now produces this evidence unattended — that re-earns
@@ -77,7 +82,10 @@ freeze-safety verdicts: {"callable":31,"n/a-no-pending":95}
 
 `summarizeFreezeSafety` reports `demonstrated` only when at least one sample probed a **real**
 pending deposit and none was blocked. Before this run it returned `false` for every soak: not
-because the property failed, but because nothing had ever exercised it.
+because the property failed, but because nothing had ever exercised it **through this probe, on
+this deployment**. (`docs/LAUNCH-READINESS.md` records `cancelPending` as executed live in an
+earlier soak; that was a real execution against superseded bytecode, and it is not what
+`summarizeFreezeSafety` reduces. The two statements are about different things and both are true.)
 
 ## What this does NOT show
 
