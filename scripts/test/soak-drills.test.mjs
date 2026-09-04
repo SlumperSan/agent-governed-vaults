@@ -913,7 +913,7 @@ test('budgetExhaustedFailure fires on a remainder that is still positive but bel
 test('budgetExhaustedFailure reads the field names createBudget().summary() actually emits', () => {
   // THE WIRING, not the predicate. Every case above hand-builds the summary object, so nothing
   // connected the guard's five field reads to their only real producer. A rename in budget.mjs
-  // would break the guard in one of two silent ways and change no test: `enabled` renamed makes
+  // would break the guard in one of two silent ways and change no test in this file: `enabled` renamed makes
   // `!spend?.enabled` short-circuit and the guard goes inert; `remainingUsdc` renamed makes
   // `Number(undefined)` NaN, `NaN > 0` false, and the guard fire on tick 1 of every run. Both
   // mutations turn this test red.
