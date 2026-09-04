@@ -221,14 +221,14 @@ export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed', 'unreadable'
 export function freezeSafetyReport(freeze) {
   const out = [`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`];
   const kinds = Object.keys(freeze.verdicts ?? {}).filter((v) => UNMEASURED_VERDICTS.includes(v));
-  const named = kinds.join('/') || 'not-configured/not-probed';
+  const named = kinds.join('/') || 'unknown';
   // `unreadable` means the call WAS attempted and the transport failed. The others mean it was
   // never attempted. Only the latter is fixed by configuring the sampler.
   const ranButUnreadable = kinds.includes('unreadable');
   const unmeasured = freeze.unmeasured ?? 0;
 
   if (freeze.oracleBlocked > 0) {
-    out.push(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} sample(s) — freeze-safety VIOLATED ***`);
+    out.push(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} probe(s) — freeze-safety VIOLATED ***`);
     for (const b of freeze.blockedDetail ?? []) out.push(`     ${b.at} ${b.vault}: ${b.verdict} — ${b.detail}`);
     return out;
   }
@@ -245,7 +245,7 @@ export function freezeSafetyReport(freeze) {
     out.push('  NOT demonstrated by this run. Nothing here is a passing check or an on-chain finding.');
 
     if (unmeasured > 0) {
-      out.push(`  ${unmeasured} sample(s) yielded NO MEASUREMENT (${named}):`);
+      out.push(`  ${unmeasured} probe(s) yielded NO MEASUREMENT (${named}):`);
       if (ranButUnreadable) {
         out.push('    `unreadable` — the static call WAS attempted and the transport failed (rate limit,');
         out.push('    timeout, unreachable RPC). Not a contract verdict, and not something the sampler');
@@ -260,7 +260,7 @@ export function freezeSafetyReport(freeze) {
     }
 
     if (nA > 0) {
-      out.push(`  ${nA} sample(s) were probed and found NO PENDING DEPOSIT to cancel, so they prove`);
+      out.push(`  ${nA} probe(s) found NO PENDING DEPOSIT to cancel, so they prove`);
       out.push('  nothing either way. TO FIX: the sampler must run DURING a 4h observation window, with');
       out.push('  SOAK_PROBE_MEMBER set to the depositor. Drills 1, 2 and 5 each open one — that is the');
       out.push('  window in which a pending deposit actually exists to cancel.');
@@ -278,11 +278,11 @@ export function freezeSafetyReport(freeze) {
     return out;
   }
 
-  out.push(`  cancelPending stayed callable in all ${freeze.probedWithPending} probed sample(s) — freeze safety held`);
+  out.push(`  cancelPending stayed callable in all ${freeze.probedWithPending} probe(s) that found a pending deposit — freeze safety held`);
   // Partial coverage must be said out loud. "Held" over a window that was only partly measured is a
   // narrower claim than "held", and the difference is invisible unless it is printed.
   if (unmeasured > 0) {
-    out.push(`  NOTE: ${unmeasured} further sample(s) yielded no measurement (${named}),`);
+    out.push(`  NOTE: ${unmeasured} further probe(s) yielded no measurement (${named}),`);
     out.push('  so that holds over the measured samples only, not over the whole window.');
   }
   return out;
@@ -384,7 +384,11 @@ export function verdictOf(byAsset, canaryRows) {
     return {
       verdict: 'INSUFFICIENT_EVIDENCE',
       breached: [], worst: null, canaryTracked: null, canaryAssetRows: 0,
-      unreadableSamples: assets.reduce((n, a) => n + (a.unreadableSamples ?? 0), 0),
+      // SUMMED ACROSS ASSETS, so this is a count of asset OBSERVATIONS, not of samples: a
+      // 2-asset basket contributes 2 per sample. Named for what it counts, because the sibling
+      // freeze-safety counters were printed as "sample(s)" while holding per-vault rows and
+      // overstated the evidence threefold.
+      unreadableObservations: assets.reduce((n, a) => n + (a.unreadableSamples ?? 0), 0),
     };
   }
 

@@ -169,6 +169,36 @@ test('an UNCONFIGURED probe is missing evidence, not a freeze-safety breach', ()
 
 // ── the operator-facing prose (previously untested, and it shipped a falsehood) ──
 
+test('freezeSafetyReport counts PROBES and says so — the tally is per-vault, not per-sample', () => {
+  // THE UNITS ARE THE CLAIM. `summarizeFreezeSafety` iterates `for (const f of s.freezeSafety)`,
+  // so every counter is a per-VAULT-per-sample ROW. While the probe set was always empty that
+  // count was 0 and the units could not diverge; discovery makes 3 rows per sample the norm, so
+  // calling them "sample(s)" overstated the evidence THREEFOLD — 4 samples across 3 vaults
+  // printed as "12 sample(s)". This is gate-3 evidence, where the count is the claim about how
+  // much of it exists.
+  //
+  // Pinned as a UNIT test rather than a wording test: the numbers below are row counts by
+  // construction, and the assertion is that the noun matches them.
+  const threeVaults = summarizeFreezeSafety([
+    sample('t1', 1, { freezeSafety: [
+      { vault: '0xa', verdict: 'n/a-no-pending' },
+      { vault: '0xb', verdict: 'n/a-no-pending' },
+      { vault: '0xc', verdict: 'n/a-no-pending' },
+    ] }),
+    sample('t2', 2, { freezeSafety: [
+      { vault: '0xa', verdict: 'n/a-no-pending' },
+      { vault: '0xb', verdict: 'n/a-no-pending' },
+      { vault: '0xc', verdict: 'n/a-no-pending' },
+    ] }),
+  ]);
+  assert.equal(threeVaults.verdicts['n/a-no-pending'], 6, 'two samples over three vaults is six ROWS');
+
+  const lines = freezeSafetyReport(threeVaults).join('\n');
+  assert.match(lines, /6 probe\(s\)/, 'six rows must be reported as six probes');
+  assert.doesNotMatch(lines, /\bsample\(s\)/,
+    'the report must never call a per-vault row a "sample" — 2 samples are not 6');
+});
+
 test('freezeSafetyReport names the ACTUAL unmeasured kind, never a hardcoded one', () => {
   // The first version hardcoded "not-configured/not-probed" while `unreadable` sat in the same
   // bucket, so an all-`unreadable` window printed "the probe did not run" about samples that DID
@@ -176,7 +206,7 @@ test('freezeSafetyReport names the ACTUAL unmeasured kind, never a hardcoded one
   const lines = freezeSafetyReport({
     verdicts: { unreadable: 3 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 3,
   }).join('\n');
-  assert.match(lines, /3 sample\(s\) yielded NO MEASUREMENT \(unreadable\)/);
+  assert.match(lines, /3 probe\(s\) yielded NO MEASUREMENT \(unreadable\)/);
   assert.doesNotMatch(lines, /not-configured|not-probed/, 'names a cause that is not present');
   assert.doesNotMatch(lines, /probe did not run|never probed at all/i, 'the call WAS attempted');
   assert.match(lines, /transport failed/, 'must say what unreadable actually means');
@@ -190,8 +220,8 @@ test('freezeSafetyReport reports the n/a remedy even when one unmeasured sample 
   const lines = freezeSafetyReport({
     verdicts: { 'n/a-no-pending': 19, unreadable: 1 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 1,
   }).join('\n');
-  assert.match(lines, /1 sample\(s\) yielded NO MEASUREMENT \(unreadable\)/);
-  assert.match(lines, /19 sample\(s\) were probed and found NO PENDING DEPOSIT/);
+  assert.match(lines, /1 probe\(s\) yielded NO MEASUREMENT \(unreadable\)/);
+  assert.match(lines, /19 probe\(s\) found NO PENDING DEPOSIT/);
   assert.match(lines, /4h observation window/, 'the remedy that would actually help must survive');
   assert.match(lines, /less rate-limited RPC/, 'and so must the one for the blip');
 });
@@ -212,7 +242,7 @@ test('freezeSafetyReport still names configuration when THAT is the cause', () =
   const lines = freezeSafetyReport({
     verdicts: { 'not-configured': 2 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 2,
   }).join('\n');
-  assert.match(lines, /2 sample\(s\) yielded NO MEASUREMENT \(not-configured\)/);
+  assert.match(lines, /2 probe\(s\) yielded NO MEASUREMENT \(not-configured\)/);
   assert.match(lines, /SOAK_VAULTS/, 'the config remedy belongs on the config cause');
   assert.doesNotMatch(lines, /transport failed/);
 });
@@ -231,7 +261,7 @@ test('freezeSafetyReport qualifies "held" when part of the window yielded no mea
     verdicts: { callable: 1, unreadable: 2 }, probedWithPending: 1, oracleBlocked: 0, unmeasured: 2,
   }).join('\n');
   assert.match(lines, /freeze safety held/);
-  assert.match(lines, /2 further sample\(s\) yielded no measurement \(unreadable\)/);
+  assert.match(lines, /2 further probe\(s\) yielded no measurement \(unreadable\)/);
   assert.match(lines, /measured samples only, not over the whole window/);
 });
 
@@ -639,8 +669,24 @@ test('a series with no readable asset observation is INSUFFICIENT_EVIDENCE, neve
   const s = summarize([liveSample('t1', 1, { asset: { unreadable: true, ageSec: null, priceReverts: null } })]);
   const r = verdictOf(s, []);
   assert.equal(r.verdict, 'INSUFFICIENT_EVIDENCE');
-  assert.equal(r.unreadableSamples, 1);
+  // `unreadableObservations`, not `...Samples`: it SUMS across assets, so a 2-asset basket
+  // contributes 2 per sample. Named for what it counts after the freeze-safety counters were
+  // caught printing per-vault rows as "sample(s)" and overstating the evidence threefold.
+  assert.equal(r.unreadableObservations, 1);
   assert.equal(verdictOf({}, []).verdict, 'INSUFFICIENT_EVIDENCE', 'an empty reduction certifies nothing either');
+});
+
+test('unreadableObservations sums ACROSS assets — two assets contribute two per sample', () => {
+  // The units defect, in the place the reviewer did not cite. With a 2-asset basket this counter
+  // is a row count, so reporting it as "sample(s)" would double the apparent missing evidence.
+  const s = summarize([liveSample('t1', 1, {
+    asset: { unreadable: true, ageSec: null, priceReverts: null },
+  })]);
+  // Fabricate a second asset with one unreadable observation in the same single sample.
+  s.LINK = { ...s.WETH, symbol: 'LINK' };
+  const r = verdictOf(s, []);
+  assert.equal(r.verdict, 'INSUFFICIENT_EVIDENCE');
+  assert.equal(r.unreadableObservations, 2, 'ONE sample over TWO assets is TWO observations');
 });
 
 // ───────────────────────── the sequencer leg over a window ─────────────────────────

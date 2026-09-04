@@ -129,7 +129,7 @@ for (const r of canaryRows) {
 
 if (result.verdict === 'INSUFFICIENT_EVIDENCE') {
   log('VERDICT: INSUFFICIENT EVIDENCE — the series contains no readable asset observation');
-  log(`  ${result.unreadableSamples} unreadable sample(s). "Nothing broke" and "nothing was measured" are opposite claims;`);
+  log(`  ${result.unreadableObservations} unreadable asset observation(s). "Nothing broke" and "nothing was measured" are opposite claims;`);
   log('  this drill will not report the second as the first. Fix the sampler/RPC and re-run across a fresh window.');
   assert(false,
     'drill 4 collected no readable oracle observation across the window — it certifies nothing, so it must not pass');
