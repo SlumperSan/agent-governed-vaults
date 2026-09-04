@@ -214,7 +214,10 @@ function memoPrice(reader, oracle, at) {
     if (cache.has(k)) return cache.get(k);
     const res = await reader.tryRead(oracle, ORACLE_VIEWS, 'priceWad', [asset], at);
     if (!res.ok) {
-      const err = new Error(`priceWad(${asset}) reverted: ${res.error}`);
+      // Only a CONFIRMED revert may be worded as one. This message is not swallowed — `:92` puts
+      // it verbatim into the operator's `NAV recompute failed …` line — so the unconditional
+      // "reverted" it used to carry reported an HTTP 429 as a claim about priceWad.
+      const err = new Error(`priceWad(${asset}) ${res.kind === 'revert' ? 'reverted' : 'could not be read'}: ${res.error}`);
       // @ts-ignore — carried so the caller can attribute a StaleOracle revert to the oracle signal
       err.revertData = res.revertData;
       throw err;

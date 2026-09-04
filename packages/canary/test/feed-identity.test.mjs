@@ -413,3 +413,27 @@ test('an unreadable feedOf() says the call did not arrive, not that the oracle r
   assert.match(r.message, /could not be read/);
   assert.doesNotMatch(r.message, /reverts \(/);
 });
+
+test('an unreadable decimals() says the read failed, not that the feed refused to answer', async () => {
+  // The harm leg's "did not answer decimals()" is a claim about the FEED. On a 429 the feed was
+  // never asked, so the line must not make it. The revert leg keeps the old wording, and its
+  // unqualified "UNMONITORED … not clean" tail is pinned at `:279`.
+  const reader = readerFor({ overrides: { [FEED]: { decimals: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.decimalsKind, 'transport');
+  assert.match(r.message, /decimals\(\) on the feed at .* could not be read/);
+  assert.doesNotMatch(r.message, /did not answer/);
+});
+
+test('an unreadable aggregator() and phaseId() do not become "answered neither"', async () => {
+  const reader = readerFor({ overrides: { [FEED]: { aggregator: UNREACHABLE, phaseId: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.aggregatorKind, 'transport');
+  assert.equal(r.detail.phaseIdKind, 'transport');
+  assert.match(r.message, /neither aggregator\(\) nor phaseId\(\) on the feed at .* could be read/);
+  assert.doesNotMatch(r.message, /answered neither/);
+  // The harm legs still ran and still passed, which is the half of this line that is a finding.
+  assert.match(r.message, /denomination and cached-scale checks DID pass this sweep/);
+});
