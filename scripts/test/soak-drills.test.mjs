@@ -845,6 +845,12 @@ test('classifyCallError is fail-safe for the drill: an unknown string is NOT a r
 });
 
 // ───────── budget exhaustion is terminal, and must say so (drill 5) ─────────
+//
+// The guard is fed `agent.budget.summary()` in the drill, so the real producer is imported here
+// rather than described: a test that hand-builds the summary cannot notice a rename in budget.mjs.
+
+import { createBudget } from '../../packages/reference-agent/src/budget.mjs';
+import { toBaseUnits } from '../../packages/reference-agent/src/config.mjs';
 
 test('budgetExhaustedFailure fires the moment the cap is gone, and names the real cause', () => {
   // The 2026-09-04 run verbatim: cap hit at tick 5 of 40, then 35 more ticks against a blind
@@ -882,6 +888,61 @@ test('budgetExhaustedFailure keeps quiet while budget remains, or when payments 
     'payments disabled means the cap is irrelevant, not exhausted',
   );
   assert.equal(budgetExhaustedFailure(undefined, 3, 40, 'x'), null, 'no budget surface, no claim');
+});
+
+test('budgetExhaustedFailure fires on a remainder that is still positive but below one average read', () => {
+  // THE NEAR-EXHAUSTION HALF OF THE PREDICATE. Replacing the whole condition with plain
+  // `remaining > 0` — so nothing above zero ever fires — left every other test in this file green:
+  // none of them distinguishes "the remainder cannot buy one more average read" from "the
+  // remainder is zero". A remainder of exactly zero is the lucky case; it needs the reads to
+  // divide the cap evenly. A $0.004 remainder against $0.01025 average reads is the ordinary one,
+  // and it is just as blind.
+  const msg = budgetExhaustedFailure(
+    { enabled: true, spentUsdc: '0.246', capUsdc: '0.25', remainingUsdc: '0.004', paidReads: 24 },
+    20, 40, 'vote:commit',
+  );
+  assert.ok(msg, 'a remainder too small to buy a read is already blind — waiting it out proves nothing');
+  assert.match(msg, /tick 20\/40/);
+  // Derived, not asserted: $0.246 over 24 reads averages $0.01025, which $0.004 cannot buy; and
+  // $0.246 over 20 ticks is $0.0123 per tick, so 40 ticks would need about $0.49.
+  assert.match(msg, /24 paid reads averaging \$0\.010/);
+  assert.match(msg, /\$0\.012 per tick/);
+  assert.match(msg, /40 ticks needs about \$0\.49/);
+});
+
+test('budgetExhaustedFailure reads the field names createBudget().summary() actually emits', () => {
+  // THE WIRING, not the predicate. Every case above hand-builds the summary object, so nothing
+  // connected the guard's five field reads to their only real producer. A rename in budget.mjs
+  // would break the guard in one of two silent ways and change no test in this file: `enabled` renamed makes
+  // `!spend?.enabled` short-circuit and the guard goes inert; `remainingUsdc` renamed makes
+  // `Number(undefined)` NaN, `NaN > 0` false, and the guard fire on tick 1 of every run. Both
+  // mutations turn this test red.
+  const budget = createBudget({ maxSessionSpendUsdc: '0.25', maxSingleReadUsdc: '0.05' });
+  assert.equal(
+    budgetExhaustedFailure(budget.summary(), 1, 40, 'vote:commit'),
+    null,
+    'a budget with nothing spent must not abort the run before its first read',
+  );
+
+  // Spend it to the cap through the same call the agent's guarded signer makes: `charge()`, at
+  // signature time, in base units (perceive.mjs wraps the signer with `guardSigner`, which charges).
+  // Ten reads at $0.025 keeps the average read distinct from the per-tick burn, so the two
+  // derivations below are pinned separately rather than coinciding.
+  for (let i = 0; i < 10; i += 1) budget.charge(toBaseUnits('0.025'), 'metered read');
+  assert.throws(
+    () => budget.charge(toBaseUnits('0.025'), 'metered read'),
+    /spend refused/,
+    'the premise of the guard: this budget will not fund another average read',
+  );
+
+  const msg = budgetExhaustedFailure(budget.summary(), 4, 40, 'vote:commit');
+  assert.ok(msg, 'a real spent-out budget must stop the poll');
+  // One regex over the four fields the message prints, plus the average derived from two of them.
+  // The fifth, `enabled`, is pinned by the guard returning a message at all rather than null.
+  assert.match(msg, /\$0\.25 of \$0\.25 spent, \$0 left, 10 paid reads averaging \$0\.025/);
+  assert.match(msg, /tick 4\/40/);
+  assert.match(msg, /\$0\.063 per tick/);
+  assert.match(msg, /40 ticks needs about \$2\.50/);
 });
 
 test('tryCall WIRES the classifier — a failed cast carries kind, not just ok:false', () => {
