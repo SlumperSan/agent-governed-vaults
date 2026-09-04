@@ -47,6 +47,10 @@
  * Exit 0 = every listed feed passed; the `chainlinkOracle` block may be flipped to VERIFIED and the
  *          deployed oracle address added to BLESSED_ORACLES (Deploy.s.sol).
  * Exit 1 = at least one check failed; do NOT deploy the oracle.
+ * Exit 2 = no check failed, but at least one could not run: a read failed and no revert was
+ *          observed (rate limit, timeout, DNS, a missing `cast`), so it is reported ERR rather than
+ *          scored. NOT a verdict on the config, and not a pass — re-run against an RPC that answers.
+ *          The same three codes as scripts/verify-mainnet-config.mjs.
  *
  * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
  *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
@@ -63,6 +67,10 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The one definition of "was this failure a revert, or missing evidence?", shared with the soak
+// harness and the canary. Imported from the leaf module rather than from scripts/soak/lib.mjs so a
+// read-only config verifier does not pull in that file's `cast send` wiring (SOAK_SIGNER_ARGS).
+import { classifyCallError } from '../packages/canary/src/call-error.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Which config to verify: env CONFIG, or a *.json path argument, else the mainnet config (back-compat).
@@ -109,7 +117,7 @@ const MAX_BAND_RATIO = 1000n;
  */
 const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
 
-/** @type {{name:string, ok:boolean, drift?:boolean, detail:string}[]} */
+/** @type {{name:string, ok:boolean, drift?:boolean, error?:boolean, detail:string}[]} */
 const results = [];
 const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: String(detail) });
 /**
@@ -121,39 +129,107 @@ const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: Strin
  * carried by the `decimals() == 8` check, which is independent of how many swaps happened.
  */
 const notice = (name, detail) => results.push({ name, ok: true, drift: true, detail: String(detail) });
+/**
+ * A check that DID NOT RUN, because the read it depends on failed and no revert was observed.
+ * Counted apart from passes, failures and notices; it is what a transport failure becomes instead
+ * of a FAIL. Before it existed every helper below collapsed a rate limit into the same `null` /
+ * `'0x'` a revert produces, so a 429 printed "code.length == 0", "description=null",
+ * "decimals=null", "latestRoundData reverted" and "reverted / no code" -- findings about a
+ * deployment nobody had read.
+ * An ERR still blocks exit 0 (see `finish`): "not verified" is not "verified".
+ */
+const unrun = (name, detail) => results.push({ name, ok: false, error: true, detail: String(detail) });
+
+/** A read that failed and no revert was observed. Missing evidence, never a verdict. */
+export class RpcError extends Error {}
+/** A read the chain refused: `cast` reported a contract-level revert. Evidence about the feed. */
+export class RevertError extends Error {}
+
+/**
+ * cast's stderr on one line, for a result row. cast puts the cause under a "Context:" header on
+ * later lines ("error sending request for url (…)" / "- operation timed out"), so taking the first
+ * line alone would drop the one word that says what happened.
+ */
+const oneLine = (s) =>
+  String(s)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && l !== 'Context:')
+    .join(' | ')
+    .slice(0, 200);
+/** The leading integer of each output line; cast annotates large ints ("244049270000 [2.44e11]"). */
+const intLines = (out) =>
+  String(out)
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/)[0])
+    .filter((x) => /^-?\d+$/.test(x));
 
 function cast(args) {
   return execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 /**
- * `cast` with one retry. The public Base RPC rate-limits a burst of calls, and this script fires
- * one burst per feed: observed 2026-08-30, a mid-sweep `aggregator()` read came back empty while
- * the identical call succeeded three times in a row on its own. An un-retried hiccup would FAIL the
- * `decimals() == 8` check and exit 1 -- blocking a correct deploy on network noise, which is a
- * strictly worse outcome than the extra round trip. A genuine revert simply fails twice.
+ * `cast`, classified. The public Base RPC rate-limits a burst of calls, and this script fires one
+ * burst per feed: observed 2026-08-30, a mid-sweep `aggregator()` read came back empty while the
+ * identical call succeeded three times in a row on its own. So a failure that is NOT a confirmed
+ * revert is retried once, and if it fails again it is thrown as `RpcError`, which `main` records
+ * with `unrun` -- ERR, not FAIL -- everywhere except the aggregator-pin reads, where a single
+ * unanswered read is handed to `compareAggregatorPin` as null (see the note there). A confirmed
+ * revert is thrown as `RevertError` on the first try: retrying would only ask the chain the same
+ * question twice, and the four `call…` helpers below turn it into the `null` sentinel that keeps
+ * its FAIL verdict.
+ *
+ * `classifyCallError` is the shared rule on purpose -- a second copy of a security-relevant
+ * classifier is a copy that drifts. Its 'transport' means only "not a confirmed revert": cast's
+ * "contract 0x… does not have any code" lands there too, so a no-code feed is FAILED by the
+ * `cast code` check and ERR'd, quoting cast, by the reads that depend on it.
  */
 function castRetry(args) {
+  const what = args[0] === 'call' ? `cast call ${args[2]}` : `cast ${args[0]}`;
+  let last = '';
+  for (let i = 0; i < 2; i++) {
+    try {
+      return cast(args);
+    } catch (e) {
+      last = String(e.stderr || e.message || e);
+      if (classifyCallError(last) === 'revert') throw new RevertError(oneLine(last));
+    }
+  }
+  throw new RpcError(`${what} failed twice and no revert was observed -- NOT a verdict on the feed; re-run (${oneLine(last)})`);
+}
+/**
+ * One read, for the checks that depend on it. A transport failure comes back as `unread`, so the
+ * caller can record those checks with `unrun`; a revert comes back as `value: null` -- the sentinel
+ * the helpers already used -- so the caller's verdict on it is unchanged.
+ */
+function attempt(fn) {
   try {
-    return cast(args);
-  } catch {
-    return cast(args);
+    return { value: fn(), unread: null };
+  } catch (e) {
+    if (e instanceof RpcError) return { value: null, unread: e };
+    throw e;
   }
 }
+/** Only a confirmed revert becomes the `null` sentinel; anything else propagates. */
+const nullOnRevert = (e) => {
+  if (e instanceof RevertError) return null;
+  throw e;
+};
+/**
+ * Bytecode at `addr` (`'0x'` when there is none). `eth_getCode` has no revert path, so its only
+ * failure is a transport one, thrown as `RpcError`. It used to come back as `'0x'`, which both
+ * "has code" checks then reported as a feed with no code.
+ */
 function code(addr) {
-  try {
-    return cast(['code', addr, '--rpc-url', RPC]);
-  } catch {
-    return '0x';
-  }
+  return castRetry(['code', addr, '--rpc-url', RPC]);
 }
 function callString(addr, sig) {
-  // returns the string, or null on revert / no code. `cast` prints a string return wrapped in
-  // double quotes ("ETH / USD"); strip them.
+  // returns the string, or null on revert. `cast` prints a string return wrapped in double quotes
+  // ("ETH / USD"); strip them.
   try {
     const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
     return out.replace(/^"(.*)"$/s, '$1');
-  } catch {
-    return null;
+  } catch (e) {
+    return nullOnRevert(e);
   }
 }
 /**
@@ -168,38 +244,42 @@ export function isUsdQuoted(description) {
   return sep === ' ' || sep === '/';
 }
 function callUint(addr, sig) {
-  // returns a decimal string, or null on revert / no code
+  // returns a decimal string, or null on revert
   try {
     const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
-    return BigInt(out).toString();
-  } catch {
-    return null;
+    const [n] = intLines(out);
+    // An answer that is not an integer is not parsed, and not a revert either: ERR, not a verdict.
+    if (n === undefined) throw new RpcError(`cast call ${sig} answered "${oneLine(out)}", which is not an integer -- not parsed, NOT a verdict on the feed`);
+    return BigInt(n).toString();
+  } catch (e) {
+    return nullOnRevert(e);
   }
 }
 function latestRoundData(addr) {
   // (roundId, answer, startedAt, updatedAt, answeredInRound). `cast` prints one value per line and
   // annotates large ints with a scientific-notation suffix, e.g. "244049270000 [2.44e11]" — take
-  // the leading integer token of each line and ignore the annotation.
+  // the leading integer token of each line and ignore the annotation. Returns null on revert.
   try {
     const out = castRetry(['call', addr, 'latestRoundData()(uint80,int256,uint256,uint256,uint80)', '--rpc-url', RPC]);
-    const nums = out
-      .split('\n')
-      .map((l) => l.trim().split(/\s+/)[0])
-      .filter((x) => /^-?\d+$/.test(x));
-    if (nums.length < 5) return null;
+    const nums = intLines(out);
+    // Fewer than five integers is an answer this script could not parse, not a revert: cast either
+    // decodes all five or exits non-zero. It used to return null here and print "reverted".
+    if (nums.length < 5) {
+      throw new RpcError(`cast call latestRoundData() answered with ${nums.length} integer line(s), not 5 -- not parsed, NOT a verdict on the feed (${oneLine(out)})`);
+    }
     return { answer: BigInt(nums[1]), startedAt: BigInt(nums[2]), updatedAt: BigInt(nums[3]) };
-  } catch {
-    return null;
+  } catch (e) {
+    return nullOnRevert(e);
   }
 }
 
-/** Read an address-returning view; null on revert / no code. */
+/** Read an address-returning view; null on revert. A transport failure propagates as `RpcError`. */
 function callAddr(addr, sig) {
   try {
     const m = castRetry(['call', addr, sig, '--rpc-url', RPC]).match(/0x[0-9a-fA-F]{40}/);
     return m ? m[0] : null;
-  } catch {
-    return null;
+  } catch (e) {
+    return nullOnRevert(e);
   }
 }
 
@@ -333,10 +413,15 @@ function main() {
         : 'empty/zero — guard intentionally skipped on an exempt chain (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
     );
   } else {
-    const hasCode = code(seq).length > 2;
-    check('sequencer uptime feed has code', hasCode, `${seq} code.length ${hasCode ? '> 0' : '== 0'}`);
-    const rd = latestRoundData(seq);
-    check('sequencer uptime feed answers', rd !== null, rd ? `answer=${rd.answer} (0=up,1=down)` : 'latestRoundData reverted');
+    const c = attempt(() => code(seq));
+    if (c.unread) unrun('sequencer uptime feed has code', c.unread.message);
+    else {
+      const hasCode = c.value.length > 2;
+      check('sequencer uptime feed has code', hasCode, `${seq} code.length ${hasCode ? '> 0' : '== 0'}`);
+    }
+    const rd = attempt(() => latestRoundData(seq));
+    if (rd.unread) unrun('sequencer uptime feed answers', rd.unread.message);
+    else check('sequencer uptime feed answers', rd.value !== null, rd.value ? `answer=${rd.value.answer} (0=up,1=down)` : 'latestRoundData reverted');
   }
 
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
@@ -351,7 +436,9 @@ function main() {
       continue;
     }
     // code
-    check(`${label}: feed has code`, code(feed).length > 2, feed);
+    const c = attempt(() => code(feed));
+    if (c.unread) unrun(`${label}: feed has code`, c.unread.message);
+    else check(`${label}: feed has code`, c.value.length > 2, feed);
 
     // DENOMINATION. The oracle returns a USD price to every consumer (NAV, deposits, exits,
     // rebalances) and nothing downstream can tell a USD number from an ETH-denominated one. Base
@@ -362,39 +449,70 @@ function main() {
     //   2. it must EQUAL the `feedDescriptionOnChain` the config commits to — which is what catches
     //      the "plausible wrong feed" (right pair, wrong deployment / a copy-paste from another
     //      chain) that check 1 alone cannot see.
-    const desc = callString(feed, 'description()(string)');
-    check(`${label}: feed description is USD-quoted`, isUsdQuoted(desc), `description=${JSON.stringify(desc)}`);
+    const descRead = attempt(() => callString(feed, 'description()(string)'));
+    const desc = descRead.value;
+    if (descRead.unread) unrun(`${label}: feed description is USD-quoted`, descRead.unread.message);
+    else check(`${label}: feed description is USD-quoted`, isUsdQuoted(desc), `description=${JSON.stringify(desc)}`);
     const expectedDesc = a.feedDescriptionOnChain;
-    check(
-      `${label}: description matches config feedDescriptionOnChain`,
-      typeof expectedDesc === 'string' && expectedDesc.length > 0 && desc === expectedDesc,
-      typeof expectedDesc === 'string' && expectedDesc.length > 0
-        ? `on-chain=${JSON.stringify(desc)} config=${JSON.stringify(expectedDesc)}`
-        : 'config has no `feedDescriptionOnChain` — add the EXACT on-chain description string so a swapped feed is detectable',
-    );
+    const hasExpectedDesc = typeof expectedDesc === 'string' && expectedDesc.length > 0;
+    // A config with no `feedDescriptionOnChain` is a finding whether or not the read answered;
+    // only the comparison itself waits on the chain.
+    if (descRead.unread && hasExpectedDesc) {
+      unrun(`${label}: description matches config feedDescriptionOnChain`, descRead.unread.message);
+    } else {
+      check(
+        `${label}: description matches config feedDescriptionOnChain`,
+        hasExpectedDesc && desc === expectedDesc,
+        hasExpectedDesc
+          ? `on-chain=${JSON.stringify(desc)} config=${JSON.stringify(expectedDesc)}`
+          : 'config has no `feedDescriptionOnChain` — add the EXACT on-chain description string so a swapped feed is detectable',
+      );
+    }
 
     // decimals == 8: Chainlink's USD-feed convention (ETH-denominated feeds are 18). The oracle
     // caches `scale` from this and its constructor pins it to 8, so anything else is both a
     // denomination smell and an un-deployable config.
-    const dec = callUint(feed, 'decimals()(uint8)');
-    check(`${label}: feed decimals == 8 (USD convention)`, dec !== null && BigInt(dec) === 8n, `decimals=${dec}`);
+    const decRead = attempt(() => callUint(feed, 'decimals()(uint8)'));
+    const dec = decRead.value;
+    if (decRead.unread) unrun(`${label}: feed decimals == 8 (USD convention)`, decRead.unread.message);
+    else check(`${label}: feed decimals == 8 (USD convention)`, dec !== null && BigInt(dec) === 8n, `decimals=${dec}`);
 
     // AGGREGATOR-SWAP DRIFT (notice only). The decimals check above is the safety verdict; this one
     // tells the operator WHETHER the upstream moved since the config was last verified -- the
     // difference between "nothing changed" and "it changed and re-checked clean".
-    const pinResult = compareAggregatorPin(a.aggregatorPin, {
-      implementation: callAddr(feed, 'aggregator()(address)'),
-      phaseId: callUint(feed, 'phaseId()(uint16)'),
-    });
-    if (pinResult.status === 'ok') {
-      check(`${label}: aggregator unchanged since pin`, true, pinResult.message);
+    //
+    // A read that failed in transit is passed through as null: `compareAggregatorPin` was written
+    // for exactly that (a dropped `aggregator()` is 'unreadable', and phaseId alone can still
+    // convict). The one exception is BOTH reads failing that way: its 'unreadable' message then
+    // infers "not an EACAggregatorProxy" from two calls that never got an answer, and under
+    // --strict that notice sets the exit code. Nothing was read, so nothing is inferred: ERR.
+    const implRead = attempt(() => callAddr(feed, 'aggregator()(address)'));
+    const phaseRead = attempt(() => callUint(feed, 'phaseId()(uint16)'));
+    if (implRead.unread && phaseRead.unread) {
+      unrun(`${label}: aggregator pin`, `${implRead.unread.message}; ${phaseRead.unread.message}`);
     } else {
-      notice(`${label}: aggregator pin`, pinResult.message);
+      const pinResult = compareAggregatorPin(a.aggregatorPin, {
+        implementation: implRead.value,
+        phaseId: phaseRead.value,
+      });
+      if (pinResult.status === 'ok') {
+        check(`${label}: aggregator unchanged since pin`, true, pinResult.message);
+      } else {
+        notice(`${label}: aggregator pin`, pinResult.message);
+      }
     }
     // latestRoundData: positive answer, fresh within heartbeat
-    const rd = latestRoundData(feed);
+    const rdRead = attempt(() => latestRoundData(feed));
+    if (rdRead.unread) {
+      unrun(
+        `${label}: latestRoundData answers`,
+        `${rdRead.unread.message}; the answer, freshness, heartbeat-bound and band checks for this feed did not run`,
+      );
+      continue;
+    }
+    const rd = rdRead.value;
     if (!rd) {
-      check(`${label}: latestRoundData answers`, false, 'reverted / no code');
+      check(`${label}: latestRoundData answers`, false, 'latestRoundData reverted');
       continue;
     }
     check(`${label}: answer > 0`, rd.answer > 0n, `answer=${rd.answer}`);
@@ -422,11 +540,20 @@ function main() {
       check(`${label}: band width within on-chain bound`, mx <= mn * MAX_BAND_RATIO, `ratio=${mx / mn}x (max ${MAX_BAND_RATIO}x)`);
       const scale = dec !== null && BigInt(dec) <= 18n ? 10n ** (18n - BigInt(dec)) : null;
       const spotWad = scale !== null && rd.answer > 0n ? rd.answer * scale : null;
-      check(
-        `${label}: live price inside the band`,
-        spotWad !== null && spotWad >= mn && spotWad <= mx,
-        spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
-      );
+      // The WAD spot needs decimals(). If THAT read failed in transit, this check and the band-width
+      // check under it did not run -- it used to FAIL here as "could not scale the live answer".
+      if (decRead.unread) {
+        unrun(
+          `${label}: live price inside the band`,
+          `${decRead.unread.message}; the band-width check for this feed did not run either`,
+        );
+      } else {
+        check(
+          `${label}: live price inside the band`,
+          spotWad !== null && spotWad >= mn && spotWad <= mx,
+          spotWad === null ? 'could not scale the live answer to WAD' : `spot=${spotWad} band=[${mn},${mx}]`,
+        );
+      }
       // BAND WIDTH, not just band presence. "A band is set" is not the property residual row 14
       // depends on -- it depends on the band being tight enough that a 2-decimal aggregator-swap
       // drift leaves it. Checked against the live answer, because that is what the band is compared
@@ -451,29 +578,44 @@ function main() {
 }
 
 function finish() {
-  // Three counts, not two. A notice used to be counted as a pass, so a config with an unpinned or
+  // Four counts, not two. A notice used to be counted as a pass, so a config with an unpinned or
   // unreadable aggregator still printed "18/18 checks passed" -- and that tally is what residual
   // row 14 cites as evidence the feeds are clean. A summary that cannot express "not clean" is not
-  // evidence. `passed + noticed + failed === total`, always.
+  // evidence. An un-run check is neither a pass nor a failure -- it says nothing about the config
+  // at all -- so it gets its own count. `passed + noticed + errored + failed === total`, always.
   const noticed = results.filter((r) => r.drift).length;
+  const errored = results.filter((r) => r.error).length;
   const passed = results.filter((r) => r.ok && !r.drift).length;
-  const failed = results.length - passed - noticed;
+  const failed = results.length - passed - noticed - errored;
   if (JSON_OUT) {
     console.log(
-      JSON.stringify({ passed, failed, drift: noticed, strict: STRICT, total: results.length, results }, null, 2),
+      JSON.stringify({ passed, failed, errored, drift: noticed, strict: STRICT, total: results.length, results }, null, 2),
     );
   } else {
-    for (const r of results) console.log(`${r.drift ? 'DRIFT' : r.ok ? 'PASS ' : 'FAIL '} ${r.name} — ${r.detail}`);
+    for (const r of results) {
+      const tag = r.drift ? 'DRIFT' : r.error ? 'ERR  ' : r.ok ? 'PASS ' : 'FAIL ';
+      console.log(`${tag} ${r.name} — ${r.detail}`);
+    }
     const noticeTail = STRICT
       ? ' — --strict, so these set the exit code'
       : ' — read them; re-run with --strict to make them exit non-zero';
     console.log(
       `\n${passed}/${results.length} checks passed` +
         `${failed ? `, ${failed} FAILED — do NOT deploy the oracle` : ''}` +
+        `${errored ? `, ${errored} could not run` : ''}` +
         `${noticed ? `, ${noticed} DRIFT notice(s)${noticeTail}` : ''}`,
     );
+    if (errored) {
+      console.log(
+        `\n${errored} check(s) did not run: a read failed and no revert was observed -- a rate limit, a timeout, DNS,\n` +
+          'a missing `cast`, or an address cast refused to call because it has no code; each ERR row quotes cast.\n' +
+          'That is NOT a verdict on the config, and it is not a pass either -- re-run against an RPC that answers\n' +
+          '(BASE_RPC=...) before concluding anything.',
+      );
+    }
   }
-  process.exit(failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : 0);
+  // 0 = verified · 1 = a check failed (or --strict and a notice) · 2 = incomplete, which is neither
+  process.exit(failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : errored > 0 ? 2 : 0);
 }
 
 // Importable by unit tests without firing the RPC sweep: only run when this file is the entrypoint.
