@@ -776,7 +776,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -841,4 +841,44 @@ test('classifyCallError is fail-safe for the drill: an unknown string is NOT a r
   // Unknown wording must not satisfy an assertion that a refusal was observed. Erring toward
   // "transport" makes drill 3 fail loudly (UNPROVEN) rather than pass quietly.
   assert.equal(classifyCallError('something nobody has seen before'), 'transport');
+});
+
+// ───────── budget exhaustion is terminal, and must say so (drill 5) ─────────
+
+test('budgetExhaustedFailure fires the moment the cap is gone, and names the real cause', () => {
+  // The 2026-09-04 run verbatim: cap hit at tick 5 of 40, then 35 more ticks against a blind
+  // agent before failing with "vote:commit: not satisfied after 40 ticks" — a governance symptom
+  // standing in for a harness budget cause.
+  const msg = budgetExhaustedFailure(
+    { enabled: true, spentUsdc: '0.25', capUsdc: '0.25', remainingUsdc: '0', paidReads: 25 },
+    5, 40, 'vote:commit',
+  );
+  assert.ok(msg, 'an exhausted cap must stop the poll, not be waited out');
+  assert.match(msg, /tick 5\/40/);
+  assert.match(msg, /HARNESS BUDGET failure, NOT evidence about governance/);
+  assert.match(msg, /SOAK_AGENT_CAP_USDC/, 'the operator needs the lever named');
+  // The arithmetic must be derived, not asserted: $0.25 over 5 ticks is $0.05/tick, so 40 ticks
+  // needs $2.00. Stating the shortfall is what turns a failure into a decision.
+  assert.match(msg, /\$0\.050 per tick/);
+  assert.match(msg, /40 ticks needs about \$2\.00/);
+});
+
+test('budgetExhaustedFailure keeps quiet while budget remains, or when payments are off', () => {
+  assert.equal(
+    budgetExhaustedFailure(
+      { enabled: true, spentUsdc: '0.10', capUsdc: '0.25', remainingUsdc: '0.15', paidReads: 10 },
+      3, 40, 'vote:commit',
+    ),
+    null,
+    'must not abort a run that can still perceive',
+  );
+  assert.equal(
+    budgetExhaustedFailure(
+      { enabled: false, spentUsdc: '0', capUsdc: '0', remainingUsdc: '0', paidReads: 0 },
+      3, 40, 'vote:commit',
+    ),
+    null,
+    'payments disabled means the cap is irrelevant, not exhausted',
+  );
+  assert.equal(budgetExhaustedFailure(undefined, 3, 40, 'x'), null, 'no budget surface, no claim');
 });

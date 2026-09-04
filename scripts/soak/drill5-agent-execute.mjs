@@ -59,6 +59,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   ROOT, RPC, log, assert, eq, call, callU, chainNow, waitUntilChainTime, openState, cast,
+  budgetExhaustedFailure,
 } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
 import { loadAccountFromKeystore, redact } from '../lib/keystore.mjs';
@@ -87,7 +88,18 @@ async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) 
 
   const config = loadConfig({
     mode: 'execute',
-    api: { baseUrl: cfgIn.apiBaseUrl, payments: { enabled: true, maxSessionSpendUsdc: '0.25', maxSingleReadUsdc: '0.05' } },
+    // The cap is a SAFETY CONTROL on an agent that signs, so the default is not widened here to
+    // make a drill pass — it is surfaced. `tickUntil` computes the spend actually needed for the
+    // poll window and names SOAK_AGENT_CAP_USDC when the two disagree, leaving the decision with
+    // the operator. Default unchanged at $0.25.
+    api: {
+      baseUrl: cfgIn.apiBaseUrl,
+      payments: {
+        enabled: true,
+        maxSessionSpendUsdc: process.env.SOAK_AGENT_CAP_USDC ?? '0.25',
+        maxSingleReadUsdc: '0.05',
+      },
+    },
     chain: {
       rpcUrl: cfgIn.rpcUrl, chainId: dep.chainId, chainName: 'base-sepolia',
       governance: dep.governance.toLowerCase(),
@@ -131,6 +143,21 @@ async function tickUntil(phase, cfgIn, account, walletClient, done, label, entry
     if (done()) { log(`${label}: goal already satisfied on-chain`); break; }
     await agent.loop({ maxTicks: 1 });
     if (done()) { log(`${label}: goal reached after ${i + 1} tick(s)`); break; }
+
+    // THE BUDGET IS TERMINAL, SO STOP POLLING AS IF IT WERE NOT.
+    //
+    // The agent perceives through PAID x402 reads. Once the session spend cap is exhausted it can
+    // no longer read the vault list or the leaderboard, so it reports "perception gaps" and
+    // "no action warranted" on every subsequent tick — forever. No later tick can satisfy `done()`.
+    //
+    // On 2026-09-04 this drill hit the cap at tick 5 of 40 and then polled a permanently blind
+    // agent for the remaining 35 ticks — 17.5 minutes — before failing with
+    // "vote:commit: not satisfied after 40 ticks", which names a GOVERNANCE symptom for what was
+    // a HARNESS BUDGET cause. Same substitution this soak keeps making: the observed effect
+    // standing in for the reason.
+    const exhausted = budgetExhaustedFailure(agent.budget?.summary?.(), i + 1, MAX_TICKS, label);
+    if (exhausted) assert(false, exhausted);
+
     log(`${label}: tick ${i + 1}/${MAX_TICKS}, not yet satisfied`);
     await new Promise((r) => setTimeout(r, TICK_MS));
   }

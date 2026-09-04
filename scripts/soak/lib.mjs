@@ -145,6 +145,41 @@ export function classifyCallError(err) {
   return REVERTED.test(err) ? 'revert' : 'transport';
 }
 
+/**
+ * Is a paid-perception agent permanently blind, and if so what should the operator be told?
+ *
+ * The reference agent perceives through PAID x402 reads. Once its session spend cap is exhausted
+ * it can no longer read the vault list or the leaderboard, so it reports "perception gaps" and
+ * "no action warranted" on every subsequent tick — forever. No later tick can satisfy the goal.
+ *
+ * On 2026-09-04 drill 5 hit the cap at tick 5 of 40 and then polled a blind agent for the
+ * remaining 35 ticks — 17.5 minutes — before failing with "vote:commit: not satisfied after 40
+ * ticks", which names a GOVERNANCE symptom for a HARNESS BUDGET cause. That misattribution is the
+ * defect; the wasted ticks are just how long it took to arrive at it.
+ *
+ * Pure, and in lib.mjs rather than in the drill, because the drill executes at import and so
+ * anything defined there cannot be tested.
+ *
+ * @param {{enabled:boolean,spentUsdc:string,capUsdc:string,remainingUsdc:string,paidReads:number}|undefined} spend
+ * @param {number} tick 1-based tick just completed
+ * @param {number} maxTicks
+ * @param {string} label
+ * @returns {string|null} the failure message, or null to keep polling
+ */
+export function budgetExhaustedFailure(spend, tick, maxTicks, label) {
+  if (!spend?.enabled) return null;
+  if (Number(spend.remainingUsdc) > 0) return null;
+  const perTick = Number(spend.spentUsdc) / Math.max(tick, 1);
+  return `${label}: the agent exhausted its x402 session spend cap at tick ${tick}/${maxTicks} `
+    + `($${spend.spentUsdc} of $${spend.capUsdc}, ${spend.paidReads} paid reads). It perceives through `
+    + `paid reads, so from here it is BLIND and no further tick can satisfy the goal — this is a `
+    + `HARNESS BUDGET failure, NOT evidence about governance or the contracts. The cap must cover the `
+    + `whole poll window: this phase burned ~$${perTick.toFixed(3)} per tick, so ${maxTicks} ticks needs `
+    + `about $${(perTick * maxTicks).toFixed(2)}. Raise it deliberately via SOAK_AGENT_CAP_USDC (it is a `
+    + `spend limit on an agent that signs, so it is the operator's call, not a default to quietly `
+    + `widen), or lower SOAK_MAX_TICKS.`;
+}
+
 /** Read-only call that may legitimately revert. Never throws. Carries `kind` on failure. */
 export function tryCall(to, sig, ...args) {
   try {
@@ -356,3 +391,4 @@ export const TOPIC = {
   DepositPending: () => keccakOf('DepositPending(address,uint256,uint64)'),
   DepositActivated: () => keccakOf('DepositActivated(address,uint256,uint256)'),
 };
+
