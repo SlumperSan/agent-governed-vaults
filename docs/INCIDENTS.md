@@ -226,10 +226,13 @@ rebalance.
 >
 > **Update 2026-08-28 (Phase 2):** the operational rule at the bottom of this box — "do not create
 > sub-vaults, do not allocate parent capital into a child" — is now an **enforced contract
-> invariant**, not an operator instruction. `VaultFactory` ships with `allowSubVaults = false`:
-> `createChildVault` reverts `SubVaultsDisabled` and every deployed vault is wired root-only, so no
-> funded child can exist and the C-1 capture below has no target. C-1 is thereby **closed as a
-> class at launch** (together with the sub-vault-only Highs H-5/H-6/H-7/H-9). The rest of this box
+> invariant**, not an operator instruction. The mainnet launch path (`Deploy.s.sol`) constructs
+> `VaultFactory` with `allowSubVaults = false` — a constructor immutable, so it binds *that
+> factory*: on it `createChildVault` reverts `SubVaultsDisabled` and every vault it deploys is
+> wired root-only, so no funded child can exist and the C-1 capture below has no target. C-1 is
+> thereby **closed as a class at launch** (together with the sub-vault-only Highs H-5/H-6/H-7/H-9).
+> On a factory built with `true` — `DeployTestnet.s.sol`, and the live Base Sepolia deployment —
+> none of that holds, which is where the SV-* drills run. The rest of this box
 > describes the sub-vault risk that applies **only** to a future release that re-enables sub-vaults
 > with the parent-casts-child-vote mechanism; on a launch (root-only) deployment it is dormant.
 >

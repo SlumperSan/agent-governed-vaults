@@ -10,16 +10,22 @@ launch and deferred the correct design to a post-audit release.
 
 ## DORMANT-AT-LAUNCH — the double disable (audit C-1)
 
-[[vaultfactory]] ships with `allowSubVaults = false` (immutable). This disables sub-vaults in
-**two** independent ways:
+`Deploy.s.sol` constructs [[vaultfactory]] with `allowSubVaults = false`. It is a constructor
+immutable, so it is a property of **that factory**, not of the protocol. On such a factory
+sub-vaults are disabled in **two** independent ways:
 
-1. `createChildVault` **reverts** — no child can be created.
-2. Every deployed vault is wired with `subVaultRegistry = address(0)`, so each vault is
+1. `createChildVault` **reverts** `SubVaultsDisabled` — no child can be created on it.
+2. Every vault it deploys is wired with `subVaultRegistry = address(0)`, so each of those vaults is
    **intrinsically root-only**: `parentVault()` is `address(0)`, `allocateToChild` reverts, and
    the look-through pricing paths are dead code.
 
-This closes audit findings **C-1, H-5, H-6, H-7, and H-9 as a class**. See [[c1-empty-electorate]]
-and the decision note [[root-vaults-only]].
+**Neither bullet holds on a factory built with `true`.** `DeployTestnet.s.sol` passes `true`, and
+the live Base Sepolia factory reads `allowSubVaults() == true`, because the SV-7 look-through soak
+drill needs a real child vault to exercise. Read `VaultFactory.allowSubVaults()` on the factory you
+integrate against rather than trusting this page.
+
+This closes audit findings **C-1, H-5, H-6, H-7, and H-9 as a class** on the launch factory. See
+[[c1-empty-electorate]] and the decision note [[root-vaults-only]].
 
 ## Why there is no internal fix
 

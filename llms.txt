@@ -27,6 +27,11 @@
   its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
   execution window. Governance.hasPendingExecution(vault) is the exact predicate; a defeated
   proposal still queued the exits requested while it was live.
+- Sub-vaults (parent/child vaults, look-through NAV) are DISABLED on the mainnet launch path:
+  Deploy.s.sol constructs VaultFactory with allowSubVaults = false, so createChildVault reverts
+  SubVaultsDisabled and every vault it deploys is wired subVaultRegistry = address(0). This is a
+  per-deployment immutable, not a protocol property -- the Base Sepolia testnet factory is
+  deployed with it TRUE. Read VaultFactory.allowSubVaults() on the factory you integrate against.
 - Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.

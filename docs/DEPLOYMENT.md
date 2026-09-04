@@ -231,9 +231,10 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 (same USDC), depth ≤ 3, stacked exit-fee ≤ 2.5%.
 
 > **Sub-vaults are DISABLED at launch (Critical C-1 remediation, "root vaults only").** The former
-> manual warning here is now an enforced contract invariant: `VaultFactory` is deployed with
-> `allowSubVaults = false`, so `createChildVault` reverts `SubVaultsDisabled` and every deployed
-> vault is wired `subVaultRegistry = address(0)` — intrinsically root-only. This closes C-1
+> manual warning here is now an enforced contract invariant: `Deploy.s.sol` constructs
+> `VaultFactory` with `allowSubVaults = false` — a constructor immutable, so it binds that factory
+> rather than the protocol. On it `createChildVault` reverts `SubVaultsDisabled` and every vault it
+> deploys is wired `subVaultRegistry = address(0)` — intrinsically root-only. This closes C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) and the sub-vault-only
 > Highs (H-5/H-6/H-7/H-9) as a class. **Why disabled rather than patched:** a child funded only by
 > its parent has an empty electorate (the parent is excluded by GA-1), and there is no
