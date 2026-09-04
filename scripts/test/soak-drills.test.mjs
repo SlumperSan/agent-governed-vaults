@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
@@ -1179,4 +1179,59 @@ test('no file still claims run-soak.ps1 does not start the companion', () => {
     }
   }
   assert.deepEqual(offenders, [], 'run-soak.ps1 starts drill5-gov-companion.mjs — these say otherwise');
+});
+
+// ───────── ROOT survives a checkout path containing a space ─────────
+
+test('lib.mjs ROOT resolves a checkout whose path contains a space to a real directory', () => {
+  // `new URL(import.meta.url).pathname` hands back the path PERCENT-ENCODED, so a checkout at
+  // `.../sp ace/` yields `.../sp%20ace/` — a directory that does not exist. Every drill joins ROOT
+  // to reach the address book at module scope (`scripts/soak/drill1-multivault.mjs:37`), so
+  // `loadDeployment` throws "deployment: address book not found at ..."
+  // (`scripts/soak/deployment.mjs:134`) at load, before any drill's own skip logic can run. The
+  // encoding is not Windows-only: only the drive-letter strip in the old expression was, so this
+  // asserts nothing platform-shaped.
+  //
+  // Reproduced by copying lib.mjs and its single non-builtin import into a scratch tree whose
+  // path contains a space, then reading ROOT back out of a child process. The child's import
+  // specifier is built with pathToFileURL rather than string concatenation, so the harness cannot
+  // reintroduce the very encoding bug under test.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'soak-space-'));
+  const root = path.join(scratch, 'sp ace');
+  const copies = [
+    ['scripts', 'soak', 'lib.mjs'],
+    ['packages', 'canary', 'src', 'call-error.mjs'],
+  ];
+  try {
+    const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    for (const rel of copies) {
+      fs.mkdirSync(path.join(root, ...rel.slice(0, -1)), { recursive: true });
+      fs.copyFileSync(path.join(repo, ...rel), path.join(root, ...rel));
+    }
+    // A file reachable ONLY by joining onto ROOT, standing in for the address book.
+    fs.writeFileSync(path.join(root, 'marker.txt'), 'root-relative read');
+
+    const target = pathToFileURL(path.join(root, 'scripts', 'soak', 'lib.mjs')).href;
+    const src = `
+      import fs from 'node:fs';
+      import path from 'node:path';
+      const m = await import(${JSON.stringify(target)});
+      const exists = fs.existsSync(m.ROOT);
+      console.log(JSON.stringify({
+        root: m.ROOT,
+        exists,
+        marker: exists ? fs.readFileSync(path.join(m.ROOT, 'marker.txt'), 'utf8') : null,
+      }));
+    `;
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], { encoding: 'utf8' });
+    const r = JSON.parse(out.trim().split('\n').pop());
+
+    assert.equal(r.root, root, 'ROOT must be the real directory, not a percent-encoded twin of it');
+    assert.ok(!r.root.includes('%20'), 'a space must arrive decoded — %20 names no directory');
+    assert.equal(r.exists, true, 'ROOT must exist, or every path joined onto it is unreadable');
+    assert.equal(r.marker, 'root-relative read',
+      'a file addressed through ROOT must open — this is the read the address book load performs');
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 });
