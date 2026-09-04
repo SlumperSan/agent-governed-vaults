@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
@@ -30,7 +31,7 @@ const LINK = '0xE4aB69C077896252FAFBD49EFD26B5D171A32410';
 
 /** For the selector drift guard: viem and the compiled ABIs, both optional in a bare checkout. */
 const viem = await import('viem').catch(() => null);
-const OUT = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', 'contracts', 'out');
+const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'contracts', 'out');
 const abiOf = (rel) => {
   const p = path.join(OUT, rel);
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).abi ?? [] : [];
@@ -1169,7 +1170,7 @@ test('no file still claims run-soak.ps1 does not start the companion', () => {
 
   const offenders = [];
   for (const file of files) {
-    if (path.resolve(file) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) continue;
+    if (path.resolve(file) === path.resolve(fileURLToPath(import.meta.url))) continue;
     const normalized = fs.readFileSync(file, 'utf8')
       .replace(/\\n/g, ' ').replace(/['"`+]/g, ' ').replace(/\s+/g, ' ');
     for (const shape of NOT_STARTED_SHAPES) {
