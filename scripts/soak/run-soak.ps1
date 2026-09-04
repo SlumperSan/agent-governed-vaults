@@ -5,7 +5,9 @@
 # vault) genuinely overlap - running them serially wastes about six hours.
 #
 #   Track A: drill1-multivault  ->  drill3-modef
-#   Track B: drill2-subvault    ->  drill5-agent-execute
+#   Track B: drill2-subvault    ->  drill5(join) -> drill5(activate)
+#                               ->  drill5-gov-companion (background)
+#                               ->  drill5(vote + exit) -> wait for the companion
 #
 # Everything logs to .\logs\*.log. Every drill is resumable, so a crash or a reboot costs only
 # the step in flight. Nothing needs a human once the password files are in place.
@@ -14,6 +16,17 @@
 #         powershell -ExecutionPolicy Bypass -File scripts\soak\run-soak.ps1 -SkipAgent
 #         powershell -ExecutionPolicy Bypass -File scripts\soak\run-soak.ps1 -Status
 #         powershell -ExecutionPolicy Bypass -File scripts\soak\run-soak.ps1 -Stop
+#
+# Env READ if you set it:  BASE_SEPOLIA_RPC (default https://sepolia.base.org)
+#                          SOAK_API         (default http://127.0.0.1:8402)
+#                          SOAK_STATE_DIR   (default <repo>\scripts\soak - where the drills keep
+#                                            their resumable state; this script only reads it to
+#                                            find the companion's file)
+#                          SOAK_AGENT_CAP_USDC (default 5.00 - drill 5's x402 session spend cap,
+#                                            per phase poll window, see drill5-agent-execute.mjs)
+# Env SET by this script (your value is overwritten): SOAK_SIGNER_ARGS, SOAK_PROBE_MEMBER,
+#                          SOAK_PHASE, AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS, SOAK_AGENT_KEYSTORE,
+#                          SOAK_AGENT_KEYSTORE_PASSWORD
 
 param(
   [string]$SignerPasswordFile = "$env:USERPROFILE\.soak.pw",
@@ -132,13 +145,22 @@ function Start-Bg([string]$Name, [string]$File, [string[]]$ArgList) {
   return $p
 }
 
-# Track scripts: run the drills of one track in sequence inside a single child powershell, so
-# drill 3 starts the moment drill 1 finishes without anyone watching for it.
-function Start-Track([string]$Name, [string[]]$Scripts) {
-  $inner = ($Scripts | ForEach-Object {
-    "Write-Host '>>> $_'; node '$_'; if (`$LASTEXITCODE -ne 0) { Write-Host 'FAILED: $_'; exit `$LASTEXITCODE }"
-  }) -join '; '
-  return Start-Bg $Name 'powershell.exe' @('-NoProfile','-ExecutionPolicy','Bypass','-Command', $inner)
+# One track step: run a node script, and abandon the track if it fails.
+#
+# $Phase sets SOAK_PHASE for that step only. drill5-agent-execute.mjs runs a single phase when
+# SOAK_PHASE is set and every phase when it is empty or absent, so '' is the correct "all phases"
+# encoding under either PowerShell semantics for clearing an environment variable.
+function New-NodeStep([string]$Script, [string]$Phase = '') {
+  $label = if ($Phase) { "$Script [$Phase]" } else { $Script }
+  return "`$env:SOAK_PHASE = '$Phase'; Write-Host '>>> $label'; node '$Script'; " +
+         "if (`$LASTEXITCODE -ne 0) { Write-Host 'FAILED: $label'; exit `$LASTEXITCODE }"
+}
+
+# Track steps: run one track's steps in sequence inside a single child powershell, so drill 3
+# starts the moment drill 1 finishes without anyone watching for it. Each element must be a
+# single-line statement - they are joined with '; '.
+function Start-Track([string]$Name, [string[]]$Steps) {
+  return Start-Bg $Name 'powershell.exe' @('-NoProfile','-ExecutionPolicy','Bypass','-Command', ($Steps -join '; '))
 }
 
 # Services read their configuration from .env (RPC_URL, the contract addresses, START_BLOCK,
@@ -199,14 +221,74 @@ while ($true) {
 }
 
 Write-Host "`nstarting drill tracks (these run in PARALLEL - governance serializes per vault)..." -ForegroundColor Cyan
-Start-Track 'trackA' @('scripts/soak/drill1-multivault.mjs','scripts/soak/drill3-modef.mjs') | Out-Null
+Start-Track 'trackA' @(
+  (New-NodeStep 'scripts/soak/drill1-multivault.mjs'),
+  (New-NodeStep 'scripts/soak/drill3-modef.mjs')
+) | Out-Null
 
-$trackB = @('scripts/soak/drill2-subvault.mjs')
+$trackB = @(New-NodeStep 'scripts/soak/drill2-subvault.mjs')
 if ($runAgent) {
   $env:AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS = 'yes'
   $env:SOAK_AGENT_KEYSTORE = "$env:USERPROFILE\.foundry\keystores\soak-throwaway"
   $env:SOAK_AGENT_KEYSTORE_PASSWORD = (Get-Content $AgentPasswordFile -Raw)
-  $trackB += 'scripts/soak/drill5-agent-execute.mjs'
+  # The x402 session spend cap the agent runs under, stated rather than left to a default a
+  # reader would have to go find. drill5-agent-execute.mjs carries the same 5.00 as its own
+  # default; scripts/test/soak-drills.test.mjs pins the two together.
+  if (-not $env:SOAK_AGENT_CAP_USDC) { $env:SOAK_AGENT_CAP_USDC = '5.00' }
+  Write-Host "  SOAK_AGENT_CAP_USDC = `$$($env:SOAK_AGENT_CAP_USDC) per phase poll window" -ForegroundColor Green
+
+  # DRILL 5 AND THE GOVERNANCE COMPANION ARE EACH OTHER'S PRECONDITION, so drill 5 is split.
+  #
+  # drill5-gov-companion.mjs refuses to propose until the agent holds shares (it snapshots voting
+  # weight at createdAt-1, so a round raised earlier would give the agent zero weight), and drill
+  # 5's vote phase refuses to tick until a votable round exists. The only ordering that satisfies
+  # both is: join, activate, THEN the companion, THEN vote. Each `node` invocation re-reads the
+  # state file and skips what is already recorded done, so the split costs two extra preflights
+  # and nothing else.
+  $compOut   = Join-Path $LogDir 'gov-companion.log'
+  $compErr   = Join-Path $LogDir 'gov-companion.err.log'
+  # Mirrors drill5-gov-companion.mjs: SOAK_STATE_DIR ?? <repo>/scripts/soak, then the state file.
+  $compStateDir = if ($env:SOAK_STATE_DIR) { $env:SOAK_STATE_DIR } else { Join-Path $Root 'scripts\soak' }
+  $compState = Join-Path $compStateDir '.state-drill5gov.json'
+
+  $trackB += New-NodeStep 'scripts/soak/drill5-agent-execute.mjs' 'join'
+  $trackB += New-NodeStep 'scripts/soak/drill5-agent-execute.mjs' 'activate'
+
+  # Background, because the companion outlives drill 5: it settles the agent's queued exit after
+  # drill 5's exit phase. Start-Process detaches it, so stopping track B's powershell does NOT
+  # reach it - its pid line in $PidFile is the only thing that does, and -Stop is what reads that
+  # file. That is what keeps it from outliving the run, and why the operator must -Stop before
+  # deleting the password files the companion signs with.
+  $trackB += "Write-Host '>>> starting drill5-gov-companion (background) - drill 5 needs a votable round'"
+  $trackB += "`$comp = Start-Process -FilePath 'node' -ArgumentList 'scripts/soak/drill5-gov-companion.mjs' " +
+             "-WorkingDirectory '$Root' -NoNewWindow -PassThru -RedirectStandardOutput '$compOut' -RedirectStandardError '$compErr'"
+  $trackB += "Add-Content -Path '$PidFile' -Value ('gov-companion=' + `$comp.Id)"
+  $trackB += "Write-Host ('  started gov-companion pid ' + `$comp.Id)"
+
+  # Then WAIT for the round to exist before drill 5 looks for it, or the vote gate loses a race it
+  # would report as a governance problem. The signal is the companion's own state file: it writes
+  # steps.propose.done after the proposal id is confirmed on chain. A half-written file throws in
+  # ConvertFrom-Json and is simply retried on the next pass.
+  #
+  # Every exit from this loop is logged and NONE of them abort the track: if the companion could
+  # not raise a round, drill 5's own round-availability diagnostic is the one that belongs on the
+  # record, and masking it here with a launcher error would be the substitution this soak keeps
+  # making.
+  $trackB += "`$compDeadline = (Get-Date).AddMinutes(10)"
+  $trackB += "while (`$true) { " +
+             "`$raised = `$false; " +
+             "if (Test-Path '$compState') { try { `$raised = [bool](Get-Content '$compState' -Raw | ConvertFrom-Json).steps.propose.done } catch { `$raised = `$false } }; " +
+             "if (`$raised) { Write-Host '  companion raised the round'; break }; " +
+             "if (`$comp.HasExited) { Write-Host ('  companion EXITED ' + `$comp.ExitCode + ' without raising a round - see $compErr; running drill 5 anyway so its own diagnostic is what lands'); break }; " +
+             "if ((Get-Date) -gt `$compDeadline) { Write-Host '  companion has not raised a round after 10 minutes - see $compOut; running drill 5 anyway'; break }; " +
+             "Start-Sleep -Seconds 10 }"
+
+  # No SOAK_PHASE: join and activate are recorded as done, so this runs vote then exit and writes
+  # the full transcript.
+  $trackB += New-NodeStep 'scripts/soak/drill5-agent-execute.mjs'
+
+  $trackB += "Write-Host '>>> waiting for drill5-gov-companion (it finalizes, executes and settles the agent exit AFTER drill 5)'"
+  $trackB += "if (`$comp) { `$comp.WaitForExit(); Write-Host ('gov-companion exited ' + `$comp.ExitCode + ' - see $compOut') }"
 }
 Start-Track 'trackB' $trackB | Out-Null
 
@@ -224,7 +306,9 @@ sampler has covered a 4h observation window:
 
   node scripts/soak/drill4-oraclefreeze.mjs
 
-Delete the password files when the run is done:
+Delete the password files when the run is done - AFTER -Stop, never before. The governance
+companion signs with SOAK_SIGNER_ARGS, which names $SignerPasswordFile, and it keeps running
+past drill 5 to finalize, execute and settle:
   Remove-Item "$SignerPasswordFile","$AgentPasswordFile" -ErrorAction SilentlyContinue
 ===============================================================
 "@ -ForegroundColor Cyan

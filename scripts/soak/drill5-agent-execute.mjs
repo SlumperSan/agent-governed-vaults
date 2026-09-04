@@ -45,14 +45,21 @@
  * ## Governance serializes per VAULT
  *
  * The vote phase needs a live proposal on the smoke vault, and drill 2 also runs governance
- * rounds there. They cannot overlap. Run drill 2's allocate round first and let this drill's
- * agent vote on it, or raise a standalone no-op proposal for it — either way, only one
- * proposal is in flight on the smoke vault at a time.
+ * rounds there. They cannot overlap — only one proposal is in flight on the smoke vault at a time.
+ *
+ * `run-soak.ps1` supplies that round rather than leaving it to the operator: track B runs drill 2
+ * to completion, then this script's `join` and `activate` phases, then starts
+ * `drill5-gov-companion.mjs` in the background, then re-enters this script for `vote` and `exit`.
+ * The split is forced, because the two are each other's precondition: the companion refuses to
+ * propose until the agent holds shares (drill5-gov-companion.mjs:54-56), and the vote phase
+ * refuses to tick until a votable round exists.
  *
  * Env (required): SOAK_AGENT_KEYSTORE, SOAK_AGENT_KEYSTORE_PASSWORD,
  *                 AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS=yes
  * Env (optional): BASE_SEPOLIA_RPC, SOAK_API, SOAK_STATE_DIR, SOAK_TICK_MS, SOAK_MAX_TICKS,
- *                 SOAK_PHASE (run a single phase), SOAK_RESET=1
+ *                 SOAK_AGENT_CAP_USDC (x402 session spend cap per phase poll window, default
+ *                 5.00 — see the cap note in buildAgent), SOAK_PHASE (run a single phase),
+ *                 SOAK_RESET=1
  * Run:  node scripts/soak/drill5-agent-execute.mjs
  */
 import fs from 'node:fs';
@@ -89,15 +96,18 @@ async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) 
 
   const config = loadConfig({
     mode: 'execute',
-    // The cap is a SAFETY CONTROL on an agent that signs, so the default is not widened here to
-    // make a drill pass — it is surfaced. `tickUntil` computes the spend actually needed for the
-    // poll window and names SOAK_AGENT_CAP_USDC when the two disagree, leaving the decision with
-    // the operator. Default unchanged at $0.25.
+    // THE CAP MUST COVER A WHOLE POLL WINDOW, and $0.25 did not. One tick pays for `2 + vaultCount`
+    // metered reads (perceive.mjs:127, 133, 144) at $0.01 each (apps/api/src/serve.mjs:70,
+    // PRICE_AMOUNT default '10000'), so the 2026-09-04 run burned $0.05/tick against three indexed
+    // vaults and went blind at tick 5 of 40. 40 ticks at that rate needs $2.00; $5.00 buys 40 ticks
+    // at $0.125, i.e. ten indexed vaults. The owner authorised the raise for this testnet soak.
+    // Still PER SESSION, not per drill: `createBudget` runs inside `createAgent` (agent.mjs:52),
+    // and `tickUntil` builds a fresh agent per phase window.
     api: {
       baseUrl: cfgIn.apiBaseUrl,
       payments: {
         enabled: true,
-        maxSessionSpendUsdc: process.env.SOAK_AGENT_CAP_USDC ?? '0.25',
+        maxSessionSpendUsdc: process.env.SOAK_AGENT_CAP_USDC ?? '5.00',
         maxSingleReadUsdc: '0.05',
       },
     },
@@ -186,11 +196,24 @@ const account = await loadAccountFromKeystore(cfgIn.keystore, cfgIn.password);
 saveFirst('agent', account.address);
 log(`agent identity ${account.address} (throwaway, keystore-held by the operator)`);
 
+// SPENDABLE USDC IS A `join` PRECONDITION, NOT A DRILL-WIDE ONE. This check sits above every
+// `want(...)` guard, so it also gates activate, vote and exit — none of which spend USDC, and all
+// of which run AFTER the deposit has left the wallet. run-soak.ps1 now invokes this script three
+// times (join, activate, then vote+exit) so the governance companion can raise its round in
+// between, which makes those later invocations the normal case rather than a resume-only one.
+// On 2026-09-04 the agent read 995,100 units while holding 1e18 shares — under the threshold, so
+// the unqualified form aborts before the phase guard that would have skipped join.
+// The minimum is met once the money is escrowed or minted, so accept either as evidence of it.
 const usdc = callU(dep.usdc, 'balanceOf(address)(uint256)', account.address);
 const eth = BigInt(cast(['balance', account.address, '--rpc-url', cfgIn.rpcUrl]));
-assert(usdc >= 1_000_000n, `agent needs >= 1.00 USDC to meet the vault minimum (has ${usdc})`);
+const [pendingUsdc] = call(VAULT, 'pendingDeposit(address)(uint256,uint64)', account.address);
+const joinedShares = callU(VAULT, 'sharesOf(address)(uint256)', account.address);
+const joined = BigInt(pendingUsdc) > 0n || joinedShares > 0n;
+assert(usdc >= 1_000_000n || joined,
+  `agent needs >= 1.00 USDC to meet the vault minimum, or a deposit already in `
+  + `(has ${usdc} units, pending ${pendingUsdc}, shares ${joinedShares})`);
 assert(eth >= 10n ** 15n, `agent needs test ETH for gas (has ${eth} wei)`);
-log(`agent funded: ${usdc} USDC units, ${eth} wei`);
+log(`agent funded: ${usdc} USDC units, ${eth} wei (pending ${pendingUsdc}, shares ${joinedShares})`);
 
 const { createWalletClient, http } = await import('viem');
 const { baseSepolia } = await import('viem/chains');
@@ -281,8 +304,10 @@ if (want('vote') && !state.phases?.vote?.done) {
         + '  contracts, and no amount of ticking will change it. A fresh round must be raised on this\n'
         + '  vault AFTER the agent holds shares (voting weight snapshots at createdAt-1), and any\n'
         + '  settled-but-still-named predecessor must be finalized first — governance serializes per\n'
-        + '  vault. scripts/soak/drill5-gov-companion.mjs does exactly that, and run-soak.ps1 does\n'
-        + '  not start it.');
+        + '  vault. scripts/soak/drill5-gov-companion.mjs does exactly that, and run-soak.ps1 starts\n'
+        + '  it in the background before this phase — so read logs/gov-companion.log and\n'
+        + '  logs/gov-companion.err.log for why no round is there. Running this drill standalone,\n'
+        + '  start the companion yourself first.');
     log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} boundedWeight=${snapshotWeight}`);
   } else {
     log(`proposal ${pid} already carries this agent's commitment — skipping the votability gate and going to reveal`);

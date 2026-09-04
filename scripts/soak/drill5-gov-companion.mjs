@@ -14,8 +14,17 @@
  * `createdAt - 1`, so a proposal raised before activation would give the agent zero weight and
  * its reveal would be a no-op. Preflight enforces this.
  *
- * Env: SOAK_SIGNER_ARGS (deployer), BASE_SEPOLIA_RPC, SOAK_STATE_DIR, SOAK_RESET=1.
- * Run:  node scripts/soak/drill5-gov-companion.mjs
+ * `run-soak.ps1` starts this script in the background inside track B, between drill 5's `activate`
+ * and `vote` phases — the only window that satisfies the preflight above. Track B then waits for
+ * it to exit, because the settlement below happens AFTER drill 5's exit phase. Its pid is appended
+ * to logs/soak-pids.txt, so `run-soak.ps1 -Stop` reaches it; that matters because SOAK_SIGNER_ARGS
+ * names a `--password-file` the operator deletes once the run is over.
+ *
+ * Env: SOAK_SIGNER_ARGS (deployer), BASE_SEPOLIA_RPC, SOAK_STATE_DIR, SOAK_RESET=1. run-soak.ps1
+ *      sets the first two for the whole run; it never sets SOAK_STATE_DIR, and only reads it to
+ *      find the state file this script writes.
+ * Run:  node scripts/soak/drill5-gov-companion.mjs   (standalone: the agent must already hold
+ *       shares — drill5-fasttrack.mjs is one way to get there)
  */
 import fs from 'node:fs';
 import path from 'node:path';
