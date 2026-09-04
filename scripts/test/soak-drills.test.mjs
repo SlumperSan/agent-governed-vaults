@@ -1063,11 +1063,29 @@ test('votableNow refuses rather than guesses when currentWeight is not supplied'
   assert.match(r.reason, /currentWeight was not supplied/, 'name the missing input, not a symptom');
 });
 
+test('votableNow refuses on a missing snapshotWeight too, rather than falling through it', () => {
+  // THE SAME FAIL-CLOSED RULE, APPLIED TO THE FIRST TERM. `undefined <= 0n` is `false`, so before
+  // the null check covered both terms an omitted `snapshotWeight` skipped its own branch and the
+  // predicate answered "votable" on an input it had never been given — fail OPEN on one term while
+  // the other failed closed, three lines apart. Nothing in the suite caught it: every case above
+  // either supplies both terms or omits `currentWeight`, so no test ever reached this path.
+  const p = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 };
+  const r = votableNow(p, { now: 100, currentWeight: 5n });
+  assert.equal(r.votable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /snapshotWeight was not supplied/, 'name the term that is missing, not the other one');
+  assert.doesNotMatch(r.reason, /currentWeight was not supplied/, 'currentWeight WAS supplied — naming it sends the reader to the wrong caller');
+
+  // And with neither term, the refusal names both rather than picking one.
+  const neither = votableNow(p, { now: 100 });
+  assert.equal(neither.votable, false);
+  assert.match(neither.reason, /snapshotWeight and currentWeight were not supplied/);
+});
+
 // ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────
 //
 // Every votableNow case above hands the predicate a hand-built literal. In production its
 // argument is a `readProposal` result, and `readProposal` derives `status` from
-// `STATUS[Number(p[P.STATUS])]` (lib.mjs:473) after a live `cast` subprocess — so nothing in this
+// `STATUS[Number(p[P.STATUS])]` (lib.mjs:483) after a live `cast` subprocess — so nothing in this
 // file could reach that lookup. Respell an entry in STATUS and votableNow states a confident,
 // wrong reason on every proposal while the suite stays green: the same silent failure the budget
 // guard had before PR #177.
@@ -1180,10 +1198,17 @@ test('decodeProposal produces the exact Active string votableNow compares agains
   );
 });
 
-test('the P index map still matches the arity and order of PROPOSAL_SIG', () => {
+test('the P index map still matches the arity of PROPOSAL_SIG and uses each index exactly once', () => {
   // A fixture is only evidence if it has the shape the signature returns. `cast call` prints one
   // line per return value, so the tuple length and the highest index in `P` must agree with the
   // signature `readProposal` actually sends.
+  //
+  // ORDER IS NOT ASSERTED HERE, and the name no longer says it is: `PROPOSAL_SIG` is parsed for
+  // its comma count only, so swapping two entries in `P` leaves every assertion below green. The
+  // order pin is the sibling test above — `decodeProposal maps every tuple index to its named
+  // field` — which reds on exactly that swap because the fixture's sixteen values are distinct.
+  // A positional type check could not replace it anyway: the signature has five `uint64`s and six
+  // `uint256`s, so same-typed neighbours are indistinguishable from the type list.
   const returns = /\)\(([^)]*)\)$/.exec(PROPOSAL_SIG);
   assert.ok(returns, 'PROPOSAL_SIG must still declare a return tuple');
   const arity = returns[1].split(',').length;
@@ -1211,7 +1236,7 @@ test('the two seams the fixture cannot execute are pinned as source text instead
   const drill5 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill5-agent-execute.mjs'), 'utf8');
   assert.match(drill5, /votableNow\(prop, \{ now: chainNow\(\), snapshotWeight: snap, currentWeight: cur \}\)/,
     'drill 5 must pass BOTH terms unbounded — handing it the min again restores the wrong-cause message');
-  assert.match(drill5, /const snapshotWeight = snap < cur \? snap : cur;/,
+  assert.match(drill5, /const boundedWeight = snap < cur \? snap : cur;/,
     'the local min is still what the diagnostic line prints as boundedWeight');
 });
 

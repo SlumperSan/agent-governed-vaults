@@ -420,9 +420,11 @@ export const PTYPE = { Rebalance: 0, RuleChange: 1, ChildAllocation: 2 };
  * exit has snapshot weight and zero current weight, because `votingEligibleShares` is
  * `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028); handed only the already-minimised
  * weight, this function cannot tell that apart from "the proposal predates this account" and
- * would state the wrong cause with full confidence. `currentWeight` is REQUIRED, not defaulted:
- * a caller that omits it gets a refusal naming the missing input, never a silent fallback to the
- * snapshot-only story.
+ * would state the wrong cause with full confidence. BOTH terms are REQUIRED, not defaulted: a
+ * caller that omits either gets a refusal naming the missing one, never a silent fallback to a
+ * one-term story. `undefined <= 0n` is `false`, so a missing term left unchecked would skip its
+ * branch and be read as a healthy weight — the fail-OPEN direction, and the reason the null test
+ * is separate from the zero test rather than folded into it.
  *
  * @param {{status: string, ptype: number, commitDeadline: number}} p a `readProposal` result
  * @param {{now: number, snapshotWeight: bigint, currentWeight: bigint, wantPtype?: number}} ctx
@@ -442,14 +444,17 @@ export function votableNow(p, { now, snapshotWeight, currentWeight, wantPtype })
   if (wantPtype != null && p.ptype !== wantPtype) {
     return { votable: false, reason: `ptype is ${p.ptype}, not the expected ${wantPtype}` };
   }
-  if (currentWeight == null) {
-    return { votable: false, reason: 'currentWeight was not supplied — commitVote gates on min(snapshot, current) (Governance.sol:352-356, :365), so a snapshot-only answer cannot be given' };
+  if (snapshotWeight == null || currentWeight == null) {
+    const missing = snapshotWeight == null
+      ? (currentWeight == null ? 'snapshotWeight and currentWeight were' : 'snapshotWeight was')
+      : 'currentWeight was';
+    return { votable: false, reason: `${missing} not supplied — commitVote gates on min(snapshot, current) (Governance.sol:352-356, :365), so a one-term answer cannot be given` };
   }
   if (snapshotWeight <= 0n) {
     return { votable: false, reason: 'the voter had zero voting-eligible stake at the proposal\'s snapshot — it was raised before this account held shares, so commitVote would revert NoWeight' };
   }
   if (currentWeight <= 0n) {
-    return { votable: false, reason: `the voter holds no voting-eligible shares NOW (snapshot weight ${snapshotWeight}, current ${currentWeight}) — votingEligibleShares is sharesOf minus queuedExitShares (VaultCore.sol:1025-1028), so a queued exit zeroes it, and commitVote gates on min(snapshot, current) (Governance.sol:352-356) and would revert NoWeight` };
+    return { votable: false, reason: `the voter holds no voting-eligible shares NOW (snapshot weight ${snapshotWeight}, current ${currentWeight}) — votingEligibleShares returns 0 for the parent vault and otherwise sharesOf minus queuedExitShares (VaultCore.sol:1026-1027), so a queued exit zeroes it, and commitVote gates on min(snapshot, current) (Governance.sol:352-356) and would revert NoWeight` };
   }
   return { votable: true, reason: '' };
 }

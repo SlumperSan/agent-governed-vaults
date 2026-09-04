@@ -296,14 +296,17 @@ if (want('vote') && !state.phases?.vote?.done) {
       account.address, String(prop.createdAt - 1),
     );
     const cur = callU(VAULT, 'votingEligibleShares(address)(uint256)', account.address);
-    const snapshotWeight = snap < cur ? snap : cur;
+    // Named for what it holds. Calling this local `snapshotWeight` put that word on the bounded
+    // minimum one line above the argument spelled `snapshotWeight:`, which takes `snap` — two
+    // meanings, three lines apart, for the confusion this whole gate exists to remove.
+    const boundedWeight = snap < cur ? snap : cur;
 
     const { votable, reason } = votableNow(prop, { now: chainNow(), snapshotWeight: snap, currentWeight: cur });
     assert(votable,
       `proposal ${pid} on the smoke vault is NOT votable by this agent: ${reason}.\n`
         + `  status=${prop.status} ptype=${prop.ptype} createdAt=${prop.createdAt} `
         + `commitDeadline=${prop.commitDeadline} revealDeadline=${prop.revealDeadline} `
-        + `snapshot=${snap} current=${cur} boundedWeight=${snapshotWeight}\n`
+        + `snapshot=${snap} current=${cur} boundedWeight=${boundedWeight}\n`
         + '  This is a HARNESS/round-availability failure, not evidence about governance or the\n'
         + '  contracts, and no amount of ticking will change it. A fresh round must be raised on this\n'
         + '  vault AFTER the agent holds shares (voting weight snapshots at createdAt-1), and any\n'
@@ -312,7 +315,7 @@ if (want('vote') && !state.phases?.vote?.done) {
         + '  it in the background before this phase — so read logs/gov-companion.log and\n'
         + '  logs/gov-companion.err.log for why no round is there. Running this drill standalone,\n'
         + '  start the companion yourself first.');
-    log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} boundedWeight=${snapshotWeight}`);
+    log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} boundedWeight=${boundedWeight}`);
   } else {
     log(`proposal ${pid} already carries this agent's commitment — skipping the votability gate and going to reveal`);
   }
