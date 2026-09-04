@@ -17,8 +17,9 @@
  * Flags:
  *   --api=<url>        metered API base URL          (default http://127.0.0.1:8402)
  *   --rpc=<url>        JSON-RPC endpoint for chain reads. Omitted ⇒ the STUB reader, whose values
- *                      are marked [stub-chain] in the narrative. The protocol has no deployment
- *                      yet (issue #10), so the stub is the default for the demo run.
+ *                      are marked [stub-chain] in the narrative. `config.mjs` defaults
+ *                      `chain.rpcUrl` to null, so the stub is what a demo run gets unless you
+ *                      pass one.
  *   --governance=<addr> --subvault-registry=<addr> --usdc=<addr> --chain-id=<n>
  *   --ticks=<n>        how many loop passes to run (default 1)
  *   --demo-wallet      generate a throwaway in-memory key, used as the x402 payer AND as the
@@ -119,8 +120,9 @@ async function main() {
   }
 
   // ── chain reader ───────────────────────────────────────────────────────────
-  // No RPC ⇒ the stub, loudly marked. The protocol is not deployed yet (docs/RUNTIME.md, #10), so
-  // the demo run cannot read a real chain and does not pretend to.
+  // No RPC ⇒ the stub, loudly marked. Nothing is deployed to mainnet; the one record in
+  // contracts/config/deployments/ is base-sepolia.json, a testnet trial. Without an --rpc there is
+  // no node to read at all, so the demo run answers from the fixture and does not pretend to.
   let chainReader;
   let entryMarks = {};
   if (config.chain.rpcUrl) {

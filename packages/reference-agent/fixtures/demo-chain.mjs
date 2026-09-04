@@ -2,10 +2,13 @@
 /**
  * Demo scenario — three vaults chosen to exercise every branch of the policy in one pass.
  *
- * This is FIXTURE DATA, not live protocol state. The contracts are not deployed yet (issue #10,
- * `VaultFactory` over the EIP-170 cap), so there is no chain to read and no indexer with real
- * history. Rather than run the demo against an empty snapshot — which produces "0 vaults known"
- * and an incoherent narrative — the same events are folded through the REAL projection code
+ * This is FIXTURE DATA, not live protocol state. (Nothing is deployed to mainnet: the only record
+ * in `contracts/config/deployments/` is `base-sepolia.json`, a testnet trial.) But no deployment
+ * would retire this file. The scenario below needs three vaults holding a specific joint state at
+ * the same moment — an unattested `operatorId 0`, an operator whose realized net has gone
+ * negative, and a Rebalance proposal in its reveal phase against a commit THIS agent already made
+ * — and no live chain can be relied on to be holding that when a demo happens to run. So the same
+ * events are folded through the REAL projection code
  * (`seed-snapshot.mjs` → `packages/indexer/src/projections.mjs`) so the API serves them exactly as
  * it would serve real ones, and the chain half comes from the stub reader, which marks every value
  * it produces `[stub-chain]`.

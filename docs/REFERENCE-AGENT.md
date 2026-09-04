@@ -344,6 +344,14 @@ mode — join, a freeze-safety `cancelPending` detour, activate, commit, reveal,
 priced on its own, and settle, every phase with a transaction hash. See
 [SOAK-REPORT.md](SOAK-REPORT.md) §5.
 
+The same claim outlived this section in the source comments, which the claims guard cannot reach —
+it walks `.md`, `.html`, `.txt` and `.json`, not `.mjs`. Five sites across
+`fixtures/demo-chain.mjs`, `fixtures/seed-snapshot.mjs`, `src/chain.mjs` and `src/run.mjs` still
+said the protocol was not deployed; all five were corrected on 2026-09-04
+([#197](https://github.com/SlumperSan/agent-governed-vaults/issues/197)). The absence is now scoped
+to mainnet, where it is true: `contracts/config/deployments/` holds one record,
+[`base-sepolia.json`](../contracts/config/deployments/base-sepolia.json), and no mainnet one.
+
 **The live run is what makes the warning above stronger, not weaker.** It surfaced two launch-class
 bugs that no amount of mock testing had found: `requireProvenOperator: false` was inert, so no
 configuration could ever admit a zero-track-record operator; and execute-mode deposits set no ERC-20
