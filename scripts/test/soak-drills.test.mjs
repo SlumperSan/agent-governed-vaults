@@ -979,7 +979,7 @@ test('votableNow rejects a settled proposal that activeProposalOf still names', 
   // the drill blamed governance 20 minutes later.
   const r = votableNow(
     { status: 'Executed', ptype: 0, createdAt: 1788479808, commitDeadline: 1788483408 },
-    { now: 1788534622, snapshotWeight: 0n },
+    { now: 1788534622, snapshotWeight: 0n, currentWeight: 0n },
   );
   assert.equal(r.votable, false);
   assert.match(r.reason, /status is Executed/);
@@ -989,7 +989,7 @@ test('votableNow rejects a settled proposal that activeProposalOf still names', 
 test('votableNow rejects an Active proposal whose commit window has closed', () => {
   const r = votableNow(
     { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 1000 },
-    { now: 1600, snapshotWeight: 5n },
+    { now: 1600, snapshotWeight: 5n, currentWeight: 5n },
   );
   assert.equal(r.votable, false);
   assert.match(r.reason, /commit window closed 600s ago/, 'say how stale, not just that it is stale');
@@ -999,9 +999,13 @@ test('votableNow rejects a proposal raised before the voter held shares', () => 
   // The conjunct a status+deadline check would miss. Proposal 3 was raised before the agent
   // activated, so its snapshot weight is zero and commitVote reverts NoWeight — attaching to it
   // reproduces the same 40-tick stall in a different costume.
+  //
+  // `currentWeight: 5n` is the faithful shape of that account: it holds shares NOW, it just did
+  // not hold them at `createdAt - 1`. It also proves the snapshot branch is reached on its own
+  // merits rather than by a healthy current weight being absent.
   const r = votableNow(
     { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 },
-    { now: 100, snapshotWeight: 0n },
+    { now: 100, snapshotWeight: 0n, currentWeight: 5n },
   );
   assert.equal(r.votable, false);
   assert.match(r.reason, /zero voting-eligible stake/);
@@ -1010,13 +1014,13 @@ test('votableNow rejects a proposal raised before the voter held shares', () => 
 
 test('votableNow accepts a genuinely votable round, and only then', () => {
   const good = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 };
-  assert.deepEqual(votableNow(good, { now: 100, snapshotWeight: 1n }), { votable: true, reason: '' });
+  assert.deepEqual(votableNow(good, { now: 100, snapshotWeight: 1n, currentWeight: 1n }), { votable: true, reason: '' });
   // and the ptype filter is opt-in, so it cannot silently reject when unused
-  assert.equal(votableNow(good, { now: 100, snapshotWeight: 1n, wantPtype: 0 }).votable, true);
-  const wrongType = votableNow(good, { now: 100, snapshotWeight: 1n, wantPtype: 3 });
+  assert.equal(votableNow(good, { now: 100, snapshotWeight: 1n, currentWeight: 1n, wantPtype: 0 }).votable, true);
+  const wrongType = votableNow(good, { now: 100, snapshotWeight: 1n, currentWeight: 1n, wantPtype: 3 });
   assert.equal(wrongType.votable, false);
   assert.match(wrongType.reason, /ptype is 0, not the expected 3/, 'the ptype reason must be asserted too, or it can be emptied unnoticed');
-  assert.equal(votableNow(null, { now: 100, snapshotWeight: 1n }).votable, false);
+  assert.equal(votableNow(null, { now: 100, snapshotWeight: 1n, currentWeight: 1n }).votable, false);
 });
 
 test('votableNow rejects at the EXACT commit deadline, matching commitVote', () => {
@@ -1024,8 +1028,191 @@ test('votableNow rejects at the EXACT commit deadline, matching commitVote', () 
   // Unpinned, `>=` could be relaxed to `>` and the suite would stay green while the drill
   // attached to a round one second past its window.
   const p = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 1000 };
-  assert.equal(votableNow(p, { now: 1000, snapshotWeight: 5n }).votable, false, 'now === deadline is CLOSED');
-  assert.equal(votableNow(p, { now: 999, snapshotWeight: 5n }).votable, true, 'one second earlier is open');
+  assert.equal(votableNow(p, { now: 1000, snapshotWeight: 5n, currentWeight: 5n }).votable, false, 'now === deadline is CLOSED');
+  assert.equal(votableNow(p, { now: 999, snapshotWeight: 5n, currentWeight: 5n }).votable, true, 'one second earlier is open');
+});
+
+test('votableNow names the QUEUED EXIT, not the snapshot, when only the current weight is zero', () => {
+  // The two zero-weight causes are opposite in time and the message used to state only one of
+  // them. `commitVote` gates on `_boundedWeight` (Governance.sol:365 -> :352-356), which is
+  // min(snapshot, current); handed only that minimum, this predicate saw `0` and blamed the
+  // proposal for predating the account. A voter who has queued an exit is the reverse case:
+  // `votingEligibleShares` is `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028), so the
+  // snapshot is positive and the CURRENT term is what went to zero. Drill 5 queues an exit in its
+  // own next phase (drill5-agent-execute.mjs), so a re-run reaches this exact state, and an
+  // operator told "raised before this account held shares" would go looking at the wrong end of
+  // the timeline.
+  const p = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 };
+  const r = votableNow(p, { now: 100, snapshotWeight: 7n, currentWeight: 0n });
+  assert.equal(r.votable, false, 'min(7, 0) is 0, so commitVote would revert NoWeight');
+  assert.match(r.reason, /no voting-eligible shares NOW/, 'the cause is present-tense, not the snapshot');
+  assert.match(r.reason, /queuedExitShares/, 'name the mechanism that zeroed it');
+  assert.match(r.reason, /snapshot weight 7, current 0/, 'print both terms, or the operator cannot see which one is zero');
+  assert.doesNotMatch(r.reason, /raised before this account held shares/,
+    'the snapshot story is FALSE here — snapshot weight is 7');
+});
+
+test('votableNow refuses rather than guesses when currentWeight is not supplied', () => {
+  // FAIL CLOSED ON A MISSING INPUT. Defaulting the second term — to the snapshot, or to infinity —
+  // would hand a future caller the exact wrong-cause message this pair of branches exists to
+  // prevent, and nothing would go red. That is the shape of the inert SOAK_VAULTS leg: a guard
+  // wired to an input nobody supplies reads identically to a guard with nothing to report.
+  const p = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 };
+  const r = votableNow(p, { now: 100, snapshotWeight: 5n });
+  assert.equal(r.votable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /currentWeight was not supplied/, 'name the missing input, not a symptom');
+});
+
+// ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────
+//
+// Every votableNow case above hands the predicate a hand-built literal. In production its
+// argument is a `readProposal` result, and `readProposal` derives `status` from
+// `STATUS[Number(p[P.STATUS])]` (lib.mjs:473) after a live `cast` subprocess — so nothing in this
+// file could reach that lookup. Respell an entry in STATUS and votableNow states a confident,
+// wrong reason on every proposal while the suite stays green: the same silent failure the budget
+// guard had before PR #177.
+//
+// `decodeProposal` is the pure half, split out of `readProposal` for exactly this. The two
+// fixtures below are its input.
+//
+// PROVENANCE, stated precisely because a fixture that claims to be captured and is not is worse
+// than no fixture. NEITHER TUPLE WAS CAPTURED FROM A CHAIN OR A LOG. `PROPOSAL_3_EXECUTED` is
+// CONSTRUCTED around the four values this file already pins for the smoke vault's proposal 3 —
+// createdAt 1788479808, commitDeadline 1788483408 and status Executed from the regression test
+// above, and ptype 2 (ChildAllocation) from that test's own comment, which is a comment and not a
+// chain read. The `vault` field is soak-vaults.json's `smokeVault.address`. The remaining ELEVEN
+// fields, revealDeadline included, are synthetic: chosen only so that all sixteen decoded values
+// are pairwise distinct, which is what makes an index shift in `P` change an asserted value
+// instead of swapping two equal ones.
+
+import { decodeProposal, STATUS, P, PROPOSAL_SIG } from '../soak/lib.mjs';
+
+/** One cleaned `cast call` output line per tuple member, in `P` order — what `call()` returns. */
+const PROPOSAL_3_EXECUTED = [
+  '0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98',                         // 0 vault
+  '2',                                                                  // 1 ptype (ChildAllocation)
+  '0x00000000000000000000000000000000000000b2',                         // 2 proposer (synthetic)
+  '1788479808',                                                         // 3 createdAt
+  '1788483408',                                                         // 4 commitDeadline
+  '1788487008',                                                         // 5 revealDeadline (synthetic)
+  '1788487009',                                                         // 6 executableAt (synthetic)
+  '1788573408',                                                         // 7 expiresAt (synthetic)
+  '4',                                                                  // 8 status (Executed)
+  `0x${'ab'.repeat(32)}`,                                               // 9 actionHash (synthetic)
+  '7000000000000000000',                                                // 10 snapshotTotal (synthetic)
+  '5',                                                                  // 11 memberCount (synthetic)
+  '6000000000000000000',                                                // 12 forWeight (synthetic)
+  '1000000000000000000',                                                // 13 againstWeight (synthetic)
+  '8000000000000000000',                                                // 14 revealedWeight (synthetic)
+  '3',                                                                  // 15 revealedVoterCount (synthetic)
+];
+
+/** Wholly synthetic. Status byte 1, so it is the tuple that exercises `STATUS[1] === 'Active'`. */
+const PROPOSAL_ACTIVE = [
+  '0x00000000000000000000000000000000000000a1', '0',
+  '0x00000000000000000000000000000000000000b2',
+  '1000', '4600', '8200', '8201', '94600',
+  '1',
+  `0x${'11'.repeat(32)}`,
+  '9000', '4', '0', '0', '0', '0',
+];
+
+test('decodeProposal maps every tuple index to its named field, and no two land on the same one', () => {
+  const p = decodeProposal(PROPOSAL_3_EXECUTED);
+  assert.deepEqual(
+    {
+      vault: p.vault, ptype: p.ptype, proposer: p.proposer, createdAt: p.createdAt,
+      commitDeadline: p.commitDeadline, revealDeadline: p.revealDeadline,
+      executableAt: p.executableAt, expiresAt: p.expiresAt, status: p.status,
+      actionHash: p.actionHash, snapshotTotal: p.snapshotTotal, memberCount: p.memberCount,
+      forWeight: p.forWeight, againstWeight: p.againstWeight, revealedWeight: p.revealedWeight,
+      revealedVoterCount: p.revealedVoterCount,
+    },
+    {
+      vault: '0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98',
+      ptype: 2,
+      proposer: '0x00000000000000000000000000000000000000b2',
+      createdAt: 1788479808,
+      commitDeadline: 1788483408,
+      revealDeadline: 1788487008,
+      executableAt: 1788487009,
+      expiresAt: 1788573408,
+      status: 'Executed',
+      actionHash: `0x${'ab'.repeat(32)}`,
+      snapshotTotal: 7000000000000000000n,
+      memberCount: 5,
+      forWeight: 6000000000000000000n,
+      againstWeight: 1000000000000000000n,
+      revealedWeight: 8000000000000000000n,
+      revealedVoterCount: 3,
+    },
+  );
+  // The numeric fields are Numbers and the weight fields BigInts; `deepEqual` above is strict
+  // about that, so a `Number`/`BigInt` swap in the decode is caught rather than coerced away.
+  assert.equal(p.raw, PROPOSAL_3_EXECUTED, 'raw must carry the input lines through unchanged');
+});
+
+test('decodeProposal feeds votableNow the Executed status that stalled the 2026-09-04 run', () => {
+  // END TO END ACROSS THE SEAM, which is the whole point of issue #178: the decoded object goes
+  // straight into the predicate, so `STATUS[4]` and `p.status !== 'Active'` are pinned to each
+  // other rather than each to a literal.
+  const p = decodeProposal(PROPOSAL_3_EXECUTED);
+  const r = votableNow(p, { now: 1788534622, snapshotWeight: 0n, currentWeight: 0n });
+  assert.equal(r.votable, false);
+  assert.match(r.reason, /status is Executed/,
+    'a respelt STATUS[4] would print "status is undefined" here');
+});
+
+test('decodeProposal produces the exact Active string votableNow compares against', () => {
+  // THE MUTATION ISSUE #178 DESCRIBES. `votableNow` tests `p.status !== 'Active'` against a string
+  // that only `STATUS` produces. Respell `STATUS[1]` — 'Active' -> 'Activ' — and every proposal
+  // becomes unvotable with the confident reason "status is Activ, not Active"; before this test
+  // the whole suite stayed green through that mutation, because no test ever produced a status
+  // string with the decoder.
+  assert.equal(STATUS[1], 'Active', 'the literal the predicate compares against, at its source');
+
+  const p = decodeProposal(PROPOSAL_ACTIVE);
+  assert.equal(p.status, 'Active');
+  assert.deepEqual(
+    votableNow(p, { now: 1200, snapshotWeight: 3n, currentWeight: 3n }),
+    { votable: true, reason: '' },
+    'a decoded Active proposal inside its commit window must be votable',
+  );
+});
+
+test('the P index map still matches the arity and order of PROPOSAL_SIG', () => {
+  // A fixture is only evidence if it has the shape the signature returns. `cast call` prints one
+  // line per return value, so the tuple length and the highest index in `P` must agree with the
+  // signature `readProposal` actually sends.
+  const returns = /\)\(([^)]*)\)$/.exec(PROPOSAL_SIG);
+  assert.ok(returns, 'PROPOSAL_SIG must still declare a return tuple');
+  const arity = returns[1].split(',').length;
+  assert.equal(arity, 16, 'proposals(uint256) returns sixteen values');
+  assert.equal(PROPOSAL_3_EXECUTED.length, arity, 'the fixture must be one line per return value');
+  assert.equal(PROPOSAL_ACTIVE.length, arity);
+  assert.equal(Math.max(...Object.values(P)), arity - 1, 'P must not index past the tuple');
+  assert.equal(new Set(Object.values(P)).size, arity, 'every index used exactly once');
+  assert.equal(new Set(PROPOSAL_3_EXECUTED).size, arity,
+    'the fixture values must be pairwise distinct, or an index swap decodes identically');
+});
+
+test('the two seams the fixture cannot execute are pinned as source text instead', () => {
+  // WHAT A FIXTURE CANNOT REACH. `readProposal` runs `cast` in a subprocess and drill 5 executes
+  // at import, so neither can be driven in-process. Mutation confirmed the gap is real: making
+  // `readProposal` drop the first output line before decoding, and making drill 5 pass its
+  // already-minimised weight again, each left all other tests in this file green. These are
+  // text-and-order pins over the source, the same instrument the run-soak.ps1 tests below use,
+  // and they catch the defect that actually happens here — an edit that re-introduces the
+  // pre-#178 shape in a file no test executes.
+  const lib = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'lib.mjs'), 'utf8');
+  assert.match(lib, /return decodeProposal\(call\(governance, PROPOSAL_SIG, pid\)\);/,
+    'readProposal must hand call()\'s lines to decodeProposal unaltered, or the fixture pins a decoder nothing uses');
+
+  const drill5 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill5-agent-execute.mjs'), 'utf8');
+  assert.match(drill5, /votableNow\(prop, \{ now: chainNow\(\), snapshotWeight: snap, currentWeight: cur \}\)/,
+    'drill 5 must pass BOTH terms unbounded — handing it the min again restores the wrong-cause message');
+  assert.match(drill5, /const snapshotWeight = snap < cur \? snap : cur;/,
+    'the local min is still what the diagnostic line prints as boundedWeight');
 });
 
 // ───────── the launcher wiring: run-soak.ps1 must actually start the companion ─────────
