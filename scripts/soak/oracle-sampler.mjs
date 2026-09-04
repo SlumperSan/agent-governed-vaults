@@ -110,21 +110,15 @@ const clean = (s) => s.replace(/\s+\[[^\]]*\]$/, '').trim();
  * A transport failure is NOT a contract verdict. Conflating the two is how a rate-limited public
  * RPC turns into "the oracle is frozen" in a report — the same defect `verify-chainlink-oracle.mjs`
  * found in itself when a dropped `aggregator()` call announced a swap that never happened.
+ *
+ * SINGLE SOURCE, in `lib.mjs`. This used to be defined here and `lib.mjs`'s own `tryCall` had no
+ * equivalent at all, which is how drill 3 came to assert `!attempt.ok` as proof that a call had
+ * been REFUSED — an assertion a 429 satisfies. Two copies of a security-relevant regex drift; one
+ * of them would eventually be the stale one. Re-exported so this module's public API is unchanged.
  */
-const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
-/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
-const REVERTED = /execution reverted|revert(ed)?:/i;
+import { classifyCallError } from './lib.mjs';
 
-/**
- * Classify a failed `cast call`. Only a recognised REVERT is evidence about the contract; anything
- * else is missing evidence and must be recorded as such.
- * @param {string} err
- * @returns {'revert'|'transport'}
- */
-export function classifyCallError(err) {
-  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
-  return REVERTED.test(err) ? 'revert' : 'transport';
-}
+export { classifyCallError };
 
 /** @returns {{ok:true,out:string}|{ok:false,err:string,kind:'revert'|'transport'}} */
 function tryCast(args, { attempts = 2 } = {}) {

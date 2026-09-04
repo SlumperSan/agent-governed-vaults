@@ -125,12 +125,33 @@ export function call(to, sig, ...args) {
 }
 export const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
-/** Read-only call that may legitimately revert. Never throws. */
+const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
+/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
+const REVERTED = /execution reverted|revert(ed)?:/i;
+
+/**
+ * Classify a failed `cast` call. ONLY a recognised revert is evidence about the contract; anything
+ * else is missing evidence and must be recorded as such.
+ *
+ * This exists because a drill asserted `!result.ok` to prove a call was REFUSED, and `ok:false` is
+ * also what a rate limit produces — so a 429 satisfied a security assertion. "It failed" and "the
+ * contract refused it" are different claims, and only one of them is a finding.
+ *
+ * @param {string} err
+ * @returns {'revert'|'transport'}
+ */
+export function classifyCallError(err) {
+  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
+  return REVERTED.test(err) ? 'revert' : 'transport';
+}
+
+/** Read-only call that may legitimately revert. Never throws. Carries `kind` on failure. */
 export function tryCall(to, sig, ...args) {
   try {
     return { ok: true, lines: call(to, sig, ...args) };
   } catch (e) {
-    return { ok: false, err: String(e.message).split('\n').slice(0, 2).join(' ') };
+    const err = String(e.message).split('\n').slice(0, 2).join(' ');
+    return { ok: false, err, kind: classifyCallError(err) };
   }
 }
 
@@ -139,7 +160,8 @@ export function staticCallAs(from, to, sig, ...args) {
   try {
     return { ok: true, out: cast(['call', to, sig, ...args.map(String), '--from', from, '--rpc-url', RPC]) };
   } catch (e) {
-    return { ok: false, err: String(e.message).split('\n').slice(0, 2).join(' ') };
+    const err = String(e.message).split('\n').slice(0, 2).join(' ');
+    return { ok: false, err, kind: classifyCallError(err) };
   }
 }
 

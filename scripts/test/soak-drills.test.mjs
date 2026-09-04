@@ -802,3 +802,43 @@ test('a stale lock from a crashed drill is broken rather than waited on forever'
   assert.equal(got, 'proceeded', 'a dead holder must not block the rest of the soak');
   assert.equal(fs.existsSync(LOCK), false);
 });
+
+// ─────────── transport is not a verdict (drill 3's false PASS) ───────────
+
+test('classifyCallError: only a recognised revert is evidence about the contract', () => {
+  // drill3-modef asserted `!attempt.ok` to prove settleQueuedExit was REFUSED while a rebalance
+  // was pending (EE-10/K-1). A rate limit also yields `ok:false`, so the assertion PASSED on a
+  // 429 and the drill persisted the 429 text as `revertedWith` — a security invariant recorded as
+  // proven because the network was busy. These are the two claims that must never be conflated.
+  for (const err of [
+    'server returned an error response: error code 3: execution reverted, data: "0x88cce429"',
+    'Error: execution reverted',
+    'reverted: ExecutionPending()',
+  ]) {
+    assert.equal(classifyCallError(err), 'revert', `should be a contract verdict: ${err}`);
+  }
+
+  for (const err of [
+    'error sending request: 429 Too Many Requests',
+    'Error: operation timed out',
+    'ECONNRESET',
+    'getaddrinfo ENOTFOUND base-sepolia-rpc.publicnode.com',
+    'max retries exceeded',
+    'error sending request: 503 Service Unavailable',
+  ]) {
+    assert.equal(classifyCallError(err), 'transport', `must NOT be read as a contract verdict: ${err}`);
+  }
+});
+
+test('classifyCallError: a revert whose text also mentions a transport-ish token is still a revert', () => {
+  // The order matters. A revert reason containing "timeout" or a 429-like number must not be
+  // demoted to missing evidence, or a real finding disappears.
+  assert.equal(classifyCallError('execution reverted, data: "0x429" timeout'), 'revert');
+  assert.equal(classifyCallError('reverted: DeadlineTimeout()'), 'revert');
+});
+
+test('classifyCallError is fail-safe for the drill: an unknown string is NOT a revert', () => {
+  // Unknown wording must not satisfy an assertion that a refusal was observed. Erring toward
+  // "transport" makes drill 3 fail loudly (UNPROVEN) rather than pass quietly.
+  assert.equal(classifyCallError('something nobody has seen before'), 'transport');
+});
