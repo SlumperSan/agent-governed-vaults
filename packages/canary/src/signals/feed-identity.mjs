@@ -69,11 +69,17 @@
  *
  * Every branch below that cannot measure returns `detectorBroken`, which the transition tracker
  * re-asserts on a doubling backoff. The one departure from `oracle-health.mjs` is
- * `minConsecutive: UNREADABLE_SWEEPS`: every blind branch here is triggered by an eth_call coming
- * back empty, and PR #92 recorded observing exactly that against `aggregator()` on 2026-08-30 —
- * a single empty return is RPC noise, three consecutive is the feed. oracle-health needs no such
- * damping because its blind branch is structural (an oracle answering an ABI it does not have),
- * not a transient read.
+ * `minConsecutive: UNREADABLE_SWEEPS`: the case that earned it is an eth_call coming back empty,
+ * which PR #92 recorded observing against `aggregator()` on 2026-08-30 — a single empty return is
+ * RPC noise, three consecutive is the feed. That is the case it was written for, not the only one
+ * it covers: every blind branch here is also reachable on a confirmed revert, and on a transport
+ * failure since the reader began telling those apart, and the damping applies to all three.
+ *
+ * `oracle-health` carries no such damping, but not for the reason this header used to give. Its
+ * blind branches are FOUR, not one (`oracle-health.mjs:173, 264, 356, 401`), and only `:173`'s is
+ * structural — an oracle answering neither known ABI. The other three turn on a per-asset or
+ * per-feed read that did not come back, so “structural, not a transient read” never covered them;
+ * they simply set no `minConsecutive`.
  *
  * Fans out one result per (vault, asset), keyed by asset, like `oracle-freshness`.
  */

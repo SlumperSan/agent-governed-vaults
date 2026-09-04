@@ -580,19 +580,32 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 `revert` can produce a verdict, and a `transport` routes here — visible, re-asserted on a backoff,
 and explicitly not evidence of a fault.
 
-**`feed-identity` is the only signal that damps against RPC noise.** All four of its blind branches
-(`feed-identity.mjs:172, 204, 252, 283`) are triggered by an `eth_call` coming back empty, and one
-empty return is noise while three consecutive is the feed — so they carry
-`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:94`) and only escalate on the third sweep.
-The exception is the very first sighting of an asset, which reports immediately: a monitor that has
+**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
+blind branches (`feed-identity.mjs:178, 210, 258, 289`) carry
+`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:100`), so they escalate only on the third
+consecutive sweep. The case that earned the damping is an `eth_call` coming back empty — one empty
+return is noise where three consecutive is the feed — but that is the case it was written for, not
+the only one it covers: each branch is reachable on a confirmed revert too, and on a transport
+failure since the reader began telling those apart, and the damping applies to all three. The
+exception is the very first sighting of an asset, which reports immediately: a monitor that has
 never once succeeded must not be indistinguishable from silence.
 
-Do not read that count off the table, because rows and branches do not correspond one to one: only
-two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds two
-lines that behave differently — `feed-identity`'s “could not be probed” damps, `oracle-health`'s
+**`share-conservation` damps as well, which is why that lede is scoped to blind lines.**
+`minConsecutive: pinned ? 1 : 2` (`share-conservation.mjs:76`) makes an UNPINNED result wait for two
+consecutive observations before the tracker flips its status — `alert` and `ok` alike, because
+`transitions.mjs:146` gates every status flip on `need`, not only the blind ones. A result is
+unpinned either because the caller passed no `atBlock` (`share-conservation.mjs:39`) or because the
+pinned read failed and the archive fallback re-read at chain head (`share-conservation.mjs:44-51`);
+that failure is transport-classified, so RPC noise is one of the two paths into this damping rather
+than something it is unrelated to.
+
+Do not read the branch count off the table, because rows and branches do not correspond one to one:
+only two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds
+two lines that behave differently — `feed-identity`'s “could not be probed” damps, `oracle-health`'s
 “neither probe … could be read” does not. **Every other blind line re-asserts from the first
 sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
-branches set no `minConsecutive` at all.
+branches set no `minConsecutive`, and neither do the two the runner emits itself
+(`canary-runner.mjs:266` — row `:566`; `canary-runner.mjs:243` — row `:567`).
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never
