@@ -198,3 +198,28 @@ test('WIRING: a genuine revert over the same live path still ALERTS — the sent
     assert.equal(r.detail.revertName, 'Reentrancy');
   } finally { await node.close(); }
 });
+
+test('WIRING: a genuine EMPTY-returndata revert over the live path ALERTS as EMPTY returndata, not as the probe member\'s own address', async () => {
+  // The H-1 signature itself: the node says code 3 and returns no `data`. viem's message then
+  // quotes the request under "Raw Call Arguments" with `from` first, and the reader's scrape used
+  // to read that back as returndata — so this exact line said "unrecognized revert 0x66666666",
+  // MEMBER's first four bytes. The verdict was already right (both branches ALERT); what this pins
+  // is the diagnosis, because docs/CANARY.md §3(d) names empty returndata as the thing an
+  // operator is meant to recognise.
+  const node = await rpcServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: 3, message: 'execution reverted' } }));
+  });
+  try {
+    const [r] = await checkExitLiveness({
+      reader: liveReader(node.url), vault: VAULT, shareBook: book, creator: CREATOR,
+    });
+    assert.equal(r.status, 'alert');
+    assert.match(r.message, /EXIT LIVENESS BROKEN/);
+    assert.match(r.message, /EMPTY returndata \(out-of-gas or returndata bomb\)/);
+    assert.doesNotMatch(r.message, /unrecognized revert/);
+    assert.doesNotMatch(r.message, new RegExp(MEMBER.slice(0, 10)), 'the probe member\'s address is the request, not the revert');
+    assert.equal(r.detail.revertName, 'EMPTY returndata (out-of-gas or returndata bomb)');
+    assert.equal(r.detail.revertData, null);
+  } finally { await node.close(); }
+});

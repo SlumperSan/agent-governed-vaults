@@ -276,6 +276,14 @@ Three-way classification:
 Empty returndata is the actual H-1 signature — a creator-chosen module that ran out of its 300k gas
 cap or bombed returndata. There is deliberately **no** "could not classify, assume healthy" branch.
 
+The two fault labels are backed differently, and neither can come from the canary's own request.
+`EMPTY returndata (out-of-gas or returndata bomb)` means neither viem's structured fields nor the
+node's own error text carried any returndata. `unrecognized revert 0x…` names the first four bytes
+of returndata the node did return. The reader never scrapes viem's composed message, which quotes
+the `from`, `to` and `data` it was asked to send: on an empty-returndata revert that scrape used to
+report the probe member's address as an "unrecognized revert" (`packages/canary/src/reader.mjs`,
+`scrapedRevertData`; pinned against a real viem client in `test/exit-liveness.test.mjs`).
+
 **Threshold.** No non-gate revert.
 
 **When it fires.** Members cannot leave. Check the `module-events` signal on the same vault: a
