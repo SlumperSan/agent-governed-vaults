@@ -17,8 +17,8 @@ capital would be trapped for the length of an outage with no recourse.
 |---|---|
 | Vault | `0xd9d386dd76d802e5e1ce3fc53d0e104217fd686a` |
 | Member | `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35` |
-| Pending deposit | `5000000` base units (5.000000 USDC), unchanged across every probed sample |
-| `cancelPending()` verdict | **`callable` in 31 of 31 probed samples** |
+| Pending deposit | `5000000` base units (5.000000 USDC), unchanged across all 31 rows that saw a live deposit |
+| `cancelPending()` verdict | **162 probe rows; 31 probed a real pending deposit and all 31 returned `callable`; 0 `BLOCKED`; 131 `n/a-no-pending`** |
 | Probe window | `2026-09-04T01:35:36Z` → `2026-09-04T02:08:16Z` (32.7 minutes) |
 | Series file | [`soak-freeze-safety-series.jsonl`](soak-freeze-safety-series.jsonl) — a snapshot taken at `02:33:18Z`: 54 samples, `01:35:36Z` → `02:33:18Z`, verdicts `{"callable": 31, "n/a-no-pending": 131}` |
 
@@ -98,6 +98,17 @@ mapped over an empty list and wrote `freezeSafety: []` every sample — no rows,
 Drill 4 correctly refused to claim the property, but reported the reason as "every sample was
 `n/a-no-pending`", a statement about pending deposits rather than about the probe.
 
-Fixed by indexer-projection discovery plus a `not-configured` sentinel row, so an unconfigured
-probe records its own absence instead of leaving a gap. Details in `scripts/soak/oracle-sampler.mjs`
-and `scripts/soak/series-analysis.mjs`.
+**Not yet fixed in this tree.** The fix — indexer-projection discovery plus a `not-configured`
+sentinel row, so an unconfigured probe records its own absence instead of leaving a gap — is in
+PR #170, which is open and unmerged as of this record. On the commit this record lands on,
+`scripts/soak/oracle-sampler.mjs` still derives its probe set from `SOAK_VAULTS` alone. Do not read
+the paragraph above as describing current behaviour; it describes the defect this evidence was
+captured in spite of.
+
+## This does not move gate 3
+
+Gate 3 asks for the **five soak drills executing against the current deployment**. This is the
+freeze-safety leg of drill 4 only, from a hand-started sampler. **Gate 3 remains STALE**, and
+`docs/LAUNCH-READINESS.md` is deliberately not edited by the change that adds this file — evidence
+accumulating is not a gate being earned, and the row should move only when the whole battery has
+run on the fixed harness.
