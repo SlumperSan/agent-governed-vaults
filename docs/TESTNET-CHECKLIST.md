@@ -166,6 +166,14 @@ Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address
   configured heartbeat (86,400 s on this testnet). The breaker is working as designed (K-4), and
   with one feed per asset there is no second source to fall back to. The no-op lifecycle never prices a non-zero basket balance, so
   the run continues; the warning is still worth noting in the run record.
+- **`priceWad could not be read` warning, or a `registry.wire() could not be confirmed to revert`
+  FAIL, in preflight** — the call failed without a contract revert (a rate limit, a timeout, DNS,
+  `cast` itself, or wording the classifier does not recognise). Neither is a verdict on the
+  deployment: the oracle line is not a `StaleOracle` trip, and the wiring line means the lock was
+  not verified, not that it is broken. Preflight runs from the top on every start, so re-run the
+  same command once the RPC answers. Before this distinction existed the runner passed the wiring
+  check on any failed call, so a preflight line from an older runner is evidence of the lock only
+  if the RPC was answering at the time.
 - **`ChainIdMismatch` on deploy** — your `--rpc-url` points at the wrong chain. Nothing was
   sent.
 - **Proposal expired during a long pause** — the runner auto-expires it (`markExpired`) and

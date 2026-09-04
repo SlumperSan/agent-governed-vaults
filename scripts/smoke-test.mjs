@@ -34,6 +34,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { classifyProposal } from './proposal-recovery.mjs';
+import { wiringImmutabilityFailure, oracleProbeWarning } from './smoke-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
@@ -70,7 +71,9 @@ function cast(args, { interactive = false } = {}) {
     }).trim();
   } catch (e) {
     const detail = e.stderr ? String(e.stderr).trim() : e.message;
-    throw new Error(`cast ${args.slice(0, 3).join(' ')} … failed: ${detail}`);
+    // `detail` rides on the error so a catch site can classify cast's own words (revert vs
+    // transport, packages/canary/src/call-error.mjs) without the prefix below in front of them.
+    throw Object.assign(new Error(`cast ${args.slice(0, 3).join(' ')} … failed: ${detail}`), { detail });
   }
 }
 
@@ -83,6 +86,14 @@ function call(to, sig, ...args) {
   return out.split('\n').map(clean);
 }
 const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
+
+/** Run a read whose EXPECTED outcome may be a revert, and return the failure as data for a verdict
+ * function (smoke-preflight.mjs) instead of swallowing it. `error` is cast's own stderr (`detail`,
+ * set in `cast()`), which is what `classifyCallError` is measured against. */
+function attempt(fn) {
+  try { return { ok: true, value: fn() }; }
+  catch (e) { return { ok: false, error: String(e.detail ?? e.message) }; }
+}
 
 /** Synchronous sleep — used only by readUntilEq's retry loop, so the (non-async) step functions
  * need no async plumbing. Atomics.wait blocks this thread for `ms`. */
@@ -223,25 +234,25 @@ function preflight() {
     assert(usdcBal >= need, `signer needs >= ${need} USDC units (has ${usdcBal}) — faucet.circle.com → Base Sepolia`);
   }
 
-  // Wiring is one-shot: a second wire() MUST revert (AlreadyWired / OnlyDeployer).
-  let rewired = false;
-  try {
-    call(dep.registry, 'wire(address,address)', '0x0000000000000000000000000000000000000001', '0x0000000000000000000000000000000000000002');
-    rewired = true;
-  } catch { /* expected revert */ }
-  assert(!rewired, 'registry.wire() did NOT revert — deployment is not wired/locked correctly');
+  // Wiring is one-shot: a second wire() MUST revert (AlreadyWired / OnlyDeployer), and only a
+  // CONFIRMED revert proves it. This was a bare catch commented "expected revert", which read a
+  // 429, a timeout or a DNS miss as that revert and PASSED the assertion having tested nothing —
+  // a false PASS on a security check, the quiet direction. smoke-preflight.mjs holds the three
+  // outcomes; a call that reaches no verdict now FAILS the run.
+  const wiring = wiringImmutabilityFailure(attempt(() =>
+    call(dep.registry, 'wire(address,address)', '0x0000000000000000000000000000000000000001', '0x0000000000000000000000000000000000000002')));
+  assert(wiring === null, wiring);
 
-  // Oracle probe: real Chainlink feeds through the deployed aggregator. Testnet feeds can
-  // idle past maxStaleness; the no-op lifecycle never prices a non-zero basket balance, so
-  // a tripped breaker here is a WARNING, not a failure.
+  // Oracle probe: real Chainlink feeds through the deployed aggregator. Testnet feeds can idle
+  // past their heartbeat; the no-op lifecycle never prices a non-zero basket balance, so a
+  // tripped breaker here is a WARNING, not a failure. A read that reached no verdict is a
+  // different warning, and is no longer worded as a stale feed (smoke-preflight.mjs).
   for (const a of cfg.assets) {
-    try {
-      const p = callU(dep.aggregator, 'priceWad(address)(uint256)', a.token);
-      assert(p > 10n ** 12n && p < 10n ** 26n, `${a.symbol} priceWad ${p} outside sanity range`);
-      log(`oracle ${a.symbol}: priceWad = ${p} (~$${Number(p / 10n ** 12n) / 1e6})`);
-    } catch (e) {
-      log(`WARN oracle ${a.symbol}: priceWad reverted (${e.message.split('\n')[0]}) — feed likely stale >24h on testnet; breaker is doing its job, lifecycle continues`);
-    }
+    const r = attempt(() => callU(dep.aggregator, 'priceWad(address)(uint256)', a.token));
+    if (!r.ok) { log(oracleProbeWarning(a.symbol, r.error).message); continue; }
+    const p = r.value;
+    assert(p > 10n ** 12n && p < 10n ** 26n, `${a.symbol} priceWad ${p} outside sanity range`);
+    log(`oracle ${a.symbol}: priceWad = ${p} (~$${Number(p / 10n ** 12n) / 1e6})`);
   }
   log('preflight OK');
 }
