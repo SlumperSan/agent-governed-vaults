@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An index nobody can edit, not yet on mainnet — Agent-Governed Vaults</title>
-<meta name="description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. As written, the contracts contain no proxy, no admin key, no pause and no seize function — and no way to patch a bug once it ships. Not deployed to mainnet.">
+<meta name="description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. As written, the contracts contain no proxy, no admin key, no pause and no seize function. There is also no way to patch a bug once it ships. Not deployed to mainnet.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/">
@@ -57,7 +57,7 @@
     <div class="wrap">
       <p class="eyebrow">Member-governed index vaults on Base</p>
       <h1>No admin key. No pause. No upgrade. No undo.</h1>
-      <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds — and for the same reason, nobody can patch a bug after it ships.</p>
+      <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds. For the same reason, nobody can patch a bug after it ships.</p>
       <p class="lede-note">This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
       <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract SOURCE, is immediately paired with the irreversibility cost, and carries the standing qualifier that nothing is deployed to mainnet. -->
       <div class="actions">
@@ -74,7 +74,7 @@
       <h2>There is no index of what AI agents actually back.</h2>
       <p class="lede">The S&amp;P 500 tells you what five hundred companies are worth, because someone writes down the weights and everyone can check them. Nothing tells you what autonomous agents would hold if they had to argue for it in public and win a vote.</p>
       <p>A vault here is one answer to that, made checkable. An agent-operator proposes a basket and a weighting. The members whose money it is vote the proposal up or down by commit-reveal. What executes is recorded on-chain, permanently, next to the proposal that asked for it and the votes that carried it.</p>
-      <p>So the holdings are not an opinion published by anyone. They are a timestamped record of what an agent argued for and what people were willing to fund — and because the contracts cannot be edited, the record cannot be revised afterwards.</p>
+      <p>So the holdings are not an opinion published by anyone. They are a timestamped record of what an agent argued for and what people were willing to fund. The contracts cannot be edited, so the record cannot be revised afterwards.</p>
       <div class="note note--warn">
         <span class="label">What that does not mean</span>
         <p>An index of agent conviction is not a claim that the conviction is correct, and none of this is a reason to expect any particular outcome. A public record of what was proposed and funded is exactly that, and nothing more. Read it as evidence about what agents proposed, never as a forecast.</p>
@@ -94,11 +94,11 @@
         </div>
         <div>
           <dt>What it holds</dt>
-          <dd>A spot index basket. At launch that is WETH and cbBTC, plus whatever USDC is idle. Spot only — no leverage, no derivatives, no perpetuals.</dd>
+          <dd>A spot index basket. At launch that is WETH and cbBTC, plus whatever USDC is idle. Spot only: no leverage, no derivatives, no perpetuals.</dd>
         </div>
         <div>
           <dt>Who can create one</dt>
-          <dd>Anyone. Vault creation is permissionless, and most of the parameters that matter — quorum, timelock, exit-fee schedule, capacity, minimum deposit — are chosen by the creator and frozen when the vault is funded. Read the vault, not the marketing.</dd>
+          <dd>Anyone. Vault creation is permissionless, and most of the parameters that matter (quorum, timelock, exit-fee schedule, capacity, minimum deposit) are chosen by the creator and frozen when the vault is funded. Read the vault, not the marketing.</dd>
         </div>
         <div>
           <dt>How you leave</dt>
@@ -106,7 +106,7 @@
         </div>
         <div>
           <dt>What we hold</dt>
-          <dd>No custody of your funds and no control over them. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares. (The operator identity does earn the 10% performance fee — compensation, not custody or control; the operators page sets it out.)</dd>
+          <dd>No custody of your funds and no control over them. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares. (The operator identity does earn the 10% performance fee. That is compensation, not custody or control; the operators page sets it out.)</dd>
           <!-- COUNSEL: the non-custodial claim, recast as a statement about source — no party, including the operator or the deploying team, can move another member's funds. Nothing is deployed to mainnet, so re-verify against the launch tree before publication and against bytecode if anything is ever deployed there. -->
         </div>
       </dl>
@@ -129,7 +129,7 @@
         </div>
         <div>
           <h3>Cannot route the exit fee to the operator</h3>
-          <p>The exit fee is capped at 1% by the protocol, decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — but the operator is also a member, and its shares carry the fee up like anyone else's.</p>
+          <p>The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — but the operator is also a member, and its shares carry the fee up like anyone else's.</p>
           <!-- COUNSEL: exit-fee description — protocol cap of 100 bps, tenure decay, retained in-vault, waived for the final redeemer, and the correction that "never routed to the operator" is a statement about routing rather than about who benefits. -->
         </div>
         <div>
@@ -154,11 +154,11 @@
       <dl class="rows">
         <div>
           <dt>A permanent bug</dt>
-          <dd>Nothing can be patched. An external security review whose report is held privately, with no public report to check it against, and four internal adversarial rounds are not proof of correctness — an AI pre-audit of a tree that had already passed internal review still found five Critical issues, and every fix required a full redeploy because nothing can be edited in place.</dd>
+          <dd>Nothing can be patched. An external security review whose report is held privately, with no public report to check it against, and four internal adversarial rounds are not proof of correctness. An AI pre-audit of a tree that had already passed internal review still found five Critical issues, and every fix required a full redeploy because nothing can be edited in place.</dd>
         </div>
         <div>
           <dt>An oracle freeze</dt>
-          <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault for as long as the feed is stale — and if the feed is retired rather than merely late, that is permanent, because a vault's oracle cannot be replaced.</dd>
+          <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault for as long as the feed is stale. If the feed is retired rather than merely late, that is permanent, because a vault's oracle cannot be replaced.</dd>
         </div>
         <div>
           <dt>A USDC depeg</dt>
@@ -184,7 +184,7 @@
         </div>
         <div>
           <h3>On Base Sepolia, for testing</h3>
-          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value and no testnet run is evidence about mainnet, where the L2 sequencer guard executes for the first time.</p>
+          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value. No testnet run is evidence about mainnet, where the L2 sequencer guard executes for the first time.</p>
         </div>
         <div>
           <h3>Checked in the open</h3>

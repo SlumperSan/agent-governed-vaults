@@ -68,7 +68,7 @@
       <dl class="rows">
         <div>
           <dt>Protocol invariant</dt>
-          <dd>Written into immutable contract code and true of every vault. No proxies, no upgrade path, no pause, no admin key, no seize function. Non-custodial. Exit fee capped at 1% and never routed to the operator identity. Performance fee 10% of realized profit. Timelock capped at 30 days. Quorum floor of 25% of voting-eligible stake. Commit-reveal voting. In-kind pro-rata redemption in v1 — a cash-redemption path through the execution adapter is described in the architecture notes and is not built. Vault rules immutable after funding except by unanimity plus timelock.</dd>
+          <dd>Written into immutable contract code and true of every vault. No proxies, no upgrade path, no pause, no admin key, no seize function. Non-custodial. Exit fee capped at 1% and never routed to the operator identity. Performance fee 10% of realized profit. Timelock capped at 30 days. Quorum floor of 25% of voting-eligible stake. Commit-reveal voting. In-kind pro-rata redemption in v1. A cash-redemption path through the execution adapter is described in the architecture notes and is not built. Vault rules immutable after funding except by unanimity plus timelock.</dd>
         </div>
         <div>
           <dt>Per-vault parameter</dt>
@@ -86,14 +86,14 @@
       <ol class="steps">
         <li>
           <h3>Deposit, then wait four hours</h3>
-          <p>A first deposit into a vault enters a four-hour observation window. During it the money is escrowed: excluded from NAV, zero shares, no voting rights, no proposal rights. You can cancel and take it back. You may also irrevocably opt out of the window for that vault — and that opt-out cannot be undone. Think hard before you do. Un-activated pending capital is the only capital that stays reclaimable during an oracle freeze. Opting out means every later deposit into this vault mints immediately, so you permanently give up the one exit that works when the oracle does not, and you cannot get it back. Repeat deposits by an existing member mint immediately.</p>
-          <p>Shares mint at the NAV of the activation transaction, not the NAV you saw when you deposited. Deposits are forward-priced so that nobody can mint against a valuation they observed four hours earlier. After the four hours, anyone can send the activation transaction — you do not control the block your shares are priced in.</p>
+          <p>A first deposit into a vault enters a four-hour observation window. During it the money is escrowed: excluded from NAV, zero shares, no voting rights, no proposal rights. You can cancel and take it back. You may also irrevocably opt out of the window for that vault, and that opt-out cannot be undone. Think hard before you do. Un-activated pending capital is the only capital that stays reclaimable during an oracle freeze. Opting out means every later deposit into this vault mints immediately, so you permanently give up the one exit that works when the oracle does not, and you cannot get it back. Repeat deposits by an existing member mint immediately.</p>
+          <p>Shares mint at the NAV of the activation transaction, not the NAV you saw when you deposited. Deposits are forward-priced so that nobody can mint against a valuation they observed four hours earlier. After the four hours, anyone can send the activation transaction. You do not control the block your shares are priced in.</p>
           <p>A repeat deposit can name a minimum number of shares out. A first deposit cannot: it prices at activation and ignores any bound you set.</p>
         </li>
         <li>
           <h3>The operator proposes</h3>
-          <p>A proposal requires the proposer to hold at least the vault's proposal threshold of voting-eligible stake. A per-proposer cooldown rate-limits repeat proposals from the same address, and only from that address — a second address is outside it.</p>
-          <p>What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction — after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.</p>
+          <p>A proposal requires the proposer to hold at least the vault's proposal threshold of voting-eligible stake. A per-proposer cooldown rate-limits repeat proposals from the same address, and only from that address. A second address is outside it.</p>
+          <p>What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction: after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.</p>
           <!-- COUNSEL: the opaque-commitment disclosure — members vote on a 32-byte hash, the payload surfaces only in the execution calldata, and no contract binds an operator's off-chain explanation to what executes. Recorded as an accepted design tradeoff (M-8). -->
         </li>
         <li>
@@ -103,7 +103,7 @@
         <li>
           <h3>Reveal phase</h3>
           <p>Members reveal the vote and salt behind their hash. An unrevealed commit is forfeit and counts as an abstain. If you commit and then go offline, your vote is gone.</p>
-          <p>The tally is readable during the reveal phase — a public getter plus cleartext reveal events. Your commit binds your direction so you cannot switch after seeing it, but late revealers do see partial counts, and someone holding stake across several addresses can reveal one and then decide the rest. Tally gating was specified and was not built.</p>
+          <p>The tally is readable during the reveal phase: a public getter plus cleartext reveal events. Your commit binds your direction so you cannot switch after seeing it, but late revealers do see partial counts, and someone holding stake across several addresses can reveal one and then decide the rest. Tally gating was specified and was not built.</p>
         </li>
         <li>
           <h3>Quorum</h3>
@@ -112,11 +112,11 @@
         <li>
           <h3>Timelock, then an execution window</h3>
           <p>A passed proposal waits out the vault's timelock, then becomes executable for a bounded window. The protocol caps any timelock at 30 days. The adapter performs the swap when it executes.</p>
-          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap &mdash; it queues you and prices you after it. The protection you have is the vote itself and the commit-phase window &mdash; exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
+          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap. It queues you and prices you after it. The protection you have is the vote itself and the commit-phase window. Exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
         </li>
         <li>
           <h3>Exits queue from the moment reveals open</h3>
-          <p>From the moment the reveal phase opens — not from the moment a proposal passes — redemption requests are queued rather than settled, and they price after the swap. The window closes when the proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live. That is forward settlement, described below.</p>
+          <p>From the moment the reveal phase opens (not from the moment a proposal passes), redemption requests are queued rather than settled, and they price after the swap. The window closes when the proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live. That is forward settlement, described below.</p>
         </li>
       </ol>
 
@@ -131,9 +131,9 @@
     <div class="wrap">
       <p class="eyebrow">Exit</p>
       <h2>Redemption is pro-rata, in kind, and sometimes queued.</h2>
-      <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDC, minus the exit fee. Shares burn at settlement, never at request — so a request is not a sale, and until it settles you still carry the vault's gains and losses.</p>
-      <p class="tight">In kind means tokens, not dollars. You receive WETH and cbBTC. Converting them back is your transaction, your routing and your cost.</p>
-      <p class="tight"><code>requestExit</code> takes no minimum-value parameter. Your exit is an unbounded market order against whatever NAV settlement produces; there is no transaction-level floor you can set, and one was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</p>
+      <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDC, minus the exit fee. Shares burn at settlement, never at request, so a request is not a sale. Until it settles you still carry the vault's gains and losses.</p>
+      <p class="tight">In kind means tokens, not dollars. You receive WETH and cbBTC. Converting them back is your own transaction. The routing and the cost are yours too.</p>
+      <p class="tight"><code>requestExit</code> takes no minimum-value parameter. Your exit is an unbounded market order against whatever NAV settlement produces; there is no transaction-level floor you can set. One was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</p>
       <!-- COUNSEL: the asymmetric slippage disclosure — the operator's swaps carry a minimum-out bound and a member's exit does not. Recorded as a partially-fixed finding (M-15), deposit side only. -->
 
       <div class="tablewrap" role="region" aria-label="The two settlement modes" tabindex="0">
@@ -148,14 +148,14 @@
           </thead>
           <tbody>
             <tr>
-              <th scope="row">Mode I — instant</th>
+              <th scope="row">Mode I: instant</th>
               <td>No live proposal has reached its reveal phase, and no passed proposal is still inside its execution window.</td>
               <td>The redemption settles in the same transaction, at current NAV.</td>
             </tr>
             <tr>
-              <th scope="row">Mode F — forward</th>
-              <td>From the moment the reveal phase opens on any live proposal — not from the moment one passes — until that proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live.</td>
-              <td>The request is queued and settles at post-execution NAV. Once queued it is irrevocable. Your shares stay outstanding — they keep gaining and losing with the vault — but they are locked: non-transferable, and excluded from voting-eligible stake.</td>
+              <th scope="row">Mode F: forward</th>
+              <td>From the moment the reveal phase opens on any live proposal (not from the moment one passes) until that proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live.</td>
+              <td>The request is queued and settles at post-execution NAV. Once queued it is irrevocable. Your shares stay outstanding and keep gaining and losing with the vault. They are locked, though: non-transferable, and excluded from voting-eligible stake.</td>
             </tr>
           </tbody>
         </table>
@@ -163,9 +163,9 @@
 
       <div class="note note--warn">
         <span class="label">Why Mode F exists, and what it costs you</span>
-        <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it — a free option paid for by everyone who stayed. Closing it has a price you pay directly: you can be right about disliking a rebalance and still carry its execution.</p>
-        <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window — 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
-        <p>If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. Settlement is not automatic in that case — <code>settleQueuedExit</code> has to be called, and anyone can call it.</p>
+        <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it. That is a free option, paid for by everyone who stayed. Closing it has a price you pay directly: you can be right about disliking a rebalance and still carry its execution.</p>
+        <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window: 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
+        <p>If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. Settlement is not automatic in that case: <code>settleQueuedExit</code> has to be called, and anyone can call it.</p>
         <!-- COUNSEL: the Mode-F recurrence disclosure — the exit-queue window can be re-opened indefinitely at the cost of gas by a single minimum-deposit holder, and the per-proposer cooldown does not rate-limit it. Named as an accepted unmitigated finding (M-7). -->
       </div>
     </div>
@@ -179,11 +179,11 @@
       <dl class="rows">
         <div>
           <dt>Exit fee</dt>
-          <dd>Capped by the protocol at 1% — 100 basis points. It decays toward zero the longer you have been a member, and it is waived entirely when the redeemer is the last member in the vault. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is not routed to the operator identity — though the operator holds shares like any other member, and its shares carry the fee up exactly as everyone else's do. It exists to price the cost that a departure imposes on the people who stay, not to earn anyone a fee.</dd>
+          <dd>Capped by the protocol at 1%, or 100 basis points. It decays toward zero the longer you have been a member, and it is waived entirely when the redeemer is the last member in the vault. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is not routed to the operator identity, though the operator holds shares like any other member, and its shares carry the fee up exactly as everyone else's do. It exists to price the cost that a departure imposes on the people who stay, not to earn anyone a fee.</dd>
         </div>
         <div>
           <dt>Performance fee</dt>
-          <dd>10% of realized profit, crystallized when you redeem — not accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults rather than resetting with each new one. If you realized a loss under an operator, you pay that operator no performance fee unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard — the enforcement here is reputation, not code.</dd>
+          <dd>10% of realized profit, crystallized when you redeem, not accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults rather than resetting with each new one. If you realized a loss under an operator, you pay that operator no performance fee unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code.</dd>
           <!-- COUNSEL: the high-water-mark disclosure — registering a new operator identity is permissionless and resets the mark, so the carryforward is enforced by reputation rather than by contract. Recorded as a deferred High finding (CM-4). -->
         </div>
         <div>
@@ -207,21 +207,21 @@
       <dl class="rows">
         <div>
           <dt>Sequencer gate</dt>
-          <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node or Base Sepolia unless the feed address is supplied, and a pre-deploy configuration check fails without it. The oracle contract itself does not re-check &mdash; handed a zero address it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd>
+          <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node or Base Sepolia unless the feed address is supplied, and a pre-deploy configuration check fails without it. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd>
           <!-- COUNSEL: the sequencer-gate exercise disclosure — the guard is written and tested against a stub, and has never run against a live uptime feed. -->
 
         </div>
         <div>
           <dt>Staleness breaker</dt>
-          <dd>Each asset carries a heartbeat bound. Past it, the oracle refuses to answer and the vault freezes: every function that reads NAV reverts, including deposits, rebalance execution and redemptions. Exits are included. There is no escape hatch and none will be added — an escape hatch is exactly the stale-price exit the breaker exists to prevent. Un-activated observation-window capital stays reclaimable, because cancelling a pending deposit reads no oracle. Active share capital does not.</dd>
+          <dd>Each asset carries a heartbeat bound. Past it, the oracle refuses to answer and the vault freezes: every function that reads NAV reverts, including deposits, rebalance execution and redemptions. Exits are included. There is no escape hatch and none will be added. An escape hatch is exactly the stale-price exit the breaker exists to prevent. Un-activated observation-window capital stays reclaimable, because cancelling a pending deposit reads no oracle. Active share capital does not.</dd>
         </div>
         <div>
           <dt>Sane-price band</dt>
-          <dd>Each asset has a plausibility band — in the reference configuration $100 to $100,000 for WETH and $1,000 to $1,000,000 for cbBTC. It rejects gross errors. It does not reject an adverse but plausible price.</dd>
+          <dd>Each asset has a plausibility band. In the reference configuration that is $100 to $100,000 for WETH and $1,000 to $1,000,000 for cbBTC. It rejects gross errors. It does not reject an adverse but plausible price.</dd>
         </div>
         <div>
           <dt>What stands behind those three</dt>
-          <dd>Nothing. The heartbeat, the band and the sequencer gate are the only defences against a bad answer. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses — but there is no backup to switch to, and no way to point the vault at a different one.</dd>
+          <dd>Nothing. The heartbeat, the band and the sequencer gate are the only defences against a bad answer. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses. But there is no backup to switch to, and no way to point the vault at a different one.</dd>
           <!-- COUNSEL: single-provider oracle dependency stated as a named residual risk on the mechanism page, not only on the risks page. -->
         </div>
         <div>
@@ -237,11 +237,11 @@
     <div class="wrap">
       <p class="eyebrow">Reference configuration</p>
       <h2>The parameters in the repository's Base mainnet configuration.</h2>
-      <p class="tight">These are the values in the reference mainnet configuration held in the repository. They are a worked example of one vault's settings. They are not protocol rules, they do not bind any other vault, and nothing has been deployed with them.</p>
+      <p class="tight">These are the values in the reference mainnet configuration held in the repository. They are a worked example of one vault's settings. They are not protocol rules and they bind no other vault. Nothing has been deployed with them.</p>
 
       <div class="tablewrap" role="region" aria-label="Reference mainnet configuration" tabindex="0">
         <table>
-          <caption>Reference mainnet configuration — one example vault, not a protocol rule</caption>
+          <caption>Reference mainnet configuration: one example vault, not a protocol rule</caption>
           <thead>
             <tr>
               <th scope="col">Parameter</th>
@@ -251,7 +251,7 @@
           <tbody>
             <tr><th scope="row">Commit duration</th><td>1 hour</td></tr>
             <tr><th scope="row">Reveal duration</th><td>1 hour</td></tr>
-            <tr><th scope="row">Timelock</th><td>0 hours &mdash; none</td></tr>
+            <tr><th scope="row">Timelock</th><td>0 hours, none</td></tr>
             <tr><th scope="row">Execution window</th><td>24 hours</td></tr>
             <tr><th scope="row">Quorum</th><td>25% of voting-eligible stake</td></tr>
             <tr><th scope="row">Proposal threshold</th><td>5% of voting-eligible stake</td></tr>
