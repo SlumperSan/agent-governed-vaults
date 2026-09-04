@@ -106,7 +106,7 @@ an ancestor's `_fullNavWad` walks `idleUsdc()` / `assetBalance()` on the descend
 > Adding one without the modifier silently reopens H-9 at full severity.
 >
 > **The dormancy argument is unchanged in substance and moved into this block** — it was the third
-> sentence of the withdrawn paragraph, and it is still independently true, so H-9 was never
+> of those claims, carried by the second sentence, and it is still independently true, so H-9 was never
 > reachable at launch either way: `Deploy.s.sol` constructs the mainnet factory with
 > `allowSubVaults = false` (C-1, root vaults only), so on that factory `createChildVault` reverts,
 > `childVaults` stays empty and `_fullNavWad`'s child leg is never reached. Note this is a
