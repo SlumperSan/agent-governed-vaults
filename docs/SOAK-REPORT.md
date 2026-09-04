@@ -9,7 +9,11 @@
 > meaning on a single-feed oracle, and its "testnet compromise" paragraph describes three
 > `ChainlinkSourceAdapter`s that are no longer deployed. The instrument was rewritten for the live
 > oracle on 2026-08-30; **launch gates 3 and 6 are re-earned by a re-run, not by this document.**
-> The re-run is blocked on a testnet key — see `docs/NOW.md` "Blocked on a human".
+> The re-run is **not blocked on a key**: `docs/NOW.md`'s soak entry records **NOT BLOCKED** — both
+> password files exist (`.soak.pw`, `.soak-agent.pw`), and `scripts/soak/run-soak.ps1`'s own header
+> says *"Nothing needs a human once the password files are in place."* What is outstanding is the
+> run itself — the five drills executing against the current deployment, with the canary observed
+> alongside; see the gate 3 and gate 6 rows of `docs/LAUNCH-READINESS.md`.
 
 **Date:** 2026-08-24 → 2026-08-25 · **Chain:** Base Sepolia (84532) · **Issue:** [#21](https://github.com/SlumperSan/agent-governed-vaults/issues/21)
 
