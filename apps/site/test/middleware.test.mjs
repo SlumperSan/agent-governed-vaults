@@ -75,7 +75,7 @@ test('a protocol-relative path cannot redirect off the canonical host (CWE-601)'
   //   https://rwally.pages.dev//evil.example/x  ->  https://evil.example/x
   for (const path of [
     '//evil.example/x',
-    '/\/evil.example/x', // the parser normalises `\` to `/` before parsing
+    '/' + String.fromCharCode(92) + '/evil.example/x', // a REAL backslash; a '\\/' literal collapses to '//' and silently duplicates the line above
     '//attacker.test/connect-wallet?a=1',
     '///triple.example/x',
   ]) {
