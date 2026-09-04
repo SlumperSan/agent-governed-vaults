@@ -95,7 +95,8 @@ for the **root-only launch configuration**:
 | **C-4** | **Closed at `a ≤ 1`, RE-OPENED at `a ≥ 2`** — Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) found the "root cause closed" claim held only under a curation assumption the code cannot enforce. See **C-6**. DiD deferred, partially subsumed by M-15. |
 | **C-6** | **OPEN (new, Phase-2)** — the oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor (`quorum ≥ 2a+1`); two adversarial sources + one withholding leg re-open C-4's theft. Config/curation requirement + corrected prescription; **gate 0 does not clear while open**. |
 | **H-1, H-2, H-3, H-4** | **Fixed** (earlier remediation). |
-| **H-5, H-6, H-7, H-9** | **Dormant at launch** — all require a funded child. Deferred with sub-vaults. |
+| **H-5, H-6, H-7** | **Dormant at launch** — all require a funded child. Deferred with sub-vaults. |
+| **H-9** | **Dormant at launch AND REMEDIATED 2026-09-01.** This row originally grouped it with the three above as "deferred with sub-vaults"; that is superseded by this report's own H-9 row, which records `REMEDIATED 2026-09-01`. The guard is unconditional, so H-9 is not waiting on the feature. |
 | **H-8** | **Partially fixed** (dust-lockout + zero-stake-sybil closed in `Governance.finalize`) **+ config-mitigated** (regime-flip: meaningful `minDepositUsdc`). |
 | **M-1..M-4, M-6, M-11, M-12** | **Fixed** (earlier remediation; M-6 partial + config, M-7 not mitigated). |
 | **M-15** | **Partially fixed** — deposit-side `minSharesOut` overload; exit-side deferred (byte budget). |
@@ -1255,7 +1256,9 @@ data — VO-7 residual, plus unenforced salt entropy).
 **Recent DeFi exploit classes.** Share inflation / first-depositor / donation: **refuted** (internal
 accounting, `minted > 0` required, smallest first mint 1e12 share-wei, exit-fee pump bounded to
 100 bps). Price-of-share manipulation via donation: **defended** — this one could not be broken.
-Oracle manipulation: **present** (C-3, C-4, H-1, H-2). Read-only reentrancy: **present** (H-9).
+Oracle manipulation: **present** (C-3, C-4, H-1, H-2). Read-only reentrancy: **present** (H-9) —
+*as found*; H-9 is recorded `REMEDIATED 2026-09-01` in its own row above, so this line is the
+finding-time state, not the current one.
 Callback/hook tokens: **partially present** (M-3, L-5). Fee-on-transfer: defended on the vault
 (measured deltas everywhere), **not** on `FeeEngine`'s vault-reported credit paths. Signature replay
 / domain separation: **not applicable** — no signature scheme exists anywhere in the tree (verified

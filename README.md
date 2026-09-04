@@ -133,9 +133,12 @@ finding fixed, replaced or dispositioned ([docs/AUDIT-HANDOFF.md](docs/AUDIT-HAN
 [docs/audit/AI-AUDIT-REPORT.md](docs/audit/AI-AUDIT-REPORT.md)). **"Dispositioned" is not
 "closed", and the difference is load-bearing:** one High (**H-8**, the stake-blind `<5`-member
 quorum regime) is partially fixed in code with its regime-flip mitigated only by configuration —
-it remains open at the launch configuration — and a further class (**H-5/H-6/H-7/H-9**) is dormant
+it remains open at the launch configuration — and a further class (**H-5/H-6/H-7**) is dormant
 solely because `allowSubVaults = false`: not repaired in code, and live again if sub-vaults are
-ever enabled. Hardened with invariant/fuzz
+ever enabled. **H-9 was in that class and is no longer**: it was fixed in code on 2026-09-01
+(`require(!v.locked(), Reentrancy())` in `VaultCore._fullNavWad`), and that guard is
+unconditional — it does not depend on `allowSubVaults`, so enabling sub-vaults does not bring H-9
+back. Hardened with invariant/fuzz
 suites for share conservation, NAVps-non-decreasing, solvency, the cross-vault carry HWM, the
 Chainlink oracle's fail-closed guards, and governance rounds.
 
