@@ -29,3 +29,6 @@ skills-lock.json
 # Local pre-merge gate result (scripts/gate.mjs). Describes THIS machine last run,
 # not a property of the branch, so it is never committed.
 .gate-state.json
+# Project skills are source, not session state — track them (worktrees under .claude/ stay ignored).
+!.claude/skills/
+!.claude/skills/**
