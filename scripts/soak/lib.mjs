@@ -21,6 +21,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { classifyCallError } from '../../packages/canary/src/call-error.mjs';
 
 export const ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..',
@@ -125,30 +126,14 @@ export function call(to, sig, ...args) {
 }
 export const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
-// REDUNDANT WITH THE TERNARY BELOW, and kept only as documentation of what "transport" means in
-// practice. Trace it: if REVERTED matches, this cannot fire; if it does not, both paths already
-// return 'transport'. Deleting it changes no behaviour and no test. It is labelled rather than
-// removed because in a file whose whole subject is that this classification is security-relevant,
-// a decorative regex reading as load-bearing logic is its own hazard.
-const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
-/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
-const REVERTED = /execution reverted|revert(ed)?:/i;
-
-/**
- * Classify a failed `cast` call. ONLY a recognised revert is evidence about the contract; anything
- * else is missing evidence and must be recorded as such.
- *
- * This exists because a drill asserted `!result.ok` to prove a call was REFUSED, and `ok:false` is
- * also what a rate limit produces — so a 429 satisfied a security assertion. "It failed" and "the
- * contract refused it" are different claims, and only one of them is a finding.
- *
- * @param {string} err
- * @returns {'revert'|'transport'}
- */
-export function classifyCallError(err) {
-  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
-  return REVERTED.test(err) ? 'revert' : 'transport';
-}
+// ONE DEFINITION, TWO HARNESSES. `classifyCallError` moved to packages/canary/src/call-error.mjs
+// when the canary needed the same rule: "it failed" and "the contract refused it" are different
+// claims there too, and a second copy of a security-relevant classifier is a copy that drifts.
+// It lives under packages/ rather than here because the Dockerfile copies only `packages` and
+// `apps` into the runtime image, so a canary importing this file would fail in production.
+// Re-exported so every `import { classifyCallError } from './lib.mjs'` in scripts/soak and
+// scripts/test keeps working — the same shape oracle-sampler.mjs already uses to re-export it.
+export { classifyCallError };
 
 /**
  * Is a paid-perception agent permanently blind, and if so what should the operator be told?

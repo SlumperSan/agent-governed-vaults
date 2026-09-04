@@ -60,7 +60,10 @@ export async function checkNavBacking({ reader, vault, atBlock, thresholdBps = 5
       message: frozen
         ? `NAV check skipped on vault ${shortAddr(vault)}: navWad() reverts StaleOracle — the oracle breaker is tripped (see the oracle-freshness signal for the asset)`
         : `NAV check skipped on vault ${shortAddr(vault)}: navWad() is unreadable: ${reportedRes.error}`,
-      detail: { vault, revertData: reportedRes.revertData, attributedTo: frozen ? 'oracle-freshness' : null },
+      // `isFrozen` reads `revertData`, which the reader nulls on a transport failure, so a 429 can
+      // no longer be attributed to the oracle breaker by a scraped selector. Both branches already
+      // said "skipped"; `kind` records which one it was.
+      detail: { vault, revertData: reportedRes.revertData, kind: reportedRes.kind ?? null, attributedTo: frozen ? 'oracle-freshness' : null },
     }));
     return results;
   }

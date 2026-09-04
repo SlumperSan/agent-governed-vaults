@@ -231,8 +231,8 @@ export async function checkGovernanceWatch({ reader, vault, fromBlock, toBlock, 
   if (!gov.ok || typeof gov.value !== 'string' || gov.value.toLowerCase() === ZERO_ADDR) {
     return [detectorBroken({
       signal: SIGNAL, vault,
-      message: `GOVERNANCE DETECTOR BLIND on vault ${shortAddr(vault)}: governance() ${gov.ok ? `returned ${gov.value}` : `did not answer (${gov.error ?? 'reverted'})`} — no proposal on this vault can be seen, so it is unmonitored for governance, not quiet`,
-      detail: { vault, error: gov.ok ? `governance() = ${gov.value}` : gov.error ?? 'reverted' },
+      message: `GOVERNANCE DETECTOR BLIND on vault ${shortAddr(vault)}: governance() ${gov.ok ? `returned ${gov.value}` : `${gov.kind === 'transport' ? 'could not be read' : 'reverted'} (${gov.error ?? 'reverted'})`} — no proposal on this vault can be seen, so it is unmonitored for governance, not quiet`,
+      detail: { vault, error: gov.ok ? `governance() = ${gov.value}` : gov.error ?? 'reverted', kind: gov.ok ? null : gov.kind ?? null },
     })];
   }
   const governance = gov.value;
@@ -241,8 +241,12 @@ export async function checkGovernanceWatch({ reader, vault, fromBlock, toBlock, 
   if (!active.ok) {
     return [detectorBroken({
       signal: SIGNAL, vault,
-      message: `GOVERNANCE DETECTOR BLIND on vault ${shortAddr(vault)}: Governance ${shortAddr(governance)} did not answer activeProposalOf() (${active.error ?? 'reverted'}) — it may not be a Governance contract; the vault is unmonitored for governance, not quiet`,
-      detail: { vault, governance, error: active.error ?? 'reverted' },
+      // "It may not be a Governance contract" is an inference from a REVERT. A transport failure
+      // supports no inference about what is deployed at that address, so it does not get one.
+      message: active.kind === 'transport'
+        ? `GOVERNANCE DETECTOR BLIND on vault ${shortAddr(vault)}: activeProposalOf() on Governance ${shortAddr(governance)} could not be read (${active.error ?? 'no error text'}) — the call did not reach the chain, so no revert was observed; the vault is unmonitored for governance this sweep, not quiet`
+        : `GOVERNANCE DETECTOR BLIND on vault ${shortAddr(vault)}: Governance ${shortAddr(governance)} did not answer activeProposalOf() (${active.error ?? 'reverted'}) — it may not be a Governance contract; the vault is unmonitored for governance, not quiet`,
+      detail: { vault, governance, error: active.error ?? 'reverted', kind: active.kind ?? null },
     })];
   }
   const pid = num(active.value);
