@@ -147,6 +147,38 @@ test('any verdict other than callable/ok/n-a counts as a freeze-safety violation
   assert.equal(r.blockedDetail[0].detail, 'StaleOracle');
 });
 
+test('an UNCONFIGURED probe is missing evidence, not a freeze-safety breach', () => {
+  // Regression for a live run in which the sampler emitted `freezeSafety: []` for six hours,
+  // because run-soak.ps1 set SOAK_PROBE_MEMBER but never SOAK_VAULTS: mapping over an empty vault
+  // list produced NO ROWS, so the leg's own absence was invisible and drill 4's refusal to claim
+  // freeze safety looked like "no pending deposit existed".
+  //
+  // The sampler now emits a `not-configured` sentinel instead. It must suppress `demonstrated` —
+  // nothing was shown — WITHOUT being counted as a violation: a misconfigured harness reporting a
+  // freeze-safety BREACH is the same lie in the opposite direction, and would page someone.
+  const r = summarizeFreezeSafety([
+    sample('t1', 1, { freezeSafety: [{ vault: null, probed: false, verdict: 'not-configured', reason: 'no vaults to probe (indexer-empty)' }] }),
+    sample('t2', 2, { freezeSafety: [{ vault: null, probed: false, verdict: 'not-configured', reason: 'no vaults to probe (indexer-empty)' }] }),
+  ]);
+  assert.equal(r.oracleBlocked, 0, 'an unconfigured probe must never be reported as a violation');
+  assert.equal(r.unmeasured, 2, 'the absence must be counted, not dropped');
+  assert.equal(r.probedWithPending, 0);
+  assert.equal(r.demonstrated, false, 'nothing was measured, so nothing is demonstrated');
+  assert.deepEqual(r.blockedDetail, [], 'nothing to page on');
+});
+
+test('not-probed (no SOAK_PROBE_MEMBER) is unmeasured too, and does not mask a real breach', () => {
+  const r = summarizeFreezeSafety([
+    sample('t1', 1, { freezeSafety: [{ vault: '0xv', probed: false, verdict: 'not-probed' }] }),
+    sample('t2', 2, { freezeSafety: [{ vault: '0xv', verdict: 'callable' }] }),
+    sample('t3', 3, { freezeSafety: [{ vault: '0xv', verdict: 'BLOCKED', detail: 'StaleOracle' }] }),
+  ]);
+  assert.equal(r.unmeasured, 1);
+  assert.equal(r.probedWithPending, 1);
+  assert.equal(r.oracleBlocked, 1, 'a real breach must still surface alongside unmeasured samples');
+  assert.equal(r.demonstrated, false);
+});
+
 // ───────────────────────────── canary + verdict ─────────────────────────────
 
 test('oracleCanaryRows selects only the oracle-freshness signal and splits its composite key', () => {

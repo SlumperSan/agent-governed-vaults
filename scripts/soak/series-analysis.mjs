@@ -182,19 +182,35 @@ export function findGaps(samples, maxGapMult) {
  * `n/a-no-pending` is counted SEPARATELY and never as a pass: with no pending deposit there is
  * nothing to cancel, so the probe proves nothing. A run in which every sample was `n/a` leaves
  * the property un-contradicted, not demonstrated — `demonstrated` says so.
+ *
+ * `not-configured` / `not-probed` are a THIRD category, added after a live run in which the
+ * sampler emitted `freezeSafety: []` for six hours because `SOAK_VAULTS` was never set: the probe
+ * had nothing to iterate, so it produced no rows and its own absence was invisible. Those verdicts
+ * now record the absence explicitly, and they must NOT be counted as `oracleBlocked` — a
+ * misconfigured harness reporting a freeze-safety BREACH is the same class of lie in the opposite
+ * direction.
  * @param {any[]} samples
  */
+export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed'];
+
 export function summarizeFreezeSafety(samples) {
   /** @type {Record<string, number>} */
   const verdicts = {};
   let probedWithPending = 0;
   let oracleBlocked = 0;
+  let unmeasured = 0;
   const blockedDetail = [];
   for (const s of samples) {
     for (const f of s.freezeSafety ?? []) {
       verdicts[f.verdict] = (verdicts[f.verdict] ?? 0) + 1;
       if (f.verdict === 'callable' || f.verdict === 'ok') probedWithPending++;
-      if (!['callable', 'ok', 'n/a-no-pending'].includes(f.verdict)) {
+      // MISSING EVIDENCE IS NOT A BREACH. `not-configured` (no vaults resolved) and `not-probed`
+      // (no SOAK_PROBE_MEMBER) mean the probe never ran; treating them as `oracleBlocked` would
+      // report a freeze-safety FAILURE caused entirely by the harness being misconfigured, which
+      // is the mirror image of the bug that made this leg silent in the first place. They suppress
+      // `demonstrated` — which is correct, nothing was shown — without manufacturing an incident.
+      else if (UNMEASURED_VERDICTS.includes(f.verdict)) unmeasured++;
+      else if (f.verdict !== 'n/a-no-pending') {
         oracleBlocked++;
         if (blockedDetail.length < 5) {
           blockedDetail.push({ at: s.t, vault: f.vault, verdict: f.verdict, detail: f.detail });
@@ -206,6 +222,7 @@ export function summarizeFreezeSafety(samples) {
     verdicts,
     probedWithPending,
     oracleBlocked,
+    unmeasured,
     blockedDetail,
     demonstrated: probedWithPending > 0 && oracleBlocked === 0,
   };

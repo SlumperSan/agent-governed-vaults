@@ -68,6 +68,35 @@ const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
 const PROBE_MEMBER = process.env.SOAK_PROBE_MEMBER ?? '';
 const VAULTS = (process.env.SOAK_VAULTS ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+const STATE_PATH = process.env.SOAK_INDEXER_STATE ?? path.join(ROOT, 'data', 'indexer-state.json');
+
+/**
+ * The vaults to probe `cancelPending` against — explicit `SOAK_VAULTS`, else every vault the
+ * indexer has projected. Mirrors `canary-runner.resolveVaults`, and for the same reason.
+ *
+ * WHY THE FALLBACK EXISTS. `run-soak.ps1` sets `SOAK_PROBE_MEMBER` — with a comment explaining
+ * exactly why drill 4's freeze-safety probe needs it — and never set `SOAK_VAULTS`, which is the
+ * other half of the same wiring. So `VAULTS` was `[]`, the probe `.map` produced NO ROWS AT ALL,
+ * and every sample recorded `freezeSafety: []`. Drill 4 then correctly refused to claim freeze
+ * safety, but the reason looked like "no pending deposit existed" rather than "the probe was never
+ * configured" — two very different facts.
+ *
+ * It also cannot be fixed by setting `SOAK_VAULTS` at launch: drills 1 and 2 CREATE their vaults
+ * at runtime, so the addresses do not exist when the sampler starts. Discovery is the only
+ * configuration that is correct on the first sample and still correct on the hundredth.
+ */
+function resolveProbeVaults() {
+  if (VAULTS.length > 0) return { vaults: VAULTS, source: 'SOAK_VAULTS' };
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    // `vaults` is a serialized Map: [[address, projection], ...].
+    const found = (state.vaults ?? []).map((e) => (Array.isArray(e) ? e[0] : e?.vault)).filter(Boolean);
+    if (found.length > 0) return { vaults: found, source: 'indexer' };
+    return { vaults: [], source: 'indexer-empty' };
+  } catch {
+    return { vaults: [], source: 'no-indexer-state' };
+  }
+}
 
 const dep = loadDeployment(
   path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
@@ -429,7 +458,12 @@ function sample(env) {
   });
 
   // FREEZE-SAFETY: cancelPending must stay callable while the oracle is frozen.
-  const freezeSafety = VAULTS.map((vault) => {
+  //
+  // An EMPTY probe set must record itself. Mapping over `[]` yields `[]`, which reads downstream as
+  // "probed, nothing to report" when the truth is "never probed" — the silent-inertness failure
+  // this repository has shipped twice. One sentinel row per sample keeps the absence in the series.
+  const { vaults: probeVaults, source: probeSource } = resolveProbeVaults();
+  const probeOne = (vault) => {
     if (!PROBE_MEMBER) return { vault, probed: false, verdict: 'not-probed', reason: 'no SOAK_PROBE_MEMBER set' };
     const pend = callRaw(vault, 'pendingDeposit(address)(uint256,uint64)', PROBE_MEMBER);
     const pendingAmount = pend.ok ? clean(pend.out.split('\n')[0]) : null;
@@ -439,7 +473,10 @@ function sample(env) {
       verdict: classifyCancelPending(r, pendingAmount),
       detail: r.ok ? 'static call returned successfully' : r.err,
     };
-  });
+  };
+  const freezeSafety = probeVaults.length === 0
+    ? [{ vault: null, probed: false, verdict: 'not-configured', reason: `no vaults to probe (${probeSource})` }]
+    : probeVaults.map(probeOne);
 
   return { t: new Date().toISOString(), chainNow, oracle: dep.aggregator, sequencer: seq, assets, freezeSafety };
 }

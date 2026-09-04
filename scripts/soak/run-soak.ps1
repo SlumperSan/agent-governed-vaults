@@ -104,6 +104,15 @@ $env:SOAK_API         = if ($env:SOAK_API) { $env:SOAK_API } else { 'http://127.
 # Drill 4's freeze-safety probe needs a member who actually HAS a pending deposit. The deployer
 # gets one during drill 1's and drill 2's 4h observation windows - that is the only window in
 # which cancelPending has anything to cancel.
+#
+# The probe needs a VAULT LIST as well as a member, and this script deliberately does not set one.
+# Only half the wiring was here for the whole of the 2026-09-03 run: SOAK_PROBE_MEMBER was set and
+# SOAK_VAULTS was not, so oracle-sampler.mjs mapped over an empty list, emitted no freeze-safety
+# rows at all, and the leg was silently absent for six hours. Setting SOAK_VAULTS here would not
+# have fixed it either - drills 1 and 2 CREATE their vaults at runtime, so the addresses do not
+# exist when the sampler starts. The sampler now DISCOVERS them from the indexer projection (the
+# same source the canary uses) and records an explicit `not-configured` sentinel when it finds
+# none, so the absence can never be silent again. Set SOAK_VAULTS only to override that.
 $env:SOAK_PROBE_MEMBER = $Deployer
 
 # ── launch ───────────────────────────────────────────────────────────────────
