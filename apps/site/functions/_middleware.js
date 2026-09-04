@@ -39,7 +39,26 @@ export const onRequest = async (context) => {
 
   if (url.hostname === CANONICAL_HOST) return next();
 
-  // Preserve path and query so a shared deep link survives the hop.
-  const target = new URL(`${url.pathname}${url.search}`, `https://${CANONICAL_HOST}`);
+  // Rewrite the AUTHORITY of the already-parsed URL. Never re-parse a path as a relative
+  // reference against a base — that was an open redirect (CWE-601), shipped and live:
+  //
+  //   new URL(`${url.pathname}${url.search}`, `https://${CANONICAL_HOST}`)
+  //
+  // A pathname beginning with `//` is a PROTOCOL-RELATIVE url, so the WHATWG parser keeps the
+  // base's scheme and REPLACES its authority. `https://rwally.pages.dev//evil.example/x` then
+  // redirected to `https://evil.example/x` — an attacker-controlled destination reached through
+  // a link on this project's own domain. A `\` variant worked too; the parser normalises it to
+  // `/` before parsing.
+  //
+  // Zone-level URL normalization does NOT save this: it is a zone feature, and `*.pages.dev` is
+  // in no zone — which is this file's own founding premise. The bug was exploitable precisely
+  // where the file exists to help.
+  //
+  // Mutating the parsed URL cannot escape the host: `hostname` is a setter on an already-parsed
+  // origin, so `//evil.example/x` stays a PATH.
+  const target = new URL(url);
+  target.protocol = 'https:';
+  target.hostname = CANONICAL_HOST;
+  target.port = '';
   return Response.redirect(target.toString(), 301);
 };
