@@ -69,9 +69,11 @@ describe (see [RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)).
 
 ## SV — Sub-vaults
 
-> **DISABLED AT LAUNCH (Critical C-1 remediation, 2026-08-28).** `VaultFactory` ships with
-> `allowSubVaults = false`, so no vault can create or fund a child and none of the SV rows below
-> are reachable in the launch configuration. A funded child has an empty electorate (the parent is
+> **DISABLED AT LAUNCH (Critical C-1 remediation, 2026-08-28).** `Deploy.s.sol` constructs
+> `VaultFactory` with `allowSubVaults = false` — a constructor immutable, so it binds that factory
+> rather than the protocol. On it no vault can create or fund a child and none of the SV rows below
+> are reachable in the launch configuration. (`DeployTestnet.s.sol` passes `true`; the SV-* drills
+> need a real child vault, so they run against a testnet factory where these rows ARE reachable.) A funded child has an empty electorate (the parent is
 > excluded by GA-1), capturable by one dust deposit (C-1), and there is no purely-internal fix —
 > the correct mechanism (parent casts the child's vote) is deferred to a post-launch, post-audit
 > release. The rows below remain the threat model for that future release. See

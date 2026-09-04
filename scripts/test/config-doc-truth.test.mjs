@@ -362,16 +362,23 @@ test('every `allowSubVaults = false` citation of `Deploy.s.sol:N` in docs/ point
 });
 
 /**
- * Every prose surface a reader acts on — markdown AND the public site's HTML. Enumerated from the
- * filesystem, never from a list: the drift this catches arrives in the file nobody added.
+ * Every prose surface a reader acts on. Enumerated from the filesystem, never from a list: the
+ * drift this catches arrives in the file nobody added.
+ *
+ * WIDENED from `.md`/`.html` to include `.json` and `.txt`, because the first version missed the
+ * offender with the widest blast radius: the false sequencer claim lived in `base-mainnet.json`'s
+ * `sequencerUptimeFeedNote`, which is the DEPLOYER's own reference, and `llms.txt` is the file an
+ * integrating agent reads instead of the source. A guard that skips the two surfaces most likely
+ * to be acted on is not a guard.
  */
+const PROSE_EXT = ['.md', '.html', '.json', '.txt'];
 function proseFiles() {
   const found = [];
   (function walk(dir) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (!SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name));
-      } else if (entry.name.endsWith('.md') || entry.name.endsWith('.html')) {
+      } else if (PROSE_EXT.some((e) => entry.name.endsWith(e)) && entry.name !== 'package-lock.json') {
         found.push(path.join(dir, entry.name));
       }
     }
@@ -379,11 +386,43 @@ function proseFiles() {
   return found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
 }
 
-/** Prose claiming the oracle REVERTS when it has no sequencer uptime feed. It does the opposite. */
+/**
+ * Prose claiming the oracle REVERTS when it has no sequencer uptime feed. It does the opposite.
+ *
+ * WIDENED after review. The first version matched a PHRASING FAMILY, not a shape: the alternation
+ * was `(?:one|it|the feed|a feed)`, so 10 of 14 rephrasings of the identical claim walked straight
+ * through — including `Without a sequencer uptime feed the oracle reverts every price.`, which
+ * differs from the shipped wording only by naming the noun. CLAUDE.md's standard is to match the
+ * banned SHAPE; a guard that only catches the sentence already fixed can never catch the next one.
+ *
+ * Three axes are now covered: the CONDITION as a `without`-phrase (any feed noun), the condition
+ * as an ABSENCE adjective (`missing`/`absent`/`unconfigured`/`unset`/`no`), and the CONSEQUENCE as
+ * revert OR its synonyms (`refuse`/`freeze`), in either word order.
+ */
+const SEQ_CONSEQUENCE = '(?:revert|refus|freez)';
+const SEQ_FEEDNOUN = '(?:one|it|(?:a|an|the)[^.]{0,40}?feed)';
 const SEQUENCER_FAILS_CLOSED = [
-  /without (?:one|it|the feed|a feed)[^.]{0,80}\brevert/i,
-  /\brevert[^.]{0,80}\bwithout (?:one|it|the feed|a feed)\b/i,
+  new RegExp(`without ${SEQ_FEEDNOUN}[^.]{0,80}\\b${SEQ_CONSEQUENCE}`, 'i'),
+  new RegExp(`\\b${SEQ_CONSEQUENCE}[^.]{0,80}\\bwithout ${SEQ_FEEDNOUN}`, 'i'),
+  new RegExp(`\\b(?:missing|absent|unconfigured|unset|no)\\b[^.]{0,60}\\bfeed\\b[^.]{0,80}\\b${SEQ_CONSEQUENCE}`, 'i'),
+  // …and the same absence stated AFTER the noun ("if the feed is absent, priceWad reverts").
+  new RegExp(`\\bfeed\\b[^.]{0,60}\\b(?:is|are|was|were)\\s+(?:missing|absent|unconfigured|unset)\\b[^.]{0,80}\\b${SEQ_CONSEQUENCE}`, 'i'),
+  new RegExp(`\\b${SEQ_CONSEQUENCE}[^.]{0,80}\\bunless\\b[^.]{0,60}\\bfeed\\b`, 'i'),
 ];
+
+/**
+ * The claim this guard bans is about the ORACLE at PRICE time. The enforcement that genuinely
+ * exists is the DEPLOY SCRIPT refusing to deploy — and that true sentence has the same shape
+ * ("refuses … without a feed"), so widening the consequence verb to `refus` made the guard flag
+ * the very prose #168 landed to correct it. Subject, not shape, is what separates them.
+ *
+ * A line that explicitly attributes the enforcement to deploy time is therefore exempt. This is a
+ * real narrowing and it is stated rather than hidden: prose that says the ORACLE reverts and also
+ * happens to mention the deploy script would slip through. That is the right trade — the failure
+ * this guard exists to stop is a reader believing the RUNTIME protects them, and a sentence that
+ * names deploy-time enforcement is telling them the truth about where the protection lives.
+ */
+const SEQ_DEPLOY_TIME_ENFORCEMENT = /deploy[- ]time|deploy script|at deploy|DeployChainlinkOracle|verify-chainlink-oracle/i;
 
 /**
  * The L2 sequencer uptime feed: mandatory, but NOT in the way three public claims said.
@@ -433,6 +472,9 @@ test('no live prose claims the oracle reverts when no sequencer uptime feed is c
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i];
       if (!/sequencer/i.test(line)) continue;
+      // A line that attributes the enforcement to DEPLOY time is making the true claim, not the
+      // banned one — see SEQ_DEPLOY_TIME_ENFORCEMENT for why subject beats shape here.
+      if (SEQ_DEPLOY_TIME_ENFORCEMENT.test(line)) continue;
       // The corrected wording quotes the withdrawn claim so the record survives; skip attributed
       // quotations the same way the govNote guard does, and judge only the file's own voice.
       const own = line.replace(/'[^']*'/g, ' ');
@@ -450,12 +492,29 @@ test('no live prose claims the oracle reverts when no sequencer uptime feed is c
 });
 
 test('probe: the sequencer-fails-closed guard is live', () => {
-  // The verbatim wording that shipped in three places. If this ever stops matching, the guard has
-  // gone inert and the next inversion lands silently.
+  // Two sets, and the second is the one that matters.
+  //
+  // SHIPPED: the wordings that were actually live. The first two are verbatim; the third is a
+  // PARAPHRASE — risks.html's original read `mandatory — without one the oracle reverts every
+  // price —`. An earlier version of this comment called all three "verbatim", which was a false
+  // literal claim inside the file whose whole job is literal truth, so it is corrected rather
+  // than waved through, and the real wording is included below.
+  //
+  // INVENTED: phrasings that never shipped. A probe built only from strings already fixed proves
+  // nothing — it passes on the guard's narrowest possible form. Review found the first version
+  // missed 10 of 14 rephrasings; these are drawn from that set, so the probe can now FAIL.
   for (const claim of [
+    // shipped
     'MANDATORY on Base — ChainlinkOracle reverts every price without it.',
     'Without one the oracle reverts every price.',
-    'A feed is mandatory and the oracle reverts every price without one.',
+    'mandatory — without one the oracle reverts every price —',
+    // invented: never shipped, must still be caught
+    'Without a sequencer uptime feed the oracle reverts every price.',
+    'A missing sequencer uptime feed causes the oracle to revert.',
+    'If the sequencer uptime feed is absent, priceWad reverts.',
+    'The oracle reverts unless a sequencer uptime feed is configured.',
+    'Without one the oracle refuses to price anything.',
+    'With no uptime feed configured the oracle freezes every price.',
   ]) {
     assert.ok(
       SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(claim)),
@@ -497,11 +556,154 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
 
   // And the recorded on-chain read of the LIVE testnet factory must still agree with that script.
   // A script says what was intended; this is what the chain answered.
-  const sepolia = JSON.parse(read('contracts', 'config', 'deployments', 'base-sepolia.json'));
+  // NOT named `sepolia`: line 41 already binds that to `contracts/config/base-sepolia.json`, a
+  // DIFFERENT file (the deploy config, not the deployed address book). Shadowing one config with
+  // another inside a truth guard is how the wrong file gets asserted against.
+  const sepoliaDeployment = JSON.parse(read('contracts', 'config', 'deployments', 'base-sepolia.json'));
   assert.equal(
-    sepolia.verifiedWiring?.['factory.allowSubVaults()'],
+    sepoliaDeployment.verifiedWiring?.['factory.allowSubVaults()'],
     true,
     'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/vault/subvaultregistry.md '
       + 'cites that read by name as the evidence the flag is per-deployment.'
   );
+});
+
+/**
+ * The PROSE half of the allowSubVaults asymmetry — the guard whose absence let this defect ship.
+ *
+ * The test above pins the two SCRIPTS and the recorded on-chain read. It pins no prose, so nothing
+ * stopped a doc re-asserting the universal — and that is exactly how the first version of this
+ * change was rejected: it scoped bullet 2 of a two-bullet list and left bullet 1, and left the
+ * canonical decision note (`root-vaults-only.md`) saying "the protocol ships with sub-vaults
+ * disabled … every vault is wired root-only".
+ *
+ * WHAT IS BANNED, and why these shapes rather than a scoping heuristic. "At launch" reads like
+ * scoping but is not: `root-vaults-only.md` said "At launch the protocol ships with…" and was
+ * still false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
+ * whether a sentence is sufficiently qualified. It bans the two CONSTRUCTIONS that erase the
+ * per-factory binding no matter how they are qualified:
+ *
+ *   1. "<subject> ships with allowSubVaults = false" / "the protocol ships with sub-vaults
+ *      disabled" — a factory is CONSTRUCTED with a constructor argument; nothing "ships with" one.
+ *      `Deploy.s.sol` passes false and `DeployTestnet.s.sol` passes true, so there is no subject
+ *      for which this sentence is true.
+ *   2. "every vault is wired …" / "no vault can be funded as a child" with no possessive — the
+ *      missing "it deploys" is the whole tell. `VaultFactory._deploy` wires
+ *      `allowSubVaults ? subVaultRegistry : address(0)`, so the claim is true of the vaults A
+ *      GIVEN FACTORY deploys and false across the deployment set.
+ *
+ * Both are cheap to write correctly ("Deploy.s.sol constructs VaultFactory with…", "every vault it
+ * deploys is wired…"), which is what makes banning the construction outright the right call rather
+ * than a judgement about context.
+ */
+const SUBVAULT_UNIVERSAL = [
+  // 1. the "ships with" construction, in either the flag or the feature form.
+  //    `with` is OPTIONAL: LAUNCH-READINESS's gate-0 cell read "`VaultFactory` ships
+  //    `allowSubVaults = false`", which slipped past the `ships with` form and was caught only by
+  //    the unpossessed-universal pattern below. One guard leg should not depend on another's reach.
+  /\bships?\b(?:\s+with)?[^.]{0,60}\ballowSubVaults\b/i,
+  /\bprotocol\b[^.]{0,60}\bships? with\b[^.]{0,60}\bsub-?vaults?\b[^.]{0,30}\bdisabled\b/i,
+  // 2. the unpossessed universal: "every vault is wired", but NOT "every vault it deploys is wired"
+  /\bevery (?:deployed )?vault is wired\b/i,
+  /\bno vault can (?:ever )?be funded as a child\b/i,
+  /\bno parent\/child edge can (?:ever )?(?:be|exist)/i,
+];
+
+/** Sentences that name the factory they are about are making the true claim, not the banned one. */
+const SUBVAULT_SCOPED = /\bit deploys\b|\bon (?:that|such a|this) factory\b|\bwhen false\b|\bDeploy\.s\.sol\b|\brefusing creation here\b/i;
+
+/**
+ * SENTENCES, not lines. Markdown wraps at ~100 columns, so a claim and the clause that scopes it
+ * routinely sit on different lines: `c1-empty-electorate.md` says "…so on that factory
+ * `createChildVault` reverts and every vault it deploys is wired `subVaultRegistry = address(0)`
+ * — no vault can be funded as a child there…", where the scoping is two lines above the claim. A
+ * line-based guard reads that as an unscoped universal and false-positives on correct prose,
+ * which is how a guard gets weakened or deleted. Paragraph-joined, then split on sentence ends.
+ */
+function sentencesOf(text) {
+  const out = [];
+  let line = 1;
+  for (const para of text.split(/\r?\n\s*\r?\n/)) {
+    const rows = para.split(/\r?\n/);
+    // A markdown TABLE ROW is its own unit. Joining a table into one paragraph splices text across
+    // cells, which both invents sentences that nobody wrote and lets a claim in one cell borrow
+    // scoping from another. Each `|` row stands alone; everything else is joined as wrapped prose.
+    let buf = [];
+    let bufLine = line;
+    const flush = () => {
+      const joined = buf.join(' ').replace(/\s+/g, ' ').trim();
+      if (joined) for (const s of joined.split(/(?<=[.!?])\s+(?=[A-Z`*[(])/)) out.push({ text: s, line: bufLine });
+      buf = [];
+    };
+    rows.forEach((row, i) => {
+      if (/^\s*\|/.test(row)) {
+        flush();
+        for (const cell of row.split('|')) {
+          const c = cell.replace(/\s+/g, ' ').trim();
+          if (c) for (const s of c.split(/(?<=[.!?])\s+(?=[A-Z`*[(])/)) out.push({ text: s, line: line + i });
+        }
+        bufLine = line + i + 1;
+      } else {
+        if (buf.length === 0) bufLine = line + i;
+        buf.push(row);
+      }
+    });
+    flush();
+    line += rows.length + 1;
+  }
+  return out;
+}
+
+test('no live prose states allowSubVaults as a protocol universal', () => {
+  const offenders = [];
+  for (const rel of proseFiles()) {
+    if (RECORD_DIRS.some((d) => rel.startsWith(`${d}/`))) continue; // dated records keep their wording
+    for (const { text, line } of sentencesOf(read(rel))) {
+      if (!/allowSubVaults|sub-?vault|child/i.test(text)) continue;
+      if (SUBVAULT_SCOPED.test(text)) continue;
+      // Attributed quotations survive, exactly as the govNote and sequencer guards allow.
+      const own = text.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ');
+      if (SUBVAULT_UNIVERSAL.some((rx) => rx.test(own))) {
+        offenders.push(`${rel}:~${line}  ${text.trim().slice(0, 140)}`);
+      }
+    }
+  }
+  assert.equal(
+    offenders.length,
+    0,
+    `these state allowSubVaults as a property of the protocol; it is a constructor immutable, so it `
+      + `binds ONE factory (Deploy.s.sol passes false, DeployTestnet.s.sol passes true):\n  ${offenders.join('\n  ')}`
+  );
+});
+
+test('probe: the sub-vault-universal guard is live', () => {
+  // The wordings that were actually shipped and had to be corrected. If any stops matching, the
+  // guard has gone inert and the universal creeps back into the docs it was removed from.
+  for (const claim of [
+    'At launch the protocol ships with sub-vaults disabled: `VaultFactory.allowSubVaults = false`, so `createChildVault` reverts and every vault is wired root-only.',
+    '[[vaultfactory]] ships with `allowSubVaults = false` (immutable). This disables sub-vaults in',
+    '`VaultFactory` ships with immutable `allowSubVaults = false`: `createChildVault` reverts',
+    'every deployed vault is wired root-only, so no funded child can exist',
+    '`VaultFactory` ships `allowSubVaults = false` — `createChildVault` reverts',
+    // invented: never shipped, must still be caught
+    'On this protocol no vault can be funded as a child.',
+    'No parent/child edge can ever exist anywhere in the system.',
+  ]) {
+    assert.ok(
+      SUBVAULT_UNIVERSAL.some((rx) => rx.test(claim)),
+      `the guard no longer catches: ${claim}`
+    );
+  }
+  // …and the corrected constructions must NOT trip it, or the fix trips its own guard.
+  for (const ok of [
+    '`Deploy.s.sol` constructs [[vaultfactory]] with `allowSubVaults = false`.',
+    'Every vault it deploys is wired with `subVaultRegistry = address(0)`.',
+    'so on that factory no vault can be funded as a child',
+    'When false: `createChildVault` reverts and every deployed vault is wired with `subVaultRegistry = address(0)`',
+  ]) {
+    assert.ok(
+      SUBVAULT_SCOPED.test(ok) || !SUBVAULT_UNIVERSAL.some((rx) => rx.test(ok)),
+      `the guard false-positives on corrected prose: ${ok}`
+    );
+  }
 });
