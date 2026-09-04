@@ -21,7 +21,7 @@ UI change closes with this loop, and the report includes the artifacts, not a de
 | console / network | `read_console_messages`, `read_network_requests` | **zero** external hosts is a hard requirement — any non-`self` request is a failure |
 | performance | Chrome DevTools MCP (`chrome-devtools`, user scope) | trace the scroll path; 60fps or it is not done |
 | library docs | Context7 MCP | `motion`, `gsap`, `@react-three/fiber` current APIs — do not guess from training data |
-| wording | `rwally-claims-contract` skill + the guard suites | run on `dist/`, not `src/` |
+| wording | `rwally-claims-contract` skill + the guard suites | they read `apps/site/*.html`; `dist/` needs a prerender step first |
 
 The built-in Browser pane already covers what Playwright MCP would add; do not install a second
 browser automation layer.
@@ -38,7 +38,8 @@ browser automation layer.
    hit is a rejection.
 6. **Console**: no errors, no CSP violations.
 7. **Measure** motion: DevTools trace over the scroll path. Report frame time, not "smooth".
-8. **Guards**: `node --test apps/site/test/site.test.mjs` pointed at `dist/`, plus
+8. **Guards**: `node --test apps/site/test/site.test.mjs` (it reads the seven `apps/site/*.html` pages,
+   not `dist/`; until a prerender step exists, step 4 is the wording check for `apps/site-next`), plus
    `claims-lede-truth` and `config-doc-truth`.
 9. **Report** with the screenshots attached (`SendUserFile`), the network summary, the trace
    numbers, and the guard counts. A report without artifacts is a claim.

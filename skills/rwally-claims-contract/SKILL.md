@@ -8,7 +8,8 @@ description: The wording contract every public surface of rwally.com must satisf
 Every public claim must be **literally true against the contracts, verified by reading the
 source** — not by assertion, not by paraphrasing another document. This is enforced in CI by
 `scripts/test/claims-lede-truth.test.mjs` (walks every `.md`/`.html`/`.txt`/`.json` it finds) and
-`apps/site/test/site.test.mjs` (36 tests, pinning wording). A redesign does not relax any of it, and it does not inherit it for free either: the guards walk
+`apps/site/test/site.test.mjs` (36 tests, pinning wording).
+A redesign does not relax any of it, and it does not inherit it for free either: the guards walk
 source files by extension (`.md`, `.html`, `.txt`, `.json`) and never the JS bundle, and the
 `dist/index.html` of a client-rendered React app is an empty root `<div>` with no prose in it. A
 banned shape inside a component therefore reds **nothing** today. Until a prerender step exists (the
@@ -50,7 +51,7 @@ after. A COUNSEL-marked passage rendered two ways is a rejection.
   it; `CLAUDE.md` is written the long way round for the same reason. The operator is the sole
   recipient of the 10% performance fee (`FeeEngine.onFeeCollected` →
   `claimableFees[operatorAddressOf(opId)]`), so any universal is falsifiable in one transaction.
-  Write the enumeration:Write the enumeration: *operatorship confers no authority to
+  Write the enumeration: *operatorship confers no authority to
   vote, execute, pause, reprice, or move member funds.*
 - **A universal about `allowSubVaults`.** It is a constructor immutable. `Deploy.s.sol` passes
   `false`; `DeployTestnet.s.sol` passes `true`; the live Base Sepolia factory reads `true`. Write
