@@ -6,8 +6,8 @@ is now cleared and what remains is operational.
 
 > **⚠ [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) is authoritative; this note is a mirror.** Rows
 > 0, 1 and 5 below were corrected on 2026-08-30 after the C-6 pivot shipped and the owner's audit
-> attestation landed, row 7 on 2026-09-02 when the gate closed, and row 2 on 2026-09-04 when the
-> lifecycle re-run on the current deployment passed. Rows 3/6 are directionally right but read the
+> attestation landed, row 7 on 2026-09-02 when the gate closed, and row 2 on 2026-09-04, after the
+> lifecycle re-run on the current deployment passed 2026-09-03. Rows 3/6 are directionally right but read the
 > source document (and `npm run cc`) for the live board.
 
 ## Why it matters
@@ -15,9 +15,11 @@ is now cleared and what remains is operational.
 A green board measures the tests you wrote, and the tests you wrote encode the failures you already
 imagined — five Criticals sat under 189 passing tests, a clean soak, and a verified deployment. And
 the remediation **invalidated the evidence**: six contracts changed bytecode, so the soak and
-canary results now describe *superseded* contracts (the testnet lifecycle has since been re-run on the
-current deployment — gate 2). Only gates 0 and 1 speak to
-safety, and both are now **GO** (gate 0 root-only, gate 1 owner-attested); the launch stays NO-GO on the OPERATIONAL gates 3/6 (soak + canary), which need the five-drill soak re-run against the current deployment (the owner holds the runbook).
+canary results now describe *superseded* contracts (the testnet lifecycle has since been re-run on
+the current deployment — gate 2). Only gates 0 and 1 speak to safety, and both are now **GO**
+(gate 0 root-only, gate 1 owner-attested); the launch stays NO-GO on the OPERATIONAL gates 3/6
+(soak + canary), which need the five-drill soak re-run against the current deployment with the
+canary observed alongside it (the owner holds the runbook).
 
 ## The nine gates
 
