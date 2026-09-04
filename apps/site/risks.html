@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Risks — Agent-Governed Vaults</title>
-<meta name="description" content="Fifteen named risks, each with what it is, the worst realistic case, and what is actually done about it — including the ones where the answer is that nothing is done.">
+<meta name="description" content="Fifteen named risks, each with what it is, the worst realistic case, and what is actually done about it, including the ones where the answer is that nothing is done.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/risks">
@@ -95,8 +95,8 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>As written, the contracts contain no proxy, no upgrade path, no pause and no admin key. Whatever ships is what runs, permanently. This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</dd></div>
           <!-- COUNSEL: the immutability claim recast as a statement about source, with the standing qualifier that nothing is deployed to mainnet. Revised 2026-09-02: a Base Sepolia deployment of the current code now exists, so the previous absolute “has not been deployed” wording became false and was replaced. -->
-          <div><dt>Worst case</dt><dd>A critical bug that survived review is permanent. Funds may be unrecoverable, and no party — including the people who wrote the code — has any power to stop it, patch it or claw anything back.</dd></div>
-          <div><dt>What is done</dt><dd>Nothing can be done after deployment; that is the point. Before then: an external security review whose report is held privately, with no public report to check it against, four internal adversarial review rounds, and an AI pre-audit. The evidence that this is not enough is in the project's own history — the AI pre-audit found five Critical issues in a frozen tree that had already passed internal review, and every fix required a full redeploy because nothing can be edited in place.</dd></div>
+          <div><dt>Worst case</dt><dd>A critical bug that survived review is permanent. Funds may be unrecoverable, and no party has any power to stop it, patch it or claw anything back. That includes the people who wrote the code.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing can be done after deployment; that is the point. Before then: an external security review whose report is held privately, with no public report to check it against, four internal adversarial review rounds, and an AI pre-audit. The project's own history shows that is not enough. The AI pre-audit found five Critical issues in a frozen tree that had already passed internal review, and every fix required a full redeploy because nothing can be edited in place.</dd></div>
         </dl>
       </article>
 
@@ -106,7 +106,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>If a price feed goes past its staleness bound, the oracle refuses to answer and every function that reads NAV reverts: deposits, rebalance execution and redemptions alike.</dd></div>
           <div><dt>Worst case</dt><dd>All active capital in the vault is frozen for as long as the feed stays past its bound, with exits included and no escape hatch. You cannot leave at any price while the freeze lasts. If the feed is deprecated or retired rather than merely late, the freeze does not end: a vault's oracle cannot be replaced, which is risk 15.</dd></div>
-          <div><dt>What is done</dt><dd>Nothing, deliberately, and no hatch will be added — any escape hatch is exactly the stale-price exit the breaker exists to prevent. The reasoning is that freezing beats mispricing: an exit priced off a stale feed is a transfer from the members who stay to whoever moves first. The one thing that stays reclaimable during a freeze is un-activated observation-window capital, because cancelling a pending deposit reads no oracle.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, deliberately, and no hatch will be added. Any escape hatch is exactly the stale-price exit the breaker exists to prevent. The reasoning is that freezing beats mispricing: an exit priced off a stale feed is a transfer from the members who stay to whoever moves first. One thing stays reclaimable during a freeze: un-activated observation-window capital, because cancelling a pending deposit reads no oracle.</dd></div>
         </dl>
       </article>
 
@@ -115,8 +115,8 @@
         <h2>3. A single price provider, with no fallback</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>Each asset is priced from exactly one Chainlink Data Feed: WETH from ETH/USD, cbBTC from BTC/USD. There is no second provider and no fallback source. This is a named residual risk, not an oversight.</dd></div>
-          <div><dt>Worst case</dt><dd>A wrong answer that lands inside the sane-price band and inside the heartbeat is treated as truth, and the vault trades or settles on it. A feed deprecation fails that asset closed, which stops the vault rather than mispricing it — but there is nothing to fail over to.</dd></div>
-          <div><dt>What is done</dt><dd>Three defences, and they are the only ones: a heartbeat and staleness bound per asset (3,600 seconds in the reference mainnet configuration), a plausibility band per asset that rejects prices outside it, and the mandatory Base sequencer gate. The band is wide — in the reference configuration $100 to $100,000 for WETH and $1,000 to $1,000,000 for cbBTC. It rejects gross errors. It does not reject an adverse but plausible price. The basket is limited to the two assets Base has Chainlink USD feeds for, rather than reaching for assets that would need a weaker price source.</dd></div>
+          <div><dt>Worst case</dt><dd>A wrong answer that lands inside the sane-price band and inside the heartbeat is treated as truth, and the vault trades or settles on it. A feed deprecation fails that asset closed, which stops the vault rather than mispricing it. But there is nothing to fail over to.</dd></div>
+          <div><dt>What is done</dt><dd>Three defences, and they are the only ones: a heartbeat and staleness bound per asset (3,600 seconds in the reference mainnet configuration), a plausibility band per asset that rejects prices outside it, and the mandatory Base sequencer gate. The band is wide. In the reference configuration it runs $100 to $100,000 for WETH and $1,000 to $1,000,000 for cbBTC. It rejects gross errors; it does not reject an adverse but plausible price. The basket is limited to the two assets Base has Chainlink USD feeds for, rather than reaching for assets that would need a weaker price source.</dd></div>
         </dl>
       </article>
 
@@ -136,7 +136,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>Base is an L2 with a sequencer. When it stops, on-chain prices stop being trustworthy before they stop being available.</dd></div>
           <div><dt>Worst case</dt><dd>A sequencer incident extends into a vault freeze that outlasts the incident itself, because the oracle will not price anything until the grace period has elapsed.</dd></div>
-          <div><dt>What is done</dt><dd>A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time: the deploy script refuses any chain outside a local node and Base Sepolia without one, and a pre-deploy check fails a configuration that omits it. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight. Where the feed is wired, the oracle enforces a 3,600-second grace period after the sequencer comes back up. The mitigation and the risk are the same mechanism: you are protected from stale-sequencer pricing by being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd></div>
+          <div><dt>What is done</dt><dd>A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain outside a local node and Base Sepolia without one, and a pre-deploy check fails a configuration that omits it. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight. Where the feed is wired, the oracle enforces a 3,600-second grace period after the sequencer comes back up. The mitigation and the risk are the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd></div>
         </dl>
         <!-- COUNSEL: the sequencer-gate exercise disclosure — the guard is written and unit-tested, and has never run against a live uptime feed, so this entry is not labelled as a proven mitigation. -->
       </article>
@@ -145,9 +145,9 @@
         <span class="severity severity--accepted">Accepted by design</span>
         <h2>6. Forward-settled exits are irrevocable</h2>
         <dl class="rows">
-          <div><dt>What it is</dt><dd><strong>Vault #1 sets its timelock to zero, so a passed proposal is executable immediately and there is no delay in which to leave after seeing the outcome.</strong> And from the moment the reveal phase opens on any live proposal — not from the moment one passes — redemption requests queue in forward settlement mode and price at post-execution NAV. The window lasts until that proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live.</dd></div>
-          <div><dt>Worst case</dt><dd>You can be right about disliking a rebalance, vote against it, request your exit, and still carry the full effect of its execution. Once queued, the request cannot be withdrawn. Your shares stay outstanding and keep gaining and losing with the vault, but they are locked: non-transferable and excluded from voting-eligible stake. There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window — 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas.</dd></div>
-          <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is worse: instant exits during that window would be a free option to leave at pre-rebalance prices while already knowing the outcome, paid for by every member who stayed. The recurrence is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it. If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement — but settlement is not automatic in that case. <code>settleQueuedExit</code> has to be called, and anyone can call it. Separately, <code>requestExit</code> takes no minimum-value parameter: your exit is an unbounded market order against whatever NAV settlement produces, there is no transaction-level floor you can set, and one was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</dd></div>
+          <div><dt>What it is</dt><dd><strong>Vault #1 sets its timelock to zero, so a passed proposal is executable immediately and there is no delay in which to leave after seeing the outcome.</strong> And redemption requests queue in forward settlement mode, priced at post-execution NAV, from the moment the reveal phase opens on any live proposal. Not from the moment one passes. The window lasts until that proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live.</dd></div>
+          <div><dt>Worst case</dt><dd>You can be right about disliking a rebalance, vote against it, request your exit, and still carry the full effect of its execution. Once queued, the request cannot be withdrawn. Your shares stay outstanding and keep gaining and losing with the vault, but they are locked: non-transferable and excluded from voting-eligible stake. There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window: 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is worse: instant exits during that window would be a free option to leave at pre-rebalance prices while already knowing the outcome, paid for by every member who stayed. The recurrence is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it. If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. But settlement is not automatic in that case. <code>settleQueuedExit</code> has to be called, and anyone can call it. Separately, <code>requestExit</code> takes no minimum-value parameter: your exit is an unbounded market order against whatever NAV settlement produces, there is no transaction-level floor you can set, and one was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</dd></div>
         </dl>
         <!-- COUNSEL: the Mode-F disclosure — the exit queue opens at reveal start rather than at passage, can be re-opened indefinitely for the cost of gas (M-7), and a member's exit carries no slippage floor while the operator's swaps do (M-15). -->
       </article>
@@ -157,7 +157,7 @@
         <h2>7. Governance capture and thin electorates</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>Voting is stake-weighted at five or more members, so a large enough holder can pass proposals. Below five members the vault takes a different branch: a proposal passes on either a majority of the members-at-creation revealing in favour while the favouring stake still clears the quorum, or an outright favouring stake majority. Both branches are stake-sensitive, so neither is a pure head count, and a rule change instead requires full consensus of eligible stake.</dd></div>
-          <div><dt>Worst case</dt><dd>A small vault is governed by whoever holds the most. In the small-member regime the residual is not a cheap head-count flip: because both sub-five branches weigh stake, dust addresses cannot pass a proposal on numbers alone. What is still purchasable is the regime itself — buying seats up to five moves the vault out of the signer-count branch and into the pure stake rule, and a seat costs one minimum deposit. At the reference 100 USDC minimum deposit that is about 400 USDC for the four seats a single-member vault needs. There is no contract-level floor here — the minimum deposit is chosen by whoever created the vault, and a low one makes capture cheap. Check it before you deposit. Proposals you oppose pass, and your exit settles after they execute.</dd></div>
+          <div><dt>Worst case</dt><dd>A small vault is governed by whoever holds the most. In the small-member regime the residual is not a cheap head-count flip: because both sub-five branches weigh stake, dust addresses cannot pass a proposal on numbers alone. What is still purchasable is the regime itself. Buying seats up to five moves the vault out of the signer-count branch and into the pure stake rule, and a seat costs one minimum deposit. At the reference 100 USDC minimum deposit that is about 400 USDC for the four seats a single-member vault needs. There is no contract-level floor here. The minimum deposit is chosen by whoever created the vault, and a low one makes capture cheap. Check it before you deposit. Proposals you oppose pass, and your exit settles after they execute.</dd></div>
           <div><dt>What is done</dt><dd>A protocol quorum floor of 25% of voting-eligible stake, a per-vault proposal threshold, a cap on how much delegated weight any single delegate may receive, and a minimum deposit that exists precisely as a listing constraint against cheap address-splitting in the small-member regime. There is also a per-proposer cooldown, which is not a defence against this: it is keyed per proposer, so a second address sidesteps it entirely. None of these makes a determined majority holder harmless, and the purchasable member count below five members is the open High-severity finding at the launch configuration.</dd></div>
           <!-- COUNSEL: the governance-capture disclosure — the cost of flipping the small-member regime is stated as a number, the per-proposer cooldown is explicitly not counted as a mitigation, and the open High-severity finding is named. -->
         </dl>
@@ -168,7 +168,7 @@
         <h2>8. The rules can freeze permanently</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>After a vault is funded, changing its rules requires 100% of voting-eligible stake plus a timelock.</dd></div>
-          <div><dt>Worst case</dt><dd>One permanently offline member — a lost key, a death, a walked-away wallet — freezes the vault's rules forever. Nobody can change a parameter again, no matter how much everyone else agrees.</dd></div>
+          <div><dt>Worst case</dt><dd>One permanently offline member (a lost key, a death, a walked-away wallet) freezes the vault's rules forever. Nobody can change a parameter again, no matter how much everyone else agrees.</dd></div>
           <div><dt>What is done</dt><dd>Nothing. Unanimity is what makes "nobody can change the rules behind you" true, and a lower bar would make it false. The consequence is stated here rather than discovered later.</dd></div>
         </dl>
       </article>
@@ -179,7 +179,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>The operator identity is attested by the registry at vault creation and is immutable for that vault. There is no rebind, and the payout address is permanent.</dd></div>
           <div><dt>Worst case</dt><dd>A compromised operator identity cannot be rotated, replaced or revoked. Whoever controls it controls the proposal right that identity carries, for as long as the vault exists.</dd></div>
-          <div><dt>What is done</dt><dd>The remedy is procedural, not technical: wind the vault down through exits and launch a new one. The compromise cannot let an attacker move member funds — the operator has no such power — but it cannot be undone either. Operators are told to use a multisig, because the address is permanent.</dd></div>
+          <div><dt>What is done</dt><dd>The remedy is procedural, not technical: wind the vault down through exits and launch a new one. The compromise cannot let an attacker move member funds: the operator has no such power. Nor can it be undone. Operators are told to use a multisig, because the address is permanent.</dd></div>
         </dl>
       </article>
 
@@ -200,7 +200,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>Interests in these vaults may be treated as securities, or as collective investment scheme interests, in some jurisdictions. This is an unresolved legal question, not a settled one.</dd></div>
           <div><dt>Worst case</dt><dd>A regulator takes that view. Participants face consequences that depend entirely on where they are, and this project cannot indemnify anyone against them.</dd></div>
-          <div><dt>What is done</dt><dd>Disclosure, and an intended geofence. Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end — a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. We will not characterize your position for you.</dd></div>
+          <div><dt>What is done</dt><dd>Disclosure, and an intended geofence. Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end, a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. We will not characterize your position for you.</dd></div>
           <!-- COUNSEL: the securities / CIS recharacterization disclosure, the "not an offer" language, and the geofencing-as-good-faith-measure framing. Highest-priority review item on the site. -->
         </dl>
       </article>
@@ -211,7 +211,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>A reference operator agent ships in the repository. It is beta reference code and it sat outside the scope of the contract security review.</dd></div>
           <div><dt>Worst case</dt><dd>An operator runs it as-is, it proposes something the operator did not intend, and the members pass it.</dd></div>
-          <div><dt>What is done</dt><dd>It is labelled as reference code here and in the repository. It is an ordinary member address — in governance it can only propose and vote its own weight — so its failure mode is a bad proposal, not a theft. Read it before you run it.</dd></div>
+          <div><dt>What is done</dt><dd>It is labelled as reference code here and in the repository. It is an ordinary member address. In governance it can only propose and vote its own weight, so its failure mode is a bad proposal, not a theft. Read it before you run it.</dd></div>
         </dl>
       </article>
 
@@ -241,8 +241,8 @@
         <h2>15. There is no oracle rotation path</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is fixed in its constructor with no add, no remove and no owner, and it governs only which oracle a <em>new</em> vault may be created with.</dd></div>
-          <div><dt>Worst case</dt><dd>If a feed is deprecated or permanently retired, the freeze in risk 2 is permanent. Members are locked out for good, with the funds visibly on-chain and no party able to change it — not the operator, not the members, not the deployers. A replacement oracle cannot be attached to an existing vault; it can only be blessed for new vaults on a new factory, and existing vaults keep pricing through the dead one.</dd></div>
-          <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is an address able to bless a new oracle, which is an address able to bless a fake price feed — the exact attack the allowlist exists to close, and it would be the protocol's first standing privileged role. Creating a new vault against a dead feed fails loudly rather than producing a brick, so the failure mode is "that asset becomes unlistable until a new factory is published", never "broken vaults ship". Publishing a new factory also restarts the operator registry, the leaderboard and the loss carryforward in a fresh registry.</dd></div>
+          <div><dt>Worst case</dt><dd>If a feed is deprecated or permanently retired, the freeze in risk 2 is permanent. Members are locked out for good, with the funds visibly on-chain and no party able to change it: not the operator, not the members, not the deployers. A replacement oracle cannot be attached to an existing vault; it can only be blessed for new vaults on a new factory, and existing vaults keep pricing through the dead one.</dd></div>
+          <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is an address able to bless a new oracle, which is an address able to bless a fake price feed. That is the exact attack the allowlist exists to close, and it would be the protocol's first standing privileged role. Creating a new vault against a dead feed fails loudly rather than producing a brick, so the failure mode is "that asset becomes unlistable until a new factory is published", never "broken vaults ship". Publishing a new factory also restarts the operator registry, the leaderboard and the loss carryforward in a fresh registry.</dd></div>
         </dl>
         <!-- COUNSEL: the permanent-brick disclosure — a retired price feed locks an existing vault for good, with no party able to intervene, because the oracle is immutable per vault and the factory allowlist has no owner. This is a permanent-loss-of-access path stated with no remedy. -->
       </article>
@@ -256,7 +256,7 @@
       <h2>What has and has not been checked.</h2>
       <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
       <!-- COUNSEL: the security-review attestation sentence, repeated verbatim from the overview page. The owner's attestation and the absence of a public report must always appear together and this paragraph must not be shortened. The open High-severity finding at the launch configuration is named rather than absorbed into "all resolved". -->
-      <p class="tight">The remaining launch blockers are operational and legal rather than security: a testnet lifecycle re-run, a soak, a canary re-run, and counsel review. Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker. The launch verdict as at 2026-08-29 is still NO-GO, recorded at <code>protocol/main</code>; check the repository for anything later.</p>
+      <p class="tight">The remaining launch blockers are operational and legal rather than security: a testnet lifecycle re-run, a soak, a canary re-run, and counsel review. Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High, the purchasable member count below five members, remains open at the launch configuration and is not classified as a launch blocker. The launch verdict as at 2026-08-29 is still NO-GO, recorded at <code>protocol/main</code>; check the repository for anything later.</p>
       <div class="actions">
         <a class="btn btn--primary" href="faq.html">The awkward questions</a>
         <a class="btn" href="how-it-works.html">The mechanism</a>
@@ -277,11 +277,11 @@
         </div>
         <div>
           <dt><code>docs/THREAT-MODEL.md</code></dt>
-          <dd>K-4, CM-2, CM-4, CM-7, EE-9, EE-10, EX-2 and VO-7 — the high-water-mark reset, the operator's share of the exit fee, the readable mid-reveal tally, and the execution-slippage bound.</dd>
+          <dd>K-4, CM-2, CM-4, CM-7, EE-9, EE-10, EX-2 and VO-7: the high-water-mark reset, the operator's share of the exit fee, the readable mid-reveal tally, and the execution-slippage bound.</dd>
         </div>
         <div>
           <dt><code>docs/audit/AI-AUDIT-REPORT.md</code></dt>
-          <dd>H-8, M-7, M-8, M-10 and M-15 — the open High at the launch configuration, the Mode-F recurrence, the opaque proposal payload, and the missing exit-side slippage floor.</dd>
+          <dd>H-8, M-7, M-8, M-10 and M-15: the open High at the launch configuration, the Mode-F recurrence, the opaque proposal payload, and the missing exit-side slippage floor.</dd>
         </div>
         <div>
           <dt><code>contracts/config/base-mainnet.json</code></dt>
@@ -289,7 +289,7 @@
         </div>
         <div>
           <dt><code>contracts/src/VaultCore.sol</code> and <code>contracts/src/Governance.sol</code></dt>
-          <dd>The mechanisms themselves — the immutable oracle reference, the creator gate, the exit queue and its trigger condition, and the rebalance slippage constant.</dd>
+          <dd>The mechanisms themselves: the immutable oracle reference, the creator gate, the exit queue and its trigger condition, and the rebalance slippage constant.</dd>
         </div>
       </dl>
     </div>

@@ -73,21 +73,21 @@
 
       <article class="qa">
         <h2>Is it running anywhere yet?</h2>
-        <p>No. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Sepolia deployments are not interchangeable and the difference matters: the current one runs the code on <code>protocol/main</code> today, while earlier ones are superseded — the contracts changed after them, the oracle, the vault core and the factory among them, so the lifecycle, soak and canary evidence earned against that bytecode is marked stale pending a re-run against the current stack.</p>
-        <p>There are no mainnet addresses to publish, which is why this site publishes none. The current testnet addresses are not published either — the address book in the repository records an earlier deployment, and flags that its execution adapter predates two security fixes. Anyone showing you a mainnet address for this protocol is not showing you this protocol.</p>
+        <p>No. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Sepolia deployments are not interchangeable and the difference matters: the current one runs the code on <code>protocol/main</code> today, while earlier ones are superseded. The contracts changed after them, the oracle, the vault core and the factory among them, so the lifecycle, soak and canary evidence earned against that bytecode is marked stale pending a re-run against the current stack.</p>
+        <p>There are no mainnet addresses to publish, which is why this site publishes none. The current testnet addresses are not published either. The address book in the repository records an earlier deployment, and flags that its execution adapter predates two security fixes. Anyone showing you a mainnet address for this protocol is not showing you this protocol.</p>
       </article>
 
       <article class="qa">
         <h2>Can you rug me?</h2>
         <p>Not through the contracts. As written they are non-custodial, with no seize function, no privileged withdrawal and no admin key. An operator cannot withdraw another member's funds, and neither can anyone else. Operatorship confers no authority to execute an unpassed rebalance, pause, reprice, upgrade, skip the timelock, or move, freeze or seize member funds. Its one power beyond proposing and voting like any member of equal stake is economic: the operator identity receives the 10% performance fee, which no other member does.</p>
         <p>This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
-        <p>You can still lose everything — to a bug, to the market, or to a governance majority you disagree with. Those are different failure modes and they are all on the <a href="risks.html">risks page</a>.</p>
+        <p>You can still lose everything. A bug can do it. So can the market, and so can a governance majority you disagree with. Those are different failure modes and they are all on the <a href="risks.html">risks page</a>.</p>
         <!-- COUNSEL: the non-custodial claim, stated as a direct answer about SOURCE and paired with the standing qualifier that nothing has been deployed. Must be re-verified against bytecode if anything is ever deployed. -->
       </article>
 
       <article class="qa">
         <h2>Can you pause it?</h2>
-        <p>No. As written, the contracts contain no pause function, no proxy and no upgrade path. Nobody can stop a vault — not the operator, not the members, not the people who wrote it. The only thing that halts a vault is the oracle staleness breaker, and that is a property of the code rather than a switch anyone holds.</p>
+        <p>No. As written, the contracts contain no pause function, no proxy and no upgrade path. Nobody can stop a vault. Not the operator. Not the members. Not the people who wrote it. The only thing that halts a vault is the oracle staleness breaker, and that is a property of the code rather than a switch anyone holds.</p>
         <!-- COUNSEL: the "cannot pause or upgrade" claim, recast as a statement about source rather than about deployed code. -->
       </article>
 
@@ -101,22 +101,22 @@
       <article class="qa">
         <h2>Can I always get out?</h2>
         <p>No. Two situations stop you.</p>
-        <p>During an oracle freeze you cannot exit at all, at any price, for as long as the feed stays past its bound — and permanently if it is retired rather than late.</p>
-        <p>And from the moment the reveal phase opens on any live proposal — not from the moment one passes — your request queues in forward settlement mode: it is irrevocable once submitted and it settles at post-execution NAV, so you carry the execution whether you voted for it or not. The window lasts until that proposal executes, is defeated, or its execution window lapses, so a proposal that is ultimately defeated still forced your exit into the queue while it was live. Between request and settlement your shares stay outstanding — still gaining and losing with the vault — but locked, non-transferable and excluded from voting-eligible stake.</p>
+        <p>During an oracle freeze you cannot exit at all, at any price, for as long as the feed stays past its bound, and permanently if it is retired rather than late.</p>
+        <p>And from the moment the reveal phase opens on any live proposal (not from the moment one passes), your request queues in forward settlement mode: it is irrevocable once submitted and it settles at post-execution NAV, so you carry the execution whether you voted for it or not. The window lasts until that proposal executes, is defeated, or its execution window lapses, so a proposal that is ultimately defeated still forced your exit into the queue while it was live. Between request and settlement your shares stay outstanding. They still gain and lose with the vault, but they are locked, non-transferable and excluded from voting-eligible stake.</p>
       </article>
 
       <article class="qa">
         <h2>What does the operator earn, and what do they have to lock?</h2>
-        <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows that operator identity across vaults. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard — the enforcement here is reputation, not code. There is no management fee.</p>
-        <p>The exit fee is never routed to the operator identity. But the operator is also a member, and the fee stays in the vault where it raises the value of every share — so an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</p>
+        <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows that operator identity across vaults. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code. There is no management fee.</p>
+        <p>The exit fee is never routed to the operator identity. But the operator is also a member, and the fee stays in the vault where it raises the value of every share. So an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</p>
         <!-- COUNSEL: the exit-fee correction — the prohibition is on routing to the operator identity, and the operator's mandatory 5% membership means it collects at least that share of every exit fee through share value. Recorded in the threat model (EE-9) so it is not misread as a violation. -->
-        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDC that is 2,500 USDC — and the 50,000 is a planned first-vault cap that has not been deployed. Separately, the proposal threshold — 5% of voting-eligible stake in the reference mainnet configuration, and still an open launch decision — decays passively as others deposit, and losing it means losing the right to propose anything. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
+        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDC that is 2,500 USDC. The 50,000 is a planned first-vault cap that has not been deployed. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference mainnet configuration, and still an open launch decision. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
         <!-- COUNSEL: the operator capital obligation, quantified, and the two distinct 5% mechanisms kept separate. No projection of operator fee income appears anywhere on this site. -->
       </article>
 
       <article class="qa">
         <h2>Why is the cap so small?</h2>
-        <p>Because nothing can be patched and nothing can be paused. The reason that matters to a depositor is blast radius: a planned 50,000 USDC is the largest amount this team is willing to have permanently trapped by a bug that survived review. Other reasons are on record; that is the one you should weigh. It is not a scarcity mechanic — there is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault, not editing this one.</p>
+        <p>Because nothing can be patched and nothing can be paused. The reason that matters to a depositor is blast radius: a planned 50,000 USDC is the largest amount this team is willing to have permanently trapped by a bug that survived review. Other reasons are on record; that is the one you should weigh. It is not a scarcity mechanic. There is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault, not editing this one.</p>
       </article>
 
       <article class="qa">
@@ -134,8 +134,8 @@
 
       <article class="qa">
         <h2>What if I disagree with a rebalance?</h2>
-        <p>Vote against it. Voting is commit then reveal: you submit a hash of your vote and a salt, then reveal it after the commit deadline. An unrevealed commit is forfeit and counts as an abstain, so committing is not enough — you have to come back.</p>
-        <p>What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction — after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.</p>
+        <p>Vote against it. Voting is commit then reveal: you submit a hash of your vote and a salt, then reveal it after the commit deadline. An unrevealed commit is forfeit and counts as an abstain, so committing is not enough. You have to come back.</p>
+        <p>What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction: after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.</p>
         <p>If it passes anyway, your options are to stay or to leave, and leaving during that window means a forward-settled exit that prices after the swap. There is no way to opt out of an executed rebalance while remaining in the vault.</p>
       </article>
 
@@ -148,7 +148,7 @@
       <article class="qa">
         <h2>Am I an investor?</h2>
         <p>We will not characterize your position for you, and you should not take a characterization from a marketing page.</p>
-        <p>Mechanically, here is what is true: you hold shares in a vault whose rules you govern by on-chain vote, alongside other members — stake-weighted at five or more members, and by a signer-count-plus-stake rule below that. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. Whether that makes you an investor in a security or a collective investment scheme where you live is a legal question with a jurisdiction-specific answer, it is unresolved, and it is listed as risk 11. Take your own advice.</p>
+        <p>Mechanically, you hold shares in a vault whose rules you govern by on-chain vote, alongside other members. That vote is stake-weighted at five or more members, and follows a signer-count-plus-stake rule below that. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. Whether that makes you an investor in a security or a collective investment scheme where you live is a legal question with a jurisdiction-specific answer. It is unresolved, and it is listed as risk 11. Take your own advice.</p>
         <!-- COUNSEL: the "you govern, we do not manage your money" framing and the deliberate refusal to characterize a depositor's position. Highest-priority review item alongside risk 11. -->
       </article>
 
@@ -161,7 +161,7 @@
 
       <article class="qa">
         <h2>How do I get in?</h2>
-        <p>You do not, yet — there is nothing running.</p>
+        <p>You do not, yet. Nothing is running.</p>
         <p>There is no list to join, no allocation to claim, no priority to earn, no form on this site and no wallet connection on this site. If someone offers you a place in a queue for this protocol, they are not connected to it.</p>
       </article>
 

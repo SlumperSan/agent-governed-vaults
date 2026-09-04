@@ -67,12 +67,12 @@
     <div class="wrap">
       <p class="eyebrow">The obligation</p>
       <h2>The creator withdrawal gate is 5% of the vault's share supply.</h2>
-      <p class="tight">In a vault holding 50,000 USDC that is 2,500 USDC — the figure moves with the vault's actual size, so in a half-subscribed vault it is 1,250 USDC. The 50,000 cap is a planned first-vault parameter that has not been deployed, and the 5% proposal threshold is still an open launch decision.</p>
-      <p class="tight">That capital is locked while other members remain. Being diluted below 5% is permitted and breaches nothing — but your redemptions revert until you are back above it, so dilution quietly converts a locked minimum into a locked whole position. Anyone telling you an agent can operate one of these vaults without putting capital at risk is describing a different protocol.</p>
+      <p class="tight">In a vault holding 50,000 USDC that is 2,500 USDC. The figure moves with the vault's actual size, so in a half-subscribed vault it is 1,250 USDC. The 50,000 cap is a planned first-vault parameter that has not been deployed, and the 5% proposal threshold is still an open launch decision.</p>
+      <p class="tight">That capital is locked while other members remain. Being diluted below 5% is permitted and breaches nothing. But your redemptions revert until you are back above it, so dilution quietly converts a locked minimum into a locked whole position. Anyone telling you an agent can operate one of these vaults without putting capital at risk is describing a different protocol.</p>
 
       <div class="note note--crit">
         <span class="label">Two separate mechanisms, both 5%</span>
-        <p>They are not the same rule and they do not bite the same way. Conflating them is the most common misreading of this protocol, so they are set out separately below.</p>
+        <p>They are not the same rule. They do not bite the same way. Conflating them is the most common misreading of this protocol, so they are set out separately below.</p>
       </div>
 
       <div class="tablewrap" role="region" aria-label="The two 5 percent mechanisms" tabindex="0">
@@ -91,7 +91,7 @@
               <th scope="row">Proposal threshold</th>
               <td>The right to open any proposal at all. In the reference mainnet configuration it is 5% of voting-eligible stake.</td>
               <td>Passively. Other members deposit, total shares grow, your percentage falls. Nothing re-checks it and nothing warns you.</td>
-              <td>You lose the right to propose anything — including the rule change that would lower the threshold. The only way back is to deposit more.</td>
+              <td>You lose the right to propose anything, including the rule change that would lower the threshold. The only way back is to deposit more.</td>
             </tr>
             <tr>
               <th scope="row">Creator withdrawal gate</th>
@@ -116,11 +116,11 @@
       <dl class="rows">
         <div>
           <dt>Can</dt>
-          <dd>Propose a rebalance, provided it holds at least the vault's proposal threshold of voting-eligible stake and is not inside its proposal cooldown. Vote with exactly the weight its own stake carries — no more than any member holding the same stake.</dd>
+          <dd>Propose a rebalance, provided it holds at least the vault's proposal threshold of voting-eligible stake and is not inside its proposal cooldown. Vote with exactly the weight its own stake carries, no more than any member holding the same stake.</dd>
         </div>
         <div>
           <dt>Cannot</dt>
-          <dd>Execute a rebalance the members did not pass. Pause the vault. Upgrade the contracts. Reprice shares. Move, freeze or seize another member's funds. Skip the timelock. Receive the exit fee as a payment — the fee fraction stays in the vault and is never routed to the operator identity, though it reaches the operator's own shares like every other holder's. The economics section below sets that out.</dd>
+          <dd>Execute a rebalance the members did not pass. Pause the vault. Upgrade the contracts. Reprice shares. Move, freeze or seize another member's funds. Skip the timelock. Receive the exit fee as a payment. The fee fraction stays in the vault and is never routed to the operator identity, though it reaches the operator's own shares like every other holder's. The economics section below sets that out.</dd>
         </div>
         <div>
           <dt>Is</dt>
@@ -144,12 +144,12 @@
       <dl class="rows">
         <div>
           <dt>What is earned</dt>
-          <dd>10% of realized profit, crystallized when a member redeems — never accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults instead of resetting with each new one. If a member realized a loss under you, you earn no performance fee from that member unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard — the enforcement here is reputation, not code.</dd>
+          <dd>10% of realized profit, crystallized when a member redeems. Never accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults instead of resetting with each new one. If a member realized a loss under you, you earn no performance fee from that member unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code.</dd>
           <!-- COUNSEL: the high-water-mark disclosure — registering a new operator identity is permissionless and resets the mark, so the loss carryforward is enforced by reputation rather than by contract. Recorded as a deferred High finding (CM-4). -->
         </div>
         <div>
           <dt>What is not routed to you</dt>
-          <dd>No management fee. No deposit fee. No spread. Nothing accrues while a member simply holds. The exit fee is never routed to the operator identity — but you are also a member, and the fee stays in the vault where it raises the value of every share, so an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</dd>
+          <dd>No management fee. No deposit fee. No spread. Nothing accrues while a member simply holds. The exit fee is never routed to the operator identity, but you are also a member, and the fee stays in the vault where it raises the value of every share. An operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</dd>
           <!-- COUNSEL: the exit-fee correction — the prohibition is on routing to the operator identity, and the operator's mandatory 5% membership means it collects at least that share of every exit fee through share value. Recorded in the threat model (EE-9) so it is not misread as a violation. -->
         </div>
         <div>

@@ -56,7 +56,7 @@
     <div class="wrap">
       <p class="eyebrow">The machine-readable path</p>
       <h1>Every page here is for a person. This one is not.</h1>
-      <p class="lede">An agent does not need the rest of this site. It needs one free call that describes the interface, a way to pay for reads, and the contract addresses. That is the whole integration surface, and it is documented rather than negotiated.</p>
+      <p class="lede">An agent does not need the rest of this site. It needs one free call that describes the interface, a way to pay for reads, and the contract addresses. That is the whole integration surface. It is documented rather than negotiated.</p>
       <p class="lede-note">This describes source code and a published interface. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
       <div class="actions">
         <a class="btn btn--primary" href="llms.txt">llms.txt</a>
@@ -78,7 +78,7 @@
         </div>
         <div>
           <dt>Metered</dt>
-          <dd>Reads over the projected index state — the vault list, a single vault, the operator leaderboard. Each returns <code>402</code> with a <code>PAYMENT-REQUIRED</code> header naming the scheme, asset, amount, recipient and nonce.</dd>
+          <dd>Reads over the projected index state: the vault list, a single vault, the operator leaderboard. Each returns <code>402</code> with a <code>PAYMENT-REQUIRED</code> header naming the scheme, asset, amount, recipient and nonce.</dd>
         </div>
         <div>
           <dt>Payment</dt>
@@ -86,10 +86,10 @@
         </div>
         <div>
           <dt>Acting</dt>
-          <dd>The metered API is read-only. Every state change — deposit, activate, propose, commit, reveal, exit — goes straight to the contracts. The API is a convenience for reading, never a path to authority.</dd>
+          <dd>The metered API is read-only. Deposit, activate, propose, commit, reveal, exit: every state change goes straight to the contracts. The API is a convenience for reading, never a path to authority.</dd>
         </div>
       </dl>
-      <p class="tight">There is no key to request, no allowlist to join, and nothing on this site to sign up for. An agent that can sign an EIP-712 message and send a transaction has everything it needs.</p>
+      <p class="tight">There is no key to request and no allowlist to join, and nothing on this site to sign up for. An agent that can sign an EIP-712 message and send a transaction has everything it needs.</p>
     </div>
   </section>
 
@@ -101,7 +101,7 @@
       <dl class="rows">
         <div>
           <dt>Deposit</dt>
-          <dd>Permissionless. The contracts gate on amount alone — a minimum deposit and a capacity cap — and screen nobody. Any address meeting those can join. Vault #1 will screen at the front end, which is a different thing and binds nothing on-chain.</dd>
+          <dd>Permissionless. The contracts gate on amount alone (a minimum deposit and a capacity cap) and screen nobody. Any address meeting those can join. Vault #1 will screen at the front end, which is a different thing and binds nothing on-chain.</dd>
         </div>
         <div>
           <dt>Propose</dt>
@@ -109,16 +109,16 @@
         </div>
         <div>
           <dt>Vote</dt>
-          <dd>Commit then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference agent solves that by <em>deriving</em> the salt from a signature it can reproduce rather than storing it — that is a client technique, not a protocol property, and an integrator writing their own client gets it only by implementing it.</dd>
+          <dd>Commit then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference agent solves that by <em>deriving</em> the salt from a signature it can reproduce rather than storing it. That is a client technique, not a protocol property, and an integrator writing their own client gets it only by implementing it.</dd>
         </div>
         <div>
           <dt>Exit</dt>
-          <dd>Pro-rata and in kind, and subject to two conditions worth reading before you build around it. <strong>From the moment the reveal phase opens on any live proposal — not from the moment one passes — until that proposal executes, is defeated, or its execution window lapses</strong>, the request is queued and settles at post-execution NAV; a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is a delay. <strong>An oracle freeze is not.</strong> Every function that reads NAV reverts while a price feed is stale, exits included, and there is no escape hatch — you cannot leave at any price until the feed recovers, and if the feed is retired rather than late, that is permanent. See <a href="risks.html">the risks page</a>.</dd>
+          <dd>Pro-rata and in kind, and subject to two conditions worth reading before you build around it. <strong>From the moment the reveal phase opens on any live proposal (not from the moment one passes) until that proposal executes, is defeated, or its execution window lapses</strong>, the request is queued and settles at post-execution NAV; a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is a delay. <strong>An oracle freeze is not.</strong> Every function that reads NAV reverts while a price feed is stale, exits included, and there is no escape hatch — you cannot leave at any price until the feed recovers. If the feed is retired rather than late, that is permanent. See <a href="risks.html">the risks page</a>.</dd>
         </div>
       </dl>
       <div class="note note--warn">
         <span class="label">The gate that will surprise an integrator first</span>
-        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately checks its balance will read zero, and that is correct rather than a failure.</p>
+        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately checks its balance will read zero. That is correct, not a failure.</p>
         <p><code>skipWindow()</code> opts out and activates a pending deposit immediately. It is irrevocable, and the cost is not obvious: pending capital is the only capital that stays reclaimable while the oracle is frozen. Opting out forfeits that permanently.</p>
       </div>
     </div>
@@ -129,7 +129,7 @@
       <p class="eyebrow">Reference client</p>
       <h2>There is a working agent in the repository.</h2>
       <p>It reads the metered API and the chain, decides whether to join, vote or exit, and prints the exact calls it would make. It is dry-run by default and cannot sign without an explicit environment gate.</p>
-      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as product code. It sits outside the scope of the contract security review, and running it live is what exposed two launch-class bugs in it — one gate that could never admit a new operator, and a deposit path that set no token allowance and therefore reverted in every configuration as shipped. Both are fixed with regression tests. Both were invisible to mocks.</p>
+      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as product code. It sits outside the scope of the contract security review, and running it live is what exposed two launch-class bugs in it. One gate could never admit a new operator. A deposit path set no token allowance and therefore reverted in every configuration as shipped. Both are fixed with regression tests. Both were invisible to mocks.</p>
       <div class="actions">
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/REFERENCE-AGENT.md">Reference agent</a>
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
