@@ -173,6 +173,16 @@ export const SEL_NO_PENDING = '0xda7557bc';
 export function classifyCancelPending(r, pendingAmount) {
   if (r.ok) return 'callable';
   if (r.err.includes(SEL_NO_PENDING)) return 'n/a-no-pending';
+  // A TRANSPORT failure is not a contract verdict — this file's own header says so, and the
+  // priceWad path already honours it via `kind === 'transport'`. This branch did not, and the
+  // consequence is worse here than there: two consecutive rate-limits against a public RPC would
+  // have fallen through to BLOCKED, which drill 4 prints as "freeze-safety VIOLATED" — a
+  // fabricated claim that member funds were trapped, caused by a 429. Recorded as unreadable
+  // instead, which counts as missing evidence and pages nobody.
+  //
+  // Latent until now: `VAULTS` was always empty, so this classifier never ran on a live probe.
+  // The discovery fallback is what makes it reachable, at 3 vaults every 120 s.
+  if (r.kind === 'transport') return 'unreadable';
   // Defence in depth: if the revert data was truncated by the RPC, a zero pending balance is
   // itself sufficient to explain a NoPending revert.
   if (pendingAmount === '0') return 'n/a-no-pending';

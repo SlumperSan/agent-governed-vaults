@@ -167,6 +167,34 @@ test('an UNCONFIGURED probe is missing evidence, not a freeze-safety breach', ()
   assert.deepEqual(r.blockedDetail, [], 'nothing to page on');
 });
 
+test('a transport failure is unmeasured, not a freeze-safety breach', () => {
+  // A rate-limited or timed-out RPC is a fact about the transport, never about the contract.
+  // Before this, two consecutive transport failures on the cancelPending static call fell through
+  // to BLOCKED, and drill 4 prints BLOCKED as "freeze-safety VIOLATED" — a fabricated claim that
+  // member funds were trapped, caused by a 429. Latent while the probe set was always empty; the
+  // discovery fallback is what makes it reachable, at 3 vaults every 120 s.
+  const r = summarizeFreezeSafety([
+    sample('t1', 1, { freezeSafety: [{ vault: '0xv', probed: true, verdict: 'unreadable', detail: '429 Too Many Requests' }] }),
+    sample('t2', 2, { freezeSafety: [{ vault: '0xv', verdict: 'callable' }] }),
+  ]);
+  assert.equal(r.oracleBlocked, 0, 'a 429 must never be reported as member funds being trapped');
+  assert.equal(r.unmeasured, 1);
+  assert.equal(r.probedWithPending, 1);
+  assert.deepEqual(r.blockedDetail, []);
+});
+
+test('a REAL revert still counts as a breach — the transport carve-out must not swallow it', () => {
+  // The other direction: making transport failures unmeasured must not make contract reverts
+  // unmeasured too, or the guard stops guarding.
+  const r = summarizeFreezeSafety([
+    sample('t1', 1, { freezeSafety: [{ vault: '0xv', verdict: 'callable' }] }),
+    sample('t2', 2, { freezeSafety: [{ vault: '0xv', verdict: 'BLOCKED', detail: 'StaleOracle' }] }),
+  ]);
+  assert.equal(r.oracleBlocked, 1);
+  assert.equal(r.demonstrated, false);
+  assert.equal(r.blockedDetail[0].detail, 'StaleOracle');
+});
+
 test('not-probed (no SOAK_PROBE_MEMBER) is unmeasured too, and does not mask a real breach', () => {
   const r = summarizeFreezeSafety([
     sample('t1', 1, { freezeSafety: [{ vault: '0xv', probed: false, verdict: 'not-probed' }] }),

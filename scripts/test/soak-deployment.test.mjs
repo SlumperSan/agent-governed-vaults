@@ -170,6 +170,21 @@ test('any other revert WITH a real pending deposit is the reportable finding', (
   assert.equal(classifyCancelPending(r, '5000000'), 'BLOCKED');
 });
 
+test('a TRANSPORT failure is unreadable, not BLOCKED — a 429 is not a contract verdict', () => {
+  // The file's own header: "An unreadable observation is recorded as missing evidence, never
+  // folded into a value that reads as a finding." This classifier did not honour it, and the
+  // consequence is worse here than on the price path: BLOCKED prints as "freeze-safety VIOLATED",
+  // i.e. a fabricated claim that member funds are trapped — from a rate limit.
+  const r = { ok: false, err: 'error sending request: 429 Too Many Requests', kind: 'transport' };
+  assert.equal(classifyCancelPending(r, '5000000'), 'unreadable');
+  assert.notEqual(classifyCancelPending(r, '5000000'), 'BLOCKED');
+
+  // …and the carve-out must be keyed on `kind`, not on the error text. A REVERT whose message
+  // happens to mention a number must still be the reportable finding.
+  const revert = { ok: false, err: 'execution reverted, data: "0x88cce429"', kind: 'revert' };
+  assert.equal(classifyCancelPending(revert, '5000000'), 'BLOCKED');
+});
+
 test('SEL_NO_PENDING matches the NoPending() selector cast computes', () => {
   // Pinned rather than derived, so renaming the error in VaultCore fails here instead of
   // silently reclassifying every BLOCKED result as n/a.

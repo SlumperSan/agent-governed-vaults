@@ -191,7 +191,15 @@ export function findGaps(samples, maxGapMult) {
  * direction.
  * @param {any[]} samples
  */
-export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed'];
+/**
+ * Verdicts that mean NOTHING WAS MEASURED, as opposed to something was measured and was fine
+ * (`callable`/`ok`), or measured and was not (`BLOCKED`).
+ *
+ * `unreadable` belongs here for the same reason the others do: a rate-limited RPC is a fact about
+ * the transport, never about the contract. Folding it into the failure bucket would let a 429
+ * print as "freeze-safety VIOLATED" — a fabricated claim that member funds were trapped.
+ */
+export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed', 'unreadable'];
 
 export function summarizeFreezeSafety(samples) {
   /** @type {Record<string, number>} */
@@ -207,8 +215,13 @@ export function summarizeFreezeSafety(samples) {
       // MISSING EVIDENCE IS NOT A BREACH. `not-configured` (no vaults resolved) and `not-probed`
       // (no SOAK_PROBE_MEMBER) mean the probe never ran; treating them as `oracleBlocked` would
       // report a freeze-safety FAILURE caused entirely by the harness being misconfigured, which
-      // is the mirror image of the bug that made this leg silent in the first place. They suppress
-      // `demonstrated` — which is correct, nothing was shown — without manufacturing an incident.
+      // is the mirror image of the bug that made this leg silent in the first place.
+      //
+      // They do NOT suppress `demonstrated` on their own — an earlier version of this comment said
+      // they did, which overstated it. `demonstrated` turns on `probedWithPending > 0 &&
+      // oracleBlocked === 0`, so unmeasured samples alongside a real `callable` leave it true. That
+      // is the right behaviour (positive evidence exists, no breach) and drill 4 prints the
+      // unmeasured count beside the verdict so partial coverage is visible rather than implied.
       else if (UNMEASURED_VERDICTS.includes(f.verdict)) unmeasured++;
       else if (f.verdict !== 'n/a-no-pending') {
         oracleBlocked++;
