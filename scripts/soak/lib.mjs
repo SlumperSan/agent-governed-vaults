@@ -381,7 +381,6 @@ export const P = {
 export const STATUS = ['None', 'Active', 'Passed', 'Defeated', 'Executed', 'Expired'];
 export const PTYPE = { Rebalance: 0, RuleChange: 1, ChildAllocation: 2 };
 
-/** Read a proposal into a named object. */
 /**
  * Can THIS voter still commit a vote on THIS proposal, right now?
  *
@@ -426,6 +425,7 @@ export function votableNow(p, { now, snapshotWeight, wantPtype }) {
   return { votable: true, reason: '' };
 }
 
+/** Read a proposal into a named object. */
 export function readProposal(governance, pid) {
   const p = call(governance, PROPOSAL_SIG, pid);
   return {

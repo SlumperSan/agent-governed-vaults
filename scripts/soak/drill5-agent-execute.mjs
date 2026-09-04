@@ -232,33 +232,62 @@ if (want('vote') && !state.phases?.vote?.done) {
   assert(pid > 0n,
     'no proposal has ever been raised on the smoke vault — the agent has nothing to vote on. Start drill 2\'s allocate round (or a standalone no-op proposal) first; governance serializes per vault, so only one may be in flight.');
 
-  // A pid is NOT a votable round. `activeProposalOf` is never cleared on settlement, so it names
-  // the last proposal the vault ever had regardless of its state — see `votableNow`, which
-  // documents the fourteen-hour-dead proposal this guard used to accept. Ask the real question,
-  // and say which conjunct failed rather than letting the agent tick forty times against a round
-  // it correctly refuses to vote on.
-  const prop = readProposal(dep.governance, pid);
-  const snapshotWeight = callU(
-    VAULT, 'pastVotingEligibleShares(address,uint256)(uint256)',
-    account.address, String(prop.createdAt - 1),
-  );
-  const { votable, reason } = votableNow(prop, { now: chainNow(), snapshotWeight });
-  assert(votable,
-    `proposal ${pid} on the smoke vault is NOT votable by this agent: ${reason}.\n`
-      + `  status=${prop.status} ptype=${prop.ptype} createdAt=${prop.createdAt} `
-      + `commitDeadline=${prop.commitDeadline} revealDeadline=${prop.revealDeadline} `
-      + `snapshotWeight=${snapshotWeight}\n`
-      + '  This is a HARNESS/round-availability failure, not evidence about governance or the\n'
-      + '  contracts, and no amount of ticking will change it. A fresh round must be raised on this\n'
-      + '  vault AFTER the agent holds shares (voting weight snapshots at createdAt-1), and any\n'
-      + '  settled-but-still-named predecessor must be finalized first — governance serializes per\n'
-      + '  vault. scripts/soak/drill5-gov-companion.mjs does exactly that, and run-soak.ps1 does\n'
-      + '  not start it.');
-  log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} snapshotWeight=${snapshotWeight}`);
   // No hasCommitted/hasRevealed helpers exist — read the public mappings directly.
   // commitOf is bytes32(0) until a commitment lands; revealedOf is the reveal flag.
   const ZERO32 = '0x' + '0'.repeat(64);
   const hasCommitted = () => call(dep.governance, 'commitOf(uint256,address)(bytes32)', pid.toString(), account.address)[0] !== ZERO32;
+
+  // ORDER MATTERS: ask "already committed?" BEFORE "still votable?".
+  //
+  // `record('vote', ...)` runs only after commit AND reveal, so any restart between the two
+  // re-enters this phase — and by then the commit deadline has legitimately passed, because
+  // `waitUntilChainTime` below waits for exactly that. Gating on votability first would abort a
+  // LIVE round mid-reveal, claiming "a fresh round must be raised", which is false: the
+  // commitment is on-chain and only the reveal remains. The reveal window here is 3600s inside a
+  // 14-hour unattended run that advertises resumability, so that path is ordinary, not exotic.
+  //
+  // Checking the commitment first also closes `AlreadyCommitted` (Governance.sol:364) without a
+  // fifth conjunct, and keeps `votableNow`'s contract honestly "can this voter still COMMIT".
+  if (!hasCommitted()) {
+    // A pid is NOT a votable round. `activeProposalOf` is never cleared on settlement, so it names
+    // the last proposal the vault ever had regardless of its state — see `votableNow`, which
+    // documents the fourteen-hour-dead proposal this guard used to accept.
+    const prop = readProposal(dep.governance, pid);
+
+    // BOTH TERMS, because `commitVote` gates on `_boundedWeight` (Governance.sol:352-356), which
+    // is min(snapshot, current) — not the snapshot alone. `votingEligibleShares` is
+    // `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028), so a voter who has queued an exit
+    // has snapshot weight and no current weight, and a snapshot-only check would call that
+    // votable and then watch `commitVote` revert NoWeight for forty ticks. Drill 5 queues an exit
+    // in its own next phase, so a re-run or reset reaches this exact state.
+    //
+    // NOTE THE `uint64`. VaultCore.sol:1040 declares `pastVotingEligibleShares(address, uint64)`;
+    // the `uint256` spelling is a DIFFERENT SELECTOR (0xab46cdef vs 0xc5a88eb3) and reverts, which
+    // is how the first version of this guard aborted the phase 100% of the time.
+    const snap = callU(
+      VAULT, 'pastVotingEligibleShares(address,uint64)(uint256)',
+      account.address, String(prop.createdAt - 1),
+    );
+    const cur = callU(VAULT, 'votingEligibleShares(address)(uint256)', account.address);
+    const snapshotWeight = snap < cur ? snap : cur;
+
+    const { votable, reason } = votableNow(prop, { now: chainNow(), snapshotWeight });
+    assert(votable,
+      `proposal ${pid} on the smoke vault is NOT votable by this agent: ${reason}.\n`
+        + `  status=${prop.status} ptype=${prop.ptype} createdAt=${prop.createdAt} `
+        + `commitDeadline=${prop.commitDeadline} revealDeadline=${prop.revealDeadline} `
+        + `snapshot=${snap} current=${cur} boundedWeight=${snapshotWeight}\n`
+        + '  This is a HARNESS/round-availability failure, not evidence about governance or the\n'
+        + '  contracts, and no amount of ticking will change it. A fresh round must be raised on this\n'
+        + '  vault AFTER the agent holds shares (voting weight snapshots at createdAt-1), and any\n'
+        + '  settled-but-still-named predecessor must be finalized first — governance serializes per\n'
+        + '  vault. scripts/soak/drill5-gov-companion.mjs does exactly that, and run-soak.ps1 does\n'
+        + '  not start it.');
+    log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} boundedWeight=${snapshotWeight}`);
+  } else {
+    log(`proposal ${pid} already carries this agent's commitment — skipping the votability gate and going to reveal`);
+  }
+
   const commitEvents = await tickUntil('vote', cfgIn, account, walletClient, hasCommitted, 'vote:commit');
   saveFirst('votedPid', pid.toString());
 
