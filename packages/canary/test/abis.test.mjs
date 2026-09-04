@@ -19,8 +19,8 @@ import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
   VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
-  VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   GOVERNANCE_VIEWS, GOVERNANCE_WATCH_EVENTS,
+  VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   signatureOf,
 } from '../src/abis.mjs';
 
@@ -41,15 +41,15 @@ const feedAbiPath = join(OUT, 'IAggregatorV3.sol/IAggregatorV3.json');
 const feedBuilt = existsSync(feedAbiPath);
 const feedAbi = feedBuilt ? JSON.parse(readFileSync(feedAbiPath, 'utf8')).abi ?? [] : [];
 
+const govAbiPath = join(OUT, 'Governance.sol/Governance.json');
+const govBuilt = existsSync(govAbiPath);
+const govAbi = govBuilt ? JSON.parse(readFileSync(govAbiPath, 'utf8')).abi ?? [] : [];
+
 // `description()` is declared as its own interface inside ChainlinkOracle.sol, because the
 // constructor reaches it by raw staticcall rather than through IAggregatorV3.
 const descAbiPath = join(OUT, 'ChainlinkOracle.sol/IAggregatorV3Description.json');
 const descBuilt = existsSync(descAbiPath);
 const descAbi = descBuilt ? JSON.parse(readFileSync(descAbiPath, 'utf8')).abi ?? [] : [];
-
-const govAbiPath = join(OUT, 'Governance.sol/Governance.json');
-const govBuilt = existsSync(govAbiPath);
-const govAbi = govBuilt ? JSON.parse(readFileSync(govAbiPath, 'utf8')).abi ?? [] : [];
 
 /** Every embedded selector, mapped to the Solidity signature it must equal. */
 const EXPECTED = {
@@ -92,7 +92,10 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS, ...CHAINLINK_FEED_IDENTITY_VIEWS]) {
+  for (const frag of [
+    ...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS,
+    ...CHAINLINK_FEED_IDENTITY_VIEWS, ...GOVERNANCE_VIEWS,
+  ]) {
     assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
   }
 });
@@ -146,6 +149,45 @@ test('the views the signals read exist on the compiled VaultCore', { skip: !buil
 test('requestExit(uint256) is a real VaultCore function — the sentinel probes a live selector', { skip: !built && 'contracts/out absent' }, () => {
   const fns = vaultAbi.filter((i) => i.type === 'function').map(canonical);
   assert.ok(fns.includes('requestExit(uint256)'));
+});
+
+/**
+ * The G1 guard, matching the ChainlinkOracle one above: `GOVERNANCE_VIEWS` is only checked for
+ * `stateMutability === 'view'` against itself unless something also compares it against the
+ * COMPILED `Governance` ABI. `configOf`'s field ORDER is load-bearing — it is a mapping-to-struct
+ * getter that viem flattens positionally, and `signals/operator-power.mjs` reads
+ * `proposalThresholdBps` out of slot 5 by position, not by name.
+ */
+test('every Governance view operator-power.mjs reads exists on the compiled contract, with the same field order', { skip: !govBuilt && 'contracts/out absent — run `cd contracts && forge build`' }, () => {
+  const fns = new Map(govAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
+  for (const frag of GOVERNANCE_VIEWS) {
+    const sig = signatureOf(frag);
+    const onChain = fns.get(sig);
+    assert.ok(onChain, `Governance has no ${sig} — signals/operator-power.mjs would read a reverting selector`);
+    assert.equal(onChain.stateMutability, 'view', `${sig} is not a view on the compiled contract`);
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted — operator-power.mjs would mis-decode configOf's fields`,
+    );
+    // NAMES, not just types. `quorumBps`, `proposalThresholdBps` and `concentrationCapBps` are
+    // three ADJACENT uint16s in GovConfig: swapping any two of them is type-identical, so the
+    // shape assertion above passes unchanged while `operator-power.mjs` — which reads slot 5 BY
+    // POSITION — starts monitoring `quorumBps` (2500 at launch) as if it were the propose gate.
+    // A test titled "with the same field order" has to actually check the order (Review115 F9).
+    // `abis.mjs`'s `view()` helper auto-names an unnamed output `o0`, `o1`, … — a positional
+    // placeholder, not a claim about the source — and Solidity returns '' for a genuinely unnamed
+    // return value. Both normalize to '' so this compares REAL names only, and a fragment that
+    // names nothing (vaultRegistered) simply asserts the compiled one names nothing either.
+    const realNames = (outs) => outs.map((o) => (/^o\d+$/.test(o.name ?? '') ? '' : (o.name ?? '')));
+    assert.deepEqual(
+      realNames(onChain.outputs), realNames(frag.outputs),
+      `${sig} field ORDER or naming drifted — operator-power.mjs reads configOf's fields positionally`,
+    );
+    assert.deepEqual(
+      onChain.inputs.map((i) => i.type), frag.inputs.map((i) => i.type),
+      `${sig} argument shape drifted`,
+    );
+  }
 });
 
 /**

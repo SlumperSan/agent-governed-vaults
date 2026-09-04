@@ -55,6 +55,14 @@ export function proposalTuple({
   ];
 }
 
+/**
+ * Chainlink USDC/USD reference feed — `signals/depeg-reference.mjs` (G4). resolveCanaryConfig
+ * defaults `usdcUsdFeed` to this SAME address on chainId 8453 (the default `baseCfg` in
+ * runner.test.mjs never sets CHAIN_ID), so every fixture below carries a healthy $1.00 entry for
+ * it — otherwise every full sweep in this package would report a DETECTOR BROKEN depeg leg.
+ */
+export const USDC_USD_FEED = '0x7e860098f58bbfc8648a4311b374b1d669a2bc6b';
+
 // ChainlinkOracle fixtures (the LIVE oracle). Deliberately not built from A(), so they can never
 // collide with the `0x9999…`-style throwaway addresses the existing tests use inline.
 export const FEED = `0x${'fe'.repeat(18)}0001`;
@@ -173,7 +181,22 @@ export function healthyVault(overrides = {}) {
       assetBalance: (a) => (lc(a) === lc(ASSET) ? 2_000000000000000000n : 0n),
       childVaultCount: 0n,
       childVaults: () => { throw new Error('no children'); },
-      sharesOf: () => 0n,
+      // CREATOR holds 100e18 of the 500e18 total (20%, matching healthyState()'s share book below)
+      // — comfortably above the 750 bps WARN bar at the launch 500 bps threshold, so the default
+      // fixture reads OK on signals/operator-power.mjs (G1). Everyone else holds nothing, matching
+      // the pre-existing behaviour every other signal's fixture already assumed.
+      sharesOf: (a) => (lc(a) === lc(CREATOR) ? 100_000000000000000000n : 0n),
+      // Governance gates on VOTING-ELIGIBLE stake, not the raw book (Governance.sol:287-291).
+      // With no queued Mode-F exits the two agree, which is the healthy default; a fixture that
+      // wants them to diverge overrides these two alone and leaves sharesOf/totalShares intact,
+      // exactly as a real queued exit does.
+      votingEligibleShares: (a) => (lc(a) === lc(CREATOR) ? 100_000000000000000000n : 0n),
+      totalVotingEligibleShares: () => 500_000000000000000000n,
+      governance: () => GOVERNANCE,
+      capacityCapUsdc: () => 0n, // uncapped by default
+      minDepositUsdc: () => 1_000000n, // $1.00, the dust/rounding-inflation floor
+      nonCreatorMemberCount: () => 1n, // MEMBER, per healthyState()'s share book
+      CREATOR_MIN_STAKE_BPS: () => 500n,
     },
     [ORACLE]: {
       priceWad: () => 3_000000000000000000n,
@@ -188,11 +211,23 @@ export function healthyVault(overrides = {}) {
       operatorOf: () => 7n,
       operatorAddressOf: () => OPERATOR,
     },
-    // Registered, quiet: no proposal has ever been opened. governance-watch reads OK on this.
+    // Registered, quiet: no proposal has ever been opened, so `governance-watch` reads OK.
+    // `vaultRegistered` is `operator-power`'s: `propose()` reverts NotRegistered before it
+    // reads any threshold. `configOf` uses the shared GOV_CONFIG rather than a second inline
+    // literal -- its proposalThresholdBps is 500 bps, the same figure CREATOR_MIN_STAKE_BPS
+    // carries, so the default fixture's two operator-power legs still agree
+    // (thresholdsDiffer: false). Asserted at resolution time, not assumed.
     [GOVERNANCE]: {
+      vaultRegistered: () => true,
       activeProposalOf: () => 0n,
       configOf: () => GOV_CONFIG,
       proposals: () => proposalTuple({ status: 0 }),
+    },
+    // A healthy $1.00 reading, 8 decimals, comfortably inside the 0.995..1.005 band -- so
+    // signals/depeg-reference.mjs (G4) reads OK by default across every fixture in this package.
+    [USDC_USD_FEED]: {
+      latestRoundData: () => [1n, 100_000000n, 1_699_999_990n, 1_699_999_990n, 1n],
+      decimals: () => 8,
     },
   };
 

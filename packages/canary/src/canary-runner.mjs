@@ -21,6 +21,19 @@
  * Optional env:
  *   OPERATOR_REGISTRY_ADDRESS  enables the fee-routing signal (skipped without it)
  *   EXTRA_OPERATOR_ADDRESSES   comma-separated extra operator addresses to treat as prohibited
+ *   USDC_USD_FEED_ADDRESS      Chainlink USDC/USD reference feed for the depeg-reference signal
+ *                              (G4). Defaults to the verified Base mainnet feed
+ *                              (contracts/config/base-mainnet.json usdcReferenceFeeds.chainlinkUsdcUsd)
+ *                              ONLY when CHAIN_ID is 8453 — no Base Sepolia address is documented
+ *                              anywhere in this repo, so none is guessed; on any other chain id the
+ *                              signal reports `skipped` (a configuration fact) until this is set.
+ *                              The mainnet default applies only when CHAIN_ID was EXPLICITLY set —
+ *                              CHAIN_ID's own default is 8453, so an unset CHAIN_ID must not be
+ *                              read as "this is mainnet".
+ *   USDC_USD_FEED_MAX_AGE_SEC  (86400) how old that feed's reading may be before depeg-reference
+ *                              calls itself BLIND rather than reporting a frozen $1.0000 as
+ *                              in-band. A bound we choose; no heartbeat is documented for this
+ *                              feed. `detail.ageSec` reports the observed age every sweep.
  *   PAGE_WEBHOOK_URL           POST one JSON body per PAGE-tier transition (Monitoring Gap
  *                              Analysis §2 G6 / §3 item 4): nav-backing, share-conservation,
  *                              fee-routing, exit-liveness ALERT, oracle-freshness ALERT, and
@@ -113,10 +126,23 @@ import { checkExitLiveness } from './signals/exit-liveness.mjs';
 import { checkModuleEvents } from './signals/module-events.mjs';
 import { checkFeeRouting } from './signals/fee-routing.mjs';
 import { checkGovernanceWatch } from './signals/governance-watch.mjs';
+import { checkOperatorPower } from './signals/operator-power.mjs';
+import { checkDepegReference, DEFAULT_MAX_AGE_SEC as DEPEG_DEFAULT_MAX_AGE_SEC } from './signals/depeg-reference.mjs';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
 const list = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+
+/**
+ * Chainlink USDC/USD Data Feed, Base MAINNET — `contracts/config/base-mainnet.json`
+ * `usdcReferenceFeeds.chainlinkUsdcUsd`, verified on-chain 2026-08-24 (see that file's
+ * `verifiedOnChain` block). Used as the default for `USDC_USD_FEED_ADDRESS` ONLY when
+ * `CHAIN_ID` resolves to 8453 (base-mainnet.json's own chainId) — see `resolveCanaryConfig`.
+ * No Base Sepolia equivalent is documented in `contracts/config/base-sepolia.json` or
+ * `contracts/config/deployments/base-sepolia.json`, so none is invented here; that chain gets
+ * no default and `signals/depeg-reference.mjs` reports `skipped` until one is supplied.
+ */
+export const BASE_MAINNET_USDC_USD_FEED = '0x7e860098f58bbfc8648a4311b374b1d669a2bc6b';
 
 /**
  * Parse + validate the canary config from a raw env object. Pure and testable (no I/O).
@@ -139,6 +165,29 @@ export function resolveCanaryConfig(env) {
     throw new Error(`canary: OPERATOR_REGISTRY_ADDRESS is not a 20-byte address: ${operatorRegistry}`);
   }
 
+  const chainId = num('CHAIN_ID', 8453);
+  // Explicit override always wins. Left unset, default to the verified mainnet feed ONLY on
+  // mainnet — see BASE_MAINNET_USDC_USD_FEED above for why no other chain gets one.
+  //
+  // `chainId` DEFAULTS to 8453, so "chainId === 8453" would also be true on a Sepolia deployment
+  // that simply never set CHAIN_ID: the guard would then rest on the variable being SET rather than
+  // on it being right, and hand the depeg signal a mainnet address with no code behind it — a
+  // permanent DETECTOR BROKEN, re-asserted on the backoff forever, which is the muting failure this
+  // package has already been bitten by twice (Review115 F13). Nothing cross-checks CHAIN_ID against
+  // the RPC's own eth_chainId, so require it to have been stated on purpose. The documented paths
+  // all set it (.env.example, docker-compose's env_file, docs/RUNTIME.md, docs/RESTORE-DRILL.md);
+  // an undocumented one now gets `skipped` with a reason instead of a wrong address.
+  let usdcUsdFeed = null;
+  if (env.USDC_USD_FEED_ADDRESS) {
+    usdcUsdFeed = lc(env.USDC_USD_FEED_ADDRESS);
+    if (!ADDRESS_RE.test(usdcUsdFeed)) {
+      throw new Error(`canary: USDC_USD_FEED_ADDRESS is not a 20-byte address: ${usdcUsdFeed}`);
+    }
+  } else if (env.CHAIN_ID != null && env.CHAIN_ID !== '' && chainId === 8453) {
+    usdcUsdFeed = BASE_MAINNET_USDC_USD_FEED;
+  }
+  const usdcUsdFeedMaxAgeSec = num('USDC_USD_FEED_MAX_AGE_SEC', DEPEG_DEFAULT_MAX_AGE_SEC);
+
   // address:seconds pairs — the one fact no oracle exposes on-chain, so the derived early-warning
   // bar in signals/oracle-health.mjs has to be told it. An asset left out simply gets no derived
   // bar (reported, not silent — see `warnDisabledReason` on that signal).
@@ -159,7 +208,7 @@ export function resolveCanaryConfig(env) {
   const pollIntervalMs = num('CANARY_POLL_INTERVAL_MS', 30_000);
   return {
     rpcUrl: env.RPC_URL,
-    chainId: num('CHAIN_ID', 8453),
+    chainId,
     chainName: env.CHAIN_NAME || 'base',
     statePath,
     canaryStatePath: env.CANARY_STATE_PATH || './data/canary-state.json',
@@ -171,6 +220,8 @@ export function resolveCanaryConfig(env) {
     vaults,
     operatorRegistry,
     extraOperators,
+    usdcUsdFeed,
+    usdcUsdFeedMaxAgeSec,
     webhookUrl: env.ALERT_WEBHOOK_URL || null,
     // Tiered sinks (Monitoring Gap Analysis §2 G6 / §3 item 4). ALERT_WEBHOOK_URL is the
     // backwards-compatible fallback for whichever of these two is unset — resolved here so
@@ -326,6 +377,16 @@ export async function collectSignals({ reader, state, vaults, cfg, window, ident
     // Phase is read from Governance state against chain time; the window scan only attributes
     // the block/tx. Finds the Governance module through vault.governance(), so it needs no env.
     await run('governance-watch', () => checkGovernanceWatch({ reader, vault, fromBlock, toBlock, nowSec }));
+    // G1: the operator's own governance/exit stake against proposalThresholdBps and
+    // CREATOR_MIN_STAKE_BPS. `meta.creator` is the same read exit-liveness already shares.
+    await run('operator-power', () => checkOperatorPower({ reader, vault, operator: meta.creator }));
+
+    // G4: the vault's own oracle keeps pricing USDC at $1.00 regardless of what this reads —
+    // there is no on-chain remedy, only the human de-list decision it exists to trigger.
+    await run('depeg-reference', () => checkDepegReference({
+      reader, vault, feed: cfg.usdcUsdFeed, chainId: cfg.chainId,
+      nowSec, maxAgeSec: cfg.usdcUsdFeedMaxAgeSec,
+    }));
   }
 
   return out;
