@@ -50,7 +50,21 @@ const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md', 'docs/vault/go-to-market-plan.m
 const RECORD_DIRS = ['docs/audit', 'docs/reviews'];
 
 // Build outputs, dependencies and vendored submodules are not our prose.
-const SKIP_DIRS = new Set(['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'coverage']);
+//
+// `.claude` is skipped for a different reason than the rest: it holds OTHER SESSIONS' worktrees.
+// This walker starts at REPO, so without this entry it reads their checkouts and a stale copy of
+// a file someone else is mid-edit on turns this suite red for reasons unrelated to the change
+// being tested. CLAUDE.md records that as a real cost of the shared tree; this is the fix.
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.claude',
+  'lib',
+  'out',
+  'cache',
+  'broadcast',
+  'coverage',
+]);
 
 const withCommas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
@@ -345,4 +359,111 @@ test('every `allowSubVaults = false` citation of `Deploy.s.sol:N` in docs/ point
     }
   }
   assert.ok(cited > 0, 'no doc cites Deploy.s.sol:N for allowSubVaults = false any more; drop this test or re-point it');
+});
+
+/**
+ * Every prose surface a reader acts on — markdown AND the public site's HTML. Enumerated from the
+ * filesystem, never from a list: the drift this catches arrives in the file nobody added.
+ */
+function proseFiles() {
+  const found = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name));
+      } else if (entry.name.endsWith('.md') || entry.name.endsWith('.html')) {
+        found.push(path.join(dir, entry.name));
+      }
+    }
+  })(REPO);
+  return found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+}
+
+/** Prose claiming the oracle REVERTS when it has no sequencer uptime feed. It does the opposite. */
+const SEQUENCER_FAILS_CLOSED = [
+  /without (?:one|it|the feed|a feed)[^.]{0,80}\brevert/i,
+  /\brevert[^.]{0,80}\bwithout (?:one|it|the feed|a feed)\b/i,
+];
+
+/**
+ * The L2 sequencer uptime feed: mandatory, but NOT in the way three public claims said.
+ *
+ * `ChainlinkOracle._requireSequencerUp` opens with `if (address(seq) == address(0)) return;`, and
+ * `priceWad` is the only price-serving entry point. So an oracle deployed with a zero feed SKIPS
+ * the gate and serves prices straight through a sequencer outage — it fails OPEN. Three live
+ * claims said the opposite ("reverts every price without it"), inverting the safety direction of
+ * the most-cited L2 defence: a deployer who omitted the feed would get no revert to tell them.
+ *
+ * "Mandatory" is still TRUE and the corrected prose keeps it — the enforcement is just elsewhere.
+ * `DeployChainlinkOracle.s.sol` requires a non-zero sequencer on every chain but local 31337 and
+ * Base Sepolia 84532, checked before any other config and with no env override.
+ *
+ * This binds all three legs, so the prose cannot drift from the code in either direction.
+ */
+test('the sequencer uptime feed is configured on mainnet, and the code still enforces it where the docs say', () => {
+  const seq = String(mainnet.chainlinkOracle.sequencerUptimeFeed ?? '');
+  assert.match(seq, /^0x[0-9a-fA-F]{40}$/, 'base-mainnet.json dropped chainlinkOracle.sequencerUptimeFeed');
+  assert.notEqual(
+    seq.toLowerCase(),
+    `0x${'0'.repeat(40)}`,
+    'base-mainnet.json zeroed the sequencer uptime feed; on Base that ships an oracle with no L2 gate'
+  );
+
+  // If the contract is ever changed to fail CLOSED, every doc that now says it "skips the gate"
+  // becomes false — this goes red rather than letting the prose rot silently.
+  const oracle = read('contracts', 'src', 'oracle', 'ChainlinkOracle.sol');
+  assert.ok(
+    oracle.includes('if (address(seq) == address(0)) return;'),
+    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). Every doc saying it "skips the gate" / fails open must be rewritten.'
+  );
+
+  // And the deploy-time refusal the corrected docs now credit must actually exist.
+  const script = read('contracts', 'script', 'DeployChainlinkOracle.s.sol');
+  assert.ok(
+    script.includes('!requiresSequencerUptimeFeed(block.chainid)'),
+    'DeployChainlinkOracle lost its fail-closed sequencer require; the docs credit it as the enforcement that carries the weight'
+  );
+});
+
+test('no live prose claims the oracle reverts when no sequencer uptime feed is configured', () => {
+  const offenders = [];
+  for (const rel of proseFiles()) {
+    if (RECORD_DIRS.some((d) => rel.startsWith(`${d}/`))) continue; // dated records keep their wording
+    const lines = read(rel).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (!/sequencer/i.test(line)) continue;
+      // The corrected wording quotes the withdrawn claim so the record survives; skip attributed
+      // quotations the same way the govNote guard does, and judge only the file's own voice.
+      const own = line.replace(/'[^']*'/g, ' ');
+      if (SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(own))) {
+        offenders.push(`${rel}:${i + 1}  ${line.trim().slice(0, 140)}`);
+      }
+    }
+  }
+  assert.equal(
+    offenders.length,
+    0,
+    `these claim the oracle reverts without a sequencer uptime feed; it returns early and prices anyway `
+      + `(ChainlinkOracle.sol, _requireSequencerUp):\n  ${offenders.join('\n  ')}`
+  );
+});
+
+test('probe: the sequencer-fails-closed guard is live', () => {
+  // The verbatim wording that shipped in three places. If this ever stops matching, the guard has
+  // gone inert and the next inversion lands silently.
+  for (const claim of [
+    'MANDATORY on Base — ChainlinkOracle reverts every price without it.',
+    'Without one the oracle reverts every price.',
+    'A feed is mandatory and the oracle reverts every price without one.',
+  ]) {
+    assert.ok(
+      SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(claim)),
+      `the guard no longer catches: ${claim}`
+    );
+  }
+  // And an attributed quotation of it must be tolerated, or the correction trips its own guard.
+  const corrected = "This note previously read 'ChainlinkOracle reverts every price without it', which inverted the direction the contract fails in.";
+  const own = corrected.replace(/'[^']*'/g, ' ');
+  assert.ok(!SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(own)), 'the guard false-positives on its own correction');
 });

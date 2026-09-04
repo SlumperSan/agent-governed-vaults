@@ -207,7 +207,7 @@
       <dl class="rows">
         <div>
           <dt>Sequencer gate</dt>
-          <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. Without one the oracle reverts every price. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd>
+          <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node or Base Sepolia unless the feed address is supplied, and a pre-deploy configuration check fails without it. The oracle contract itself does not re-check &mdash; handed a zero address it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd>
           <!-- COUNSEL: the sequencer-gate exercise disclosure — the guard is written and tested against a stub, and has never run against a live uptime feed. -->
 
         </div>
