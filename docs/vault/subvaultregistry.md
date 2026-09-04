@@ -10,8 +10,12 @@ pricing and stacked fees. This registry is the source of truth for who is whose 
 structural rules are what make the composition safe *when enabled*. At launch it is deliberately
 inert: the C-1 empty-electorate capture ([[root-vaults-only]]) has no purely-internal fix, so
 [[vaultfactory]] ships with `allowSubVaults = false` and wires every vault with `subVaultRegistry =
-address(0)`. No parent/child edge can ever be created, so nothing in this contract runs. The code is
-**retained, not deleted**, so a future audited factory can enable it.
+address(0)`. On such a factory no parent/child edge can be created, so nothing in this contract
+runs. The code is **retained, not deleted**, so a future audited factory can enable it.
+**This is a per-deployment property, not a universal:** `DeployTestnet.s.sol` passes
+`allowSubVaults = true`, and the live Base Sepolia factory reads `allowSubVaults() == true`
+(`contracts/config/deployments/base-sepolia.json`), because the SV-7 look-through soak drill needs
+a real child vault to exercise.
 
 ## Structural properties (SV-1..SV-7)
 

@@ -14,7 +14,7 @@ launch and deferred the correct design to a post-audit release.
 **two** independent ways:
 
 1. `createChildVault` **reverts** — no child can be created.
-2. Every deployed vault is wired with `subVaultRegistry = address(0)`, so each vault is
+2. Every vault it deploys is wired with `subVaultRegistry = address(0)`, so each vault is
    **intrinsically root-only**: `parentVault()` is `address(0)`, `allocateToChild` reverts, and
    the look-through pricing paths are dead code.
 

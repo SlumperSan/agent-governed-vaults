@@ -467,3 +467,41 @@ test('probe: the sequencer-fails-closed guard is live', () => {
   const own = corrected.replace(/'[^']*'/g, ' ');
   assert.ok(!SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(own)), 'the guard false-positives on its own correction');
 });
+
+/**
+ * `allowSubVaults` is a PER-DEPLOYMENT immutable, not a protocol property — and the docs now say so
+ * in those words. The two scripts disagree on purpose: mainnet launches root-only (that is what
+ * closes C-1), while testnet enables sub-vaults because the SV-* soak drills need a real child
+ * vault to exercise. Prose that flattens either side into a universal is false against the other.
+ *
+ * This pins BOTH legs. Flip either script and the docs describing the asymmetry go red here rather
+ * than rotting into a claim no deployment satisfies.
+ */
+test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.s.sol true', () => {
+  const mainnetScript = read('contracts', 'script', 'Deploy.s.sol');
+  assert.match(
+    mainnetScript,
+    /false, \/\/ C-1: root vaults only/,
+    'Deploy.s.sol no longer passes allowSubVaults = false. That is the C-1 fix; every doc saying the '
+      + 'mainnet launch path is root-only must be rewritten before this is changed.'
+  );
+
+  const testnetScript = read('contracts', 'script', 'DeployTestnet.s.sol');
+  assert.match(
+    testnetScript,
+    /C-1: TESTNET deliberately enables sub-vaults[\s\S]{0,400}?\n\s*true,/,
+    'DeployTestnet.s.sol no longer passes allowSubVaults = true. The docs cite the testnet factory as '
+      + 'the proof that allowSubVaults is per-deployment rather than a protocol property, and the SV-7 '
+      + 'look-through soak drill has no environment to run in without it.'
+  );
+
+  // And the recorded on-chain read of the LIVE testnet factory must still agree with that script.
+  // A script says what was intended; this is what the chain answered.
+  const sepolia = JSON.parse(read('contracts', 'config', 'deployments', 'base-sepolia.json'));
+  assert.equal(
+    sepolia.verifiedWiring?.['factory.allowSubVaults()'],
+    true,
+    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/vault/subvaultregistry.md '
+      + 'cites that read by name as the evidence the flag is per-deployment.'
+  );
+});

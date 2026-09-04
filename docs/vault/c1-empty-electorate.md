@@ -32,7 +32,7 @@ the parent's allocation, while including it makes the child ungovernable (the pa
 with no vote path). There is **no purely-internal fix**; the correct mechanism (parent casts the
 child's vote) is a product decision deferred to a post-launch, post-audit release. `VaultFactory`
 ships with immutable `allowSubVaults = false`: `createChildVault` reverts `SubVaultsDisabled` and
-every vault is wired `subVaultRegistry = address(0)`, so no vault can ever be funded as a child and
+every vault it deploys is wired `subVaultRegistry = address(0)`, so on that factory no vault can be funded as a child and
 the empty-electorate precondition is **unreachable**. VaultCore bytes are unchanged. This closes C-1
 and the sub-vault-only Highs H-5/H-6/H-7/H-9 as a class. **Re-enabling sub-vaults reopens C-1.**
 
