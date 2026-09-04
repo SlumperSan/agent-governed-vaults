@@ -68,6 +68,35 @@ const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
 const PROBE_MEMBER = process.env.SOAK_PROBE_MEMBER ?? '';
 const VAULTS = (process.env.SOAK_VAULTS ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+const STATE_PATH = process.env.SOAK_INDEXER_STATE ?? path.join(ROOT, 'data', 'indexer-state.json');
+
+/**
+ * The vaults to probe `cancelPending` against — explicit `SOAK_VAULTS`, else every vault the
+ * indexer has projected. Mirrors `canary-runner.resolveVaults`, and for the same reason.
+ *
+ * WHY THE FALLBACK EXISTS. `run-soak.ps1` sets `SOAK_PROBE_MEMBER` — with a comment explaining
+ * exactly why drill 4's freeze-safety probe needs it — and never set `SOAK_VAULTS`, which is the
+ * other half of the same wiring. So `VAULTS` was `[]`, the probe `.map` produced NO ROWS AT ALL,
+ * and every sample recorded `freezeSafety: []`. Drill 4 then correctly refused to claim freeze
+ * safety, but the reason looked like "no pending deposit existed" rather than "the probe was never
+ * configured" — two very different facts.
+ *
+ * It also cannot be fixed by setting `SOAK_VAULTS` at launch: drills 1 and 2 CREATE their vaults
+ * at runtime, so the addresses do not exist when the sampler starts. Discovery is the only
+ * configuration that is correct on the first sample and still correct on the hundredth.
+ */
+function resolveProbeVaults() {
+  if (VAULTS.length > 0) return { vaults: VAULTS, source: 'SOAK_VAULTS' };
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    // `vaults` is a serialized Map: [[address, projection], ...].
+    const found = (state.vaults ?? []).map((e) => (Array.isArray(e) ? e[0] : e?.vault)).filter(Boolean);
+    if (found.length > 0) return { vaults: found, source: 'indexer' };
+    return { vaults: [], source: 'indexer-empty' };
+  } catch {
+    return { vaults: [], source: 'no-indexer-state' };
+  }
+}
 
 const dep = loadDeployment(
   path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
@@ -123,10 +152,10 @@ export const SEL_STALE_ORACLE = '0xa2671f4b';
 export const SEL_NO_PENDING = '0xda7557bc';
 
 /**
- * Classify a `cancelPending()` static call into a TRI-STATE verdict.
+ * Classify a `cancelPending()` static call into a FOUR-STATE verdict.
  *
- * This is the evidence drill 4 turns on, so "it reverted" is not good enough — the call reverts
- * for two entirely different reasons and only one of them is a finding:
+ * This is the evidence drill 4 turns on, so "it failed" is not good enough — the call can fail for
+ * three entirely different reasons and only one of them is a finding:
  *
  *   'callable'        the escrow-return path is open. THIS is the freeze-safety property.
  *   'n/a-no-pending'  reverted NoPending(): there is no pending deposit for this member to
@@ -137,13 +166,34 @@ export const SEL_NO_PENDING = '0xda7557bc';
  *   'BLOCKED'         reverted for any other reason. While the oracle is frozen this is the
  *                     real finding: a path that must never consult a price just did.
  *
- * @param {{ok:true,out:string}|{ok:false,err:string}} r
+ *   'unreadable'      the call was ATTEMPTED and the transport failed (rate limit, timeout,
+ *                     unreachable RPC). Missing evidence, never a finding — see below.
+ *
+ * NOTE the classifier is FAIL-OPEN by default: `classifyCallError` is effectively
+ * `REVERTED.test(err) ? 'revert' : 'transport'`, so an error string this file does not recognise
+ * lands on 'transport' and therefore 'unreadable' rather than 'BLOCKED'. Against a real RPC `cast`
+ * prints "execution reverted", which is matched, so the production path classifies correctly; but
+ * an exotic client wording would be recorded as missing evidence rather than as a finding. That is
+ * the quieter failure and it is deliberate — a fabricated "member funds are trapped" page is worse
+ * than a sample scored unmeasured — but it is stated here rather than left to be discovered.
+ *
+ * @param {{ok:true,out:string}|{ok:false,err:string,kind?:'revert'|'transport'}} r
  * @param {string|null} pendingAmount
- * @returns {'callable'|'n/a-no-pending'|'BLOCKED'}
+ * @returns {'callable'|'n/a-no-pending'|'unreadable'|'BLOCKED'}
  */
 export function classifyCancelPending(r, pendingAmount) {
   if (r.ok) return 'callable';
   if (r.err.includes(SEL_NO_PENDING)) return 'n/a-no-pending';
+  // A TRANSPORT failure is not a contract verdict — this file's own header says so, and the
+  // priceWad path already honours it via `kind === 'transport'`. This branch did not, and the
+  // consequence is worse here than there: two consecutive rate-limits against a public RPC would
+  // have fallen through to BLOCKED, which drill 4 prints as "freeze-safety VIOLATED" — a
+  // fabricated claim that member funds were trapped, caused by a 429. Recorded as unreadable
+  // instead, which counts as missing evidence and pages nobody.
+  //
+  // Latent until now: `VAULTS` was always empty, so this classifier never ran on a live probe.
+  // The discovery fallback is what makes it reachable, at 3 vaults every 120 s.
+  if (r.kind === 'transport') return 'unreadable';
   // Defence in depth: if the revert data was truncated by the RPC, a zero pending balance is
   // itself sufficient to explain a NoPending revert.
   if (pendingAmount === '0') return 'n/a-no-pending';
@@ -429,7 +479,12 @@ function sample(env) {
   });
 
   // FREEZE-SAFETY: cancelPending must stay callable while the oracle is frozen.
-  const freezeSafety = VAULTS.map((vault) => {
+  //
+  // An EMPTY probe set must record itself. Mapping over `[]` yields `[]`, which reads downstream as
+  // "probed, nothing to report" when the truth is "never probed" — the silent-inertness failure
+  // this repository has shipped three times. One sentinel row per sample keeps it in the series.
+  const { vaults: probeVaults, source: probeSource } = resolveProbeVaults();
+  const probeOne = (vault) => {
     if (!PROBE_MEMBER) return { vault, probed: false, verdict: 'not-probed', reason: 'no SOAK_PROBE_MEMBER set' };
     const pend = callRaw(vault, 'pendingDeposit(address)(uint256,uint64)', PROBE_MEMBER);
     const pendingAmount = pend.ok ? clean(pend.out.split('\n')[0]) : null;
@@ -439,7 +494,10 @@ function sample(env) {
       verdict: classifyCancelPending(r, pendingAmount),
       detail: r.ok ? 'static call returned successfully' : r.err,
     };
-  });
+  };
+  const freezeSafety = probeVaults.length === 0
+    ? [{ vault: null, probed: false, verdict: 'not-configured', reason: `no vaults to probe (${probeSource})` }]
+    : probeVaults.map(probeOne);
 
   return { t: new Date().toISOString(), chainNow, oracle: dep.aggregator, sequencer: seq, assets, freezeSafety };
 }

@@ -182,19 +182,135 @@ export function findGaps(samples, maxGapMult) {
  * `n/a-no-pending` is counted SEPARATELY and never as a pass: with no pending deposit there is
  * nothing to cancel, so the probe proves nothing. A run in which every sample was `n/a` leaves
  * the property un-contradicted, not demonstrated — `demonstrated` says so.
+ *
+ * `not-configured` / `not-probed` are a THIRD category, added after a live run in which the
+ * sampler emitted `freezeSafety: []` for six hours because `SOAK_VAULTS` was never set: the probe
+ * had nothing to iterate, so it produced no rows and its own absence was invisible. Those verdicts
+ * now record the absence explicitly, and they must NOT be counted as `oracleBlocked` — a
+ * misconfigured harness reporting a freeze-safety BREACH is the same class of lie in the opposite
+ * direction.
  * @param {any[]} samples
  */
+/**
+ * Verdicts that mean NOTHING WAS MEASURED, as opposed to something was measured and was fine
+ * (`callable`/`ok`), or measured and was not (`BLOCKED`).
+ *
+ * `unreadable` belongs here for the same reason the others do: a rate-limited RPC is a fact about
+ * the transport, never about the contract. Folding it into the failure bucket would let a 429
+ * print as "freeze-safety VIOLATED" — a fabricated claim that member funds were trapped.
+ */
+export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed', 'unreadable'];
+
+/**
+ * The operator-facing lines for the freeze-safety leg. A PURE function of the summary, living here
+ * rather than inline in drill 4, for one reason: nothing in the repository executes
+ * `drill4-oraclefreeze.mjs`, so prose written inline has no regression coverage at all — and the
+ * first version of these branches shipped a falsehood because of exactly that.
+ *
+ * It hardcoded "not-configured/not-probed" as the cause while `unreadable` sat in the same bucket,
+ * so an all-`unreadable` window printed "the probe did not run" about samples that ran, and a TO
+ * FIX block naming vault discovery for what was a rate limit. That is a statement about
+ * CONFIGURATION standing in for a statement about TRANSPORT — the same substitution the branch
+ * above it exists to remove, re-created eleven lines below. The cause is now read from the verdict
+ * tally instead of assumed, and this function is unit-tested.
+ *
+ * @param {{verdicts: Record<string, number>, probedWithPending: number, oracleBlocked: number,
+ *          unmeasured?: number, blockedDetail?: any[]}} freeze
+ * @returns {string[]} lines to log, in order
+ */
+export function freezeSafetyReport(freeze) {
+  const out = [`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`];
+  const kinds = Object.keys(freeze.verdicts ?? {}).filter((v) => UNMEASURED_VERDICTS.includes(v));
+  const named = kinds.join('/') || 'unknown';
+  // `unreadable` means the call WAS attempted and the transport failed. The others mean it was
+  // never attempted. Only the latter is fixed by configuring the sampler.
+  const ranButUnreadable = kinds.includes('unreadable');
+  const unmeasured = freeze.unmeasured ?? 0;
+
+  if (freeze.oracleBlocked > 0) {
+    out.push(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} probe(s) — freeze-safety VIOLATED ***`);
+    for (const b of freeze.blockedDetail ?? []) out.push(`     ${b.at} ${b.vault}: ${b.verdict} — ${b.detail}`);
+    return out;
+  }
+
+  if (freeze.probedWithPending === 0) {
+    // EVERY cause present gets named, and every remedy that applies gets printed. These were
+    // mutually exclusive branches, which meant one `unreadable` sample in an otherwise all-`n/a`
+    // window suppressed the `n/a` remedy entirely — and the `n/a` remedy is the one that would
+    // actually help, since a better RPC does not conjure a pending deposit. That is the dominant
+    // real shape (the run this was written for was all-`n/a`, and one transport blip over six
+    // hours at N vaults every 120 s is near-certain), so exclusivity was the wrong structure.
+    const nA = freeze.verdicts?.['n/a-no-pending'] ?? 0;
+    out.push('  cancelPending was never observed against a REAL pending deposit, so freeze safety is');
+    out.push('  NOT demonstrated by this run. Nothing here is a passing check or an on-chain finding.');
+
+    if (unmeasured > 0) {
+      out.push(`  ${unmeasured} probe(s) yielded NO MEASUREMENT (${named}):`);
+      if (ranButUnreadable) {
+        out.push('    `unreadable` — the static call WAS attempted and the transport failed (rate limit,');
+        out.push('    timeout, unreachable RPC). Not a contract verdict, and not something the sampler');
+        out.push('    configuration can fix. TO FIX: use a less rate-limited RPC and re-run.');
+      }
+      if (kinds.some((k) => k !== 'unreadable')) {
+        out.push('    `not-configured`/`not-probed` — the probe never ran. TO FIX: the sampler resolves its');
+        out.push('    vault set from SOAK_VAULTS, else from the indexer projection. An empty result means');
+        out.push('    the indexer had projected no vaults yet (start the sampler after it catches up), or');
+        out.push('    SOAK_PROBE_MEMBER was unset. The per-sample `reason` field names which.');
+      }
+    }
+
+    if (nA > 0) {
+      out.push(`  ${nA} probe(s) found NO PENDING DEPOSIT to cancel, so they prove`);
+      out.push('  nothing either way. TO FIX: the sampler must run DURING a 4h observation window, with');
+      out.push('  SOAK_PROBE_MEMBER set to the depositor. Drills 1, 2 and 5 each open one — that is the');
+      out.push('  window in which a pending deposit actually exists to cancel.');
+    }
+
+    if (unmeasured === 0 && nA === 0) {
+      // The pre-fix sampler's signature: `freezeSafety: []` on every sample, so the reducer sees
+      // no rows at all. Saying "every sample was n/a-no-pending" about THIS is the exact lie that
+      // let the leg sit inert for a whole run — and it was still being printed for this input.
+      out.push('  The series carries NO freeze-safety rows at all — not a single probe was recorded.');
+      out.push('  That is the signature of a sampler running without a resolved vault set (the pre-fix');
+      out.push('  behaviour: mapping over an empty list yields no rows and no error). Re-run the soak');
+      out.push('  with a sampler that discovers its vaults, and this section will have data to reduce.');
+    }
+    return out;
+  }
+
+  out.push(`  cancelPending stayed callable in all ${freeze.probedWithPending} probe(s) that found a pending deposit — freeze safety held`);
+  // Partial coverage must be said out loud. "Held" over a window that was only partly measured is a
+  // narrower claim than "held", and the difference is invisible unless it is printed.
+  if (unmeasured > 0) {
+    out.push(`  NOTE: ${unmeasured} further probe(s) yielded no measurement (${named}),`);
+    out.push('  so that holds over the measured samples only, not over the whole window.');
+  }
+  return out;
+}
+
 export function summarizeFreezeSafety(samples) {
   /** @type {Record<string, number>} */
   const verdicts = {};
   let probedWithPending = 0;
   let oracleBlocked = 0;
+  let unmeasured = 0;
   const blockedDetail = [];
   for (const s of samples) {
     for (const f of s.freezeSafety ?? []) {
       verdicts[f.verdict] = (verdicts[f.verdict] ?? 0) + 1;
       if (f.verdict === 'callable' || f.verdict === 'ok') probedWithPending++;
-      if (!['callable', 'ok', 'n/a-no-pending'].includes(f.verdict)) {
+      // MISSING EVIDENCE IS NOT A BREACH. `not-configured` (no vaults resolved) and `not-probed`
+      // (no SOAK_PROBE_MEMBER) mean the probe never ran; treating them as `oracleBlocked` would
+      // report a freeze-safety FAILURE caused entirely by the harness being misconfigured, which
+      // is the mirror image of the bug that made this leg silent in the first place.
+      //
+      // They do NOT suppress `demonstrated` on their own — an earlier version of this comment said
+      // they did, which overstated it. `demonstrated` turns on `probedWithPending > 0 &&
+      // oracleBlocked === 0`, so unmeasured samples alongside a real `callable` leave it true. That
+      // is the right behaviour (positive evidence exists, no breach) and drill 4 prints the
+      // unmeasured count beside the verdict so partial coverage is visible rather than implied.
+      else if (UNMEASURED_VERDICTS.includes(f.verdict)) unmeasured++;
+      else if (f.verdict !== 'n/a-no-pending') {
         oracleBlocked++;
         if (blockedDetail.length < 5) {
           blockedDetail.push({ at: s.t, vault: f.vault, verdict: f.verdict, detail: f.detail });
@@ -206,6 +322,7 @@ export function summarizeFreezeSafety(samples) {
     verdicts,
     probedWithPending,
     oracleBlocked,
+    unmeasured,
     blockedDetail,
     demonstrated: probedWithPending > 0 && oracleBlocked === 0,
   };
@@ -267,7 +384,11 @@ export function verdictOf(byAsset, canaryRows) {
     return {
       verdict: 'INSUFFICIENT_EVIDENCE',
       breached: [], worst: null, canaryTracked: null, canaryAssetRows: 0,
-      unreadableSamples: assets.reduce((n, a) => n + (a.unreadableSamples ?? 0), 0),
+      // SUMMED ACROSS ASSETS, so this is a count of asset OBSERVATIONS, not of samples: a
+      // 2-asset basket contributes 2 per sample. Named for what it counts, because the sibling
+      // freeze-safety counters were printed as "sample(s)" while holding per-vault rows and
+      // overstated the evidence threefold.
+      unreadableObservations: assets.reduce((n, a) => n + (a.unreadableSamples ?? 0), 0),
     };
   }
 

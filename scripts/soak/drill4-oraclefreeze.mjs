@@ -52,6 +52,7 @@ import { ROOT, log, assert, openState } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer, oracleCanaryRows, verdictOf,
+  freezeSafetyReport,
 } from './series-analysis.mjs';
 
 const dep = loadDeployment(
@@ -116,19 +117,10 @@ if (!sequencer.exercised) {
   log(`  *** the sequencer was not fully up in ${sequencer.notUpSamples} sample(s); earliest computed resume ${sequencer.earliestResumesAtSec ?? 'n/a'} ***`);
 }
 
-log(`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`);
-if (freeze.oracleBlocked > 0) {
-  log(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} sample(s) — freeze-safety VIOLATED ***`);
-  for (const b of freeze.blockedDetail) log(`     ${b.at} ${b.vault}: ${b.verdict} — ${b.detail}`);
-} else if (freeze.probedWithPending === 0) {
-  log('  cancelPending was never probed against a REAL pending deposit (every sample was n/a-no-pending),');
-  log('  so freeze safety is NOT demonstrated by this run — it is merely un-contradicted.');
-  log('  TO FIX: the sampler must run DURING a 4h observation window, with SOAK_PROBE_MEMBER set');
-  log('  to the depositor. Drills 1, 2 and 5 each open one — that is the window in which a pending');
-  log('  deposit actually exists to cancel. Restart oracle-sampler.mjs right after a deposit lands.');
-} else {
-  log(`  cancelPending stayed callable in all ${freeze.probedWithPending} probed sample(s) — freeze safety held`);
-}
+// The wording lives in series-analysis so it can be unit-tested: nothing here executes this file,
+// so prose written inline has no regression coverage, and the first version of these branches
+// shipped a falsehood for exactly that reason.
+for (const line of freezeSafetyReport(freeze)) log(line);
 
 log(`canary oracle-freshness rows: ${canaryRows.length} (${result.canaryAssetRows ?? 0} keyed by a basket asset)${canaryExists ? '' : ' (canary state file absent)'}`);
 for (const r of canaryRows) {
@@ -137,7 +129,7 @@ for (const r of canaryRows) {
 
 if (result.verdict === 'INSUFFICIENT_EVIDENCE') {
   log('VERDICT: INSUFFICIENT EVIDENCE — the series contains no readable asset observation');
-  log(`  ${result.unreadableSamples} unreadable sample(s). "Nothing broke" and "nothing was measured" are opposite claims;`);
+  log(`  ${result.unreadableObservations} unreadable asset observation(s). "Nothing broke" and "nothing was measured" are opposite claims;`);
   log('  this drill will not report the second as the first. Fix the sampler/RPC and re-run across a fresh window.');
   assert(false,
     'drill 4 collected no readable oracle observation across the window — it certifies nothing, so it must not pass');
