@@ -777,7 +777,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -904,4 +904,64 @@ test('tryCall WIRES the classifier — a failed cast carries kind, not just ok:f
   assert.equal(r.hasErr, true);
   assert.equal(r.kind, 'transport',
     'tryCall must classify the failure — without `kind` drill 3\'s revert assertion is unguarded');
+});
+
+// ───────── votableNow: a pid is not a votable round (drill 5) ─────────
+
+test('votableNow rejects a settled proposal that activeProposalOf still names', () => {
+  // The 2026-09-04 failure. (ptype is 0 here only because this predicate ignores it unless a
+  // caller passes wantPtype; on chain proposal 3 is ptype 2, ChildAllocation.) Governance assigns
+  // activeProposalOf at :321 and NEVER
+  // clears it on settlement, so it kept naming proposal 3 — Executed, commit window shut 14h
+  // earlier. `assert(pid > 0n)` passed, the agent correctly refused to vote on every tick, and
+  // the drill blamed governance 20 minutes later.
+  const r = votableNow(
+    { status: 'Executed', ptype: 0, createdAt: 1788479808, commitDeadline: 1788483408 },
+    { now: 1788534622, snapshotWeight: 0n },
+  );
+  assert.equal(r.votable, false);
+  assert.match(r.reason, /status is Executed/);
+  assert.match(r.reason, /never clears that mapping/, 'the reason must name the mechanism, not just the symptom');
+});
+
+test('votableNow rejects an Active proposal whose commit window has closed', () => {
+  const r = votableNow(
+    { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 1000 },
+    { now: 1600, snapshotWeight: 5n },
+  );
+  assert.equal(r.votable, false);
+  assert.match(r.reason, /commit window closed 600s ago/, 'say how stale, not just that it is stale');
+});
+
+test('votableNow rejects a proposal raised before the voter held shares', () => {
+  // The conjunct a status+deadline check would miss. Proposal 3 was raised before the agent
+  // activated, so its snapshot weight is zero and commitVote reverts NoWeight — attaching to it
+  // reproduces the same 40-tick stall in a different costume.
+  const r = votableNow(
+    { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 },
+    { now: 100, snapshotWeight: 0n },
+  );
+  assert.equal(r.votable, false);
+  assert.match(r.reason, /zero voting-eligible stake/);
+  assert.match(r.reason, /NoWeight/, 'name the revert the voter would actually hit');
+});
+
+test('votableNow accepts a genuinely votable round, and only then', () => {
+  const good = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 9999 };
+  assert.deepEqual(votableNow(good, { now: 100, snapshotWeight: 1n }), { votable: true, reason: '' });
+  // and the ptype filter is opt-in, so it cannot silently reject when unused
+  assert.equal(votableNow(good, { now: 100, snapshotWeight: 1n, wantPtype: 0 }).votable, true);
+  const wrongType = votableNow(good, { now: 100, snapshotWeight: 1n, wantPtype: 3 });
+  assert.equal(wrongType.votable, false);
+  assert.match(wrongType.reason, /ptype is 0, not the expected 3/, 'the ptype reason must be asserted too, or it can be emptied unnoticed');
+  assert.equal(votableNow(null, { now: 100, snapshotWeight: 1n }).votable, false);
+});
+
+test('votableNow rejects at the EXACT commit deadline, matching commitVote', () => {
+  // Governance requires `block.timestamp < p.commitDeadline`, so equality is already too late.
+  // Unpinned, `>=` could be relaxed to `>` and the suite would stay green while the drill
+  // attached to a round one second past its window.
+  const p = { status: 'Active', ptype: 0, createdAt: 1, commitDeadline: 1000 };
+  assert.equal(votableNow(p, { now: 1000, snapshotWeight: 5n }).votable, false, 'now === deadline is CLOSED');
+  assert.equal(votableNow(p, { now: 999, snapshotWeight: 5n }).votable, true, 'one second earlier is open');
 });

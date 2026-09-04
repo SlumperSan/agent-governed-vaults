@@ -381,6 +381,50 @@ export const P = {
 export const STATUS = ['None', 'Active', 'Passed', 'Defeated', 'Executed', 'Expired'];
 export const PTYPE = { Rebalance: 0, RuleChange: 1, ChildAllocation: 2 };
 
+/**
+ * Can THIS voter still commit a vote on THIS proposal, right now?
+ *
+ * `activeProposalOf` IS NOT THIS QUESTION, and conflating the two cost a soak run.
+ * `Governance.sol` assigns that mapping once, at `:321` inside `propose`, and **never clears it**
+ * on settlement — reads at `:290`, `:518` and `:650` are the only other uses. So it keeps
+ * returning the last pid the vault ever had, forever, whatever became of it.
+ *
+ * Drill 5 guarded its vote phase with `assert(pid > 0n)`. On 2026-09-04 that passed against
+ * proposal 3, whose commit window had closed FOURTEEN HOURS earlier and which had already
+ * executed. The agent then did exactly the right thing — its evaluator returned "commit window
+ * closed" on every tick — and the drill failed twenty minutes later with
+ * "vote:commit: not satisfied after 40 ticks", a GOVERNANCE-shaped message for a
+ * NO-VOTABLE-PROPOSAL cause. The guard was not too weak; it asked the wrong question.
+ *
+ * Four conjuncts, and the fourth is not theoretical: proposal 3 was raised BEFORE the agent
+ * activated, so the agent's snapshot weight reads zero and `commitVote` would revert `NoWeight`.
+ * A predicate that checked only status and deadline would attach to it and reproduce the same
+ * forty-tick stall wearing a different costume.
+ *
+ * Pure so it can be tested: the drill executes at import, so a predicate defined there could not be.
+ *
+ * @param {{status: string, ptype: number, commitDeadline: number}} p a `readProposal` result
+ * @param {{now: number, snapshotWeight: bigint, wantPtype?: number}} ctx
+ * @returns {{votable: boolean, reason: string}} reason is '' when votable
+ */
+export function votableNow(p, { now, snapshotWeight, wantPtype }) {
+  if (!p) return { votable: false, reason: 'no proposal was read' };
+  if (p.status !== 'Active') {
+    return { votable: false, reason: `status is ${p.status}, not Active — activeProposalOf still names it because Governance never clears that mapping on settlement` };
+  }
+  if (now >= p.commitDeadline) {
+    const ago = now - p.commitDeadline;
+    return { votable: false, reason: `the commit window closed ${ago}s ago (deadline ${p.commitDeadline}, chain now ${now}) — commitVote would revert` };
+  }
+  if (wantPtype != null && p.ptype !== wantPtype) {
+    return { votable: false, reason: `ptype is ${p.ptype}, not the expected ${wantPtype}` };
+  }
+  if (snapshotWeight <= 0n) {
+    return { votable: false, reason: 'the voter had zero voting-eligible stake at the proposal\'s snapshot — it was raised before this account held shares, so commitVote would revert NoWeight' };
+  }
+  return { votable: true, reason: '' };
+}
+
 /** Read a proposal into a named object. */
 export function readProposal(governance, pid) {
   const p = call(governance, PROPOSAL_SIG, pid);
