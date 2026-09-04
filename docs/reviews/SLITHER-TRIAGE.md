@@ -36,7 +36,7 @@ reference for what is signal vs. noise.
 
 | Detector | Disposition |
 | --- | --- |
-| `reentrancy-balance` (High ×8) | **Triaged row by row on 2026-09-01 — see "reentrancy-balance, eight rows, four sites" below.** The blanket "false positive" in the row beneath is what this replaces: it was right about same-contract reentrancy and wrong to stop there. One row is a real, reproduced defect (`AggregationRouterAdapter`, 600e6 USDC extracted in test); four are the cross-contract read-only window already registered as **H-9**, unfixed on `protocol/main`. |
+| `reentrancy-balance` (High ×8) | **Triaged row by row on 2026-09-01 — see "reentrancy-balance, eight rows, four sites" below.** The blanket "false positive" in the row beneath is what this replaces: it was right about same-contract reentrancy and wrong to stop there. One row is a real, reproduced defect (`AggregationRouterAdapter`, 600e6 USDC extracted in test); four are the cross-contract read-only window already registered as **H-9** — described here as "unfixed on `protocol/main`", which was true when this row was triaged and is **no longer**: PR #98 merged the same day as `0e70ea69`, and `_fullNavWad` now carries `require(!v.locked(), Reentrancy())` (`VaultCore.sol:352`). See the dated correction in the section below. |
 | `reentrancy-no-eth`, `reentrancy-events`, `reentrancy-benign` | **False positive, but NOT for one reason — check the site before reusing this row.** The `VaultCore` functions flagged (`deposit`, `executeRebalance`, `_settleExit`, child flows) carry the `nonReentrant` mutex (shared lock, `_lock`), which Slither does not model. **This row has twice been read as "everything flagged carries the mutex", and twice that was false** — see the Sprint 10 and Sprint 14 corrections below. `FeeEngine.onFeeCollected` has no mutex, and **`Governance` has none anywhere**; both are benign by CEI, which is a different argument that has to be made separately. A blanket dismissal is how a real finding gets filed as noise. CEI + the single lock were proven sound in SPRINT1-SECURITY-REVIEW §"Reentrancy / CEI" and re-verified in the SPRINT6 execution review. The H-1 fix additionally makes every external module call on the exit path gas-bounded and non-blocking. **Sprint 10 correction:** `VaultFactory.createVault` / `createChildVault` are also flagged (a hostile settlement or basket token can reenter from `decimals()` during `VaultCore`'s constructor) and they carry **no** mutex — so the mutex reasoning above does not cover them. They are still benign, for a different reason: the factory's only state is the append-only `allVaults`, so nesting interleaves push order and nothing else; `VaultCreated` is emitted innermost-first and the indexer sorts by `(block, logIndex)`, matching emission order; and a nested attempt to register the still-constructing outer vault as a sub-vault parent fails, because `registerChild` calls `IVaultFees(parent).exitFeeMaxBps()` on a contract that has no code yet. Pre-existing — `new VaultCore(...)` made the same constructor calls — but Sprint 7's extra hop puts these rows in the output more prominently, so the reasoning is recorded rather than assumed. **AI-audit correction (§4.5):** the mutex reasoning is sound for SAME-contract reentrancy but does not cover **cross-contract read-only reentrancy** — a `VaultCore`'s public views are read as an oracle by its PARENT while the child is mid-mutation, and a per-contract mutex is definitionally not a defence against a different contract reading it (**H-9**). Slither does not model this either, so the row's blind spot and the analyser's coincide. H-9 requires a parent/child pair and is therefore **dormant at launch** (root vaults only, C-1 gate), deferred with the sub-vault feature. |
 | `divide-before-multiply` | **By design for the payout legs.** The `a * b / ts * c / BPS` pattern in `_settleExit` loses precision **downward on purpose** — rounding favors the vault/remaining members, the algebraic condition for the §4.6 NAVps-non-decreasing invariant (SPRINT1 §4.6, fuzzed). **AI-audit correction (§4.5):** "rounds in the vault's favour" is not the same as "safe" — the same pattern at `:557` is what makes `:576`'s shortfall dust check unsatisfiable and reverts a member's child-backed exit (**H-6**). H-6 is a sub-vault-only path and is **dormant at launch** (root vaults only, C-1 gate; sub-vaults disabled), deferred with the sub-vault feature. Not a disposition change for the payout-leg rounding, but the "safe" generalization was too broad. |
 | `unused-return` | **By design.** (a) The `boundedCall` results are intentionally best-effort (H-1): the `ok` flag is checked where liveness needs it and the rest ignored — a failing bookkeeping module must not block an exit. (b) `IExecutionAdapter.executeSwap`'s return is ignored because output is measured from the vault's OWN balance delta (EX-3), never the adapter's word. (c) `getReserves`/`latestRoundData` ignore fields the caller doesn't need (timestamp / round metadata). |
@@ -85,12 +85,29 @@ lands before the swap and the credit after, so the vault's *internal accounting*
 understated for the duration of the external call. A same-contract mutex is definitionally no
 defence against a **different** `VaultCore` instance reading that state through unguarded views:
 an ancestor's `_fullNavWad` walks `idleUsdc()` / `assetBalance()` on the descendant and feeds a
-*mutating* path (share minting). That is [`AI-AUDIT-REPORT.md` H-9](../audit/AI-AUDIT-REPORT.md)
-and it is **unfixed on `protocol/main`**. It is dormant at launch — `Deploy.s.sol` hardcodes
-`allowSubVaults = false` (C-1, root vaults only), so `_fullNavWad` is unreachable on the launch
-configuration — and the fix is written and in review as **PR #98** (a `locked()` view plus
-`require(!v.locked(), Reentrancy())` in `_fullNavWad`, +170 B, with a reproduction that mints
-2,000e18 shares for 1,000 USDC).
+*mutating* path (share minting). That is [`AI-AUDIT-REPORT.md` H-9](../audit/AI-AUDIT-REPORT.md).
+
+> **FIXED — correction 2026-09-04.** The two sentences that followed said H-9 was "unfixed on
+> `protocol/main`" and that the fix was "written and in review as PR #98". **PR #98 merged
+> 2026-09-01 as `0e70ea69`**, hours after this row was triaged, and both claims went stale the
+> same day. They are withdrawn.
+>
+> On `protocol/main` today: `VaultCore.locked()` exists (`VaultCore.sol:161`, `return _lock != 1`)
+> and `_fullNavWad` refuses to price a locked descendant — `VaultCore.sol:352`,
+> `require(!v.locked(), Reentrancy())`. The substitution of "locked" for "mid-write" is sound only
+> while **every state-mutating external on `VaultCore` is `nonReentrant`**; that invariant is
+> stated at `locked()` and enforced by `test/audit/AuditReentrancyGuardCoverage.t.sol`, which
+> enumerates the compiled ABI and fails when a mutating external appears outside its register.
+> Adding one without the modifier silently reopens H-9 at full severity.
+>
+> The **dormancy** argument below is unchanged and still independently true, so H-9 was never
+> reachable at launch either way: `Deploy.s.sol` constructs the mainnet factory with
+> `allowSubVaults = false` (C-1, root vaults only), so on that factory `_fullNavWad`'s child leg is
+> unreachable. Note this is a per-factory property — `DeployTestnet.s.sol` passes `true`, which is
+> what lets the SV-* soak drills exercise the path at all.
+
+It is dormant at launch — see the correction above for both the fix and the scope of that
+dormancy — with a reproduction that mints 2,000e18 shares for 1,000 USDC.
 
 Deliberately **not** changed here: hoisting the debit, or reordering anything in
 `executeRebalance`. The ordering is not the defect — the understatement window cannot be closed at
