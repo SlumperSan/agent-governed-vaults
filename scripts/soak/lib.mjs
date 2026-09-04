@@ -125,6 +125,11 @@ export function call(to, sig, ...args) {
 }
 export const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
+// REDUNDANT WITH THE TERNARY BELOW, and kept only as documentation of what "transport" means in
+// practice. Trace it: if REVERTED matches, this cannot fire; if it does not, both paths already
+// return 'transport'. Deleting it changes no behaviour and no test. It is labelled rather than
+// removed because in a file whose whole subject is that this classification is security-relevant,
+// a decorative regex reading as load-bearing logic is its own hazard.
 const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
 /** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
 const REVERTED = /execution reverted|revert(ed)?:/i;
@@ -168,10 +173,24 @@ export function classifyCallError(err) {
  */
 export function budgetExhaustedFailure(spend, tick, maxTicks, label) {
   if (!spend?.enabled) return null;
-  if (Number(spend.remainingUsdc) > 0) return null;
+
+  // BLIND IS NOT THE SAME AS ZERO. The budget refuses a read when `spent + price > cap`, so an
+  // agent holding $0.004 against a $0.01 read is ALREADY permanently blind while `remainingUsdc`
+  // still reads positive. Testing `=== 0` would have polled that agent for the full window with
+  // the misleading failure this function exists to replace; the 2026-09-04 run landed on exactly
+  // zero only because its reads happened to divide the cap evenly.
+  //
+  // The average price paid so far is the best floor available from `summary()` — it exposes no
+  // per-read price — and it is the right shape: if what remains cannot buy an average read, the
+  // next perception is already refused.
+  const remaining = Number(spend.remainingUsdc);
+  const avgRead = spend.paidReads > 0 ? Number(spend.spentUsdc) / spend.paidReads : 0;
+  if (remaining > 0 && !(avgRead > 0 && remaining < avgRead)) return null;
+
   const perTick = Number(spend.spentUsdc) / Math.max(tick, 1);
   return `${label}: the agent exhausted its x402 session spend cap at tick ${tick}/${maxTicks} `
-    + `($${spend.spentUsdc} of $${spend.capUsdc}, ${spend.paidReads} paid reads). It perceives through `
+    + `($${spend.spentUsdc} of $${spend.capUsdc} spent, $${spend.remainingUsdc} left, `
+    + `${spend.paidReads} paid reads averaging $${avgRead.toFixed(3)}). It perceives through `
     + `paid reads, so from here it is BLIND and no further tick can satisfy the goal — this is a `
     + `HARNESS BUDGET failure, NOT evidence about governance or the contracts. The cap must cover the `
     + `whole poll window: this phase burned ~$${perTick.toFixed(3)} per tick, so ${maxTicks} ticks needs `

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
@@ -881,4 +882,26 @@ test('budgetExhaustedFailure keeps quiet while budget remains, or when payments 
     'payments disabled means the cap is irrelevant, not exhausted',
   );
   assert.equal(budgetExhaustedFailure(undefined, 3, 40, 'x'), null, 'no budget surface, no claim');
+});
+
+test('tryCall WIRES the classifier — a failed cast carries kind, not just ok:false', () => {
+  // THE WIRING, not the classifier. Mutation showed that stripping `kind` from `tryCall` changed
+  // no test: the classifier was well covered and drill 3's assert was well reasoned, but nothing
+  // pinned the connection between them. A `kind`-keyed guard wired to a producer that never sets
+  // `kind` is exactly how the freeze-safety probe shipped inert.
+  //
+  // CAST is read at module load, so a child process with it pointed at a binary that does not
+  // exist makes every call fail at the transport layer — no RPC, no network, no transaction.
+  const src = `
+    process.env.CAST = 'definitely-not-a-real-binary-${'x'.repeat(8)}';
+    const { tryCall } = await import(${JSON.stringify(new URL('../soak/lib.mjs', import.meta.url).href)});
+    const r = tryCall('0x0000000000000000000000000000000000000000', 'foo()');
+    console.log(JSON.stringify({ ok: r.ok, kind: r.kind, hasErr: typeof r.err === 'string' }));
+  `;
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], { encoding: 'utf8' });
+  const r = JSON.parse(out.trim().split('\n').pop());
+  assert.equal(r.ok, false, 'a missing binary must fail the call');
+  assert.equal(r.hasErr, true);
+  assert.equal(r.kind, 'transport',
+    'tryCall must classify the failure — without `kind` drill 3\'s revert assertion is unguarded');
 });
