@@ -4,7 +4,7 @@ The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Ever
 
 ## Why it matters
 
-Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gate 0 root-only (C-6 resolved by the Chainlink pivot), gate 1 on owner attestation. The launch is still NO-GO, but on the OPERATIONAL gates (3/6, soak + canary), which need a funded testnet key. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
+Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gate 0 root-only (C-6 resolved by the Chainlink pivot), gate 1 on owner attestation. The launch is still NO-GO, but on the OPERATIONAL gates (3/6, soak + canary), which need the five-drill soak re-run against the current deployment with the canary observed alongside it. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
 
 ## Launch-blocking
 
@@ -25,7 +25,7 @@ Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gat
    (`scripts/verify-chainlink-oracle.mjs`). The "5 sources/asset at quorum 3" requirement described
    the retired aggregator and no longer applies. The file is at `contracts/config/base-mainnet.json`
    — note the path: only `base-sepolia.json` lives under `config/deployments/`.
-4. **Re-run testnet lifecycle + soak + canary (gates 2, 3, 6).** STALE — earned against superseded bytecode. Redeploy testnet, re-run drills against the corrected contracts. See [[audit-reverification]].
+4. **Re-run soak + canary (gates 3, 6).** STALE — the drills have not been re-run; the superseded-bytecode reason is retired. Gate 2 (testnet lifecycle) is **GO**: the ten-phase lifecycle was re-run against the current Base Sepolia deployment (sourceCommit `8a0e1155`, factory `0xc1cb7824…9743`) and passed 2026-09-03 — `docs/evidence/testnet-lifecycle-run.json`, `docs/LAUNCH-READINESS.md` gate 2. What remains is the soak drills and the canary against that same deployment (`scripts/soak/run-soak.ps1`, which needs no human once the password files are in place — `docs/NOW.md`). See [[audit-reverification]].
 5. **VaultCore-headroom sprint (issue #40).** H-5/H-6 and M-15's exit-side once needed `VaultCore` bytes that did not exist. **They now fit**: the margin is **3,926 B** (2026-09-02), up from ~283 B before PR #90. What still defers them is the sub-vault dormancy and #40's absent escrow-degradation design decision, not the byte budget. This entry read "bytes that do not exist" and called the budget *tighter* than earlier notes claimed; both were true against ~283 B and are backwards against 3,926 B. Dormant-at-launch behind [[root-vaults-only]], but required before sub-vaults return.
 6. ~~**One recorded restore drill (gate 7).**~~ **DONE — gate 7 is GO as of 2026-09-02.** Recorded Docker-free 2026-08-30, then re-run under a real Linux Docker engine with steps 1 and 6 literal (`docker compose stop/start`) in #139 (`4619f17a`), `docs/RESTORE-DRILL.md` §10; the three runbook/Compose defects that re-run surfaced are fixed in #141 (`adafdc7c`). The residuals the drill named are in the gate 7 row of [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) and belong to other gates.
 
