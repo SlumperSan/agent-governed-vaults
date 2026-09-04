@@ -8,9 +8,15 @@
 # gives `workers.example.com/* workers.example.com/blog/:splat 301` as an example of a line that
 # does not work. Invalid lines are ignored rather than reported, so a hostname rule written here
 # would look correct in review, deploy without error, and silently do nothing -- which is worse
-# than not writing it. Redirecting `www.rwally.com` to `rwally.com` is a zone-level Bulk Redirect
-# in the Cloudflare dashboard; the steps are in the pull request that added this file and in
-# Cloudflare's "Redirecting www to domain apex" guide.
+# than not writing it. That much is still true of THIS file.
+#
+# THE HOSTNAME RULE NOW LIVES IN `functions/_middleware.js`, which can read `Host` because it is a
+# Function rather than a static rule table. It redirects every non-canonical hostname — including
+# `www.rwally.com` AND the `*.rwally.pages.dev` hostnames — to `rwally.com` with a 301. That is not
+# only a www->apex tidy-up: the sanctions geofence is a WAF rule on the `rwally.com` ZONE, and the
+# pages.dev hostnames are not in that zone, so before the middleware they were an unfiltered path
+# to the same content. Read that file before changing anything here. A zone-level Bulk Redirect in
+# the dashboard remains a valid alternative for the www leg, but it would not cover pages.dev.
 #
 # NO CANONICALIZATION RULE IS NEEDED EITHER. Pages already redirects HTML pages to their
 # extension-less counterparts: `/faq.html` to `/faq`, and `/index.html` to `/`. Those are the
