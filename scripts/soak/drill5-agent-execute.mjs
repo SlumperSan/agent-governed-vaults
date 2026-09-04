@@ -60,6 +60,7 @@ import path from 'node:path';
 import {
   ROOT, RPC, log, assert, eq, call, callU, chainNow, waitUntilChainTime, openState, cast,
   budgetExhaustedFailure,
+  readProposal, votableNow,
 } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
 import { loadAccountFromKeystore, redact } from '../lib/keystore.mjs';
@@ -229,7 +230,31 @@ if (want('activate') && !state.phases?.activate?.done) {
 if (want('vote') && !state.phases?.vote?.done) {
   const pid = callU(dep.governance, 'activeProposalOf(address)(uint256)', VAULT);
   assert(pid > 0n,
-    'no active proposal on the smoke vault — the agent has nothing to vote on. Start drill 2\'s allocate round (or a standalone no-op proposal) first; governance serializes per vault, so only one may be in flight.');
+    'no proposal has ever been raised on the smoke vault — the agent has nothing to vote on. Start drill 2\'s allocate round (or a standalone no-op proposal) first; governance serializes per vault, so only one may be in flight.');
+
+  // A pid is NOT a votable round. `activeProposalOf` is never cleared on settlement, so it names
+  // the last proposal the vault ever had regardless of its state — see `votableNow`, which
+  // documents the fourteen-hour-dead proposal this guard used to accept. Ask the real question,
+  // and say which conjunct failed rather than letting the agent tick forty times against a round
+  // it correctly refuses to vote on.
+  const prop = readProposal(dep.governance, pid);
+  const snapshotWeight = callU(
+    VAULT, 'pastVotingEligibleShares(address,uint256)(uint256)',
+    account.address, String(prop.createdAt - 1),
+  );
+  const { votable, reason } = votableNow(prop, { now: chainNow(), snapshotWeight });
+  assert(votable,
+    `proposal ${pid} on the smoke vault is NOT votable by this agent: ${reason}.\n`
+      + `  status=${prop.status} ptype=${prop.ptype} createdAt=${prop.createdAt} `
+      + `commitDeadline=${prop.commitDeadline} revealDeadline=${prop.revealDeadline} `
+      + `snapshotWeight=${snapshotWeight}\n`
+      + '  This is a HARNESS/round-availability failure, not evidence about governance or the\n'
+      + '  contracts, and no amount of ticking will change it. A fresh round must be raised on this\n'
+      + '  vault AFTER the agent holds shares (voting weight snapshots at createdAt-1), and any\n'
+      + '  settled-but-still-named predecessor must be finalized first — governance serializes per\n'
+      + '  vault. scripts/soak/drill5-gov-companion.mjs does exactly that, and run-soak.ps1 does\n'
+      + '  not start it.');
+  log(`proposal ${pid} is votable: status=${prop.status} commitDeadline=${prop.commitDeadline} snapshotWeight=${snapshotWeight}`);
   // No hasCommitted/hasRevealed helpers exist — read the public mappings directly.
   // commitOf is bytes32(0) until a commitment lands; revealedOf is the reveal flag.
   const ZERO32 = '0x' + '0'.repeat(64);
