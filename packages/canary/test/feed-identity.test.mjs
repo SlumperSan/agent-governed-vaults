@@ -21,6 +21,7 @@ import {
   checkFeedIdentity, applyIdentityObservations, scaleForDecimals, isUsdQuoted, UNREADABLE_SWEEPS,
 } from '../src/signals/feed-identity.mjs';
 import { createTransitionTracker } from '../src/transitions.mjs';
+import { createTieredWebhookSink, emitAll, tierOf } from '../src/sinks.mjs';
 import {
   mockReader, healthyVault, chainlinkVault,
   VAULT, ORACLE, ASSET, FEED, AGGREGATOR, AGGREGATOR_2, ZERO_ADDR,
@@ -31,6 +32,12 @@ const NOW = 1_700_000_000;
 const readerFor = (opts = {}) => mockReader({ contracts: chainlinkVault({ nowSec: NOW, ...opts }), nowSec: NOW });
 const run = (reader, pins = {}) => checkFeedIdentity({ reader, vault: VAULT, oracle: ORACLE, assets: [ASSET], pins });
 const one = async (opts = {}, pins = {}) => (await run(readerFor(opts), pins))[0];
+/**
+ * The SECOND result for an asset: the aggregator-swap notice, tracked under its own transition key
+ * (`<asset>:swap`) so it can never mask a latching harm finding and can never be masked by one.
+ * Every path returns both, so neither tracked id can go stale.
+ */
+const swapOne = async (opts = {}, pins = {}) => (await run(readerFor(opts), pins))[1];
 
 /** The pin a healthy first sweep leaves behind. */
 const PINNED = { [`feed-identity|${VAULT}|${ASSET}`]: { feed: FEED, aggregator: AGGREGATOR, phaseId: '4' } };
@@ -65,16 +72,22 @@ test('isUsdQuoted is ChainlinkOracle._requireUsdQuote, separator rule included',
 
 test('a ChainlinkOracle deployment is checked, and a healthy feed pins itself on first sight', async () => {
   const results = await run(readerFor());
-  assert.equal(results.length, 1);
-  const r = results[0];
+  // Two per asset, always: the harm finding and the swap notice, on separate transition keys.
+  assert.equal(results.length, 2);
+  const [r, swap] = results;
   assert.equal(r.status, 'ok');
+  assert.equal(swap.status, 'ok', 'a first sight pins the identity rather than convicting a swap');
+  assert.equal(swap.key, `${ASSET}:swap`);
+  assert.match(swap.message, /PINNED/);
   assert.equal(r.signal, 'feed-identity', 'its own signal name, not oracle-freshness');
   assert.equal(r.detail.cachedScale, '10000000000');
   assert.equal(r.detail.liveDecimals, 8);
   assert.equal(r.detail.observedIdentity.aggregator, AGGREGATOR);
   assert.equal(r.detail.observedIdentity.phaseId, '4');
-  assert.match(r.message, /PINNED for .* on first sight/);
-  assert.match(r.message, /A swap that happened BEFORE this pin is invisible/, 'the residual is stated, not hidden');
+  // The pinning narrative belongs to the identity leg, which is now the swap-keyed result.
+  assert.match(swap.message, /PINNED for .* on first sight/);
+  assert.match(swap.message, /A swap that happened BEFORE this pin is invisible/, 'the residual is stated, not hidden');
+  assert.match(r.message, /feed identity unchanged/, 'and the harm finding reports the harm legs only');
 });
 
 test('a retired-aggregator deployment produces NOTHING — there is no proxy there to drift', async () => {
@@ -232,20 +245,39 @@ test('a swap that ALSO moves decimals alerts and STAYS alerting — the self-cle
   assert.deepEqual(await sweep({}), []);
   const bad = { feedAggregator: AGGREGATOR_2, feedPhaseId: 5, feedDecimals: 6 };
   const first = await sweep(bad);
-  assert.equal(first.length, 1);
-  assert.equal(first[0].to, 'alert');
-  assert.match(first[0].line, /FEED DECIMALS DRIFT/, 'the harm outranks the swap notice');
+  // BOTH facts are now reported, on their own keys. Before the split they shared one transition id,
+  // so the harm alert was the only line and the swap was masked -- and, worse, a harm drift arriving
+  // on the sweep AFTER a benign swap was `alert -> alert` and emitted nothing at all.
+  assert.equal(first.length, 2, 'the harm finding and the swap notice are separate transitions');
+  const harm = first.find((t) => /FEED DECIMALS DRIFT/.test(t.line));
+  const swap = first.find((t) => /AGGREGATOR SWAPPED/.test(t.line));
+  assert.ok(harm && swap, 'both the harm finding and the swap notice must be emitted');
+  assert.equal(harm.key, ASSET, 'the harm finding keeps the bare-asset key');
+  assert.equal(swap.key, `${ASSET}:swap`, 'the swap notice is tracked apart from it');
+  assert.match(
+    swap.line, /not established as harmless/,
+    'and it must not claim the swap was harmless while a harm leg alerts on the same sweep',
+  );
+  assert.equal(harm.to, 'alert');
 
-  // The pin is refreshed exactly as in the benign case — and it must NOT be what silences this.
-  assert.deepEqual(await sweep(bad), [], 'no RECOVERED line: the vault is still mispriced');
-  assert.deepEqual(await sweep(bad), []);
-  assert.equal(tracker.unhealthy().length, 1, 'it stays not-OK until the oracle is replaced');
+  // The pin is refreshed exactly as in the benign case, and it must NOT be what silences the HARM.
+  const second = await sweep(bad);
+  assert.equal(
+    second.filter((t) => t.key === ASSET).length, 0,
+    'no RECOVERED line for the harm finding: the vault is still mispriced',
+  );
+  const third = await sweep(bad);
+  assert.deepEqual(third.filter((t) => t.key === ASSET), []);
+  assert.equal(
+    tracker.unhealthy().filter((b) => !b.id.endsWith(':swap')).length, 1,
+    'the harm finding stays not-OK until the oracle is replaced',
+  );
 });
 
 // ── the identity leg on its own ──────────────────────────────────────────────
 
 test('phaseId convicts a swap on its own, even when aggregator() does not answer', async () => {
-  const r = await one({ feedPhaseId: 5, feedAggregatorReverts: true }, PINNED);
+  const r = await swapOne({ feedPhaseId: 5, feedAggregatorReverts: true }, PINNED);
   assert.equal(r.status, 'alert');
   assert.match(r.message, /phaseId moved 4 -> 5/);
 });
@@ -253,13 +285,13 @@ test('phaseId convicts a swap on its own, even when aggregator() does not answer
 test('an unreadable aggregator() alone does NOT convict — an empty return is not evidence of a swap', async () => {
   // PR #92 recorded observing exactly this burst against a live proxy on 2026-08-30. Convicting on
   // it would page on network noise.
-  const r = await one({ feedAggregatorReverts: true }, PINNED);
+  const r = await swapOne({ feedAggregatorReverts: true }, PINNED);
   assert.equal(r.status, 'ok');
   assert.equal(r.detail.identityPartial, true);
 });
 
 test('a changed aggregator() convicts when phaseId is unreadable but both addresses are', async () => {
-  const r = await one({ feedAggregator: AGGREGATOR_2, feedPhaseIdReverts: true }, PINNED);
+  const r = await swapOne({ feedAggregator: AGGREGATOR_2, feedPhaseIdReverts: true }, PINNED);
   assert.equal(r.status, 'alert');
   assert.match(r.message, /aggregator\(\) moved/);
 });
@@ -302,7 +334,8 @@ test('an unreadable feedOf() is a BROKEN DETECTOR: the cached scale is the thing
 });
 
 test('a blind IDENTITY leg is still loud, and the line says the harm checks DID run', async () => {
-  const r = await one({ feedAggregatorReverts: true, feedPhaseIdReverts: true });
+  // The blind identity leg lives on the SWAP key now, so this reads the second result.
+  const r = await swapOne({ feedAggregatorReverts: true, feedPhaseIdReverts: true });
   assert.equal(r.detail.detectorBroken, true);
   assert.match(r.message, /answered neither aggregator\(\) nor phaseId\(\)/);
   assert.match(r.message, /denomination and cached-scale checks DID pass this sweep/);
@@ -375,4 +408,67 @@ test('an identity read that DID succeed is pinned even when a harm leg was blind
 test('applyIdentityObservations ignores results from every other signal', () => {
   const foreign = [{ id: 'oracle-freshness|v|a', signal: 'oracle-freshness', detail: { observedIdentity: { aggregator: AGGREGATOR } } }];
   assert.deepEqual(applyIdentityObservations({}, foreign), {});
+});
+
+// -- the reason the swap notice has its own key, driven end to end -------------
+//
+// Not a claim about which SET a signal is in, and not a claim about `tierOf` in isolation: this
+// drives the real `checkFeedIdentity` through the real tracker into the real tiered sink and asserts
+// which URL physically received the POST. The bug it pins was invisible to every test that stopped
+// short of dispatch, because the failure was that NOTHING was dispatched at all.
+
+test('case B: a benign swap followed NEXT SWEEP by a decimals drift still PAGES', async () => {
+  const tracker = createTransitionTracker({});
+  const posted = [];
+  const sink = createTieredWebhookSink({
+    pageUrl: 'https://example.invalid/page', logUrl: 'https://example.invalid/log',
+    fetchImpl: async (url, init) => { posted.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200 }; },
+  });
+  let pins = {}, poll = 0;
+  const sweep = async (opts) => {
+    const results = await run(readerFor(opts), pins);
+    const transitions = tracker.observe(results, { poll: (poll += 1) });
+    pins = applyIdentityObservations(pins, results);
+    await emitAll([sink], transitions);
+    return transitions;
+  };
+
+  await sweep({});                                                        // healthy, pins the identity
+  await sweep({ feedAggregator: AGGREGATOR_2, feedPhaseId: 5 });          // benign swap: LOG
+  posted.length = 0;
+  // The very next sweep, with NO intervening OK on the harm key: the aggregator stays where the
+  // swap left it (so no second swap is convicted) and decimals now drift. Before the key split this
+  // was `alert -> alert` on one shared id and emitted NOTHING -- the drift reached no endpoint and
+  // the CONDITIONAL_PAGE predicate was never consulted.
+  await sweep({ feedAggregator: AGGREGATOR_2, feedPhaseId: 5, feedDecimals: 6 });
+
+  const paged = posted.filter((x) => x.url === 'https://example.invalid/page');
+  assert.equal(paged.length, 1, 'the latching decimals drift must reach the PAGE endpoint');
+  assert.equal(paged[0].body.tier, 'page');
+  assert.equal(paged[0].body.detail.harm, 'decimals');
+  assert.match(paged[0].body.text, /FEED DECIMALS DRIFT/);
+});
+
+test('the swap notice self-clears on its own key, so no tracked id is left stranded', async () => {
+  const tracker = createTransitionTracker({});
+  let pins = {}, poll = 0;
+  const sweep = async (opts) => {
+    const results = await run(readerFor(opts), pins);
+    const t = tracker.observe(results, { poll: (poll += 1) });
+    pins = applyIdentityObservations(pins, results);
+    return t;
+  };
+  await sweep({});
+  const swapSweep = await sweep({ feedAggregator: AGGREGATOR_2, feedPhaseId: 5 });
+  assert.equal(swapSweep.length, 1);
+  assert.equal(swapSweep[0].key, `${ASSET}:swap`);
+  assert.equal(tierOf(swapSweep[0]), 'log', 'a routine rotation must not wake anyone');
+
+  // `transitions.mjs` never prunes an id that stops being observed, so a key emitted only on some
+  // paths would strand its last status forever. Both keys are emitted every sweep, so this clears.
+  const after = await sweep({ feedAggregator: AGGREGATOR_2, feedPhaseId: 5 });
+  assert.equal(after.length, 1, 'the swap notice self-clears once the pin is re-taken');
+  assert.equal(after[0].to, 'ok');
+  assert.equal(after[0].key, `${ASSET}:swap`);
+  assert.deepEqual(tracker.unhealthy(), [], 'nothing is left standing not-OK');
 });
