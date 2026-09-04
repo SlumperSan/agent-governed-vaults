@@ -14,7 +14,7 @@ import path from 'node:path';
 
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer,
-  oracleCanaryRows, verdictOf, isAssetSubject, isBreachSample,
+  oracleCanaryRows, verdictOf, isAssetSubject, isBreachSample, freezeSafetyReport,
 } from '../soak/series-analysis.mjs';
 import {
   sequencerState, attributeAsset, classifyCallError, SEL_STALE_ORACLE, SEL_NO_PENDING,
@@ -165,6 +165,62 @@ test('an UNCONFIGURED probe is missing evidence, not a freeze-safety breach', ()
   assert.equal(r.probedWithPending, 0);
   assert.equal(r.demonstrated, false, 'nothing was measured, so nothing is demonstrated');
   assert.deepEqual(r.blockedDetail, [], 'nothing to page on');
+});
+
+// ── the operator-facing prose (previously untested, and it shipped a falsehood) ──
+
+test('freezeSafetyReport names the ACTUAL unmeasured kind, never a hardcoded one', () => {
+  // The first version hardcoded "not-configured/not-probed" while `unreadable` sat in the same
+  // bucket, so an all-`unreadable` window printed "the probe did not run" about samples that DID
+  // run, and offered a fix (vault discovery) for what was a rate limit.
+  const lines = freezeSafetyReport({
+    verdicts: { unreadable: 3 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 3,
+  }).join('\n');
+  assert.match(lines, /3 sample\(s\) carry unreadable/);
+  assert.doesNotMatch(lines, /not-configured|not-probed/, 'names a cause that is not present');
+  assert.doesNotMatch(lines, /probe did not run|never probed at all/i, 'the call WAS attempted');
+  assert.match(lines, /transport failed/, 'must say what unreadable actually means');
+  assert.doesNotMatch(lines, /SOAK_VAULTS/, 'no sampler config fixes a rate limit');
+});
+
+test('freezeSafetyReport still names configuration when THAT is the cause', () => {
+  const lines = freezeSafetyReport({
+    verdicts: { 'not-configured': 2 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 2,
+  }).join('\n');
+  assert.match(lines, /2 sample\(s\) carry not-configured/);
+  assert.match(lines, /SOAK_VAULTS/, 'the config remedy belongs on the config cause');
+  assert.doesNotMatch(lines, /transport failed/);
+});
+
+test('freezeSafetyReport reports BOTH causes when both are present', () => {
+  const lines = freezeSafetyReport({
+    verdicts: { unreadable: 1, 'not-probed': 1 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 2,
+  }).join('\n');
+  assert.match(lines, /unreadable\/not-probed|not-probed\/unreadable/);
+  assert.match(lines, /transport failed/);
+  assert.match(lines, /SOAK_VAULTS/);
+});
+
+test('freezeSafetyReport qualifies "held" when part of the window yielded no measurement', () => {
+  const lines = freezeSafetyReport({
+    verdicts: { callable: 1, unreadable: 2 }, probedWithPending: 1, oracleBlocked: 0, unmeasured: 2,
+  }).join('\n');
+  assert.match(lines, /freeze safety held/);
+  assert.match(lines, /2 further sample\(s\) yielded no measurement \(unreadable\)/);
+  assert.match(lines, /measured samples only, not over the whole window/);
+});
+
+test('freezeSafetyReport puts a real breach first and never softens it', () => {
+  const lines = freezeSafetyReport({
+    verdicts: { callable: 1, BLOCKED: 1, unreadable: 5 },
+    probedWithPending: 1,
+    oracleBlocked: 1,
+    unmeasured: 5,
+    blockedDetail: [{ at: 't2', vault: '0xv', verdict: 'BLOCKED', detail: 'StaleOracle' }],
+  }).join('\n');
+  assert.match(lines, /freeze-safety VIOLATED/);
+  assert.match(lines, /StaleOracle/);
+  assert.doesNotMatch(lines, /freeze safety held/, 'a breach must not be reported as held');
 });
 
 test('a transport failure is unmeasured, not a freeze-safety breach', () => {

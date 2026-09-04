@@ -52,6 +52,7 @@ import { ROOT, log, assert, openState } from './lib.mjs';
 import { loadDeployment } from './deployment.mjs';
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer, oracleCanaryRows, verdictOf,
+  freezeSafetyReport,
 } from './series-analysis.mjs';
 
 const dep = loadDeployment(
@@ -116,38 +117,10 @@ if (!sequencer.exercised) {
   log(`  *** the sequencer was not fully up in ${sequencer.notUpSamples} sample(s); earliest computed resume ${sequencer.earliestResumesAtSec ?? 'n/a'} ***`);
 }
 
-log(`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`);
-if (freeze.oracleBlocked > 0) {
-  log(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} sample(s) — freeze-safety VIOLATED ***`);
-  for (const b of freeze.blockedDetail) log(`     ${b.at} ${b.vault}: ${b.verdict} — ${b.detail}`);
-} else if (freeze.probedWithPending === 0 && (freeze.unmeasured ?? 0) > 0) {
-  // NOT the same as "no pending deposit existed". The probe never ran — no vault list resolved, or
-  // no member to probe as. Saying "every sample was n/a-no-pending" here would misattribute a
-  // CONFIGURATION failure to an on-chain fact, which is the exact substitution that let this leg
-  // sit inert for a whole soak run: a statement about pending deposits standing in for a statement
-  // about the probe. The advice differs too — no observation window fixes an unconfigured probe.
-  log(`  cancelPending was NEVER PROBED: ${freeze.unmeasured} sample(s) carry not-configured/not-probed.`);
-  log('  This is MISSING EVIDENCE, not a passing check and not an on-chain finding — the probe did');
-  log('  not run, so nothing was measured either way.');
-  log('  TO FIX: the sampler resolves its vault set from SOAK_VAULTS, else from the indexer');
-  log('  projection. An empty result means the indexer had projected no vaults yet (start the');
-  log('  sampler after the indexer catches up), or SOAK_PROBE_MEMBER was unset. The per-sample');
-  log('  `reason` field names which.');
-} else if (freeze.probedWithPending === 0) {
-  log('  cancelPending was never probed against a REAL pending deposit (every sample was n/a-no-pending),');
-  log('  so freeze safety is NOT demonstrated by this run — it is merely un-contradicted.');
-  log('  TO FIX: the sampler must run DURING a 4h observation window, with SOAK_PROBE_MEMBER set');
-  log('  to the depositor. Drills 1, 2 and 5 each open one — that is the window in which a pending');
-  log('  deposit actually exists to cancel. Restart oracle-sampler.mjs right after a deposit lands.');
-} else {
-  log(`  cancelPending stayed callable in all ${freeze.probedWithPending} probed sample(s) — freeze safety held`);
-  // Partial coverage must be said out loud. "Held" over a window that was only partly probed is a
-  // narrower claim than "held", and the difference is invisible unless it is printed.
-  if ((freeze.unmeasured ?? 0) > 0) {
-    log(`  NOTE: ${freeze.unmeasured} further sample(s) were not probed at all (not-configured/not-probed),`);
-    log('  so that holds over the probed samples only, not over the whole window.');
-  }
-}
+// The wording lives in series-analysis so it can be unit-tested: nothing here executes this file,
+// so prose written inline has no regression coverage, and the first version of these branches
+// shipped a falsehood for exactly that reason.
+for (const line of freezeSafetyReport(freeze)) log(line);
 
 log(`canary oracle-freshness rows: ${canaryRows.length} (${result.canaryAssetRows ?? 0} keyed by a basket asset)${canaryExists ? '' : ' (canary state file absent)'}`);
 for (const r of canaryRows) {

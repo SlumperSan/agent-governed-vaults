@@ -201,6 +201,74 @@ export function findGaps(samples, maxGapMult) {
  */
 export const UNMEASURED_VERDICTS = ['not-configured', 'not-probed', 'unreadable'];
 
+/**
+ * The operator-facing lines for the freeze-safety leg. A PURE function of the summary, living here
+ * rather than inline in drill 4, for one reason: nothing in the repository executes
+ * `drill4-oraclefreeze.mjs`, so prose written inline has no regression coverage at all — and the
+ * first version of these branches shipped a falsehood because of exactly that.
+ *
+ * It hardcoded "not-configured/not-probed" as the cause while `unreadable` sat in the same bucket,
+ * so an all-`unreadable` window printed "the probe did not run" about samples that ran, and a TO
+ * FIX block naming vault discovery for what was a rate limit. That is a statement about
+ * CONFIGURATION standing in for a statement about TRANSPORT — the same substitution the branch
+ * above it exists to remove, re-created eleven lines below. The cause is now read from the verdict
+ * tally instead of assumed, and this function is unit-tested.
+ *
+ * @param {{verdicts: Record<string, number>, probedWithPending: number, oracleBlocked: number,
+ *          unmeasured?: number, blockedDetail?: any[]}} freeze
+ * @returns {string[]} lines to log, in order
+ */
+export function freezeSafetyReport(freeze) {
+  const out = [`freeze-safety verdicts: ${JSON.stringify(freeze.verdicts)}`];
+  const kinds = Object.keys(freeze.verdicts ?? {}).filter((v) => UNMEASURED_VERDICTS.includes(v));
+  const named = kinds.join('/') || 'not-configured/not-probed';
+  // `unreadable` means the call WAS attempted and the transport failed. The others mean it was
+  // never attempted. Only the latter is fixed by configuring the sampler.
+  const ranButUnreadable = kinds.includes('unreadable');
+  const unmeasured = freeze.unmeasured ?? 0;
+
+  if (freeze.oracleBlocked > 0) {
+    out.push(`  *** cancelPending was NOT callable in ${freeze.oracleBlocked} sample(s) — freeze-safety VIOLATED ***`);
+    for (const b of freeze.blockedDetail ?? []) out.push(`     ${b.at} ${b.vault}: ${b.verdict} — ${b.detail}`);
+    return out;
+  }
+
+  if (freeze.probedWithPending === 0 && unmeasured > 0) {
+    out.push(`  cancelPending produced NO USABLE MEASUREMENT: ${unmeasured} sample(s) carry ${named}.`);
+    out.push('  This is MISSING EVIDENCE, not a passing check and not an on-chain finding.');
+    if (ranButUnreadable) {
+      out.push('  `unreadable` means the static call WAS attempted and the transport failed (rate limit,');
+      out.push('  timeout, unreachable RPC) — not a contract verdict, and not something the sampler');
+      out.push('  configuration can fix. TO FIX: use a less rate-limited RPC and re-run.');
+    }
+    if (kinds.some((k) => k !== 'unreadable')) {
+      out.push('  `not-configured`/`not-probed` mean the probe never ran. TO FIX: the sampler resolves its');
+      out.push('  vault set from SOAK_VAULTS, else from the indexer projection. An empty result means the');
+      out.push('  indexer had projected no vaults yet (start the sampler after it catches up), or');
+      out.push('  SOAK_PROBE_MEMBER was unset. The per-sample `reason` field names which.');
+    }
+    return out;
+  }
+
+  if (freeze.probedWithPending === 0) {
+    out.push('  cancelPending was never probed against a REAL pending deposit (every sample was n/a-no-pending),');
+    out.push('  so freeze safety is NOT demonstrated by this run — it is merely un-contradicted.');
+    out.push('  TO FIX: the sampler must run DURING a 4h observation window, with SOAK_PROBE_MEMBER set');
+    out.push('  to the depositor. Drills 1, 2 and 5 each open one — that is the window in which a pending');
+    out.push('  deposit actually exists to cancel. Restart oracle-sampler.mjs right after a deposit lands.');
+    return out;
+  }
+
+  out.push(`  cancelPending stayed callable in all ${freeze.probedWithPending} probed sample(s) — freeze safety held`);
+  // Partial coverage must be said out loud. "Held" over a window that was only partly measured is a
+  // narrower claim than "held", and the difference is invisible unless it is printed.
+  if (unmeasured > 0) {
+    out.push(`  NOTE: ${unmeasured} further sample(s) yielded no measurement (${named}),`);
+    out.push('  so that holds over the measured samples only, not over the whole window.');
+  }
+  return out;
+}
+
 export function summarizeFreezeSafety(samples) {
   /** @type {Record<string, number>} */
   const verdicts = {};

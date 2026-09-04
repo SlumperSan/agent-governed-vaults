@@ -166,9 +166,20 @@ export const SEL_NO_PENDING = '0xda7557bc';
  *   'BLOCKED'         reverted for any other reason. While the oracle is frozen this is the
  *                     real finding: a path that must never consult a price just did.
  *
- * @param {{ok:true,out:string}|{ok:false,err:string}} r
+ *   'unreadable'      the call was ATTEMPTED and the transport failed (rate limit, timeout,
+ *                     unreachable RPC). Missing evidence, never a finding — see below.
+ *
+ * NOTE the classifier is FAIL-OPEN by default: `classifyCallError` is effectively
+ * `REVERTED.test(err) ? 'revert' : 'transport'`, so an error string this file does not recognise
+ * lands on 'transport' and therefore 'unreadable' rather than 'BLOCKED'. Against a real RPC `cast`
+ * prints "execution reverted", which is matched, so the production path classifies correctly; but
+ * an exotic client wording would be recorded as missing evidence rather than as a finding. That is
+ * the quieter failure and it is deliberate — a fabricated "member funds are trapped" page is worse
+ * than a sample scored unmeasured — but it is stated here rather than left to be discovered.
+ *
+ * @param {{ok:true,out:string}|{ok:false,err:string,kind?:'revert'|'transport'}} r
  * @param {string|null} pendingAmount
- * @returns {'callable'|'n/a-no-pending'|'BLOCKED'}
+ * @returns {'callable'|'n/a-no-pending'|'unreadable'|'BLOCKED'}
  */
 export function classifyCancelPending(r, pendingAmount) {
   if (r.ok) return 'callable';
@@ -471,7 +482,7 @@ function sample(env) {
   //
   // An EMPTY probe set must record itself. Mapping over `[]` yields `[]`, which reads downstream as
   // "probed, nothing to report" when the truth is "never probed" — the silent-inertness failure
-  // this repository has shipped twice. One sentinel row per sample keeps the absence in the series.
+  // this repository has shipped three times. One sentinel row per sample keeps it in the series.
   const { vaults: probeVaults, source: probeSource } = resolveProbeVaults();
   const probeOne = (vault) => {
     if (!PROBE_MEMBER) return { vault, probed: false, verdict: 'not-probed', reason: 'no SOAK_PROBE_MEMBER set' };
