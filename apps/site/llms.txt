@@ -19,7 +19,7 @@
 ## Key semantics an integrator must respect
 - NOT DEPLOYED TO MAINNET. No mainnet deployment exists. A Base Sepolia deployment of the current
   code does exist, but it is a testnet trial with no real value at stake and its addresses are
-  not published — the committed address book records an earlier deployment, not that one. Launch
+  not published on this site — the committed address book records that current deployment. Launch
   verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md). There is nothing live to integrate
   against on mainnet, and no token, presale or airdrop exists.
 - First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
