@@ -442,3 +442,54 @@ test('when the sequencer AND the heartbeat are both blown, the SEQUENCER is name
   assert.equal(r.detail.staleBySec, 6000);
   assert.equal(forSequencer(results).status, 'alert');
 });
+
+// ── transport is not a verdict ───────────────────────────────────────────────
+
+const UNREACHABLE = () => ({ transport: 'HTTP request failed.' });
+
+test('an unreadable priceWad() is BLIND, not "ORACLE FROZEN" — a 429 must not claim exits are frozen', async () => {
+  const reader = readerFor({ overrides: { [ORACLE]: { priceWad: UNREACHABLE } } });
+  const r = forAsset(await run(reader));
+  assert.equal(r.status, 'skipped');
+  assert.equal(r.detail.detectorBroken, true, 'the detector is blind, and blindness must stay visible');
+  assert.match(r.message, /BLIND/);
+  assert.doesNotMatch(r.message, /ORACLE FROZEN/);
+  assert.equal(r.detail.priceWadReverts, false, 'only a confirmed revert may set this');
+  assert.equal(r.detail.priceWadUnreadable, true);
+});
+
+test('a genuine priceWad revert still ALERTS as ORACLE FROZEN — the fix did not disable the check', async () => {
+  const r = forAsset(await run(readerFor({ priceWadReverts: true })));
+  assert.equal(r.status, 'alert');
+  assert.match(r.message, /ORACLE FROZEN/);
+  assert.equal(r.detail.priceWadReverts, true);
+});
+
+test('an unreadable sequencer uptime feed does not claim the vault is frozen vault-wide', async () => {
+  const reader = readerFor({
+    sequencerUptimeFeed: SEQ_FEED,
+    overrides: { [SEQ_FEED]: { latestRoundData: UNREACHABLE } },
+  });
+  const r = forSequencer(await run(reader));
+  assert.equal(r.status, 'skipped');
+  assert.equal(r.detail.detectorBroken, true);
+  assert.match(r.message, /BLIND/);
+  assert.doesNotMatch(r.message, /frozen/);
+});
+
+test('a sequencer uptime feed that genuinely reverts still ALERTS — the contract really does freeze on it', async () => {
+  const reader = readerFor({ sequencerUptimeFeed: SEQ_FEED, sequencerReverts: true });
+  const r = forSequencer(await run(reader));
+  assert.equal(r.status, 'alert');
+  assert.match(r.message, /UNREADABLE/);
+});
+
+test('when both flavor probes fail in transit, the line does not assert what ABI the oracle has', async () => {
+  const reader = readerFor({ overrides: { [ORACLE]: { sequencerUptimeFeed: UNREACHABLE, assetConfig: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.unreachable, true);
+  assert.match(r.message, /neither probe of the oracle .* could be read/);
+  assert.match(r.message, /says nothing about the oracle's ABI/);
+  assert.doesNotMatch(r.message, /answers neither/);
+});

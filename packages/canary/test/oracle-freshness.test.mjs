@@ -150,3 +150,40 @@ test('DEGRADED, not OK, when the oracle config itself is unreadable', async () =
   assert.equal(r.status, 'skipped');
   assert.notEqual(r.status, 'ok');
 });
+
+// ── transport is not a verdict ───────────────────────────────────────────────
+
+const UNREACHABLE = { latestPrice: { transport: 'HTTP request failed.' } };
+
+test('a source the canary could not READ is neither fresh nor stale — a 429 must not trip the breaker', async () => {
+  // Two unreadable sources against quorum 2 used to count as two STALE sources, walking the margin
+  // to -1 and paging "oracle breaker TRIPPED … NAV and exits are frozen" off a rate limit.
+  const [r] = await run(withSources(FRESH, UNREACHABLE, UNREACHABLE));
+  assert.equal(r.status, 'skipped');
+  assert.equal(r.detail.detectorBroken, true, 'blindness must stay visible, not collapse into ok');
+  assert.match(r.message, /BLIND/);
+  assert.doesNotMatch(r.message, /TRIPPED/);
+  assert.equal(r.detail.unreadableSources.length, 2);
+  assert.equal(r.detail.staleSources.length, 0, 'unreadable is its own bucket, not a stale source');
+});
+
+test('an unreadable source cannot HIDE a freeze either: quorum out of reach in the best case still ALERTS', async () => {
+  // quorum 3, one fresh, one unreadable, one genuinely stale: even counting the unreadable one as
+  // fresh leaves 2 < 3, so the verdict is sound on the best case and must still be given.
+  const [r] = await run(withSources(FRESH, UNREACHABLE, STALE, { quorum: 3 }));
+  assert.equal(r.status, 'alert');
+  assert.match(r.message, /TRIPPED/);
+});
+
+test('a healthy margin is still reported when it holds on the WORST case, unreadable sources and all', async () => {
+  // quorum 1, two fresh, one unreadable: the margin is at least 1 whatever the unreadable one is.
+  const [r] = await run(withSources(FRESH, FRESH, UNREACHABLE, { quorum: 1 }));
+  assert.equal(r.status, 'ok');
+});
+
+test('a source that genuinely REVERTS is still counted stale — the fix did not blind the detector', async () => {
+  const [r] = await run(withSources(FRESH, BROKEN, BROKEN));
+  assert.equal(r.status, 'alert');
+  assert.match(r.message, /TRIPPED/);
+  assert.equal(r.detail.staleSources.length, 2);
+});

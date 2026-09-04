@@ -30,7 +30,8 @@ its own `CANARY_STATE_PATH`.
 | File | Role |
 |---|---|
 | `src/canary-runner.mjs` | entrypoint: env config, the sweep, the poll loop |
-| `src/reader.mjs` | the only file that talks to an RPC; lazy/optional viem, same pattern as the indexer's `rpc.mjs` |
+| `src/reader.mjs` | the only file that talks to an RPC; lazy/optional viem, same pattern as the indexer's `rpc.mjs`. Tags every failure `kind: 'revert' \| 'transport'` |
+| `src/call-error.mjs` | the `revert` vs `transport` classifier, imported with zero dependencies. `scripts/soak/lib.mjs` re-exports it so the two harnesses cannot drift |
 | `src/abis.mjs` | views, watched events, and the embedded revert selectors — kept separate from the indexer's table on purpose (see the file header) |
 | `src/signal.mjs` | the `ok` / `alert` / `skipped` result vocabulary, the `detectorBroken` marker, and integer bps math |
 | `src/transitions.mjs` | pure transition detection — the piece that makes the canary quiet, and the one rule that keeps a blind detector loud |

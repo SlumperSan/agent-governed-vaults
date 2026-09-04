@@ -166,13 +166,22 @@ export async function checkOracleSignals(ctx) {
   const legacy = await reader.tryRead(oracle, ORACLE_VIEWS, 'assetConfig', [assets[0]]);
   if (legacy.ok) return checkOracleFreshness(ctx);
 
+  // Both probes failed, but WHY decides what may be said. Only a confirmed revert from both is
+  // evidence about the oracle's ABI; if either failed in transit the canary never got an answer to
+  // report, and claiming the contract "answers neither" would be a finding invented by a network.
+  const unreachable = seq.kind === 'transport' || legacy.kind === 'transport';
   return [detectorBroken({
     signal: SIGNAL, vault, key: 'flavor',
-    message: `ORACLE DETECTOR BLIND on vault ${shortAddr(vault)}: the oracle at ${shortAddr(oracle)} answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig(), so NO oracle check is running for this vault. It is UNMONITORED for the staleness freeze, not healthy`,
+    message: unreachable
+      ? `ORACLE DETECTOR BLIND on vault ${shortAddr(vault)}: neither probe of the oracle at ${shortAddr(oracle)} could be read (sequencerUptimeFeed: ${seq.error ?? 'no error text'}; assetConfig: ${legacy.error ?? 'no error text'}), so which oracle is deployed is UNKNOWN and no oracle check ran. The vault is UNMONITORED for the staleness freeze — this says nothing about the oracle's ABI`
+      : `ORACLE DETECTOR BLIND on vault ${shortAddr(vault)}: the oracle at ${shortAddr(oracle)} answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig(), so NO oracle check is running for this vault. It is UNMONITORED for the staleness freeze, not healthy`,
     detail: {
       vault, oracle,
       chainlinkProbeError: seq.error ?? null,
       legacyProbeError: legacy.error ?? null,
+      chainlinkProbeKind: seq.kind ?? null,
+      legacyProbeKind: legacy.kind ?? null,
+      unreachable,
     },
   })];
 }
@@ -247,9 +256,23 @@ async function sequencerLeg({ reader, vault, oracle, sequencerFeed, nowSec, grac
   }
 
   const rd = await reader.tryRead(sequencerFeed, AGGREGATOR_V3_VIEWS, 'latestRoundData', []);
+  if (!rd.ok && rd.kind === 'transport') {
+    // The canary could not reach the feed. That is a statement about this process's network, not
+    // about the sequencer gate, and the alert below would have claimed a vault-wide freeze from it.
+    return {
+      cause: null,
+      result: detectorBroken({
+        ...base,
+        message: `SEQUENCER GATE DETECTOR BLIND for vault ${shortAddr(vault)}: latestRoundData() on the uptime feed ${shortAddr(sequencerFeed)} could not be read (${rd.error ?? 'no error text'}) — no revert was observed, so nothing is known about the sequencer gate this sweep. The vault is UNMONITORED for it, and this is NOT evidence of a freeze`,
+        detail: { vault, oracle, sequencerUptimeFeed: sequencerFeed, error: rd.error ?? null, kind: 'transport' },
+      }),
+    };
+  }
   if (!rd.ok) {
-    // The contract try/catches this and reverts StaleOracle, so it is a live freeze, not a blind
-    // detector: we can see the cause perfectly well.
+    // A CONFIRMED revert. The contract try/catches this and reverts StaleOracle, so it is a live
+    // freeze, not a blind detector: we can see the cause perfectly well. (A transport failure
+    // cannot reach here — it is handled above — because an on-chain try/catch catches a revert,
+    // and no on-chain try/catch can catch a 429.)
     return {
       cause: 'the sequencer uptime feed itself reverts',
       result: alert({
@@ -327,11 +350,15 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
   if (!cfgRead.ok) {
     // `feedOf` is a public mapping getter: it answers for EVERY address, including unlisted ones.
     // A revert here means the contract is not the ChainlinkOracle the flavor probe said it was, so
-    // this detector is blind rather than looking at a broken vault.
+    // this detector is blind rather than looking at a broken vault. A transport failure lands in
+    // the same blind channel but must not be described as a revert — the call never arrived.
+    const reverted = cfgRead.kind === 'revert';
     return detectorBroken({
       ...base,
-      message: `ORACLE DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}) even though the oracle answered as a ChainlinkOracle. This asset is UNMONITORED for the staleness freeze, not healthy`,
-      detail: { vault, oracle, asset, error: cfgRead.error ?? null },
+      message: reverted
+        ? `ORACLE DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}) even though the oracle answered as a ChainlinkOracle. This asset is UNMONITORED for the staleness freeze, not healthy`
+        : `ORACLE DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} could not be read (${cfgRead.error}) — the call did not reach the chain, so no revert was observed. This asset is UNMONITORED for the staleness freeze this sweep, not healthy`,
+      detail: { vault, oracle, asset, error: cfgRead.error ?? null, kind: cfgRead.kind ?? null },
     });
   }
 
@@ -360,9 +387,23 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
     minPriceWad: cfg.minPriceWad.toString(), maxPriceWad: cfg.maxPriceWad.toString(),
     bandEnabled: cfg.maxPriceWad !== 0n,
     priceWad: price.ok ? String(price.value) : null,
-    priceWadReverts: !price.ok,
+    // Only a CONFIRMED revert may set this. It used to be `!price.ok`, which reported a rate limit
+    // as the contract refusing to price the asset.
+    priceWadReverts: !price.ok && price.kind === 'revert',
+    priceWadUnreadable: !price.ok && price.kind === 'transport',
     ...facts.detail,
   };
+
+  // GROUND TRUTH WAS NOT REACHED. The whole leg below rests on `priceWad` having actually
+  // answered, so a call that never got to the chain yields no verdict at all — it must not become
+  // "ORACLE FROZEN … NAV, deposits, rebalances and EXITS are all frozen".
+  if (!price.ok && price.kind === 'transport') {
+    return detectorBroken({
+      ...base,
+      message: `ORACLE DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: priceWad() on ${shortAddr(oracle)} could not be read (${price.error ?? 'no error text'}) — no revert was observed, so whether this asset is frozen is UNKNOWN this sweep. It is unmonitored, not healthy, and nothing here says the breaker tripped`,
+      detail: { ...detail, kind: 'transport' },
+    });
+  }
 
   if (!price.ok) {
     const isStaleOracle = typeof price.revertData === 'string'
@@ -426,6 +467,16 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
 function describe({ cfg, round, nowSec }) {
   if (isZero(cfg.feed)) {
     return { cause: 'the asset is not listed on this oracle (feedOf returns address(0))', ageSec: null, detail: { listed: false } };
+  }
+  if (!round.ok && round.kind === 'transport') {
+    // The feed was not reached, so it is not known to be dead. Returning no cause is what keeps
+    // this honest: the caller falls back to its "the attribution is missing" wording rather than
+    // naming a deprecated feed the canary never actually asked.
+    return {
+      cause: null,
+      ageSec: null,
+      detail: { listed: true, feedReverts: false, feedUnreadable: true, feedError: round.error ?? null },
+    };
   }
   if (!round.ok) {
     return {
