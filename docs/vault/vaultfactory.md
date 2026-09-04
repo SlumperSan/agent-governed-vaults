@@ -42,7 +42,7 @@ unchanged.
   parent lets a dust depositor govern the parent's allocation; including it makes the child
   ungovernable). The decision is to ship launch with sub-vaults **disabled at the contract level**:
   - `createChildVault` reverts;
-  - `_deploy` wires every vault with `subVaultRegistry = address(0)`, so each is intrinsically
+  - `_deploy` wires every vault it deploys with `subVaultRegistry = address(0)`, so each is intrinsically
     root-only — `parentVault()` is `address(0)`, `allocateToChild` reverts, the look-through paths
     are dead.
   - This closes **C-1, H-5, H-6, H-7 and H-9 as a class.** The sub-vault code is **retained, not

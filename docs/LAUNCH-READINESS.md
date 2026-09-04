@@ -356,8 +356,9 @@ Shorter than it was, and still not short.
    ungovernable.** There is no purely-internal fix. The parent needs a mechanism for its own
    governance to cast the child's vote — a new mechanism, deferred to a post-launch, post-audit
    release. **The owner's decision was to disable sub-vaults at launch rather than build that
-   mechanism now:** `VaultFactory.allowSubVaults = false` makes `createChildVault` revert and wires
-   every vault root-only, so the empty-electorate capture has no target. This closes C-1 and the
+   mechanism now:** `Deploy.s.sol` constructs the mainnet factory with `allowSubVaults = false`,
+   which makes `createChildVault` revert on it and wires every vault it deploys root-only, so the
+   empty-electorate capture has no target there. This closes C-1 and the
    sub-vault-only Highs H-5/H-6/H-7/H-9 as a class (regression `AuditRootVaultsOnly.t.sol`), which
    is also why the broken `redeemFromChild` escape hatch (H-6) no longer matters at launch. Gate 0
    is now GO for a root-only deployment. Re-enabling sub-vaults reopens C-1 until the mechanism is

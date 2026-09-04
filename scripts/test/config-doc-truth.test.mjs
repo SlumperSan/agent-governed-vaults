@@ -425,6 +425,19 @@ const SEQUENCER_FAILS_CLOSED = [
 const SEQ_DEPLOY_TIME_ENFORCEMENT = /deploy[- ]time|deploy script|at deploy|DeployChainlinkOracle|verify-chainlink-oracle/i;
 
 /**
+ * A NEGATED consequence is the true claim, not the banned one.
+ *
+ * `base-mainnet.json`'s corrected note says the oracle "would serve prices straight through a
+ * sequencer outage and NEVER REVERT" — the fail-open behaviour, stated correctly. The patterns
+ * above match `without … the feed … revert` and cannot see the `never`, so sentence-scoping the
+ * guard (which was the right fix for the deploy-time exemption) surfaced it as an offender.
+ * Negation is the one context in which the banned shape means its own opposite.
+ */
+// NOTE the absence of `without` from this list, deliberately. `without … reverts` IS the banned
+// claim; adding it here would exempt the very shape the guard exists to catch. Only true negators.
+const SEQ_NEGATED = /\b(?:never|not|n't|cannot|can not)\s+(?:\w+\s+){0,3}(?:revert|refus|freez)/i;
+
+/**
  * The L2 sequencer uptime feed: mandatory, but NOT in the way three public claims said.
  *
  * `ChainlinkOracle._requireSequencerUp` opens with `if (address(seq) == address(0)) return;`, and
@@ -468,18 +481,21 @@ test('no live prose claims the oracle reverts when no sequencer uptime feed is c
   const offenders = [];
   for (const rel of proseFiles()) {
     if (RECORD_DIRS.some((d) => rel.startsWith(`${d}/`))) continue; // dated records keep their wording
-    const lines = read(rel).split(/\r?\n/);
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      if (!/sequencer/i.test(line)) continue;
-      // A line that attributes the enforcement to DEPLOY time is making the true claim, not the
-      // banned one — see SEQ_DEPLOY_TIME_ENFORCEMENT for why subject beats shape here.
-      if (SEQ_DEPLOY_TIME_ENFORCEMENT.test(line)) continue;
+    // SENTENCES, not lines — same reason as the sub-vault guard, plus one specific to this guard:
+    // the deploy-time exemption below was a LINE-level `continue` over prose wrapped at ~100 cols,
+    // so one mention of "deploy script" anywhere on a line disarmed the guard for that whole line.
+    // Scoped to a sentence it disarms only the clause that actually makes the deploy-time claim.
+    for (const { text, line } of sentencesOf(read(rel))) {
+      if (!/sequencer/i.test(text)) continue;
+      // A sentence that attributes the enforcement to DEPLOY time is making the true claim, not
+      // the banned one — see SEQ_DEPLOY_TIME_ENFORCEMENT for why subject beats shape here.
+      if (SEQ_DEPLOY_TIME_ENFORCEMENT.test(text)) continue;
+      if (SEQ_NEGATED.test(text)) continue; // "…and never revert" is the fail-OPEN truth
       // The corrected wording quotes the withdrawn claim so the record survives; skip attributed
       // quotations the same way the govNote guard does, and judge only the file's own voice.
-      const own = line.replace(/'[^']*'/g, ' ');
+      const own = text.replace(/'[^']*'/g, ' ');
       if (SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(own))) {
-        offenders.push(`${rel}:${i + 1}  ${line.trim().slice(0, 140)}`);
+        offenders.push(`${rel}:~${line}  ${text.trim().slice(0, 140)}`);
       }
     }
   }
@@ -525,6 +541,19 @@ test('probe: the sequencer-fails-closed guard is live', () => {
   const corrected = "This note previously read 'ChainlinkOracle reverts every price without it', which inverted the direction the contract fails in.";
   const own = corrected.replace(/'[^']*'/g, ' ');
   assert.ok(!SEQUENCER_FAILS_CLOSED.some((rx) => rx.test(own)), 'the guard false-positives on its own correction');
+
+  // NEGATION: the fail-OPEN truth uses the banned shape with the verb negated. It must pass…
+  const failsOpen = 'an oracle somehow deployed without the feed would serve prices straight through a sequencer outage and never revert';
+  assert.ok(SEQ_NEGATED.test(failsOpen), 'the negation exemption no longer recognises the corrected fail-open wording');
+
+  // …but the exemption must NOT swallow the banned claim itself. `without` is a preposition here,
+  // not a negator, and listing it would have disarmed the whole guard.
+  for (const banned of [
+    'Without one the oracle reverts every price.',
+    'Without a sequencer uptime feed the oracle reverts every price.',
+  ]) {
+    assert.ok(!SEQ_NEGATED.test(banned), `the negation exemption wrongly clears a banned claim: ${banned}`);
+  }
 });
 
 /**
@@ -596,17 +625,30 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
  * deploys is wired…"), which is what makes banning the construction outright the right call rather
  * than a judgement about context.
  */
+// The VERB is not the shape — the missing factory is. A second review escaped 11 of 12 minimal
+// variants of the legs below by swapping the verb ("is deployed with", "launches with"), the voice
+// ("wires every vault" for "every vault is wired"), the quantifier ("all"/"each" for "every") or
+// the tense. TWO of those escapes were live in the tree. So each leg now enumerates its own
+// inflections rather than one surface form, and correctness is carried by SUBVAULT_SCOPED below:
+// prose written correctly always names the factory (`Deploy.s.sol`, "it deploys", "on that
+// factory"), so the verb list can widen freely without flagging the fix.
+// `launches`/`launched` only — NEVER bare `launch`, which is overwhelmingly the NOUN here ("at
+// launch", "the launch factory", "moot at launch"). Including it flagged two correctly-scoped
+// sentences on its first run, and a guard that cries wolf on correct prose gets deleted.
+const SV_CONSTRUCT = '(?:ships?|launch(?:es|ed)|is deployed|are deployed|is built|is created|comes?)';
+const SV_QUANT = '(?:every|each|all)\\s+(?:deployed\\s+)?vaults?';
 const SUBVAULT_UNIVERSAL = [
-  // 1. the "ships with" construction, in either the flag or the feature form.
-  //    `with` is OPTIONAL: LAUNCH-READINESS's gate-0 cell read "`VaultFactory` ships
-  //    `allowSubVaults = false`", which slipped past the `ships with` form and was caught only by
-  //    the unpossessed-universal pattern below. One guard leg should not depend on another's reach.
-  /\bships?\b(?:\s+with)?[^.]{0,60}\ballowSubVaults\b/i,
-  /\bprotocol\b[^.]{0,60}\bships? with\b[^.]{0,60}\bsub-?vaults?\b[^.]{0,30}\bdisabled\b/i,
-  // 2. the unpossessed universal: "every vault is wired", but NOT "every vault it deploys is wired"
-  /\bevery (?:deployed )?vault is wired\b/i,
+  // 1. "<subject> ships / is deployed with / launches with allowSubVaults = false"
+  new RegExp(`\\b${SV_CONSTRUCT}\\b(?:\\s+with)?[^.]{0,60}\\ballowSubVaults\\b`, 'i'),
+  new RegExp(`\\bprotocol\\b[^.]{0,60}\\b${SV_CONSTRUCT}\\b(?:\\s+with)?[^.]{0,60}\\bsub-?vaults?\\b[^.]{0,30}\\bdisabled\\b`, 'i'),
+  // 2. the unpossessed universal, passive AND active, any quantifier or tense:
+  //    "every vault is wired" / "all vaults are wired" / "wires every vault" —
+  //    but never "every vault IT DEPLOYS is wired", which SUBVAULT_SCOPED exempts.
+  new RegExp(`\\b${SV_QUANT}\\s+(?:is|are|was|were)\\s+wired\\b`, 'i'),
+  new RegExp(`\\bwires?\\s+${SV_QUANT}\\b`, 'i'),
+  // 3. the impossibility claims
   /\bno vault can (?:ever )?be funded as a child\b/i,
-  /\bno parent\/child edge can (?:ever )?(?:be|exist)/i,
+  /\bno parent\/child edge (?:can (?:ever )?(?:be|exist)|is ever (?:registered|created))/i,
 ];
 
 /** Sentences that name the factory they are about are making the true claim, not the banned one. */
@@ -645,7 +687,13 @@ function sentencesOf(text) {
         bufLine = line + i + 1;
       } else {
         if (buf.length === 0) bufLine = line + i;
-        buf.push(row);
+        // STRIP THE BLOCKQUOTE MARKER before joining. Without this, a banned phrase that crosses a
+        // wrap inside a `>` block joins as "…every deployed > vault is wired…" and is unmatchable —
+        // an INERT REGION covering exactly where these launch claims live (the DEPLOYMENT.md,
+        // INCIDENTS.md and THREAT-MODEL.md banners are all blockquotes). Review found a live
+        // uncorrected instance hiding in precisely that shape. List markers get the same treatment
+        // for the same reason.
+        buf.push(row.replace(/^\s*(?:>\s?)+/, '').replace(/^\s*(?:[-*+]|\d+\.)\s+/, ''));
       }
     });
     flush();
@@ -676,6 +724,40 @@ test('no live prose states allowSubVaults as a protocol universal', () => {
   );
 });
 
+test('probe: sentencesOf sees through blockquotes and list markers, and does not splice table cells', () => {
+  // THE INERT REGION THIS CLOSES. `>` markers were not stripped before joining, so a banned phrase
+  // that crossed a wrap inside a blockquote joined as "…every deployed > vault is wired…" and was
+  // unmatchable. Every launch banner in this repo is a blockquote (DEPLOYMENT, INCIDENTS,
+  // THREAT-MODEL), so the guard was blind exactly where these claims live. A live uncorrected
+  // instance was found hiding in precisely that shape.
+  // The wrap must fall INSIDE the banned phrase, and the phrase must be the ONLY banned shape in
+  // the sentence. An earlier version of this probe put "is deployed with `allowSubVaults`" in the
+  // same sentence, so leg 1 matched across the stray `>` (its `[^.]{0,60}` window spans it happily)
+  // and the probe passed with the strip REMOVED — vacuous, the exact defect it was written to
+  // prevent. Mutation-tested: deleting the strip must turn this red.
+  const blockquoted = ['> so `createChildVault` reverts and every deployed', '> vault is wired root-only.'].join('\n');
+  const found = sentencesOf(blockquoted).some(
+    (s) => !SUBVAULT_SCOPED.test(s.text) && SUBVAULT_UNIVERSAL.some((rx) => rx.test(s.text))
+  );
+  assert.ok(found, 'sentencesOf no longer strips the blockquote marker; the guard is blind inside `>` blocks');
+
+  // The same claim behind a list marker.
+  const listed = ['- `VaultFactory` ships with `allowSubVaults = false`, so every', '  vault is wired root-only.'].join('\n');
+  assert.ok(
+    sentencesOf(listed).some((s) => SUBVAULT_UNIVERSAL.some((rx) => rx.test(s.text))),
+    'sentencesOf no longer strips list markers'
+  );
+
+  // …and table cells must NOT be spliced together, or a claim in one cell borrows scoping from
+  // another and the guard silently under-reports.
+  const table = '| `VaultFactory` ships `allowSubVaults = false` | see `Deploy.s.sol` for the launch path |';
+  const units = sentencesOf(table).map((s) => s.text);
+  assert.ok(
+    units.some((u) => /ships/.test(u) && !/Deploy\.s\.sol/.test(u)),
+    'table cells are being joined; a cell must not inherit another cell\'s scoping'
+  );
+});
+
 test('probe: the sub-vault-universal guard is live', () => {
   // The wordings that were actually shipped and had to be corrected. If any stops matching, the
   // guard has gone inert and the universal creeps back into the docs it was removed from.
@@ -685,6 +767,11 @@ test('probe: the sub-vault-universal guard is live', () => {
     '`VaultFactory` ships with immutable `allowSubVaults = false`: `createChildVault` reverts',
     'every deployed vault is wired root-only, so no funded child can exist',
     '`VaultFactory` ships `allowSubVaults = false` — `createChildVault` reverts',
+    // Found by a SECOND review, after the first widening: both were live in the tree and both
+    // escaped, one by swapping the verb and one by swapping the voice.
+    '`VaultFactory` is deployed with `allowSubVaults = false`, so `createChildVault` reverts',
+    '`VaultFactory.allowSubVaults = false` makes `createChildVault` revert and wires every vault root-only',
+    '`_deploy` wires every vault with `subVaultRegistry = address(0)`',
     // invented: never shipped, must still be caught
     'On this protocol no vault can be funded as a child.',
     'No parent/child edge can ever exist anywhere in the system.',
