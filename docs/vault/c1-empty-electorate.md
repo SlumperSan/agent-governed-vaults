@@ -30,10 +30,12 @@ breaks the legitimate parent+1-member child (the signer regime needs `1*2 > 2`, 
 tension is structural — any voting denominator that excludes the parent lets a dust depositor govern
 the parent's allocation, while including it makes the child ungovernable (the parent is a contract
 with no vote path). There is **no purely-internal fix**; the correct mechanism (parent casts the
-child's vote) is a product decision deferred to a post-launch, post-audit release. `VaultFactory`
-ships with immutable `allowSubVaults = false`: `createChildVault` reverts `SubVaultsDisabled` and
-every vault it deploys is wired `subVaultRegistry = address(0)`, so on that factory no vault can be funded as a child and
-the empty-electorate precondition is **unreachable**. VaultCore bytes are unchanged. This closes C-1
+child's vote) is a product decision deferred to a post-launch, post-audit release. `Deploy.s.sol`
+constructs `VaultFactory` with immutable `allowSubVaults = false`, so on that factory
+`createChildVault` reverts `SubVaultsDisabled` and every vault it deploys is wired
+`subVaultRegistry = address(0)` — no vault can be funded as a child there, and the
+empty-electorate precondition is **unreachable**. (`DeployTestnet.s.sol` passes `true`; the flag
+is per-factory, not protocol-wide.) VaultCore bytes are unchanged. This closes C-1
 and the sub-vault-only Highs H-5/H-6/H-7/H-9 as a class. **Re-enabling sub-vaults reopens C-1.**
 
 ## Regression test
