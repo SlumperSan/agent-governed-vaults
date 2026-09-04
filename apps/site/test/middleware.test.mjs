@@ -67,3 +67,24 @@ test('an http request on a non-canonical host is upgraded to https', async () =>
   const res = await onRequest(ctx('http://rwally.pages.dev/agents'));
   assert.equal(res.headers.get('location'), 'https://rwally.com/agents');
 });
+
+test('a protocol-relative path cannot redirect off the canonical host (CWE-601)', async () => {
+  // This shipped and was LIVE: building the target as `new URL(pathname+search, base)` treats a
+  // pathname starting with `//` as protocol-relative, so the parser replaces the AUTHORITY and
+  // the redirect leaves the site. Verified in production before the fix:
+  //   https://rwally.pages.dev//evil.example/x  ->  https://evil.example/x
+  for (const path of [
+    '//evil.example/x',
+    '/' + String.fromCharCode(92) + '/evil.example/x', // a REAL backslash; a '\\/' literal collapses to '//' and silently duplicates the line above
+    '//attacker.test/connect-wallet?a=1',
+    '///triple.example/x',
+  ]) {
+    const res = await onRequest(ctx(`https://rwally.pages.dev${path}`));
+    const loc = new URL(res.headers.get('location'));
+    assert.equal(
+      loc.hostname,
+      'rwally.com',
+      `open redirect: ${path} escaped to ${loc.hostname}`
+    );
+  }
+});
