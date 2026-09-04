@@ -28,7 +28,7 @@
  */
 
 import { ORACLE_VIEWS, PRICE_SOURCE_VIEWS } from '../abis.mjs';
-import { ok, alert, skipped, shortAddr } from '../signal.mjs';
+import { ok, alert, skipped, detectorBroken, shortAddr } from '../signal.mjs';
 
 export const SIGNAL = 'oracle-freshness';
 
@@ -72,8 +72,18 @@ export async function checkOracleFreshness({ reader, vault, oracle, assets, nowS
     const minUpdated = nowSec > maxStaleness ? nowSec - maxStaleness : 0;
     let fresh = 0;
     const stale = [];
+    const unreadable = [];
     for (const source of sources) {
       const res = await reader.tryRead(source, PRICE_SOURCE_VIEWS, 'latestPrice', []);
+      // THREE BUCKETS, NOT TWO. A source the canary could not reach is neither fresh nor stale.
+      // Counting it stale (what this line did before) walks `fresh` down until `margin < 0` and
+      // pages "oracle breaker TRIPPED … NAV and exits are frozen" off a rate limit; counting it
+      // fresh would fail open. The aggregator's own on-chain try/catch is not the precedent it
+      // was cited as here — that catches a REVERT, and no on-chain try/catch can catch a 429.
+      if (!res.ok && res.kind === 'transport') {
+        unreadable.push({ source, reason: res.error ?? 'unreadable' });
+        continue;
+      }
       // A reverting source is not fresh. Same rule the aggregator applies in its try/catch.
       if (!res.ok) { stale.push({ source, reason: 'reverted' }); continue; }
       const [priceWad, updatedAt] = normalizePrice(res.value);
@@ -85,9 +95,23 @@ export async function checkOracleFreshness({ reader, vault, oracle, assets, nowS
     const detail = {
       vault, asset, oracle, freshSources: fresh, totalSources: sources.length,
       quorum, margin, maxStalenessSec: maxStaleness, staleSources: stale,
+      unreadableSources: unreadable,
     };
 
-    if (margin < 0) {
+    // With `u` sources unreadable, the true fresh count lies in [fresh, fresh + u]. Both verdicts
+    // below are still SOUND on a bound — tripped is decided on the best case, a healthy margin on
+    // the worst — so an unreadable source never invents a freeze and never hides one. Only when
+    // the quorum sits inside the interval is there nothing honest to say, and that is the one
+    // case that goes blind.
+    if (unreadable.length > 0 && fresh + unreadable.length >= quorum && margin <= minMargin) {
+      out.push(detectorBroken({
+        signal: SIGNAL, vault, key: asset,
+        message: `ORACLE FRESHNESS DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${unreadable.length}/${sources.length} price sources could not be read (${unreadable[0].reason}), so the freshness margin cannot be stated — confirmed fresh: ${fresh} of ${sources.length}, against quorum ${quorum}, and the unreadable ones decide it either way. This asset is UNMONITORED for the staleness freeze this sweep; nothing here says the breaker tripped`,
+        measured: `${fresh} confirmed fresh, ${unreadable.length} unreadable`,
+        threshold: `>= ${quorum} (quorum)`,
+        detail,
+      }));
+    } else if (margin < 0) {
       out.push(alert({
         signal: SIGNAL, vault, key: asset,
         message: `oracle breaker TRIPPED for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${fresh}/${sources.length} sources fresh, quorum ${quorum} — priceWad reverts StaleOracle, NAV and exits are frozen`,

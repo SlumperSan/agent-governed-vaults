@@ -11,7 +11,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import { createPublicClient, http as httpTransport } from 'viem';
 import { checkExitLiveness, pickProbeMember, encodeRequestExit } from '../src/signals/exit-liveness.mjs';
+import { createChainReader } from '../src/reader.mjs';
 import { mockReader, VAULT, MEMBER, CREATOR } from './helpers.mjs';
 
 const REENTRANCY = '0xab143c06';
@@ -139,4 +142,59 @@ test('probe amount is clamped to the member balance so it never self-inflicts In
   });
   const call = reader.calls.find((c) => c.kind === 'staticCall');
   assert.equal(BigInt(`0x${call.data.slice(10)}`), 1n);
+});
+
+// ── transport is not a verdict ───────────────────────────────────────────────
+//
+// These two run the REAL adapter over a REAL viem client against a local node, because the defect
+// they pin lives in the wiring and not in any one function: `ok:false` alone cannot tell a 429
+// from a revert, and every stub in this file that hands the signal a pre-made `{ok:false}` would
+// keep passing while the deployed canary paged on a rate limit.
+
+/** A node that answers every JSON-RPC request the same way. */
+async function rpcServer(handler) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${/** @type {any} */ (server.address()).port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+/** The real reader over a real viem client — nothing stubbed between the socket and the signal. */
+const liveReader = (url) => createChainReader({
+  client: createPublicClient({ transport: httpTransport(url, { retryCount: 0 }) }),
+});
+
+test('WIRING: a real HTTP 429 reaches the sentinel as BLIND, never as the H-1 breach', async () => {
+  const node = await rpcServer((_req, res) => { res.writeHead(429); res.end('Too Many Requests'); });
+  try {
+    const [r] = await checkExitLiveness({
+      reader: liveReader(node.url), vault: VAULT, shareBook: book, creator: CREATOR,
+    });
+    assert.equal(r.status, 'skipped', 'a rate limit is not a verdict about requestExit');
+    assert.doesNotMatch(r.message, /EXIT LIVENESS BROKEN/);
+    assert.match(r.message, /BLIND/);
+    // Visible, not merely quiet: detectorBroken is re-asserted on a backoff by transitions.mjs,
+    // where a plain `skipped` would be reported once and then fall silent.
+    assert.equal(r.detail.detectorBroken, true);
+    assert.equal(r.detail.kind, 'transport');
+    assert.equal(r.detail.revertData, null,
+      'viem quotes the request in a transport error, so the scrape recovers this probe\'s own calldata');
+  } finally { await node.close(); }
+});
+
+test('WIRING: a genuine revert over the same live path still ALERTS — the sentinel was not disabled', async () => {
+  const node = await rpcServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: 3, message: 'execution reverted', data: REENTRANCY } }));
+  });
+  try {
+    const [r] = await checkExitLiveness({
+      reader: liveReader(node.url), vault: VAULT, shareBook: book, creator: CREATOR,
+    });
+    assert.equal(r.status, 'alert');
+    assert.match(r.message, /EXIT LIVENESS BROKEN/);
+    assert.equal(r.detail.revertName, 'Reentrancy');
+  } finally { await node.close(); }
 });

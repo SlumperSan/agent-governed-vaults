@@ -60,7 +60,7 @@ export async function checkFeeRouting({ reader, vault, usdc, operatorRegistry, e
       return [skipped({
         signal: SIGNAL, vault,
         message: `fee routing skipped on vault ${shortAddr(vault)}: operatorOf() is unreadable on the registry: ${idRes.error}`,
-        detail: { vault, operatorRegistry },
+        detail: { vault, operatorRegistry, kind: idRes.kind ?? null },
       })];
     }
     const opId = BigInt(idRes.value ?? 0);

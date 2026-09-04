@@ -567,14 +567,45 @@ re-assert on a backoff until fixed:
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
 | `FEED IDENTITY DETECTOR BLIND … did not answer description() / decimals()` | the proxy stopped answering the two reads the harm checks compare against | the asset is unmonitored for aggregator-swap drift. A feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry |
 | `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()` | the feed is not an `EACAggregatorProxy`, or both reads are failing | the harm checks (decimals, denomination) **did** run and passed; it is the swap *notice* that is blind |
+| `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket) — no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
+| `ORACLE DETECTOR BLIND … priceWad() … could not be read` | the ground-truth price read failed in transit | as above. Whether the asset is frozen is unknown, so it is not reported either way |
+| `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound — this line means the unreadable sources are what decides it |
+| `SEQUENCER GATE DETECTOR BLIND … could not be read` | the uptime feed read failed in transit | as above. It does **not** mean the sequencer gate tripped |
+| `… DETECTOR BLIND … could not be probed` / `neither probe … could be read` | both oracle-flavor probes failed in transit | which oracle is deployed is unknown; this says nothing about the oracle's ABI |
 
-**These three damp against RPC noise, and none of the others do.** Every blind branch in
-`feed-identity` is triggered by an `eth_call` coming back empty, and one empty return is noise while
-three consecutive is the feed — so they carry `minConsecutive: 3` and only escalate on the third
-sweep. The exception is the very first sighting of an asset, which reports immediately: a monitor
-that has never once succeeded must not be indistinguishable from silence. `oracle-freshness` needs no
-such damping, because its blind branch is structural (an oracle answering an ABI it does not have),
-not a transient read.
+**Transport failures never become findings.** Every line in the second half of that table exists
+because an RPC failure and a contract revert both surface as a failed read, and code that treats
+"the read failed" as "the contract refused" turns a busy network into a security incident. The
+reader tags each failure `revert` or `transport` (`packages/canary/src/call-error.mjs`); only a
+`revert` can produce a verdict, and a `transport` routes here — visible, re-asserted on a backoff,
+and explicitly not evidence of a fault.
+
+**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
+blind branches (`feed-identity.mjs:178, 210, 258, 289`) carry
+`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:100`), so they escalate only on the third
+consecutive sweep. The case that earned the damping is an `eth_call` coming back empty — one empty
+return is noise where three consecutive is the feed — but that is the case it was written for, not
+the only one it covers: each branch is reachable on a confirmed revert too, and on a transport
+failure since the reader began telling those apart, and the damping applies to all three. The
+exception is the very first sighting of an asset, which reports immediately: a monitor that has
+never once succeeded must not be indistinguishable from silence.
+
+**`share-conservation` damps as well, which is why that lede is scoped to blind lines.**
+`minConsecutive: pinned ? 1 : 2` (`share-conservation.mjs:76`) makes an UNPINNED result wait for two
+consecutive observations before the tracker flips its status — `alert` and `ok` alike, because
+`transitions.mjs:146` gates every status flip on `need`, not only the blind ones. A result is
+unpinned either because the caller passed no `atBlock` (`share-conservation.mjs:39`) or because the
+pinned read failed and the archive fallback re-read at chain head (`share-conservation.mjs:44-51`);
+that failure is transport-classified, so RPC noise is one of the two paths into this damping rather
+than something it is unrelated to.
+
+Do not read the branch count off the table, because rows and branches do not correspond one to one:
+only two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds
+two lines that behave differently — `feed-identity`'s “could not be probed” damps, `oracle-health`'s
+“neither probe … could be read” does not. **Every other blind line re-asserts from the first
+sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
+branches set no `minConsecutive`, and neither do the two the runner emits itself
+(`canary-runner.mjs:266` — row `:566`; `canary-runner.mjs:243` — row `:567`).
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never

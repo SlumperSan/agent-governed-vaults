@@ -69,11 +69,17 @@
  *
  * Every branch below that cannot measure returns `detectorBroken`, which the transition tracker
  * re-asserts on a doubling backoff. The one departure from `oracle-health.mjs` is
- * `minConsecutive: UNREADABLE_SWEEPS`: every blind branch here is triggered by an eth_call coming
- * back empty, and PR #92 recorded observing exactly that against `aggregator()` on 2026-08-30 —
- * a single empty return is RPC noise, three consecutive is the feed. oracle-health needs no such
- * damping because its blind branch is structural (an oracle answering an ABI it does not have),
- * not a transient read.
+ * `minConsecutive: UNREADABLE_SWEEPS`: the case that earned it is an eth_call coming back empty,
+ * which PR #92 recorded observing against `aggregator()` on 2026-08-30 — a single empty return is
+ * RPC noise, three consecutive is the feed. That is the case it was written for, not the only one
+ * it covers: every blind branch here is also reachable on a confirmed revert, and on a transport
+ * failure since the reader began telling those apart, and the damping applies to all three.
+ *
+ * `oracle-health` carries no such damping, but not for the reason this header used to give. Its
+ * blind branches are FOUR, not one (`oracle-health.mjs:173, 264, 356, 401`), and only `:173`'s is
+ * structural — an oracle answering neither known ABI. The other three turn on a per-asset or
+ * per-feed read that did not come back, so “structural, not a transient read” never covered them;
+ * they simply set no `minConsecutive`.
  *
  * Fans out one result per (vault, asset), keyed by asset, like `oracle-freshness`.
  */
@@ -153,22 +159,32 @@ export async function checkFeedIdentity({ reader, vault, oracle, assets, pins = 
   const seq = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'sequencerUptimeFeed', []);
   if (!seq.ok) {
     const legacy = await reader.tryRead(oracle, ORACLE_VIEWS, 'assetConfig', [assets[0]]);
-    if (legacy.ok) {
+    if (legacy.ok && seq.kind === 'revert') {
       // A CONFIRMED retired `OracleAggregator`. There is no Chainlink proxy anywhere in that
       // regime, so feed identity is not a thing that exists to be blind about — its sources are
       // fixed addresses in an immutable config. Nothing to report is the honest answer, not a
       // suppressed one.
+      //
+      // "CONFIRMED" is carried by `seq.kind === 'revert'`, and that guard is the point: this is
+      // the one branch in the package that returns SILENCE. Reached on a transport failure it
+      // would conclude "retired aggregator, nothing to monitor" from a 429 that happened to hit
+      // the first probe and miss the second, and the signal would go quiet with no line at all.
       return [];
     }
-    // Neither ABI. This IS a blind detector, and it is reported here as well as under
+    const unreachable = seq.kind === 'transport' || legacy.kind === 'transport';
+    // Neither ABI answered. This IS a blind detector, and it is reported here as well as under
     // `oracle-freshness`: that signal's line says the vault is unmonitored for the staleness
     // FREEZE, which is a different capability from the one this signal provides.
     return [detectorBroken({
       signal: SIGNAL, vault, key: 'flavor',
-      message: `FEED IDENTITY DETECTOR BLIND on vault ${shortAddr(vault)}: the oracle at ${shortAddr(oracle)} answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig(), so no feed can be located to check. This vault is UNMONITORED for aggregator-swap drift, not clean`,
+      message: unreachable
+        ? `FEED IDENTITY DETECTOR BLIND on vault ${shortAddr(vault)}: the oracle at ${shortAddr(oracle)} could not be probed (sequencerUptimeFeed: ${seq.error ?? 'no error text'}; assetConfig: ${legacy.error ?? 'no error text'}), so no feed can be located to check. This vault is UNMONITORED for aggregator-swap drift this sweep — this says nothing about the oracle's ABI`
+        : `FEED IDENTITY DETECTOR BLIND on vault ${shortAddr(vault)}: the oracle at ${shortAddr(oracle)} answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig(), so no feed can be located to check. This vault is UNMONITORED for aggregator-swap drift, not clean`,
       detail: {
         vault, oracle, minConsecutive: UNREADABLE_SWEEPS,
         chainlinkProbeError: seq.error ?? null, legacyProbeError: legacy.error ?? null,
+        chainlinkProbeKind: seq.kind ?? null, legacyProbeKind: legacy.kind ?? null,
+        unreachable,
       },
     })];
   }
@@ -192,8 +208,10 @@ async function assetIdentity({ reader, vault, oracle, asset, pins }) {
   const cfgRead = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'feedOf', [asset]);
   if (!cfgRead.ok) {
     return blind(
-      `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}) even though the oracle answered as a ChainlinkOracle, so the cached scale this check compares against cannot be read. This asset is UNMONITORED for aggregator-swap drift, not clean`,
-      { error: cfgRead.error ?? null },
+      cfgRead.kind === 'revert'
+        ? `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}) even though the oracle answered as a ChainlinkOracle, so the cached scale this check compares against cannot be read. This asset is UNMONITORED for aggregator-swap drift, not clean`
+        : `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} could not be read (${cfgRead.error}) — the call did not reach the chain, so no revert was observed and the cached scale this check compares against is unavailable. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
+      { error: cfgRead.error ?? null, kind: cfgRead.kind ?? null },
     );
   }
   const cfg = normalizeFeedConfig(cfgRead.value);

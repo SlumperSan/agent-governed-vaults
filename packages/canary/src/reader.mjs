@@ -20,9 +20,25 @@
  *   getLogs({address, event, args, fromBlock, toBlock})-> Promise<Log[]>
  *   staticCall({to, from, data})                       -> Promise<CallResult>   (never throws)
  *
- * @typedef {{ok:boolean, value?:any, revertData?:string|null, error?:string}} ReadResult
- * @typedef {{ok:boolean, data:string|null, error?:string}} CallResult
+ * ── `kind` on a failure: is this evidence about the contract? ──
+ * `ok:false` alone says only that a read did not produce a value. A 429, a timeout and a genuine
+ * revert all reach a caller that way, so a signal branching on `!ok` turns a busy network into a
+ * finding about the protocol. Every failure therefore carries `kind`: `'revert'` when the chain
+ * refused the call, `'transport'` when it is not a confirmed revert (see call-error.mjs — that
+ * word does NOT mean the node was unreachable). Signals route `'transport'` to a blind-detector
+ * result and keep their verdicts for `'revert'`.
+ *
+ * A transport failure also carries NO returndata. `extractRevertData` falls back to scraping hex
+ * out of the error text, and viem's transport errors quote the request — so on an HTTP 429 it
+ * returns the canary's OWN `requestExit` calldata, whose first four bytes then read as an
+ * unrecognized revert selector. That is measured, not hypothetical (test/reader.test.mjs), and it
+ * is why `revertData`/`data` is forced to null when `kind === 'transport'`: a call that never
+ * reached the chain produced no returndata, so reporting scraped hex would be a lie at the source.
+ *
+ * @typedef {{ok:boolean, value?:any, revertData?:string|null, error?:string, kind?:'revert'|'transport'}} ReadResult
+ * @typedef {{ok:boolean, data:string|null, error?:string, kind?:'revert'|'transport'}} CallResult
  */
+import { classifyCallError } from './call-error.mjs';
 
 const HEX_RE = /0x[0-9a-fA-F]{8,}/;
 
@@ -39,6 +55,22 @@ const HEX_RE = /0x[0-9a-fA-F]{8,}/;
  * @returns {string|null} lowercased 0x-prefixed returndata, or null if there was none
  */
 export function extractRevertData(err) {
+  return structuredRevertData(err) ?? scrapedRevertData(err);
+}
+
+/**
+ * The STRUCTURED half of the walk: returndata viem actually handed us in a field, as opposed to
+ * hex found in prose. Split out (behaviour of `extractRevertData` unchanged — it is these two in
+ * the original order) because the two halves carry very different weight as evidence.
+ *
+ * Returndata in a field can only exist if the EVM executed and reverted, so a non-null answer here
+ * is positive proof of a revert and outranks the message text when `tryRead`/`staticCall` decide
+ * `kind`. That matters for a provider whose wording no pattern recognises: without this, a real
+ * revert carrying real returndata would be filed as unreadable.
+ * @param {any} err
+ * @returns {string|null}
+ */
+export function structuredRevertData(err) {
   const seen = new Set();
   let node = err;
   for (let depth = 0; node && typeof node === 'object' && depth < 12; depth += 1) {
@@ -54,11 +86,39 @@ export function extractRevertData(err) {
     }
     node = node.cause;
   }
+  return null;
+}
+
+/**
+ * The SCRAPED half: the first long hex run anywhere in the error prose. Weak evidence, and the
+ * reason `kind` exists — viem quotes the failing request in a transport error's message, so on an
+ * HTTP 429 this returns the CALLER'S OWN calldata. Never used to decide `kind`.
+ * @param {any} err
+ * @returns {string|null}
+ */
+function scrapedRevertData(err) {
   const text = [err?.details, err?.shortMessage, err?.message]
     .filter((s) => typeof s === 'string')
     .join(' ');
   const m = HEX_RE.exec(text);
   return m ? m[0].toLowerCase() : null;
+}
+
+/**
+ * Was a failed call EVIDENCE ABOUT THE CONTRACT, or did it never get there?
+ *
+ * Two sources, in order of how much they prove. Returndata viem handed us in a FIELD can only
+ * exist if the EVM executed and reverted, so it settles the question outright — that path also
+ * keeps a revert classifiable when a provider's wording matches no known pattern. Failing that,
+ * the message text decides, via `./call-error.mjs`, which `scripts/soak/lib.mjs` re-exports so the
+ * soak harness and this one cannot drift apart.
+ *
+ * The scraped hex is deliberately not consulted: it is the thing that made a 429 look like a
+ * revert in the first place.
+ * @param {any} err @param {string} errorText @returns {'revert'|'transport'}
+ */
+function classifyFailure(err, errorText) {
+  return structuredRevertData(err) != null ? 'revert' : classifyCallError(errorText);
 }
 
 /**
@@ -114,10 +174,13 @@ export function createChainReader({ client, rpcUrl, chainId = 8453, chainName = 
     try {
       return { ok: true, value: await read(address, abi, functionName, args, opts) };
     } catch (err) {
+      const error = err?.shortMessage ?? err?.message ?? String(err);
+      const kind = classifyFailure(err, error);
       return {
         ok: false,
-        revertData: extractRevertData(err),
-        error: err?.shortMessage ?? err?.message ?? String(err),
+        revertData: kind === 'revert' ? extractRevertData(err) : null,
+        error,
+        kind,
       };
     }
   }
@@ -148,10 +211,13 @@ export function createChainReader({ client, rpcUrl, chainId = 8453, chainName = 
       const res = await c.call({ to, account: from, data });
       return { ok: true, data: res?.data ?? '0x' };
     } catch (err) {
+      const error = err?.shortMessage ?? err?.message ?? String(err);
+      const kind = classifyFailure(err, error);
       return {
         ok: false,
-        data: extractRevertData(err),
-        error: err?.shortMessage ?? err?.message ?? String(err),
+        data: kind === 'revert' ? extractRevertData(err) : null,
+        error,
+        kind,
       };
     }
   }
