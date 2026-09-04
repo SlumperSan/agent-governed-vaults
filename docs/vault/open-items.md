@@ -36,7 +36,7 @@ Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gat
 
 ## Accepted residuals (DORMANT / ACCEPTED — not tasks)
 
-- **Dormant-at-launch (need a funded child):** H-5, H-6, H-7, H-9, M-5, L-6 — deferred **with** the sub-vault feature via [[root-vaults-only]].
+- **Dormant-at-launch (need a funded child):** H-5, H-6, H-7, M-5, L-6 — deferred **with** the sub-vault feature via [[root-vaults-only]]. **H-9 has left this list:** still dormant, but FIXED IN CODE 2026-09-01 and therefore not deferred — see [[highs]].
 - **Accepted design tradeoffs:** M-8 (opaque `actionHash` = MEV protection), M-9 (settlement-timing option, bounded `gain/10`), M-10 (per-address commit-reveal), L-5 (rebasing tokens, creator-disclosed), L-7 (standing-default asymmetry).
 - **Residual-risk register:** immutability, oracle-freeze-beats-mispricing, **single-provider Chainlink dependency** (row 13) and **curation immobility — no oracle rotation path** (row 12), USDC depeg, x402 broadcast-not-finality — all documented in [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) §4 as ship-anyway with mitigations. The old TWAP-leg and Pyth-keeper rows went away with the retired aggregator.
 

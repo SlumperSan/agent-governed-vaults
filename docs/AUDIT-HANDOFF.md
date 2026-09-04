@@ -15,7 +15,9 @@
 > **Phase-2 outcome (for a root-only launch):**
 > - **C-1** (empty-electorate sub-vault capture): FIXED at launch — `VaultFactory.allowSubVaults = false`
 >   ("root vaults only"); no internal fix exists, so sub-vaults are disabled and the sub-vault-only
->   Highs **H-5/H-6/H-7/H-9** are DORMANT (deferred with the feature).
+>   Highs **H-5/H-6/H-7** are DORMANT (deferred with the feature). **H-9 is FIXED IN CODE**
+>   (2026-09-01, `0e70ea69`) and is no longer deferred — it was dormant too, but the guard is
+>   unconditional and does not wait on the feature.
 > - **C-2, C-3, C-5**: FIXED. **H-1..H-4**: FIXED. **H-8**: partially fixed + config-mitigated.
 > - **C-4 → new Critical C-6.** A Phase-2 *re-verification* replaced the inferred C-4 closure with an
 >   executed end-to-end test and found **C-6**: the bespoke `OracleAggregator`'s quorum is a

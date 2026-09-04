@@ -286,10 +286,12 @@ affordable only because M-11 came first.**
 > `cd contracts && forge build --sizes`: **`VaultCore` runtime 20,650 B, margin 3,926 B** (2026-09-02; it read 20,481 / 4,095 on 2026-08-30, before #98). So the
 > sentence that followed — "at that margin, anything `VaultCore`-shaped is effectively closed,
 > which reshapes the H-5/H-6 deferral: it is now a size wall as much as a sub-vault-dormancy
-> choice" — **no longer holds. The size wall is gone; the dormancy is not.** H-5/H-6/H-9 stay
+> choice" — **no longer holds. The size wall is gone; the dormancy is not.** H-5/H-6 stay
 > deferred because `allowSubVaults = false` makes them unreachable at launch (they all require a
 > funded child — AI-AUDIT-REPORT §"Phase-2 disposition"), *not* because they will not fit. Do not
-> cite EIP-170 headroom as the reason they are open. Note also that **M-15 has since landed** and
+> cite EIP-170 headroom as the reason they are open. **H-9 was named here too and should not have
+> been:** it is fixed in code as of 2026-09-01, which this file already records fourteen lines
+> below — the two statements contradicted each other and this is the one that was wrong. Note also that **M-15 has since landed** and
 > is no longer in the unfixed set below.
 >
 > Two further rows in that table were also read wrongly by later sessions and are corrected here:

@@ -28,7 +28,9 @@ widened run went 245 → 254 results with **no new detector class**.
   `VaultCore`'s public views are read as an oracle by its *parent* mid-mutation, and a per-contract
   mutex is definitionally no defence against a different contract reading it → **H-9**. Slither does
   not model this either, so the row's reasoning and the analyser's blind spot coincide. Dormant at
-  launch under [[root-vaults-only]].
+  launch under [[root-vaults-only]], **and separately FIXED IN CODE 2026-09-01** —
+  `require(!v.locked(), Reentrancy())` in `VaultCore._fullNavWad`, unconditional, so it does not
+  depend on the sub-vault gate. See [[highs]].
 - **`timestamp`** — sound for `Governance` and `Checkpoints`, but omitted
   `UniswapV3TwapSource._observe`, the one timestamp use with a security consequence → **H-2** (since
   FIXED, and the contract itself deleted by the Chainlink-direct pivot; the omission is closed). The per-row re-triage (2026-09-01) then found a second real
