@@ -34,12 +34,13 @@ The probed vault is **soak-B**, a root vault with a single-asset basket (drill 1
 drill 3's Mode-F host). Two others were probed in the same samples: the **smoke vault**
 `0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98` (root, two-asset basket) and its **child sub-vault**
 `0xa576189710dc28958e3cb857e8ef5f530d4f54a0` (single-asset basket, `parentVault()` = the smoke
-vault). All three roles read from chain on 2026-09-04 via `parentVault()` and `basketLength()`, so
-this record is cross-referenceable against `scripts/soak/soak-vaults.json` without them. They
-returned
-`n/a-no-pending` (revert selector `0xda7557bc`), the honest result for a vault with nothing to
-cancel. Those rows are **not** counted as passes: `summarizeFreezeSafety` counts them separately
-and they can never raise `demonstrated`.
+vault). Those two returned `n/a-no-pending` (revert selector `0xda7557bc`), the honest result for a
+vault with nothing to cancel, and those rows are **not** counted as passes: `summarizeFreezeSafety`
+counts them separately and they can never raise `demonstrated`.
+
+Each role above was read from chain on 2026-09-04 via `parentVault()` and `basketLength()`, rather
+than carried over from `scripts/soak/soak-vaults.json` — which pins an address only for the smoke
+vault, so the soak-B and child labels would otherwise rest on inference.
 
 ## Why the count stops at 31 and not at 54
 
@@ -80,7 +81,7 @@ freeze-safety verdicts: {"callable":31,"n/a-no-pending":95}
 (The `n/a` count in that line is from the reduction run at `02:21Z`; the committed snapshot goes to
 `02:33Z` and so carries 131. The `callable` figure — the one the verdict turns on — is identical.)
 
-`summarizeFreezeSafety` reports `demonstrated` only when at least one sample probed a **real**
+`summarizeFreezeSafety` reports `demonstrated` only when at least one probe ROW saw a **real**
 pending deposit and none was blocked. Before this run it returned `false` for every soak: not
 because the property failed, but because nothing had ever exercised it **through this probe, on
 this deployment**. (`docs/LAUNCH-READINESS.md` records `cancelPending` as executed live in an
