@@ -567,8 +567,21 @@ re-assert on a backoff until fixed:
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
 | `FEED IDENTITY DETECTOR BLIND … did not answer description() / decimals()` | the proxy stopped answering the two reads the harm checks compare against | the asset is unmonitored for aggregator-swap drift. A feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry |
 | `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()` | the feed is not an `EACAggregatorProxy`, or both reads are failing | the harm checks (decimals, denomination) **did** run and passed; it is the swap *notice* that is blind |
+| `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket) — no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
+| `ORACLE DETECTOR BLIND … priceWad() … could not be read` | the ground-truth price read failed in transit | as above. Whether the asset is frozen is unknown, so it is not reported either way |
+| `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound — this line means the unreadable sources are what decides it |
+| `SEQUENCER GATE DETECTOR BLIND … could not be read` | the uptime feed read failed in transit | as above. It does **not** mean the sequencer gate tripped |
+| `… DETECTOR BLIND … could not be probed` / `neither probe … could be read` | both oracle-flavor probes failed in transit | which oracle is deployed is unknown; this says nothing about the oracle's ABI |
 
-**These three damp against RPC noise, and none of the others do.** Every blind branch in
+**Transport failures never become findings.** Every line in the second half of that table exists
+because an RPC failure and a contract revert both surface as a failed read, and code that treats
+"the read failed" as "the contract refused" turns a busy network into a security incident. The
+reader tags each failure `revert` or `transport` (`packages/canary/src/call-error.mjs`); only a
+`revert` can produce a verdict, and a `transport` routes here — visible, re-asserted on a backoff,
+and explicitly not evidence of a fault.
+
+**The three `FEED IDENTITY DETECTOR BLIND` lines damp against RPC noise, and none of the others
+do.** Every blind branch in
 `feed-identity` is triggered by an `eth_call` coming back empty, and one empty return is noise while
 three consecutive is the feed — so they carry `minConsecutive: 3` and only escalate on the third
 sweep. The exception is the very first sighting of an asset, which reports immediately: a monitor

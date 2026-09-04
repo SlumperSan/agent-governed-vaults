@@ -1,5 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { bandBoundsTwoDecimalDrift, compareAggregatorPin, isUsdQuoted } from '../verify-chainlink-oracle.mjs';
 
 // ---------------------------------------------------------------------------
@@ -178,4 +183,235 @@ test('a disabled or malformed band fails rather than dividing by nothing', () =>
 
 test('no live price means the band cannot be sized — fail, never silently pass', () => {
   assert.equal(bandBoundsTwoDecimalDrift(0n, 10n ** 20n, 10n ** 23n).ok, false);
+});
+
+// ---------------------------------------------------------------------------
+// TRANSPORT IS NOT A VERDICT — the whole script, end to end, against a fake `cast`.
+//
+// A failed RPC call and a contract revert both used to reach `main` as the same `null` / `'0x'`,
+// so a rate limit printed "code.length == 0", "description=null", "decimals=null",
+// "latestRoundData reverted" and "reverted / no code" — findings about a deployment nobody had
+// read — and exited 1 with "do NOT deploy the oracle". The same shape was fixed in the soak harness (#173) and the canary
+// (#179); this is the verifier's turn. The rule these tests pin: a read that fails WITHOUT a
+// confirmed revert is ERR (an un-run check, exit 2), a confirmed revert keeps its FAIL (exit 1),
+// and a FAIL is never masked by an ERR.
+//
+// The helpers under test are module-private and shell out to `cast`, so the script is run as a
+// child process with `CAST` pointed at node itself and scripts/test/fake-cast.cjs preloaded — see
+// that file for why. Every stderr wording the fake emits is one cast 1.7.1 actually printed.
+// ---------------------------------------------------------------------------
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT = path.join(HERE, '..', 'verify-chainlink-oracle.mjs');
+const FAKE_CAST = path.join(HERE, 'fake-cast.cjs').replace(/\\/g, '/');
+const SEQ = '0xBCF85224fc0756B9Fa45aA7892530B47e10b6433';
+const FEED = '0x5000000000000000000000000000000000000001';
+const LRD = 'latestRoundData()(uint80,int256,uint256,uint256,uint80)';
+const CONFIG = {
+  chainId: 8453,
+  chainlinkOracle: {
+    sequencerUptimeFeed: SEQ,
+    assets: [
+      {
+        symbol: 'WETH',
+        asset: '0x4200000000000000000000000000000000000006',
+        feed: FEED,
+        feedDescriptionOnChain: 'ETH / USD',
+        heartbeatSeconds: 1200,
+        minPriceWad: '100000000000000000000',
+        maxPriceWad: '100000000000000000000000',
+        aggregatorPin: { implementation: IMPL, phaseId: 1 },
+      },
+    ],
+  },
+};
+
+/**
+ * Run the verifier once. `fail` is the fake-cast scenario ("<sig>=<transport|revert|nocode>;…").
+ * Returns the parsed --json report (or the text report when `json` is false), the exit status, and
+ * the list of cast invocations the fake logged.
+ */
+function runVerifier({ fail = '', json = true, strict = false, cast = process.execPath } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vco-'));
+  const cfgPath = path.join(dir, 'config.json');
+  fs.writeFileSync(cfgPath, JSON.stringify(CONFIG));
+  const log = path.join(dir, 'calls.log');
+  const args = [SCRIPT, ...(json ? ['--json'] : []), ...(strict ? ['--strict'] : [])];
+  const r = spawnSync(process.execPath, args, {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CONFIG: cfgPath,
+      BASE_RPC: 'http://127.0.0.1:1', // never contacted: every cast is the fake
+      CAST: cast,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --require "${FAKE_CAST}"`.trim(),
+      FAKE_CAST_FAIL: fail,
+      FAKE_CAST_LOG: log,
+      FAKE_CAST_SEQ: SEQ,
+    },
+  });
+  assert.equal(r.error, undefined, String(r.error));
+  const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+  if (!json) return { status: r.status, text: r.stdout, calls };
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.passed + out.failed + out.errored + out.drift, out.total, 'the four counts must partition the results');
+  return { status: r.status, out, calls };
+}
+const byName = (out, re) => out.results.filter((r) => re.test(r.name));
+const details = (out) => out.results.map((r) => r.detail).join('\n');
+
+test('baseline: the fake feed passes every check and exits 0 — the harness itself is sound', () => {
+  const { status, out } = runVerifier();
+  assert.equal(status, 0, JSON.stringify(out, null, 2));
+  assert.equal(out.failed, 0);
+  assert.equal(out.errored, 0);
+  assert.equal(out.drift, 0);
+  assert.equal(out.passed, out.total);
+  assert.ok(out.total >= 14, `expected the full sweep, got ${out.total} results`);
+});
+
+test('a transport failure on description() is ERR on both description checks — never "description=null", exit 2', () => {
+  const { status, out, calls } = runVerifier({ fail: 'description()(string)=transport' });
+  assert.equal(status, 2, 'incomplete is exit 2: neither verified (0) nor failed (1)');
+  assert.equal(out.failed, 0, details(out));
+  assert.equal(out.errored, 2);
+  for (const r of byName(out, /description/)) {
+    assert.equal(r.error, true, r.name);
+    assert.equal(r.ok, false, r.name);
+    assert.match(r.detail, /no revert was observed/);
+    assert.match(r.detail, /NOT a verdict/);
+  }
+  assert.doesNotMatch(details(out), /description=null/, 'the old false finding must be gone');
+  assert.equal(calls.filter((c) => c.includes('description()(string)')).length, 2, 'a non-revert failure is retried exactly once');
+});
+
+test('a genuine revert on description() keeps its FAIL — description=null, exit 1 — and is not retried', () => {
+  const { status, out, calls } = runVerifier({ fail: 'description()(string)=revert' });
+  assert.equal(status, 1);
+  assert.equal(out.errored, 0, 'a confirmed revert is evidence, not a missing read');
+  const [usd] = byName(out, /USD-quoted/);
+  assert.equal(usd.ok, false);
+  assert.equal(usd.detail, 'description=null');
+  assert.equal(calls.filter((c) => c.includes('description()(string)')).length, 1, 'a revert is thrown on the first try');
+});
+
+test('a transport failure on latestRoundData() is ERR, names the checks that did not run, and says "reverted" nowhere', () => {
+  const { status, out } = runVerifier({ fail: `${LRD}=transport` });
+  assert.equal(status, 2);
+  assert.equal(out.failed, 0, details(out));
+  // Both the sequencer feed and the asset feed read latestRoundData; both are ERR.
+  assert.equal(out.errored, 2);
+  const [lrd] = byName(out, /WETH: latestRoundData answers/);
+  assert.equal(lrd.error, true);
+  assert.match(lrd.detail, /did not run/, 'the operator must be told the dependent checks were skipped, not just that one read failed');
+  assert.equal(byName(out, /answer > 0/).length, 0, 'the dependent checks were not scored');
+  assert.doesNotMatch(details(out), /reverted/, 'the literal "reverted" used to be printed for every failure cause');
+});
+
+test('a genuine revert on latestRoundData() still FAILs as "latestRoundData reverted", exit 1', () => {
+  const { status, out } = runVerifier({ fail: `${LRD}=revert` });
+  assert.equal(status, 1);
+  assert.equal(out.errored, 0);
+  const [lrd] = byName(out, /WETH: latestRoundData answers/);
+  assert.equal(lrd.ok, false);
+  assert.equal(lrd.detail, 'latestRoundData reverted');
+  const [seq] = byName(out, /sequencer uptime feed answers/);
+  assert.equal(seq.ok, false);
+  assert.equal(seq.detail, 'latestRoundData reverted');
+});
+
+test('a transport failure on cast code is ERR on both has-code checks — not "code.length == 0"', () => {
+  const { status, out } = runVerifier({ fail: 'code=transport' });
+  assert.equal(status, 2);
+  assert.equal(out.failed, 0, details(out));
+  assert.equal(out.errored, 2);
+  for (const r of byName(out, /has code/)) assert.equal(r.error, true, r.name);
+  assert.doesNotMatch(details(out), /== 0/, 'a feed nobody could read must not be reported as having no code');
+});
+
+test('a transport failure on decimals() is ERR on the decimals check AND on the live-price check that needs it', () => {
+  const { status, out } = runVerifier({ fail: 'decimals()(uint8)=transport' });
+  assert.equal(status, 2);
+  assert.equal(out.failed, 0, details(out));
+  assert.equal(out.errored, 2);
+  const [dec] = byName(out, /decimals == 8/);
+  assert.equal(dec.error, true);
+  // The cascade: the WAD spot is scaled from decimals(), so this used to FAIL as
+  // "could not scale the live answer to WAD" — a second false finding from the same 429.
+  const [live] = byName(out, /live price inside the band/);
+  assert.equal(live.error, true);
+  assert.match(live.detail, /band-width check .* did not run/);
+  assert.equal(byName(out, /band bounds a 2-decimal drift/).length, 0);
+  assert.doesNotMatch(details(out), /could not scale/);
+  // phaseId() goes through the same helper with a different signature and is unaffected.
+  assert.equal(byName(out, /aggregator unchanged since pin/)[0]?.ok, true);
+});
+
+test('a transport failure on BOTH pin reads is ERR, not a DRIFT notice inferring "not an EACAggregatorProxy" — even under --strict', () => {
+  for (const strict of [false, true]) {
+    const { status, out } = runVerifier({ fail: 'aggregator()(address)=transport;phaseId()(uint16)=transport', strict });
+    assert.equal(status, 2, `strict=${strict}: an un-run pin is incomplete, not a strict-mode notice failure`);
+    assert.equal(out.failed, 0, details(out));
+    assert.equal(out.drift, 0);
+    const [pin] = byName(out, /aggregator pin/);
+    assert.equal(pin.error, true);
+    assert.doesNotMatch(details(out), /not an EACAggregatorProxy/, 'two reads that never answered prove nothing about the proxy');
+  }
+});
+
+test('a transport failure on aggregator() ALONE still goes through compareAggregatorPin as a notice — phaseId can still convict', () => {
+  // Deliberately unchanged: `compareAggregatorPin` was written for a dropped `aggregator()` read
+  // (the false "SWAPPED -> now null" alarm above), and a phaseId that moved is a swap whether or
+  // not aggregator() answered. Routing a single failed read to ERR would lose that conviction.
+  const { status, out } = runVerifier({ fail: 'aggregator()(address)=transport' });
+  assert.equal(status, 0, 'a notice does not set the exit code outside --strict');
+  assert.equal(out.errored, 0);
+  const [pin] = byName(out, /aggregator pin/);
+  assert.equal(pin.drift, true);
+  assert.match(pin.detail, /NOT confirmed/);
+  assert.doesNotMatch(pin.detail, /SWAPPED/);
+});
+
+test('a missing cast binary is ERR on every check and exit 2 — the text report says it is not a verdict', () => {
+  const cast = `definitely-not-a-real-binary-${'x'.repeat(8)}`;
+  const { status, out } = runVerifier({ cast });
+  assert.equal(status, 2);
+  assert.equal(out.failed, 0);
+  assert.equal(out.passed, 0);
+  assert.ok(out.errored > 0);
+  assert.ok(out.results.every((r) => r.error === true), details(out));
+  const { text, status: textStatus } = runVerifier({ cast, json: false });
+  assert.equal(textStatus, 2);
+  assert.match(text, /could not run/);
+  assert.match(text, /NOT a verdict on the config/);
+  assert.doesNotMatch(text, /do NOT deploy/, 'that sentence is the FAIL verdict, and nothing was read');
+  assert.doesNotMatch(text, /FAIL /);
+});
+
+test('a real FAIL alongside an ERR exits 1 — an un-run check never masks a failed one', () => {
+  const { status, out } = runVerifier({ fail: 'decimals()(uint8)=revert;description()(string)=transport' });
+  assert.equal(status, 1);
+  assert.equal(out.errored, 2);
+  assert.ok(out.failed >= 1);
+  const [dec] = byName(out, /decimals == 8/);
+  assert.equal(dec.ok, false);
+  assert.equal(dec.detail, 'decimals=null');
+});
+
+test('a feed with no code: `cast code` FAILs it, and the reads that depend on it are ERR quoting cast — not "reverted"', () => {
+  // cast 1.7.1 refuses a call to a codeless address with "contract 0x… does not have any code",
+  // which the shared classifier files as 'transport' (not a confirmed revert). The finding is
+  // carried, truthfully, by the has-code check; the dependent reads say what cast said.
+  const fail = ['code', 'description()(string)', 'decimals()(uint8)', 'aggregator()(address)', 'phaseId()(uint16)', LRD]
+    .map((k) => `${k}=nocode`)
+    .join(';');
+  const { status, out } = runVerifier({ fail });
+  assert.equal(status, 1, 'a genuine finding still exits 1 even with ERRs beside it');
+  for (const r of byName(out, /has code/)) {
+    assert.equal(r.ok, false, r.name);
+    assert.equal(r.error, undefined, `${r.name} is a FAIL, not an ERR`);
+  }
+  assert.ok(out.errored >= 4);
+  for (const r of out.results.filter((x) => x.error)) assert.match(r.detail, /does not have any code/, r.name);
+  assert.doesNotMatch(details(out), /reverted/);
 });

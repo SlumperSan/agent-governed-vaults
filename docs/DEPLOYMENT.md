@@ -338,8 +338,11 @@ node scripts/verify-chainlink-oracle.mjs
 Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
 **weekly, and after any Chainlink feed announcement** — with
 `--strict`, so an aggregator swap exits non-zero instead of scrolling past as a notice nobody
-reads. Two things it catches that nothing on-chain
-can:
+reads. Read the exit code, not just "non-zero": **1** is a failed check (or, under `--strict`, a
+DRIFT notice); **2** is an incomplete run — a read failed and no revert was observed (a rate limit,
+a timeout), so the affected checks print `ERR` and were not scored. Exit 2 is not a verdict either
+way; re-run against an RPC that answers before reading anything into it. Two things it catches
+that nothing on-chain can:
 
 - **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
   configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
