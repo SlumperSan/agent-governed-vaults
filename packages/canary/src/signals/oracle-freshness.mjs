@@ -106,7 +106,7 @@ export async function checkOracleFreshness({ reader, vault, oracle, assets, nowS
     if (unreadable.length > 0 && fresh + unreadable.length >= quorum && margin <= minMargin) {
       out.push(detectorBroken({
         signal: SIGNAL, vault, key: asset,
-        message: `ORACLE FRESHNESS DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${unreadable.length}/${sources.length} price sources could not be read (${unreadable[0].reason}), so the freshness margin cannot be stated — ${fresh} sources are confirmed fresh against quorum ${quorum}, and the unreadable ones decide it either way. This asset is UNMONITORED for the staleness freeze this sweep; nothing here says the breaker tripped`,
+        message: `ORACLE FRESHNESS DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${unreadable.length}/${sources.length} price sources could not be read (${unreadable[0].reason}), so the freshness margin cannot be stated — confirmed fresh: ${fresh} of ${sources.length}, against quorum ${quorum}, and the unreadable ones decide it either way. This asset is UNMONITORED for the staleness freeze this sweep; nothing here says the breaker tripped`,
         measured: `${fresh} confirmed fresh, ${unreadable.length} unreadable`,
         threshold: `>= ${quorum} (quorum)`,
         detail,

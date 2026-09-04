@@ -110,7 +110,8 @@ function scrapedRevertData(err) {
  * Two sources, in order of how much they prove. Returndata viem handed us in a FIELD can only
  * exist if the EVM executed and reverted, so it settles the question outright — that path also
  * keeps a revert classifiable when a provider's wording matches no known pattern. Failing that,
- * the message text decides, via the classifier `scripts/soak/lib.mjs` shares.
+ * the message text decides, via `./call-error.mjs`, which `scripts/soak/lib.mjs` re-exports so the
+ * soak harness and this one cannot drift apart.
  *
  * The scraped hex is deliberately not consulted: it is the thing that made a 429 look like a
  * revert in the first place.

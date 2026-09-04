@@ -580,14 +580,19 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 `revert` can produce a verdict, and a `transport` routes here — visible, re-asserted on a backoff,
 and explicitly not evidence of a fault.
 
-**The three `FEED IDENTITY DETECTOR BLIND` lines damp against RPC noise, and none of the others
-do.** Every blind branch in
-`feed-identity` is triggered by an `eth_call` coming back empty, and one empty return is noise while
-three consecutive is the feed — so they carry `minConsecutive: 3` and only escalate on the third
-sweep. The exception is the very first sighting of an asset, which reports immediately: a monitor
-that has never once succeeded must not be indistinguishable from silence. `oracle-freshness` needs no
-such damping, because its blind branch is structural (an oracle answering an ABI it does not have),
-not a transient read.
+**`feed-identity` is the only signal that damps against RPC noise.** All four of its blind branches
+(`feed-identity.mjs:172, 204, 252, 283`) are triggered by an `eth_call` coming back empty, and one
+empty return is noise while three consecutive is the feed — so they carry
+`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:94`) and only escalate on the third sweep.
+The exception is the very first sighting of an asset, which reports immediately: a monitor that has
+never once succeeded must not be indistinguishable from silence.
+
+Do not read that count off the table, because rows and branches do not correspond one to one: only
+two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds two
+lines that behave differently — `feed-identity`'s “could not be probed” damps, `oracle-health`'s
+“neither probe … could be read” does not. **Every other blind line re-asserts from the first
+sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
+branches set no `minConsecutive` at all.
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never
