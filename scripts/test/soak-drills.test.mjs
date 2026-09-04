@@ -176,18 +176,43 @@ test('freezeSafetyReport names the ACTUAL unmeasured kind, never a hardcoded one
   const lines = freezeSafetyReport({
     verdicts: { unreadable: 3 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 3,
   }).join('\n');
-  assert.match(lines, /3 sample\(s\) carry unreadable/);
+  assert.match(lines, /3 sample\(s\) yielded NO MEASUREMENT \(unreadable\)/);
   assert.doesNotMatch(lines, /not-configured|not-probed/, 'names a cause that is not present');
   assert.doesNotMatch(lines, /probe did not run|never probed at all/i, 'the call WAS attempted');
   assert.match(lines, /transport failed/, 'must say what unreadable actually means');
   assert.doesNotMatch(lines, /SOAK_VAULTS/, 'no sampler config fixes a rate limit');
 });
 
+test('freezeSafetyReport reports the n/a remedy even when one unmeasured sample is present', () => {
+  // The branches used to be exclusive, so a SINGLE transport blip in an otherwise all-`n/a`
+  // window suppressed the only remedy that would have helped. One blip over six hours at N vaults
+  // every 120 s is near-certain, so this is the dominant shape, not a corner.
+  const lines = freezeSafetyReport({
+    verdicts: { 'n/a-no-pending': 19, unreadable: 1 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 1,
+  }).join('\n');
+  assert.match(lines, /1 sample\(s\) yielded NO MEASUREMENT \(unreadable\)/);
+  assert.match(lines, /19 sample\(s\) were probed and found NO PENDING DEPOSIT/);
+  assert.match(lines, /4h observation window/, 'the remedy that would actually help must survive');
+  assert.match(lines, /less rate-limited RPC/, 'and so must the one for the blip');
+});
+
+test('freezeSafetyReport does not claim "n/a" about a series with NO probe rows at all', () => {
+  // The pre-fix sampler emitted `freezeSafety: []` every sample, so the reducer sees nothing.
+  // Reporting that as "every sample was n/a-no-pending" is the exact misattribution this whole
+  // change exists to remove — and it was still being printed for precisely this input.
+  const lines = freezeSafetyReport({
+    verdicts: {}, probedWithPending: 0, oracleBlocked: 0, unmeasured: 0,
+  }).join('\n');
+  assert.match(lines, /NO freeze-safety rows at all/);
+  assert.doesNotMatch(lines, /n\/a-no-pending/, 'must not describe absent rows as n/a rows');
+  assert.match(lines, /mapping over an empty list/, 'name the actual mechanism');
+});
+
 test('freezeSafetyReport still names configuration when THAT is the cause', () => {
   const lines = freezeSafetyReport({
     verdicts: { 'not-configured': 2 }, probedWithPending: 0, oracleBlocked: 0, unmeasured: 2,
   }).join('\n');
-  assert.match(lines, /2 sample\(s\) carry not-configured/);
+  assert.match(lines, /2 sample\(s\) yielded NO MEASUREMENT \(not-configured\)/);
   assert.match(lines, /SOAK_VAULTS/, 'the config remedy belongs on the config cause');
   assert.doesNotMatch(lines, /transport failed/);
 });

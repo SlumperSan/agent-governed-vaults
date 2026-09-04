@@ -233,29 +233,48 @@ export function freezeSafetyReport(freeze) {
     return out;
   }
 
-  if (freeze.probedWithPending === 0 && unmeasured > 0) {
-    out.push(`  cancelPending produced NO USABLE MEASUREMENT: ${unmeasured} sample(s) carry ${named}.`);
-    out.push('  This is MISSING EVIDENCE, not a passing check and not an on-chain finding.');
-    if (ranButUnreadable) {
-      out.push('  `unreadable` means the static call WAS attempted and the transport failed (rate limit,');
-      out.push('  timeout, unreachable RPC) — not a contract verdict, and not something the sampler');
-      out.push('  configuration can fix. TO FIX: use a less rate-limited RPC and re-run.');
-    }
-    if (kinds.some((k) => k !== 'unreadable')) {
-      out.push('  `not-configured`/`not-probed` mean the probe never ran. TO FIX: the sampler resolves its');
-      out.push('  vault set from SOAK_VAULTS, else from the indexer projection. An empty result means the');
-      out.push('  indexer had projected no vaults yet (start the sampler after it catches up), or');
-      out.push('  SOAK_PROBE_MEMBER was unset. The per-sample `reason` field names which.');
-    }
-    return out;
-  }
-
   if (freeze.probedWithPending === 0) {
-    out.push('  cancelPending was never probed against a REAL pending deposit (every sample was n/a-no-pending),');
-    out.push('  so freeze safety is NOT demonstrated by this run — it is merely un-contradicted.');
-    out.push('  TO FIX: the sampler must run DURING a 4h observation window, with SOAK_PROBE_MEMBER set');
-    out.push('  to the depositor. Drills 1, 2 and 5 each open one — that is the window in which a pending');
-    out.push('  deposit actually exists to cancel. Restart oracle-sampler.mjs right after a deposit lands.');
+    // EVERY cause present gets named, and every remedy that applies gets printed. These were
+    // mutually exclusive branches, which meant one `unreadable` sample in an otherwise all-`n/a`
+    // window suppressed the `n/a` remedy entirely — and the `n/a` remedy is the one that would
+    // actually help, since a better RPC does not conjure a pending deposit. That is the dominant
+    // real shape (the run this was written for was all-`n/a`, and one transport blip over six
+    // hours at N vaults every 120 s is near-certain), so exclusivity was the wrong structure.
+    const nA = freeze.verdicts?.['n/a-no-pending'] ?? 0;
+    out.push('  cancelPending was never observed against a REAL pending deposit, so freeze safety is');
+    out.push('  NOT demonstrated by this run. Nothing here is a passing check or an on-chain finding.');
+
+    if (unmeasured > 0) {
+      out.push(`  ${unmeasured} sample(s) yielded NO MEASUREMENT (${named}):`);
+      if (ranButUnreadable) {
+        out.push('    `unreadable` — the static call WAS attempted and the transport failed (rate limit,');
+        out.push('    timeout, unreachable RPC). Not a contract verdict, and not something the sampler');
+        out.push('    configuration can fix. TO FIX: use a less rate-limited RPC and re-run.');
+      }
+      if (kinds.some((k) => k !== 'unreadable')) {
+        out.push('    `not-configured`/`not-probed` — the probe never ran. TO FIX: the sampler resolves its');
+        out.push('    vault set from SOAK_VAULTS, else from the indexer projection. An empty result means');
+        out.push('    the indexer had projected no vaults yet (start the sampler after it catches up), or');
+        out.push('    SOAK_PROBE_MEMBER was unset. The per-sample `reason` field names which.');
+      }
+    }
+
+    if (nA > 0) {
+      out.push(`  ${nA} sample(s) were probed and found NO PENDING DEPOSIT to cancel, so they prove`);
+      out.push('  nothing either way. TO FIX: the sampler must run DURING a 4h observation window, with');
+      out.push('  SOAK_PROBE_MEMBER set to the depositor. Drills 1, 2 and 5 each open one — that is the');
+      out.push('  window in which a pending deposit actually exists to cancel.');
+    }
+
+    if (unmeasured === 0 && nA === 0) {
+      // The pre-fix sampler's signature: `freezeSafety: []` on every sample, so the reducer sees
+      // no rows at all. Saying "every sample was n/a-no-pending" about THIS is the exact lie that
+      // let the leg sit inert for a whole run — and it was still being printed for this input.
+      out.push('  The series carries NO freeze-safety rows at all — not a single probe was recorded.');
+      out.push('  That is the signature of a sampler running without a resolved vault set (the pre-fix');
+      out.push('  behaviour: mapping over an empty list yields no rows and no error). Re-run the soak');
+      out.push('  with a sampler that discovers its vaults, and this section will have data to reduce.');
+    }
     return out;
   }
 

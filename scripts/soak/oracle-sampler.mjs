@@ -152,10 +152,10 @@ export const SEL_STALE_ORACLE = '0xa2671f4b';
 export const SEL_NO_PENDING = '0xda7557bc';
 
 /**
- * Classify a `cancelPending()` static call into a TRI-STATE verdict.
+ * Classify a `cancelPending()` static call into a FOUR-STATE verdict.
  *
- * This is the evidence drill 4 turns on, so "it reverted" is not good enough — the call reverts
- * for two entirely different reasons and only one of them is a finding:
+ * This is the evidence drill 4 turns on, so "it failed" is not good enough — the call can fail for
+ * three entirely different reasons and only one of them is a finding:
  *
  *   'callable'        the escrow-return path is open. THIS is the freeze-safety property.
  *   'n/a-no-pending'  reverted NoPending(): there is no pending deposit for this member to
