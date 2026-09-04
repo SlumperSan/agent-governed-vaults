@@ -34,6 +34,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PROPOSAL_SIG, decodeProposal } from './lib/proposal-decode.mjs';
 import { classifyProposal } from './proposal-recovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -197,10 +198,10 @@ const T_VAULT_CREATED = keccakOf('VaultCreated(address,address,address,uint256)'
 const T_REBALANCE_EXECUTED = keccakOf('RebalanceExecuted(address,uint256)');
 const T_EXIT_SETTLED = keccakOf('ExitSettled(address,uint256,uint256,uint256,uint256)');
 
-const PROPOSAL_SIG = 'proposals(uint256)(address,uint8,address,uint64,uint64,uint64,uint64,uint64,uint8,bytes32,uint256,uint256,uint256,uint256,uint256,uint256)';
-const P_COMMIT_DEADLINE = 4, P_REVEAL_DEADLINE = 5, P_EXPIRES_AT = 7, P_STATUS = 8;
-const P_REVEALED_VOTER_COUNT = 15;
-const STATUS = ['None', 'Active', 'Passed', 'Defeated', 'Executed', 'Expired'];
+// PROPOSAL_SIG, the tuple index map and the Status enum now live in ./lib/proposal-decode.mjs,
+// which is pure and therefore reachable by scripts/test/proposal-decode.test.mjs. This file
+// executes its whole lifecycle at import, so while the decode lived here no test could run it
+// (issue #196).
 
 // ────────────────────────────────── phases ──────────────────────────────────
 
@@ -324,9 +325,9 @@ function stepPropose() {
   const pid = callU(dep.governance, 'activeProposalOf(address)(uint256)', state.vault);
   assert(pid > 0n, 'no active proposal after propose');
   state.pid = pid.toString();
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  state.commitDeadline = Number(p[P_COMMIT_DEADLINE]);
-  state.revealDeadline = Number(p[P_REVEAL_DEADLINE]);
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  state.commitDeadline = p.commitDeadline;
+  state.revealDeadline = p.revealDeadline;
   log(`proposal ${state.pid}: commit until ${state.commitDeadline}, reveal until ${state.revealDeadline}`);
   state.steps.propose = { done: true, tx: r.transactionHash };
   save();
@@ -356,10 +357,10 @@ async function stepReveal() {
 async function stepFinalize() {
   await waitUntilChainTime(state.revealDeadline, 'reveal phase end (1h)');
   const r = send('governance.finalize', dep.governance, 'finalize(uint256)', state.pid);
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  const status = STATUS[Number(p[P_STATUS])];
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  const status = p.status;
   assert(status === 'Passed', `proposal finalized as ${status}, expected Passed (signer-regime quorum: 1 of 1 members revealed FOR)`);
-  state.expiresAt = Number(p[P_EXPIRES_AT]);
+  state.expiresAt = p.expiresAt;
   log(`proposal Passed; executable now (timelock 0), window closes at ${state.expiresAt}`);
   state.steps.finalize = { done: true, tx: r.transactionHash };
   save();
@@ -413,16 +414,16 @@ function stepExit() {
  */
 function recoverStrandedProposal() {
   if (!state.pid || state.steps.execute?.done) return;
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  const status = STATUS[Number(p[P_STATUS])];
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  const status = p.status;
   const now = chainNow();
 
   const { stranded, action, reason } = classifyProposal({
     status,
     now,
-    expiresAt: Number(p[P_EXPIRES_AT]),
-    revealDeadline: Number(p[P_REVEAL_DEADLINE]),
-    revealedVoterCount: Number(p[P_REVEALED_VOTER_COUNT]),
+    expiresAt: p.expiresAt,
+    revealDeadline: p.revealDeadline,
+    revealedVoterCount: p.revealedVoterCount,
   });
   if (!stranded) return;
 
