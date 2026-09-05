@@ -143,9 +143,12 @@ export { classifyCallError };
 /**
  * Is a paid-perception agent permanently blind, and if so what should the operator be told?
  *
- * The reference agent perceives through PAID x402 reads. Once its session spend cap is exhausted
- * it can no longer read the vault list or the leaderboard, so it reports "perception gaps" and
- * "no action warranted" on every subsequent tick — forever. No later tick can satisfy the goal.
+ * The reference agent perceives through PAID x402 reads. Once its session spend cap can no longer
+ * fund one, it can no longer read the vault list or the leaderboard, so it reports "perception
+ * gaps" and "no action warranted" on every subsequent tick — forever. No later tick can satisfy
+ * the goal. "Can no longer fund one" is not the same as "spent to zero": the budget refuses a read
+ * when `spent + price > cap`, so a positive remainder smaller than the next read's price is
+ * already terminal.
  *
  * On 2026-09-04 drill 5 hit the cap at tick 5 of 40 and then polled a blind agent for the
  * remaining 35 ticks — 17.5 minutes — before failing with "vote:commit: not satisfied after 40
@@ -154,6 +157,11 @@ export { classifyCallError };
  *
  * Pure, and in lib.mjs rather than in the drill, because the drill executes at import and so
  * anything defined there cannot be tested.
+ *
+ * The NAME is narrower than the predicate — it also fires below exhaustion, on the
+ * cannot-fund-one-more case above. Kept because renaming it touches sixteen occurrences across
+ * this file, drill5-agent-execute.mjs and soak-drills.test.mjs, which is a different change from
+ * this one; the JSDoc and the message it returns both state the wider rule.
  *
  * @param {{enabled:boolean,spentUsdc:string,capUsdc:string,remainingUsdc:string,paidReads:number}|undefined} spend
  * @param {number} tick 1-based tick just completed
@@ -170,15 +178,24 @@ export function budgetExhaustedFailure(spend, tick, maxTicks, label) {
   // the misleading failure this function exists to replace; the 2026-09-04 run landed on exactly
   // zero only because its reads happened to divide the cap evenly.
   //
-  // The average price paid so far is the best floor available from `summary()` — it exposes no
-  // per-read price — and it is the right shape: if what remains cannot buy an average read, the
-  // next perception is already refused.
+  // THE THRESHOLD IS A MEAN, NOT A BOUND. `summary()` exposes no per-read price, so the only
+  // price this can compute is `spentUsdc / paidReads` — the average of the reads already paid
+  // for. An average is not a floor on the next read's price, and it is wrong in both directions:
+  // if the next read is cheaper than the mean, this aborts a run that could still have perceived;
+  // if it is dearer and `remaining >= avgRead`, this keeps polling an agent that is already
+  // blind. Erring toward the early abort is the deliberate choice, because that direction names
+  // the cause, while waiting produces the governance-shaped failure this function exists to
+  // replace.
   const remaining = Number(spend.remainingUsdc);
   const avgRead = spend.paidReads > 0 ? Number(spend.spentUsdc) / spend.paidReads : 0;
   if (remaining > 0 && !(avgRead > 0 && remaining < avgRead)) return null;
 
   const perTick = Number(spend.spentUsdc) / Math.max(tick, 1);
-  return `${label}: the agent exhausted its x402 session spend cap at tick ${tick}/${maxTicks} `
+  // "can no longer fund" rather than "exhausted": this fires on a zero remainder AND on a
+  // positive remainder too small to buy one average read, and only the first of those is
+  // exhaustion. The parenthetical prints the remainder, so the operator sees which case it is.
+  return `${label}: the agent can no longer fund an x402 read from its session spend cap at `
+    + `tick ${tick}/${maxTicks} `
     + `($${spend.spentUsdc} of $${spend.capUsdc} spent, $${spend.remainingUsdc} left, `
     + `${spend.paidReads} paid reads averaging $${avgRead.toFixed(3)}). It perceives through `
     + `paid reads, so from here it is BLIND and no further tick can satisfy the goal — this is a `
@@ -386,18 +403,36 @@ export const PTYPE = { Rebalance: 0, RuleChange: 1, ChildAllocation: 2 };
  * "vote:commit: not satisfied after 40 ticks", a GOVERNANCE-shaped message for a
  * NO-VOTABLE-PROPOSAL cause. The guard was not too weak; it asked the wrong question.
  *
- * Four conjuncts, and the fourth is not theoretical: proposal 3 was raised BEFORE the agent
- * activated, so the agent's snapshot weight reads zero and `commitVote` would revert `NoWeight`.
- * A predicate that checked only status and deadline would attach to it and reproduce the same
- * forty-tick stall wearing a different costume.
+ * Five conjuncts, and the last two are not theoretical: proposal 3 was raised BEFORE the agent
+ * activated, so the agent's snapshot weight reads zero and `commitVote` would revert `NoWeight`;
+ * and drill 5 queues an exit in its own next phase, so a re-run reaches a state where the
+ * snapshot weight is positive and the CURRENT weight is zero. A predicate that checked only
+ * status and deadline would attach to either and reproduce the same forty-tick stall wearing a
+ * different costume.
  *
  * Pure so it can be tested: the drill executes at import, so a predicate defined there could not be.
  *
+ * BOTH WEIGHT TERMS, TESTED SEPARATELY. `commitVote` (Governance.sol:365) gates on
+ * `_boundedWeight` (Governance.sol:352-356), which is `min(pastVotingEligibleShares(member,
+ * createdAt-1), votingEligibleShares(member))`. For the verdict, "either term is zero" and
+ * "the minimum is zero" are the same test — but they are not the same EXPLANATION, so the two
+ * terms are taken as separate arguments and checked one at a time. A voter who has queued an
+ * exit has snapshot weight and zero current weight, because `votingEligibleShares` is
+ * `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028); handed only the already-minimised
+ * weight, this function cannot tell that apart from "the proposal predates this account" and
+ * would state the wrong cause with full confidence. BOTH terms are REQUIRED, not defaulted: a
+ * caller that omits either gets a refusal naming the missing one, never a silent fallback to a
+ * one-term story. `undefined <= 0n` is `false`, so a missing term left unchecked would skip its
+ * branch and be read as a healthy weight — the fail-OPEN direction, and the reason the null test
+ * is separate from the zero test rather than folded into it.
+ *
  * @param {{status: string, ptype: number, commitDeadline: number}} p a `readProposal` result
- * @param {{now: number, snapshotWeight: bigint, wantPtype?: number}} ctx
+ * @param {{now: number, snapshotWeight: bigint, currentWeight: bigint, wantPtype?: number}} ctx
+ *   `snapshotWeight` is `pastVotingEligibleShares(voter, createdAt-1)` and `currentWeight` is
+ *   `votingEligibleShares(voter)` — the two terms unbounded, not their minimum.
  * @returns {{votable: boolean, reason: string}} reason is '' when votable
  */
-export function votableNow(p, { now, snapshotWeight, wantPtype }) {
+export function votableNow(p, { now, snapshotWeight, currentWeight, wantPtype }) {
   if (!p) return { votable: false, reason: 'no proposal was read' };
   if (p.status !== 'Active') {
     return { votable: false, reason: `status is ${p.status}, not Active — activeProposalOf still names it because Governance never clears that mapping on settlement` };
@@ -409,15 +444,36 @@ export function votableNow(p, { now, snapshotWeight, wantPtype }) {
   if (wantPtype != null && p.ptype !== wantPtype) {
     return { votable: false, reason: `ptype is ${p.ptype}, not the expected ${wantPtype}` };
   }
+  if (snapshotWeight == null || currentWeight == null) {
+    const missing = snapshotWeight == null
+      ? (currentWeight == null ? 'snapshotWeight and currentWeight were' : 'snapshotWeight was')
+      : 'currentWeight was';
+    return { votable: false, reason: `${missing} not supplied — commitVote gates on min(snapshot, current) (Governance.sol:352-356, :365), so a one-term answer cannot be given` };
+  }
   if (snapshotWeight <= 0n) {
     return { votable: false, reason: 'the voter had zero voting-eligible stake at the proposal\'s snapshot — it was raised before this account held shares, so commitVote would revert NoWeight' };
+  }
+  if (currentWeight <= 0n) {
+    return { votable: false, reason: `the voter holds no voting-eligible shares NOW (snapshot weight ${snapshotWeight}, current ${currentWeight}) — votingEligibleShares returns 0 for the parent vault and otherwise sharesOf minus queuedExitShares (VaultCore.sol:1026-1027), so a queued exit zeroes it, and commitVote gates on min(snapshot, current) (Governance.sol:352-356) and would revert NoWeight` };
   }
   return { votable: true, reason: '' };
 }
 
-/** Read a proposal into a named object. */
-export function readProposal(governance, pid) {
-  const p = call(governance, PROPOSAL_SIG, pid);
+/**
+ * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
+ *
+ * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through
+ * `call()`, i.e. a live `cast` subprocess, so nothing in the suite could reach this arithmetic:
+ * `status` is `STATUS[Number(p[P.STATUS])]`, and `votableNow` compares that string against
+ * `'Active'`. Respell an entry in `STATUS`, or shift one index in `P`, and `votableNow` rejects
+ * every proposal for a reason it states confidently and wrongly, while the whole suite stays
+ * green — the same silent-failure shape PR #177 closed for the budget guard (issue #178).
+ *
+ * @param {string[]} p one decoded `cast call` output line per tuple member, in `P` order —
+ *   exactly what `call()` returns (its `.map(clean)` has already run)
+ * @returns {object} the named proposal, with `raw` carrying the input lines unchanged
+ */
+export function decodeProposal(p) {
   return {
     raw: p,
     vault: p[P.VAULT], ptype: Number(p[P.PTYPE]), proposer: p[P.PROPOSER],
@@ -430,6 +486,11 @@ export function readProposal(governance, pid) {
     revealedWeight: BigInt(p[P.REVEALED_WEIGHT]),
     revealedVoterCount: Number(p[P.REVEALED_VOTER_COUNT]),
   };
+}
+
+/** Read a proposal into a named object. The decode is `decodeProposal`; this adds only the call. */
+export function readProposal(governance, pid) {
+  return decodeProposal(call(governance, PROPOSAL_SIG, pid));
 }
 
 /** Event topics, computed from the Solidity signatures rather than hardcoded. */
