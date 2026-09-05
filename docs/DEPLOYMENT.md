@@ -63,10 +63,10 @@ uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-appro
 `scripts/test/config-doc-truth.test.mjs` pins both the emptiness and that behaviour so the note
 cannot drift from the code.
 
-Two further questions in it are the owner's, and are left open rather than answered: which
-`minDepositUsdc` vault #1 takes (the file reproduces `base-mainnet.json`'s 100-unit value verbatim,
-while the owner's vault-1 decision records 0.01), and how much USDG the creator Safe holds before
-the first deposit. Supplying a config is not a substitute for the rest of this runbook.
+Two further questions in it were the owner's, and the owner answered both on 2026-09-05: vault #1
+takes the file's 100-unit `minDepositUsdc` (100 USDG, superseding the 0.01 figure an earlier vault-1
+note recorded), and the creator Safe holds 100 USDG for the first deposit. Supplying a config is
+not a substitute for the rest of this runbook.
 
 ### The chain-4663 deployment, and where it is recorded (2026-09-05)
 
@@ -223,8 +223,9 @@ rather than tuned here.
 
 **Two things this exemption does not do.** It does not change any other chain: `DeployChainlinkOracle`
 still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
-by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it does
-not make a 4663 deploy actionable.
+by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it did
+not, by itself, make a 4663 deploy actionable: the deploy happened on 2026-09-05 and is recorded in
+the Robinhood Chain mainnet section below.
 
 A config for that chain does now exist — #209 landed
 [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
@@ -242,21 +243,24 @@ chain 4663 by read-only JSON-RPC on 2026-09-04 (`chainlinkOracle.verifiedOnChain
 is empty there under this same exemption, and `chainlinkOracle.verification` says the verifier passes
 that row only once 4663 is on its exempt allowlist — which is what this change adds.
 
-Four things remain blocking, and none of them is in this change's gift:
+Four things were blocking when this section was written, and none of them was in that change's
+gift. Two have since closed and two remain:
 
-- **There is no deployment record.** `contracts/config/deployments/` holds `base-sepolia.json` and
-  nothing else. No contract from this repository exists on chain 4663, or on any mainnet.
-- **The funding and one immutable launch parameter are still open owner questions,** both already
-  recorded in §0 above: how much USDG the creator Safe (`creator` `0xC73B…AD4c`) holds before the
-  first deposit, and which `minDepositUsdc` vault #1 takes — the config reproduces
-  `base-mainnet.json`'s 100-unit value verbatim while the owner's vault-1 decision records 0.01, and
-  the field is immutable once `createVault` has run.
-- **The owner has to broadcast it.** §1 step 2 and §2 both need a funded key and `--broadcast`,
-  which `docs/SWARM.md` §10 places outside an agent's authority entirely.
+- **The deployment record now exists.** `contracts/config/deployments/` holds `base-sepolia.json`
+  and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
+  (the Robinhood Chain mainnet section below), and no contract from this repository exists on any
+  other mainnet.
+- **The funding and one immutable launch parameter are decided but not yet executed,** both
+  recorded in §0 above: the creator Safe (`creator` `0xC73B…AD4c`) holds 100 USDG for the first
+  deposit, and vault #1 takes the config's 100-unit `minDepositUsdc` (the owner's decision of
+  2026-09-05). The field is immutable once `createVault` has run, and vault #1 has not been created.
+- **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
+  `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
+  ran both scripts, and the record was written from on-chain readback afterwards.
 - **The public claims still say the opposite.** All eight pages of `apps/site` carry the status
   line *"Not deployed to mainnet."*, and [LAUNCH-READINESS.md](LAUNCH-READINESS.md) opens
-  **VERDICT: NO-GO**. A 4663 deploy falsifies the first the moment it lands and has to be argued
-  against the second, so it wants its own reviewed change rather than arriving as a side effect of
+  **VERDICT: NO-GO**. The 4663 deploy falsified the first the moment it landed and has to be argued
+  against the second, so the claims flip is its own reviewed change rather than a side effect of
   this one.
 
 `verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
