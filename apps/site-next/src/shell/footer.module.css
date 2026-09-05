@@ -89,10 +89,23 @@
    happens that" is not a contrast guarantee. It is a fact about the current crop
    that changes the first time somebody adjusts `object-position`, and it would
    change silently. So the left third is taken to opaque --ground by a horizontal
-   gradient, which makes the ratio under every word exactly the 8.62:1 that
-   tokens.css records for --muted on --ground, by construction rather than by
-   coincidence. The figure is at about 65% across and the gradient is clear by
-   62%, so the picture loses nothing.
+   gradient. The figure is at about 65% across and the gradient is clear by 62%,
+   so the picture loses nothing.
+
+   AND THE RESULT IS MEASURED RATHER THAN ARGUED, because a ratio asserted in a
+   comment is exactly the kind of claim this repository does not accept anywhere
+   else. The method, which is repeatable: render the page, scroll the footer into
+   view, take the union rectangle of the two --muted runs (the tagline and the
+   licence line), hide the text layer, photograph that rectangle, and read back
+   the BRIGHTEST pixel in it. That is the worst ground any word actually sits on,
+   with both gradients and the plate already composited by the browser.
+
+   Taken on 2026-09-05 at 1440, 785 and 375: the brightest pixel behind the type
+   is (7, 7, 11) at all three widths, which is --ground exactly. So --muted
+   measures 8.62:1 and --ink 16.82:1 under every word, the figures tokens.css
+   records for those two on --ground, and this site's 7:1 body floor is cleared
+   with room. Re-run the measurement rather than trusting these numbers if the
+   crop, the gradient stops or the plate ever change.
 
    The two gradients are layered on one element in one declaration, the
    horizontal one on top, so there is no third box to keep in sync. */
