@@ -39,6 +39,10 @@ off-chain access. **Launch verdict:** NO-GO — for OPERATIONAL reasons only (th
 - [[root-vaults-only]] · [[chainlink-direct-pivot]] · [[build-vs-buy]] · [[auto-merge]] ·
   [[delegatecall-split-rejected]] · [[continuous-autonomous-mode]]
 
+### Operator policy — [[agent-policy-vault-1]]
+- [[agent-policy-vault-1]] (vault #1's published deterministic rebalance policy) ·
+  [[agent-policy-log]] (the proposal pre-image log it requires)
+
 ### State & Roadmap — [[current-state]]
 - [[remediation-history]] · [[open-items]] · [[prs-and-issues]] · [[go-to-market-plan]]
 
