@@ -52,25 +52,22 @@ when a real design system lands, **replace `assets/tokens.css` wholesale** and c
   `:root[data-theme="dark"]`. The last two are duplicates on purpose — edit both or the forced-dark
   path silently drifts.
 
-## Nothing here goes public before counsel review
+## Every claim here is the owner's call, and the test is what enforces it
 
-The launch constraint on this project is legal, not engineering. Every load-bearing legal or factual
-claim on these pages carries an HTML comment on its own line:
+The launch constraint on this project is legal, not engineering, and that has not changed. What
+changed on 2026-09-04 is how it is recorded. The owner's decision, verbatim: *"The audit counsel is
+now becoming an issue with repetitiveness. Remove them entirely so that we can work faster."*
 
-```html
-<!-- COUNSEL: <one-line description of the claim needing sign-off> -->
-```
+Eighty HTML review markers used to sit beside the load-bearing claims on these pages, one per
+claim, as a grep-able queue. They are deleted, the rendered prose of every page was byte-identical
+before and after, and `test/site.test.mjs` now reds if the string comes back anywhere under
+`apps/site`.
 
-**Those markers are the review queue.** Grep them to generate the list:
-
-```
-grep -rn "COUNSEL:" apps/site/*.html
-```
-
-The wording of each marker is self-explanatory out of context, because it is read in a list and not
-next to the sentence it describes. If you add a claim about custody, fees, deployment status,
-jurisdiction, the security review, the operator's obligations, or what a depositor's position is,
-add a marker with it.
+**The obligation they carried did not go with them.** A claim about custody, fees, deployment
+status, jurisdiction, the security review, the operator's obligations or what a depositor's
+position is must still be literally true against the contracts. Establish that by opening the
+function and citing `file:line`, never by paraphrasing another document that says it. The checks
+below are what stop a claim that is not; the owner is who decides.
 
 ## The claims test is what stops a banned claim from shipping
 
@@ -82,7 +79,7 @@ has no compiler; that file is the compiler. It asserts, across all seven pages:
   The same list is applied to this README and to both stylesheets, not only to the seven pages.
 - **Presence** of the two exact pre-launch banner strings and the two exact footer strings, exactly
   one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
-  ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
+  ending in ` — Agent-Governed Vaults`, and no surviving review marker anywhere under `apps/site`.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
   checks against `fonts.googleapis.com` and `fonts.gstatic.com`. Exactly one exemption:

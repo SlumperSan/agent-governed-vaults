@@ -38,10 +38,16 @@ paragraph will say so when it is true.
 - The operator capital obligation sentence (2,500 USDC, 5%, both mechanisms named).
 - Every occurrence of the word **deployed** must sit inside a sentence that negates it. No page may
   imply a live mainnet deployment.
-- At least one `<!-- COUNSEL: … -->` marker per page. Keep them; they are the review record.
-
 If two pages carried a passage byte-identically before your edit, they must carry it byte-identically
-after. A COUNSEL-marked passage rendered two ways is a rejection.
+after. A pinned passage rendered two ways is a rejection.
+
+**The per-claim review markers are gone and must not come back.** Owner decision, 2026-09-04: *"The
+audit counsel is now becoming an issue with repetitiveness. Remove them entirely so that we can work
+faster."* Eighty HTML comments annotating individual claims were deleted from the seven pages — the
+rendered prose was byte-identical before and after — and `apps/site/test/site.test.mjs` reds on the
+marker string anywhere under `apps/site`. Do not reintroduce a per-claim annotation scheme in any
+spelling. Everything else in this file still binds: the truth obligation was in the guards, never in
+the comments, and the owner is who decides a claim.
 
 ## Banned shapes (the guard matches SHAPE, not phrasing)
 

@@ -117,7 +117,7 @@ before relying on it.
 | `OracleAggregator.sol` | ~140 | median + staleness breaker | **Critical** — prices everything |
 | `oracle/UniswapV3TwapSource.sol` | ~370 | spot-TWAP `IPriceSource` (SF-1 mechanism class 2); one- or two-hop, USDC pinned to $1 | **Critical** — feeds the aggregator. Added POST-FREEZE (Sprint 11, PR #25): one internal adversarial review round, no prior external eyes — the least-scrutinized contracts here |
 | `oracle/PythSource.sol` | ~150 | pull-oracle `IPriceSource` (class 3); expo→WAD, confidence gate | **Critical** — same provenance and caveat as above |
-| `oracle/vendor/` (TickMath, FullMath) | ~170 | vendored Uniswap math under original licenses (GPL-2.0-or-later / MIT) | High — vendored; license mix vs BUSL is flagged for counsel, not for the technical audit |
+| `oracle/vendor/` (TickMath, FullMath) | ~170 | vendored Uniswap math under original licenses (GPL-2.0-or-later / MIT) | High — vendored; the license mix against BUSL is an owner decision, not a question for the technical audit |
 | `AggregationRouterAdapter.sol` | ~80 | DEX-aggregation execution | High — external calls |
 | `SubVaultRegistry.sol` | ~100 | edges, depth, fee-stack caps | Medium |
 | `VaultFactory.sol` | ~120 | permissionless deploy + attestation | Medium |

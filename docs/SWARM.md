@@ -106,7 +106,7 @@ Route an artifact through the departments that can actually falsify it:
 
 | Artifact | Must be checked by | For what |
 |---|---|---|
-| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim needing counsel sign-off |
+| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim that turns on a legal question — **the owner decides those**, per the 2026-09-04 decision that retired the per-claim review-marker workflow |
 | Anything claiming a capability | **Development** | does the feature exist, on which network, and is it in the launch scope |
 | Anything with a number in it | **Finance** | is the number derived from the code, or asserted |
 | Anything promising a response | **Operations** | can a one-to-two person rotation actually honour it |

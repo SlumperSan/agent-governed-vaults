@@ -27,7 +27,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -113,12 +113,18 @@ const BANNED_OUTSIDE_FOOTER = [/\bairdrop\b/i, /\bpresale\b/i, /\bopen source\b/
  */
 const PERMITTED = [
   // "guarantee" -- the geofencing sentence in every footer and in three page bodies, the hero
-  // lede's unhedged no-outcome sentence, and two statements of the invariant/parameter split.
+  // lede's unhedged no-outcome sentence, and the invariant/parameter split on how-it-works.
+  //
+  // TWO ENTRIES WERE DELETED HERE ON 2026-09-04, and the deletion is the point rather than
+  // collateral. `may be presented anywhere as a protocol-level guarantee` and `described as a
+  // guarantee of anything` were exemptions for text that existed ONLY inside the review-marker
+  // comments -- how-it-works.html and operators.html respectively -- so when the eighty markers
+  // went, both became standing exemptions covering nothing. The "every permitted negation is
+  // actually in use" test below caught them on the first run and named the remedy it was written
+  // for: delete the entry, do not leave a blanket hole for a banned word to walk through later.
   'a good-faith measure and not a guarantee',
   'no guarantee of any outcome',
   'treating a parameter as a guarantee is how people get hurt',
-  'may be presented anywhere as a protocol-level guarantee',
-  'described as a guarantee of anything',
   // "sign up" -- both occurrences deny that there is anything to sign up for.
   'There is nothing to sign up for.',
   'nothing on this site to sign up for',
@@ -268,10 +274,61 @@ test('the skip link is the first focusable element on every page', () => {
   }
 });
 
-test('every page carries at least one COUNSEL marker', () => {
-  for (const p of PAGES) {
-    const n = (raw.get(p) ?? '').split('<!-- COUNSEL:').length - 1;
-    assert.ok(n >= 1, `${p}: needs at least one <!-- COUNSEL: ... --> marker`);
+/**
+ * THE REVIEW MARKERS ARE GONE, AND THIS IS THE GUARD THAT KEEPS THEM GONE.
+ *
+ * Owner decision, 2026-09-04: "The audit counsel is now becoming an issue with repetitiveness.
+ * Remove them entirely so that we can work faster." Eighty `<!-- COUNSEL: … -->` comments were
+ * deleted from the seven pages, and the rendered prose of every page was byte-identical before and
+ * after -- only the comments went, never the copy they annotated.
+ *
+ * The assertion INVERTS rather than disappears. A deleted check protects nothing, and this habit
+ * was spread across seven files: without a guard it comes back one page at a time and nobody
+ * notices until there are eighty again. It walks every file under apps/site rather than only
+ * PAGES, because the review-queue instruction lived in the README as well as in the markup.
+ *
+ * TWO ASSERTIONS, AND THE SPLIT IS THE WHOLE DESIGN. The marker token was ALL CAPS by convention
+ * in every one of the eighty, so the first check bans `COUNSEL` case-SENSITIVELY and catches it in
+ * any spelling of container -- a comment, an attribute, a class name, a heading. A single
+ * case-insensitive ban would have been simpler and is what this file tried first; it reds on
+ * `apps/site/README.md`, which quotes the owner's decision in the owner's own lower-case words,
+ * and a guard that forbids recording the reason for itself is a guard that gets deleted. So the
+ * second check takes the case-insensitive half and scopes it to HTML COMMENTS, which is the shape
+ * the markers actually had and the shape prose cannot accidentally take. Between them a lower-case
+ * marker is caught, an upper-case one is caught, and quoting the decision stays legal.
+ *
+ * `test/` is the one directory excluded, and the reason is unavoidable rather than convenient: a
+ * guard has to name the string it bans, so this file contains the word and would match itself.
+ */
+function siteFiles(dir = '') {
+  /** @type {string[]} */
+  const out = [];
+  for (const e of readdirSync(path.join(SITE, dir), { withFileTypes: true })) {
+    const rel = dir ? `${dir}/${e.name}` : e.name;
+    if (rel === 'test') continue; // see above: this file names the banned string
+    if (e.isDirectory()) out.push(...siteFiles(rel));
+    else if (!/\.(?:png|ico)$/i.test(e.name)) out.push(rel);
+  }
+  return out;
+}
+
+test('no COUNSEL review marker survives anywhere under apps/site', () => {
+  const files = siteFiles();
+  assert.ok(files.length >= 14, `expected the walk to reach at least fourteen files, found ${files.length}`);
+  for (const f of files) {
+    const text = readFileSync(path.join(SITE, f), 'utf8');
+    assert.equal(
+      text.match(/COUNSEL/),
+      null,
+      `${f}: the per-claim review markers were removed by owner decision 2026-09-04 — do not reintroduce them`,
+    );
+    for (const c of text.match(/<!--[\s\S]*?-->/g) ?? []) {
+      assert.equal(
+        c.match(/counsel/i),
+        null,
+        `${f}: an HTML comment reintroduces a per-claim review marker — ${JSON.stringify(c.replace(/\s+/g, ' ').slice(0, 120))}`,
+      );
+    }
   }
 });
 
@@ -430,8 +487,8 @@ test('no page implies a live deployment', () => {
 });
 
 /**
- * The published prose of a page: HTML comments dropped (COUNSEL markers are the internal review
- * queue, not copy a reader ever sees), tags flattened, and the meta description put back in front
+ * The published prose of a page: HTML comments dropped (a comment is a note to the next editor,
+ * not copy a reader ever sees), tags flattened, and the meta description put back in front
  * because it is the string that travels into a link preview.
  */
 function publishedProse(html) {

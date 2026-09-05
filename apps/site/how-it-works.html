@@ -21,7 +21,6 @@
 <meta name="twitter:title" content="How it works, mechanism by mechanism">
 <meta name="twitter:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Not deployed to mainnet.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
-<!-- COUNSEL: social-preview metadata. The og:/twitter: title and description are the sentence a reader sees before deciding to click, and are often the only sentence they read, so they are published copy and not configuration. Each description ends in the deployment-status sentence and is kept under the ~160 characters a preview shows, so the status cannot be truncated away. -->
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -30,7 +29,6 @@
   <div class="wrap">
     <span class="tag">Pre-launch</span>
     <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
-    <!-- COUNSEL: sitewide pre-launch banner — deployment-status disclosure plus the "not an offer, not a solicitation, not advice" disclaimer. -->
   </div>
 </div>
 
@@ -73,7 +71,6 @@
         <div>
           <dt>Per-vault parameter</dt>
           <dd>Chosen by whoever creates the vault, then frozen when it is funded: quorum, proposal threshold, delegate concentration cap, proposal cooldown, timelock duration, execution window, exit-fee maximum and decay, capacity cap, minimum deposit, and the commit and reveal durations. Anyone can create a vault permissionlessly, so these differ from vault to vault. Read the vault you are looking at. A capacity cap is optional: a vault created with a cap of zero is uncapped, and <code>isCapped()</code> reports which. Do not assume a cap exists because this site describes a planned one.</dd>
-          <!-- COUNSEL: the invariant / parameter distinction. No per-vault parameter may be presented anywhere as a protocol-level guarantee; this section is the site's controlling statement of that split. -->
         </div>
       </dl>
     </div>
@@ -94,7 +91,6 @@
           <h3>The operator proposes</h3>
           <p>A proposal requires the proposer to hold at least the vault's proposal threshold of voting-eligible stake. A per-proposer cooldown rate-limits repeat proposals from the same address, and only from that address. A second address is outside it.</p>
           <p>What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction: after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.</p>
-          <!-- COUNSEL: the opaque-commitment disclosure — members vote on a 32-byte hash, the payload surfaces only in the execution calldata, and no contract binds an operator's off-chain explanation to what executes. Recorded as an accepted design tradeoff (M-8). -->
         </li>
         <li>
           <h3>Commit phase</h3>
@@ -134,7 +130,6 @@
       <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDC, minus the exit fee. Shares burn at settlement, never at request, so a request is not a sale. Until it settles you still carry the vault's gains and losses.</p>
       <p class="tight">In kind means tokens, not dollars. You receive WETH and cbBTC. Converting them back is your own transaction. The routing and the cost are yours too.</p>
       <p class="tight"><code>requestExit</code> takes no minimum-value parameter. Your exit is an unbounded market order against whatever NAV settlement produces; there is no transaction-level floor you can set. One was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</p>
-      <!-- COUNSEL: the asymmetric slippage disclosure — the operator's swaps carry a minimum-out bound and a member's exit does not. Recorded as a partially-fixed finding (M-15), deposit side only. -->
 
       <div class="tablewrap" role="region" aria-label="The two settlement modes" tabindex="0">
         <table>
@@ -166,7 +161,6 @@
         <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it. That is a free option, paid for by everyone who stayed. Closing it has a price you pay directly: you can be right about disliking a rebalance and still carry its execution.</p>
         <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window: 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
         <p>If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. Settlement is not automatic in that case: <code>settleQueuedExit</code> has to be called, and anyone can call it.</p>
-        <!-- COUNSEL: the Mode-F recurrence disclosure — the exit-queue window can be re-opened indefinitely at the cost of gas by a single minimum-deposit holder, and the per-proposer cooldown does not rate-limit it. Named as an accepted unmitigated finding (M-7). -->
       </div>
     </div>
   </section>
@@ -175,7 +169,6 @@
     <div class="wrap">
       <p class="eyebrow">What leaves the vault</p>
       <h2>Two fees, and a slippage bound that is not a fee.</h2>
-      <!-- COUNSEL: fee descriptions — exit fee (protocol cap 100 bps, tenure decay, retained in-vault, waived for the last member) and performance fee (10% of realized profit, crystallized at redemption, per-member/per-operator high-water mark that follows the operator identity across vaults). -->
       <dl class="rows">
         <div>
           <dt>Exit fee</dt>
@@ -184,12 +177,10 @@
         <div>
           <dt>Performance fee</dt>
           <dd>10% of realized profit, crystallized when you redeem, not accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults rather than resetting with each new one. If you realized a loss under an operator, you pay that operator no performance fee unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code.</dd>
-          <!-- COUNSEL: the high-water-mark disclosure — registering a new operator identity is permissionless and resets the mark, so the carryforward is enforced by reputation rather than by contract. Recorded as a deferred High finding (CM-4). -->
         </div>
         <div>
           <dt>What a rebalance costs you</dt>
           <dd>Not a fee, but it leaves the vault. Every rebalance leg is checked against the vault's own oracle and must land within 2% of it (<code>MAX_REBALANCE_SLIPPAGE_BPS</code>, a protocol constant, not a per-vault setting). Up to that 2%, plus the pool's own fee and gas, leaves the vault on every executed rebalance and is borne by every member pro-rata. Protection against being sandwiched on execution is an off-chain concern for whoever submits the transaction; the contracts do not provide it.</dd>
-          <!-- COUNSEL: the 2% execution-slippage bound stated as value leaving the vault rather than as a fee, with the explicit statement that MEV protection on execution is off-chain and not provided by the contracts. -->
         </div>
         <div>
           <dt>What is not charged</dt>
@@ -208,7 +199,6 @@
         <div>
           <dt>Sequencer gate</dt>
           <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node or Base Sepolia unless the feed address is supplied, and a pre-deploy configuration check fails without it. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd>
-          <!-- COUNSEL: the sequencer-gate exercise disclosure — the guard is written and tested against a stub, and has never run against a live uptime feed. -->
 
         </div>
         <div>
@@ -222,12 +212,10 @@
         <div>
           <dt>What stands behind those three</dt>
           <dd>Nothing. The heartbeat, the band and the sequencer gate are the only defences against a bad answer. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses. But there is no backup to switch to, and no way to point the vault at a different one.</dd>
-          <!-- COUNSEL: single-provider oracle dependency stated as a named residual risk on the mechanism page, not only on the risks page. -->
         </div>
         <div>
           <dt>There is no rotation path</dt>
           <dd>Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal, and the factory's allowlist is fixed in its constructor with no add, no remove and no owner. If a feed is deprecated or permanently retired, the freeze above is permanent for every vault already pointing at it. Risk 15 sets out what that means.</dd>
-          <!-- COUNSEL: the permanent-brick disclosure — a deprecated feed freezes an existing vault for good, because the oracle is immutable per vault and no party can replace it. Load-bearing: this is a permanent-loss-of-access path with no remedy. -->
         </div>
       </dl>
     </div>
@@ -269,7 +257,6 @@
         <span class="label">Launch configuration</span>
         <p>At launch the factory permits root vaults only; nested sub-vaults are disabled. Root-only is not a preference. It is what closes Critical C-1 and a group of High findings; they are dormant, not repaired. If sub-vaults were ever enabled, those findings would return.</p>
         <p>The first vault's planned capacity cap is 50,000 USDC. It is a planned parameter of a vault that has not been created. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing this one.</p>
-        <!-- COUNSEL: the launch-configuration disclosure — root-only is the control that closes a Critical and a group of High findings, which are dormant rather than fixed in code. -->
       </div>
     </div>
   </section>
@@ -319,17 +306,14 @@
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
         <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
-        <!-- COUNSEL: the repository-link note. Revised 2026-09-02: the repository became public, so the prior note saying it was private and that these links resolved only for people with access was false and was replaced. -->
       </div>
       <div>
         <h2>Standing facts</h2>
         <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
-        <!-- COUNSEL: the no-token statement and the licence characterisation, pinned to every page footer. -->
       </div>
     </div>
     <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
-    <!-- COUNSEL: jurisdiction and geofencing language, repeated in every footer. -->
   </div>
 </footer>
 
