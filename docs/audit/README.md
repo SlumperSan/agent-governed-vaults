@@ -97,7 +97,7 @@ Cross-references:
                        │  createVault / createChildVault → attest       │  the ONLY attestation path
                        │            │ CREATEs via (immutable pin)       │
                        │            ▼                                   │
-                       │      VaultDeployer: holds VaultCore's         │  no authority of its
+                       │      VaultDeployer — holds VaultCore's         │  no authority of its
                        │      creation code (EIP-170, #10)              │  own (PX-4)
                        └───────┬───────────────────┬────────────────────┘
                      attests   │                   │ registers child edge
@@ -110,8 +110,8 @@ Cross-references:
           carry reads /      │                     │ parentOf (quorum floor,
           realization writes │                     │ voting exclusion, edges)
                              │                     │
-┌───────────────┐  executes  ┌▼─────────────────┐  │ prices  ┌──────────────────┐
-│  Governance   │───────────►│    VaultCore     │──┘         │ OracleAggregator │
+┌───────────────┐  executes  ┌▼─────────────────┐  │        ┌──────────────────┐
+│  Governance   │───────────►│    VaultCore     │──┘ prices │ OracleAggregator │
 │ commit-reveal │ rebalance/ │  shares / NAV /  │◄──────────│ ≥3-source median │
 │ quorum/deleg. │ child-alloc│  deposits/exits  │ + breaker │ + staleness trip │
 │ timelock      │◄───────────│  sub-vault flows │           └──────────────────┘
