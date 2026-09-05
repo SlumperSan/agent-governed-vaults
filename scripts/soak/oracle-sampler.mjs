@@ -213,9 +213,12 @@ export function sequencerState({ feed, round, chainNow, grace }) {
     unreadable: false, answer: null, startedAtSec: null, upForSec: null, resumesAtSec: null,
     gracePeriodSec: grace,
   };
-  // Not a fault and not health: off a sequencer L2 (Base Sepolia leaves this at address(0) by
-  // design) `_requireSequencerUp` is a no-op, so there is nothing to observe. On Base MAINNET the
-  // same reading means the deployment shipped with no sequencer guard at all.
+  // Not a fault and not health: `_requireSequencerUp` returns without reading a feed when this is
+  // address(0) (ChainlinkOracle.sol:314), so there is nothing to observe. This sampler cannot tell
+  // WHY a deployment has no feed and does not guess — the two guesses it used to print (off a
+  // sequencer L2; on Base mainnet) are both wrong at once on a sequencer L2 whose vendor publishes
+  // no uptime feed. Which chains may ship without one is settled at deploy time by
+  // DeployChainlinkOracle.requiresSequencerUptimeFeed.
   if (!base.configured || round == null) return base;
 
   if (!round.ok) {

@@ -623,11 +623,14 @@ test('isAssetSubject accepts an address and rejects every per-vault meta key', (
   assert.equal(isAssetSubject(undefined), false);
 });
 
-test('a permanently-skipped `sequencer` row does NOT count as the canary tracking a freeze', () => {
-  // PR #89 added a per-vault `sequencer` row under the `oracle-freshness` signal name. On Base
-  // Sepolia sequencerUptimeFeed is address(0), so that row is permanently `skipped` — under the old
+test('a not-OK `sequencer` row does NOT count as the canary tracking a freeze', () => {
+  // PR #89 added a per-vault `sequencer` row under the `oracle-freshness` signal name. Where
+  // sequencerUptimeFeed is address(0) that row was permanently `skipped` — under the old
   // `rows.some(r => r.status !== 'ok')` it satisfied the assertion by itself, whether or not any
-  // asset row ever left OK. That is a drill certifying nothing while exiting 0.
+  // asset row ever left OK. That is a drill certifying nothing while exiting 0. The canary now
+  // reports that case as not-applicable `ok`, so this exact fixture is a state file written by an
+  // older build; the guard is kept because the exclusion must hold on STATUS-blind grounds — the
+  // `flavor` row below is `skipped` today and would otherwise walk straight back through.
   const byAsset = summarize([liveSample('t1', 1, { asset: { priceReverts: true, frozenCauseKey: 'heartbeat-exceeded' } })]);
   const rows = oracleCanaryRows({
     transitions: {

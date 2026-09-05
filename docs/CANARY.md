@@ -1,7 +1,8 @@
 # Canary — post-launch monitoring
 
 The canary watches a deployed vault set and **stays silent while healthy**. It prints one line per
-signal *transition* (OK→ALERT, ALERT→OK, OK→DEGRADED), so anything it says is worth reading. It is
+signal *transition* (OK→ALERT, ALERT→OK, OK→DEGRADED), plus a one-off NOTICE for a check
+that does not apply to this deployment (§2), so anything it says is worth reading. It is
 the runnable form of the signal table in [DEPLOYMENT.md §6](DEPLOYMENT.md).
 
 "Silent while healthy" is a claim about transition lines specifically. By default the canary also
@@ -62,7 +63,7 @@ Every line carries the **vault**, the **signal**, and **measured vs threshold**.
 degradations go to stderr, recoveries to stdout, so `2>` gives a pure problem feed. The webhook body
 carries the same fields plus the structured `detail` for routing.
 
-Three statuses, rendered as four marks:
+Three statuses, rendered as five marks:
 
 - **ALERT** — measured, out of threshold. Page.
 - **RECOVERED** — back within threshold.
@@ -73,6 +74,13 @@ Three statuses, rendered as four marks:
 - **DETECTOR BROKEN** — the check could not run because the **monitor itself is blind**: it cannot
   reach its target, does not understand the contract it is pointed at, or threw. Nothing was
   measured and nobody knows what is being missed.
+- **NOTICE** — the check does not APPLY to this deployment: the contract path it watches is inert,
+  so the condition it reports on cannot arise here at all. Carried on an `ok` result (see
+  `notApplicable()` in `src/signal.mjs`), stated **once** per tracked signal id
+  (`signal|vault|key`, so once per vault) on the first sighting and never again, and it never counts
+  toward the not-OK tally. This is the opposite of DEGRADED, and the distinction is
+  the point: DEGRADED means something might be wrong and the check cannot see it, NOTICE means there
+  is nothing there to see.
 
 A standing problem is reported **once**, not every poll, and the state survives a restart.
 **DETECTOR BROKEN is the single exception**: it is re-asserted on a doubling backoff — sweeps 1, 2,
@@ -128,6 +136,24 @@ event-driven: it only writes on an up↔down transition, so a months-old `update
 steady state. Staleness-checking it would report a permanent outage on a perfectly healthy chain —
 and `_requireSequencerUp` ignores it for exactly that reason. It gets its own transition key
 (`sequencer`), because when it trips it freezes every vault on the oracle at once.
+
+**On an oracle deployed with no uptime feed, the leg is NOT-APPLICABLE, not degraded.**
+`sequencerUptimeFeed` is immutable (`ChainlinkOracle.sol:75`) and `_requireSequencerUp` returns
+without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:314`), so no sequencer state
+can ever freeze such a vault. The canary says so once per vault, as a NOTICE, and is silent
+thereafter — it does not repeat a "cannot run" line on every vault on every sweep for the life of
+the deployment,
+and the leg does not sit in the not-OK tally forever. Every other guard in `priceWad` is unaffected
+and still measured per asset: unlisted feed, dead or non-positive answer, unset or future timestamp,
+the heartbeat, and the sane-price band (`ChainlinkOracle.sol:285-304`).
+
+**Which chains may ship without an uptime feed is not the canary's call.** It is settled before the
+oracle exists, by `DeployChainlinkOracle.requiresSequencerUptimeFeed`
+(`contracts/script/DeployChainlinkOracle.s.sol:59`), which blocks the broadcast, and re-checked
+read-only by `scripts/verify-chainlink-oracle.mjs`. A monitor pointed at an already-immutable
+contract cannot revisit that decision, and the line it used to print tried to: it named Base
+mainnet and a local/testnet chain as the only two possibilities, which are both wrong at once on a
+sequencer L2 whose vendor publishes no uptime feed.
 
 **Threshold.** `priceWad` returns. There is also a pre-trip early-warning bar that alerts while the
 vault is still priceable, once the answer has aged past it — and unlike the first cut of this
@@ -551,11 +577,16 @@ vault. The cases:
 | `exit-liveness sentinel CANNOT RUN … no member holding shares` | the projection lists no holder to probe with | wait for the first deposit, or check the indexer is caught up |
 | `… not in the indexer projection` | the vault is in `VAULTS` but not in the snapshot | point `STATE_PATH` at a caught-up indexer, or set `START_BLOCK` to the factory deploy block so the vault is discovered |
 | `… reverts StaleOracle` (NAV, exit liveness) | the oracle breaker is tripped | signal (a) is paging for the real cause; coverage resumes when the breaker clears |
-| `sequencer gate not configured … sequencerUptimeFeed is address(0)` | the oracle has no uptime feed | correct off a sequencer L2 (Base Sepolia leaves it `address(0)` by design, so expect exactly one line per vault on testnet). **On Base mainnet it means the deployment shipped with no sequencer guard at all** |
 | `no vaults to watch` | empty watch set | set `VAULTS`, or point `STATE_PATH` at a snapshot that has seen a `VaultCreated` |
 | `feed identity cannot be checked … feedOf() lists no feed for it` | the asset is unlisted, or it is the oracle's pinned USDC leg | if unlisted, signal (a) is already paging (`priceWad` reverts permanently); if it is the pin, there is no aggregator behind it and nothing to drift |
 
 An empty watch set is reported loudly rather than read as a clean bill of health.
+
+**A deployment with no sequencer uptime feed is no longer in this table.** It used to be, as
+`sequencer gate not configured … sequencerUptimeFeed is address(0)`, and that was the wrong class:
+it is not a check that cannot run today and might run tomorrow, it is a check with no subject in
+this deployment for as long as the oracle exists. It now emits one NOTICE line per vault and is
+`ok` thereafter — see §3(a) and the NOTICE mark in §2.
 
 **DETECTOR BROKEN lines are a different class** — the monitor is blind, not the vault. They
 re-assert on a backoff until fixed:
@@ -675,8 +706,8 @@ citation of Operations' spec, not an escalation inferred here, and unconditional
 `CONDITIONAL_PAGE` because no on-chain predicate separates a routine proposal from a hostile one
 (see §3(h)). **The waking-hours half is the receiver's**: nothing in this process knows the time of
 day, and no string it emits promises a response time. `LOG_WEBHOOK_URL` receives every
-other transition: recoveries, every DEGRADED / DETECTOR BROKEN line, and the harmless half of
-`feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
+other transition: recoveries, every DEGRADED / DETECTOR BROKEN / NOTICE line, and the harmless
+half of `feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
 the two is unset — set only that one and every transition reaches the one configured URL exactly
 once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
 'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
