@@ -140,7 +140,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -508,5 +508,86 @@ test('no public surface claims the contracts screen who may deposit', () => {
       'allowlists in contracts/src are for ADAPTERS and ORACLES. Vault #1\'s member allowlist is\n' +
       'frontend-only, the same class as the geofence: never imply the contracts enforce it.\n' +
       `Offending text:\n${report(hits)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// COVERAGE, NOT A GUARD — the walk must actually REACH the redesign's prerendered pages.
+//
+// The header draws this file's scope on two axes, the STORE (repo vs vault) and the FILE TYPE
+// (`PUBLIC_EXT`). There is a third, and it is the one that made every guard above vacuous over the
+// redesign: TIME. The walk enumerates from disk, and `apps/site-next/.gitignore` line 11 ignores
+// `dist`, so `apps/site-next`'s prerendered pages exist only after
+// `npm run build --workspace apps/site-next` has run. Order that build AFTER `npm run test:backend`
+// — which is where `.github/workflows/ci.yml` had it until this test was written — and on a fresh
+// checkout every guard above walks zero rendered redesign pages and reports a pass. A pass over
+// nothing is indistinguishable from a pass over everything, which is the failure this whole file
+// exists to refuse; the header makes the same point about the vault, for the same reason.
+//
+// `dist` IS WALKED AND `dist-ssr` IS NOT A SECOND CASE OF IT, so do not read this as "build outputs
+// are walked here". `dist` is walked because the redesign publishes its prose ONLY as build output:
+// skip it and the pages a reader receives are guarded by nothing. `dist-ssr` is the SSR
+// bundle, which `apps/site-next/README.md` records as never deployed (grep `vite build --ssr`, on
+// the line that ends `into dist-ssr/ (never deployed)`); its only two prose files,
+// `llms.txt` and `robots.txt`, are byte-identical copies of `apps/site-next/public/`'s, which are
+// walked whether or not anything has been built (checked 2026-09-04 with `diff`). So it is walked
+// today, it costs no coverage either way, and neither `SKIP_DIRS` here nor the near-identical one
+// in `config-doc-truth.test.mjs` lists it. Adding it belongs in a change that edits both, since a
+// skip list that two sibling guards disagree on is its own drift.
+//
+// So the ordering is ASSERTED here rather than only documented there. This is the one test in this
+// file that MAY name its files: it is a POSITIVE requirement, and by the rule quoted in the header,
+// requiring too little never lets a falsehood through. The names below are `PAGE_IDS`, declared
+// in `apps/site-next/src/shell/pinned.ts` (grep `export const PAGE_IDS`), re-exported as `pages`
+// by `apps/site-next/src/entry-server.tsx` (grep `export const pages`) and looped over by
+// `apps/site-next/scripts/prerender.mjs` (grep `for (const page of pages)`), which writes one
+// `dist/<page>` per entry. Those citations are grep-able phrases rather than line numbers: a line
+// number in a comment goes stale silently, and this one already had.
+//
+// IT DOES NOT SKIP WHEN THE BUILD IS MISSING, and that is the deliberate break with the two
+// neighbouring suites that read build artefacts: `apps/site-next/test/site.test.mjs` skips its
+// dist-reading tests (its `BUILT`/`SKIP` pair), and `packages/indexer/test/abis.test.mjs` skips on
+// `contracts/out` absent. Both are right to — they have nothing to say without their input. This
+// test's whole subject IS the missing input, so a skip would reproduce the defect it catches.
+// ---------------------------------------------------------------------------------------------
+const SITE_NEXT = 'apps/site-next';
+
+/**
+ * Every prerendered page, in the build order of `PAGE_IDS`. This list is the count, and the test
+ * name deliberately does not repeat it as a word: a page added to `PAGE_IDS` and not added here is
+ * a page this test silently stops covering, and a number in the name is a second place to edit.
+ */
+const PRERENDERED = [
+  'index.html',
+  'how-it-works.html',
+  'agents.html',
+  'who-its-for.html',
+  'operators.html',
+  'faq.html',
+  'status.html',
+  'disclaimers.html',
+].map((page) => `${SITE_NEXT}/dist/${page}`);
+
+test('every prerendered redesign page is inside the walk', () => {
+  // A checkout with no redesign owes nothing. `dist` alone is not the condition to test on: it is
+  // the very thing that goes missing, so gating on it would make this test disappear exactly when
+  // it is needed.
+  if (!existsSync(path.join(REPO, SITE_NEXT))) return;
+
+  const walked = new Set(publicSurfaces());
+  const missing = PRERENDERED.filter((f) => !walked.has(f));
+  assert.deepEqual(
+    missing,
+    [],
+    'The guards above walked none of these pages, so they reported a pass over prose they never\n' +
+      'read. Two things cause that, and both are silent:\n' +
+      '  1. THE BUILD HAS NOT RUN. `apps/site-next/.gitignore` ignores `dist`, so the pages exist\n' +
+      '     only after:  npm run build --workspace apps/site-next\n' +
+      '     `.github/workflows/ci.yml` and `scripts/gate.mjs` both run that step BEFORE\n' +
+      '     `npm run test:backend`, and each carries the reason at the step. Keep it there.\n' +
+      '  2. `dist` WAS ADDED TO SKIP_DIRS. It is deliberately not on that list. The redesign\n' +
+      '     publishes its prose only as build output, so skipping build outputs wholesale would\n' +
+      '     exempt the pages the reader actually receives.\n' +
+      `Not walked:\n  ${missing.join('\n  ')}`,
   );
 });

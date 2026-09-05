@@ -104,12 +104,42 @@ const STEPS = [
     why: 'Its exit code IS the contract: must be 1, not 0 (disarmed alerting) and not 2 (crash).',
   },
   {
+    id: 'site-build',
+    title: 'npm run build --workspace apps/site-next',
+    cmd: WIN ? 'npm.cmd' : 'npm',
+    args: ['run', 'build', '--workspace', 'apps/site-next'],
+    cwd: REPO,
+    // ORDERING IS LOAD-BEARING, and for TWO consumers, not one. It used to sit after `backend`.
+    //
+    // The near one: `site-test` reads the BUILT pages (prerendered HTML in dist/) and skips
+    // itself when dist/ is absent.
+    // The far one, and the reason this moved: the repository-wide claims guards run by `backend`
+    // -- claims-lede-truth.test.mjs and config-doc-truth.test.mjs -- enumerate .md/.html/.txt/
+    // .json from the filesystem and neither skips `dist`. `apps/site-next/.gitignore` ignores
+    // `dist`, so on a fresh checkout the redesign's prerendered pages are not there to be
+    // walked, and those guards cover none of them while still reporting a pass.
+    //
+    // NOT DROPPED BY --quick, and the runtime is beside the point: with `backend` now depending
+    // on this step's output, a --quick run that skipped it would take the backend suite red
+    // rather than save time. claims-lede-truth.test.mjs asserts every prerendered page is in the
+    // walk, so that failure is loud instead of silent.
+    why: 'Must precede `backend` AND `site-test`: without dist/ the claims guards walk zero redesign pages.',
+  },
+  {
     id: 'backend',
     title: 'npm run test:backend',
     cmd: WIN ? 'npm.cmd' : 'npm',
     args: ['run', 'test:backend'],
     cwd: REPO,
-    why: 'Backend + frontend logic suite. Needs `build` first (see above).',
+    why: 'Backend + frontend logic suite. Needs `build` and `site-build` first (see both above).',
+  },
+  {
+    id: 'site-test',
+    title: 'npm test --workspace apps/site-next',
+    cmd: WIN ? 'npm.cmd' : 'npm',
+    args: ['test', '--workspace', 'apps/site-next'],
+    cwd: REPO,
+    why: 'apps/site-next/test/site.test.mjs: pinned strings, banned shapes and non-vacuous guards, against dist/.',
   },
   {
     id: 'test',

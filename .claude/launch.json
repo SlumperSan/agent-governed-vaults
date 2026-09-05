@@ -6,6 +6,20 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "http-server", "apps/web", "-p", "8791", "-c-1", "--silent"],
       "port": 8791
+    },
+    {
+      "name": "site-next",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "http-server",
+        "apps/site-next/dist",
+        "-p",
+        "8792",
+        "-c-1",
+        "--silent"
+      ],
+      "port": 8792
     }
   ]
 }
