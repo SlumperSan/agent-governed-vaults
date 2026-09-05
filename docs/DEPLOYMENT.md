@@ -52,9 +52,10 @@ description, aggregator phase and answer in it was read from chain 4663 by read-
 of chain time, and the file records the earliest and latest samples alongside the one its feed ages
 are measured against.
 
-**Nothing is deployed with it.** No contract from this repository exists on chain 4663, or on any
-mainnet. The file is configuration evidence rather than deployment evidence, and it changes no row
-of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
+**Nothing was deployed with it.** At the time it landed no contract from this repository existed on
+chain 4663 or on any mainnet; the deployment came the next day and is recorded in the subsection
+below, "The chain-4663 deployment, and where it is recorded". The file is configuration evidence
+rather than deployment evidence, and it changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
 1's four inputs — real, on-chain-verified feed addresses (never invented ones), per-asset heartbeats
 and sane-price bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
 uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-approved exemption dated
@@ -225,7 +226,7 @@ rather than tuned here.
 still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
 by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it did
 not, by itself, make a 4663 deploy actionable: the deploy happened on 2026-09-05 and is recorded in
-the Robinhood Chain mainnet section below.
+§0 above, under "The chain-4663 deployment, and where it is recorded".
 
 A config for that chain does now exist — #209 landed
 [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
@@ -248,8 +249,8 @@ gift. Two have since closed and two remain:
 
 - **The deployment record now exists.** `contracts/config/deployments/` holds `base-sepolia.json`
   and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
-  (the Robinhood Chain mainnet section below), and no contract from this repository exists on any
-  other mainnet.
+  (§0 above, "The chain-4663 deployment, and where it is recorded"), and no contract from this
+  repository exists on any other mainnet.
 - **The funding and one immutable launch parameter are decided but not yet executed,** both
   recorded in §0 above: the creator Safe (`creator` `0xC73B…AD4c`) holds 100 USDG for the first
   deposit, and vault #1 takes the config's 100-unit `minDepositUsdc` (the owner's decision of
