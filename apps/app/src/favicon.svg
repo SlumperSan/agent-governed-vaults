@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="51.5 19.5 152 216.5" role="img" aria-label="Rwally">
+  <title>Rwally</title>
+  <!--
+    The brand mark, the ledger R, chosen by the owner on 2026-09-05. One unbroken stroke: up the
+    stem, round the bowl, in to the throat, then out along a leg that steps once and drops square
+    onto the baseline. The brand pass later that day made this the mark for favicon and small
+    avatar sizes specifically, because the comic lockup it delivered stops reading below 48 px. The path is the same string as src/brand/markPath.ts and src/brand/mark.svg, and
+    the test named "the brand mark is one path, drawn the same in all three files" in
+    test/site.test.mjs reds when any two of the three disagree.
+
+    WHAT REPLACED WHAT. Until 2026-09-05 this file drew a ring knocked out of a solid accent tile.
+    The tile is gone with it: the mark is monochrome by design and the panel it came from says in
+    terms not to put it on one.
+
+    THE viewBox IS THE INK, NOT THE PANEL'S BOX. src/brand/markPath.ts derives it: the path spans
+    x 76..179 and y 44..228 at stroke width 33, which after half a stroke either side, a miter at
+    the top and butt caps at the bottom gives ink of 59.5..195.5 by 27.5..228; this box is that
+    plus 8 units all round. In the panel's own 0 0 256 256 box the letter would pay 60 units of
+    empty air on each side, which at 16 pixels is 3.75 pixels of nothing.
+
+    IT READS AT 16 PIXELS. The stroke is 33 units against a 216.5-unit box, so at 16px it is 2.44
+    device pixels at 1x, and the narrowest gap in the letter, the 40-unit throat between the leg
+    and the bowl, is 2.96. Nothing in the drawing is thinner than the stroke.
+
+    THE COLOURS ARE HARDCODED, and that is not an oversight. An SVG loaded as a favicon is an
+    isolated document: it cannot see the page's custom properties, so this file does NOT follow the
+    tokens.css swap the site's token contract describes. Anyone replacing that file must edit these
+    values too. The light value is the site's ink token on a light ground and the dark value is its
+    ink token, written here without their leading dashes because a pair of hyphens is not legal
+    inside an XML comment and an SVG that fails to parse renders as nothing at all.
+  -->
+  <style>
+    .mark { stroke: #14121f; }
+    @media (prefers-color-scheme: dark) {
+      .mark { stroke: #eaeaf3; }
+    }
+  </style>
+  <!--
+    The light value is repeated as a PRESENTATION ATTRIBUTE, and that redundancy is load-bearing.
+    This origin sends `style-src 'self'`, which refuses an inline style block. As a favicon that
+    never matters, because the browser renders the file as an image and does not apply the
+    response's policy to it. On DIRECT NAVIGATION to /favicon.svg it does: the file becomes a
+    document, the block above is blocked, and with nothing else to go on the mark would not draw at
+    all. Presentation attributes are not gated by CSP and sit below any CSS rule in the cascade, so
+    the stylesheet still wins wherever it is allowed, including the dark-mode override, and the
+    mark still draws where it is not.
+  -->
+  <path class="mark" d="M76 228V44H179V122H139L179 190V228"
+        fill="none" stroke="#14121f" stroke-width="33"
+        stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>

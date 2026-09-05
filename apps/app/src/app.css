@@ -1,0 +1,602 @@
+/* ===========================================================================
+   app.rwally.com, v1 shell.
+
+   ONE STYLESHEET, AND IT IS EXTERNAL FOR A REASON. The Content Security Policy
+   this page ships in _headers is style-src 'self', which blocks an inline
+   <style> block and every style="..." attribute in the document. There is
+   therefore nothing to inline and nothing to move here later.
+
+   THE PALETTE IS apps/site-next/src/tokens.css, values as authored there, so
+   the app reads as the same product as the site. The contrast ratios in the
+   comments are that file's computed figures, carried across with the values
+   they describe; they are not re-estimated here.
+
+   ONE GROUND. Dark only, deliberately, the same decision the site made. A
+   second palette is a second set of ratios nobody re-measures.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   FONTS. Self-hosted, so font-src 'self' holds and the page makes no external
+   request of any kind. Two faces: the variable sans for everything, the mono
+   for addresses, selectors and figures, where a fixed advance width is what
+   keeps a column of hex from shimmering.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Plex Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url('/fonts/plex-sans-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('/fonts/plex-mono-400.woff2') format('woff2');
+}
+
+:root {
+  color-scheme: dark;
+
+  --ground: #07070b;
+  --surface: #0e0e16;
+  --surface-2: #16161f;
+  --surface-3: #1e1e2a;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --ink: #eaeaf3;      /* 16.82:1 on --ground */
+  --muted: #a8a8bd;    /*  8.62:1 on --ground */
+  --faint: #7c7c93;    /*  4.94:1 on --ground, the floor for body text */
+
+  --accent: #a094ff;   /*  7.83:1 on --ground */
+  --accent-dim: #8577e4;
+  --accent-wash: rgba(160, 148, 255, 0.1);
+
+  --teal: #3fb8ad;
+  --teal-wash: rgba(63, 184, 173, 0.09);
+
+  --good: #5fd89a;
+  --warn: #f2c14e;
+  --crit: #ff8b83;
+  --crit-wash: rgba(255, 139, 131, 0.09);
+
+  --sans: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  /* Square corners, as the site's token set specifies. */
+  --radius: 0;
+
+  --gutter: clamp(1rem, 0.6rem + 1.8vw, 2rem);
+  --maxw: 76rem;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A single background wash so the ground is not a flat void. No animation, no
+   image, no external request. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60rem 32rem at 18% -8%, var(--accent-wash), transparent 70%),
+    radial-gradient(50rem 30rem at 92% 4%, var(--teal-wash), transparent 72%);
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:hover { color: var(--ink); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 20;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  text-decoration: none;
+  transition: top 160ms ease-out;
+}
+.skip:focus { top: 0.5rem; }
+
+.mono,
+.num,
+.addr { font-family: var(--mono); font-feature-settings: 'tnum' 1; }
+
+/* ---------------------------------------------------------------------------
+   MASTHEAD
+   --------------------------------------------------------------------------- */
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(7, 7, 11, 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.75rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 0.5rem 0;
+}
+.brand:hover { color: var(--ink); }
+.brand:hover .mark { color: var(--accent); }
+
+.mark {
+  width: 0.95rem;
+  height: 1.35rem;
+  color: var(--ink);
+  display: block;
+  transition: color 160ms ease-out;
+  overflow: visible;
+}
+
+.wordmark {
+  font-weight: 650;
+  font-size: 1.0625rem;
+  letter-spacing: -0.035em;
+}
+
+.brand-chip {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  padding: 0.1rem 0.35rem;
+  line-height: 1.4;
+}
+
+.masthead-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.masthead-link {
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.7rem 0.6rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.masthead-link:hover { color: var(--ink); }
+
+/* The connect control is INERT AND HONEST. aria-disabled rather than disabled,
+   so it keeps its place in the tab order and a screen reader can reach the
+   reason attached by aria-describedby. A removed control explains nothing. */
+.connect {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--faint);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.9rem;
+  min-height: 44px;
+  cursor: not-allowed;
+}
+.connect:hover { border-color: var(--accent-dim); color: var(--muted); }
+
+/* ---------------------------------------------------------------------------
+   CARDS
+   --------------------------------------------------------------------------- */
+main { padding-block: clamp(1.5rem, 1rem + 2vw, 3rem) 4rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: clamp(1.1rem, 0.8rem + 1.2vw, 1.75rem);
+  margin-bottom: 1.25rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.1rem;
+}
+
+.card-head h1,
+.card-head h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.chain-chip,
+.count-chip {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+}
+.chain-chip b { color: var(--teal); font-weight: 400; }
+.count-chip .num { color: var(--ink); }
+
+/* --- meta grid --- */
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  margin: 0 0 1.35rem;
+}
+.meta-cell { min-width: 0; }
+.meta dt {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.2rem;
+}
+.meta dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.meta dd.addr { font-size: 0.75rem; color: var(--muted); }
+
+/* --- live reads --- */
+.reads {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--teal);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.reads-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+}
+
+.reads-head h2 {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.reads-stamp {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+.reads-stamp.is-ok { color: var(--muted); }
+.reads-stamp.is-bad { color: var(--crit); }
+
+.reads-intro {
+  margin: 0.6rem 0 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.reads-list { list-style: none; margin: 0; padding: 0; max-width: 62rem; }
+
+.read {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+.read:first-child { border-top: 0; padding-top: 0; }
+
+.read-call {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.read-value {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.read-value.is-ok { color: var(--ink); }
+.read-value.is-bad { color: var(--crit); }
+
+.reads-fail {
+  margin: 0.8rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--crit-wash);
+  border: 1px solid var(--crit);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  max-width: 62ch;
+}
+
+/* --- contracts --- */
+.contracts-h {
+  margin: 0 0 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.contracts-note {
+  margin: 0 0 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+.contracts { list-style: none; margin: 0; padding: 0; }
+
+.contract {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+.contract:first-child { border-top: 0; }
+
+.contract-name { font-size: 0.875rem; font-weight: 550; }
+
+.addr {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* The rule under an address marks it as a LINK, so it goes on the anchor and
+   not on the class. On the plain RPC text it drew a line that stopped part way
+   through a wrap and read as a broken hyperlink. */
+a.addr {
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 1px;
+}
+a.addr:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------------------------------------------------------------------------
+   VAULT TABLE. Wide content scrolls inside its own container; the page body
+   never scrolls sideways.
+   --------------------------------------------------------------------------- */
+.table-scroll { overflow-x: auto; }
+
+.vault-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  text-align: right;
+  /* FIXED, because the body is empty. With auto layout the five headings
+     collapse onto their own text widths and cluster at the left edge, which
+     reads as a broken table rather than as a table awaiting rows. */
+  table-layout: fixed;
+}
+
+.vault-table .col-name { width: 30%; }
+.vault-table .col-num { width: 17.5%; }
+
+.vault-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 0.75rem 0.7rem;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.vault-table th.col-name { text-align: left; padding-left: 0; }
+.vault-table th:last-child { padding-right: 0; }
+
+.empty {
+  text-align: center;
+  padding: clamp(2rem, 1.2rem + 4vw, 4rem) 0;
+}
+
+.empty-mark {
+  width: 4rem;
+  height: 2.5rem;
+  color: var(--line-strong);
+  margin-bottom: 1.1rem;
+}
+
+.empty-lede {
+  margin: 0 auto 0.6rem;
+  max-width: 44ch;
+  font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.empty-sub {
+  margin: 0 auto 1.5rem;
+  max-width: 52ch;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.empty-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  max-width: 46rem;
+  margin: 0 auto 1.5rem;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.empty-facts dt {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.2rem;
+}
+.empty-facts dd { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+
+.empty-watch {
+  margin: 0 auto;
+  max-width: 52ch;
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+
+/* ---------------------------------------------------------------------------
+   FOOTER
+   --------------------------------------------------------------------------- */
+.footer {
+  position: relative;
+  z-index: 1;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding-block: 1.5rem 2rem;
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  flex-wrap: wrap;
+}
+
+.footer-nav { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.footer-nav a {
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.6rem 0.7rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.footer-nav a:first-child { padding-left: 0; }
+.footer-nav a:hover { color: var(--ink); }
+
+.footer-legal {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--faint);
+  max-width: 46ch;
+}
+
+/* ---------------------------------------------------------------------------
+   NARROW. 375 px is the target the site tests at.
+   --------------------------------------------------------------------------- */
+@media (max-width: 40rem) {
+  /* A 42-character address in mono at 0.75rem needs about 302 px, and a
+     375 px viewport leaves roughly 308 px inside the gutter and the card
+     padding. That is close enough to the edge that a slightly wider default
+     mono clips the last characters, so step the size down rather than let the
+     end of an address be the thing that goes missing. */
+  .addr { font-size: 0.6875rem; }
+  /* The same arithmetic one level deeper: the facts panel adds its own inset
+     inside the card's, and at the default 1rem a 42-character address wraps
+     with a single digit alone on the second line. Give the panel back the
+     twenty pixels. */
+  .empty-facts { padding-inline: 0.7rem; }
+  /* And one level out again. The card's own inset is the last term in the
+     same sum, and trimming it here buys the address enough room to sit on one
+     line inside the facts panel with a few pixels to spare, rather than
+     wrapping with a single digit stranded below. */
+  .card { padding: 1rem 0.85rem; }
+  .masthead-link { padding-inline: 0.3rem; font-size: 0.8125rem; }
+  .connect { padding-inline: 0.7rem; }
+  .read,
+  .contract { flex-direction: column; align-items: flex-start; gap: 0.15rem; }
+  .read-value { text-align: left; }
+  .footer-inner { flex-direction: column; align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

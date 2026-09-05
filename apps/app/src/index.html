@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rwally app</title>
+<meta name="description" content="Explore vaults on the Agent-Governed Index Vault Protocol, chain 4663. Contract addresses from the deployment record, protocol state read live from the public RPC.">
+<meta name="robots" content="index, follow">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <a class="brand" href="https://rwally.com">
+      <svg class="mark" viewBox="51.5 19.5 152 216.5" role="img" aria-label="Rwally" focusable="false">
+        <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
+      </svg>
+      <span class="wordmark">rwally</span>
+      <span class="brand-chip">app</span>
+    </a>
+
+    <nav class="masthead-nav" aria-label="Site">
+      <a class="masthead-link" href="https://rwally.com">rwally.com</a>
+      <button type="button" class="connect" aria-disabled="true" aria-describedby="connect-note" title="Deposits open when a vault exists.">
+        Connect wallet
+      </button>
+      <span id="connect-note" class="sr-only">Deposits open when a vault exists. There is nothing to connect to yet.</span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================================================================
+       PROTOCOL CARD
+       Addresses and the deploy instant come from
+       contracts/config/deployments/robinhood-mainnet.json at protocol/main,
+       which records them as read back from chain 4663 with cast.
+       The LIVE READS panel below re-reads three of those facts from the
+       public RPC in the reader's own browser, so the page is checkable
+       rather than merely asserted.
+       =================================================================== -->
+  <section class="card protocol" aria-labelledby="protocol-h">
+    <div class="card-head">
+      <h1 id="protocol-h">Protocol</h1>
+      <span class="chain-chip">Robinhood Chain <b>4663</b></span>
+    </div>
+
+    <dl class="meta">
+      <div class="meta-cell">
+        <dt>Chain</dt>
+        <dd>Robinhood Chain, id <span class="num">4663</span></dd>
+      </div>
+      <div class="meta-cell">
+        <dt>RPC</dt>
+        <dd class="addr">https://rpc.mainnet.chain.robinhood.com</dd>
+      </div>
+      <div class="meta-cell">
+        <dt>Deployed at</dt>
+        <dd><time datetime="2026-09-05T08:47:02Z">2026-09-05 08:47:02 UTC</time>, block <span class="num">54,989,195</span></dd>
+      </div>
+      <div class="meta-cell">
+        <dt>Vaults</dt>
+        <dd>None. The factory has created no vault.</dd>
+      </div>
+    </dl>
+
+    <!-- LIVE READS -->
+    <div class="reads" id="reads">
+      <div class="reads-head">
+        <h2>Live reads</h2>
+        <p class="reads-stamp" id="reads-stamp" aria-live="polite">Reading from the public RPC.</p>
+      </div>
+
+      <p class="reads-intro">
+        Three calls, sent from this browser straight to the chain 4663 public RPC with
+        <span class="mono">eth_call</span>. Nothing is proxied and nothing is cached.
+      </p>
+
+      <ul class="reads-list">
+        <li class="read" id="read-vaultcount">
+          <span class="read-call">VaultFactory.vaultCount()</span>
+          <span class="read-value" data-slot="value">not read yet</span>
+        </li>
+        <li class="read" id="read-allowsub">
+          <span class="read-call">VaultFactory.allowSubVaults()</span>
+          <span class="read-value" data-slot="value">not read yet</span>
+        </li>
+        <li class="read" id="read-usdc">
+          <span class="read-call">ChainlinkOracle.usdc(), then symbol() on what it returns</span>
+          <span class="read-value" data-slot="value">not read yet</span>
+        </li>
+      </ul>
+
+      <p class="reads-fail" id="reads-fail" hidden>
+        The public RPC did not answer, so nothing on this line was read. The addresses above
+        come from the deployment record in the repository, not from this browser. Reload to try again.
+      </p>
+    </div>
+
+    <!-- CONTRACTS -->
+    <h2 class="contracts-h" id="contracts-h">Contracts</h2>
+    <p class="contracts-note">
+      Seven addresses, every one of them read back from chain 4663 and recorded in
+      <span class="mono">contracts/config/deployments/robinhood-mainnet.json</span>.
+      Zero of the seven are source-verified on the explorer: the explorer API answers an
+      automated client with a bot challenge, and that attempt is written up in the repository.
+    </p>
+
+    <ul class="contracts" aria-labelledby="contracts-h">
+      <li class="contract">
+        <span class="contract-name">VaultFactory</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1" rel="noopener">0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">VaultDeployer</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0xc36198FD2c7C62738159ED1FF965679105FAF05a" rel="noopener">0xc36198FD2c7C62738159ED1FF965679105FAF05a</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">Governance</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x790A308f1ac06FeD4C79884BAD25d0C721C5B125" rel="noopener">0x790A308f1ac06FeD4C79884BAD25d0C721C5B125</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">FeeEngine</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232" rel="noopener">0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">OperatorRegistry</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568" rel="noopener">0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">SubVaultRegistry</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x692385262C05df7515560886f167c4eDD0814025" rel="noopener">0x692385262C05df7515560886f167c4eDD0814025</a>
+      </li>
+      <li class="contract">
+        <span class="contract-name">ChainlinkOracle</span>
+        <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB" rel="noopener">0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB</a>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ===================================================================
+       VAULTS
+       Zero rows today. The empty state is static markup on purpose: the
+       sentence has to be true whether or not the RPC answers, and the
+       LIVE READS panel above corroborates it rather than producing it.
+       =================================================================== -->
+  <section class="card vaults" aria-labelledby="vaults-h">
+    <div class="card-head">
+      <h2 id="vaults-h">Vaults</h2>
+      <span class="count-chip"><span class="num">0</span> listed</span>
+    </div>
+
+    <div class="table-scroll">
+      <table class="vault-table">
+        <caption class="sr-only">Vaults on chain 4663. The table has no rows because no vault has been created.</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-name">Name</th>
+            <th scope="col" class="col-num">TVL</th>
+            <th scope="col" class="col-num">Age</th>
+            <th scope="col" class="col-num">NAV per share</th>
+            <th scope="col" class="col-num">Performance vs SPY</th>
+          </tr>
+        </thead>
+      </table>
+    </div>
+
+    <!-- THE EMPTY STATE SITS OUTSIDE THE SCROLL CONTAINER, NOT IN A SPANNING
+         CELL. Inside one it inherits the table's 40rem min-width, so at 375 px
+         the sentence this page exists to say is clipped by the horizontal
+         scroll and the reader sees "No vaults have been create". A table may
+         carry a header row and no body rows; the explanation of why there are
+         none belongs beside the table, at the width of the card. -->
+    <div class="empty">
+      <svg class="empty-mark" viewBox="0 0 64 40" role="presentation" focusable="false" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="62.5" height="38.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></rect>
+        <line x1="0.75" y1="12.75" x2="63.25" y2="12.75" stroke="currentColor" stroke-width="1.5"></line>
+        <line x1="20.75" y1="0.75" x2="20.75" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
+        <line x1="42.25" y1="0.75" x2="42.25" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
+      </svg>
+      <p class="empty-lede">No vaults have been created yet. vaultCount() reads 0 on chain 4663.</p>
+      <p class="empty-sub">
+        Creating a vault is permissionless. The caller becomes its creator and its attested
+        operator, immutably.
+      </p>
+      <dl class="empty-facts">
+        <div>
+          <dt>Factory</dt>
+          <dd><a class="addr" href="https://robinhoodchain.blockscout.com/address/0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1" rel="noopener">0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</a></dd>
+        </div>
+        <div>
+          <dt>Sub-vaults</dt>
+          <dd>Off. <span class="mono">allowSubVaults()</span> reads false, and the factory is immutable, so this deployment is root vaults only.</dd>
+        </div>
+      </dl>
+      <p class="empty-watch">
+        Watch this page. The first row appears here the moment the factory reports a vault,
+        because the count above is read from the chain on every load.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="https://rwally.com/disclaimers">Disclaimers</a>
+      <a href="https://github.com/SlumperSan/agent-governed-vaults" rel="noopener">GitHub</a>
+      <a href="https://rwally.com">rwally.com</a>
+    </nav>
+    <p class="footer-legal">
+      Business Source License 1.1. Nothing on this page is an offer, a solicitation, or
+      investment advice.
+    </p>
+  </div>
+</footer>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>
