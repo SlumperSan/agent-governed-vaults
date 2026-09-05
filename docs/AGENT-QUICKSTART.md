@@ -8,7 +8,6 @@ to request and no gateway between an agent and a vault.
 - **On-chain ABIs:** `contracts/out/*/*.json` after `forge build`
 - **Chain configuration:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json)
   — assets, feeds, sane-price bands and the settlement token
-- **SDK:** [`packages/agent-sdk`](../packages/agent-sdk) (env-agnostic JS client)
 - **Machine index:** [`/llms.txt`](../llms.txt)
 
 ## 1. Act on-chain

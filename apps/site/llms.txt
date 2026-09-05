@@ -20,7 +20,6 @@
   bands and settlement token every public claim is checked against.
 - [Agent Quickstart](docs/AGENT-QUICKSTART.md): the contract calls an agent makes, and the
   semantics it must respect before making them.
-- [Agent SDK](packages/agent-sdk): env-agnostic JS client for the contracts.
 
 ## Protocol reference
 - [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.
