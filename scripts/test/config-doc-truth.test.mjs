@@ -40,6 +40,29 @@ const read = (...p) => readFileSync(path.join(REPO, ...p), 'utf8');
 const mainnet = JSON.parse(read('contracts', 'config', 'base-mainnet.json'));
 const sepolia = JSON.parse(read('contracts', 'config', 'base-sepolia.json'));
 
+/**
+ * EVERY mainnet configuration, enumerated from the filesystem — never from a list.
+ *
+ * The per-config assertions below used to iterate a hand-written pair,
+ * `[['base-mainnet.json', mainnet], ['base-sepolia.json', sepolia]]`. That is the same mistake the
+ * header warns about one level up: a guard scoped by a hand-kept list cannot see the file nobody
+ * remembered to add. When `contracts/config/robinhood-mainnet.json` landed, every govDefencesNote
+ * and proposal-threshold assertion in this file went on describing the two Base configs and said
+ * nothing at all about the new one — a mistyped note or a zeroed threshold in it reddened nothing.
+ *
+ * So the mainnet side is enumerated: any `*-mainnet.json` in `contracts/config/` is covered the day
+ * it is added, without an edit here. `base-sepolia.json` is still named, because it is the ONLY
+ * testnet config and a glob for it would be a glob of one.
+ */
+const mainnetConfigs = () =>
+  readdirSync(path.join(REPO, 'contracts', 'config'))
+    .filter((f) => f.endsWith('-mainnet.json'))
+    .sort()
+    .map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+
+/** Mainnet configs plus the one testnet config: the full set the shared assertions apply to. */
+const allConfigs = () => [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
 const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md', 'docs/vault/go-to-market-plan.md'];
@@ -284,16 +307,16 @@ test('the exit-fee decay period in the mainnet config matches the site reference
   assert.match(siteTest, /config\.smoke\.exitFeeDecayPeriod/, 'site.test.mjs no longer pins the exit-fee decay row to base-mainnet.json');
 });
 
-test('Governance.sol has no proposalThresholdBps floor, and govDefencesNote in both configs says so', () => {
+test("Governance.sol has no proposalThresholdBps floor, and every config's govDefencesNote says so", () => {
   const gov = read('contracts', 'src', 'Governance.sol');
   // Source of truth: the validator bounds the threshold from above only. If a floor ever lands,
   // this assertion fails first and the notes below must be rewritten with it.
   assert.match(gov, /require\(cfg\.proposalThresholdBps <= BPS, BadGovConfig\(\)\);/, 'the <= BPS bound on proposalThresholdBps moved or changed');
-  assert.doesNotMatch(gov, /proposalThresholdBps\s*>=/, 'Governance.sol now enforces a proposalThresholdBps floor; govDefencesNote in both configs must be rewritten');
+  assert.doesNotMatch(gov, /proposalThresholdBps\s*>=/, "Governance.sol now enforces a proposalThresholdBps floor; every config's govDefencesNote must be rewritten");
   assert.match(gov, /NO FLOOR on proposalThresholdBps/, 'the M-6 "no floor" comment in _validateConfig is gone');
 
   const NO_FLOOR = 'NO contract floor on proposalThresholdBps';
-  for (const [name, cfg] of [['base-mainnet.json', mainnet], ['base-sepolia.json', sepolia]]) {
+  for (const [name, cfg] of allConfigs()) {
     const note = cfg.smoke.govDefencesNote;
     assert.equal(typeof note, 'string', `${name}: smoke.govDefencesNote missing`);
     assert.ok(note.includes(NO_FLOOR), `${name}: govDefencesNote must state that there is no contract floor on proposalThresholdBps`);
@@ -328,9 +351,9 @@ test('Governance.sol has no proposalThresholdBps floor, and govDefencesNote in b
   }
 });
 
-test('the configs still choose a proposal threshold above zero, since the contract will accept zero', () => {
+test('every config still chooses a proposal threshold above zero, since the contract will accept zero', () => {
   // Not a contract invariant — the note above explains why — so it is a config invariant here.
-  for (const [name, cfg] of [['base-mainnet.json', mainnet], ['base-sepolia.json', sepolia]]) {
+  for (const [name, cfg] of allConfigs()) {
     assert.ok(cfg.smoke.gov.proposalThresholdBps > 0, `${name}: proposalThresholdBps is 0, re-opening the M-7/C-1 precondition the note describes`);
   }
 });
@@ -793,4 +816,131 @@ test('probe: the sub-vault-universal guard is live', () => {
       `the guard false-positives on corrected prose: ${ok}`
     );
   }
+});
+
+/**
+ * THE LAUNCH-ORACLE BLOCK, pinned against the contract that consumes it — for every mainnet config.
+ *
+ * `ChainlinkOracle`'s constructor bounds are the only thing standing between a typo and a
+ * permanently mis-parameterised immutable oracle, and they are checked at DEPLOY time: a heartbeat
+ * outside `[MIN_HEARTBEAT, MAX_HEARTBEAT]` or a band wider than `MAX_BAND_RATIO` reverts the
+ * constructor, which costs a round trip and, on a chain where the deployer is paying real gas, the
+ * gas with it. The values live in a JSON file no compiler reads. So they are pinned here, from the
+ * config side, against the constants read out of the contract source rather than retyped into this
+ * test.
+ *
+ * This is a POSITIVE requirement in the header's sense — it asserts what each config must satisfy,
+ * never that no other file may say something — so enumerating the configs is safe, and enumerating
+ * is what makes the next mainnet config covered on the day it lands rather than on the day someone
+ * remembers this file.
+ */
+test("every mainnet config's chainlinkOracle assets satisfy the ChainlinkOracle constructor bounds", () => {
+  const oracle = read('contracts', 'src', 'oracle', 'ChainlinkOracle.sol');
+  // Read the bounds from the contract. A renamed constant still binds; a CHANGED one goes red here
+  // first, which is the point — these numbers must never become two independent copies.
+  const constant = (name) => /** @type {string | undefined} */ (
+    new RegExp(`constant ${name} = (\\d[\\d_]*);`).exec(oracle)?.[1]
+  )?.replace(/_/g, '');
+  const minHeartbeat = Number(constant('MIN_HEARTBEAT'));
+  const maxHeartbeat = Number(constant('MAX_HEARTBEAT'));
+  const maxBandRatio = BigInt(constant('MAX_BAND_RATIO') ?? '0');
+  assert.ok(
+    Number.isFinite(minHeartbeat) && Number.isFinite(maxHeartbeat) && maxBandRatio > 0n,
+    'could not read MIN_HEARTBEAT / MAX_HEARTBEAT / MAX_BAND_RATIO out of ChainlinkOracle.sol'
+  );
+
+  for (const [name, cfg] of mainnetConfigs()) {
+    const co = cfg.chainlinkOracle;
+    assert.ok(co, `${name}: no chainlinkOracle block — the launch oracle has no configuration`);
+    const assets = co.assets;
+    assert.ok(Array.isArray(assets) && assets.length > 0, `${name}: chainlinkOracle.assets is empty; there is nothing to price`);
+
+    for (const a of assets) {
+      const where = `${name} / ${a.symbol}`;
+      // The settlement token is pinned at 1e18 and the constructor rejects an asset that is ALSO the
+      // pinned token (ChainlinkOracle.sol:151). Compared case-insensitively: these addresses are
+      // copied out of block explorers and are checksummed inconsistently across the configs.
+      assert.notEqual(
+        String(a.asset).toLowerCase(),
+        String(cfg.usdc).toLowerCase(),
+        `${where}: listed as a priced asset AND as the pinned settlement token; the constructor rejects that`
+      );
+
+      assert.ok(
+        a.heartbeatSeconds >= minHeartbeat && a.heartbeatSeconds <= maxHeartbeat,
+        `${where}: heartbeatSeconds ${a.heartbeatSeconds} is outside ChainlinkOracle's [${minHeartbeat}, ${maxHeartbeat}]`
+      );
+
+      // Band shape. `hi == 0` disables the band, which the constructor permits but which
+      // verify-chainlink-oracle.mjs rejects for mainnet — so on a MAINNET config it must be set.
+      const lo = BigInt(a.minPriceWad);
+      const hi = BigInt(a.maxPriceWad);
+      assert.ok(lo > 0n, `${where}: minPriceWad is 0 — a mainnet asset must carry the sane-price band`);
+      assert.ok(hi > lo, `${where}: maxPriceWad ${hi} is not strictly above minPriceWad ${lo}`);
+      assert.ok(hi <= lo * maxBandRatio, `${where}: band is wider than MAX_BAND_RATIO (${maxBandRatio}x)`);
+
+      // The feed's own decimals, pinned beside the aggregator implementation. ChainlinkOracle caches
+      // `scale` from decimals() ONCE at construction, so this is the number that cache is derived
+      // from, and 8 is the Chainlink USD-feed convention.
+      assert.equal(a.aggregatorPin?.decimals, 8, `${where}: aggregatorPin.decimals must be 8`);
+      assert.match(
+        String(a.aggregatorPin?.observedAt ?? ''),
+        /^\d{4}-\d{2}-\d{2}$/,
+        `${where}: aggregatorPin.observedAt must be a date — an undated pin records nothing`
+      );
+
+      // DENOMINATION. ChainlinkOracle requires the description to end in a USD quote leg
+      // (ChainlinkOracle.sol:272-273); the string the config records must satisfy the same rule, or
+      // the exact-string check in verify-chainlink-oracle.mjs is comparing against a feed the
+      // constructor would refuse anyway.
+      assert.match(
+        String(a.feedDescriptionOnChain ?? ''),
+        /(?: |\/)USD$/,
+        `${where}: feedDescriptionOnChain is not USD-quoted; ChainlinkOracle's constructor rejects such a feed`
+      );
+    }
+  }
+});
+
+/**
+ * ROBINHOOD CHAIN 4663 — the sequencer-uptime-feed exemption, and why it gets its own test.
+ *
+ * The Base guard above ('the sequencer uptime feed is configured on mainnet…') asserts a `0x…40`
+ * address. That assertion is CORRECT for Base and would be wrong to generalise: chain 4663 has no
+ * L2 Sequencer Uptime Feed to configure — Chainlink publishes none for it, and the Base feed
+ * address carries zero bytes of code there. The empty string is the owner-approved answer of
+ * 2026-09-04, not a dropped field. So the two configs get two tests, each asserting the thing that
+ * is true of it.
+ *
+ * What still needs guarding here is the pair of claims the empty field rests on, because both are
+ * falsifiable and neither is self-evident from the empty string:
+ *
+ *   1. The emptiness is DELIBERATE and DATED. An empty `sequencerUptimeFeed` with no note beside it
+ *      is indistinguishable from a config someone did not finish, and the difference is the whole
+ *      difference — one is an owner decision on the record, the other is a missing security control.
+ *   2. The contract still fails OPEN on `address(0)`. The config's note tells a reader the oracle
+ *      "serves prices straight through a sequencer outage and never reverts on that account". If
+ *      `_requireSequencerUp` is ever changed to fail CLOSED, that note becomes false — and it is the
+ *      note a reader consults to understand what the exemption costs them.
+ */
+test('robinhood-mainnet.json leaves the sequencer uptime feed empty, on the record and for the stated reason', () => {
+  const rh = JSON.parse(read('contracts', 'config', 'robinhood-mainnet.json'));
+  assert.equal(rh.chainId, 4663, 'robinhood-mainnet.json is not chain 4663');
+
+  const seq = rh.chainlinkOracle.sequencerUptimeFeed;
+  assert.equal(seq, '', 'robinhood-mainnet.json now names a sequencer uptime feed; rewrite sequencerUptimeFeedNote to match it');
+
+  // The note, matched by SHAPE rather than by one phrasing: an owner approval, and its date.
+  const note = String(rh.chainlinkOracle.sequencerUptimeFeedNote ?? '');
+  assert.match(note, /owner[- ]approved/i, 'sequencerUptimeFeedNote must record that the exemption is owner-approved');
+  assert.match(note, /\b2026-09-04\b/, 'sequencerUptimeFeedNote must carry the date of that approval');
+
+  // Claim 2: the runtime behaviour the note describes.
+  const oracle = read('contracts', 'src', 'oracle', 'ChainlinkOracle.sol');
+  assert.ok(
+    oracle.includes('if (address(seq) == address(0)) return;'),
+    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). robinhood-mainnet.json\'s '
+      + 'sequencerUptimeFeedNote tells the reader that an oracle with a zero feed serves prices '
+      + 'through an outage and never reverts on that account; rewrite it before this changes.'
+  );
 });

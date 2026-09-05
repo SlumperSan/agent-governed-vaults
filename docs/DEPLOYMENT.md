@@ -40,6 +40,34 @@ unwired registry cannot be fixed after the fact).
   [`base-mainnet.json`](../contracts/config/base-mainnet.json) and described in §3; **UNVERIFIED-ON-CHAIN**
   and not for a mainnet launch.
 
+### A second mainnet configuration exists, and nothing is deployed with it (2026-09-04)
+
+**Added 2026-09-04:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json),
+for Robinhood Chain (chain id 4663). It is modelled key for key on `base-mainnet.json` so the two
+diff field by field, and its `chainlinkOracle` block is the launch shape §1 describes: WETH and
+cbBTC priced from that chain's own `ETH / USD` and `CBBTC / USD` Chainlink Data Feeds, with USDG as
+the pinned settlement token under the historical `usdc` key. Every address, code size, decimal, feed
+description, aggregator phase and answer in it was read from chain 4663 by read-only JSON-RPC on
+2026-09-04. Those reads are several batches rather than one instant, spanning roughly three minutes
+of chain time, and the file records the earliest and latest samples alongside the one its feed ages
+are measured against.
+
+**Nothing is deployed with it.** No contract from this repository exists on chain 4663, or on any
+mainnet. The file is configuration evidence rather than deployment evidence, and it changes no row
+of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
+1's four inputs — real, on-chain-verified feed addresses (never invented ones), per-asset heartbeats
+and sane-price bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
+uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-approved exemption dated
+2026-09-04, because Chainlink publishes no L2 Sequencer Uptime Feed for that chain. The file's
+`sequencerUptimeFeedNote` states what `ChainlinkOracle` does with a zero feed, and
+`scripts/test/config-doc-truth.test.mjs` pins both the emptiness and that behaviour so the note
+cannot drift from the code.
+
+Two further questions in it are the owner's, and are left open rather than answered: which
+`minDepositUsdc` vault #1 takes (the file reproduces `base-mainnet.json`'s 100-unit value verbatim,
+while the owner's vault-1 decision records 0.01), and how much USDG the creator Safe holds before
+the first deposit. Supplying a config is not a substitute for the rest of this runbook.
+
 ## 1. Deploy and verify the curated oracle FIRST (C-6)
 
 **Read this before §2's oracle subsection — it supersedes it for launch.** Audit finding **C-6**
