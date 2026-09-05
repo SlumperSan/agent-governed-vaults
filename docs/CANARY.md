@@ -461,7 +461,7 @@ masking failure of single-key signals, and it is why per-leg keys are the house 
 proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
 Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
 Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
-be settled (`Governance.sol:278`), so one vault cannot have two proposals running at once however
+be settled (`Governance.sol:288`), so one vault cannot have two proposals running at once however
 many proposers try. That, not the phase durations, is what bounds pages per vault per hour — and it
 is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
 true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour

@@ -1,5 +1,7 @@
 # Sprint 6 — Governance & Economic Layer Adversarial Review (Security Agent A)
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree as reviewed at Sprint 6 and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 Scope: `src/Governance.sol`, `src/FeeEngine.sol`, `src/OperatorRegistry.sol`, `src/lib/Checkpoints.sol`,
 and VaultCore's `_snapshot` / `pastVotingEligibleShares` machinery + Mode-F settlement path.
 Sprints 2 & 3.

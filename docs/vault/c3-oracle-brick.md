@@ -13,7 +13,7 @@ be accepted and no exit can settle.
 ## Mechanism
 
 The aggregator used `try IPriceSource(...).latestPrice() returns (uint256 p, uint256 updatedAt) {...}
-catch {}` (`OracleAggregator.sol:88-90`). Solidity decodes the returned buffer in the **caller's**
+catch {}` — the code is gone, and `_tryLatestPrice` (`OracleAggregator.sol:169`) is the raw-staticcall replacement that records why. Solidity decodes the returned buffer in the **caller's**
 frame *after* the callee returns successfully, so a `catch` clause cannot absorb a decode failure. A
 source returning 32 bytes, 0 bytes, or living at a codeless address makes the whole call revert with
 empty returndata — **not** `StaleOracle`. A genuine `revert("boom")` is correctly absorbed (the

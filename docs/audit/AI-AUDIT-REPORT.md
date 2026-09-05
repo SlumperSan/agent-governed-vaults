@@ -1,5 +1,7 @@
 # AI Pre-Audit Report — Agent-Governed Vaults
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree at tag `v0.3.0-audit` (2026-08-25) and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 **Engagement reference:** tag `v0.3.0-audit` (annotated → commit `ad9396d7`)
 **Date:** 2026-08-25
 **Status:** Complete — all nine specialist passes ran to completion.

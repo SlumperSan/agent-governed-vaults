@@ -1,5 +1,7 @@
 # Testnet soak report — Sprint 12
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the pre-C-6 deployment this run was made against and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 > [!warning] SUPERSEDED DEPLOYMENT (noted 2026-08-30). This report is a faithful record of a run
 > against the **pre-C-6 deployment** (`deployBlock` 45,784,186, the custom multi-source
 > `OracleAggregator`). That stack was retired and Base Sepolia was **redeployed on 2026-08-29**

@@ -1,5 +1,7 @@
 # Sprint 6 Security Review — Oracle / Execution / Sub-Vault layers
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree as reviewed at Sprint 6 and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 Adversarial review by **Security Agent B**. Scope (Sprints 4–5): `src/OracleAggregator.sol`,
 `src/AggregationRouterAdapter.sol`, the sub-vault surface of `src/VaultCore.sol`
 (`executeRebalance`, `allocateToChild`, `redeemFromChild`, `_redeemChildMeasured`,

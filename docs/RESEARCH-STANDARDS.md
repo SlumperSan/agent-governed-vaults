@@ -1,5 +1,7 @@
 # Standards Research — EVM Standards, Testnet Targets, Solana Compatibility
 
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree at the time of the research pass and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
+
 Scope: which published standards this protocol can leverage; which testnet to deploy to; what
 "Solana compatibility" can and cannot mean. Research only — no code changes in this document.
 Compiled 2026-08-19.
