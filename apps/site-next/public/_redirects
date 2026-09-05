@@ -1,6 +1,6 @@
 # Cloudflare Pages redirects for the public site.
 #
-# THIS FILE DEFINES NO RULES, AND THAT IS THE FINDING. It exists so the next person looks here,
+# THIS FILE DEFINES ONE RULE. It exists so the next person looks here,
 # reads why, and does not spend an afternoon rediscovering it.
 #
 # THE www -> APEX REDIRECT CANNOT BE EXPRESSED HERE. Pages matches the source column on PATH ONLY.
@@ -26,3 +26,15 @@
 # IF A RULE IS EVER ADDED: one per line, `from  to  status`, source is a path, and the file is
 # capped at 2,000 static and 100 dynamic redirects. Put the reason for the rule in a comment above
 # it -- a redirect nobody can explain is a redirect nobody can safely delete.
+
+# THE ONE RULE. `/risks` was a page of this site from launch until 2026-09-05, when the owner
+# consolidated every warning, limit and unresolved question onto a single page and `risks.html` was
+# retired into `disclaimers.html`. The old URL is in `sitemap.xml` history, in the repository, and in
+# whatever anyone has bookmarked or linked, and the page it pointed at is the one a reader most needs
+# to reach. A 301 rather than a 302 because the move is permanent: the page is not coming back.
+#
+# This is a PATH rule, which is the kind `_redirects` actually supports, so unlike the hostname rule
+# above it works here. Pages serves the extension-less form, so `/risks` is the URL to match;
+# `/risks.html` redirects to `/risks` first and lands on this rule on the second hop.
+
+/risks  /disclaimers  301

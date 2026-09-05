@@ -30,7 +30,7 @@
  * into this row; the short form is only honest because status.html anchors it.
  */
 import type { JSX } from 'react';
-import { MotionBackdrop } from '../../assets/Backdrop';
+import { Backdrop } from '../../assets/Backdrop';
 import { DUR, STAGGER } from '../../motion/easings';
 import { Reveal } from '../../motion/Reveal';
 import { Pinned } from '../../shell/PinnedText';
@@ -89,7 +89,7 @@ const ROWS: ReadonlyArray<{ term: string; detail: string }> = [
 export default function IndexWhat(): JSX.Element {
   return (
     <section className={s.section} aria-labelledby={HEADING_ID}>
-      <MotionBackdrop />
+      <Backdrop slot="lifecycle" />
       <div className="wrap">
         <div className={s.head}>
           <p className={s.eyebrow}>What this is</p>

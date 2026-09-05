@@ -51,7 +51,7 @@
 #
 # media-src 'self'
 #   ONE FILE, AND IT IS THE ONLY REASON THIS DIRECTIVE EXISTS:
-#   /media/field-loop-1280.mp4, the background clip behind one section of the
+#   /media/loop-1280.mp4, the background clip behind one section of the
 #   index page. It is muted, autoplaying, looping and playsinline, it carries no
 #   audio track at all, and it is added to the page after hydration and only for
 #   a reader who has not asked for reduced motion — see
