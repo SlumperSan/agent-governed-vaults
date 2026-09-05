@@ -127,7 +127,7 @@ re-checked it. Re-check this list before repeating it.
   only defences against a bad answer. Assets are limited to WETH + cbBTC — Base has no cbETH/USD
   feed. A feed deprecation fails that asset *closed*, which is safe but has no fallback.
 - **The sequencer guard has never run against a real uptime feed.** Testnet leaves it `address(0)`
-  by design, so its first real execution would be on mainnet.
+  by design, so its first real execution would be on Base mainnet.
 
 ## The loop
 
