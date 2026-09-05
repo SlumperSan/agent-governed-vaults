@@ -43,7 +43,8 @@
  *
  * Host is vault B, created by drill 1 — run that first.
  *
- * Env: SOAK_SIGNER_ARGS (required), BASE_SEPOLIA_RPC, SOAK_STATE_DIR, SOAK_RESET=1.
+ * Env: SOAK_SIGNER_ARGS (required), SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT,
+ *      SOAK_STATE_DIR, SOAK_RESET=1.
  * Run:  node scripts/soak/drill3-modef.mjs
  */
 import fs from 'node:fs';
@@ -53,12 +54,9 @@ import {
   ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime,
   openState, runSteps, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
 } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const STATE_DIR = process.env.SOAK_STATE_DIR ?? path.join(ROOT, 'scripts', 'soak');
 const STATE_PATH = path.join(STATE_DIR, '.state-drill3.json');
@@ -82,8 +80,7 @@ function resolveHost() {
 
 function preflight() {
   log(`rpc=${RPC}  governance=${dep.governance}`);
-  const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
-  assert(chainId === dep.chainId, `RPC chain id ${chainId} != address-book chainId ${dep.chainId}`);
+  assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   const vault = resolveHost();
   log(`Mode-F host: vault B ${vault}`);

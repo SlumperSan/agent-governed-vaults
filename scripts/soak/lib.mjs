@@ -16,7 +16,8 @@
  *      from it: every assertion re-reads state with `cast call`. The runner's own output is
  *      not evidence about the chain.
  *
- * Env: BASE_SEPOLIA_RPC, SOAK_SIGNER_ARGS, CAST, and per-drill state paths.
+ * Env: SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_SIGNER_ARGS, CAST, and per-drill
+ *      state paths.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -28,7 +29,16 @@ import { classifyCallError } from '../../packages/canary/src/call-error.mjs';
 // percent-encoded, so the raw pathname yields a directory that does not exist and every drill
 // dies at load resolving the address book under it.
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+// SOAK_RPC is the chain-neutral name; BASE_SEPOLIA_RPC is read after it so an operator's existing
+// environment keeps working unchanged. The documented default is a Base Sepolia public node, which
+// is the chain `deploymentPath`'s default address book describes. A run elsewhere sets SOAK_RPC and
+// SOAK_DEPLOYMENT together, and `assertLiveChainId` refuses the pair when they disagree.
+//
+// `||`, not `??`, because agent-policy.mjs resolves the same two names with `||`. A shell that
+// exports SOAK_RPC empty would otherwise leave this at '' while drill 5's viem client fell through
+// to the default — the drill's cast reads and its writes on two endpoints, which no chain-id check
+// can see, since drill 5 reads the id through the viem side's url.
+export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia-rpc.publicnode.com';
 const CAST = process.env.CAST ?? 'cast';
 
 /**

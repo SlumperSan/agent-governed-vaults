@@ -728,6 +728,17 @@ test('resolveAgentRunConfig accepts a complete environment and defaults the API 
   assert.match(c.rpcUrl, /^https:\/\//);
 });
 
+test('SOAK_RPC outranks BASE_SEPOLIA_RPC, which still works on its own', () => {
+  // Drill 5's viem writes go to whatever this returns while its cast reads go to lib.mjs's `RPC`.
+  // The two resolve in the same order, so an operator who sets only the new name, or only the old
+  // one, gets one endpoint rather than two.
+  assert.equal(resolveAgentRunConfig({ ...okEnv, SOAK_RPC: 'https://a.example' }).rpcUrl, 'https://a.example');
+  assert.equal(resolveAgentRunConfig({ ...okEnv, BASE_SEPOLIA_RPC: 'https://b.example' }).rpcUrl, 'https://b.example');
+  assert.equal(
+    resolveAgentRunConfig({ ...okEnv, SOAK_RPC: 'https://a.example', BASE_SEPOLIA_RPC: 'https://b.example' }).rpcUrl,
+    'https://a.example', 'SOAK_RPC wins when both are set');
+});
+
 test('resolveAgentRunConfig names EVERY problem at once, not just the first', () => {
   // An operator fixing a three-item misconfiguration one error at a time is an operator who
   // eventually pastes a private key into a shell to make it stop.
@@ -1240,6 +1251,75 @@ test('the two seams the fixture cannot execute are pinned as source text instead
     'the local min is still what the diagnostic line prints as boundedWeight');
 });
 
+// ───────── no soak entrypoint may pin a chain id in its own source ─────────
+//
+// Eight entrypoints each carried `{ expectChainId: 84532 }` beside their `loadDeployment` call, so
+// the expected chain was written down eight times and the address book's own `chainId` a ninth.
+// Pointing a run at another chain meant editing all eight, and until someone did, drill coverage
+// was reachable on Base Sepolia and nowhere else. The chain id now comes from the record, and
+// `assertLiveChainId` proves the endpoint matches it.
+//
+// A source-text pin, like the run-soak.ps1 tests below, because these files execute at import and
+// no node test can run them. What it catches is the defect that actually happens: a new drill, or
+// an edit to an old one, quietly re-pinning a literal in a file nothing else checks.
+
+const SOAK_ENTRYPOINTS = [
+  'drill1-multivault.mjs', 'drill2-subvault.mjs', 'drill3-modef.mjs', 'drill4-oraclefreeze.mjs',
+  'drill5-agent-execute.mjs', 'drill5-fasttrack.mjs', 'drill5-gov-companion.mjs',
+  'oracle-sampler.mjs',
+];
+
+test('the eight soak entrypoints contain no chain-id literal at all', () => {
+  for (const name of SOAK_ENTRYPOINTS) {
+    const src = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', name), 'utf8');
+    assert.doesNotMatch(src, /\b84532\b/, `${name} still names Base Sepolia's chain id`);
+    // Every chain id, not just this one: re-pinning 4663 in a drill would recreate the same
+    // defect pointing the other way.
+    assert.doesNotMatch(src, /expectChainId/,
+      `${name} passes expectChainId — the record's own chainId is the expected value`);
+  }
+});
+
+test('every soak entrypoint loads the address book through deploymentPath', () => {
+  // The other half of the same property. Dropping the literal but keeping a hardcoded
+  // `path.join(ROOT, ..., 'base-sepolia.json')` would leave the file un-repointable and this
+  // file's 84532 assertion above would still pass.
+  for (const name of SOAK_ENTRYPOINTS) {
+    const src = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', name), 'utf8');
+    assert.match(src, /loadDeployment\(deploymentPath\(ROOT\)\)/,
+      `${name} must resolve its address book through deploymentPath`);
+    assert.doesNotMatch(src, /'base-sepolia\.json'/,
+      `${name} names the Base Sepolia book directly, so SOAK_DEPLOYMENT cannot repoint it`);
+  }
+});
+
+test('the one surviving 84532 is the drill-5 testnet allowlist, and it is still a Set of chain ids', () => {
+  // NOT swept, deliberately. `TESTNET_CHAIN_IDS` is the gate that stops a throwaway keystore
+  // signing on a chain where the funds are real; widening it is a launch-parameter decision, not a
+  // portability fix. Pinned here so the exemption stays exactly this one declaration — a second
+  // 84532 appearing elsewhere in agent-policy.mjs would go unnoticed if the file were skipped.
+  const src = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'agent-policy.mjs'), 'utf8');
+  const hits = src.match(/\b84532\b/g) ?? [];
+  assert.equal(hits.length, 1, 'agent-policy.mjs must name 84532 exactly once');
+  assert.match(src, /export const TESTNET_CHAIN_IDS = new Set\(\[84532, /,
+    'the single occurrence must be the testnet allowlist');
+});
+
+test('the soak scripts resolve their RPC from SOAK_RPC first, then BASE_SEPOLIA_RPC', () => {
+  // Two resolvers, two files: lib.mjs drives every `cast` read and write, agent-policy.mjs drives
+  // drill 5's viem client. Letting them disagree would put the reads and the writes of one drill on
+  // two different endpoints, which is exactly the kind of split a chain-id check cannot see.
+  // Same names AND the same operator. `??` in one and `||` in the other agree on every set value
+  // and disagree on an exported-but-empty one, which is precisely the split this pins shut — and
+  // one `assertLiveChainId` cannot catch, because drill 5 reads the chain id through the viem url.
+  const lib = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'lib.mjs'), 'utf8');
+  assert.match(lib, /process\.env\.SOAK_RPC \|\| process\.env\.BASE_SEPOLIA_RPC \|\|/);
+  const sampler = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'oracle-sampler.mjs'), 'utf8');
+  assert.match(sampler, /process\.env\.SOAK_RPC \|\| process\.env\.BASE_SEPOLIA_RPC \|\|/);
+  const policy = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'agent-policy.mjs'), 'utf8');
+  assert.match(policy, /rpcUrl: env\.SOAK_RPC \|\| env\.BASE_SEPOLIA_RPC \|\| defaultRpc/);
+});
+
 // ───────── the launcher wiring: run-soak.ps1 must actually start the companion ─────────
 //
 // The votability gate taught drill 5 to say "no votable round" instead of stalling for 40 ticks,
@@ -1267,6 +1347,38 @@ const PS_ACTIVATE = /New-NodeStep 'scripts\/soak\/drill5-agent-execute\.mjs' 'ac
 const PS_COMPANION = /Start-Process[^\n]*drill5-gov-companion\.mjs/;
 const PS_VOTE = /New-NodeStep 'scripts\/soak\/drill5-agent-execute\.mjs'\s*$/m;
 const PS_WAIT = /\$comp\.WaitForExit\(\)/;
+
+test('the launcher takes the signer and the endpoint from the same places the drills do', () => {
+  // run-soak.ps1 hardcoded the deployer address and defaulted only BASE_SEPOLIA_RPC. Both were
+  // copies of something the drills resolve differently, so a run repointed at another chain would
+  // have had its preflight compare the unlocked key against Base Sepolia's deployer and reject it.
+  // No node test can execute PowerShell in CI (ubuntu-latest), so these are text pins.
+  assert.match(RUN_SOAK, /\$Deployer = \(Get-Content -Raw \$Book \| ConvertFrom-Json\)\.deployer/,
+    'the signer must come from the address book, not a second copy in the launcher');
+  assert.doesNotMatch(RUN_SOAK, /\$Deployer = '0x/, 'no hardcoded deployer address may return');
+  assert.match(RUN_SOAK, /\$env:SOAK_DEPLOYMENT/, '$Book must honour the same override the drills read');
+  assert.match(RUN_SOAK, /base-sepolia\.json/, 'and fall back to the same committed default');
+
+  // SOAK_RPC first, BASE_SEPOLIA_RPC second — lib.mjs's order. Then BOTH are exported, so a child
+  // reading either name sees one endpoint.
+  const rpc = /\$env:SOAK_RPC = if \(\$env:SOAK_RPC\) \{ \$env:SOAK_RPC \}[\s\S]*?elseif \(\$env:BASE_SEPOLIA_RPC\)[\s\S]*?else \{ 'https:\/\/sepolia\.base\.org' \}/;
+  assert.match(RUN_SOAK, rpc);
+  assert.match(RUN_SOAK, /\$env:BASE_SEPOLIA_RPC = \$env:SOAK_RPC/);
+});
+
+test('reading the address book cannot break -Stop, because it happens after that block', () => {
+  // $ErrorActionPreference is 'Stop'. Resolving $Book above the -Status/-Stop early exits would let
+  // a typo'd SOAK_DEPLOYMENT throw before -Stop killed the pids — and -Stop is the only thing that
+  // reaches the detached companion, which runs with a --password-file the operator deletes after
+  // the run. The read belongs below those exits, where it is first needed.
+  const iStop = anchorAt(/^if \(\$Stop\) \{/m, 'the -Stop block');
+  const iExit = RUN_SOAK.indexOf('exit 0', iStop);
+  assert.ok(iExit > iStop, 'the -Stop block must still end in an early exit');
+  const iBook = anchorAt(/\$Book = if \(\$env:SOAK_DEPLOYMENT\)/, 'the address-book resolution');
+  const iDeployer = anchorAt(/\$Deployer = \(Get-Content -Raw \$Book/, 'the signer read');
+  assert.ok(iBook > iExit, '$Book must resolve only after -Stop has already exited');
+  assert.ok(iDeployer > iBook, 'the signer is read from $Book, so it comes after it');
+});
 
 test('run-soak.ps1 starts the governance companion, between drill 5 activating and voting', () => {
   // The ordering is FORCED, not a preference: drill5-gov-companion.mjs refuses to propose until

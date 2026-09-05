@@ -20,8 +20,8 @@
  *
  * Vault B is also drill 3's Mode-F host, so this drill leaves it activated with live shares.
  *
- * Env: SOAK_SIGNER_ARGS (required for the write steps), BASE_SEPOLIA_RPC, SOAK_API,
- *      SOAK_STATE_DIR, SOAK_INDEXER_STATE, SOAK_RESET=1 to start over.
+ * Env: SOAK_SIGNER_ARGS (required for the write steps), SOAK_RPC (or BASE_SEPOLIA_RPC),
+ *      SOAK_DEPLOYMENT, SOAK_API, SOAK_STATE_DIR, SOAK_INDEXER_STATE, SOAK_RESET=1 to start over.
  * Run:  node scripts/soak/drill1-multivault.mjs
  */
 import fs from 'node:fs';
@@ -30,14 +30,11 @@ import {
   ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast,
 } from './lib.mjs';
-import { loadDeployment, wiringExpectations } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment, wiringExpectations } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
 import { vaultsIn, headBlockOf } from './snapshot.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
 const B = soak.vaultB;
 
@@ -61,8 +58,7 @@ const TOKENS_B = tokensFor(B.basket);
 
 function preflight() {
   log(`rpc=${RPC}  factory=${dep.factory}`);
-  const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
-  assert(chainId === dep.chainId, `RPC chain id ${chainId} != address-book chainId ${dep.chainId}`);
+  assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   // Re-prove the address book against the chain. A committed JSON file can drift from a
   // redeploy; spending a signature against a stale book is the expensive way to find out.

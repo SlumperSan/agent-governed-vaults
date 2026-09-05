@@ -41,7 +41,9 @@ export function resolveAgentRunConfig(env, { defaultRpc = 'https://base-sepolia-
     keystore: String(env.SOAK_AGENT_KEYSTORE),
     password: String(env.SOAK_AGENT_KEYSTORE_PASSWORD),
     apiBaseUrl: env.SOAK_API || 'http://127.0.0.1:8402',
-    rpcUrl: env.BASE_SEPOLIA_RPC || defaultRpc,
+    // SOAK_RPC first, BASE_SEPOLIA_RPC second: the same order lib.mjs resolves `RPC` in, so the
+    // drill's cast reads and its viem writes cannot end up on two different endpoints.
+    rpcUrl: env.SOAK_RPC || env.BASE_SEPOLIA_RPC || defaultRpc,
   };
 }
 
