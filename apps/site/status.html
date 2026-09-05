@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status — Agent-Governed Vaults</title>
+<meta name="description" content="The launch verdict, the go/no-go gates, the Base Sepolia testnet address book, and how to check every claim on this site against the repository. No mainnet deployment of the current code exists.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="canonical" href="https://rwally.com/status">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:url" content="https://rwally.com/status">
+<meta property="og:title" content="Status and claims">
+<meta property="og:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
+<meta property="og:image" content="https://rwally.com/assets/og-card.png">
+<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: not deployed to mainnet.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Status and claims">
+<meta name="twitter:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
+<meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="agents.html">Agents</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="risks.html">Risks</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="pre-launch">
+    <div class="wrap">
+      <span class="tag">Pre-launch</span>
+      <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+    </div>
+  </div>
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Status</p>
+      <h1>Where this stands, and how to check it.</h1>
+      <p class="lede">Until 2026-09-04 the block above sat at the top of all seven pages. It now lives here, one page linked from every footer, and every page still states the same status sentence in its own footer. Every figure below is read out of a named file in the public repository, and nothing on this page asks to be taken on trust.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The board</p>
+      <h2>The launch verdict is NO-GO.</h2>
+      <p class="tight">It is recorded in the verdict line at the top of <code>docs/LAUNCH-READINESS.md</code>, and §1 of that file is the go/no-go checklist that decides it. What holds it there is operational rather than security. Two gates are marked STALE, and each is earned back by running a drill against the current testnet deployment, which needs a funded testnet key nobody but the owner holds.</p>
+
+      <div class="tablewrap" role="region" aria-label="The three gates that moved most recently" tabindex="0">
+        <table>
+          <caption>The three gates that moved most recently, as docs/LAUNCH-READINESS.md §1 records them</caption>
+          <thead>
+            <tr>
+              <th scope="col">Gate</th>
+              <th scope="col">Status on the board</th>
+              <th scope="col">What that means</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">2. Testnet full lifecycle</th><td>GO, re-run 2026-09-03</td><td>All ten phases ran against a deployment of the current code and passed, from vault creation through to a member exit. Every receipt was re-read from the chain after the run</td></tr>
+            <tr><th scope="row">3. Soak drills</th><td>STALE</td><td>The reason this was stale is retired: a deployment of the current code exists on Base Sepolia. The row stays stale anyway, because five drills have to run against it and have not. It needs a funded testnet key</td></tr>
+            <tr><th scope="row">6. Canary operational</th><td>STALE</td><td>Earned by observation and by nothing else. It closes when the canary runs against the current deployment alongside the soak and its transitions reconcile to specific drill actions</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="tight">Gates 0, 1, 4, 5, 7 and 8 are recorded GO, gate 5 with a named residual: single-provider dependency, because the launch oracle prices each asset from one Chainlink Data Feed and a heartbeat, a sane-price band and a sequencer gate are the only protocol-side defences against a bad answer from it. <code>docs/LAUNCH-READINESS.md</code> §1 is the authority for every row here. This table is a summary of that file, never a second source for it, and where the two differ the file is right.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Testnet</p>
+      <h2>What exists on Base Sepolia, and what it is worth.</h2>
+      <p class="tight">A Base Sepolia deployment of the current code exists. It is a testnet trial with no real value at stake, its USDC is test USDC, and no mainnet deployment of the current code exists. The addresses below are the committed address book, <code>contracts/config/deployments/base-sepolia.json</code>, whose own note records that every address in it was read back independently on-chain rather than transcribed from the deploy log.</p>
+
+      <div class="tablewrap" role="region" aria-label="Base Sepolia address book" tabindex="0">
+        <table>
+          <caption>Base Sepolia, from contracts/config/deployments/base-sepolia.json</caption>
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+              <th scope="col">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Chain</th><td>Base Sepolia, chain id 84532</td></tr>
+            <tr><th scope="row">VaultFactory</th><td><code>0xc1cb782471e506c71ae91feb91adcefc34a99743</code></td></tr>
+            <tr><th scope="row">Smoke vault</th><td><code>0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98</code></td></tr>
+            <tr><th scope="row">Singletons deploy block</th><td>46,307,173, all eleven receipts in that one block</td></tr>
+            <tr><th scope="row">Smoke vault created in block</th><td>46,307,218</td></tr>
+            <tr><th scope="row">Block timestamp of the deploy block</th><td>2026-09-02, 20:57:14 UTC</td></tr>
+            <tr><th scope="row">Source commit</th><td><code>8a0e1155</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="tight">The smoke vault is the one the ten-phase lifecycle ran against. It is fully exited: <code>totalShares()</code> reads 0 on-chain, so it holds no funds and is kept as evidence rather than as a working vault. The per-phase transaction table is <code>docs/evidence/testnet-lifecycle-run.json</code>. One limit the address book states plainly and this page repeats rather than drops: the sequencer guard did not execute during that run, because Base Sepolia leaves the sequencer uptime feed at the zero address by design, so its first real execution would be on mainnet.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Standing facts</p>
+      <h2>Four sentences the guard pins.</h2>
+      <div class="note note--flat">
+        <span class="label">Pinned to every page footer</span>
+        <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p>There is nothing to buy, nothing to claim, and nothing on this site to sign up for. The recommendation on the record is that there should be no token at all. That line is not editorial: the wording guard asserts it verbatim, counts its occurrences on every page, and reds on any rewording, so it cannot be softened by an edit that still leaves CI green.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Verification</p>
+      <h2>How to verify these claims.</h2>
+      <p class="tight">Every claim on this page is a file you can open. The repository is public, including the launch-readiness board and every review round.</p>
+      <ul>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/base-sepolia.json">The address book</a>: every address above, plus the note recording how each was read back on-chain and what the record deliberately does not prove.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/evidence/testnet-lifecycle-run.json">The lifecycle transaction table</a>: the ten phases, block by block, with the receipts.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/LAUNCH-READINESS.md">The go/no-go board</a>: the verdict, all nine gates, and the residual-risk register behind them.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences above, bans the claim shapes these pages may not make, and reads the contract configuration to catch a page that has gone stale against it.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a> and <a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/config-doc-truth.test.mjs">the config-versus-docs guard</a>: the same discipline applied to the documentation, so a claim cannot escape by moving out of the site.</li>
+      </ul>
+      <p class="tight">All three suites run in CI on every change. Green is necessary and not sufficient, which is why the files themselves are linked rather than a badge: read the contracts rather than this description of them.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="agents.html">Agents</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="risks.html">Risks</a></li>
+          <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html" aria-current="page">Status and claims</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+      </div>
+      <div>
+        <h2>Standing facts</h2>
+        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+      </div>
+    </div>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+  </div>
+</footer>
+
+</body>
+</html>

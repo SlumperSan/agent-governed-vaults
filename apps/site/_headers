@@ -9,14 +9,14 @@
 # WHY THE POLICY BELOW IS SHAPED THE WAY IT IS. `apps/site/test/site.test.mjs` asserts that this
 # site makes no external request: no `<script>` tag, no `fonts.googleapis.com`, no
 # `fonts.gstatic.com`, and `github.com` as the only permitted remote host. That test reads the
-# SOURCE. It proves the seven files in the repository are clean; it cannot prove the bytes a visitor
+# SOURCE. It proves the eight files in the repository are clean; it cannot prove the bytes a visitor
 # receives are. The Content-Security-Policy below is the same claim expressed as something the
 # browser enforces, so the property survives an injected tag, a compromised build, or an edit that
 # reaches production without the test running.
 #
 # The policy was derived from an audit of what these pages actually load, not copied from a
 # template:
-#   - 14 `<link rel="stylesheet">` (two stylesheets across seven pages) are the only subresources.
+#   - 16 `<link rel="stylesheet">` (two stylesheets across eight pages) are the only subresources.
 #   - zero `<script>` tags, zero `style="..."` attributes, zero `<style>` blocks.
 #   - zero `<img>`, `<svg>`, `<iframe>`, `<form>`, `<video>`, `<object>`.
 #   - zero `url()` in either stylesheet, zero `data:` URIs anywhere.
@@ -55,9 +55,11 @@
 #
 # frame-ancestors 'none'
 #   Nobody may frame these pages. The material value is not clickjacking, since there is nothing to
-#   click, but framing: the pre-launch banner and the not-an-offer disclaimer are load-bearing
-#   legal text, and a hostile page that frames this site with the banner cropped out has published
-#   the protocol's own words without its disclosures.
+#   click, but framing: the deployment-status sentence and the not-an-offer disclaimer are
+#   load-bearing legal text, and a hostile page that frames this site with them cropped out has
+#   published the protocol's own words without its disclosures. Since 2026-09-04 that text lives in
+#   the FOOTER of every page rather than in a band above the nav, so the crop this refuses is a
+#   bottom crop, which is the easier one to perform and the harder one to notice.
 #
 # X-Content-Type-Options: nosniff
 #   This origin serves .html, .css, .txt, .xml, .svg, .ico and .png. Content sniffing is the

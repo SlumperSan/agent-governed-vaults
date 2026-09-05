@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  All seven pages of the public site.
+  All eight pages of the public site.
 
   The URLs are extension-less because that is what Cloudflare Pages serves as canonical: it
   redirects /faq.html to /faq and /index.html to /. Listing the .html forms would make every entry
@@ -17,4 +17,5 @@
   <url><loc>https://rwally.com/operators</loc></url>
   <url><loc>https://rwally.com/risks</loc></url>
   <url><loc>https://rwally.com/faq</loc></url>
+  <url><loc>https://rwally.com/status</loc></url>
 </urlset>

@@ -37,7 +37,10 @@ const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'base-mainnet.json');
 
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html'];
+// Eight since 2026-09-04: status.html joined by owner decision. It is NOT in the header nav --
+// it is reached from the footer of every page -- but it is a public page and every guard in this
+// file walks it, which is the whole reason it is a member of this array rather than a special case.
+const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html', 'status.html'];
 
 /** Everything else the banned-phrase list must also cover: the README and both stylesheets. */
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
@@ -125,7 +128,8 @@ const PERMITTED = [
   'a good-faith measure and not a guarantee',
   'no guarantee of any outcome',
   'treating a parameter as a guarantee is how people get hurt',
-  // "sign up" -- both occurrences deny that there is anything to sign up for.
+  // "sign up" -- every occurrence denies that there is anything to sign up for; status.html
+  // added a third on 2026-09-04, which is why this no longer says "both".
   'There is nothing to sign up for.',
   'nothing on this site to sign up for',
 ];
@@ -138,7 +142,7 @@ const PERMITTED = [
  * occurrence, so a stray copy anywhere on a page went unnoticed.
  */
 const FOOTER_SENTENCE_COUNTS = {
-  [FOOTER_TOKEN]: { default: 1, 'faq.html': 2 },
+  [FOOTER_TOKEN]: { default: 1, 'faq.html': 2, 'status.html': 2 },
   [FOOTER_LICENSE]: { default: 1, 'faq.html': 2 },
 };
 
@@ -171,7 +175,8 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-test('all seven pages exist', () => {
+test('all eight pages exist', () => {
+  assert.equal(PAGES.length, 8, 'PAGES must list all eight public pages');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -224,12 +229,103 @@ test('each footer sentence appears exactly the number of times it is permitted t
   }
 });
 
-test('every page carries both pre-launch banner strings verbatim', () => {
+/**
+ * THE STATUS BLOCK MOVED, AND THESE THREE TESTS SAY EXACTLY WHERE IT WENT.
+ *
+ * Owner decision, 2026-09-04: "Claims should not be a header page, it should be a link in the
+ * footer." The `.pre-launch` band that sat above the nav on all seven pages is deleted from every
+ * one of them and now appears once, on status.html, inside `<main>`.
+ *
+ * THE DISCLOSURE DID NOT MOVE WITH IT, and that is the fact that makes the change safe rather than
+ * a deletion. Both pinned sentences have always ALSO been the opening of every page's footer
+ * paragraph -- the not-an-offer sentence first, the deployment-status sentence second -- so every
+ * page carried each of them twice, and removing the band leaves each page stating each of them
+ * exactly once. Nothing was dropped; a duplicate was.
+ *
+ * Three tests, because there are three separate ways to get this wrong and a single combined
+ * assertion would report the wrong one:
+ *
+ *   1. `the top status band is gone …` -- a page the sweep missed, or a band re-added later.
+ *   2. `every page states the deployment status …` -- a footer edit that drops the disclosure now
+ *      that nothing above the nav repeats it. This is the assertion that actually protects the
+ *      reader, and it is the reason the count is pinned per page rather than merely `>= 1`.
+ *   3. `status.html carries the full block` -- the status page quietly emptied into a link.
+ *
+ * The counts are per page and enumerated, in the same shape as FOOTER_SENTENCE_COUNTS and for the
+ * same reason: faq.html answers "Is it deployed?" by quoting the deployment-status sentence in its
+ * body, which is deliberate and is the one place the repetition earns itself, and status.html
+ * carries both sentences in its band as well as in its footer.
+ */
+const STATUS_PAGE = 'status.html';
+
+const STATUS_SENTENCE_COUNTS = {
+  [BANNER_STATUS]: { default: 1, 'faq.html': 2, [STATUS_PAGE]: 2 },
+  [BANNER_OFFER]: { default: 1, [STATUS_PAGE]: 2 },
+};
+
+/** The `.pre-launch` band of a page, markup and all, or null when the page has none. */
+const statusBand = (html) => (html.match(/<div class="pre-launch">[\s\S]*?<\/div>\s*<\/div>/) ?? [null])[0];
+
+test('the top status band is gone from every marketing page and lives only on the status page', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
-    assert.ok(html.includes(BANNER_STATUS), `${p}: missing exact deployment-status string`);
-    assert.ok(html.includes(BANNER_OFFER), `${p}: missing exact not-an-offer string`);
+    const bands = (html.match(/class="pre-launch"/g) ?? []).length;
+    if (p === STATUS_PAGE) {
+      assert.equal(bands, 1, `${p}: the status page must carry exactly one status band, found ${bands}`);
+      continue;
+    }
+    assert.equal(
+      bands,
+      0,
+      `${p}: the top status band was moved to ${STATUS_PAGE} by owner decision 2026-09-04 — link to it from the footer instead of restoring it here`,
+    );
   }
+});
+
+test('every page states the deployment status the permitted number of times, and always in its footer', () => {
+  for (const p of PAGES) {
+    const html = raw.get(p) ?? '';
+    const footerAt = html.indexOf('<footer');
+    assert.ok(footerAt !== -1, `${p}: missing <footer>`);
+    for (const [sentence, allowed] of Object.entries(STATUS_SENTENCE_COUNTS)) {
+      const want = /** @type {Record<string, number>} */ (allowed)[p] ?? allowed.default;
+      const got = count(html, sentence);
+      assert.equal(got, want, `${p}: expected ${want} occurrence(s) of ${JSON.stringify(sentence)}, found ${got}`);
+      // The LAST occurrence is the footer's. This is the assertion that catches a footer edit
+      // dropping the disclosure now that no band above the nav repeats it.
+      assert.ok(
+        html.lastIndexOf(sentence) > footerAt,
+        `${p}: the footer must carry ${JSON.stringify(sentence.slice(0, 40))}… — it is the only place every page states it since the top band was removed`,
+      );
+    }
+  }
+});
+
+test('status.html carries the full status block, inside main rather than above the nav', () => {
+  const html = raw.get(STATUS_PAGE) ?? '';
+  const band = statusBand(html);
+  assert.ok(band, `${STATUS_PAGE}: the status band is missing entirely`);
+  assert.ok(band.includes(BANNER_STATUS), `${STATUS_PAGE}: the band is missing the exact deployment-status string`);
+  assert.ok(band.includes(BANNER_OFFER), `${STATUS_PAGE}: the band is missing the exact not-an-offer string`);
+  const at = html.indexOf(band);
+  assert.ok(at > html.indexOf('<main id="main"'), `${STATUS_PAGE}: the band must sit inside <main>, not above the nav`);
+  assert.ok(at < html.indexOf('<footer'), `${STATUS_PAGE}: the band must sit inside <main>, not in the footer`);
+  // The page exists to be reachable without being in the header nav, so both halves are pinned.
+  assert.ok(!/<nav[\s\S]*?status\.html[\s\S]*?<\/nav>/.test(html), `${STATUS_PAGE}: the status page is deliberately not in the header nav`);
+  // Attribute-tolerant on purpose. The footer Pages list omits the page you are on, everywhere
+  // except here: the status link is the ONLY route to this page, so it stays in the list on the
+  // status page too, and carries aria-current="page" -- the same treatment the header nav gives a
+  // self-link -- rather than being silently dropped where a reader is most likely to look for it.
+  for (const p of PAGES) {
+    assert.ok(
+      /href="status\.html"[^>]*>Status and claims<\/a>/.test(raw.get(p) ?? ''),
+      `${p}: the footer must link to the status page — that link is the only route to it`,
+    );
+  }
+  assert.ok(
+    /href="status\.html" aria-current="page"/.test(html),
+    `${STATUS_PAGE}: its own footer link must carry aria-current="page"`,
+  );
 });
 
 test('every page carries both footer strings verbatim', () => {
@@ -240,12 +336,11 @@ test('every page carries both footer strings verbatim', () => {
   }
 });
 
-test('the banner precedes the nav on every page', () => {
-  for (const p of PAGES) {
-    const html = raw.get(p) ?? '';
-    assert.ok(html.indexOf(BANNER_STATUS) < html.indexOf('<nav'), `${p}: banner must come before the nav`);
-  }
-});
+// The "banner precedes the nav on every page" test was deleted on 2026-09-04 rather than adapted.
+// It asserted the ONE property the owner's decision reverses -- that the status block sits above
+// the nav -- so there is nothing left of it to keep. What it was protecting, that the disclosure is
+// not buried, is now carried by the footer-position assertion two tests above, which is strictly
+// stronger: it pins the count as well as the position.
 
 test('document skeleton: doctype, lang, one h1, main, skip link, description, title', () => {
   for (const p of PAGES) {
@@ -420,11 +515,11 @@ test('every internal .html link resolves to a file on disk', () => {
   }
 });
 
-test('every page links to all seven pages', () => {
+test('every page links to all eight pages', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {
-      assert.ok(html.includes(`href="${other}"`), `${p}: nav is missing a link to ${other}`);
+      assert.ok(html.includes(`href="${other}"`), `${p}: is missing a link to ${other}`);
     }
   }
 });
@@ -716,13 +811,22 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
   assert.ok(/never (?:run|executed) against a real/i.test(r5), 'risks.html: risk 5 must say the sequencer path has never executed against a real feed');
 });
 
-test('the pre-launch banner cannot be hidden by the stylesheet', () => {
+/**
+ * The `.pre-launch` rules now style ONE block on ONE page -- the status band on status.html -- and
+ * this check follows it there rather than being retired with the sitewide band. The reasoning is
+ * unchanged and is now sharper: a status block that exists in the markup and renders at zero height
+ * is worse than no status block, because it passes every presence assertion above while showing a
+ * reader nothing. That was true when the band was on seven pages and it is true when it is on one.
+ */
+test('the status band cannot be hidden by the stylesheet', () => {
   const site = decls(readFileSync(path.join(SITE, 'assets/site.css'), 'utf8'));
-  for (const block of site.match(/\.pre-launch[^{]*\{[^}]*\}/g) ?? []) {
-    assert.ok(!/display\s*:\s*none/i.test(block), `site.css hides the pre-launch banner: ${block.replace(/\s+/g, ' ')}`);
-    assert.ok(!/visibility\s*:\s*hidden/i.test(block), `site.css hides the pre-launch banner: ${block.replace(/\s+/g, ' ')}`);
-    assert.ok(!/(?:^|[;{])\s*height\s*:\s*0/i.test(block), `site.css collapses the pre-launch banner: ${block.replace(/\s+/g, ' ')}`);
-    assert.ok(!/font-size\s*:\s*0/i.test(block), `site.css collapses the pre-launch banner: ${block.replace(/\s+/g, ' ')}`);
+  const blocks = site.match(/\.pre-launch[^{]*\{[^}]*\}/g) ?? [];
+  assert.ok(blocks.length >= 1, 'site.css no longer styles the status band at all');
+  for (const block of blocks) {
+    assert.ok(!/display\s*:\s*none/i.test(block), `site.css hides the status band: ${block.replace(/\s+/g, ' ')}`);
+    assert.ok(!/visibility\s*:\s*hidden/i.test(block), `site.css hides the status band: ${block.replace(/\s+/g, ' ')}`);
+    assert.ok(!/(?:^|[;{])\s*height\s*:\s*0/i.test(block), `site.css collapses the status band: ${block.replace(/\s+/g, ' ')}`);
+    assert.ok(!/font-size\s*:\s*0/i.test(block), `site.css collapses the status band: ${block.replace(/\s+/g, ' ')}`);
   }
 });
 
