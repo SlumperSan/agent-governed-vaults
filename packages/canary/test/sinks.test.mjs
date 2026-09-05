@@ -6,11 +6,15 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { sep, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import {
   createConsoleSink, createWebhookSink, createTieredWebhookSink, createDeadmanPing, emitAll,
   PAGE_SIGNALS, LOG_SIGNALS, CONDITIONAL_PAGE, tierOf,
 } from '../src/sinks.mjs';
+import { EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
 
 /**
  * Every SIGNAL name `src/signals/` can emit, read from DISK rather than from a hand-written import
@@ -21,12 +25,16 @@ import {
  * a shared helper, not a signal, and is skipped.
  */
 const SIGNALS_DIR = new URL('../src/signals/', import.meta.url);
-async function signalNamesOnDisk() {
-  const files = (await readdir(SIGNALS_DIR)).filter((f) => f.endsWith('.mjs'));
-  assert.ok(files.length > 0, 'src/signals/ resolved to an empty directory — the URL above is wrong');
+async function signalNamesOnDisk(dir = SIGNALS_DIR) {
+  // RECURSIVE on purpose. A non-recursive readdir could not see `src/signals/<subdir>/x.mjs`, which
+  // made such a file invisible to BOTH halves of the coverage test below — absent from the live set
+  // so the forward check never saw it, absent from every tier set so the reverse check never saw it
+  // — and it routed to LOG with a green suite.
+  const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith('.mjs'));
+  assert.ok(files.length > 0, 'the signals directory resolved to an empty listing — the URL above is wrong');
   const names = new Set();
   for (const file of files) {
-    const mod = await import(new URL(file, SIGNALS_DIR).href);
+    const mod = await import(new URL(file.split(sep).join('/'), dir).href);
     // Two files legitimately export the SAME name (`oracle-freshness.mjs` and the post-pivot
     // `oracle-health.mjs`, which kept the wire name across the rename); a Set is the point.
     if (typeof mod.SIGNAL === 'string') names.add(mod.SIGNAL);
@@ -184,10 +192,55 @@ test('a governance-watch ALERT reaches the PAGER, and its recovery and blind-det
   assert.equal(tierOf(tr('alert', GOVERNANCE_WATCH)), 'page');
 });
 
-test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG decision', async () => {
-  const liveSignals = await signalNamesOnDisk();
-  // Not a file: `canary-runner.mjs` synthesises this one when a whole vault is unreadable.
-  liveSignals.add('vault-config');
+test('the signal sweep reads SUBDIRECTORIES — a non-recursive listing is a blind spot with a green suite', async () => {
+  // Review126 F2: reverting `{ recursive: true }` left the entire suite green, because no committed
+  // fixture puts a signal file in a subdirectory. That is the "a directory is a proxy" anti-pattern
+  // this PR set out to remove, reintroduced one layer down.
+  //
+  // STATED PLAINLY: the mechanism under test here lives in THIS FILE, not in `src/`. Per
+  // `mutation-disables-behaviour` that is weaker than a test over product code — it pins a test
+  // helper against its own future edit, and nothing more. It is worth having anyway, because the
+  // helper is one half of the cross-check that keeps `EMITTABLE_SIGNALS` honest: a subdirectory
+  // signal file invisible to it is a file the reverse check can never report.
+  const dir = await mkdtemp(join(tmpdir(), 'canary-signals-'));
+  try {
+    await writeFile(join(dir, 'top.mjs'), `export const SIGNAL = 'probe-top';\n`);
+    await mkdir(join(dir, 'nested'));
+    await writeFile(join(dir, 'nested', 'deep.mjs'), `export const SIGNAL = 'probe-nested';\n`);
+    await writeFile(join(dir, 'helper.mjs'), `export const NOT_A_SIGNAL = 1;\n`);
+
+    const found = await signalNamesOnDisk(pathToFileURL(join(dir, sep)));
+    assert.deepEqual([...found].sort(), ['probe-nested', 'probe-top'],
+      'a signal file one directory down must be discovered; a file with no SIGNAL export must not be');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('coverage: the signal files and the runner\'s declaration agree — neither proxy is trusted alone', async () => {
+  const onDisk = await signalNamesOnDisk();
+  // `vault-config` is the one emittable name with no file: `canary-runner.mjs` synthesises it when a
+  // whole vault's config is unreadable. Everything else must exist in both places.
+  for (const signal of EMITTABLE_SIGNALS) {
+    assert.ok(
+      signal === 'vault-config' || onDisk.has(signal),
+      `${signal} is declared EMITTABLE by the runner but no file under src/signals/ exports it`,
+    );
+  }
+  for (const signal of onDisk) {
+    assert.ok(
+      EMITTABLE_SIGNALS.has(signal),
+      `${signal} has a signal file but the runner does not declare it emittable — either wire it up ` +
+      'in collectSignals and add it to EMITTABLE_SIGNALS, or delete the file. A signal that exists ' +
+      'but is never dispatched is a detector everyone believes is running.',
+    );
+  }
+});
+
+test('coverage: every signal the runner can EMIT is an explicit PAGE / CONDITIONAL / LOG decision', async () => {
+  // The runner's own declaration, not a directory listing — the directory is a proxy for this, and
+  // the test above is what keeps the two honest.
+  const liveSignals = new Set(EMITTABLE_SIGNALS);
 
   const classify = (signal) => [
     PAGE_SIGNALS.has(signal) && 'PAGE_SIGNALS',
@@ -209,14 +262,9 @@ test('coverage: every signal ON DISK is an explicit PAGE / CONDITIONAL / LOG dec
   for (const signal of [...PAGE_SIGNALS, ...CONDITIONAL_PAGE.keys(), ...LOG_SIGNALS]) {
     assert.ok(liveSignals.has(signal), `${signal} is classified but no signal file emits it any more`);
   }
-  // A self-check on the mechanism itself: reading the directory is only worth anything if it is
-  // actually seeing files. EIGHT signal files exported SEVEN distinct names when this was written
-  // (`oracle-freshness.mjs` and `oracle-health.mjs` both export `'oracle-freshness'`), which with
-  // `vault-config` is eight live names. The old by-name import list held seven of those eight files
-  // and never imported `oracle-freshness.mjs` at all. That particular omission was HARMLESS — the
-  // unimported file exports the same name as one that was imported, so no name went uncovered — but
-  // it shows the hand-written list had already drifted from the directory it claimed to mirror.
-  assert.ok(liveSignals.size >= 8, `only ${liveSignals.size} signals discovered — the readdir is not working`);
+  // A self-check on the mechanism: eight emittable names when this was written — seven dispatched by
+  // `collectSignals` plus the synthesised `vault-config`.
+  assert.ok(liveSignals.size >= 8, `only ${liveSignals.size} signals discovered — EMITTABLE_SIGNALS is not being read`);
 });
 
 // ── the feed-identity split, proven by DISPATCH rather than by set membership ─
