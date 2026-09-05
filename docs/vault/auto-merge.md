@@ -12,6 +12,11 @@ Each finding gets its own `security/*` branch and PR; CI runs the full battery (
 
 This pairs with [[continuous-autonomous-mode]]: parallel workers each own a finding, and the merge queue serializes their output onto the live branch without a human gate per PR. **Caveat, learned the hard way:** the worktree is shared across concurrent sessions, so `git add -A` is banned here — it once swept another sprint's contracts into an unrelated PR. Stage explicitly.
 
+**Standing exceptions (security-ops §3, launch gate 10).** Two cases never auto-merge, however green the board:
+
+- **Any `viem` or `@noble/*` version bump gets a human review gate.** A human reads the diff, or at minimum the release provenance, before it lands. These are the signing-path dependencies; no agent merges them on CI alone.
+- **No new runtime dependency without an explicit, recorded decision.** The 13-package runtime closure is an asset that each addition spends. A PR that grows `dependencies` in `package.json` waits for that decision; it is not a CI question.
+
 Because the fixes are additive and gated by CI, gate 8 ("all CI gates green at the candidate ref") stays GO throughout — though a green board certifies the gates *ran*, not that the protocol is *safe* ([[launch-readiness-gates]]).
 
 ## Links

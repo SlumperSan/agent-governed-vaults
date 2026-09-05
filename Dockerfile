@@ -23,10 +23,11 @@ FROM node:24-slim
 
 WORKDIR /app
 
-# Install runtime deps first for layer caching. No lockfile in this repo, so `npm install`
-# (not `npm ci`). --omit=dev pulls only viem (the sole runtime dependency).
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+# Install runtime deps first for layer caching. `npm ci` against the committed lockfile so the
+# image resolves exactly what CI tested (security-ops §3). --omit=dev pulls only viem (the sole
+# runtime dependency) and its transitive closure.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 
 # App source (contracts/ and other heavy dirs excluded via .dockerignore).
 COPY packages ./packages
