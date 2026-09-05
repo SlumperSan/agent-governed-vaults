@@ -100,13 +100,13 @@ has no compiler; that file is the compiler. It asserts, across all eight pages:
   set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch` — the class
   that now styles the status block on `status.html` and nothing else.
 - Every internal `.html` link resolves to a file on disk.
-- The operator page states `2,500 USDC` and `5%`, names both distinct 5% mechanisms, and never
+- The operator page states `2,500 USDG` and `5%`, names both distinct 5% mechanisms, and never
   claims the operator's capital cost is nil.
 
 ### The site is pinned to the repository, not to itself
 
-`contracts/config/base-mainnet.json` is read by the test, and every row of the reference-configuration
-table on `how-it-works.html` is compared to it: the commit and reveal durations, the timelock, the
+`contracts/config/robinhood-mainnet.json` is read by the test, and every row of the
+reference-configuration table on `how-it-works.html` is compared to it: the commit and reveal durations, the timelock, the
 execution window, the quorum, the proposal threshold, the concentration cap, the cooldown, the
 minimum deposit, the exit-fee maximum and decay period, the staleness bound, and both price bands.
 The figures the copy *derives* from that config are pinned too — the length of the Mode-F exit
@@ -115,6 +115,23 @@ window (timelock plus execution window) and the cost of flipping the small-membe
 stale most quietly. An edit to that config now turns the gate red instead of silently
 desynchronizing the site. Every failure message in that block says the SITE is stale — the config is
 the source of truth.
+
+`CONFIG_PATH` was `contracts/config/base-mainnet.json` until 2026-09-05, when the owner directed
+the Base launch language removed and Robinhood Chain named as the target. The repoint is small on
+purpose: the two files are numerically identical for every value this site renders except the
+oracle staleness bound, which is `3600` on Base and `86400` — `ChainlinkOracle.MAX_HEARTBEAT`
+exactly — on chain 4663. So exactly one table row and one prose figure moved with it.
+`base-mainnet.json` stays in the repository: `scripts/test/config-doc-truth.test.mjs` reads it
+directly and asserts its sequencer uptime feed is still a real address.
+
+The settlement-asset LABEL moved with the config. Chain 4663 settles in USDG (Global Dollar), not
+Circle USDC, so the test's `usdg()` helper renders ` USDG` and three site figures changed with it
+— the `Minimum deposit` row, and `risks.html`'s `reference 100 USDG minimum deposit` and `about
+400 USDG`. The third of those is spelled out inline in the test rather than built by the helper,
+which is exactly how half a rename ships; it is named in a comment there for that reason. The
+field names in the config still read `usdc` / `minDepositUsdc` because the config keeps them, and
+nothing in `contracts/` reads a symbol — the settlement token is identified by address and
+measured with `decimals()`. The numbers did not change at all.
 
 Three checks that used to be page-scoped are now scoped to the sentence or block they belong to,
 because a page-scoped check is satisfied by a disclaimer thousands of characters away:
@@ -125,6 +142,25 @@ because a page-scoped check is satisfied by a disclaimer thousands of characters
 - the risks page's stated count of unmitigated risks is derived from the page itself — the number of
   `What is done` cells whose text begins with `Nothing` — and `who-its-for.html` must state the same
   number. Change one and the gate names the other.
+
+### RWLY does not exist, and every mention of it has to say so (added 2026-09-05)
+
+The lede now names the next iteration: *"The next iteration, RWLY, is designed to accrue the
+protocol's fees into official Robinhood Stock Tokens. RWLY does not exist yet."* The owner's
+standing rule from 2026-09-04 is that this site keeps saying no token exists until one does, and a
+named future token is the easiest thing on these pages to quote out of context into a claim that
+something is buyable. So the test requires `does not exist` within **160 characters** of every
+`RWLY` anywhere under `apps/site`, and requires at least six mentions so the rule cannot be
+satisfied by deleting them.
+
+The window is a character count rather than a sentence or a block, and both alternatives were
+tried first. The approved lede is two sentences — one names RWLY, the next says it does not exist
+— so a sentence-scoped rule reds the copy the owner directed. Block scoping does not reach the
+three mentions that live inside `content="…"` meta attributes, which sit in no `<p>`, `<dd>` or
+`<li>`. 160 is measured against the copy: the widest gap on the site today is 108 characters.
+
+The pinned footer sentence `No token. No points. No airdrop. No presale.` is unaffected and stays
+byte-identical — it is true precisely because RWLY does not exist.
 
 ### The negation exceptions
 

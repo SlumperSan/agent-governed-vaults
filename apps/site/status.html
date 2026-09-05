@@ -16,7 +16,7 @@
 <meta property="og:title" content="Status and claims">
 <meta property="og:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: not deployed to mainnet.">
+<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Status and claims">
 <meta name="twitter:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
@@ -47,7 +47,7 @@
   <div class="pre-launch">
     <div class="wrap">
       <span class="tag">Pre-launch</span>
-      <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+      <p>Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
     </div>
   </div>
 
@@ -83,7 +83,16 @@
         </table>
       </div>
 
-      <p class="tight">Gates 0, 1, 4, 5, 7 and 8 are recorded GO, gate 5 with a named residual: single-provider dependency, because the launch oracle prices each asset from one Chainlink Data Feed and a heartbeat, a sane-price band and a sequencer gate are the only protocol-side defences against a bad answer from it. <code>docs/LAUNCH-READINESS.md</code> §1 is the authority for every row here. This table is a summary of that file, never a second source for it, and where the two differ the file is right.</p>
+      <p class="tight">Gates 0, 1, 4, 5, 7 and 8 are recorded GO, gate 5 with a named residual: single-provider dependency, because the launch oracle prices each asset from one Chainlink Data Feed, and on the stated target chain a heartbeat and a sane-price band are the only protocol-side defences against a bad answer from it &mdash; the sequencer gate is available only where Chainlink publishes an uptime feed. <code>docs/LAUNCH-READINESS.md</code> §1 is the authority for every row here. This table is a summary of that file, never a second source for it, and where the two differ the file is right.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The target chain</p>
+      <h2>Robinhood Chain is the target, and nothing is deployed there.</h2>
+      <p class="tight">The stated target chain is Robinhood Chain mainnet, chain id 4663, and its parameters are the reference configuration <code>contracts/config/robinhood-mainnet.json</code>. Nothing from this repository is deployed there, or on any other mainnet. That file is a configuration read back from the chain by read-only JSON-RPC on 2026-09-04, not a deployment record, and it says so in its own <code>status</code> field.</p>
+      <p class="tight">Two things about that chain differ from the configuration this site used to quote, and both are stated here rather than left to a diff. The settlement token is USDG, the Global Dollar, not Circle USDC. And Chainlink publishes no L2 Sequencer Uptime Feed for chain 4663, so the sequencer gate never runs at price time there and the per-asset heartbeat and sane-price band carry that risk alone &mdash; an owner-approved weakening dated 2026-09-04, recorded in <code>docs/DEPLOYMENT.md</code>.</p>
     </div>
   </section>
 
@@ -114,7 +123,7 @@
         </table>
       </div>
 
-      <p class="tight">The smoke vault is the one the ten-phase lifecycle ran against. It is fully exited: <code>totalShares()</code> reads 0 on-chain, so it holds no funds and is kept as evidence rather than as a working vault. The per-phase transaction table is <code>docs/evidence/testnet-lifecycle-run.json</code>. One limit the address book states plainly and this page repeats rather than drops: the sequencer guard did not execute during that run, because Base Sepolia leaves the sequencer uptime feed at the zero address by design, so its first real execution would be on Base mainnet.</p>
+      <p class="tight">The smoke vault is the one the ten-phase lifecycle ran against. It is fully exited: <code>totalShares()</code> reads 0 on-chain, so it holds no funds and is kept as evidence rather than as a working vault. The per-phase transaction table is <code>docs/evidence/testnet-lifecycle-run.json</code>. One limit the address book states plainly and this page repeats rather than drops: the sequencer guard did not execute during that run, because Base Sepolia leaves the sequencer uptime feed at the zero address by design, and Robinhood Chain, the stated target chain, publishes no uptime feed for it to execute against at all.</p>
     </div>
   </section>
 
@@ -125,7 +134,7 @@
       <div class="note note--flat">
         <span class="label">Pinned to every page footer</span>
         <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p>There is nothing to buy, nothing to claim, and nothing on this site to sign up for. The recommendation on the record is that there should be no token at all. That line is not editorial: the wording guard asserts it verbatim, counts its occurrences on every page, and reds on any rewording, so it cannot be softened by an edit that still leaves CI green.</p>
+        <p>There is nothing to buy, nothing to claim, and nothing on this site to sign up for. That line is not editorial: the wording guard asserts it verbatim, counts its occurrences on every page, and reds on any rewording, so it cannot be softened by an edit that still leaves CI green. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens; RWLY does not exist yet, and the same guard requires every mention of RWLY on this site to sit beside that fact, so a design intention cannot be written up here as a thing you can hold.</p>
       </div>
     </div>
   </section>
@@ -138,6 +147,7 @@
       <ul>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/base-sepolia.json">The address book</a>: every address above, plus the note recording how each was read back on-chain and what the record deliberately does not prove.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/evidence/testnet-lifecycle-run.json">The lifecycle transaction table</a>: the ten phases, block by block, with the receipts.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/robinhood-mainnet.json">The reference configuration</a>: every parameter this site quotes for the target chain, each annotated with how it was read from chain 4663 and what was not checked.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/LAUNCH-READINESS.md">The go/no-go board</a>: the verdict, all nine gates, and the residual-risk register behind them.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences above, bans the claim shapes these pages may not make, and reads the contract configuration to catch a page that has gone stale against it.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a> and <a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/config-doc-truth.test.mjs">the config-versus-docs guard</a>: the same discipline applied to the documentation, so a claim cannot escape by moving out of the site.</li>
@@ -178,7 +188,7 @@
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
   </div>
 </footer>
 

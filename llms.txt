@@ -1,10 +1,16 @@
 # Index Vault Protocol
 
-> Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
+> Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
-> or move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read access via x402 (EIP-3009 on Base).
-> Chain-agnostic, immutable contracts. This file orients AI agents integrating the protocol.
+> or move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the
+> stated target chain, Robinhood Chain mainnet (chain id 4663); metered read access via x402
+> (EIP-3009 — the reference client is pinned to the Base Sepolia testnet and its USDC domain).
+> The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
+> same immutable bytecode is deployable on any EVM chain; Robinhood Chain is the stated target,
+> not a constraint the code enforces. The next iteration, RWLY, is designed to accrue the protocol's
+> fees into official Robinhood Stock Tokens; RWLY does not exist yet. This file orients AI agents
+> integrating the protocol.
 
 ## Start here (agents)
 - [Agent Quickstart](docs/AGENT-QUICKSTART.md): read metered data, pay via x402, act on-chain.

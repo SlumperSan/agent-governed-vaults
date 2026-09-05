@@ -1,10 +1,13 @@
 # Agent-Governed Index Vault Protocol
 
-Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
+Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds — nothing rebalances until a proposal passes. Settlement in USDC; metered read
-access via x402. Base-native, chain-agnostic contracts, no CEX integrations.
+move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the stated
+target chain, Robinhood Chain mainnet (chain id 4663); metered read access via x402. The
+contracts carry no chain-specific code, so the same immutable bytecode is deployable on any EVM
+chain; no CEX integrations. The next iteration, RWLY, is designed to accrue the protocol's fees
+into official Robinhood Stock Tokens; RWLY does not exist yet.
 
 **Not on mainnet. The launch verdict is NO-GO** — read [Status](#status) before anything else in
 this file.
@@ -87,12 +90,16 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
   **Disabled at launch** — `VaultFactory.allowSubVaults = false` (the C-1 fix: root vaults only),
   so this code is dormant on the launch path.
 - Safety — **one genuine Chainlink Data Feed per asset**, read directly. WETH is priced through
-  ETH/USD and cbBTC through BTC/USD; USDC is pinned to $1.00. There is **no cbETH**, because Base
-  has no cbETH/USD feed (only cbETH/ETH, which is not a USD price). There is no median, no quorum
+  ETH/USD and cbBTC through CBBTC/USD; the settlement token, USDG on the stated target chain, is
+  pinned to $1.00. There is **no cbETH**, because no cbETH/USD feed was read for either mainnet
+  configuration (Base has only cbETH/ETH, which is not a USD price). There is no median, no quorum
   and no per-vault source set: each asset maps to exactly one feed, fixed immutably at
   construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
   an **L2 sequencer uptime gate** with a grace period after recovery, a per-feed **heartbeat**,
-  and a **sane-price band**. `priceWad` reverts rather than return a stale, absent or implausible
+  and a **sane-price band**. On Robinhood Chain (chain id 4663) only the last two of those run:
+  Chainlink publishes no L2 Sequencer Uptime Feed there, and `_requireSequencerUp` returns early on
+  a zero address, so the gate is skipped at price time under the owner-approved exemption of
+  2026-09-04 — see `docs/DEPLOYMENT.md` and `contracts/config/robinhood-mainnet.json`. `priceWad` reverts rather than return a stale, absent or implausible
   price, which freezes every NAV path including active-share exits (by design; pending
   observation-window capital is always reclaimable). Per-vault capacity caps are optional
   (`capacityCapUsdc == 0` is uncapped).
