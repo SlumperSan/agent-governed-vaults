@@ -74,6 +74,8 @@ import type { JSX } from 'react';
 import { Pinned } from '../../shell/PinnedText';
 import { Reveal } from '../../motion/Reveal';
 import { DUR, STAGGER } from '../../motion/easings';
+import { Icon } from '../../brand/Icon';
+import type { IconName } from '../../brand/icons';
 import s from './AgentsCapabilities.module.css';
 
 const EYEBROW = 'What an agent can and cannot do';
@@ -99,11 +101,20 @@ const VOTE =
 const EXIT =
   'Pro-rata and in kind. From the moment the reveal phase opens on any live proposal &mdash; not from the moment one passes &mdash; the request is queued and settles at post-execution NAV. <code>Governance.hasPendingExecution(vault)</code> is the exact predicate. What that costs you, and what an oracle freeze does to it, is in the <a href="disclaimers.html">Disclaimers</a>.';
 
-const ROWS: ReadonlyArray<{ term: string; body: string }> = [
-  { term: 'Deposit', body: DEPOSIT },
-  { term: 'Propose', body: PROPOSE },
-  { term: 'Vote', body: VOTE },
-  { term: 'Exit', body: EXIT },
+/**
+ * THE FOUR THINGS AN AGENT CAN DO, and the brand icon for each.
+ *
+ * The icons are the same four this site draws beside the matching steps of the
+ * lifecycle on how-it-works, deliberately: an agent reading this page and a
+ * person reading that one are being shown one vocabulary, not two. `Vote` takes
+ * the commit plate because a vote here IS a commit followed by a reveal, and the
+ * commit is the part an integrator writes first.
+ */
+const ROWS: ReadonlyArray<{ term: string; body: string; icon: IconName }> = [
+  { term: 'Deposit', body: DEPOSIT, icon: 'deposit' },
+  { term: 'Propose', body: PROPOSE, icon: 'propose' },
+  { term: 'Vote', body: VOTE, icon: 'commit' },
+  { term: 'Exit', body: EXIT, icon: 'fee' },
 ];
 
 /* --- the warn note -------------------------------------------------------- */
@@ -152,7 +163,11 @@ export function AgentsCapabilities(): JSX.Element {
         <Reveal as="dl" className={s.rows} duration={DUR.mid} stagger={STAGGER.tight}>
           {ROWS.map((row) => (
             <div key={row.term} className={s.row}>
-              <dt className={s.term}>{row.term}</dt>
+              {/* aria-hidden, beside the label rather than instead of it. */}
+              <dt className={s.term}>
+                <Icon name={row.icon} className={s.termIcon} />
+                {row.term}
+              </dt>
               <Pinned as="dd" className={s.body} html={row.body} />
             </div>
           ))}

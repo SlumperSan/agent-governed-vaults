@@ -69,16 +69,33 @@ export const HEADING = 'One rebalance, start to finish.';
 /** The id the section's <h2> carries, so the landmark can be labelled by it. */
 export const HEADING_ID = 'lifecycle';
 
+import type { IconName } from '../../brand/icons';
+
 export type Step = {
   /** Plain text — no markup, no characters `renderToString` would escape. */
   readonly heading: string;
   /** HTML source bytes, one entry per <p>. */
   readonly paragraphs: readonly string[];
+  /**
+   * The brand line icon for this step, or absent.
+   *
+   * OPTIONAL ON PURPOSE, AND ONE STEP HAS NONE. The brand set ships eight icons
+   * (`src/brand/icons.ts`) and each carries its own description of what it
+   * draws. Six of them describe a step in this list exactly — a slab dropping
+   * into a vault, an entry lifted off the ledger, a plate sealed on one seam,
+   * the same plate with its leaf lifted, the mark's leg landing square on the
+   * line, and one bar ruled off. "Quorum" has no counterpart: it is a count of
+   * stake, and nothing in the set draws one. It is left bare rather than given
+   * the nearest picture, because an icon that means something else is worse
+   * than no icon — a reader learns the vocabulary from the six that are exact.
+   */
+  readonly icon?: IconName;
 };
 
 export const STEPS: readonly Step[] = [
   {
     heading: 'Deposit, then wait four hours',
+    icon: 'deposit',
     paragraphs: [
       "A first deposit into a vault enters a four-hour observation window. During it the money is escrowed: excluded from NAV, zero shares, no voting rights, no proposal rights. You can cancel and take it back. You may also irrevocably opt out of the window for that vault, and that opt-out cannot be undone. Think hard before you do. Un-activated pending capital is the only capital that stays reclaimable during an oracle freeze. Opting out means every later deposit into this vault mints immediately, so you permanently give up the one exit that works when the oracle does not, and you cannot get it back. Repeat deposits by an existing member mint immediately.",
       "Shares mint at the NAV of the activation transaction, not the NAV you saw when you deposited. Deposits are forward-priced so that nobody can mint against a valuation they observed four hours earlier. After the four hours, anyone can send the activation transaction. You do not control the block your shares are priced in.",
@@ -87,6 +104,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     heading: 'The operator proposes',
+    icon: 'propose',
     paragraphs: [
       "A proposal requires the proposer to hold at least the vault's proposal threshold of voting-eligible stake. A per-proposer cooldown rate-limits repeat proposals from the same address, and only from that address. A second address is outside it.",
       "What is on-chain when a proposal opens is a 32-byte hash of the intended action, not the action. The swap target, amounts and route appear only in the execution transaction: after the vote, after finalization, after the timelock. That is deliberate: publishing the route up front would let anyone front-run the rebalance. The cost is that you vote on a commitment rather than a description. Any explanation an operator publishes is off-chain, and the contracts never check it against what finally executes.",
@@ -94,12 +112,14 @@ export const STEPS: readonly Step[] = [
   },
   {
     heading: 'Commit phase',
+    icon: 'commit',
     paragraphs: [
       "Members submit a hash of their vote and a salt. Nothing about the tally is visible while it forms, so nobody votes by watching the count.",
     ],
   },
   {
     heading: 'Reveal phase',
+    icon: 'reveal',
     paragraphs: [
       "Members reveal the vote and salt behind their hash. An unrevealed commit is forfeit and counts as an abstain. If you commit and then go offline, your vote is gone.",
       "The tally is readable during the reveal phase: a public getter plus cleartext reveal events. Your commit binds your direction so you cannot switch after seeing it, but late revealers do see partial counts, and someone holding stake across several addresses can reveal one and then decide the rest. Tally gating was specified and was not built.",
@@ -113,6 +133,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     heading: 'Timelock, then an execution window',
+    icon: 'execute',
     paragraphs: [
       "A passed proposal waits out the vault's timelock, then becomes executable for a bounded window. The protocol caps any timelock at 30 days. The adapter performs the swap when it executes.",
       "<strong>The reference configuration sets the timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap. It queues you and prices you after it. The protection you have is the vote itself and the commit-phase window. Exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.",
@@ -120,6 +141,7 @@ export const STEPS: readonly Step[] = [
   },
   {
     heading: 'Exits queue from the moment reveals open',
+    icon: 'fee',
     paragraphs: [
       "From the moment the reveal phase opens (not from the moment a proposal passes), redemption requests are queued rather than settled, and they price after the swap. The window closes when the proposal executes, is defeated, or its execution window lapses. A proposal that is ultimately defeated still forced your exit into the queue while it was live. That is forward settlement, described below.",
     ],

@@ -38,6 +38,7 @@ import {
   STEPS,
 } from './copy';
 import { Backdrop } from '../../assets/Backdrop';
+import { Icon } from '../../brand/Icon';
 import s from './HiwLifecycle.module.css';
 
 export default function HiwLifecycle(): JSX.Element {
@@ -59,7 +60,22 @@ export default function HiwLifecycle(): JSX.Element {
           <ol className={s.steps}>
             {STEPS.map((step) => (
               <li className={s.step} key={step.heading}>
-                <h3 className={s.stepHeading}>{step.heading}</h3>
+                {/*
+                  The icon sits BESIDE the heading, not in place of it, and it is
+                  aria-hidden: it is the same claim the heading already makes,
+                  drawn. A step with no icon in the brand set renders the heading
+                  alone — see the note on Step.icon in copy.ts for why one is
+                  deliberately bare rather than approximated.
+                */}
+                <h3 className={s.stepHeading}>
+                  {step.icon ? (
+                    <Icon
+                      name={step.icon}
+                      className={step.icon === 'reveal' ? `${s.stepIcon} ${s.stepIconSecond}` : s.stepIcon}
+                    />
+                  ) : null}
+                  {step.heading}
+                </h3>
                 {step.paragraphs.map((html) => (
                   <Pinned as="p" html={html} key={html.slice(0, 48)} />
                 ))}

@@ -143,8 +143,37 @@
 }
 
 .stepHeading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
   color: var(--ink);
   margin-bottom: var(--s3);
+}
+
+/* Sized in em against the heading it sits beside, so the pair holds together if
+   the heading's size changes. `flex: none` because an SVG in a flex row is a
+   replaced element and would otherwise be squeezed by a long heading. The
+   translate is optical, not structural: the icons are drawn on a 24-unit box
+   with no descender, so aligning their box to the baseline leaves them sitting
+   high against a cap. */
+.stepIcon {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  transform: translateY(0.16em);
+  color: var(--accent);
+}
+
+/* THE ONE PLACE THE SECOND HUE IS USED, and it is used for what the brand token
+   set says it is for: "the second state in any pair — revealed against
+   committed". Commit and reveal are that pair, and they are the two steps a
+   reader most often runs together. The commit step keeps --accent; this is the
+   reveal. --teal is 8.30:1 on --ground, recorded in src/tokens.css, so it
+   clears the non-text floor with room whether or not a reader sees hue. It is
+   not carrying the meaning on its own: the two icons are different drawings and
+   the headings say which is which. */
+.stepIconSecond {
+  color: var(--teal);
 }
 
 .step p {

@@ -70,7 +70,19 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* The label and its icon on one line. `inline-flex` rather than `flex` so the
+   absolute line box above still governs the row's baseline. */
+.termIcon {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  color: var(--accent);
+}
+
 .term {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
   margin: 0;
   font-family: var(--mono);
   font-size: var(--step-label);
