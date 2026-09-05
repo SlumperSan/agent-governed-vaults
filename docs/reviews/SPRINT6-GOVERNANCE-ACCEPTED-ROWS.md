@@ -1,4 +1,4 @@
-# Sprint 6 — Adversarial Pass on Deliberately-Accepted Governance Rows
+# Sprint 6: Adversarial Pass on Deliberately-Accepted Governance Rows
 
 Scope: the four governance areas whose "Accepted" tradeoffs never got an adversarial pass against
 the stated design intent, because the prior governance review (`SPRINT6-GOVERNANCE-REVIEW.md`, Agent A)
@@ -15,28 +15,28 @@ Files verified:
 - `contracts/src/VaultCore.sol`
 - `contracts/src/lib/Checkpoints.sol`
 
-Verdict legend: **(a) holds as designed** · **(b) diverges — code ≠ doc claim** · **(c) accepted
+Verdict legend: **(a) holds as designed** · **(b) diverges: code ≠ doc claim** · **(c) accepted
 tradeoff has an unstated worse consequence.**
 
 ---
 
-## Area 1 — K-2 / CM-8: "Rules immutable after funding except full consensus + timelock"
+## Area 1: K-2 / CM-8: "Rules immutable after funding except full consensus + timelock"
 
-**Verdict: (c) DIVERGES — the accepted tradeoff carries an unstated worse consequence for any
+**Verdict: (c) DIVERGES: the accepted tradeoff carries an unstated worse consequence for any
 allocated sub-vault. Severity: Medium (permanent loss of a documented capability; no funds at risk).**
 The full-consensus *mechanism* is exactly as the doc claims (below), but the "one offline member freezes
 rules" acceptance understates reality: **an allocated child vault's config is structurally, permanently
-unamendable — not contingent on any agent going offline.**
+unamendable, not contingent on any agent going offline.**
 
 Doc claim (ARCHITECTURE §6, THREAT-MODEL CM-8): RuleChange config setters are reachable only by
 100% of voting-eligible stake revealed FOR + timelock; near-immutability is the intent; one permanently
 offline member freezes rules forever (accepted).
 
-### The unstated worse consequence — a parent-allocated child can never pass a RuleChange
+### The unstated worse consequence: a parent-allocated child can never pass a RuleChange
 
 K-2 accepts a *contingent social event*: an agent goes offline, so 100% consensus becomes unreachable
 until it returns. The sub-vault feature turns that into a *structural guarantee* the moment a parent
-allocates capital — and there is no recovery path the child controls:
+allocates capital, and there is no recovery path the child controls:
 
 1. `allocateToChild` (`VaultCore.sol:603-626`) calls `child.skipWindow()` then `child.deposit(amount)`
    with the parent contract as `msg.sender`, so `child._mintShares(parent, …)` → `child._snapshot(parent)`
@@ -45,14 +45,14 @@ allocates capital — and there is no recovery path the child controls:
 2. `revealedWeight == p.snapshotTotal` (`Governance.sol:399`) can then never be reached, because a
    `VaultCore` parent **cannot vote**: grep of the entire `contracts/src/` tree shows the five governance
    entry points (`commitVote`, `revealVote`, `revealDelegated`, `setDelegate`, `setStandingDefault`) have
-   **no contract caller at all** — they are EOA-only, and VaultCore contains no code that calls any of
+   **no contract caller at all**: they are EOA-only, and VaultCore contains no code that calls any of
    them. The "self-commit directly" escape I relied on for the over-cap-delegator case does not exist for a
    contract holder.
 3. The parent's shares cannot be parked in an excluded state either. The only way `_snapshot` excludes
    shares is `queuedExitShares` (Mode-F) or a burn. But `_redeemChildMeasured`
    (`VaultCore.sol:654-655`) **reverts `ChildSettlementPending`** if the child queues the exit, and a
    partial `redeemFromChild` leaves a nonzero, still-eligible remainder. Only a *full* redemption while the
-   child has no pending proposal removes the parent from `snapshotTotal` — and the child cannot compel its
+   child has no pending proposal removes the parent from `snapshotTotal`, and the child cannot compel its
    parent to do that; it depends entirely on the parent's own governance choosing to unwind the allocation.
 
 So while any parent allocation exists (the normal steady state of a sub-vault, ARCHITECTURE §10), the
@@ -64,7 +64,7 @@ structurally dead post-allocation).
 
 A confirming detail that this is live, not theoretical: the G2/F2 fix at `Governance.sol:433`
 re-applies `_requireParentQuorumFloor` on the RuleChange **update** path specifically to protect allocated
-children — but that branch is unreachable for exactly those allocated children, since they can never pass
+children, but that branch is unreachable for exactly those allocated children, since they can never pass
 a RuleChange to reach line 433 in the first place.
 
 **Minimal remediations (design choice, not prescribed here):** exempt a `VaultCore`-held (parent) position
@@ -91,12 +91,12 @@ RuleChange requires literally every eligible share to have revealed FOR. Matches
 `propose` (`237`, `p.snapshotTotal = total` where `total = pastTotalVotingEligibleShares(nowTs-1)`) and
 is never written again anywhere in the contract (struct field, no setter). Confirmed by inspection of all
 `snapshotTotal` references (`237`, `399`, `405`, `322`). "Full consensus with less than everyone" would
-require `revealedWeight` to reach `snapshotTotal` while some eligible share never revealed —
+require `revealedWeight` to reach `snapshotTotal` while some eligible share never revealed:
 impossible, because:
 - `revealedWeight` is incremented only in `revealVote` (`284`) and `revealDelegated` (`312`), each by a
   weight read from the same historical checkpoint (`createdAt-1`), and each member is counted at most
   once (`commitOf`/`defaultApplied` mutual-exclusion, verified by Agent A and unchanged);
-- the total checkpoint equals the sum of per-member checkpoints by construction — `_snapshot`
+- the total checkpoint equals the sum of per-member checkpoints by construction: `_snapshot`
   (`VaultCore.sol:380-384`) pushes `_totalEligibleHist = totalShares - totalQueuedShares` and
   `_eligibleHist[m] = sharesOf[m] - queuedExitShares[m]` in the same call, and
   `totalShares = Σ sharesOf`, `totalQueuedShares = Σ queuedExitShares` are maintained together on every
@@ -113,11 +113,11 @@ reads the historical value). No new deadlock beyond the *accepted* "offline memb
 **Interaction with the concentration-cap fix (F1/G1) is clean.** `revealVote` now adds the member's own
 weight directly with **no** `_accrueDelegate` call (`280-285`; the cap applies only to *received*
 delegated weight in `revealDelegated`→`_accrueDelegate`, `308`/`319-326`). This is what makes RuleChange
-full-consensus *reachable* for a sole/dominant holder — the pre-fix code bricked it. I checked the dual
+full-consensus *reachable* for a sole/dominant holder: the pre-fix code bricked it. I checked the dual
 question: does the cap create a **new** RuleChange freeze via the delegation path? A delegator whose
 weight cannot be cranked because the delegate is over-cap can always instead `commitVote`+`revealVote`
 directly (uncapped own vote; `revealDelegated` yields to a self-commit at `300`). The only residual freeze
-is a delegator who neither self-votes nor can be cranked — i.e. an effectively-offline member — which is
+is a delegator who neither self-votes nor can be cranked (i.e. an effectively-offline member) which is
 precisely the already-accepted K-2 consequence, not a new one.
 
 Same-second minting cannot inflate consensus: a deposit checkpointed at `createdAt` is excluded from both
@@ -125,11 +125,11 @@ Same-second minting cannot inflate consensus: a deposit checkpointed at `created
 
 ---
 
-## Area 2 — K-3 / VO-2 / VO-3: standing defaults count in tally, never quorum; 72 h TTL; must predate proposal
+## Area 2: K-3 / VO-2 / VO-3: standing defaults count in tally, never quorum; 72 h TTL; must predate proposal
 
 **Verdict: (a) HOLDS as designed.**
 
-**A vault of pure standing defaults genuinely cannot pass anything** — verified across all three
+**A vault of pure standing defaults genuinely cannot pass anything**: verified across all three
 finalize regimes (`Governance.sol:396-406`). Standing defaults touch **only** `forWeight`/`againstWeight`
 (`368-369`) and explicitly *not* `revealedWeight` / `revealedVoterCount` (comment `370`, and neither is
 assigned in `applyStandingDefault`):
@@ -154,50 +154,50 @@ require(d.set && d.setAt < p.createdAt && block.timestamp <= d.setAt + DEFAULT_T
 
 `setAt = uint64(block.timestamp)` at `setStandingDefault` (`332`); `createdAt = nowTs` at `propose`
 (`232`). The inequality is **strict** (`<`), so:
-- a default set in the *same second* as proposal creation (`setAt == createdAt`) is **excluded** — the
+- a default set in the *same second* as proposal creation (`setAt == createdAt`) is **excluded**: the
   conservative direction;
 - any default set *during* the reveal phase has `setAt ≥ commitDeadline > createdAt`, so `setAt < createdAt`
   is false → rejected. Tally-aware post-hoc defaulting (the F4 exploit) is closed.
 
 A default that legitimately predates the proposal (`setAt < createdAt`) was necessarily chosen before any
 reveal existed (the tally is empty until `commitDeadline > createdAt`), so its direction is blind to the
-proposal — exactly the "pre-declared absentee ballot" intent. Re-setting a default to refresh the TTL does
+proposal: exactly the "pre-declared absentee ballot" intent. Re-setting a default to refresh the TTL does
 not help an attacker: the refreshed `setAt` must still precede the target proposal, so it remains
 tally-blind. No reopening.
 
 ---
 
-## Area 3 — VO-6 / VO-7: commit-reveal — non-revealers forfeit (self-grief only); reveal-phase last-mover
+## Area 3: VO-6 / VO-7: commit-reveal, non-revealers forfeit (self-grief only); reveal-phase last-mover
 
-**Verdict: VO-6 (a) HOLDS. VO-7 (b) DIVERGES from the stated "tally view gated" mechanism — Low
+**Verdict: VO-6 (a) HOLDS. VO-7 (b) DIVERGES from the stated "tally view gated" mechanism: Low
 severity, no worse consequence than the already-accepted residual.**
 
-**VO-6 — a non-revealer cannot starve quorum for others: holds.** A commit is just a stored hash
+**VO-6. A non-revealer cannot starve quorum for others: holds.** A commit is just a stored hash
 (`commitVote`, `248-256`); it does not touch `snapshotTotal`, `revealedWeight`, or any other member's
 weight. A committer who withholds their reveal is arithmetically identical to a member who never
-committed — they add nothing to the numerator and subtract nothing from anyone else's reveal. The
+committed: they add nothing to the numerator and subtract nothing from anyone else's reveal. The
 denominator (`snapshotTotal`) is fixed at propose. So a large holder abstaining can deny quorum *with
 their own absent weight* (the inherent participation requirement, mitigated by defaults/delegation), but a
 non-revealer has **no** primitive to cancel or waste *another* member's revealed weight. Self-grief only,
 as VO-6 states.
 
-**VO-7 — divergence: the tally is NOT gated on-chain during the reveal phase.** THREAT-MODEL VO-7's
+**VO-7. Divergence: the tally is NOT gated on-chain during the reveal phase.** THREAT-MODEL VO-7's
 mitigation text claims "all-or-nothing tally publication — reveals accumulate in contract state but tally
 view gated until reveal deadline." The code implements no such gating:
 - `proposals` is a `public` mapping (`Governance.sol:109`); its auto-generated getter returns the full
-  `Proposal` struct — including `forWeight`, `againstWeight`, `revealedWeight` — **at any time**, including
+  `Proposal` struct (including `forWeight`, `againstWeight`, `revealedWeight`) **at any time**, including
   mid-reveal. Each `revealVote` updates these immediately (`282-284`).
 - `revealVote` also emits `Revealed(pid, voter, support, weight)` in cleartext per reveal (`286`, event
   `132`), so the running tally is fully reconstructable in real time even without the getter.
 
 So a late revealer *can* read the partial tally before the reveal deadline. **Why this is only Low and not
-a worse consequence:** commit-reveal binds *direction* — `revealVote` requires
+a worse consequence:** commit-reveal binds *direction*: `revealVote` requires
 `c == keccak256(abi.encode(pid, msg.sender, support, salt))` (`273`), so a late revealer can only reveal
 the exact `support` they committed. They cannot flip direction on seeing the tally. The residual edge is
 purely selective-reveal (reveal-or-abstain timing) and coordinated withholding to deny quorum. Note the
 realized gap is actually *wider* than the residual VO-7 anticipated: VO-7 accepts specifically that
 "mempool observation defeats this," but the public `proposals` getter (`109`) plus the indexed cleartext
-`Revealed` event (`132`) make the running tally a free, permanent, post-hoc **contract-state** read —
+`Revealed` event (`132`) make the running tally a free, permanent, post-hoc **contract-state** read:
 available to a party doing no mempool observation at all, and readable even after the fact. It remains Low
 only because commit-binding on `support` (`273`) still forbids any direction change; the property VO-7
 cares about (no direction-changing last-mover advantage) is preserved by commit-binding, not by the
@@ -206,7 +206,7 @@ commit-binding defense and drop the unimplemented gate claim); not a new exploit
 
 ---
 
-## Area 4 — Snapshot soundness: `createdAt - 1` strictly-before, for proposer eligibility AND vote weight
+## Area 4: Snapshot soundness: `createdAt - 1` strictly-before, for proposer eligibility AND vote weight
 
 **Verdict: (a) HOLDS as designed.**
 
@@ -225,7 +225,7 @@ first-ever deposits mint **no shares at all** (escrowed in the 4 h window, `Vaul
 atomic flash-loan stake acquisition is doubly defeated.
 
 **Adjacent-block (`createdAt-1`) inclusion is correct, not a vector.** Stake checkpointed at exactly
-`createdAt-1` *is* counted — but that is genuine capital deposited at least one second before the proposal
+`createdAt-1` *is* counted, but that is genuine capital deposited at least one second before the proposal
 existed, held at risk in the basket, not an atomic flash position. It cannot be atomically withdrawn
 (redemption burns at settlement, and once the proposal enters reveal, Mode-F locks the exit). The design
 intent (VO-9) is "stake minted *after* `createdAt` carries zero weight"; `createdAt-1` is before
@@ -240,7 +240,7 @@ quantities:
   `_settleExit` → `_snapshot` at `480`.
 - `totalShares` / `totalQueuedShares` / `holderCount`: every write sits inside `_mintShares`,
   `_settleExit`, `requestExit`, or `settleQueuedExit`, each of which snapshots after the mutation.
-- Shares are **non-transferable** — no `transfer`/`transferFrom` exists on VaultCore (grep confirms none),
+- Shares are **non-transferable**: no `transfer`/`transferFrom` exists on VaultCore (grep confirms none),
   so there is no side-channel that moves stake without a snapshot.
 
 Ordering is post-mutation: in `_settleExit` the snapshot at `480` runs after `sharesOf`/`totalShares`/
@@ -255,7 +255,7 @@ should).
 
 | Area | Row(s) | Verdict |
 | --- | --- | --- |
-| 1 | K-2 / CM-8 full-consensus RuleChange | **Diverges (c), Medium** — mechanism is exact (snapshotTotal immutable; EOA cases hold), but an **allocated child vault's config is structurally, permanently unamendable**: the parent contract is a required member of the child's `snapshotTotal` yet has no code path to vote, and cannot be forced to redeem out. Contradicts ARCHITECTURE §12; not the contingent "offline member" K-2 accepts |
-| 2 | K-3 / VO-2 / VO-3 standing defaults | **Holds** — all-defaults vault cannot pass in any regime; `setAt < createdAt` strict bound closes tally-aware defaults with no off-by-one |
-| 3 | VO-6 / VO-7 commit-reveal | VO-6 **holds**; VO-7 **diverges (Low)** — tally is publicly readable mid-reveal (public `proposals` getter + cleartext `Revealed` event); no worse than accepted residual because direction is commit-bound |
-| 4 | Snapshot soundness | **Holds** — `createdAt-1` excludes same-block mints for proposer + voters; adjacent-block inclusion is real capital; every share mutation routes through `_snapshot`; shares non-transferable |
+| 1 | K-2 / CM-8 full-consensus RuleChange | **Diverges (c), Medium**: mechanism is exact (snapshotTotal immutable; EOA cases hold), but an **allocated child vault's config is structurally, permanently unamendable**: the parent contract is a required member of the child's `snapshotTotal` yet has no code path to vote, and cannot be forced to redeem out. Contradicts ARCHITECTURE §12; not the contingent "offline member" K-2 accepts |
+| 2 | K-3 / VO-2 / VO-3 standing defaults | **Holds**: all-defaults vault cannot pass in any regime; `setAt < createdAt` strict bound closes tally-aware defaults with no off-by-one |
+| 3 | VO-6 / VO-7 commit-reveal | VO-6 **holds**; VO-7 **diverges (Low)**: tally is publicly readable mid-reveal (public `proposals` getter + cleartext `Revealed` event); no worse than accepted residual because direction is commit-bound |
+| 4 | Snapshot soundness | **Holds**: `createdAt-1` excludes same-block mints for proposer + voters; adjacent-block inclusion is real capital; every share mutation routes through `_snapshot`; shares non-transferable |

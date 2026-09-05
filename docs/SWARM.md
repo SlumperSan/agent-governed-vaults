@@ -1,8 +1,8 @@
-# SWARM.md — the contract every parallel agent reads first
+# SWARM.md: the contract every parallel agent reads first
 
 This is the shared spec for parallel development on this repo. Read it before writing a line.
 
-It exists because parallel agents without a shared contract produce *divergent* output — five
+It exists because parallel agents without a shared contract produce *divergent* output: five
 different naming conventions, five different opinions about what "done" means, and a merge that
 costs more than the parallelism saved. The method is borrowed from Bun's Zig→Rust rewrite, which
 moved 535k lines with 64 concurrent agents in 11 days: **the first three hours went into writing the
@@ -13,34 +13,34 @@ porting guide, not into porting.** That guide is what made the other 64 agents a
 ## 0. Start in the vault, end in the vault
 
 **Every sprint opens by onboarding from Obsidian ("ob") and closes by updating it.** Not optional,
-and not a nicety — the vault is the project's memory. The repo records what the code does; the vault
+and not a nicety: the vault is the project's memory. The repo records what the code does; the vault
 records *why*, what was decided, what was tried and rejected, and what is blocked on a human. A
 sprint that skips the read re-derives context that already exists; a sprint that skips the write
 makes the next sprint pay for it again.
 
 **Vault root:** `C:\Users\Micha\desktop\Obsidian Vault\Agent-Governed Vaults\`
 
-### Onboarding — first thing, before any code
+### Onboarding: first thing, before any code
 
 Read, in this order, stopping once you have what your task needs:
 
-1. `Project State.md` — where the build actually stands.
-2. The most recent `Session Handoff *.md` — what the last session did and left open.
-3. `Key Decisions.md` and `Security Findings.md` — decisions and findings you must not re-litigate.
+1. `Project State.md`: where the build actually stands.
+2. The most recent `Session Handoff *.md`: what the last session did and left open.
+3. `Key Decisions.md` and `Security Findings.md`: decisions and findings you must not re-litigate.
 4. Whichever of `Business/` or `Working Agreement.md` your task touches.
 
 Then `docs/NOW.md` and `npm run cc` for the live, computed state. The vault carries the reasoning;
 `cc` carries the facts. Where they disagree the facts win, and the vault is what needs fixing.
 
-### Closeout — last thing, after the gate passes
+### Closeout: last thing, after the gate passes
 
 Update the vault before you report done. At minimum:
 
-- `Project State.md` — what changed, and what is now true that was not before.
+- `Project State.md`: what changed, and what is now true that was not before.
 - Anything your work invalidated. A stale vault note is worse than a missing one, because it will be
   believed. If you found that a recorded number or claim is wrong, correct it and say so explicitly
   rather than quietly overwriting it.
-- New findings, decisions and dead ends worth not repeating — including what you deliberately did
+- New findings, decisions and dead ends worth not repeating, including what you deliberately did
   **not** do, and why. Rejected approaches are among the most valuable things in the vault.
 
 Convert relative dates to absolute. Link related notes with `[[wikilinks]]`.
@@ -52,7 +52,7 @@ The shorthand for this is **"update ob"**.
 ## 0.5 Route the model to the task
 
 Every agent runs on a model and an effort level, and both are choices. Running the strongest model
-at the highest effort on mechanical work is not "being careful" — it is slower and more expensive
+at the highest effort on mechanical work is not "being careful"; it is slower and more expensive
 for an identical result. Running a cheap model on a permanent, irreversible decision is the opposite
 mistake, and far worse. Route deliberately.
 
@@ -77,18 +77,18 @@ Two heuristics that settle most cases:
 
 Within one workflow, mix tiers rather than picking one for the whole run: a Haiku pass to gather
 and normalize, Sonnet to implement, Opus to adversarially review. The review stage is the last place
-to economize — it exists precisely to catch what the implementer got wrong.
+to economize; it exists precisely to catch what the implementer got wrong.
 
 ---
 
-## 0.7 Departments collaborate — check before you produce
+## 0.7 Departments collaborate: check before you produce
 
 Departments are not silos. Two failures come from treating them as such: **double work** (two
 departments independently write the same analysis) and **information leakage** (one department
 ships a claim another department already knows is false).
 
 The second is the dangerous one. Marketing writing "zero capital cost to the operator" is not a
-copy error — Finance has the number, Development knows the contract enforces it, and Legal knows
+copy error: Finance has the number, Development knows the contract enforces it, and Legal knows
 that claim is exactly the kind that attracts a regulator. A claim is only as good as the department
 best placed to check it.
 
@@ -96,7 +96,7 @@ best placed to check it.
 
 The Obsidian vault's `Business/` tree is the shared surface, and `npm run cc` lists every
 department's notes with how recently each changed. Read the neighbouring departments' output before
-writing yours. If another department has already answered your question, cite it — do not
+writing yours. If another department has already answered your question, cite it; do not
 re-derive it, and do not quietly contradict it. If you believe they are wrong, say so explicitly
 and name the note, so the disagreement is visible rather than buried in two conflicting documents.
 
@@ -106,7 +106,7 @@ Route an artifact through the departments that can actually falsify it:
 
 | Artifact | Must be checked by | For what |
 |---|---|---|
-| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim that turns on a legal question — **the owner decides those**, per the 2026-09-04 decision that retired the per-claim review-marker workflow |
+| Anything public-facing | **Legal** | securities / CIS recharacterization, and every claim that turns on a legal question; **the owner decides those**, per the 2026-09-04 decision that retired the per-claim review-marker workflow |
 | Anything claiming a capability | **Development** | does the feature exist, on which network, and is it in the launch scope |
 | Anything with a number in it | **Finance** | is the number derived from the code, or asserted |
 | Anything promising a response | **Operations** | can a one-to-two person rotation actually honour it |
@@ -118,8 +118,8 @@ within one: the producer does not get to be the only judge.
 
 ### Say what you need, do not invent it
 
-When your work needs something another department owns — a number, a legal position, a statement
-about what the code does — **ask for it in your report rather than assuming it.** An assumed number
+When your work needs something another department owns (a number, a legal position, a statement
+about what the code does), **ask for it in your report rather than assuming it.** An assumed number
 that turns out wrong propagates into every document that cites it. Explicitly listing what you took
 from where makes the dependency visible and cheap to correct.
 
@@ -127,7 +127,7 @@ from where makes the dependency visible and cheap to correct.
 
 ## 1. The unit of work
 
-**One agent owns one module.** Not one feature spanning six files — one file, or one tightly-bounded
+**One agent owns one module.** Not one feature spanning six files: one file, or one tightly-bounded
 set. Ownership is exclusive for the life of the task: if you need to change a file another agent
 owns, say so in your report rather than changing it.
 
@@ -141,10 +141,10 @@ machine-generated, unambiguous, and finite, so no agent ever had to guess what t
 
 Our equivalents, in order of preference:
 
-1. **`npm run gate` failures** — the CI mirror. Unambiguous, fast, and authoritative.
-2. **Slither output** — `cd contracts && slither . --filter-paths "^lib/|^test/|^script/" --json -`.
+1. **`npm run gate` failures**: the CI mirror. Unambiguous, fast, and authoritative.
+2. **Slither output**: `cd contracts && slither . --filter-paths "^lib/|^test/|^script/" --json -`.
    236 results (measured 2026-09-03), grouped by detector. Advisory in CI, which means nobody has triaged them.
-3. **`forge build --sizes` margins** — EIP-170 headroom is the binding constraint on several
+3. **`forge build --sizes` margins**: EIP-170 headroom is the binding constraint on several
    deferred features. A byte freed is a feature unblocked.
 4. **Named findings** in `docs/LAUNCH-READINESS.md` and `docs/NOW.md`.
 
@@ -153,7 +153,7 @@ If you find yourself inventing work, stop: pick from a queue instead.
 ## 3. The review pattern: 1 implementer → 2 adversarial reviewers → 1 fixer
 
 This is not optional and it is not a formality. Bun caught three real bugs this way that would
-otherwise have shipped — a use-after-free from a premature `Box` drop, a `trunc()` that needed to be
+otherwise have shipped: a use-after-free from a premature `Box` drop, a `trunc()` that needed to be
 `floor()` for negative values, and an eager `unwrap_or()` that panicked where a closure was intended.
 All three passed the implementer's own review.
 
@@ -172,7 +172,7 @@ On 2026-09-01 four PRs merged across REJECT verdicts nobody had addressed, becau
 prose in a comment and `gh pr merge` does not read comments. So the verdict is now also a token:
 
 - **The orchestrator, when it spawns reviewers**, posts `<!-- REVIEW-ROSTER reviewers=A,B -->`.
-  This is what makes "a review is still running" visible — without it, *nobody objected* and *nobody
+  This is what makes "a review is still running" visible: without it, *nobody objected* and *nobody
   looked* are the same observation, which is how one PR merged five minutes before its verdict
   existed.
 - **Each reviewer**, inside its existing `## Adversarial review — VERDICT` comment, posts
@@ -183,25 +183,25 @@ Both are HTML comments, invisible in the rendered comment, so they cost a review
 
 **A fixer pass does not clear a verdict.** Posting "all findings addressed" is a claim, not a
 verdict; only the reviewer's newer `REVIEW-VERDICT` token clears one. And because a fixer's commits
-move the head, the *reviewer* must post that token **after** the fix lands — a verdict written before
+move the head, the *reviewer* must post that token **after** the fix lands: a verdict written before
 the last commit graded content that is no longer what would merge. This is the one place the review
 pattern costs an extra round trip, and it is deliberate: it is what the four PRs that merged over
 their own REJECTs on 2026-09-01 were missing.
 
-Check a PR with `node scripts/merge-preflight.mjs <n>` before merging — **and before pushing to a
+Check a PR with `node scripts/merge-preflight.mjs <n>` before merging, **and before pushing to a
 branch you did not just create**, because a merged branch looks exactly like a live one by git
 divergence and GitHub reopens no PR on a push.
 
 Only a token can CLEAR a PR; prose can only block it. The full rules, and an explicit list of what
 the check cannot catch, are in `docs/reviews/MERGE-POLICY.md`.
 
-## 4. Mechanical faithfulness — do not refactor opportunistically
+## 4. Mechanical faithfulness: do not refactor opportunistically
 
 Bun's rule was: *do the rewrite that looks like we transpiled the Zig code.* No cleanup along the
 way, no "while I'm here". Opportunistic refactoring is what turns a reviewable 30-line diff into an
 unreviewable 400-line one, and it is where regressions hide.
 
-If you spot something worth fixing that is outside your task, **report it — do not fix it.** It
+If you spot something worth fixing that is outside your task, **report it; do not fix it.** It
 becomes an item on the queue for someone who owns that module.
 
 ## 5. Keep the codebase light
@@ -212,7 +212,7 @@ becomes an item on the queue for someone who owns that module.
   completed task. If you cannot do it, report that you could not.
 - **No paragraph-long comments justifying a workaround.** Bun's reviewers rejected these on sight:
   if it takes a paragraph to defend the code, fix the code. (This is distinct from explaining *why*
-  a non-obvious constraint exists — that comment is valuable and belongs there.)
+  a non-obvious constraint exists; that comment is valuable and belongs there.)
 - **Minimise `assembly`.** Where it is unavoidable, it should be a single bounded block with the
   invariant stated above it.
 
@@ -224,7 +224,7 @@ across ~60,000 tests. That is the standard here.
 - Never delete a test to make a change pass. Never add `skip`. Never loosen an assertion.
 - The audit tests under `contracts/test/audit/` are **exploit demonstrations and remediation
   proofs**. They are the evidence record for findings C-1 through C-6. If your change makes one
-  unbuildable, that is a design problem with your change — solve it, or report the conflict. Do not
+  unbuildable, that is a design problem with your change: solve it, or report the conflict. Do not
   delete the evidence.
 - New behaviour needs a new test. "The existing suite still passes" is necessary, not sufficient.
 
@@ -263,6 +263,6 @@ Escalate; do not act:
 
 - Anything requiring a private key, a funded account, or a `--broadcast`.
 - Mainnet deploys, fund movement, or anything irreversible on-chain.
-- Changing launch parameters (`proposalThresholdBps`, caps, timelock durations) — these are
+- Changing launch parameters (`proposalThresholdBps`, caps, timelock durations): these are
   founder decisions with permanent consequences, documented in `docs/NOW.md`.
 - Weakening a security gate to make something pass. If a gate blocks you, the gate is probably right.

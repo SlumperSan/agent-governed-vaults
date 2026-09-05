@@ -1,7 +1,7 @@
 # Reference Agent
 
 A policy-driven autonomous vault member: it reads the metered API and the chain, decides whether to
-join, vote, or exit, and describes — or, if explicitly unlocked, sends — the resulting transactions.
+join, vote, or exit, and describes (or, if explicitly unlocked, sends) the resulting transactions.
 
 **It is dry-run by default and it is a demonstration, not a product.** Read [Risks and honest
 limitations](#7-risks-and-honest-limitations) before pointing it at anything that matters.
@@ -43,7 +43,7 @@ PRICE_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e PRICE_PAYTO=0x00000000000
 | `--config=<path>` | JSON file merged over the defaults |
 | `--json` | one JSON record per line instead of prose |
 
-`run.mjs` cannot enter execute mode at all — see [§4](#4-the-dry-runexecute-gate).
+`run.mjs` cannot enter execute mode at all; see [§4](#4-the-dry-runexecute-gate).
 
 ---
 
@@ -73,7 +73,7 @@ ACT        intents, risk-ordered:
            dry-run prints each as the exact call it would make; execute sends it
 ```
 
-The two data sources are not interchangeable. The API is an event projection — it knows share
+The two data sources are not interchangeable. The API is an event projection; it knows share
 books, member counts and the leaderboard. Events carry no post-swap balances and no oracle prices,
 so NAV, fee schedules, pending-deposit timers, and governance deadlines are **only** knowable by
 calling the contracts.
@@ -98,13 +98,13 @@ All defaults live in [`src/config.mjs`](../packages/reference-agent/src/config.m
 deliberately conservative. Pass a JSON file with `--config` to override; merging is deep, so you
 only state what you change.
 
-### `policy.join` — every gate must pass
+### `policy.join`: every gate must pass
 
 | Knob | Default | What it means |
 | --- | --- | --- |
 | `requireAttestedOperator` | `true` | `operatorId == 0` means unattested. Treated as scam-quarantine. When a registry read is available it **overrides** the API, and a disagreement between the two is itself disqualifying |
 | `minOperatorNetRealizedUsdc` | `"0"` | Floor on the operator's leaderboard net (gain − loss). Compared as a BigInt |
-| `requireProvenOperator` | `true` | Refuse an operator with no realizations at all — "not yet negative" is not a track record |
+| `requireProvenOperator` | `true` | Refuse an operator with no realizations at all: "not yet negative" is not a track record |
 | `maxPerfFeeBps` | `1000` | Ceiling on the **stacked** performance fee. Sub-vault fees compound up the parent chain, so 10% is a floor, not the number you pay |
 | `maxExitFeeBps` | `100` | Ceiling on the **stacked** exit-fee cap |
 | `depositUsdc` | `"25"` | Size of a join |
@@ -116,12 +116,12 @@ Two further gates are not configurable because failing them open is never correc
 readable** (an unreadable NAV may mean a stale oracle, and a stale oracle freezes *exits* too), and
 the **deposit must clear the vault minimum**. Every unreadable input fails **closed**.
 
-### `policy.exit` — any one trigger is sufficient
+### `policy.exit`: any one trigger is sufficient
 
 | Knob | Default | What it means |
 | --- | --- | --- |
 | `maxDrawdownBps` | `1000` | Exit if NAV/share is this far below the entry mark |
-| `onOracleFreezeWarning` | `true` | Exit on a NAV read failure — see the caveat in [§7](#7-risks-and-honest-limitations) |
+| `onOracleFreezeWarning` | `true` | Exit on a NAV read failure; see the caveat in [§7](#7-risks-and-honest-limitations) |
 | `onOperatorNetNegative` | `true` | Exit if the operator's realized net turns negative |
 
 Exit triggers are OR-ed, not AND-ed: exits are the risk-off direction.
@@ -133,12 +133,12 @@ Exit triggers are OR-ed, not AND-ed: exits are the risk-off direction.
 | `evaluator` | `"naive-drift-band"` | Name, or an object implementing `{ evaluate({proposal, chain, config, nowSec}) }` |
 | `driftBandBps` | `500` | Below this, a rebalance is churn and fees → **against** |
 | `maxDriftBandBps` | `5000` | Above this, it is a mandate change, not a correction → **against** |
-| `voteAgainstWhenUnknown` | `false` | Default is to abstain **by not committing** — an uninformed vote is not neutral, it moves the tally |
+| `voteAgainstWhenUnknown` | `false` | Default is to abstain **by not committing**; an uninformed vote is not neutral, it moves the tally |
 | `proposalTypes` | `[0]` | Rebalance only. RuleChange and ChildAllocation need a human |
 | `requireKnownAction` | *(unset)* | Set with `knownActions` (actionHash ⇒ description) to abstain on any payload you cannot verify |
 
 **The shipped evaluator is a demonstration of the plug point, not a strategy.** It measures the
-fraction of NAV sitting idle in USDC rather than deployed into the basket — a signal that is
+fraction of NAV sitting idle in USDC rather than deployed into the basket, a signal that is
 directly readable on-chain, unlike target weights, which live in a mandate the chain does not
 publish. Swap it out by passing your own object.
 
@@ -150,7 +150,7 @@ publish. Swap it out by passing your own object.
 | `activateGraceSec` | `60` | Clock-skew tolerance past the observation window's real end |
 | `tickIntervalSec` | `60` | Loop interval |
 
-### `danger` — irreversible, opt-in, off
+### `danger`: irreversible, opt-in, off
 
 | Knob | Default | What it means |
 | --- | --- | --- |
@@ -173,7 +173,7 @@ execute             requires BOTH:
 
 Missing either condition is a **hard refusal at startup**, never a silent downgrade to dry-run. A
 gate that downgraded would teach an operator the env var is optional, and they would be wrong
-exactly once. The value must be exactly `yes` — `1`, `true`, `YES` and `y` are all refused.
+exactly once. The value must be exactly `yes`; `1`, `true`, `YES` and `y` are all refused.
 
 `run.mjs` deliberately has no path into execute mode. It will not build an account from a private
 key found in the environment: an agent that reads `PRIVATE_KEY` from env is one leaked `.env` from
@@ -196,12 +196,12 @@ const agent = createAgent({
 
 The agent takes an **account object** and never key material. It reads `.address`, calls
 `signMessage`, and nothing else. Everything log-bound passes through `redact()`, which reduces a
-signer to `{ address }`, strips key-shaped fields, and collapses bare 32-byte hex — a test asserts
+signer to `{ address }`, strips key-shaped fields, and collapses bare 32-byte hex; a test asserts
 a key-shaped value cannot survive it. Salts and commitments appear only as `0x78ce1d7e…ba3924d3`:
 enough to correlate two log lines, never enough to reconstruct.
 
 The startup banner states the signing scope in the artifact rather than leaving it to this page,
-because "dry-run signs nothing" is ambiguous — the agent *does* sign x402 payment authorizations,
+because "dry-run signs nothing" is ambiguous: the agent *does* sign x402 payment authorizations,
 since that is how a metered read is paid for:
 
 ```
@@ -218,15 +218,15 @@ material, but whoever constructed the account object may hold one in the same pr
 
 Enforced at two layers, because one is not enough:
 
-1. **Pre-call gate** — perception asks before each paid request, so an exhausted budget *skips* the
+1. **Pre-call gate**. Perception asks before each paid request, so an exhausted budget *skips* the
    read cleanly and the loop still decides on what it has.
-2. **Signer backstop** — the SDK runs 402 → sign → retry inside one call, so a check afterwards is
+2. **Signer backstop**. The SDK runs 402 → sign → retry inside one call, so a check afterwards is
    too late: under EIP-3009 a **signature is the spend**. The wrapped signer reads
    `typedData.message.value` and throws before producing one. A challenge that asks for more than
    expected dies here even if the pre-call gate was told a smaller number.
 
 When the cap is exhausted, missing data is reported as a **named gap** and the join gates fail
-closed — no leaderboard means no track record, which means no join.
+closed: no leaderboard means no track record, which means no join.
 
 ---
 
@@ -253,7 +253,7 @@ The commitment matches `Governance.sol:292` exactly:
 keccak256(abi.encode(pid, msg.sender, support, salt))
 ```
 
-`abi.encode` — four 32-byte words, in that order. A mismatch reverts with `BadReveal`, producing
+`abi.encode`: four 32-byte words, in that order. A mismatch reverts with `BadReveal`, producing
 precisely the forfeiture the scheme exists to prevent, so the test pins it to a vector produced by
 `cast`, not by our own implementation:
 
@@ -266,7 +266,7 @@ cast keccak $(cast abi-encode "f(uint256,address,bool,bytes32)" 7 0x111111111111
 An outstanding commit is discovered from **chain state**, never from local storage:
 `commitOf(pid, voter) != 0 && !revealedOf(pid, voter)`. The agent then re-derives the salt and
 tries both support values against the on-chain commitment; exactly one reproduces it, and that is
-the recovery — the direction is recovered from the hash, not from memory. It verifies the
+the recovery; the direction is recovered from the hash, not from memory. It verifies the
 reconstruction before spending gas on a call that would otherwise revert.
 
 A reveal it owes therefore outranks every other action in the plan, including a policy that would
@@ -274,7 +274,7 @@ no longer cast that vote today.
 
 ### Unknown is not "nothing to do"
 
-Everywhere else the agent fails closed, and the reveal path is no exception — but here failing
+Everywhere else the agent fails closed, and the reveal path is no exception, but here failing
 closed means failing *toward* revealing. An outstanding commit is derived as
 `commitment != 0 && revealed !== true`, deliberately **not** `revealed === false`: the latter
 requires a *successful* read returning false, so one failed `revealedOf` call would drop the
@@ -287,7 +287,7 @@ rather than "no active proposal on this vault". The next tick retries.
 
 ### Voting weight is not the share balance
 
-Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)` — the measure the
+Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)`, the measure the
 contract counts, and the same one quorum uses. Shares deposited after a proposal opened, still
 inside the observation window, or locked behind a Mode-F exit carry **no** vote, so committing on
 `sharesOf` would cast votes that can never count. An unreadable weight falls to zero, which blocks
@@ -297,7 +297,7 @@ the commit.
 
 This works because viem's local accounts sign with **RFC-6979 deterministic ECDSA**: same key, same
 message, same signature, always. It is **not guaranteed** for hardware wallets, smart-contract
-accounts, or any signer that adds entropy — such a signer would commit successfully and then be
+accounts, or any signer that adds entropy; such a signer would commit successfully and then be
 unable to reveal.
 
 `assertDeterministicSigner()` runs once before the first commit of a session and refuses a signer
@@ -336,30 +336,30 @@ the scope of the contract security review.** Do not point it at funds you would 
 
 ### It has run live, and that is the reason to be careful with it
 
-This section previously said the opposite — that the contracts were not deployed, that
+This section previously said the opposite: that the contracts were not deployed, that
 [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) blocked it, and that no
 transaction this agent constructs had ever been mined. **All three are false.** Issue #10 is closed,
-the protocol has been deployed to Base Sepolia — and, since 2026-09-05, to Robinhood Chain
+the protocol has been deployed to Base Sepolia and, since 2026-09-05, to Robinhood Chain
 mainnet (chain 4663), which makes the warning below sharper rather than softer: this agent can now
 be pointed at a chain whose USDG is real money, and at a factory that will create a real vault for
-whoever calls it. No vault has been created on it yet, so there is nothing there to join today —
+whoever calls it. No vault has been created on it yet, so there is nothing there to join today,
 but the guard below is about the key, not about the vault, and a key configured against 4663 signs
 whatever it is asked to sign. Note the one guard that already exists and its exact
 limit: `--demo-wallet` is refused off a known testnet (`TESTNET_CHAIN_IDS` in
 `packages/reference-agent/src/run.mjs` is `{84532, 11155111, 31337, 1337}`, and 4663 is not in it),
-so a throwaway key cannot sign there — but nothing stops a real key being configured against 4663.
+so a throwaway key cannot sign there, but nothing stops a real key being configured against 4663.
 The agent ran its full loop on Base Sepolia in execute
-mode — join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
+mode: join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
 priced on its own, and settle, every phase with a transaction hash. See
 [SOAK-REPORT.md](SOAK-REPORT.md) §5.
 
-The same claim outlived this section in the source comments, which the claims guard cannot reach —
+The same claim outlived this section in the source comments, which the claims guard cannot reach;
 it walks `.md`, `.html`, `.txt` and `.json`, not `.mjs`. Five sites across
 `fixtures/demo-chain.mjs`, `fixtures/seed-snapshot.mjs`, `src/chain.mjs` and `src/run.mjs` still
 said the protocol was not deployed; all five were corrected on 2026-09-04
 ([#197](https://github.com/SlumperSan/agent-governed-vaults/issues/197)). The absence is now scoped
 to Base mainnet, where it is true. **And that scoping was itself falsified by the Robinhood Chain
-deployment of 2026-09-05** — the third time in three days that a deployment absolute in this repository had to be narrowed rather
+deployment of 2026-09-05**, the third time in three days that a deployment absolute in this repository had to be narrowed rather
 than replaced. `contracts/config/deployments/` now holds two records,
 [`base-sepolia.json`](../contracts/config/deployments/base-sepolia.json) and
 [`robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json), and no Base
@@ -381,16 +381,16 @@ What is still true about the demo path:
   synthetic.
 - The **chain half is stubbed in the demo**. Every value the stub reader produces is marked
   `[stub-chain]` in the narrative. Pass `--rpc` and the same code paths run against a real node.
-- The shipped CLI **cannot sign** — `run.mjs` hard-codes dry-run. The soak drill constructed the
+- The shipped CLI **cannot sign**; `run.mjs` hard-codes dry-run. The soak drill constructed the
   agent directly, and the `AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS` gate is required regardless.
 
 ### The oracle-freeze trigger detects, it does not warn
 
 `navPerShareWad()` reverts with `StaleOracle` when a basket price is stale, so a failed NAV read
-means the vault is **already frozen** — at which point exits are frozen too (ARCHITECTURE §11) and
+means the vault is **already frozen**, at which point exits are frozen too (ARCHITECTURE §11) and
 `requestExit` will revert as well. The oracle exposes no per-asset freshness view, so a genuine
-early warning is not readable on-chain. The trigger is worth keeping — breakers can clear, and an
-agent that queues its exit the moment it notices is ahead of one that waits — but it is detection
+early warning is not readable on-chain. The trigger is worth keeping; breakers can clear, and an
+agent that queues its exit the moment it notices is ahead of one that waits, but it is detection
 after the fact, not prevention. Do not read "oracle-freeze warning" as protection against being
 stranded.
 
@@ -407,15 +407,15 @@ reason string it emits. If you have an out-of-band payload source, supply `known
 The drawdown baseline is in-memory and session-scoped, so a restarted agent re-marks at the restart
 price and a pre-restart drawdown becomes invisible to it. This was a deliberate asymmetry: the
 reveal obligation is recovered from chain state because losing it forfeits a vote, whereas losing an
-entry mark only makes the exit policy less sensitive — it fails in the conservative direction. Seed
+entry mark only makes the exit policy less sensitive; it fails in the conservative direction. Seed
 marks in via `entryMarks` if you keep durable history.
 
 ### Everything else
 
-- **Forward pricing.** Exiting while a pending execution exists — any active proposal past reveal
-  start, or a passed one in its window, of any type — settles at *post*-execution NAV, and the
+- **Forward pricing.** Exiting while a pending execution exists (any active proposal past reveal
+  start, or a passed one in its window, of any type) settles at *post*-execution NAV, and the
   shares lock until someone calls `settleQueuedExit` (it is not automatic). The agent reports this loudly
-  but cannot avoid it — the price it gets is not the price it sees.
+  but cannot avoid it; the price it gets is not the price it sees.
 - **Non-transferable shares.** Exiting is the only way out. There is no secondary market to sell
   into if the policy is wrong.
 - **Naive strategy.** A drift band over idle balance is not a strategy. Anything real needs a real

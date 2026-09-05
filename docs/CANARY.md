@@ -1,4 +1,4 @@
-# Canary — post-launch monitoring
+# Canary: post-launch monitoring
 
 The canary watches a deployed vault set and **stays silent while healthy**. It prints one line per
 signal *transition* (OK→ALERT, ALERT→OK, OK→DEGRADED), plus a one-off NOTICE for a check
@@ -6,13 +6,13 @@ that does not apply to this deployment (§2), so anything it says is worth readi
 the runnable form of the signal table in [DEPLOYMENT.md §6](DEPLOYMENT.md).
 
 "Silent while healthy" is a claim about transition lines specifically. By default the canary also
-prints an hourly "still watching" heartbeat line (§5) — a deliberate exception, not a contradiction:
+prints an hourly "still watching" heartbeat line (§5), a deliberate exception, not a contradiction:
 without it a dead canary and a healthy protocol produce the identical observation (nothing), which
 is exactly the operational blind spot the dead-man's switch in §5.3 closes.
 
 It is **strictly read-only**: a viem *public* client, `eth_call` / `eth_getLogs` /
 `eth_blockNumber` / `eth_getBlockByNumber` and nothing else. There is no wallet client, no account,
-and no key anywhere in `packages/canary`. It reads the indexer's snapshot but never writes it — its
+and no key anywhere in `packages/canary`. It reads the indexer's snapshot but never writes it; its
 own transition state lives at a separate path.
 
 ```bash
@@ -36,18 +36,18 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `ALERT_WEBHOOK_URL` | | — | back-compat fallback for whichever of the two above is unset; see §5.3 |
 | `DEADMAN_PING_URL` | | — | off-host dead-man's switch, pinged once per successful sweep; see §5.3 |
 | `CANARY_TEST_ALERT_ON_START` | | off | `1`/`true`: fire the alert self-test once at startup; see §5.3 |
-| `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS` — compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
+| `CANARY_POLL_INTERVAL_MS` | | `30000` | sweep cadence (named apart from the indexer's `POLL_INTERVAL_MS`; compose feeds both one `.env`, and a sweep is heavier than an indexer poll) |
 | `CONFIRMATIONS` | | `5` | blocks to lag head, matching the indexer |
 | `NAV_DIVERGENCE_BPS` | | `50` | NAV composition bar, 50 = 0.5% |
-| `ORACLE_MIN_MARGIN` | | `0` | **retired-oracle deployments only** — alert when `freshSources - quorum <= this`. Inert against a `ChainlinkOracle`, which has no quorum |
-| `ORACLE_FEED_CADENCE_SECONDS` | | — | **`ChainlinkOracle` deployments only** — `addr:seconds` pairs giving each feed's own publish cadence, sourced from `contracts/config/*.json`'s `feedCadenceSeconds`. Drives the derived early-warning bar below; see §3(a) |
-| `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | **`ChainlinkOracle` deployments only** — MANUAL override of the early-warning bar (% of heartbeat), which otherwise alerts once a feed's answer has aged past it, *before* the breaker trips. Unset = DERIVED per asset from `ORACLE_FEED_CADENCE_SECONDS`; see §3(a) |
+| `ORACLE_MIN_MARGIN` | | `0` | **retired-oracle deployments only**: alert when `freshSources - quorum <= this`. Inert against a `ChainlinkOracle`, which has no quorum |
+| `ORACLE_FEED_CADENCE_SECONDS` | | — | **`ChainlinkOracle` deployments only**: `addr:seconds` pairs giving each feed's own publish cadence, sourced from `contracts/config/*.json`'s `feedCadenceSeconds`. Drives the derived early-warning bar below; see §3(a) |
+| `ORACLE_STALENESS_WARN_PCT` | | unset (derived) | **`ChainlinkOracle` deployments only**: MANUAL override of the early-warning bar (% of heartbeat), which otherwise alerts once a feed's answer has aged past it, *before* the breaker trips. Unset = DERIVED per asset from `ORACLE_FEED_CADENCE_SECONDS`; see §3(a) |
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
-| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap — the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
-| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2 — set `0` to explicitly opt out |
+| `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap; the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
+| `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2; set `0` to explicitly opt out |
 
 **Signals (c) and (d) need the indexer projection.** With `VAULTS` alone and no snapshot they report
-DEGRADED, not OK — see §4.
+DEGRADED, not OK; see §4.
 
 ---
 
@@ -65,16 +65,16 @@ carries the same fields plus the structured `detail` for routing.
 
 Three statuses, rendered as five marks:
 
-- **ALERT** — measured, out of threshold. Page.
-- **RECOVERED** — back within threshold.
-- **DEGRADED** — the check could not run, because the *system* is in a state it cannot measure (no
+- **ALERT**: measured, out of threshold. Page.
+- **RECOVERED**: back within threshold.
+- **DEGRADED**: the check could not run, because the *system* is in a state it cannot measure (no
   member to probe with, no indexer projection, `navWad` behind a tripped breaker). Deliberately
   *not* folded into OK: a sentinel that has stopped being able to run is exactly the thing you
   would otherwise never notice. Another signal is paging for the real cause.
-- **DETECTOR BROKEN** — the check could not run because the **monitor itself is blind**: it cannot
+- **DETECTOR BROKEN**: the check could not run because the **monitor itself is blind**: it cannot
   reach its target, does not understand the contract it is pointed at, or threw. Nothing was
   measured and nobody knows what is being missed.
-- **NOTICE** — the check does not APPLY to this deployment: the contract path it watches is inert,
+- **NOTICE**: the check does not APPLY to this deployment: the contract path it watches is inert,
   so the condition it reports on cannot arise here at all. Carried on an `ok` result (see
   `notApplicable()` in `src/signal.mjs`), stated **once** per tracked signal id
   (`signal|vault|key`, so once per vault) on the first sighting and never again, and it never counts
@@ -83,13 +83,13 @@ Three statuses, rendered as five marks:
   is nothing there to see.
 
 A standing problem is reported **once**, not every poll, and the state survives a restart.
-**DETECTOR BROKEN is the single exception**: it is re-asserted on a doubling backoff — sweeps 1, 2,
-4, 8, 16, 32, then every 64 — each line carrying how many consecutive sweeps the check has been
+**DETECTOR BROKEN is the single exception**: it is re-asserted on a doubling backoff: sweeps 1, 2,
+4, 8, 16, 32, then every 64, each line carrying how many consecutive sweeps the check has been
 blind, and a restart re-asserts it within two sweeps rather than inheriting silence.
 
 > **Why that one case earns the noise.** Report-once is right for a problem in the *system*: someone
 > is already looking at it. It is exactly wrong for a problem in the *monitor*, because silence is
-> this canary's healthy state, so a dead detector reads as good news. That is not hypothetical — it
+> this canary's healthy state, so a dead detector reads as good news. That is not hypothetical. It
 > is what happened here. The pre-pivot oracle signal called `assetConfig` on a `ChainlinkOracle`
 > that has no such function, emitted one DEGRADED line at startup, and then said nothing at all
 > while the flagship freeze detector was dead. A monitor that fails quietly is worse than no
@@ -99,18 +99,18 @@ blind, and a restart re-asserts it within two sweeps rather than inheriting sile
 
 ## 3. The signals
 
-### (a) `oracle-freshness` — is the price good enough to move money at?
+### (a) `oracle-freshness`: is the price good enough to move money at?
 
 One signal, **two implementations**, chosen per vault by probing the deployed oracle. The C-6 pivot
-replaced the bespoke multi-source `OracleAggregator` with `ChainlinkOracle` — one genuine Chainlink
-Data Feed per asset — so there is no quorum and no margin any more: an asset is either priceable or
+replaced the bespoke multi-source `OracleAggregator` with `ChainlinkOracle`, one genuine Chainlink
+Data Feed per asset, so there is no quorum and no margin any more: an asset is either priceable or
 frozen. `signals/oracle-health.mjs` measures the live oracle, `signals/oracle-freshness.mjs` still
 measures the retired one, and `checkOracleSignals()` dispatches between them. The signal *name*,
 and therefore the transition history, is the same across both.
 
 The probe is `sequencerUptimeFeed()` (only `ChainlinkOracle` answers it) then `assetConfig()` (only
 the retired aggregator answers it). **An oracle that answers neither is `DETECTOR BROKEN`**, not
-healthy — that is the failure this signal was rebuilt around.
+healthy. That is the failure this signal was rebuilt around.
 
 #### The live oracle (`ChainlinkOracle`)
 
@@ -120,7 +120,7 @@ incident, because fail-closed means the revert *is* the freeze. The per-field re
 
 | Cause | Read | Alert line says |
 |---|---|---|
-| **Sequencer down** | uptime feed `answer != 0` | `BASE SEQUENCER DOWN` — every asset of every vault on this oracle is frozen |
+| **Sequencer down** | uptime feed `answer != 0` | `BASE SEQUENCER DOWN`: every asset of every vault on this oracle is frozen |
 | **Sequencer grace tail** | `now - startedAt <= GRACE_PERIOD` | `SEQUENCER GRACE PERIOD`, with the exact unix second pricing resumes |
 | **Unlisted asset** | `feedOf(asset).feed == address(0)` | the asset is not listed, so `priceWad` reverts permanently |
 | **Heartbeat** | `now - updatedAt > heartbeat` | how many seconds past the configured heartbeat it is |
@@ -129,11 +129,11 @@ incident, because fail-closed means the revert *is* the freeze. The per-field re
 
 Two boundaries are copied from the contract deliberately, and the tests pin both: staleness trips at
 age **greater than** the heartbeat (age exactly equal is still fresh), and the band is enabled by
-`maxPriceWad != 0` **alone** — a zero floor is not the disable switch.
+`maxPriceWad != 0` **alone**: a zero floor is not the disable switch.
 
 **The sequencer leg reads `answer` and `startedAt`, and ignores `updatedAt`.** The uptime feed is
 event-driven: it only writes on an up↔down transition, so a months-old `updatedAt` is its healthy
-steady state. Staleness-checking it would report a permanent outage on a perfectly healthy chain —
+steady state. Staleness-checking it would report a permanent outage on a perfectly healthy chain,
 and `_requireSequencerUp` ignores it for exactly that reason. It gets its own transition key
 (`sequencer`), because when it trips it freezes every vault on the oracle at once.
 
@@ -141,7 +141,7 @@ and `_requireSequencerUp` ignores it for exactly that reason. It gets its own tr
 `sequencerUptimeFeed` is immutable (`ChainlinkOracle.sol:75`) and `_requireSequencerUp` returns
 without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:314`), so no sequencer state
 can ever freeze such a vault. The canary says so once per vault, as a NOTICE, and is silent
-thereafter — it does not repeat a "cannot run" line on every vault on every sweep for the life of
+thereafter; it does not repeat a "cannot run" line on every vault on every sweep for the life of
 the deployment,
 and the leg does not sit in the not-OK tally forever. Every other guard in `priceWad` is unaffected
 and still measured per asset: unlisted feed, dead or non-positive answer, unset or future timestamp,
@@ -156,54 +156,54 @@ mainnet and a local/testnet chain as the only two possibilities, which are both 
 sequencer L2 whose vendor publishes no uptime feed.
 
 **Threshold.** `priceWad` returns. There is also a pre-trip early-warning bar that alerts while the
-vault is still priceable, once the answer has aged past it — and unlike the first cut of this
+vault is still priceable, once the answer has aged past it, and unlike the first cut of this
 signal, **that bar is on by default wherever it can be set safely**, not off everywhere.
 
 **The bar is DERIVED per asset, never a flat assumed percentage.** A single number cannot be
-calibrated once for every feed: it has to clear the worst age a *healthy* feed ever reaches — which
-is close to the feed's own publish cadence, not the wider staleness bound `feedOf` reports — and
+calibrated once for every feed: it has to clear the worst age a *healthy* feed ever reaches, which
+is close to the feed's own publish cadence, not the wider staleness bound `feedOf` reports, and
 still leave real runway before the freeze. No oracle exposes its own cadence on-chain (it is
 Chainlink's off-chain publishing config, not contract state), so it has to be **told**, via
 `ORACLE_FEED_CADENCE_SECONDS` (address:seconds pairs, sourced from
 `contracts/config/*.json`'s `chainlinkOracle.assets[].feedCadenceSeconds`). Given that, the canary
-computes the bar as **2× the feed's own cadence** — comfortably above the ~1× worst healthy age —
+computes the bar as **2× the feed's own cadence**, comfortably above the ~1× worst healthy age,
 and **disables it, rather than tightening it**, once that would land past 90% of the configured
 heartbeat: past that point the bound is not meaningfully wider than the feed's own cadence, and any
 bar at all would page on ordinary heartbeat-cadence updates. That single condition is the answer to
 the failure mode the first cut of this bar shipped off by default to avoid.
 
-For the actual launch config — mainnet WETH and cbBTC, cadence 1200s against a 3600s bound (ratio
-3) — the derived bar is 2,400s (66.7% of the heartbeat), giving 1,200s of runway before the freeze
+For the actual launch config, mainnet WETH and cbBTC, cadence 1200s against a 3600s bound (ratio
+3), the derived bar is 2,400s (66.7% of the heartbeat), giving 1,200s of runway before the freeze
 and 2× margin over the worst healthy age. Base Sepolia's feeds have "no economic SLA" (see
-`heartbeatNote` in the config), so no cadence is configured there and the bar correctly stays off —
-there is nothing to derive it from safely, not a gap to fill in.
+`heartbeatNote` in the config), so no cadence is configured there and the bar correctly stays off.
+There is nothing to derive it from safely, not a gap to fill in.
 
 **`ORACLE_STALENESS_WARN_PCT` still works exactly as a manual override**, and wins outright over the
 derivation in both directions: set it to force a specific bar (as a % of heartbeat, as before), or
 set it explicitly to `0` to force the warning off even where the derivation would otherwise enable
-it — an operator's explicit choice is never silently re-enabled by the derived default. Only an
+it: an operator's explicit choice is never silently re-enabled by the derived default. Only an
 *unset* env var lets the derivation apply. A healthy result's `detail` always names which mode is
 active (`warnBarSource`: `'manual' | 'derived' | 'off'`) and, when off, why
-(`warnDisabledReason`) — "no early warning is running for this asset" is a fact the signal states,
+(`warnDisabledReason`): "no early warning is running for this asset" is a fact the signal states,
 not a silence someone has to infer.
 
 Credit where due: the calibration argument that a Chainlink feed's real cadence sits well inside its
-configured bound — which is what makes an early-warning bar safe at all — is
+configured bound, which is what makes an early-warning bar safe at all, is
 [#85](https://github.com/SlumperSan/agent-governed-vaults/pull/85)'s. This sprint derives the bar
 from that ratio per feed, rather than assuming one flat percentage is safe for every deployment.
 
 **When it fires.** There is **no contract-side remedy** and, unlike the retired design, no second
 source to fail over to: the heartbeat, the band, the feed and the vault's oracle are all immutable
 ([SF-2 / K-4](THREAT-MODEL.md)). Read `detail` for the cause and follow
-[INCIDENTS.md §1](INCIDENTS.md). Pending (observation-window) capital is **not** trapped —
-`cancelPending` reads no oracle — so tell members with un-activated deposits they can still reclaim
+[INCIDENTS.md §1](INCIDENTS.md). Pending (observation-window) capital is **not** trapped:
+`cancelPending` reads no oracle. So tell members with un-activated deposits they can still reclaim
 them, during a grace tail included. For a sequencer grace tail, `detail.resumesAtSec` is the one
 honest ETA this protocol can ever publish, because it is a contract constant.
 
 **One thing it still does not watch**, filed as a gap rather than silently absent: a USDC depeg,
 which by design freezes nothing at all because the pin is never stale.
 
-The feed's *identity* — `decimals()` / `description()` / `aggregator()` moving behind the proxy —
+The feed's *identity*, `decimals()` / `description()` / `aggregator()` moving behind the proxy,
 **is** watched, but by a different signal, because it is a different question. This one asks whether
 the price is FRESH; identity asks whether it is RIGHT, and a mis-scaled feed is not stale, not
 frozen and not out of band. See **(g) `feed-identity`** below.
@@ -223,7 +223,7 @@ In both implementations the clock is **chain time**, never the monitoring host's
 Threat-model rows: [SF-1](THREAT-MODEL.md) (source independence), [SF-2](THREAT-MODEL.md) (the
 accepted freeze).
 
-### (b) `nav-backing` — is NAV actually backed?
+### (b) `nav-backing`: is NAV actually backed?
 
 Two independently-keyed legs.
 
@@ -232,7 +232,7 @@ recompute mirrors `VaultCore.navWad()` exactly, including the SV-7 look-through:
 valued from their *internal* `assetBalance`, priced through **this** vault's oracle and
 `assetUnit`/`usdcScalar`, recursing to `MAX_LOOKTHROUGH_DEPTH = 3`, multiply-then-divide so the
 truncation matches. Every read is pinned to one block height, so a healthy vault diverges by
-**exactly 0** — this is an invariant check, not an estimate.
+**exactly 0**: this is an invariant check, not an estimate.
 
 - **Threshold.** ALERT above `NAV_DIVERGENCE_BPS` (default 50 = 0.5%). Any nonzero divergence below
   the bar still appears in `detail.divergenceBps` and is worth a look.
@@ -242,24 +242,24 @@ truncation matches. Every read is pinned to one block height, so a healthy vault
 
 **`custody`** compares internal accounting against the token balances the vault actually holds:
 `balanceOf(vault) >= idleUsdc + totalPendingUsdc` for USDC, and `balanceOf(vault) >= assetBalance[a]`
-per basket asset. **One-sided on purpose.** A *surplus* never alerts — donations, EE-6 escrowed
+per basket asset. **One-sided on purpose.** A *surplus* never alerts: donations, EE-6 escrowed
 in-kind slices, and EE-1 observation-window capital all sit in the token balance without being in
 NAV. A **shortfall** alerts: the vault believes it owns more than it holds.
 
 **When composition fires.** Compare `detail.navWad` against `detail.recomputedWad`. If the recompute
 is *higher*, value is being dropped from the reported NAV (look-through or pricing). If reported is
-higher, NAV is overstated and every `navPerShareWad` consumer — deposits minting shares, exits
-paying out — is mispricing. Treat an overstatement as capital-affecting: stop directing new deposits
+higher, NAV is overstated and every `navPerShareWad` consumer, deposits minting shares, exits
+paying out, is mispricing. Treat an overstatement as capital-affecting: stop directing new deposits
 at the vault and reconcile before anything else.
 
-**When custody fires.** This is the serious one. Reconcile `detail.shortfalls` — token, `owed`
+**When custody fires.** This is the serious one. Reconcile `detail.shortfalls`: token, `owed`
 (internal accounting), `held` (actual balance). A USDC shortfall on a vault whose address has been
 blacklisted is [PX-1](THREAT-MODEL.md), documented and accepted, not a bug; anything else means
 tokens left the vault without the accounting following.
 
 Threat-model rows: [EE-1](THREAT-MODEL.md), [SV-7](THREAT-MODEL.md), [PX-1](THREAT-MODEL.md).
 
-### (c) `share-conservation` — indexer vs chain
+### (c) `share-conservation`: indexer vs chain
 
 **What it measures.** Against one chain read of `totalShares()`: the projection's folded
 `totalShares`, and the sum of its per-member share book. Either disagreeing alerts.
@@ -270,16 +270,16 @@ Threat-model rows: [EE-1](THREAT-MODEL.md), [SV-7](THREAT-MODEL.md), [PX-1](THRE
 it against a `latest` read would false-alarm on every deposit in the confirmation window. The chain
 read is therefore **pinned to the snapshot's own `lastBlock`**. If the RPC cannot serve state at that
 height (a pruned, non-archive node) the check falls back to `latest`, marks itself `pinned: false`,
-and asks the runner for **two consecutive** observations before paging — alive on a pruned node
+and asks the runner for **two consecutive** observations before paging, alive on a pruned node
 rather than silently dead, without paging on ordinary lag.
 
 **When it fires.** Check `detail.pinned` first. If false, the mismatch may still be lag on a busy
-chain — point `RPC_URL` at an archive node for a definitive answer. If pinned, one of two things is
+chain: point `RPC_URL` at an archive node for a definitive answer. If pinned, one of two things is
 true: the **indexer** missed or double-counted a `DepositActivated`/`ExitSettled` (re-index from the
 factory deploy block and see if it reconciles), or the **chain** state is genuinely inconsistent with
 its own event history, which is a contract-level finding and escalates immediately.
 
-### (d) `exit-liveness` — the H-1 regression sentinel
+### (d) `exit-liveness`: the H-1 regression sentinel
 
 **What it measures.** Static-calls `requestExit(shares)` **as a real member** and classifies the
 revert. The member comes from the indexer's share book (a non-creator holder preferred, since the
@@ -295,11 +295,11 @@ Three-way classification:
 
 | Revert | Status | Why |
 |---|---|---|
-| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending` | **OK** | gates on the caller's own position — expected |
-| `StaleOracle` | **DEGRADED** | the SF-2/K-4 breaker. By design, but it *is* a live capital freeze, so it never reads as OK. Attributed to the oracle signal, which pages for it — one root cause, one page |
-| anything else — `Reentrancy`, `Panic`, `Error(string)`, an unrecognized selector, or **empty returndata** | **ALERT** | a non-gate revert means members cannot exit |
+| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending` | **OK** | gates on the caller's own position, expected |
+| `StaleOracle` | **DEGRADED** | the SF-2/K-4 breaker. By design, but it *is* a live capital freeze, so it never reads as OK. Attributed to the oracle signal, which pages for it, one root cause, one page |
+| anything else: `Reentrancy`, `Panic`, `Error(string)`, an unrecognized selector, or **empty returndata** | **ALERT** | a non-gate revert means members cannot exit |
 
-Empty returndata is the actual H-1 signature — a creator-chosen module that ran out of its 300k gas
+Empty returndata is the actual H-1 signature: a creator-chosen module that ran out of its 300k gas
 cap or bombed returndata. There is deliberately **no** "could not classify, assume healthy" branch.
 
 **Threshold.** No non-gate revert.
@@ -307,24 +307,24 @@ cap or bombed returndata. There is deliberately **no** "could not classify, assu
 **When it fires.** Members cannot leave. Check the `module-events` signal on the same vault: a
 concurrent `ModuleCallFailed` names the module that broke. `VaultCore` gas-caps module calls and
 falls back to Mode I on governance failure ([MO-1](THREAT-MODEL.md)), so a non-gate revert here
-means a mitigation has regressed — this is an escalate-now finding, not a watch item. There is no
+means a mitigation has regressed: this is an escalate-now finding, not a watch item. There is no
 upgrade path on a deployed vault; the remedy is a contract fix on the *next* deployment plus getting
 members out of this one however the surviving paths allow.
 
 Threat-model row: [MO-1](THREAT-MODEL.md) (review H-1).
 
-### (e) `module-events` — ModuleCallFailed + SliceEscrowed
+### (e) `module-events`: ModuleCallFailed + SliceEscrowed
 
 **What it measures.** Both events over the poll window. Neither is folded by the indexer's
 projection, so the canary reads them itself.
 
-- `ModuleCallFailed(module, member)` — a creator-chosen bookkeeping module misbehaved on the exit
+- `ModuleCallFailed(module, member)`: a creator-chosen bookkeeping module misbehaved on the exit
   path. The exit still settled (the mitigation working) but the module's bookkeeping was
   **forfeited**; for the `feeEngine.*` paths that means an operator's fee accounting silently did not
   happen. It is also the leading indicator for signal (d).
-- `SliceEscrowed(member, asset, amount)` — an in-kind transfer failed, so that asset's slice was set
+- `SliceEscrowed(member, asset, amount)`: an in-kind transfer failed, so that asset's slice was set
   aside as `claimable` rather than reverting the whole redemption (EE-6 / MO-2). Also the mitigation
-  working — and also worth knowing, because a token that keeps failing transfers leaves members
+  working, and also worth knowing, because a token that keeps failing transfers leaves members
   holding claims instead of assets.
 
 **Threshold.** 0 events per window.
@@ -335,19 +335,19 @@ failures in the following window", **not** "the earlier failure was resolved."
 
 **When it fires.** `detail.moduleCallFailed[].module` is the decoded label
 (`feeEngine.onRealize`, `feeEngine.onFeeCollected`, `feeEngine.onFeeCollectedAsset`). Repeated
-failures on one module mean that module is broken for this vault — reconcile the operator's fee
+failures on one module mean that module is broken for this vault: reconcile the operator's fee
 accounting by hand, and treat it as a strong hint to re-check signal (d). Repeated `SliceEscrowed`
 for one asset means that token is failing transfers; tell affected members to `claimEscrowed`.
 
 Threat-model rows: [MO-1](THREAT-MODEL.md), [MO-2](THREAT-MODEL.md), [EE-6](THREAT-MODEL.md).
 
-### (f) `fee-routing` — USDC straight to an operator
+### (f) `fee-routing`: USDC straight to an operator
 
 **What it measures.** USDC `Transfer` logs with `from = vault` and `to` = a **registered operator
 address** (`operatorAddressOf(operatorOf(vault))`, plus `EXTRA_OPERATOR_ADDRESSES`).
 
 The invariant ([EE-9](THREAT-MODEL.md) / [MO-4](THREAT-MODEL.md)): performance fees reach the
-operator **only** through the FeeEngine — vault transfers to the engine, engine credits
+operator **only** through the FeeEngine: vault transfers to the engine, engine credits
 `claimableFees[operator]`, operator calls `claimFees`. Exit fees never route to the operator at all;
 they accrue to remaining members through the share price.
 
@@ -359,8 +359,8 @@ that discriminator this signal would page every time an honest operator exited t
 
 **Threshold.** 0 unexcused direct transfers.
 
-**Why this is the narrow check.** An inverse allowlist — alert on any destination that is not the
-engine, a member, a child, or an adapter — would fire on ordinary exit payouts to members the indexer
+**Why this is the narrow check.** An inverse allowlist, alert on any destination that is not the
+engine, a member, a child, or an adapter, would fire on ordinary exit payouts to members the indexer
 has not projected yet, on rebalance transfers to adapters, and on `cancelPending` refunds. That
 signal cries wolf and gets muted, which is worse than not having it. This one alerts on exactly the
 destination the threat model prohibits. If you want the broad sweep, run it as a separate
@@ -371,27 +371,27 @@ operator outside the claim flow is a value-extraction finding: reconcile against
 `FeesClaimed` on the FeeEngine for the same period, and treat the vault as compromised until the
 transfers are explained.
 
-### (g) `feed-identity` — is it still the same feed, and still scaled the way the oracle assumed?
+### (g) `feed-identity`: is it still the same feed, and still scaled the way the oracle assumed?
 
 **What it measures.** Per basket asset, every sweep: the live `decimals()` and `description()` of the
 Chainlink proxy behind that asset, and which aggregator is currently behind it (`aggregator()`,
 `phaseId()`).
 
-**The gap it closes.** `ChainlinkOracle`'s constructor proves three things about every feed it lists
-— that the feed describes itself as USD-quoted (`_requireUsdQuote`), that it reports 8 decimals, and
-that `scale = 10**(18 - decimals)` is therefore correct — and then caches the result in an immutable
+**The gap it closes.** `ChainlinkOracle`'s constructor proves three things about every feed it lists:
+that the feed describes itself as USD-quoted (`_requireUsdQuote`), that it reports 8 decimals, and
+that `scale = 10**(18 - decimals)` is therefore correct, and then caches the result in an immutable
 `feedOf` entry and never looks again. Chainlink meanwhile swaps the aggregator behind an
 `EACAggregatorProxy` as routine operation, and the proxy forwards `decimals()` and `description()` to
 whichever aggregator is current. So the contract's construction-time proofs can silently stop being
 true on a contract that cannot re-check them. This signal re-checks them.
 
 **Nothing else in the canary can see this.** A mis-scaled feed is not stale, not frozen and not out
-of band, so signal (a) reads OK — the price is served, it is just wrong. And `nav-backing` recomputes
+of band, so signal (a) reads OK: the price is served, it is just wrong. And `nav-backing` recomputes
 NAV through the same `oracle.priceWad(asset)` the vault uses, so a uniform mis-scale cancels exactly
 on both sides of its comparison and that signal stays silent through the whole event.
 
 **Ground truth, and why there is no configuration here.** The comparison that matters for decimals is
-**live-vs-cached, not live-vs-config** — and the cached value is observable on-chain: `feedOf(asset)`
+**live-vs-cached, not live-vs-config**, and the cached value is observable on-chain: `feedOf(asset)`
 is a public mapping getter and `scale` *is* `10**(18 - decimals)` as cached at construction. So the
 check is
 
@@ -400,7 +400,7 @@ check is
 ```
 
 with **both sides read from the chain**. No pin, no env var, no config file, nothing that can go
-stale, and correct on the very first sweep after a cold start — which matters, because a swap that
+stale, and correct on the very first sweep after a cold start, which matters, because a swap that
 happened while the canary was down must still be caught when it comes back. The denomination leg is
 the same shape: it re-runs the constructor's own `_requireUsdQuote` predicate (ends in `USD` as a
 whole word, separator and all) against the description the proxy reports now.
@@ -410,22 +410,22 @@ own. It is pinned on first sight into `CANARY_STATE_PATH`. Rejected alternatives
 
 | Where the pin could come from | Rejected because |
 |---|---|
-| `contracts/config/*.json`'s `aggregatorPin` | `.dockerignore` excludes `contracts/` from the runtime image, so the canary cannot read it — the same finding that shaped `ORACLE_FEED_CADENCE_SECONDS` |
+| `contracts/config/*.json`'s `aggregatorPin` | `.dockerignore` excludes `contracts/` from the runtime image, so the canary cannot read it, the same finding that shaped `ORACLE_FEED_CADENCE_SECONDS` |
 | a new env var, told like the cadence map | It must be hand-edited after every routine Chainlink swap or the signal alerts forever. A standing alert that needs a config deploy to silence is the strongest possible muting pressure, and it buys nothing the harm legs do not already cover pin-free |
-| first sight, in the canary's own state | **Chosen.** No config surface, no maintenance. Residual, stated in the signal's own message: a swap during canary downtime is adopted silently and never narrated — `scripts/verify-chainlink-oracle.mjs` compares against the config's git-tracked `aggregatorPin`, which is the half that survives a restart |
+| first sight, in the canary's own state | **Chosen.** No config surface, no maintenance. Residual, stated in the signal's own message: a swap during canary downtime is adopted silently and never narrated. `scripts/verify-chainlink-oracle.mjs` compares against the config's git-tracked `aggregatorPin`, which is the half that survives a restart |
 
 **Severity, and why the two findings are not calibrated the same.** A Chainlink aggregator swap is
-routine and legitimate — `phaseId` exists to count them. A `decimals()` change is not routine and is
+routine and legitimate: `phaseId` exists to count them. A `decimals()` change is not routine and is
 the one that silently mis-scales every price. So:
 
 | Finding | Status | Behaviour |
 |---|---|---|
-| decimals no longer match the cached `scale` (including a value > 18, which no `scale` can express) | **ALERT** | **Latches.** The oracle's config is immutable, so there is no operator action that repairs it — the vault stays not-OK until it is evacuated or the oracle replaced |
+| decimals no longer match the cached `scale` (including a value > 18, which no `scale` can express) | **ALERT** | **Latches.** The oracle's config is immutable, so there is no operator action that repairs it: the vault stays not-OK until it is evacuated or the oracle replaced |
 | the description no longer ends in `USD` as a whole word | **ALERT** | **Latches**, same reason |
 | the aggregator behind the proxy changed, decimals and denomination still check out | **ALERT** | **Clears itself next sweep**, because the runner re-pins. A notification ("go read Chainlink's announcement"), not a standing incident |
 
 The self-clear is the calibration, not a softening. Latching a benign swap would park a permanent
-not-OK row in the heartbeat summary and in `ops-check` with no action that clears it — which is the
+not-OK row in the heartbeat summary and in `ops-check` with no action that clears it, which is the
 muting pressure `ORACLE_MIN_MARGIN` and `ORACLE_STALENESS_WARN_PCT` were both calibrated against. And
 alerting at all is safe here for a reason the flat staleness bar could not claim: an aggregator is
 swapped on the order of **once or twice a year**, not dozens of times a day.
@@ -440,11 +440,11 @@ inventing a second argument: `phaseId` increments on every swap so it convicts o
 `aggregator()` convicts only when both sides are readable, because an `aggregator()` read coming back
 empty is network noise, not evidence (observed against a live proxy on 2026-08-30).
 
-**When it fires.** There is no on-chain remedy — `feedOf` is immutable. For a decimals or
+**When it fires.** There is no on-chain remedy: `feedOf` is immutable. For a decimals or
 denomination finding, treat every price served since the change as wrong (`detail` carries the
 cached scale, the live decimals and the factor the price is off by) and follow the de-listing /
 evacuation path, not the freeze path: the vault is not frozen, it is *transacting at a wrong price*,
-which is worse. For a swap notice, verify it against Chainlink's announcement — that is the moment a
+which is worse. For a swap notice, verify it against Chainlink's announcement: that is the moment a
 deprecation is still recoverable, because on-chain a deprecation looks like ordinary staleness only
 *after* the response window has closed.
 
@@ -453,12 +453,12 @@ proxy anywhere, so feed identity is not a capability that exists to be blind abo
 
 ---
 
-### (h) `governance-watch` — a proposal is moving, and here is when its windows close
+### (h) `governance-watch`: a proposal is moving, and here is when its windows close
 
 **Why it exists.** Monitoring Gap Analysis G8 (Incident Catalogue OPS-7): the design's answer to
 governance capture is *publish analysis during the reveal window*, and until this signal nothing
 said when a window had opened. A hostile proposal could move through commit into reveal overnight
-and consume the only defence window the protocol has. Operations specified it as SEV-2 — page
+and consume the only defence window the protocol has. Operations specified it as SEV-2: page
 during 08:00–24:00 UTC, queue overnight. **Cite the two halves to the right notes**: the SEV-2
 label comes from Monitoring Gap Analysis §3 item 5 (the Severity Ladder's SEV-2 definition
 enumerates OPS-1/2/3/5 and does not mention governance, and the Incident Catalogue's OPS-7 entry
@@ -471,16 +471,16 @@ the time of day, and promises nothing about who responds when.
 **What it measures.** `vault.governance()` (immutable, so no extra env var) locates the
 `Governance` module; then `activeProposalOf(vault)`, `proposals(pid)` and `configOf(vault)`. The
 **phase** is derived from the proposal's stored deadlines against **chain time**, never the host
-clock, because two of the transitions that matter — commit→reveal and timelock→executable — are
+clock, because two of the transitions that matter, commit→reveal and timelock→executable, are
 clock crossings that emit no event. The four lifecycle events (`Proposed`, `Finalized`,
 `Executed`, `ProposalExpired`) are scanned over the poll window for block/tx attribution only,
 using the same `MAX_LOG_SPAN_BLOCKS` plumbing as signal (e).
 
-**Shape.** One transition key per phase — `commit`, `reveal`, `tally` (reveals closed, `finalize`
+**Shape.** One transition key per phase: `commit`, `reveal`, `tally` (reveals closed, `finalize`
 not yet called), `timelock`, `execution`, `lapsed` (passed, window closed, `markExpired` not yet
-called) — and every key is emitted every sweep: the phase the proposal is in reads ALERT, the other
+called), and every key is emitted every sweep: the phase the proposal is in reads ALERT, the other
 five read OK. **The six keys are not cosmetic and must not be collapsed into one:** the tracker
-emits on a status change, so a single key would produce *no line at all* on commit→reveal — the
+emits on a status change, so a single key would produce *no line at all* on commit→reveal: the
 signal would already be `alert`, and the reveal window would open unannounced. That is the general
 masking failure of single-key signals, and it is why per-leg keys are the house pattern here
 (`nav-backing` splits composition/custody, the oracle signals split per asset). Entering a phase is one ALERT line; leaving it is one RECOVERED line saying where the
@@ -488,7 +488,7 @@ proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`
 Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
 Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
 be settled (`Governance.sol:278`), so one vault cannot have two proposals running at once however
-many proposers try. That, not the phase durations, is what bounds pages per vault per hour — and it
+many proposers try. That, not the phase durations, is what bounds pages per vault per hour, and it
 is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
 true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
 but only *caps* `timelockDuration`, so a zero timelock is legal and that phase is skipped outright.
@@ -501,7 +501,7 @@ The phase boundaries copy `Governance.sol`'s own `require`s and the tests pin th
 **What `detail` carries.** `revealDeadline` (+ `…Iso`), `earliestExecuteAt` (+ `…Iso`) and
 `earliestExecuteBasis`, `executionWindowClosesAt`, the decoded `proposal` (type, proposer,
 `actionHash`, every stored timestamp, tallies) and the four `config` durations, `pid`, `phase`,
-`governance`, `modeFExitQueueing` (true from reveal start until settlement — VO-8, the reason a
+`governance`, `modeFExitQueueing` (true from reveal start until settlement, VO-8, the reason a
 reveal-phase line matters to members and not only to voters), the window's `events` with
 block/tx, `severity: 'SEV-2'`, `incident: 'OPS-7'`, `gap: 'G8'`.
 
@@ -511,23 +511,23 @@ the floor is `revealDeadline + timelockDuration`; a late `finalize` pushes the t
 execution window later, which is why no *upper* bound is claimed for an Active proposal and why
 the floor keeps moving with the clock while the `tally` key is alert.
 
-**Tier: `PAGE_SIGNALS`, unconditionally — and here is why not `CONDITIONAL_PAGE`.** This signal has
+**Tier: `PAGE_SIGNALS`, unconditionally, and here is why not `CONDITIONAL_PAGE`.** This signal has
 the shape that category exists for: one signal name covering two severities, a routine creator
 rebalance and a hostile proposal. It does not have the **discriminator**, which is what the category
 actually requires. `feed-identity` earned it because chain state says which severity you are in
 (`detail.harm`). Here all three candidate predicates fail:
 
-1. **The payload** — the axis the two severities genuinely differ on — is not on-chain until
+1. **The payload**, the axis the two severities genuinely differ on, is not on-chain until
    `execute`. `Proposed` carries only `actionHash`, which is exactly why this signal ships
    `payloadOnChain: false`. There is nothing to condition on.
-2. **The proposer is the wrong thing to condition on, on the merits — not because it is hard.**
+2. **The proposer is the wrong thing to condition on, on the merits, not because it is hard.**
    Incident Catalogue OPS-7 opens *"An operator key signs a bad proposal, or a hostile bloc passes a
    rebalance"*: the operator key is the **first named threat this signal exists for**. Any proposer
-   predicate — including the cheap one, a creator/operator allowlist, which needs no scoring at all
-   and is trivially available on-chain — would therefore demote exactly the case OPS-7 names first.
+   predicate, including the cheap one, a creator/operator allowlist, which needs no scoring at all
+   and is trivially available on-chain, would therefore demote exactly the case OPS-7 names first.
    The objection is not "we cannot build it"; it is that building it blinds the primary threat.
 3. **The phase** is the wrong axis. The two arguably-less-urgent keys are `tally` and `lapsed`, and
-   both mean a governance action is *stalled* — untallied, or passed and never executed. Demoting
+   both mean a governance action is *stalled*: untallied, or passed and never executed. Demoting
    them demotes the wrong two.
 
 So paging on a routine proposal is an accepted cost, not an oversight: it is what "every occurrence
@@ -544,14 +544,14 @@ transaction. Pinning also stops a `finalize`/`execute` that gets reorged out of 
 from producing a spurious ALERT→RECOVERED pair.
 
 **When it fires.** Read `detail.actionHash`, find the published payload, and check that it hashes
-to it — `execute` is permissionless and hash-gated, so the payload is the authority, not the
+to it: `execute` is permissionless and hash-gated, so the payload is the authority, not the
 caller. Publish the analysis before `revealDeadline`. A `tally` alert that stands for long means
-nobody has called `finalize`; a `lapsed` alert means a passed proposal was never executed — both
+nobody has called `finalize`; a `lapsed` alert means a passed proposal was never executed: both
 calls are permissionless. `execution` on a `RuleChange` is the vault's config about to change.
 
 **What it does NOT check, and why: whether the payload behind `actionHash` has been published**
 (security-ops §5.3 names this as the unmonitored condition). The payload is not on-chain until
-`execute` — `Proposed` carries only its keccak — and there is no publication surface anywhere in
+`execute`, `Proposed` carries only its keccak, and there is no publication surface anywhere in
 this tree: the indexer folds the hash, the API has no proposal route, and the reference agent's own
 evaluator treats the payload as opaque from chain state. There is nothing for a read-only monitor to
 read. `detail.actionHash` and `detail.payloadOnChain: false` are carried so a receiver with an
@@ -560,7 +560,7 @@ location exists.
 
 **Detector-broken branches.** A vault that does not answer `governance()`, answers `address(0)`,
 or points at a contract that does not answer `activeProposalOf()` reports DETECTOR BROKEN and
-re-asserts — a vault whose proposals cannot be seen is unmonitored, not quiet.
+re-asserts: a vault whose proposals cannot be seen is unmonitored, not quiet.
 
 Threat-model rows: [VO-7](THREAT-MODEL.md) (reveal-order visibility), [VO-8](THREAT-MODEL.md)
 (Mode-F from reveal start), [CM-6](THREAT-MODEL.md) (one proposal at a time).
@@ -569,7 +569,7 @@ Threat-model rows: [VO-7](THREAT-MODEL.md) (reveal-order visibility), [VO-8](THR
 
 ## 4. Signals that cannot run
 
-A DEGRADED line is not a false alarm to be tuned away — it means a check is **not covering** the
+A DEGRADED line is not a false alarm to be tuned away: it means a check is **not covering** the
 vault. The cases:
 
 | Line | Cause | Fix |
@@ -586,21 +586,21 @@ An empty watch set is reported loudly rather than read as a clean bill of health
 `sequencer gate not configured … sequencerUptimeFeed is address(0)`, and that was the wrong class:
 it is not a check that cannot run today and might run tomorrow, it is a check with no subject in
 this deployment for as long as the oracle exists. It now emits one NOTICE line per vault and is
-`ok` thereafter — see §3(a) and the NOTICE mark in §2.
+`ok` thereafter; see §3(a) and the NOTICE mark in §2.
 
-**DETECTOR BROKEN lines are a different class** — the monitor is blind, not the vault. They
+**DETECTOR BROKEN lines are a different class**: the monitor is blind, not the vault. They
 re-assert on a backoff until fixed:
 
 | Line | Cause | Fix |
 |---|---|---|
-| `ORACLE DETECTOR BLIND … answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig()` | the vault's oracle is a flavor this canary does not know | the canary needs a new oracle implementation before this vault is monitored at all — do not treat the vault as healthy |
+| `ORACLE DETECTOR BLIND … answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig()` | the vault's oracle is a flavor this canary does not know | the canary needs a new oracle implementation before this vault is monitored at all; do not treat the vault as healthy |
 | `vault … is unreadable` | wrong address, wrong chain, or the RPC is failing | check `RPC_URL`/`CHAIN_ID` and the address. **Every** signal for that vault is suspended |
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
-| `FEED IDENTITY DETECTOR BLIND … did not answer description() or decimals()`, or `… description() or decimals() … could not be read` | one branch, two wordings. `did not answer` needs every one of those reads that failed to be a confirmed revert — the proxy stopped answering the reads the harm checks compare against. `could not be read` means at least one of those reads failed without a confirmed revert — including an `eth_call` that came back empty, which classifies `transport` (`call-error.mjs:19-21`), so the feed may well have answered | the asset is unmonitored for aggregator-swap drift. On `did not answer`: a feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry. On `could not be read`: check the RPC's rate limit first, but an empty `eth_call` return lands here too — three consecutive sweeps is the feed, not the network (`feed-identity.mjs:72-76`) |
-| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()`, or `… neither aggregator() nor phaseId() … could be read` | one branch, two wordings, same rule: `answered neither` needs both reads to be confirmed reverts — the feed is not an `EACAggregatorProxy`. `could be read` means at least one failed without a confirmed revert — an `eth_call` that came back empty classifies `transport` too (`call-error.mjs:19-21`) — and evidences neither | the harm checks (decimals, denomination) **did** run and passed either way; it is the swap *notice* that is blind |
-| `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket) — no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
+| `FEED IDENTITY DETECTOR BLIND … did not answer description() or decimals()`, or `… description() or decimals() … could not be read` | one branch, two wordings. `did not answer` needs every one of those reads that failed to be a confirmed revert: the proxy stopped answering the reads the harm checks compare against. `could not be read` means at least one of those reads failed without a confirmed revert: including an `eth_call` that came back empty, which classifies `transport` (`call-error.mjs:19-21`), so the feed may well have answered | the asset is unmonitored for aggregator-swap drift. On `did not answer`: a feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape: check it against Chainlink's feed registry. On `could not be read`: check the RPC's rate limit first, but an empty `eth_call` return lands here too: three consecutive sweeps is the feed, not the network (`feed-identity.mjs:72-76`) |
+| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()`, or `… neither aggregator() nor phaseId() … could be read` | one branch, two wordings, same rule: `answered neither` needs both reads to be confirmed reverts: the feed is not an `EACAggregatorProxy`. `could be read` means at least one failed without a confirmed revert: an `eth_call` that came back empty classifies `transport` too (`call-error.mjs:19-21`), and evidences neither | the harm checks (decimals, denomination) **did** run and passed either way; it is the swap *notice* that is blind |
+| `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket): no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
 | `ORACLE DETECTOR BLIND … priceWad() … could not be read` | the ground-truth price read failed in transit | as above. Whether the asset is frozen is unknown, so it is not reported either way |
-| `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound — this line means the unreadable sources are what decides it |
+| `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound: this line means the unreadable sources are what decides it |
 | `SEQUENCER GATE DETECTOR BLIND … could not be read` | the uptime feed read failed in transit | as above. It does **not** mean the sequencer gate tripped |
 | `… DETECTOR BLIND … could not be probed` / `neither probe … could be read` | both oracle-flavor probes failed in transit | which oracle is deployed is unknown; this says nothing about the oracle's ABI |
 
@@ -608,14 +608,14 @@ re-assert on a backoff until fixed:
 because an RPC failure and a contract revert both surface as a failed read, and code that treats
 "the read failed" as "the contract refused" turns a busy network into a security incident. The
 reader tags each failure `revert` or `transport` (`packages/canary/src/call-error.mjs`); only a
-`revert` can produce a verdict, and a `transport` routes here — visible, re-asserted on a backoff,
+`revert` can produce a verdict, and a `transport` routes here, visible, re-asserted on a backoff,
 and explicitly not evidence of a fault.
 
 **`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
 blind branches (`feed-identity.mjs:179, 211, 266, 308`) carry
 `minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:101`), so they escalate only on the third
-consecutive sweep. The case that earned the damping is an `eth_call` coming back empty — one empty
-return is noise where three consecutive is the feed — but that is the case it was written for, not
+consecutive sweep. The case that earned the damping is an `eth_call` coming back empty: one empty
+return is noise where three consecutive is the feed, but that is the case it was written for, not
 the only one it covers: each branch is reachable on a confirmed revert too, and on a transport
 failure since the reader began telling those apart, and the damping applies to all three. The
 exception is the very first sighting of an asset, which reports immediately: a monitor that has
@@ -623,25 +623,25 @@ never once succeeded must not be indistinguishable from silence.
 
 **`share-conservation` damps as well, which is why that lede is scoped to blind lines.**
 `minConsecutive: pinned ? 1 : 2` (`share-conservation.mjs:76`) makes an UNPINNED result wait for two
-consecutive observations before the tracker flips its status — `alert` and `ok` alike, because
+consecutive observations before the tracker flips its status: `alert` and `ok` alike, because
 `transitions.mjs:146` gates every status flip on `need`, not only the blind ones. A result is
 unpinned either because the caller passed no `atBlock` (`share-conservation.mjs:39`) or because the
 pinned read failed and the archive fallback re-read at chain head (`share-conservation.mjs:44-51`);
 that retry is `if (!res.ok && pinned)` and is deliberately NOT gated on `kind` (`:46-48`), so it
-takes any failed pinned read — but the failure it exists for is the pruned node's "missing trie
+takes any failed pinned read, but the failure it exists for is the pruned node's "missing trie
 node", which classifies transport. RPC noise is therefore one of the two paths into this damping
 rather than something it is unrelated to.
 
 Do not read the branch count off the table, because rows and branches do not correspond one to one:
 only two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds
-two lines that behave differently — `feed-identity`'s “could not be probed” damps, `oracle-health`'s
+two lines that behave differently: `feed-identity`'s “could not be probed” damps, `oracle-health`'s
 “neither probe … could be read” does not. **Every other blind line re-asserts from the first
 sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
 branches set no `minConsecutive`, and neither do the two the runner emits itself
-(`canary-runner.mjs:266` — row `:566`; `canary-runner.mjs:243` — row `:567`).
+(`canary-runner.mjs:266`: row `:566`; `canary-runner.mjs:243`: row `:567`).
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
-`MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on — the older blocks are never
+`MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on: the older blocks are never
 scanned for `ModuleCallFailed`, `SliceEscrowed`, or fee outflows. It says so explicitly:
 
 ```
@@ -651,18 +651,18 @@ raise it or scan that range manually.
 ```
 
 The level signals (a–d) read current state and are unaffected. Only the two window-scoped event
-signals have the hole — signal (h) reads the proposal's phase from state and uses the window only
+signals have the hole: signal (h) reads the proposal's phase from state and uses the window only
 for block/tx attribution, so **a log-window gap costs it a tx hash, never a page**. Raise
 `MAX_LOG_SPAN_BLOCKS` or sweep the range by hand.
 
 **A sweep gap is a different thing, and signal (h) is not exempt from it.** If the canary process is
 down long enough to span a whole proposal lifecycle (≥2h), every phase key was OK before and is OK
-again after, so the tracker emits **no transition at all** and the proposal is never narrated — no
+again after, so the tracker emits **no transition at all** and the proposal is never narrated: no
 line is produced, so nothing in `detail` reaches any sink. That is not recoverable inside a
 state-poller, and it is precisely what the off-host dead-man's switch (`DEADMAN_PING_URL`, §5.3)
 exists to make visible: it tells you the canary was down, which is the cue to sweep governance by
-hand for the window it missed. The narrower case — a whole *reveal window* falling between two
-sweeps — **is** covered: `reveal` stays OK→OK and says nothing, but `commit` emits ALERT→RECOVERED
+hand for the window it missed. The narrower case, a whole *reveal window* falling between two
+sweeps, **is** covered: `reveal` stays OK→OK and says nothing, but `commit` emits ALERT→RECOVERED
 and `tally` emits OK→ALERT naming the closed window and the un-called `finalize`.
 
 ---
@@ -670,7 +670,7 @@ and `tally` emits OK→ALERT naming the closed window and the un-called `finaliz
 ## 5. Operating notes
 
 - **Silence is the healthy state**, which makes "is it alive?" a fair question. `HEARTBEAT_MS`
-  defaults to `3600000` (one hour) precisely so this question always has an answer — without it, a
+  defaults to `3600000` (one hour) precisely so this question always has an answer: without it, a
   dead canary and a healthy protocol are the same observation (nothing). Set `HEARTBEAT_MS=0` to opt
   back out. The heartbeat line is a "still watching" summary of vault count, signals tracked, and
   how many are not OK; it always goes to stdout via the console sink, never to a webhook, and is
@@ -691,53 +691,53 @@ and `tally` emits OK→ALERT naming the closed window and the un-called `finaliz
 ### 5.3 Sinks, severity tiers, and the dead-man's switch
 
 Closes the Monitoring Gap Analysis' G6: "no paging tiers, no off-host dead-man's switch. Undetected:
-a dead host, overnight (~8h)." `sinks.mjs` used to be console + one generic webhook — every
-transition, same channel, no severity — and `ops-check` (`packages/oplog`), the thing that notices a
+a dead host, overnight (~8h)." `sinks.mjs` used to be console + one generic webhook: every
+transition, same channel, no severity, and `ops-check` (`packages/oplog`), the thing that notices a
 dead canary, runs **on the same host as the canary**, so host death silenced both the watcher and the
 watcher's watcher. This section is the fix in three parts.
 
 **Tiered webhooks.** `PAGE_WEBHOOK_URL` receives only ALERT transitions on the signals Operations'
 Severity Ladder rates SEV-1/2 and worth waking a human for: `nav-backing`, `share-conservation`,
 `fee-routing`, `exit-liveness`, `oracle-freshness` (this is the "oracle-v2"/"oracle-health" the
-Monitoring Gap Analysis' §3 item 4 refers to — `signals/oracle-health.mjs`'s `SIGNAL` constant is
+Monitoring Gap Analysis' §3 item 4 refers to: `signals/oracle-health.mjs`'s `SIGNAL` constant is
 still `'oracle-freshness'`, unchanged across the post-pivot rename), and `governance-watch`, which
-§3 item 5 places here in as many words ("every occurrence PAGEs at SEV-2 during waking hours") — a
+§3 item 5 places here in as many words ("every occurrence PAGEs at SEV-2 during waking hours"), a
 citation of Operations' spec, not an escalation inferred here, and unconditional rather than
 `CONDITIONAL_PAGE` because no on-chain predicate separates a routine proposal from a hostile one
 (see §3(h)). **The waking-hours half is the receiver's**: nothing in this process knows the time of
 day, and no string it emits promises a response time. `LOG_WEBHOOK_URL` receives every
 other transition: recoveries, every DEGRADED / DETECTOR BROKEN / NOTICE line, and the harmless
 half of `feed-identity`. `ALERT_WEBHOOK_URL` remains the backwards-compatible fallback used for whichever of
-the two is unset — set only that one and every transition reaches the one configured URL exactly
+the two is unset: set only that one and every transition reaches the one configured URL exactly
 once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
 'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
 
 **`feed-identity` pages on HARM only.** `feed-identity` (§3(g)) is the one signal whose ALERTs are
 not all the same severity, so it routes on a predicate (`CONDITIONAL_PAGE` in `sinks.mjs`) rather
 than on its name: **PAGE** when `detail.harm` is `'decimals'` or `'denomination'`, **LOG** when it is
-`null` (the aggregator swap). The two harm cases LATCH — `ChainlinkOracle`'s cached scale and its
+`null` (the aggregator swap). The two harm cases LATCH: `ChainlinkOracle`'s cached scale and its
 USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
 freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
 legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
 Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
 live price sits inside the band, and per `Owner Decisions 2026-09-01.md` §1 that window closes for
-cbBTC at BTC $100,000 — above it `feed-identity` is the only detector there is, and `nav-backing`
+cbBTC at BTC $100,000: above it `feed-identity` is the only detector there is, and `nav-backing`
 cannot substitute because it recomputes through the same mis-scaled `priceWad`. The Monitoring Gap
 Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` existed (2026-09-01,
 PR #103), so its "LOG: everything else" never ruled on this; the tier map here is the reconciliation
 and the note remains Operations' to update.
 
 **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged (plain `GET`) once per **successful**
-sweep that watched **at least one vault** — a canary that cannot reach the RPC, and a canary whose
+sweep that watched **at least one vault**: a canary that cannot reach the RPC, and a canary whose
 watch set is empty (no `VAULTS`, missing or unmounted indexer snapshot), are both "not watching the
 chain" and neither may tell the one off-host monitor otherwise. A sweep that finds no vaults logs
 `sweep.no_vaults` and says on stderr that the ping is being withheld, so the external check going red
 reads as the configuration problem it is. The on-host `ops-check` heartbeat file is still written in
 that state: it reports process liveness, and promoting an empty watch set to "canary dead" there is
 an Operations decision, not this package's. Point it at an external
-heartbeat-monitoring check — e.g. a Healthchecks.io-style URL (`https://hc-ping.com/<uuid>`) — so a
+heartbeat-monitoring check, e.g. a Healthchecks.io-style URL (`https://hc-ping.com/<uuid>`), so a
 dead host is noticed by something that is not itself on that host. Off by default when unset; a
-failed ping is logged, never fatal — the ping's whole purpose is to be noticed from outside this
+failed ping is logged, never fatal: the ping's whole purpose is to be noticed from outside this
 process, so a delivery failure here must not be the thing that crashes the last line of defence.
 **Provisioning the external account is a human task**, not something this package can do (no key, no
 signup flow, by design); this is only the code path that pings whatever URL you give it.
@@ -747,26 +747,26 @@ Something must test the alert path end-to-end on a schedule, or the first real p
 first test." `CANARY_TEST_ALERT_ON_START=1` fires one synthetic PAGE-tier and one synthetic LOG-tier
 transition through the exact sinks a real sweep uses, right after startup and before the sweep loop
 begins. On demand, without starting anything: `node packages/canary/src/canary-runner.mjs test-alert`
-(mirrors the existing `verify` subcommand — same env, no sweep). Both paths bypass the transition
+(mirrors the existing `verify` subcommand, same env, no sweep). Both paths bypass the transition
 tracker entirely, so a self-test can never plant fake state in `CANARY_STATE_PATH` that would
 suppress a real future transition on a colliding id. The forced tier travels as
-`detail.tier` alongside `detail.selfTest: true`, and `tierOf` honours it **only** in that pair — a
+`detail.tier` alongside `detail.selfTest: true`, and `tierOf` honours it **only** in that pair: a
 real signal's `detail` is a bag of decoded on-chain values, and one that happened to carry a field
 named `tier` must not be able to demote its own page.
 
 > **Do not leave `CANARY_TEST_ALERT_ON_START` set in `.env`.** Compose runs the canary under
 > `restart: unless-stopped`, so it fires a synthetic PAGE on **every** automatic restart, not once.
-> Startup warns on stderr when it is set. Run the self-test, confirm both tiers arrived, unset it —
+> Startup warns on stderr when it is set. Run the self-test, confirm both tiers arrived, unset it,
 > or use the `test-alert` subcommand, which is the same path without starting the service.
 - **Cold start sees no history.** With the default `LOG_LOOKBACK_BLOCKS=0`, the first sweep scans a
   single block, so `ModuleCallFailed`, `SliceEscrowed`, and fee outflows from *before* the canary
-  started are never reported. That is deliberate — starting a monitor should not replay a backlog as
-  fresh pages — but if you are standing the canary up after a vault has been live for a while, set
+  started are never reported. That is deliberate: starting a monitor should not replay a backlog as
+  fresh pages, but if you are standing the canary up after a vault has been live for a while, set
   `LOG_LOOKBACK_BLOCKS` to cover the gap for the first run. The level signals (a–d) read current
   state and are complete from the first sweep regardless.
 - **Sizing.** A sweep is `O(vaults × basket assets)` reads against a `ChainlinkOracle` (roughly eight
-  per asset — `feedOf`, `priceWad`, `latestRoundData` for signal (a), then a second `feedOf` plus
-  `description`, `decimals`, `aggregator`, `phaseId` for signal (g), which are issued in one batch —
+  per asset: `feedOf`, `priceWad`, `latestRoundData` for signal (a), then a second `feedOf` plus
+  `description`, `decimals`, `aggregator`, `phaseId` for signal (g), which are issued in one batch,
   plus four fixed per vault). The two oracle signals deliberately do **not** share their `feedOf`
   read: each is a pure function of the reader, which is what lets every one of them be tested against
   a plain mock, and one duplicate `eth_call` per asset is a cheaper price than coupling them. Against
@@ -777,7 +777,7 @@ named `tier` must not be able to demote its own page.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs` — 284 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs`: 284 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 
@@ -787,19 +787,19 @@ Four guards worth knowing about:
   watched events, the views, and the gate errors against the **compiled** `VaultCore` ABI. A stale
   gate selector would file a live fault as a benign gate and silence the H-1 sentinel, so this is not
   optional bookkeeping. It skips gracefully when `contracts/out` or viem is absent.
-- The same file now cross-checks every `ChainlinkOracle` view — name, `view`-ness and return shape —
+- The same file now cross-checks every `ChainlinkOracle` view, name, `view`-ness and return shape,
   against the **compiled** `ChainlinkOracle` ABI, and asserts that `assetConfig`/`sourcesFor` are
   *not* on it (the flavor probe depends on that absence). **This guard is the direct answer to how
   the pivot broke this signal:** the oracle table was previously checked only against itself, so
   nothing in CI could see that the signal was calling functions the deployed contract does not have.
 - The same file cross-checks `feed-identity`'s two **harm** legs (`decimals()`, `description()`)
-  against the compiled `IAggregatorV3` / `IAggregatorV3Description` — the interfaces
+  against the compiled `IAggregatorV3` / `IAggregatorV3Description`: the interfaces
   `ChainlinkOracle`'s own constructor reads them through. `aggregator()` and `phaseId()` belong to
   Chainlink's `EACAggregatorProxy`, which is not in this tree, so they are **not** pinned that way and
   the test says so rather than pretending; their runtime failure is covered instead, by a
   DETECTOR BROKEN result.
-- The same file cross-checks every `Governance` getter signal (h) reads — name, `view`-ness and the
-  full flattened **output shape** — against the compiled `Governance`, and the four lifecycle events'
+- The same file cross-checks every `Governance` getter signal (h) reads, name, `view`-ness and the
+  full flattened **output shape**, against the compiled `Governance`, and the four lifecycle events'
   signatures and indexed flags. Public mapping-to-struct getters flatten positionally, so a reordered
   struct field would otherwise swap two deadlines silently.
 - `test/reader.test.mjs` asserts the chain reader exposes no send/sign/write surface, and

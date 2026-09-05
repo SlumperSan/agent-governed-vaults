@@ -1,4 +1,4 @@
-# Walkthrough — DirectPoolAdapter.sol
+# Walkthrough: DirectPoolAdapter.sol
 
 **Risk: High (external calls), structurally simpler than the router adapter.** ~94 LoC.
 `contracts/src/DirectPoolAdapter.sol`.
@@ -8,7 +8,7 @@
 A **second** `IExecutionAdapter` implementation that swaps directly against one
 Uniswap-V2-style pair, with the amount-out computed on-chain from reserves. It exists to
 *prove* the venue abstraction (C-2): `VaultCore.executeRebalance` drives it identically to
-the aggregation adapter although the venue shape is completely different — no off-chain
+the aggregation adapter although the venue shape is completely different: no off-chain
 calldata, no selector allowlist (`test_governedRebalanceThroughDirectPoolAdapter`). If a
 reviewer wants to check that VaultCore has no hidden venue assumptions, diffing the two
 adapters against the interface contract is the fast way.
@@ -30,12 +30,12 @@ measured deltas** (EX-3), never trusting the quote or any external return value,
 
 1. **Reserve read vs. swap atomicity:** the quote is computed from `getReserves` in the same
    transaction; a sandwich moves reserves before this transaction executes, which surfaces as
-   the measured delta failing `minAmountOut` — the caller's floor is the real protection, the
+   the measured delta failing `minAmountOut`. The caller's floor is the real protection, the
    quote is just sizing. Verify no path pays out on the quote rather than the delta.
 2. **Token quirks:** fee-on-transfer input tokens under-deliver to the pair (V2 `swap` then
    reverts on K); rebasing/callback tokens interact with the delta measurement. Bounded by the
    vault-side re-measurement and `nonReentrant`.
-3. **No approval surface at all** on this path (direct transfer to the pair) — one less thing
+3. **No approval surface at all** on this path (direct transfer to the pair). One less thing
    to audit; confirm the leftover-input story (none should exist here because the full
    `amountIn` goes to the pair).
 

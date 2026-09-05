@@ -1,18 +1,18 @@
-# Agent-Governed Vaults — Knowledge Vault (HOME)
+# Agent-Governed Vaults: Knowledge Vault (HOME)
 
-> Obsidian-style knowledge graph for this protocol. This is the **map of content (MOC)** — the hub
+> Obsidian-style knowledge graph for this protocol. This is the **map of content (MOC)**: the hub
 > of the graph. Every note links to related notes with `[[wikilinks]]` (filename without `.md`).
 > Read this first to orient; follow links to drill in. Kept current as work lands.
 
 **Repo:** `github.com/SlumperSan/agent-governed-vaults` (private) · **base:** `protocol/main`
 **One-liner:** permissionless USDC index vaults whose members ratify every rebalance by
-on-chain commit-reveal vote — proposal rights follow stake, not operatorship — with x402-metered
-off-chain access. **Base mainnet launch verdict:** NO-GO — for OPERATIONAL reasons only (the soak and canary gates need the five-drill soak re-run against the current Base Sepolia deployment with the canary observed alongside it). **Robinhood Chain mainnet (4663):** deployed 2026-09-05 on the owner's decision of 2026-09-04, without those two gates. No vault has been created on it yet — `smokeVault` is null and `verifiedWiring["factory.vaultCount()"]` is 0 in `contracts/config/deployments/robinhood-mainnet.json` — so no member funds are at stake there. See [[current-state]]. Every security gate is cleared: gate 0 GO (root-only, C-6 resolved by the Chainlink pivot), gate 1 GO on owner attestation. See [[launch-readiness-gates]].
+on-chain commit-reveal vote (proposal rights follow stake, not operatorship) with x402-metered
+off-chain access. **Base mainnet launch verdict:** NO-GO, for OPERATIONAL reasons only (the soak and canary gates need the five-drill soak re-run against the current Base Sepolia deployment with the canary observed alongside it). **Robinhood Chain mainnet (4663):** deployed 2026-09-05 on the owner's decision of 2026-09-04, without those two gates. No vault has been created on it yet: `smokeVault` is null and `verifiedWiring["factory.vaultCount()"]` is 0 in `contracts/config/deployments/robinhood-mainnet.json`, so no member funds are at stake there. See [[current-state]]. Every security gate is cleared: gate 0 GO (root-only, C-6 resolved by the Chainlink pivot), gate 1 GO on owner attestation. See [[launch-readiness-gates]].
 
 ## Conventions (for consistency across the graph)
 
 - Filenames: `kebab-case.md`; the note title is a matching `# Title` H1.
-- Link by filename stem: `[[vaultcore]]`, `[[c6-oracle-byzantine]]`. Unresolved links are fine — they
+- Link by filename stem: `[[vaultcore]]`, `[[c6-oracle-byzantine]]`. Unresolved links are fine. They
   mark notes worth writing.
 - Each note starts with a one-line **definition**, then **why it matters**, then detail, then a
   **Links** section. Keep notes atomic (one concept) and cross-linked, not monolithic.
@@ -20,26 +20,26 @@ off-chain access. **Base mainnet launch verdict:** NO-GO — for OPERATIONAL rea
 
 ## Clusters
 
-### Architecture — [[architecture-overview]]
+### Architecture: [[architecture-overview]]
 - [[nav-and-shares]] · [[governance-commit-reveal]] · [[two-mode-exits]] · [[sub-vaults]] ·
   [[oracle-layer]] · [[fees-and-carry]] · [[x402-metering]] · [[off-chain-stack]]
 
-### Contracts — [[contracts-index]]
+### Contracts: [[contracts-index]]
 - [[vaultcore]] · [[governance]] · [[oracleaggregator]] · [[chainlinkoracle]] · [[vaultfactory]] ·
   [[vaultdeployer]] · [[subvaultregistry]] · [[feeengine]] · [[operatorregistry]] ·
   [[execution-adapters]] · [[oracle-sources]] · [[safetransferlib]]
 
-### Security — [[security-index]]
+### Security: [[security-index]]
 - Criticals: [[c1-empty-electorate]] · [[c2-unbounded-governance]] · [[c3-oracle-brick]] ·
   [[c4-depressed-price-theft]] · [[c5-vote-after-exit]] · [[c6-oracle-byzantine]]
 - [[highs]] · [[mediums-and-lows]] · [[threat-model-commitments]] · [[slither-triage]] ·
   [[launch-readiness-gates]] · [[audit-reverification]]
 
-### Decisions & Principles — [[decisions-index]]
+### Decisions & Principles: [[decisions-index]]
 - [[root-vaults-only]] · [[chainlink-direct-pivot]] · [[build-vs-buy]] · [[auto-merge]] ·
   [[delegatecall-split-rejected]] · [[continuous-autonomous-mode]]
 
-### State & Roadmap — [[current-state]]
+### State & Roadmap: [[current-state]]
 - [[remediation-history]] · [[open-items]] · [[prs-and-issues]] · [[go-to-market-plan]]
 
 ## Graph note
