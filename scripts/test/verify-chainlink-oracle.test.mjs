@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  SEQUENCER_EXEMPT_CHAIN_IDS,
   bandBoundsTwoDecimalDrift,
   chainBindingVerdict,
   compareAggregatorPin,
@@ -323,4 +324,44 @@ test('end to end: matching ids proceed into the sweep, which then judges the con
     'the run must reach the feed checks — this fixture then fails them, which is the config being judged rather than the chain',
   );
   assert.doesNotMatch(r.stderr, /unexpected invocation/, 'no cast subcommand beyond chain-id should have been needed');
+});
+
+// ---------------------------------------------------------------------------
+// THE SEQUENCER EXEMPT SET — two lists, one rule.
+//
+// `DeployChainlinkOracle.requiresSequencerUptimeFeed` is the guard that actually blocks a deploy;
+// this script's SEQUENCER_EXEMPT_CHAIN_IDS is the pre-deploy mirror of it. Nothing but a test makes
+// them agree, and they have drifted before in the other direction (the script used to exempt
+// `chainId === 8453` while the deploy script used a denylist, fixed 2026-08-29). Pinning the set
+// EXACTLY -- not `.has(4663)` -- is what makes an id added to one list and not the other go red.
+// ---------------------------------------------------------------------------
+
+const REPO = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+
+test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
+  assert.deepEqual(
+    [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
+    [4663, 31337, 84532].sort((a, b) => a - b),
+    'an id was added to or removed from the exempt set; the deploy-script allowlist must match',
+  );
+});
+
+test('the deploy script exempts the same three ids, so the two lists cannot drift apart', () => {
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
+  // The constants the guard is written in terms of. Reading the CONSTANTS rather than the return
+  // expression is deliberate: a constant renamed but left at the same value still binds, and a
+  // constant whose VALUE changed is exactly the drift this test exists to catch.
+  const declared = [...src.matchAll(/uint256 constant \w+_CHAIN_ID = (\d+);/g)].map((m) => Number(m[1]));
+  assert.deepEqual(
+    declared.sort((a, b) => a - b),
+    [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
+    'DeployChainlinkOracle declares a different set of exempt chain ids than this script exempts',
+  );
+  // …and each one is actually wired into the guard, not merely declared beside it.
+  for (const name of ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID']) {
+    assert.ok(
+      new RegExp(`chainId != ${name}`).test(src),
+      `${name} is declared but requiresSequencerUptimeFeed does not exempt it`,
+    );
+  }
 });

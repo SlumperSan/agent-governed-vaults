@@ -470,8 +470,11 @@ const SEQ_NEGATED = /\b(?:never|not|n't|cannot|can not)\s+(?:\w+\s+){0,3}(?:reve
  * the most-cited L2 defence: a deployer who omitted the feed would get no revert to tell them.
  *
  * "Mandatory" is still TRUE and the corrected prose keeps it — the enforcement is just elsewhere.
- * `DeployChainlinkOracle.s.sol` requires a non-zero sequencer on every chain but local 31337 and
- * Base Sepolia 84532, checked before any other config and with no env override.
+ * `DeployChainlinkOracle.s.sol` requires a non-zero sequencer on every chain but the ids on its
+ * exempt allowlist (local 31337, Base Sepolia 84532 and, since 2026-09-04, Robinhood Chain 4663,
+ * for which Chainlink publishes no uptime feed), checked before any other config and with no env
+ * override. The set itself is pinned by scripts/test/verify-chainlink-oracle.test.mjs; this test
+ * only asserts that the guard still exists.
  *
  * This binds all three legs, so the prose cannot drift from the code in either direction.
  */

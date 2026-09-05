@@ -100,6 +100,49 @@ allowlist. So the oracle is deployed **before** the factory:
 
 > A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive).
 
+### Robinhood Chain 4663 — the sequencer-uptime-feed exemption (owner-approved 2026-09-04)
+
+**Recorded because it weakens a security gate, and the record is the only place that says so.** On
+2026-09-04 the owner approved deploying on Robinhood Chain (chain id 4663, an Arbitrum Nitro Orbit
+chain) and, on being told that exempting it from the sequencer-uptime-feed requirement weakens a
+security gate, answered: *"Approve the sequencer exemption, I'll fund the deployer now"*. Chain 4663
+is therefore on `requiresSequencerUptimeFeed`'s exempt allowlist
+([`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol), `ROBINHOOD_CHAIN_ID`)
+and on `SEQUENCER_EXEMPT_REASONS` in
+[`verify-chainlink-oracle.mjs`](../scripts/verify-chainlink-oracle.mjs), so a deploy there runs with
+`ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
+
+**Why an exemption rather than a feed address.** Chainlink publishes no L2 Sequencer Uptime Feed for
+this chain and states it is no longer expanding that feed set to additional networks
+([docs.chain.link/data-feeds/l2-sequencer-feeds](https://docs.chain.link/data-feeds/l2-sequencer-feeds),
+read 2026-09-04). There is no address to supply, so the fail-closed default refuses the deploy
+outright rather than costing the operator one argument — which is the case the allowlist exists for.
+
+**The residual risk, in plain words.** With `sequencerUptimeFeed` at `address(0)`,
+`ChainlinkOracle._requireSequencerUp` returns on its first line
+([`ChainlinkOracle.sol:314`](../contracts/src/oracle/ChainlinkOracle.sol)) and never reverts, so
+`priceWad` answers normally. A sequencer outage on 4663 would therefore **not** freeze pricing, and
+the 3,600-second `GRACE_PERIOD` after a restart (`ChainlinkOracle.sol:79`) never applies there
+either. 4663 is a Stage 0 chain with a centralised sequencer, so that is the outage shape most
+likely to occur. What members are left with is the per-asset heartbeat/staleness bound and the
+sane-price band — the same two guards that carry every other bad-price case, now carrying this one
+alone. The heartbeat is only as tight as the value the deployer passes: the constructor accepts
+`[600, 86400]` seconds (`MIN_HEARTBEAT` / `MAX_HEARTBEAT`, `ChainlinkOracle.sol:97-98`), and a
+heartbeat set at the 86,400-second maximum admits a full day of staleness before it fires. The
+2026-09-04 brief records that this chain's feeds publish on an 86,400-second cadence, which if true
+would force that maximum and leave the staleness guard at its loosest setting; that figure is
+**not verified on-chain in this repository** — read each feed's own heartbeat before choosing the
+value, per §1 step 1.
+
+**Two things this exemption does not do.** It does not change any other chain: `DeployChainlinkOracle`
+still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
+by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it does
+not supply a config: this repository holds no `contracts/config` entry for 4663 and no verified feed
+addresses for it, so §1 step 1 ("real, on-chain-verified feed addresses — do NOT invent them") is
+unchanged and still blocking. `verify-chainlink-oracle.mjs` has no default RPC for 4663 and exits 1
+until `BASE_RPC` names one, which is deliberate (guessing one would verify feeds against the wrong
+chain).
+
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
 The six protocol singletons + their one-shot wiring deploy in one transaction via

@@ -43,6 +43,19 @@ contract DeployChainlinkOracle is Script {
     /// BY DESIGN (see its `sequencerUptimeFeedNote`): the testnet exercise targets the vault lifecycle
     /// and real-feed pricing, and the uptime gate itself is mock-tested in ChainlinkOracle.t.sol.
     uint256 constant BASE_SEPOLIA_CHAIN_ID = 84532;
+    /// @dev Robinhood Chain (Arbitrum Nitro Orbit) — exempt by OWNER DECISION dated 2026-09-04, and
+    /// the first exemption on this list that is a MAINNET rather than a test environment, so it is
+    /// written out in full rather than waved in beside the other two.
+    /// REASON: Chainlink publishes no L2 Sequencer Uptime Feed for this chain and states it is no
+    /// longer expanding that feed set to additional networks, so there is no address an operator
+    /// could supply — the fail-closed default would block the deploy outright rather than cost one
+    /// argument. WHAT IT COSTS: with `sequencerUptimeFeed` left at address(0),
+    /// `ChainlinkOracle._requireSequencerUp` returns early (ChainlinkOracle.sol:314) and `priceWad`
+    /// serves prices through a sequencer outage instead of reverting. On this chain the per-asset
+    /// heartbeat/staleness bound is therefore the only guard left standing between a stalled chain
+    /// and a priced vault. This is a deliberate weakening of a security gate, approved by the owner
+    /// on 2026-09-04 in those terms; see docs/DEPLOYMENT.md "Robinhood Chain 4663".
+    uint256 constant ROBINHOOD_CHAIN_ID = 4663;
 
     /// @notice Does a deploy on `chainId` have to supply ORACLE_SEQUENCER?
     /// @dev L2-GENERIC and FAIL-CLOSED: an ALLOWLIST of the ids known to have no uptime feed, with
@@ -56,8 +69,11 @@ contract DeployChainlinkOracle is Script {
     /// There is deliberately NO env override — an `ALLOW_NO_SEQUENCER=1` escape hatch would restore
     /// the silent skip one flag at a time. A chain that genuinely has no uptime feed (another
     /// testnet, an L1) is added to the allowlist here, in a reviewed change, on the record.
+    /// Robinhood Chain 4663 is the first id added under that rule, and the first that is a mainnet:
+    /// no vendor feed exists to supply, so the entry buys a deploy at the price of the guard. The
+    /// doc comment on ROBINHOOD_CHAIN_ID above states what that costs at price time.
     function requiresSequencerUptimeFeed(uint256 chainId) public pure returns (bool) {
-        return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID;
+        return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID && chainId != ROBINHOOD_CHAIN_ID;
     }
 
     /// @notice Env entrypoint: `forge script script/DeployChainlinkOracle.s.sol:DeployChainlinkOracle`.
@@ -76,7 +92,7 @@ contract DeployChainlinkOracle is Script {
         // uptime guard never gets as far as deploying an oracle without one.
         require(
             sequencer != address(0) || !requiresSequencerUptimeFeed(block.chainid),
-            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337 and Base Sepolia 84532"
+            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532 and Robinhood Chain 4663"
         );
 
         address[] memory assets = vm.envAddress("ORACLE_ASSETS", ",");
