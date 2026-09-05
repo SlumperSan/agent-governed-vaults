@@ -12,7 +12,7 @@
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
 > same immutable bytecode is deployable on any EVM chain; Robinhood Chain is where it was deployed,
 > not a constraint the code enforces. The next iteration, RWLY, is designed to accrue the protocol's
-> fees into official Robinhood Stock Tokens; RWLY does not exist yet. This file orients AI agents
+> fees into official Robinhood Stock Tokens; RWLY launched 2026-09-05 at 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 with a fixed supply of 1,000,000,000, and that accrual design is not built. This file orients AI agents
 > integrating the protocol.
 
 ## Start here (agents)

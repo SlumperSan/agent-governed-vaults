@@ -1050,7 +1050,7 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
  * `RWLY_QUALIFIER` to accept a bare "designed" — that weakens the check on all nine pages to fix one.
  */
 const RWLY_WINDOW = 160;
-const RWLY_QUALIFIER = /does not exist/i;
+const RWLY_QUALIFIER = /does not exist|design intent|designed to|not built|0x2eed8ae7|fixed supply/i;
 const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
 const VISION_PAGE = 'vision.html';
 // MEASURED 2026-09-05, after vision.html shipped: siteFiles() finds 46 occurrences of `RWLY` across
@@ -1067,7 +1067,7 @@ const RWLY_FLOOR = 40;
  */
 const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
 
-test('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
+test('every mention of RWLY sits beside its address, its fixed supply, or a design-intent qualifier', () => {
   const files = siteFiles();
   let seen = 0;
   for (const f of files) {
@@ -1106,9 +1106,9 @@ test('every mention of RWLY on this site sits beside the fact that it does not e
       const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
       assert.ok(
         RWLY_QUALIFIER.test(window),
-        `${f}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
-          'NEXT ITERATION and is design intent only — there is no such token, no presale and nothing ' +
-          `to hold. — ${JSON.stringify(window.trim().slice(0, 200))}`,
+        `${f}: names RWLY without its address, "fixed supply", or a design-intent qualifier within ${RWLY_WINDOW} characters. ` +
+          'RWLY launched 2026-09-05; every mention must anchor to the launch facts or say which part is still design. ' +
+          `— ${JSON.stringify(window.trim().slice(0, 200))}`,
       );
     }
   }
