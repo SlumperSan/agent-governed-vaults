@@ -196,10 +196,14 @@ const REPO = path.resolve(APP, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// Eight since 2026-09-04: status.html joined by owner decision. It is NOT in the header nav —
-// it is reached from the footer of every page — but it is a public page and every guard in this
-// file walks it, which is the whole reason it is a member of this array rather than a special case.
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'faq.html', 'status.html', 'disclaimers.html'];
+// NINE, and the count is written down in exactly one place: this array's length, asserted below.
+// status.html joined on 2026-09-04 and disclaimers.html replaced risks.html on 2026-09-05, both by
+// owner decision, and both are footer-only rather than header-nav pages. vision.html joined on
+// 2026-09-05 as the design-intent page. Every one of them is a public page and every guard in this
+// file walks it, which is the whole reason they are members of this array rather than special
+// cases. Prose in this file says "every page" rather than a number wherever the number is not the
+// thing being asserted — a spelled-out count in a comment is a claim that goes stale silently.
+const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'faq.html', 'vision.html', 'status.html', 'disclaimers.html'];
 const DISCLAIMERS_PAGE = 'disclaimers.html';
 
 /**
@@ -246,7 +250,7 @@ const PROSE_FILES = ['README.md', 'src/tokens.css', 'src/index.css'];
 // without editing that component. The component was then edited: the footer now carries the
 // Disclaimers column and a link, exactly as the corpus footer does, and the sentence is gone from
 // the build. Measured over this build, the string "Not deployed to mainnet" occurs zero times on
-// all eight pages. A constant nothing counts is a claim nobody checks, so it is deleted rather than
+// every page. A constant nothing counts is a claim nobody checks, so it is deleted rather than
 // left declared.
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 // ADDED 2026-09-05, carrying across the corpus's replacement for the retired BANNER_STATUS absolute.
@@ -380,7 +384,7 @@ const raw = new Map();
 // added to PAGES before it was added to `vite.config.ts` inputs — threw at MODULE SCOPE and killed
 // the whole file with a bare ENOENT before a single test ran. That is the worst report this suite
 // can give: it names a path and no cause, and it hides the thirty-odd other results. Read it as
-// empty instead, and let `all eight pages exist` be the test that says which page is missing.
+// empty instead, and let `every public page exists in the build` be the test that says which page is missing.
 if (BUILT) {
   for (const p of PAGES) {
     const f = path.join(SITE, p);
@@ -413,8 +417,8 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-t('all eight pages exist', () => {
-  assert.equal(PAGES.length, 8, 'PAGES must list all eight public pages');
+t('every public page exists in the build', () => {
+  assert.equal(PAGES.length, 9, 'PAGES must list every public page; it is nine since vision.html landed on 2026-09-05');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -510,7 +514,7 @@ const STATUS_PAGE = 'status.html';
 // Zero everywhere a sentence is not named: a stray copy on an eighth page is as much a drift as a
 // missing one. Verified against this build — BANNER_OFFER once on disclaimers.html and nowhere
 // else; DEPLOYED_LINE once on status.html and once on disclaimers.html; the string "Not deployed to
-// mainnet" zero times on all eight.
+// mainnet" zero times on every page.
 const STATUS_SENTENCE_COUNTS = {
   [DEPLOYED_LINE]: { default: 0, 'status.html': 1, [DISCLAIMERS_PAGE]: 1 },
   [BANNER_OFFER]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
@@ -551,7 +555,7 @@ t('the top status band is gone from every marketing page and lives only on the s
 // What replaces it is stricter about the thing that actually matters: the count, defaulting to
 // zero, so a sentence cannot reappear on a page that is not named — and the mandatory footer link
 // to the Disclaimers page, which the "every page's footer links to the disclaimers page" test above
-// pins on all eight.
+// pins on every page.
 t('each pinned sentence appears exactly where it is pinned, and nowhere else', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
@@ -925,7 +929,7 @@ t('every internal .html link resolves to a file on disk', () => {
  * carrying `aria-current="page"`. Both footer-only pages now take that clause. The six pages in the
  * header nav self-link through the masthead, which does not filter the current page at all.
  */
-t('every page links to all eight pages', () => {
+t('every page links to every other page', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {
@@ -1154,10 +1158,10 @@ t('every "deployed" either negates itself or names the chain and the record', ()
     }
   }
   // NON-VACUITY, REPOINTED 2026-09-05. The floor used to be one per page, because the footer's
-  // legal paragraph carried "Not deployed to mainnet." on all eight. That paragraph is gone: the
+  // legal paragraph carried "Not deployed to mainnet." on every page. That paragraph is gone: the
   // site-copy change moved every pinned sentence onto the Disclaimers page and left a link behind,
   // so the word now appears only where a page has something to say about deployment. Measured over
-  // this build, five sentences across the eight pages qualify. The floor is set at four rather than
+  // this build, five sentences across the nine pages qualify. The floor is set at four rather than
   // five so that editing one of them out is a copy decision rather than a red gate, and it is not
   // set lower: the two pages that pin DEPLOYED_LINE contribute one each by construction, and a
   // reading below four means the sentence splitter or publishedProse() stopped returning prose.
@@ -1407,6 +1411,140 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
 });
 
 /**
+ * RWLY DOES NOT EXIST, AND EVERY MENTION OF IT HAS TO SAY SO.
+ *
+ * PORTED 2026-09-05, copy deck v2. THIS GUARD HAD NO COUNTERPART IN THIS FILE UNTIL NOW — the
+ * original `apps/site-next` port (f14837b9) carried the RWLY-attribution ban (claims-lede-truth
+ * guard 47/48) but never ported `apps/site/test/site.test.mjs`'s own "every mention of RWLY sits
+ * beside the fact that it does not exist" check, the window-scoped one this file's sibling has
+ * carried since PR #215. That gap predates the Vision page and predates this deck; it is closed
+ * here because `vision.html` — a whole page of design intent about RWLY — is exactly the page a
+ * missing qualifier check would miss the most.
+ *
+ * The rule and the reasoning are `apps/site/test/site.test.mjs`'s, unchanged: a named future token
+ * is the easiest thing on these pages to quote out of context into a claim that something is
+ * buyable, so the qualifier ("does not exist") must sit within a 160-character window of every
+ * "RWLY" on the eight non-Vision pages — window-scoped rather than sentence-scoped, because the
+ * approved index.html lede is two sentences and three of this build's occurrences sit inside
+ * `content="…"` meta attributes, which are in no `<p>`, `<dd>` or `<li>` at all.
+ *
+ * `vision.html` BREAKS THE WINDOW RULE FOR THE SAME REASON IT DOES ON apps/site: `stRWLY` CONTAINS
+ * `RWLY`, so every `stRWLY` is itself a match, and the page carries roughly thirty of them — see
+ * vision-body/copy.ts. The device is the same one apps/site uses: every `<section>` opens with the
+ * exact chip `Designed, not built. RWLY does not exist yet.` (vision-body's `RWLY_CHIP`), and this
+ * test is section-scoped for `vision.html` only rather than window-scoped, checking that every
+ * `<section>` mentioning RWLY carries that exact chip and that no mention sits outside every
+ * `<section>` (the hero, the header or the footer). The window rule is UNCHANGED for the other
+ * eight pages. Do not solve a future page's version of this problem by loosening `RWLY_QUALIFIER`
+ * to accept a bare "designed" — that weakens the check on all nine pages to fix one.
+ *
+ * THE FLOOR IS RE-MEASURED FOR THIS BUILD, NOT COPIED FROM apps/site. Measured 2026-09-05 after the
+ * copy deck v2 port: summing `RWLY` occurrences across the nine built pages plus
+ * `public/llms.txt` (byte-identical to the repository-root copy, and part of the shipped surface
+ * exactly as it is for apps/site's own `siteFiles()` walk) gives 40. Set a few below that
+ * measurement, not at it, for the same reason apps/site's floor sits below its own measurement: a
+ * small future edit should not immediately red this floor.
+ */
+const RWLY_WINDOW = 160;
+const RWLY_QUALIFIER = /does not exist/i;
+const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
+const VISION_PAGE = 'vision.html';
+const RWLY_FLOOR = 36;
+
+/**
+ * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
+ * sections (asserted below rather than assumed silently) — true of this page's shell, built from
+ * VisionBody.tsx, which nests no `<section>` inside another.
+ */
+const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+
+t('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
+  let seen = 0;
+  for (const p of PAGES) {
+    const fileText = raw.get(p) ?? '';
+    // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
+    const text = fileText.replace(/\s+/g, ' ');
+    seen += (text.match(/RWLY/g) ?? []).length;
+
+    if (p === VISION_PAGE) {
+      const sections = sectionsOf(fileText);
+      assert.equal(
+        (fileText.match(/<section\b/gi) ?? []).length,
+        sections.length,
+        `${VISION_PAGE}: a <section> did not close before the next opened, or one is nested inside ` +
+          'another -- the section-scoped RWLY check assumes flat, non-overlapping sections',
+      );
+      for (const section of sections) {
+        if (!/RWLY/.test(section)) continue;
+        assert.ok(
+          section.includes(RWLY_CHIP),
+          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)} — ` +
+            JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
+        );
+      }
+      const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
+      assert.ok(
+        !/RWLY/.test(outsideSections),
+        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer) — ` +
+          'the section-scoped chip check cannot see a mention that sits in no section',
+      );
+      continue;
+    }
+
+    // TAGS STRIPPED FIRST, via the same publishedProse() every other window-style check in this
+    // file already uses (see the security-review and Mode-F checks below) — NOT apps/site's raw
+    // fileText.replace(/\s+/g, ' '). This build's markup carries a hashed CSS-module class on most
+    // elements (e.g. `class="_term_1xs2u_43"`), which apps/site's hand-written HTML never does; a
+    // 160-character window measured over raw bytes therefore counts characters of markup apps/site
+    // never had to budget for, and a two-sentence pair the reviewed source keeps well inside the
+    // window (verified: it passes on apps/site/disclaimers.html unmodified) can be pushed outside
+    // it here by attribute soup alone — measured, not hypothetical, on the two new dl rows this
+    // deck added to risks-scope-additions. Stripping tags measures the same thing apps/site
+    // measures: prose distance, not DOM distance.
+    const prose = publishedProse(fileText).replace(/\s+/g, ' ');
+    for (const m of prose.matchAll(/RWLY/g)) {
+      const at = m.index ?? 0;
+      const window = prose.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+      assert.ok(
+        RWLY_QUALIFIER.test(window),
+        `${p}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
+          'NEXT ITERATION and is design intent only — there is no such token, no presale and nothing ' +
+          `to hold. — ${JSON.stringify(window.trim().slice(0, 200))}`,
+      );
+    }
+  }
+
+  // public/llms.txt is byte-identical to the repository-root copy (asserted elsewhere in this
+  // file) and is part of the shipped surface exactly as apps/site's own siteFiles() walk treats its
+  // llms.txt, so it is walked here too rather than left for the byte-identity check alone to cover.
+  const llmsPath = path.join(APP, 'public', 'llms.txt');
+  if (existsSync(llmsPath)) {
+    const text = readFileSync(llmsPath, 'utf8').replace(/\s+/g, ' ');
+    seen += (text.match(/RWLY/g) ?? []).length;
+    for (const m of text.matchAll(/RWLY/g)) {
+      const at = m.index ?? 0;
+      const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+      assert.ok(
+        RWLY_QUALIFIER.test(window),
+        `public/llms.txt: names RWLY without "does not exist" within ${RWLY_WINDOW} characters — ` +
+          `${JSON.stringify(window.trim().slice(0, 200))}`,
+      );
+    }
+  }
+
+  assert.ok(
+    seen >= RWLY_FLOOR,
+    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
+      'rather than qualified, say so in the commit rather than letting this guard pass by absence',
+  );
+  // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.
+  assert.ok(
+    (raw.get('index.html') ?? '').includes('RWLY does not exist yet.'),
+    'index.html: the lede must end on the exact sentence "RWLY does not exist yet."',
+  );
+});
+
+/**
  * THE GUARD THAT PROVED WHY EVERY LOOP IN THIS FILE NOW COUNTS.
  *
  * In apps/site this read `assets/site.css` and iterated `/\.pre-launch[^{]*\{[^}]*\}/g`. The
@@ -1458,7 +1596,7 @@ t('tables carry a caption and scoped headers', () => {
       assert.ok(/<th[^>]*\sscope="(?:col|row)"/i.test(table), `${p}: a <table> is missing scoped <th> cells`);
     }
   }
-  // NON-VACUITY, suite-wide rather than per page: most of the eight pages carry no table at all, so
+  // NON-VACUITY, suite-wide rather than per page: most pages carry no table at all, so
   // a per-page count would fail them for being correct. What must never happen is that the
   // suite as a whole stops finding tables — the reference-configuration table on how-it-works and
   // the fee table on operators are both asserted elsewhere to exist, and status.html adds two more.
