@@ -134,7 +134,7 @@ if (result.verdict === 'INSUFFICIENT_EVIDENCE') {
   log('VERDICT: STALENESS EVENT OBSERVED');
   for (const a of result.breached) log(`  ${a.symbol}: ${a.breachSamples}/${a.readableSamples} readable samples frozen (priceWad reverted)`);
   assert(result.canaryTracked,
-    `a staleness breach was observed on-chain but no canary oracle-freshness row keyed by a BASKET ASSET left ok (${result.canaryAssetRows} such row(s) exist) — the canary did NOT track the freeze. Per-vault meta rows (sequencer, flavor) are excluded on purpose: on Base Sepolia the sequencer row is permanently skipped and would satisfy this check by itself`);
+    `a staleness breach was observed on-chain but no canary oracle-freshness row keyed by a BASKET ASSET left ok (${result.canaryAssetRows} such row(s) exist) — the canary did NOT track the freeze. Per-vault meta rows (sequencer, flavor) are excluded on purpose: neither evidences anything about an asset. The sequencer row used to be permanently skipped where sequencerUptimeFeed is address(0) and would have satisfied this check by itself; it now reports ok (not-applicable), and the exclusion is kept on status-blind grounds because the flavor row is skipped today`);
   log('  canary tracked the event (at least one ASSET row left ok)');
 } else {
   log('VERDICT: NO STALENESS EVENT IN THE WINDOW — documenting worst-case age instead (per #21)');
