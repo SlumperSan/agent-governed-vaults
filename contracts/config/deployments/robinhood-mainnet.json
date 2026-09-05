@@ -1,0 +1,169 @@
+{
+  "chainName": "robinhood-mainnet",
+  "chainId": 4663,
+  "deployedAt": "2026-09-05T08:47:02Z",
+  "deployBlock": 54989195,
+  "startBlock": 54989143,
+  "deployedAtNote": "TWO BLOCKS, and the record names which instant it publishes. The oracle went in first, alone, in block 54,989,143 (own timestamp 1788598017 = 2026-09-05T08:46:57Z, read with `cast block`); the six singletons and the three wire calls landed together five seconds later in block 54,989,195 (own timestamp 1788598022 = 2026-09-05T08:47:02Z). `deployedAt` and `deployBlock` are the SECOND block — the instant the protocol became wired and complete. `startBlock` is the FIRST, because an indexer that starts at the second one misses the oracle's own deploy. Both numbers are block timestamps, not the runner's wall clock; the Base Sepolia record carries a note about a one-second wall-clock drift that this record avoids by never reading the clock.",
+
+  "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "sourceCommit": "b1cde122",
+  "rpc": "https://rpc.mainnet.chain.robinhood.com",
+  "explorer": "https://robinhoodchain.blockscout.com",
+
+  "note": "The Robinhood Chain mainnet (chain 4663) deployment, ten transactions, every receipt status 1. `sourceCommit` b1cde122 is the tip of origin/protocol/main and is the tree both broadcast scripts were built from. WHAT WAS READ, AND WHY IT WAS READ RATHER THAN COPIED: every address, every wiring edge, every oracle field and every code size below was read from chain 4663 with `cast` at block 54,991,182, pinned with `--block` so the whole table is one consistent state. The broadcast JSON was NOT trusted for any of it, and on this run that was not a precaution but a correction — see `broadcastLabelWarning`. `contracts/config/robinhood-mainnet.json` was likewise not trusted: it is a configuration file, it says of itself that nothing is deployed with it, and it was written the day before this broadcast. A configuration records what someone intended; this file records what the chain returned.",
+
+  "readBackAt": {
+    "block": 54991182,
+    "how": "`cast call --block 54991182` against https://rpc.mainnet.chain.robinhood.com, 1,987 blocks after the deploy. `cast chain-id` on that endpoint answers 4663.",
+    "date": "read 2026-09-05"
+  },
+
+  "broadcastLabelWarning": "THE BROADCAST JSON'S `transactions[].hash` COLUMN IS SCRAMBLED ON THIS RUN, and anyone rebuilding this table from `contracts/broadcast/Deploy.s.sol/4663/run-latest.json` will get seven of the nine core rows wrong. Worked example: that file pairs contractName `SubVaultRegistry` with hash 0x653b9df1…, while `cast receipt 0x653b9df1…` returns contractAddress 0xE200d63D… — the OperatorRegistry. The same file's `receipts[]` array is CORRECT (its hash-to-contractAddress-to-gasUsed rows agree with the chain in all ten cases), so the two halves of one file disagree with each other. This is the failure mode `scripts/soak/deployment.mjs`'s header records from Sprint 9, where taking the labels at face value would have swapped VaultFactory and VaultDeployer; it recurred here. The `transactions` table below is built from `cast receipt`, and the contract identities are independently established by `bytecodeCurrency` rather than by any label.",
+
+  "transactions": {
+    "note": "hash, block, gasUsed and txIndex from `cast receipt` for each of the ten hashes; status 1 on all ten. Ordered by execution. `txIndex` is the position within the block and is recorded because the six singletons are not contiguous — other traffic sat between them.",
+    "totalGasUsed": 11062629,
+    "deploys": [
+      {"contract": "ChainlinkOracle",  "address": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB", "hash": "0x13162f0bb9517f20b038b9b0f3efb7ab3d6fd6eb43602df367703cbebadad8de", "block": 54989143, "txIndex": 8,  "gasUsed": 571098,  "status": 1},
+      {"contract": "OperatorRegistry", "address": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568", "hash": "0x653b9df1a1b03df63ad4cf32e3b88834130ed0d397d3984d790659eb5b0196c4", "block": 54989195, "txIndex": 1,  "gasUsed": 532777,  "status": 1},
+      {"contract": "SubVaultRegistry", "address": "0x692385262C05df7515560886f167c4eDD0814025", "hash": "0xe0eb4c09ad6d6b0bd2c382a2a29f44a6b37ad1c6eec26c40ec5bb7f895cd3a6e", "block": 54989195, "txIndex": 2,  "gasUsed": 400053,  "status": 1},
+      {"contract": "FeeEngine",        "address": "0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232", "hash": "0x42cc8ecb406730a82b8e37591b40816d68e2140a2c145cf646d1c94de44aa038", "block": 54989195, "txIndex": 4,  "gasUsed": 703792,  "status": 1},
+      {"contract": "Governance",       "address": "0x790A308f1ac06FeD4C79884BAD25d0C721C5B125", "hash": "0xba0d99bcde5b4c53600f6cd554d9bd23043fdf16ed54112491b3ef5ba67bc001", "block": 54989195, "txIndex": 5,  "gasUsed": 2679326, "status": 1},
+      {"contract": "VaultDeployer",    "address": "0xc36198FD2c7C62738159ED1FF965679105FAF05a", "hash": "0xf551bd8da4440c6f569842e42093b54bf2541d5d52493dff4afecf46ba353c13", "block": 54989195, "txIndex": 11, "gasUsed": 5159604, "status": 1},
+      {"contract": "VaultFactory",     "address": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1", "hash": "0x655991c787a11fba126f7ce93608c6d76f530da3576a834f06f30f442cbce343", "block": 54989195, "txIndex": 12, "gasUsed": 858256,  "status": 1}
+    ],
+    "wiring": [
+      {"call": "OperatorRegistry.wire(VaultFactory, FeeEngine)", "to": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568", "hash": "0xc8cc8cfba6c8928baee3a88106d6ef19f5cfdbd1d51f4c477b691c824f8e0f95", "block": 54989195, "txIndex": 13, "gasUsed": 69074, "status": 1},
+      {"call": "SubVaultRegistry.wire(VaultFactory)",            "to": "0x692385262C05df7515560886f167c4eDD0814025", "hash": "0x38a2de1bf65ddeb77bb07e9f97a5d55a6ebdb1880085567ec1c8567986b50933", "block": 54989195, "txIndex": 14, "gasUsed": 44076, "status": 1},
+      {"call": "Governance.wireSubVaultRegistry(SubVaultRegistry)", "to": "0x790A308f1ac06FeD4C79884BAD25d0C721C5B125", "hash": "0xec6000afb917ec99612a3afe783e634a134da5eaa40de069fa09a224ee99bee3", "block": 54989195, "txIndex": 16, "gasUsed": 44573, "status": 1}
+    ]
+  },
+
+  "singletons": {
+    "OperatorRegistry": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "SubVaultRegistry": "0x692385262C05df7515560886f167c4eDD0814025",
+    "FeeEngine": "0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232",
+    "Governance": "0x790A308f1ac06FeD4C79884BAD25d0C721C5B125",
+    "VaultDeployer": "0xc36198FD2c7C62738159ED1FF965679105FAF05a",
+    "VaultFactory": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1"
+  },
+
+  "bytecodeCurrency": {
+    "claim": "All seven deployed contracts, and the VaultCore creation code the VaultDeployer carries, are byte-for-byte what sourceCommit b1cde122 builds. Nothing here rests on a code SIZE comparison.",
+    "basis": "Two independent byte-level checks, both run 2026-09-05 against the artifacts in the b1cde122 build tree (`contracts/out`, built in a worktree whose only untracked file is a deploy helper). (1) RUNTIME: `cast code <addr> --block 54991182` compared byte-for-byte with each artifact's `deployedBytecode.object`. Every differing byte falls inside a window the artifact itself declares in `deployedBytecode.immutableReferences` — that is, inside a constructor-set immutable, which an artifact necessarily leaves as zeros. Bytes differing OUTSIDE those windows: 0, 0, 0, 0, 0, 0, 0. (2) CREATION: `cast tx <hash> input` for each of the seven deploys begins with that artifact's `bytecode.object` as an exact prefix, with only ABI-encoded constructor arguments following. The two checks are independent — one reads what is on the chain now, the other reads what was submitted — and they agree.",
+    "whyThisAndNotCodesize": "A codesize table would have given a FALSE ALL-CLEAR on precisely the question asked here, because the CBOR metadata trailer is fixed-length and a differently-compiled contract can report an identical size. The Base Sepolia record makes that point and then relies on source-blob identity instead; this record does not need to, because the bytes were compared. The codesize table below is retained only as a cross-check that a wrong CONTRACT was not deployed under a right name — a different and also useful failure.",
+    "whatItDefeats": "The scrambled `transactions[].hash` column described in `broadcastLabelWarning` cannot mislabel this table. VaultFactory (3,572 B) and VaultDeployer (938 B) are the pair Sprint 9 actually swapped, and their runtimes are neither the same length nor the same bytes, so a byte-for-byte match against the named artifact identifies each of them independently of every label in the broadcast file.",
+    "reproduce": "git checkout b1cde122 && cd contracts && forge build, then compare `out/<Contract>.sol/<Contract>.json` `deployedBytecode.object` with `cast code` as above, masking the artifact's own `immutableReferences` windows. Per scripts/verify-deployment-reproducibility.mjs, only the pinned sourceCommit is guaranteed to reproduce a deployment trailer-for-trailer; HEAD is not.",
+    "runtimeCodesize": {
+      "how": "`cast codesize <addr> --block 54991182`, compared with the same artifacts. 7 of 7 equal.",
+      "onChainEqualsBuilt": {
+        "OperatorRegistry": 2219,
+        "SubVaultRegistry": 1605,
+        "FeeEngine": 2902,
+        "Governance": 12155,
+        "VaultDeployer": 938,
+        "VaultFactory": 3572,
+        "ChainlinkOracle": 1532
+      }
+    },
+    "vaultCoreCreationCode": {
+      "claim": "The vaults this deployment will produce are byte-identical to what b1cde122 builds, and that was read off the chain rather than inferred from VaultDeployer's own runtime.",
+      "how": "VaultDeployer holds VaultCore's creation code in two SSTORE2 data contracts, not in its own 938 B runtime, so its runtime says nothing about what it will deploy. `codeChunkA()` returns 0x3B15efeCB5E6520471cD31E36204182f1708c0c1 (11,196 B) and `codeChunkB()` returns 0x55442569F98c82fF9CF06616aD0826fad6a9BD50 (11,197 B); `cast code` on both, each stripped of its leading SSTORE2 STOP byte and concatenated, gives 22,391 bytes that equal `out/VaultCore.sol/VaultCore.json` `bytecode.object` EXACTLY.",
+      "codeChunkA": "0x3B15efeCB5E6520471cD31E36204182f1708c0c1",
+      "codeChunkB": "0x55442569F98c82fF9CF06616aD0826fad6a9BD50",
+      "vaultCoreCreationCodeBytes": 22391,
+      "vaultCoreRuntimeBytesWhenBuilt": 20650,
+      "whyItMatters": "A singleton codesize check on VaultDeployer is silent about the bytecode of every vault it will ever create. Reading the chunks is the only on-chain evidence for that, and it is the check this deployment's currency claim actually turns on — no vault exists yet to measure instead."
+    }
+  },
+
+  "oracle": {
+    "ChainlinkOracle": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "note": "C-6 launch model: ONE genuine Chainlink Data Feed per asset, no multi-source median and no quorum. `deployment.mjs` reads each asset's single `feed` as a one-element source set. The settlement token is pinned inside the oracle and is deliberately absent from `assets` — the constructor rejects a token that is both pinned and listed (ChainlinkOracle.sol:151). This oracle is the sole entry in the factory's oracle allowlist: `oracleAllowlistEnforced()` is true and `isAllowedOracle(0x79279FBa…)` is true, both read at block 54,991,182.",
+    "usdc": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "usdcNote": "READ BACK from `ChainlinkOracle.usdc()`, and the token it names is USDG, not Circle USDC — `symbol()` returns \"USDG\", `decimals()` returns 6, both read at block 54,991,182. The key keeps the name `usdc` because that is the name the contract's own getter and `scripts/soak/deployment.mjs` use. `priceWad(0x5fc5360D…)` returns exactly 1e18, which is the pin, not a feed reading.",
+    "maxStalenessSeconds": 86400,
+    "maxStalenessNote": "A CHAIN READ ON THIS RECORD, unlike the Base Sepolia record's, which states plainly that its 86400 came from a config file because ChainlinkOracle exposes no `maxStalenessSeconds()` getter. It still does not — but staleness is a per-asset heartbeat and the heartbeat IS readable, as the second member of the public `feedOf` struct. `feedOf(WETH).heartbeat` and `feedOf(cbBTC).heartbeat` both return 86400 at block 54,991,182, so this number is what the two assets carry on chain and the value is theirs, not a configuration's. 86,400 s is `ChainlinkOracle.MAX_HEARTBEAT` exactly (ChainlinkOracle.sol:98) — the loosest bound the constructor accepts, so a price up to a day old is served without reverting. MAX_HEARTBEAT itself is a private constant and reverts when called; the ceiling is read from the source, not the chain.",
+    "sequencerUptimeFeed": "0x0000000000000000000000000000000000000000",
+    "sequencerUptimeFeedNote": "address(0), read back from `ChainlinkOracle.sequencerUptimeFeed()` at block 54,991,182 — an owner-approved exemption of 2026-09-04, not an omission. Chainlink publishes no L2 Sequencer Uptime Feed for chain 4663, and the Base mainnet feed is not portable (0xBCF85224fc0756B9Fa45aA7892530B47e10b6433 has zero bytes of code here). WHAT THE CONTRACT DOES WITH IT: `_requireSequencerUp` opens with `if (address(seq) == address(0)) return;` (ChainlinkOracle.sol:314), so the guard is skipped and this oracle serves prices straight through a sequencer outage rather than reverting. It fails OPEN. `GRACE_PERIOD()` reads 3600 on chain but never applies while the feed is zero. What is left carrying a bad price is the per-asset heartbeat — at its ceiling here — and the sane-price band. The exemption that let the deploy script accept a zero feed on this chain is PR #203, merged 2026-09-05T05:11:24Z and therefore present in sourceCommit b1cde122; `contracts/config/robinhood-mainnet.json` still describes #203 as open and unmerged, which was true when that file was written and is stale now. The consequence is unchanged by the deploy: the sequencer guard has still never executed against a live feed, on this chain or any other.",
+    "assets": {
+      "WETH": {
+        "token": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "underlyingFeed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "heartbeatSeconds": 86400,
+        "scale": 10000000000,
+        "minPriceWad": "100000000000000000000",
+        "maxPriceWad": "100000000000000000000000",
+        "readback": "`feedOf(0x0Bd7D308…)` at block 54,991,182 returns the whole struct: feed 0x78F3556b…, heartbeat 86400, scale 1e10, minPriceWad 1e20, maxPriceWad 1e23. The feed's own `description()` is \"ETH / USD\" and `decimals()` is 8. `priceWad(0x0Bd7D308…)` returned 2455221900000000000000 (~$2,455.22), inside the band. The token's `symbol()` is \"WETH\"."
+      },
+      "cbBTC": {
+        "token": "0xCEC185eB182c47d1bA1EFc84e6959e18cd620Be4",
+        "feed": "0x0009cD492adf8167f9eEBf1293556A673530a21a",
+        "underlyingFeed": "0x0009cD492adf8167f9eEBf1293556A673530a21a",
+        "heartbeatSeconds": 86400,
+        "scale": 10000000000,
+        "minPriceWad": "1000000000000000000000",
+        "maxPriceWad": "1000000000000000000000000",
+        "readback": "`feedOf(0xCEC185eB…)` at block 54,991,182 returns feed 0x0009cD49…, heartbeat 86400, scale 1e10, minPriceWad 1e21, maxPriceWad 1e24. The feed's `description()` is \"CBBTC / USD\" and `decimals()` is 8. `priceWad(0xCEC185eB…)` returned 79551981378520000000000 (~$79,551.98), inside the band. The token's `symbol()` is \"cbBTC\"."
+      }
+    },
+    "constructorArgs": "Recovered from the chain, not from the broadcast file: `cast tx 0x13162f0b… input` minus the artifact's creation-code prefix leaves 704 bytes of ABI encoding, which decodes to assets [WETH, cbBTC], feeds [0x78F3556b…, 0x0009cD49…], heartbeats [86400, 86400], minPriceWad [1e20, 1e21], maxPriceWad [1e23, 1e24], usdc 0x5fc5360D…, sequencerUptimeFeed address(0). Every one of those matches the readback above."
+  },
+
+  "execution": {
+    "AggregationRouterAdapter": null,
+    "adapterNote": "NO ADAPTER IS DEPLOYED ON THIS CHAIN, and that is the mainnet design rather than an unfinished step. `contracts/script/Deploy.s.sol:33` states it directly — oracles and execution adapters are not protocol singletons, each vault creator supplies its own — and the only script in the repository that deploys an `AggregationRouterAdapter` is `DeployTestnet.s.sol`, which was not run here. The ten broadcast transactions contain no adapter. The field is null rather than absent so that a reader looking for it finds this note instead of an ambiguity, and the router address below is deliberately NOT written here: a router and an adapter are different contracts, and putting one under the other's key would be exactly the mislabeling `scripts/soak/deployment.mjs` was written to defend against. CONSEQUENCE FOR THE PARSER, stated so it is not discovered as a surprise: `parseDeployment` requires `execution.AggregationRouterAdapter` to be a 20-byte address, so it throws on this record — `deployment: AggregationRouterAdapter is not a 20-byte address: null` — and it is the ONLY field it throws on. The parser assumes the testnet-shaped deployment it was written against. Nothing here should be changed to make it pass, and neither should the parser: a soak run started against an adapterless record would fail later and less legibly.",
+    "router": "0xcaf681a66d020601342297493863e78c959e5cb2",
+    "routerName": "Uniswap SwapRouter02 (Robinhood Chain mainnet). Not at the canonical cross-chain SwapRouter02 address 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45, which has zero bytes of code on 4663.",
+    "routerAllowedSignatures": [
+      "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+      "exactInput((bytes,address,uint256,uint256))"
+    ],
+    "routerNote": "Read at block 54,991,182: the router has 24,497 bytes of runtime, its `factory()` returns 0x1f7d7550B1b028f7571E69A784071F0205FD2EfA, and the two allow-listed signatures' selectors — 0x04e45aaf for `exactInputSingle` and 0xb858183f for `exactInput`, both confirmed with `cast sig` — each appear in that runtime. The router is recorded here as the venue a future adapter would be built against; NOTHING IN THIS DEPLOYMENT REFERENCES IT, because no adapter exists to reference it and no vault exists to be bound to one."
+  },
+
+  "infrastructure": {
+    "usdc": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "usdcNote": "The same address `ChainlinkOracle.usdc()` returns, repeated under the key `scripts/soak/deployment.mjs` reads. It is USDG (Global Dollar), symbol \"USDG\", 6 decimals — read on chain, not assumed from the key name."
+  },
+
+  "verifiedWiring": {
+    "note": "Every row read from chain 4663 with `cast call --block 54991182` against the addresses in `singletons`. The four REVERSE-direction edges are listed first and deliberately: a forward read can agree with an address book that is itself wrong, and only the reverse edges catch that. Together the eleven rows close the loop in both directions between all six singletons.",
+    "registry.factory()": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1",
+    "registry.feeEngine()": "0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232",
+    "subReg.factory()": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1",
+    "feeEngine.registry()": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "gov.subVaultRegistry()": "0x692385262C05df7515560886f167c4eDD0814025",
+    "factory.registry()": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "factory.governance()": "0x790A308f1ac06FeD4C79884BAD25d0C721C5B125",
+    "factory.feeEngine()": "0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232",
+    "factory.subVaultRegistry()": "0x692385262C05df7515560886f167c4eDD0814025",
+    "factory.vaultDeployer()": "0xc36198FD2c7C62738159ED1FF965679105FAF05a",
+    "factory.oracleAllowlistEnforced()": true,
+    "factory.isAllowedOracle(ChainlinkOracle)": true,
+    "factory.allowSubVaults()": false,
+    "factory.vaultCount()": 0
+  },
+
+  "allowSubVaultsNote": "`factory.allowSubVaults()` RETURNS FALSE — read from chain 4663 at block 54,991,182, and corroborated independently by the constructor arguments recovered from `cast tx 0x655991c7… input`, whose sixth word is zero. This is the launch parameter, and it is the observed state of a live deployment rather than an intention: sub-vaults are off, so this deployment is root-vaults-only, which is what closes C-1 (docs/LAUNCH-READINESS.md gate 0). It is the opposite of the Base Sepolia record's TRUE, and that asymmetry is deliberate there — that testnet keeps sub-vaults enabled because the SV-7 look-through soak drill needs a child vault to exercise. Do not read either value as drift from the other. The factory constructor takes this flag once and the factory is immutable, so it cannot be changed on this deployment.",
+
+  "ownershipNote": "MEASUREMENT: `owner()` reverts on all six singletons and on the oracle, called at block 54,991,182 — these contracts expose no such getter. Recorded as an observation about what was read, and it is not by itself a description of what any party can or cannot do; the authority questions belong to the source and to docs/LAUNCH-READINESS.md, not to an address book.",
+
+  "intendedCreator": {
+    "safe": "0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c",
+    "readback": "Read at block 54,991,182: 171 bytes of code, `VERSION()` \"1.4.1\", `getThreshold()` 1, `getOwners()` [0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35]. A threshold-1 single-owner Safe is a 1-of-1 — an address with a different failure surface from the EOA behind it, not a multisig, and it does not by itself satisfy an operational gate asking for shared custody.",
+    "why": "`VaultFactory.createVault` is permissionless and `msg.sender` becomes both the vault's creator and its attested operator (VaultFactory.sol:183-184, attestation at :195); `VaultCore.creator` is immutable (VaultCore.sol:73); and `VaultParams` carries no field for either identity (VaultFactory.sol:172-181). So the creating account is fixed at creation and cannot be corrected afterwards. The Base Sepolia smoke vault was created by the deployer EOA and that record states the consequence: the first vault here must be created BY THE SAFE, not by a script from the EOA.",
+    "note": "The deployer EOA 0x0f80606a… broadcast all ten transactions above and has zero bytes of code. Deploying the singletons is not creating a vault; nothing in this deployment binds the EOA to any vault identity."
+  },
+
+  "smokeVault": null,
+  "smokeVaultNote": "NO VAULT EXISTS ON THIS DEPLOYMENT YET. `factory.vaultCount()` returns 0 at block 54,991,182 — this is a chain read, not an inference from the absence of a broadcast. `smokeVault` is null rather than omitted so that a reader who came here for it is told the fact instead of finding a gap. WHAT MUST HAPPEN NEXT, and by whom: vault #1 is the Safe 0xC73Bd587…'s to create, for the immutability reasons in `intendedCreator`, and once it exists this record should be updated with its address, its creation block and its runtime code size. WHAT IS BLOCKED UNTIL THEN: `scripts/test/claims-robinhood-deployment.test.mjs`, introduced by PR #211, asserts that `smokeVault.address` is a 20-byte address and that no unsubstituted RH_SMOKE_VAULT placeholder — in that guard's own doubled-brace form, which is deliberately not written out here because the guard sweeps this file too — survives anywhere in the tree. Both fail while this field is null, so #211 does not go green when this record lands — it goes green when vault #1 is created and this file records it. That is the test working as designed, not a defect in it.",
+
+  "lifecycleNote": "NO LIFECYCLE RUN HAS BEEN EXECUTED AGAINST THIS DEPLOYMENT. The ten-phase lifecycle evidence in docs/evidence/testnet-lifecycle-run.json belongs to the Base Sepolia deployment and to no other. With no vault and no adapter here, no deposit, rebalance, fee accrual or exit has been exercised on chain 4663 by this repository's code.",
+
+  "x402Note": "NO x402 ON THIS DEPLOYMENT (owner, 2026-09-05). None of the ten transactions deploys or configures an x402 payment surface, no contract recorded above implements one, and nothing in this deployment depends on one. Recorded explicitly because the absence is a decision rather than an oversight.",
+
+  "explorerVerificationNote": "ZERO OF SEVEN CONTRACTS ARE SOURCE-VERIFIED ON THE EXPLORER. The attempt was made on 2026-09-05 and the endpoint refused an automated client: https://robinhoodchain.blockscout.com/api sits behind a Cloudflare managed bot challenge and answers HTTP 403 with a `Just a moment…` interstitial instead of JSON, so `forge verify-contract --verifier blockscout --chain 4663` fails at the ABI lookup before submitting anything (`Failed to deserialize response: expected value at line 1 column 1`, then `Error: Failed to obtain contract ABI`). The challenge was not worked around. docs/DEPLOYMENT.md carries the full transcript and the conditions for retrying. Source verification is an explorer convenience and is not what establishes the identity of these contracts; `bytecodeCurrency` above is, and it does not depend on any explorer."
+}

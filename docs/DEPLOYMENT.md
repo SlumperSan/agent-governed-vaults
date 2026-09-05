@@ -52,9 +52,10 @@ description, aggregator phase and answer in it was read from chain 4663 by read-
 of chain time, and the file records the earliest and latest samples alongside the one its feed ages
 are measured against.
 
-**Nothing is deployed with it.** No contract from this repository exists on chain 4663, or on any
-mainnet. The file is configuration evidence rather than deployment evidence, and it changes no row
-of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
+**Nothing was deployed with it.** At the time it landed no contract from this repository existed on
+chain 4663 or on any mainnet; the deployment came the next day and is recorded in the subsection
+below, "The chain-4663 deployment, and where it is recorded". The file is configuration evidence
+rather than deployment evidence, and it changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
 1's four inputs — real, on-chain-verified feed addresses (never invented ones), per-asset heartbeats
 and sane-price bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
 uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-approved exemption dated
@@ -63,10 +64,64 @@ uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-appro
 `scripts/test/config-doc-truth.test.mjs` pins both the emptiness and that behaviour so the note
 cannot drift from the code.
 
-Two further questions in it are the owner's, and are left open rather than answered: which
-`minDepositUsdc` vault #1 takes (the file reproduces `base-mainnet.json`'s 100-unit value verbatim,
-while the owner's vault-1 decision records 0.01), and how much USDG the creator Safe holds before
-the first deposit. Supplying a config is not a substitute for the rest of this runbook.
+Two further questions in it were the owner's, and the owner answered both on 2026-09-05: vault #1
+takes the file's 100-unit `minDepositUsdc` (100 USDG, superseding the 0.01 figure an earlier vault-1
+note recorded), and the creator Safe holds 100 USDG for the first deposit. Supplying a config is
+not a substitute for the rest of this runbook.
+
+### The chain-4663 deployment, and where it is recorded (2026-09-05)
+
+The owner broadcast this runbook's §1 and §2 against Robinhood Chain mainnet on 2026-09-05: ten
+transactions from `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, every receipt status 1. The
+`ChainlinkOracle` went in alone at block 54,989,143 (`0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB`);
+the six singletons and the three wire calls landed together five seconds later at block 54,989,195 —
+`OperatorRegistry` `0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568`, `SubVaultRegistry`
+`0x692385262C05df7515560886f167c4eDD0814025`, `FeeEngine`
+`0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232`, `Governance`
+`0x790A308f1ac06FeD4C79884BAD25d0C721C5B125`, `VaultDeployer`
+`0xc36198FD2c7C62738159ED1FF965679105FAF05a`, `VaultFactory`
+`0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. Source commit `b1cde122`.
+
+**The address book is
+[`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json),
+and it — not this paragraph and not `robinhood-mainnet.json` — is the record.** Every value in it
+was read back from the chain with `cast` at block 54,991,182. Read the record before citing any
+number here; two things it carries are worth knowing before you open it:
+
+- **Do not rebuild that table from the broadcast JSON.** On this run the `transactions[].hash`
+  column of `contracts/broadcast/Deploy.s.sol/4663/run-latest.json` is scrambled — it pairs
+  `SubVaultRegistry` with a hash whose receipt returns the OperatorRegistry's address — while the
+  same file's `receipts[]` array is correct. This is the Sprint-9 failure `scripts/soak/deployment.mjs`
+  documents, and it recurred. The record's identities rest on byte-for-byte bytecode comparison
+  against the `b1cde122` artifacts, which no label can mislead.
+- **`factory.allowSubVaults()` reads false**, so this deployment is root-vaults-only — the opposite
+  of the Base Sepolia record's `true`, and deliberately so in both places.
+
+**Vault #1 does not exist yet.** `factory.vaultCount()` reads 0. Creating it is the Safe
+`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do and nobody else's, for the reason §4 gives:
+`VaultCore.creator` is immutable and `createVault` takes the creator from `msg.sender`, so an EOA
+that creates it cannot hand it back. Until then no deposit, rebalance, fee accrual or exit has been
+exercised on chain 4663, no execution adapter is deployed there (§3 — adapters are per-vault, and
+`Deploy.s.sol` deploys none), and `scripts/test/claims-robinhood-deployment.test.mjs` stays red.
+
+**No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
+configures an x402 surface, and nothing recorded depends on one.
+
+**None of the seven contracts is source-verified on the explorer, and §9 cannot currently do it.**
+`https://robinhoodchain.blockscout.com/api` sits behind a Cloudflare managed bot challenge: a plain
+request returns HTTP 403 with a `Just a moment…` interstitial and `Enable JavaScript and cookies to
+continue`, never JSON. `forge verify-contract --verifier blockscout --verifier-url
+https://robinhoodchain.blockscout.com/api --chain 4663` therefore fails before it submits anything,
+at the ABI lookup — `Failed to deserialize response: expected value at line 1 column 1`, then `Error:
+Failed to obtain contract ABI for 0x79279FBa…`. This is the explorer refusing an automated client,
+not a defect in the source or the constructor arguments, and the challenge must not be worked
+around. Retry from a browser session, or when the operator supplies an API key or an allow-listed
+endpoint. **Explorer verification is a convenience and is not what establishes these contracts'
+identity** — `bytecodeCurrency` in the record does that, by byte-for-byte comparison against the
+`b1cde122` artifacts, and it depends on no explorer.
+
+This changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md), whose board is the Base mainnet
+launch.
 
 ## 1. Deploy and verify the curated oracle FIRST (C-6)
 
@@ -169,8 +224,9 @@ rather than tuned here.
 
 **Two things this exemption does not do.** It does not change any other chain: `DeployChainlinkOracle`
 still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
-by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it does
-not make a 4663 deploy actionable.
+by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it did
+not, by itself, make a 4663 deploy actionable: the deploy happened on 2026-09-05 and is recorded in
+§0 above, under "The chain-4663 deployment, and where it is recorded".
 
 A config for that chain does now exist — #209 landed
 [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
@@ -188,21 +244,24 @@ chain 4663 by read-only JSON-RPC on 2026-09-04 (`chainlinkOracle.verifiedOnChain
 is empty there under this same exemption, and `chainlinkOracle.verification` says the verifier passes
 that row only once 4663 is on its exempt allowlist — which is what this change adds.
 
-Four things remain blocking, and none of them is in this change's gift:
+Four things were blocking when this section was written, and none of them was in that change's
+gift. Two have since closed and two remain:
 
-- **There is no deployment record.** `contracts/config/deployments/` holds `base-sepolia.json` and
-  nothing else. No contract from this repository exists on chain 4663, or on any mainnet.
-- **The funding and one immutable launch parameter are still open owner questions,** both already
-  recorded in §0 above: how much USDG the creator Safe (`creator` `0xC73B…AD4c`) holds before the
-  first deposit, and which `minDepositUsdc` vault #1 takes — the config reproduces
-  `base-mainnet.json`'s 100-unit value verbatim while the owner's vault-1 decision records 0.01, and
-  the field is immutable once `createVault` has run.
-- **The owner has to broadcast it.** §1 step 2 and §2 both need a funded key and `--broadcast`,
-  which `docs/SWARM.md` §10 places outside an agent's authority entirely.
+- **The deployment record now exists.** `contracts/config/deployments/` holds `base-sepolia.json`
+  and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
+  (§0 above, "The chain-4663 deployment, and where it is recorded"), and no contract from this
+  repository exists on any other mainnet.
+- **The funding and one immutable launch parameter are decided but not yet executed,** both
+  recorded in §0 above: the creator Safe (`creator` `0xC73B…AD4c`) holds 100 USDG for the first
+  deposit, and vault #1 takes the config's 100-unit `minDepositUsdc` (the owner's decision of
+  2026-09-05). The field is immutable once `createVault` has run, and vault #1 has not been created.
+- **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
+  `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
+  ran both scripts, and the record was written from on-chain readback afterwards.
 - **The public claims still say the opposite.** All eight pages of `apps/site` carry the status
   line *"Not deployed to mainnet."*, and [LAUNCH-READINESS.md](LAUNCH-READINESS.md) opens
-  **VERDICT: NO-GO**. A 4663 deploy falsifies the first the moment it lands and has to be argued
-  against the second, so it wants its own reviewed change rather than arriving as a side effect of
+  **VERDICT: NO-GO**. The 4663 deploy falsified the first the moment it landed and has to be argued
+  against the second, so the claims flip is its own reviewed change rather than a side effect of
   this one.
 
 `verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
