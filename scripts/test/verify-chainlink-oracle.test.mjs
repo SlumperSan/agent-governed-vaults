@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bandBoundsTwoDecimalDrift, compareAggregatorPin, isUsdQuoted } from '../verify-chainlink-oracle.mjs';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  bandBoundsTwoDecimalDrift,
+  chainBindingVerdict,
+  compareAggregatorPin,
+  isUsdQuoted,
+} from '../verify-chainlink-oracle.mjs';
 
 // ---------------------------------------------------------------------------
 // AGGREGATOR-SWAP DRIFT — the off-chain half of the accepted residual.
@@ -178,4 +188,139 @@ test('a disabled or malformed band fails rather than dividing by nothing', () =>
 
 test('no live price means the band cannot be sized — fail, never silently pass', () => {
   assert.equal(bandBoundsTwoDecimalDrift(0n, 10n ** 20n, 10n ** 23n).ok, false);
+});
+
+// --- chain binding: the RPC must BE the chain the config names -------------------
+// Every other check in the verifier reads an address, and an address means nothing without a
+// chain. The gap this closes was silent by construction: `BASE_MAINNET_RPC` takes precedence over
+// `BASE_RPC` and over the per-chain default, so one stale export in a shell sent a run launched
+// with ANY config to Base mainnet, where the configured feeds are other contracts or nothing --
+// and the sweep printed a pass tally for a chain nobody had asked about.
+
+test('a matching chain id binds, and the message names the chain and the config', () => {
+  const r = chainBindingVerdict({
+    configChainId: 4663, rpcChainId: 4663, rpc: 'https://rpc.example', configPath: 'contracts/config/x.json',
+  });
+  assert.equal(r.ok, true);
+  assert.match(r.message, /chain 4663/);
+  assert.match(r.message, /contracts\/config\/x\.json/);
+});
+
+test('a config chainId of 4663 against an RPC answering 8453 REFUSES, naming both ids', () => {
+  const r = chainBindingVerdict({
+    configChainId: 4663, rpcChainId: 8453, rpc: 'https://rpc.example', configPath: 'contracts/config/x.json',
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /WRONG CHAIN/);
+  assert.match(r.message, /8453/, 'the message must name what the RPC reported');
+  assert.match(r.message, /4663/, 'and what the config declared');
+  assert.match(
+    r.message,
+    /BASE_MAINNET_RPC/,
+    'and must point at the env var whose precedence produces this, since a stale export is the likely cause',
+  );
+});
+
+test('the config chainId is compared as a number — JSON holds 4663, cast prints "4663"', () => {
+  assert.equal(chainBindingVerdict({ configChainId: '4663', rpcChainId: 4663, rpc: 'r', configPath: 'c' }).ok, true);
+});
+
+test('an UNREADABLE chain id refuses too — an unproven binding is not a binding', () => {
+  const r = chainBindingVerdict({ configChainId: 4663, rpcChainId: null, rpc: 'https://rpc.example', configPath: 'c' });
+  assert.equal(r.ok, false, 'a chain id that could not be read must never pass as a match');
+  assert.match(r.message, /UNPROVEN/);
+  assert.doesNotMatch(r.message, /WRONG CHAIN/, 'unreadable is not the same finding as a mismatch');
+});
+
+test('a config with no usable chainId refuses rather than binding to whatever answers', () => {
+  for (const bad of [undefined, null, 0, -1, 'base']) {
+    assert.equal(chainBindingVerdict({ configChainId: bad, rpcChainId: 8453, rpc: 'r', configPath: 'c' }).ok, false, String(bad));
+  }
+});
+
+// --- the same rule, end to end through the real script ---------------------------
+// The pure tests above prove the decision; these prove it is WIRED -- that `main` consults it
+// before reading a feed, and that the process actually exits 1. `cast` is stubbed, so there is no
+// RPC and no network: the verifier runs `execFileSync(CAST, ['chain-id', …])`, and Windows cannot
+// exec a script file as a program, so CAST is node itself with the stub preloaded via
+// `NODE_OPTIONS=--require`. Node runs preloads before resolving the main entry, so the stub answers
+// and exits before node looks for a script named "chain-id". In the verifier's own process (which
+// inherits NODE_OPTIONS) argv[1] is the .mjs path, so the stub recognises no subcommand and does
+// nothing. It implements ONLY `chain-id`: any other cast invocation exits 3 with a message, which
+// is itself the assertion that no feed was read.
+
+const VERIFIER = fileURLToPath(new URL('../verify-chainlink-oracle.mjs', import.meta.url));
+
+/** Run the verifier with `cast chain-id` stubbed to `rpcChainId`, against a written config. */
+function runVerifier({ configChainId, rpcChainId }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chain-binding-'));
+  const stub = path.join(dir, 'stub-cast.cjs');
+  // Written with console.log/console.error rather than fs.writeSync so the stub's own source needs
+  // no escape sequences — the newline is the logger's, not a backslash-n surviving two layers of
+  // quoting into a generated file.
+  fs.writeFileSync(
+    stub,
+    [
+      `'use strict';`,
+      `const p = require('node:path');`,
+      `const sub = p.basename(String(process.argv[1] ?? ''));`,
+      `if (sub === 'chain-id') { console.log('${rpcChainId}'); process.exit(0); }`,
+      // Anything that is not a JS entry point is a cast subcommand this stub does not implement.
+      // Exiting 3 with a message is how the tests assert that no feed read was attempted.
+      `if (!/[.](mjs|cjs|js)$/.test(sub)) {`,
+      `  console.error('stub-cast: unexpected invocation ' + process.argv.slice(1).join(' '));`,
+      `  process.exit(3);`,
+      `}`,
+      '',
+    ].join('\n'),
+  );
+  const cfg = path.join(dir, 'cfg.json');
+  // No feeds and an empty sequencer address: past the binding, `main` fails on those two checks
+  // without spawning `cast` again. That keeps the stub to one subcommand and makes "did any feed
+  // get read?" answerable from the output alone.
+  fs.writeFileSync(cfg, JSON.stringify({ chainId: configChainId, chainlinkOracle: { sequencerUptimeFeed: '', assets: [] } }));
+  // Neither override is set, so the RPC comes from DEFAULT_RPC — which exercises the new 4663
+  // entry as well as the binding. `delete` rather than '': the script resolves with `??`, so an
+  // empty string is a value and would fall through to "no default RPC for chainId 4663".
+  // No request is made either way; `cast` is the stub.
+  const env = { ...process.env, CONFIG: cfg, CAST: process.execPath };
+  delete env.BASE_MAINNET_RPC;
+  delete env.BASE_RPC;
+  const r = spawnSync(process.execPath, [VERIFIER], {
+    encoding: 'utf8',
+    env: {
+      ...env,
+      // Forward slashes, not the native separator. NODE_OPTIONS is parsed as a shell-like string
+      // and a backslash there is an escape, so a real Windows path arrives as
+      // "C:UsersMichaAppData…" and the preload fails with MODULE_NOT_FOUND before the verifier
+      // starts. Node accepts forward slashes on Windows, so this is the portable spelling.
+      NODE_OPTIONS: `--require "${stub.split(path.sep).join('/')}"`,
+    },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test('end to end: a 4663 config against a cast answering 8453 refuses, and reads no feed', () => {
+  const r = runVerifier({ configChainId: 4663, rpcChainId: 8453 });
+  assert.equal(r.status, 1, `expected exit 1, got ${r.status}. stderr: ${r.stderr}`);
+  assert.match(r.stderr, /WRONG CHAIN/);
+  assert.match(r.stderr, /8453/);
+  assert.match(r.stderr, /4663/);
+  assert.doesNotMatch(
+    r.stdout,
+    /sequencer uptime feed|at least one asset feed listed/,
+    'the refusal must come BEFORE any check row: a tally scored against the wrong chain must not be printed at all',
+  );
+});
+
+test('end to end: matching ids proceed into the sweep, which then judges the config itself', () => {
+  const r = runVerifier({ configChainId: 4663, rpcChainId: 4663 });
+  assert.doesNotMatch(r.stderr, /WRONG CHAIN|UNPROVEN/, 'a matching chain id must not be refused');
+  assert.match(
+    r.stdout,
+    /sequencer uptime feed/,
+    'the run must reach the feed checks — this fixture then fails them, which is the config being judged rather than the chain',
+  );
+  assert.doesNotMatch(r.stderr, /unexpected invocation/, 'no cast subcommand beyond chain-id should have been needed');
 });

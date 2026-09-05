@@ -4,8 +4,8 @@
  * Verify the `chainlinkOracle` block of `contracts/config/base-mainnet.json` against a real Base
  * mainnet RPC, BEFORE deploying the blessed ChainlinkOracle (the C-6 launch resolution).
  *
- * READ-ONLY. No key, no signature, no transaction, no deployment. Every call is `cast call` or
- * `cast code`. Running this against mainnet costs nothing and changes nothing.
+ * READ-ONLY. No key, no signature, no transaction, no deployment. Every call is `cast call`,
+ * `cast code` or `cast chain-id`. Running this against mainnet costs nothing and changes nothing.
  *
  * ## Why this is worth a script
  *
@@ -44,14 +44,33 @@
  *     ChainlinkOracle would otherwise serve prices computed while the sequencer was down).
  * Each check below fails the config rather than letting the deploy proceed.
  *
+ * ## The chain binding comes first, and it is a refusal rather than a check
+ *
+ * Every trap above is a statement about addresses ON A PARTICULAR CHAIN, so all of them are void if
+ * the RPC is not the chain the config names. That is not hypothetical: `BASE_MAINNET_RPC` takes
+ * precedence over both `BASE_RPC` and the per-chain default below, so one stale export left in a
+ * shell pointed every read at Base mainnet no matter which config was passed — and feed addresses
+ * are chain-specific, so the sweep would have reported findings about a chain nobody asked about.
+ * `main` therefore reads `eth_chainId` (via `cast chain-id`) from whatever RPC it resolved and
+ * exits 1 unless it equals the config's `chainId`, BEFORE any feed is read. It is a refusal, not a
+ * `check` row, because a result list scored against the wrong chain is not a partial verification —
+ * it is one with no meaning at all, and printing it beside a pass tally would invite reading it.
+ * An unreadable chain id refuses too: an unproven binding is not a binding.
+ *
  * Exit 0 = every listed feed passed; the `chainlinkOracle` block may be flipped to VERIFIED and the
  *          deployed oracle address added to BLESSED_ORACLES (Deploy.s.sol).
- * Exit 1 = at least one check failed; do NOT deploy the oracle.
+ * Exit 1 = at least one check failed, OR the run was refused before any check ran because the RPC
+ *          is not (or could not be shown to be) the chain the config names. Do NOT deploy the
+ *          oracle. The two are told apart by the output: a refusal prints one line on stderr and no
+ *          check rows at all, so an empty result list is never a silent pass.
  *
  * Env: CONFIG (config to verify; default contracts/config/base-mainnet.json — may also be passed as a
  *        *.json path arg), BASE_MAINNET_RPC / BASE_RPC (RPC override; default derived from the config's
- *        chainId — Base mainnet 8453 or Base Sepolia 84532; any other chainId must supply BASE_RPC
- *        explicitly), CAST (default `cast`).
+ *        chainId, for the ids listed in DEFAULT_RPC below; a chainId that is not listed must supply
+ *        BASE_RPC explicitly), CAST (default `cast`).
+ *        Whichever of those supplied the RPC, it must answer `eth_chainId` with the config's own
+ *        chainId or the run refuses — so an override for the wrong chain is rejected rather than
+ *        verified, and a default is a convenience rather than the thing being trusted.
  *        The L2 sequencer feed is REQUIRED on every chain except local 31337 and Base Sepolia 84532,
  *        whose config leaves it empty by design (the guard is skipped there and mock-tested in
  *        ChainlinkOracle.t.sol). Same allowlist, same fail-closed default, as the on-chain rule in
@@ -70,11 +89,24 @@ const CFG_PATH_REL =
   process.env.CONFIG ?? process.argv.find((a) => a.endsWith('.json')) ?? 'contracts/config/base-mainnet.json';
 const CFG_PATH = path.isAbsolute(CFG_PATH_REL) ? CFG_PATH_REL : path.join(ROOT, CFG_PATH_REL);
 const CFG = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
-// RPC: explicit env wins; otherwise the public Base RPC for the config's chain. Only the two chains
-// this repo has configs for get a default: an UNRECOGNIZED chainId used to fall through to Base
-// mainnet, which would have read feed addresses off the wrong chain and reported the result as a
-// verification. Demand an explicit RPC instead (same fail-closed default as the sequencer rule below).
-const DEFAULT_RPC = {8453: 'https://mainnet.base.org', 84532: 'https://sepolia.base.org'}[CFG.chainId];
+// RPC: explicit env wins; otherwise the public endpoint for the config's chain. A chainId that is
+// NOT listed here gets no default: an unrecognized one used to fall through to Base mainnet, which
+// would have read feed addresses off the wrong chain and reported the result as a verification.
+// Demand an explicit RPC instead (same fail-closed default as the sequencer rule below).
+//
+// These are PUBLIC endpoints, and a URL is not evidence of which chain answers it — a provider can
+// repoint one, and an operator can override it with BASE_RPC. So none of these entries is what binds
+// a run to a chain; the `eth_chainId` refusal in `main` is, and it applies equally to a default and
+// to an override. Read that way, the table is a convenience that saves typing a URL, and it is safe
+// for it to list a chain this repo has no config for (46630 today): an entry can only ever
+// pick the endpoint that then has to prove itself.
+// Verified answering their own ids 2026-09-04: 8453 0x2105, 84532 0x14a34, 4663 0x1237, 46630 0xb626.
+const DEFAULT_RPC = {
+  8453: 'https://mainnet.base.org',
+  84532: 'https://sepolia.base.org',
+  4663: 'https://rpc.mainnet.chain.robinhood.com',
+  46630: 'https://rpc.testnet.chain.robinhood.com/rpc',
+}[CFG.chainId];
 const RPC = process.env.BASE_MAINNET_RPC ?? process.env.BASE_RPC ?? DEFAULT_RPC;
 if (!RPC) {
   console.error(
@@ -314,7 +346,91 @@ export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
   };
 }
 
+/**
+ * Does the RPC that answered belong to the chain the config names? PURE -- no RPC, no config -- so
+ * the decision table is unit-testable.
+ *
+ * Every other check in this file reads an ADDRESS, and an address means nothing without a chain.
+ * The failure this closes is silent by construction: `BASE_MAINNET_RPC` wins over `BASE_RPC` and
+ * over the per-chain default, so a stale export in a shell sends a run launched with any CONFIG to
+ * Base mainnet, where the configured feed addresses are simply other contracts (or nothing at all).
+ * The sweep then prints a verdict on a chain the operator did not name.
+ *
+ * `rpcChainId` null means the id could not be read at all. That refuses as well: this function is
+ * the only thing standing between a config and a sweep of the wrong chain, and "I could not tell"
+ * is not "they match". A transport failure costs a re-run; a wrong-chain pass costs an immutable
+ * oracle deployed against addresses nobody verified.
+ *
+ * @param {{configChainId:number|string, rpcChainId:number|null, rpc:string, configPath:string}} a
+ * @returns {{ok:boolean, message:string}}
+ */
+export function chainBindingVerdict({ configChainId, rpcChainId, rpc, configPath }) {
+  const want = Number(configChainId);
+  if (!Number.isInteger(want) || want <= 0) {
+    return {
+      ok: false,
+      message:
+        `${configPath} declares no usable chainId (${JSON.stringify(configChainId)}), so there is nothing ` +
+        'to bind the RPC to. Every check in this script reads an address, and an address is meaningless ' +
+        'without a chain -- add a chainId to the config.',
+    };
+  }
+  if (rpcChainId === null) {
+    return {
+      ok: false,
+      message:
+        `could not read the chain id of ${rpc}, so it is UNPROVEN that it is chain ${want} ` +
+        `(${configPath}). Refusing rather than sweeping: an unproven binding is not a binding, and ` +
+        'every feed address below is chain-specific. Re-run against an RPC that answers eth_chainId.',
+    };
+  }
+  if (rpcChainId !== want) {
+    return {
+      ok: false,
+      message:
+        `WRONG CHAIN: ${rpc} reports chain id ${rpcChainId}, but ${configPath} declares chainId ${want}. ` +
+        'Refusing to verify — the feed addresses in this config are addresses ON CHAIN ' +
+        `${want}, so reading them on chain ${rpcChainId} says nothing about the config and a PASS would ` +
+        'be meaningless. BASE_MAINNET_RPC takes precedence over BASE_RPC and over the built-in ' +
+        'per-chain default, so check for a stale one exported in this shell.',
+    };
+  }
+  return { ok: true, message: `${rpc} is chain ${rpcChainId}, matching ${configPath}` };
+}
+
+/**
+ * The RPC's own `eth_chainId`, or null if it could not be read. `cast chain-id` is exactly that
+ * call, and going through `cast` keeps the CAST override honoured and adds no second transport to
+ * a script whose whole contract is that it only ever reads. Deliberately NOT retried: this runs
+ * once per invocation, so a re-run is the retry, and `chainBindingVerdict` refuses on null anyway.
+ */
+function readRpcChainId() {
+  try {
+    const [n] = cast(['chain-id', '--rpc-url', RPC])
+      .split('\n')
+      .map((l) => l.trim().split(/\s+/)[0])
+      .filter((x) => /^\d+$/.test(x));
+    return n === undefined ? null : Number(n);
+  } catch {
+    return null;
+  }
+}
+
 function main() {
+  // BEFORE any feed read: prove the RPC is the chain the config names, or refuse. Not a `check`
+  // row -- see the header. A result list scored against the wrong chain is not a partial
+  // verification, so it must not be printed at all, let alone tallied.
+  const binding = chainBindingVerdict({
+    configChainId: CFG.chainId,
+    rpcChainId: readRpcChainId(),
+    rpc: RPC,
+    configPath: CFG_PATH_REL,
+  });
+  if (!binding.ok) {
+    console.error(`verify-chainlink-oracle: ${binding.message}`);
+    process.exit(1);
+  }
+
   const cfg = CFG;
   const co = cfg.chainlinkOracle;
   if (!co) {
