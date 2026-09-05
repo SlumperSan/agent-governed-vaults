@@ -16,12 +16,32 @@
  * Both cards' sentences are true today rather than design intent, which is why
  * they carry no "designed, not built" chip: a member does hold the index and can
  * leave, and vault creation is permissionless with no screen on the caller.
+ *
+ * TWO BLOCKS MOVED IN UNDER THE CARDS on 2026-09-05, round 8, out of
+ * index-hero, so that both cards stand inside the first viewport at 1440x900:
+ * the three action buttons and then the three-fact strip. Both are rendered
+ * after the cards rather than before them, because a link that repeats a
+ * destination reads after the door that names it, a fact that proves a claim
+ * reads after the claim, and putting either first would have pushed the doors
+ * back down by exactly what the move saved.
+ *
+ * THE THREE BUTTONS ARE THE HERO'S OWN, INTACT. Same three labels from
+ * `CTA` in shell/pinned.ts, same three destinations, same order, the first
+ * still the filled one. `How it works` now stands twice in this section, once
+ * as the first card's link and once as the lead button; that pair is already
+ * how `apps/site/index.html` reads at protocol/main, where the hero's button
+ * row and the first door's own button carry the same label, so the repetition
+ * is inherited rather than introduced. Equal weight between the two CARDS is
+ * untouched by it: the filled button belongs to the row below them, and the
+ * grid rule that makes the pair equal is unchanged.
  */
 import type { JSX } from 'react';
 import { DUR, STAGGER } from '../../motion/easings';
 import { Reveal } from '../../motion/Reveal';
 import { Icon } from '../../brand/Icon';
 import type { IconName } from '../../brand/icons';
+import { CTA, REPO_URL } from '../../shell/pinned';
+import { FactStrip } from './FactStrip';
 import s from './IndexDoors.module.css';
 
 const HEADING_ID = 'two-doors';
@@ -72,6 +92,20 @@ export default function IndexDoors(): JSX.Element {
               </a>
             </div>
           ))}
+        </Reveal>
+        <Reveal duration={DUR.mid}>
+          <div className={s.actions}>
+            <a className={`${s.btn} ${s.btnLead}`} href="how-it-works.html">
+              {CTA.howItWorks}
+            </a>
+            <a className={s.btn} href="status.html">
+              {CTA.record}
+            </a>
+            <a className={s.btn} href={REPO_URL}>
+              {CTA.source}
+            </a>
+          </div>
+          <FactStrip />
         </Reveal>
       </div>
     </section>

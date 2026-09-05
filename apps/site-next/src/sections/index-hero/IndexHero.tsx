@@ -1,5 +1,5 @@
 /**
- * index-hero — the page's one <h1>, the hero field, and the three-fact strip.
+ * index-hero: the page's one <h1>, the hero field, and the field caption.
  *
  * ---------------------------------------------------------------------------
  * WHERE THE COPY CAME FROM
@@ -10,8 +10,10 @@
  * 3a3e3eaf). Nothing here was rewritten, tightened or re-punctuated. The
  * funnel verbs a redesign reaches for first are banned outright by the claims
  * suite, a hero is exactly where someone reaches for one, and matching the
- * labels the current site already uses is what makes that unable to happen by
- * accident. The banned list is in the guard; it is not repeated here, because
+ * wording the current site already uses is what makes that unable to happen by
+ * accident. The three action labels are the same three, moved intact to
+ * index-doors on 2026-09-05, round 8; see that file. The banned list is in the
+ * guard; it is not repeated here, because
  * the day this file is one of the surfaces the guard walks, a comment quoting
  * it reds the gate exactly as prose would.
  *
@@ -19,9 +21,9 @@
  * permitted by the build brief as an adaptation rather than as a new claim:
  *   - the field's `Illustrative.` caption, which does for the canvas what the
  *     reference-configuration table's "a worked example" does for its numbers.
- * The three fact-strip lines (see FactStrip.tsx) are likewise an addition with
- * no corpus counterpart, each a shortened form of a sentence that IS on this
- * site or in its footer, kept in sync with those sources as they change.
+ * The three fact-strip lines were the other such addition. They MOVED OUT of
+ * this section on 2026-09-05, round 8, into index-doors, so the two doors could
+ * stand inside the first viewport; see FactStrip.tsx for the arithmetic.
  * Everything else a reader sees here already exists in the reviewed source.
  *
  * ---------------------------------------------------------------------------
@@ -83,9 +85,7 @@
  */
 import type { JSX } from 'react';
 import { MotionBackdrop } from '../../assets/Backdrop';
-import { CTA, REPO_URL } from '../../shell/pinned';
 import { Pinned } from '../../shell/PinnedText';
-import { FactStrip } from './FactStrip';
 import s from './IndexHero.module.css';
 
 
@@ -143,21 +143,7 @@ export default function IndexHero(): JSX.Element {
         <Pinned as="p" className={s.lede} html={LEDE} />
         <Pinned as="p" className={s.lede} html={LEDE_CLOSE} />
 
-        <div className={s.actions}>
-          <a className={`${s.btn} ${s.btnLead}`} href="how-it-works.html">
-            {CTA.howItWorks}
-          </a>
-          <a className={s.btn} href="status.html">
-            {CTA.record}
-          </a>
-          <a className={s.btn} href={REPO_URL}>
-            {CTA.source}
-          </a>
-        </div>
-
         <p className={s.caption}>{FIELD_CAPTION}</p>
-
-        <FactStrip />
       </div>
     </section>
   );

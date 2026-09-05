@@ -1,6 +1,17 @@
 /**
  * FactStrip — three verifiable facts, each linking to the thing that proves it.
  *
+ * IT SAT IN THE HERO UNTIL 2026-09-05, round 8. It moved here, under the two
+ * cards, so the doors could stand inside the first viewport at 1440x900: the
+ * strip was 139px of the 620px that had to come out of the fold, and it is the
+ * one block above the doors with no counterpart in `apps/site`: three
+ * shortened restatements of sentences published elsewhere on the site, rather
+ * than deck copy. Nothing about it changed but its position and the stylesheet
+ * it reads from. Under the doors it still does the job the comment below
+ * describes: it is the row a reference layout fills with partner logos, and it
+ * now reads as the proof under the two cards instead of as a fourth block to
+ * get past before reaching them.
+ *
  * WHAT THIS REPLACES. The reference layout puts a row of partner logos here.
  * We have no partners, and inventing one is the cheapest possible way to make
  * this page a lie, so the row carries facts instead — each one a sentence
@@ -45,7 +56,7 @@
  */
 import type { JSX } from 'react';
 import { REPO_URL } from '../../shell/pinned';
-import s from './IndexHero.module.css';
+import s from './IndexDoors.module.css';
 
 type Fact = {
   /** The sentence. Shortened from an existing one; never composed. */

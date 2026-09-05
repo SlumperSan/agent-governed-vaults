@@ -92,6 +92,48 @@
   );
 }
 
+/* THE NARROW-WIDTH RAMP, ADDED 2026-09-05 ROUND 8, AND WHY IT IS NOT THE ONE
+   ABOVE WIDENED.
+   ---------------------------------------------------------------------------
+   Two things make a narrow viewport the harder case, and only the second is
+   new. The copy column is capped at --measure, 38rem, which is wider than the
+   viewport below about 40rem: the copy therefore spans the whole frame and
+   crosses every stop of the ramp, where at 1440 it sits mostly over the
+   full-ground end. And when the hero box got shorter in round 8, `object-fit:
+   cover` stopped zooming the picture so hard to fill it, so more of the frame,
+   including its bright end, arrived behind the copy at the same width.
+
+   MEASURED, NOT REASONED. On the served build at 375x812, with the clip
+   mounted and sampled across fourteen frames, the worst (brightest) background
+   pixel under the hero copy read 6.346:1 against its ink before the round and
+   5.640:1 after it. That is a real regression and this block is the remedy for
+   it: the same ramp, moved along, so the full-ground stop reaches further
+   across the frame and the weakest stop is 0.90 of --ground rather than 0.82.
+
+   THE ARITHMETIC, on the same pessimistic basis as the block at the top of this
+   file. Compositing a of --ground over pure white gives (255 - 248a, 255 - 248a,
+   255 - 244a); at a = 0.90 that is luminance 0.01428, and --muted (#a8a8bd,
+   luminance 0.400042) reads (0.400042 + 0.05) / (0.01428 + 0.05) = 7.00:1
+   against it. So below 52rem the bound is not 5.53:1 but 7.00:1 for --muted
+   against the brightest pixel any picture can hold. The wide ramp is left where
+   it is: it did not move, its measurement did not regress, and 0.82 there keeps
+   the clip a clip on the width where the copy does not cross it.
+
+   IT IS STILL A BOUND, NOT A MEASUREMENT. The brightest pixel in the current
+   set is nowhere near white, which is why the measured figures above are the
+   ones that matter and both are recorded. */
+
+@media (max-width: 52rem) {
+  .backdrop::after {
+    background: linear-gradient(
+      95deg,
+      var(--ground) 55%,
+      color-mix(in srgb, var(--ground) 94%, transparent) 80%,
+      color-mix(in srgb, var(--ground) 90%, transparent) 100%
+    );
+  }
+}
+
 /* A reader who asked for reduced motion is served the poster and no clip at
    all — Backdrop.tsx does not render the element — so there is nothing here to
    pause. This block exists to state that, and to catch a future backdrop that
