@@ -1,0 +1,132 @@
+/* ===========================================================================
+   ops-economics — four definition rows on operators.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour, length and duration below is a custom
+   property from src/tokens.css. No literal is introduced here, so there is no
+   value in this file for anyone to re-measure for contrast, and no token is
+   redefined.
+
+   THE SHAPE IS A LEDGER: labelled facts read down a single left edge,
+   hairline-ruled, with a fixed label column and a reading column held to
+   --measure. It is the shape hiw-fees, hiw-pricing and agents-bootstrap use,
+   so a reader who has met one of those lists does not have to learn this one.
+   The powers section one block up this page is the site's one departure from
+   it — two columns in opposition, because the claim it carries is a Can set
+   against a Cannot rather than a list of four peers.
+
+   THE LABEL COLUMN IS DERIVED, NOT CHOSEN. These labels are phrases of four
+   to five words. The longest, "What is not routed to you", is
+   25 characters in a monospace face whose advance is 0.6em, set at
+   --step-label with --track-label of tracking — 0.72rem and 0.08em, the values
+   src/tokens.css carries: 25 x 0.72 x (0.6 + 0.08) = 12.24rem. So the column
+   is minmax(11rem, 15rem) — the maximum clears the longest label on one line,
+   and the minimum is the floor it may compress to before a label wraps to
+   three lines beside a body only four lines deep, at which point the row stops
+   reading as one statement.
+
+   WHAT THIS FILE HAS NO RULE FOR, on purpose. There is no callout, no pull
+   quote, no figure treatment and no status colour anywhere below. The passage
+   this styles states in its own words that it will not model, illustrate or
+   put a number on operator fee income, so a style that pulled "10%" out of a
+   sentence and set it at display size would contradict the sentence carrying
+   it. The four numbers in this section stay inside the prose that qualifies
+   them.
+
+   NUMBERS ARE NOT SET IN --mono HERE, which is the house default and is
+   suspended for a reason. Every figure in this section sits mid-sentence, and
+   the only mechanism for changing the type of a fragment is to wrap it in an
+   element — which splits a reviewed sentence that guards match whole. Tabular
+   figures also exist to stop a changing number from shifting its neighbours;
+   nothing in this section changes. Running prose wins.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose, so a
+   comment here is exposed exactly as a paragraph is. These comments describe
+   layout mechanics and nothing else.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the eyebrow the rest of the site uses, at
+   the palette's secondary ink. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+/* Bounded at 26ch rather than the 22 the Powers heading uses: this one is a
+   longer sentence, and 22 breaks it across four lines with a two-word last
+   line. */
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 26ch;
+  color: var(--ink);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s6);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+
+  /* An absolute line box equal to the body's first line — 1.125rem x 1.6 — so
+     a label and the first line of its body share a baseline by construction
+     rather than by a padding figure tuned to one platform's fonts. It is a
+     length rather than a ratio for a second reason here: if a label does wrap
+     against the column's lower bound, its two lines land on the body's two
+     lines rather than drifting between them. */
+  line-height: 1.8rem;
+
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* Hover raises the label's luminance and changes nothing else. No size change,
+   no movement, no rule appearing: a row is not a control and must not offer
+   itself as one. */
+.row:hover .term {
+  color: var(--ink);
+}
+
+/* Under the two-column threshold each label sits directly above its body. The
+   label's fixed line box is released here — with nothing to align to, it only
+   adds a gap. The threshold is 52rem, above every ledger on the site whose
+   labels are one or two words: these labels need 15rem of the row, so the
+   reading column runs short a viewport width earlier. */
+@media (max-width: 52rem) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+    padding-block: var(--s4);
+  }
+
+  .term {
+    line-height: 1.5;
+  }
+}

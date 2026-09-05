@@ -1,0 +1,208 @@
+/* ===========================================================================
+   DESIGN TOKENS — the interface between the design system and every component
+   ---------------------------------------------------------------------------
+   OWNED BY SHELL. A section builder reads these names and never edits this
+   file. If a section needs a token that is not here, it asks for one.
+
+   THE CONTRACT, in three clauses:
+
+     1. The custom-property NAMES are the interface. Fifty-nine are defined
+        below, and they are not all inherited. Fifteen of them — --ground,
+        --surface, --surface-2, --line, --ink, --muted, --faint, --accent,
+        --accent-ink, --good, --warn, --crit, --display, --sans and --mono — are
+        names apps/site/assets/tokens.css and apps/web/index.html both already
+        define. The other forty-four occur in neither of those two files and are
+        new here: the four -wash fills, --surface-3, --line-strong,
+        --accent-dim, the seven --step-* sizes, the three --track-* and two
+        --leading-* values, the ten rhythm steps --s1 to --s10, --seam, --wrap,
+        --measure, --gutter, --radius and --radius-lg, the two --ease-* curves
+        and four --dur-* durations, and the three --z-* layers. Counted
+        2026-09-04 against origin/protocol/main, where both of those files stand
+        byte-identical to the copies in this tree.
+
+     2. No component stylesheet contains a raw colour literal. Every colour
+        reaches the page as var(--token). That is what makes a re-theme a
+        one-file change, and it is checkable by grepping the built CSS.
+
+     3. Every ink-on-surface pair used for text meets WCAG 2.2 AA — 4.5:1 for
+        body text, 3:1 for large text. Measured ratios are recorded beside the
+        values, and HERE ONLY: a section stylesheet carries a pointer to this
+        file rather than a copy of the figure. A copied figure is a figure
+        nobody recomputes, and on 2026-09-04 twenty-eight of them across ten
+        section stylesheets were stale against the values below. A replacement
+        palette inherits that obligation.
+
+   ONE GROUND, NOT TWO. The current site ships three theme states (light,
+   media-dark, forced-dark). This one is dark, deliberately and only: the
+   owner's design decision of 2026-09-04 is "dark cinematic", and a second
+   palette would be a second set of contrast ratios nobody re-measures. There
+   is therefore no prefers-color-scheme block and no [data-theme] switch.
+
+   A NOTE ON WORDING IN THIS FILE. tokens.css is scanned as prose by the claims
+   suite, exactly like a page is. Reassurance vocabulary — outcome words,
+   funnel words, discretionary-manager words — reds the gate from a stylesheet.
+   Describe what a value IS and what it measures, never what it promises.
+   =========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces and rules -------------------------------------------------
+     Near-black, never #000: pure black bands visibly on OLED gradients, and
+     the hero is a gradient field. */
+  --ground: #07070b;
+  --surface: #0e0e16;
+  --surface-2: #16161f;
+  --surface-3: #1e1e2a;
+
+  --line: rgba(255, 255, 255, 0.08); /* hairlines only, never a text colour */
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* --- text ---------------------------------------------------------------
+     EVERY RATIO BELOW IS COMPUTED, NOT ESTIMATED. Each one is the WCAG 2.2
+     contrast ratio (L1 + 0.05) / (L2 + 0.05) over the sRGB relative luminance
+     of the two hex values on this page, to two decimal places. The set that
+     stood here until 2026-09-04 was written by hand, and all eleven figures in
+     it disagreed with the computation: --ink on --surface was recorded 14.0
+     and is 16.07, --accent-ink on --accent was recorded 8.4 and is 7.65, and
+     --accent-dim was recorded 3.5 and is 4.21. Four of the eleven ran the
+     dangerous way, overstating the real ratio: --accent, --accent-ink, --good
+     and --warn. None of the four crossed a threshold, which is luck rather
+     than design — an overstated ratio is what licenses a pairing that does not
+     in fact clear its floor. If you change a hex value, recompute rather than
+     adjust; the arithmetic is eight lines.
+
+     Both grounds are recorded where a token is used on both. --faint is the
+     case that matters: it renders on --surface in the footer (.footer-legal,
+     .footer-grid h2 in index.css), where it is 4.72:1, not the 4.94:1 it
+     measures on --ground. The lower number is the one that has to clear 4.5. */
+  --ink: #eaeaf3; /* 16.82:1 on --ground, 16.07:1 on --surface */
+  --muted: #a8a8bd; /*  8.62:1 on --ground,  8.23:1 on --surface */
+  --faint: #7c7c93; /*  4.94:1 on --ground,  4.72:1 on --surface — the floor for
+                        body text; both are above 4.5, and nothing lower is */
+
+  /* --- accent -------------------------------------------------------------
+     ONE accent, the Atlas violet at its dark-mode value. It carries data,
+     links and focus. It is never used to decorate. */
+  --accent: #a094ff; /*  7.83:1 on --ground,  7.48:1 on --surface */
+  /* REPLACED 2026-09-05, and the value it replaces is why. This token was
+     #6f62d6, which measures 4.21:1 on --ground: over the 3:1 non-text floor and
+     UNDER 4.5:1, so it was restricted by comment to rules, borders and
+     underlines. The brand token set of that date (Rwally Brand/brand/tokens.json,
+     version 3.0.0) retires #6f62d6 from every UI role for exactly that reading —
+     its own note records "the 1.x palette shipped #6f62d6 as a UI accent; it
+     measures 4.21:1 and fails the 4.5:1 floor" — and raises the same hue in
+     lightness to #8577e4, which measures 5.51:1 on --ground and 5.27:1 on
+     --surface. Both figures computed here from the WCAG 2.x formulas, not taken
+     from that file. The restriction above is therefore lifted: this value clears
+     the 4.5 floor and needs no comment fencing it off. #6f62d6 survives in the
+     brand set as an illustration fill only and appears nowhere in this
+     stylesheet. */
+  --accent-dim: #8577e4; /*  5.51:1 on --ground,  5.27:1 on --surface */
+  --accent-wash: rgba(160, 148, 255, 0.1);
+
+  /* --- the secondary hue ---------------------------------------------------
+     ADOPTED 2026-09-05 from the brand token set (Rwally Brand/brand/tokens.json
+     version 3.0.0), which takes it from the comic look's cold rim light and
+     gives it ONE job: "the second state in any pair — revealed against
+     committed, built against unbuilt, the next iteration against this one".
+     That is a rule about meaning, not a spare colour. It is not a status
+     colour: --good, --warn and --crit are, and a second hue used as a fourth
+     status makes all four unreadable.
+
+     Both ratios are computed here from the WCAG 2.x formulas and the hex values
+     on this page, not copied from that file. The brand file records 8.30 and
+     12.72 against the ground and the two agree. */
+  --teal: #3fb8ad; /*  8.30:1 on --ground,  7.93:1 on --surface */
+  --teal-bright: #7fded2; /* 12.72:1 on --ground, 12.15:1 on --surface — the
+                             heading-weight value, and rim light in artwork */
+  --teal-wash: rgba(63, 184, 173, 0.09);
+  --accent-ink: #0b0a16; /* on --accent: 7.65:1 — the pairing used by .skip */
+
+  /* --- status -------------------------------------------------------------
+     Status only. A status colour used as decoration makes every real status
+     unreadable. */
+  --good: #5fd89a; /* 11.28:1 on --ground, 10.77:1 on --surface */
+  --warn: #f2c14e; /* 11.98:1 on --ground, 11.45:1 on --surface */
+  --crit: #ff8b83; /*  8.88:1 on --ground,  8.48:1 on --surface */
+  --good-wash: rgba(95, 216, 154, 0.09);
+  --warn-wash: rgba(242, 193, 78, 0.09);
+  --crit-wash: rgba(255, 139, 131, 0.09);
+
+  /* --- type ---------------------------------------------------------------
+     Three families, all bundled from this origin. See fonts.css for the
+     @font-face rules and why they are hand-written rather than imported. */
+  /* The second entry in each of the first two stacks is a metric-adjusted
+     re-declaration of the entry after it — Georgia and Segoe UI wearing the
+     bundled face's vertical metrics and advance width — so the swap from
+     fallback to real face changes no line box and no wrap point. See fonts.css
+     for how the four percentages were computed, and for why the family it
+     stands in for is still listed behind it. */
+  --display: 'Newsreader Variable', 'Newsreader fallback', Georgia, 'Times New Roman', serif;
+  --sans: 'IBM Plex Sans Variable', 'IBM Plex Sans fallback', system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
+
+  /* Fluid display scale. clamp() rather than breakpoints so a headline never
+     steps, and tight tracking because the serif at display size sets loose. */
+  --step-display: clamp(2.75rem, 1.6rem + 5.2vw, 6rem);
+  --step-h2: clamp(1.9rem, 1.35rem + 2.2vw, 3rem);
+  --step-h3: clamp(1.2rem, 1.05rem + 0.6vw, 1.5rem);
+  --step-body: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --step-small: 0.875rem;
+  --step-eyebrow: 0.78rem;
+
+  /* The row label — the mono, uppercase term that opens a definition row. It
+     is a step under the eyebrow rather than the same size, which is why it is
+     a second pair of tokens and not a reuse of the eyebrow's. The two values
+     stood as the literals 0.72rem and 0.08em in seven section stylesheets on
+     2026-09-04 (six carried both; hiw-corrections carried the tracking on its
+     own), and are named here so a change to the row label is one edit. */
+  --step-label: 0.72rem;
+
+  --track-display: -0.02em;
+  --track-eyebrow: 0.14em;
+  --track-label: 0.08em;
+  --leading-display: 1.04;
+  --leading-body: 1.6;
+
+  /* --- rhythm -------------------------------------------------------------
+     One scale, used for every margin, gap and pad. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+  --s7: 3rem;
+  --s8: 4.5rem;
+  --s9: 7rem;
+  --s10: 10rem;
+
+  /* Half of the gap where two sections meet. Both halves are applied by one
+     rule pair in index.css, so the seam is a property of the page and not a
+     negotiation between whichever two sections happen to be adjacent. Fluid
+     rather than stepped: 1.75rem below a 1067px viewport, 3rem above it. */
+  --seam: clamp(1.75rem, 1rem + 3vw, 3rem);
+
+  --wrap: 68rem; /* the reading column's outer bound */
+  --measure: 38rem; /* prose line length, ~72 characters at --step-body */
+  --gutter: clamp(1.25rem, 0.6rem + 2.6vw, 3rem);
+
+  --radius: 4px;
+  --radius-lg: 10px;
+
+  /* --- motion -------------------------------------------------------------
+     Two curves and three durations. Nothing bounces, nothing overshoots.
+     Mirrored in src/motion/easings.ts, which is where JS reads them. */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --dur-fast: 0.24s;
+  --dur-mid: 0.5s;
+  --dur-slow: 0.8s;
+  --dur-hero: 1.2s;
+
+  --z-banner: 20;
+  --z-masthead: 30;
+  --z-skip: 40;
+}

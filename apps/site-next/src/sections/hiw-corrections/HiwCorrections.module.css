@@ -1,0 +1,139 @@
+/* ===========================================================================
+   hiw-corrections — "Corrections, before you assume them."
+   ---------------------------------------------------------------------------
+   Scoped to this section. Every colour is var(--token) from tokens.css; there
+   is no raw colour literal in this file, which is what keeps the palette a
+   one-file change.
+
+   THE LOOK. Two definition rows on hairlines, a mono uppercase term in the
+   left column and the body text in the right, then the closing links. It is
+   the reference grammar the mechanism page already uses, at the page's lowest
+   emphasis: this block corrects an assumption, so it sits below the reader's
+   attention rather than competing for it.
+
+   NOTHING HERE CHANGES SIZE ON HOVER. Hover moves luminance and a hairline's
+   colour; a link that grows under the pointer moves the text beside it.
+
+   A NOTE ON WORDING. Stylesheets are scanned as prose by the claims suite, so
+   a class name or a comment is as exposed as a paragraph. Nothing in this file
+   names an outcome, a funnel step, or a party who acts on a depositor's
+   behalf, and two ordinary CSS spellings are avoided by name: the device inset
+   environment variable, and the overflow keyword that can follow
+   `justify-content`. Both match a banned word on its boundaries.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.heading {
+  max-width: 24ch;
+  margin: 0 0 var(--s6);
+}
+
+/* --- the two rows ---------------------------------------------------------
+   A two-column grid at reading widths, stacked below it. The term column has a
+   floor and a ceiling so the two bodies start on the same x whatever the term
+   length, which is what makes a pair of corrections read as a pair. */
+
+.rows {
+  max-width: 62rem;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 13rem) minmax(0, 1fr);
+  gap: var(--s1) var(--s6);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  /* An absolute line box equal to the body's line height, so the term and the
+     first line of its body share a baseline by construction rather than by a
+     padding figure tuned to one platform's fonts. */
+  line-height: 1.75rem;
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+@media (max-width: 44rem) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+  }
+
+  .term {
+    line-height: 1.4;
+  }
+}
+
+/* --- the closing links ---------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.875rem; /* 46px — a comfortable pointer and touch target */
+  padding-inline: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* The filled link keeps its ink on hover: the accent-on-accent it would
+   otherwise land on is unreadable. The hairline carries the state instead. */
+.btnPrimary:hover {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: var(--accent-ink);
+}

@@ -1,0 +1,130 @@
+/* ===========================================================================
+   index-why — "There is no index of what AI agents actually back."
+   ---------------------------------------------------------------------------
+   Owned by this section and scoped to it. No colour literal appears below;
+   every colour is var(--token) from src/tokens.css, which is what keeps a
+   re-theme a one-file change.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS constructions are the trap: the environment
+   variable for a device's inset area, and the overflow keyword that can follow
+   justify-content, both match a banned word on its boundaries. Neither is used
+   here, and neither should be added.
+
+   THE RESTING STATE IS THE FINISHED STATE. Nothing below starts hidden,
+   collapsed or scaled to nothing. The one animated element — the note's
+   hairline — is drawn at rest and is pushed back to its start state after
+   hydration by IndexWhy.tsx, and only for a reader who has not asked for
+   reduced motion. A stylesheet that hid it would blank it for everyone whose
+   JavaScript never arrives.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s9);
+}
+
+/* Reveal animates this element's direct children in sequence. Spacing is
+   therefore carried on the children themselves rather than as a grid gap: the
+   eyebrow sits tight under nothing and close above its heading, and the note
+   needs more air than the paragraphs do. */
+.stack {
+  display: block;
+}
+
+/* Tracked all-caps at this size is the hardest thing on the page to read, so
+   it takes --muted rather than --faint. Same reasoning, same value as the
+   current site. */
+.eyebrow {
+  max-width: 52ch;
+  margin-bottom: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The serif display face, inherited from index.css. Held to a short measure
+   so the sentence breaks where it reads, not where the column ends. */
+.heading {
+  max-width: 18ch;
+  margin-bottom: var(--s5);
+}
+
+.lede {
+  max-width: 62ch;
+  margin-bottom: var(--s6);
+  font-size: clamp(1.0625rem, 1rem + 0.45vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.copy {
+  max-width: 62ch;
+}
+
+.copy + .copy {
+  margin-top: var(--s5);
+}
+
+/* --- the note ------------------------------------------------------------
+   The refusal of the forecast reading, in the note--warn shape the current
+   pages already use: a status-coloured left rule, a tinted label, and
+   body text at FULL --ink. The body is deliberately not greyed — a callout
+   whose text is dimmed reads as a footnote the reader may skip, and this is
+   the paragraph that tells someone not to read the page as a prediction.
+
+   ON THE COLOUR. The build brief calls for "a 1px accent hairline"; it is
+   drawn in --warn rather than --accent, matching the note's own left rule and
+   its label. The design system reserves --accent for data, links and focus and
+   states that it is never used to decorate, and a warning callout marked in
+   the link colour loses the status signal every other note on the site
+   carries. Flagged in the section report so Shell can overrule it in one
+   value if the brief meant --accent literally. */
+.note {
+  max-width: 72ch;
+  margin-top: var(--s6);
+  padding: var(--s1) 0 var(--s1) var(--s5);
+  border-left: 3px solid var(--warn);
+  color: var(--ink);
+}
+
+/* Drawn at rest, at full width. IndexWhy.tsx scales it to nothing after
+   hydration and animates it back as the note enters. transform-origin is what
+   makes that read as a line being drawn rather than a line being inflated. */
+.noteRule {
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin-bottom: var(--s4);
+  background: var(--warn);
+  transform-origin: left center;
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+/* The note sets the measure; the paragraph inside it fills that, rather than
+   inheriting the narrower prose measure from index.css. */
+.noteBody {
+  max-width: none;
+}
+
+@media (max-width: 40rem) {
+  .section {
+    padding-block: var(--s8);
+  }
+
+  .heading {
+    max-width: none;
+  }
+}

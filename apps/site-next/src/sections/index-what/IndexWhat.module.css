@@ -1,0 +1,139 @@
+/* ===========================================================================
+   index-what — five definition rows under "A protocol, not a product…"
+   ---------------------------------------------------------------------------
+   OWNED BY THE index-what SECTION. Every value below is a var() from
+   src/tokens.css; there is no colour literal and no length that is not on the
+   rhythm scale, so a token change reaches this section without anyone editing
+   it.
+
+   THE ROW IS A REFERENCE ROW, NOT A CARD. Label left, body right, one hairline
+   between each pair and one heavier rule to open the list. No panel, no fill,
+   no shadow: the passage is the part of the page a reader will come back to
+   check, and decoration around a definition list reads as a pitch.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS spellings match banned words on their
+   boundaries — the inset-area environment variable, and the overflow keyword
+   that can follow justify-content — and neither is used here. Describe what a
+   value is; never describe an outcome.
+   =========================================================================== */
+
+/* Vertical rhythm is symmetric and half of what the gap between two sections
+   ends up being: this section's own padding meets its neighbour's, so --s8 on
+   each side reads as ~9rem of quiet between blocks rather than 14. */
+/* THE HOST OF A BACKDROP OWES TWO DECLARATIONS. `position: relative` gives the
+   absolutely positioned picture something to sit in; `isolation: isolate` makes
+   this element a stacking context, so the backdrop's `z-index: -1` puts it
+   behind this section's own content and CANNOT reach past it to sit behind the
+   page. See src/assets/backdrop.module.css. */
+.section {
+  position: relative;
+  isolation: isolate;
+  padding-block: var(--s8);
+}
+
+/* --- heading block --------------------------------------------------------
+   Static. It is at its final position in the prerendered markup and stays
+   there; only the rows below it are animated in. */
+
+.head {
+  margin-bottom: var(--s7);
+}
+
+.eyebrow {
+  max-width: none;
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.title {
+  /* Measured in characters rather than rems so the line count holds across the
+     display clamp: at ~28ch this heading sets to two lines on a wide viewport
+     and three on a narrow one, and never to a single overlong line. */
+  max-width: 28ch;
+}
+
+/* --- the five rows --------------------------------------------------------
+   A two-column grid rather than a table: the pairs are definitions, and a dl
+   is what a reader's assistive technology can navigate as pairs. */
+
+.rows {
+  border-top: 1px solid var(--line-strong);
+}
+
+.row {
+  display: grid;
+  /* The label track is capped at 12rem rather than left to grow: the five
+     labels are two or three words, and a wider track buys nothing while taking
+     the width the body reads at. */
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s7);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+
+  /* An explicit line box equal to the body's own (font-size x leading), so the
+     label and the first line of its body sit on one baseline by construction
+     rather than by a padding figure tuned to one platform's fonts. */
+  line-height: calc(var(--step-body) * var(--leading-body));
+
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.detail {
+  max-width: var(--measure);
+  color: var(--ink); /* ratio recorded in src/tokens.css */
+}
+
+/* Hover raises the label's luminance and changes nothing else — no size, no
+   weight, no fill, no movement. --muted to --ink is the secondary ink
+   brightening to the primary one, at the two ratios recorded in
+   src/tokens.css — a change a reader can see without anything shifting under
+   the pointer.
+
+   Behind (hover: hover) because a touch reader has no pointer to leave: on a
+   touch device the :hover state latches after a tap and then sits there
+   highlighting a row nobody is pointing at. The keyboard equivalent is outside
+   the query, so a reader tabbing through gets the same cue. */
+@media (hover: hover) {
+  .row:hover .term {
+    color: var(--ink);
+  }
+}
+
+.row:focus-within .term {
+  color: var(--ink);
+}
+
+/* --- narrow viewports -----------------------------------------------------
+   The label moves above its body. The breakpoint is 52rem rather than the
+   width at which two columns first fit: measured at 768px the pair fits and
+   reads badly, because the label track takes width off a body that is then
+   wrapping every six or seven words. A media query rather than a JS branch: a
+   render tree that differs between the server and the client is a subtree
+   React discards, and that subtree is the copy the claims guards read. */
+
+@media (max-width: 52rem) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+    padding-block: var(--s4);
+  }
+
+  .term {
+    line-height: 1.5;
+  }
+}

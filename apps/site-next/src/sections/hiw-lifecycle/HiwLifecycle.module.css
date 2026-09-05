@@ -1,0 +1,221 @@
+/* ===========================================================================
+   hiw-lifecycle — the seven-step rebalance walkthrough on how-it-works.html
+   ---------------------------------------------------------------------------
+   THE RESTING STATE IS THE FINISHED STATE. Every rule below describes the page
+   as it looks with no JavaScript, or with motion reduced: the rail is drawn
+   from top to bottom, the step numbers sit at their quiet colour, and the
+   progress marker is at zero opacity so it is simply not there. The scrubbed
+   timeline in StepRail.tsx starts from this and adds to it; it never has to
+   undo it. That is also why the prerendered markup the claims guards read is
+   the markup a reader sees.
+
+   NO RAW COLOUR LITERAL. Every colour is var(--token) from src/tokens.css.
+   The only non-colour local custom property is --rail-x, the horizontal
+   position the rail and the step numbers share, declared once so the two
+   cannot drift apart at a breakpoint.
+
+   A NOTE ON THE NAMES IN THIS FILE. The claims suite scans stylesheets as
+   prose, so a class name is as exposed as a paragraph. Nothing here is named
+   with an outcome word, a funnel word or a discretionary-manager word, and the
+   two ordinary CSS constructs that match banned words on their boundaries —
+   the device-inset environment variable, and the overflow keyword of the same
+   name that may follow justify-content — appear nowhere in this file.
+   =========================================================================== */
+
+/* THE HOST OF A BACKDROP OWES TWO DECLARATIONS. `position: relative` gives the
+   absolutely positioned picture something to sit in; `isolation: isolate` makes
+   this element a stacking context, so the backdrop's `z-index: -1` puts it
+   behind this section's own content and CANNOT reach past it to sit behind the
+   page. See src/assets/backdrop.module.css. */
+.section {
+  position: relative;
+  isolation: isolate;
+  padding-block: var(--s8);
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--s3);
+}
+
+.heading {
+  max-width: 20ch;
+}
+
+/* --- the rail and the steps it measures -----------------------------------
+   The rail is an absolutely positioned sibling of the <ol>, never a child of
+   it: an <ol> takes only <li> children, and a parser that hoists an element
+   out of a list takes whatever the element carries with it. --rail-x is the
+   distance from this block's left edge to the centre of the 1px line, and the
+   step numbers are centred on the same figure. */
+
+.lifecycle {
+  --rail-x: 0.875rem;
+
+  position: relative;
+  margin-top: var(--s7);
+  padding-left: var(--s7);
+}
+
+.rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-x);
+  width: 1px;
+}
+
+/* The full extent of the walkthrough, always visible, so the reader can see
+   how much of it is left before they start. */
+.railTrack {
+  position: absolute;
+  inset: 0;
+  background: var(--line-strong);
+}
+
+/* Drawn to full height at rest. The timeline scales it from the top; with
+   motion reduced nothing touches it and the rail simply reads as complete. */
+.railProgress {
+  position: absolute;
+  inset: 0;
+  background: var(--accent-dim);
+  transform: scaleY(1);
+  transform-origin: top center;
+}
+
+/* Absent at rest — opacity, so it holds its place in the layer and costs
+   nothing to raise. Only the timeline ever raises it. */
+.railMarker {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px var(--accent-wash);
+  opacity: 0;
+}
+
+.steps {
+  counter-reset: step;
+  display: grid;
+  gap: var(--s8);
+}
+
+.step {
+  counter-increment: step;
+  position: relative;
+}
+
+/* The number is generated content rather than markup: the <ol> already carries
+   the ordering semantically, so a second copy in the accessibility tree would
+   be read out twice. It sits on the rail with the page ground behind it, which
+   is what breaks the line rather than a mask. */
+.step::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--s7));
+  width: calc(var(--rail-x) * 2);
+  padding-block: var(--s2);
+  background: var(--ground);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--step-small);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  transition: color var(--dur-mid) var(--ease-enter);
+}
+
+/* Added and removed by the scroll timeline as each step becomes the one the
+   reader is in. A colour change only: nothing on this site changes size on
+   hover or on scroll. */
+.isCurrent::before {
+  color: var(--accent);
+}
+
+.stepHeading {
+  color: var(--ink);
+  margin-bottom: var(--s3);
+}
+
+.step p {
+  color: var(--muted);
+}
+
+.step p + p {
+  margin-top: var(--s4);
+}
+
+/* The Vault #1 zero-timelock sentence. Emphasis by ink, not by a status
+   colour: --crit and --warn carry status, and a disclosure the operator chose
+   to record is not an alert the contracts raise. */
+.step strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- the flat note --------------------------------------------------------
+   Flat, in the current site's sense: a raised panel with a neutral rule, no
+   status colour, no icon. It is context, not a warning. */
+
+.note {
+  max-width: 46rem;
+  margin-top: var(--s8);
+  margin-left: var(--s7);
+  padding: var(--s5);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.note p {
+  max-width: none;
+  color: var(--muted);
+}
+
+/* --- narrow ---------------------------------------------------------------
+   The rail stays. It is the only thing telling a reader on a phone how far
+   through a seven-step passage they are, and a gutter is cheaper than that
+   information. Both the indent and --rail-x shrink together, which is the
+   whole reason the position is a custom property. */
+
+@media (max-width: 40rem) {
+  .lifecycle {
+    --rail-x: 0.6875rem;
+
+    padding-left: var(--s6);
+  }
+
+  .step::before {
+    left: calc(-1 * var(--s6));
+  }
+
+  .steps {
+    gap: var(--s7);
+  }
+
+  .note {
+    margin-left: 0;
+    padding: var(--s4);
+  }
+}

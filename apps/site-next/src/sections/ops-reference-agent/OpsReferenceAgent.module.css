@@ -1,0 +1,158 @@
+/* ===========================================================================
+   ops-reference-agent — the closing section of operators.html
+   ---------------------------------------------------------------------------
+   Scoped to src/sections/ops-reference-agent/ and imported only by
+   OpsReferenceAgent.tsx.
+
+   NO RAW COLOUR LITERAL ANYWHERE BELOW. Every colour is var(--token) from
+   src/tokens.css, which is what keeps the palette a one-file change and what a
+   grep over the built stylesheet checks.
+
+   NO NEW TOKEN, EITHER. Spacing, type sizes, radii, curves and durations are
+   read from the scale. A local value here is a value nobody re-measures for
+   contrast.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite scans stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS constructs match banned words on their
+   boundaries — the environment variable for a device's inset area, and the
+   overflow keyword of the same name that can follow the inline-alignment
+   property — and neither appears below. Nothing here is named for an outcome,
+   a funnel step, or a party who acts on a depositor's behalf.
+
+   WHY IT MOVES SO LITTLE. The paragraph tells a reader not to point unreviewed
+   code at real capital, and then three links point onward. A closing block
+   that performs would be the design arguing with that instruction. The only
+   movement is the 0.4s opacity transition OpsReferenceAgent.tsx adds through
+   <Reveal>; the only state change here is a luminance shift on hover and
+   focus. Nothing changes size, ever — a control that grows under the pointer
+   moves the two beside it.
+   =========================================================================== */
+
+/* NO TOP HAIRLINE. The section above this one closes on the last of its
+   definition rows, and every one of those rows carries a bottom rule; a second
+   hairline a few pixels below the first reads as a mistake rather than as
+   punctuation. The space does the separating instead — a long approach, then a
+   short run into the footer, whose own top margin supplies the rest of the
+   gap. */
+.section {
+  padding-block: var(--s8) var(--s6);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The last display line on the page. It takes the h2 step from the global
+   sheet; only the space around it and its measure belong to this section. The
+   ceiling keeps the sentence to two lines at the widest column, which is where
+   it reads as one statement rather than as a paragraph. */
+.heading {
+  max-width: 26ch;
+  margin-top: var(--s3);
+  color: var(--ink);
+}
+
+/* Full ink, not the secondary tone. It is three sentences of instruction, and
+   the last clause is the reason the section exists; setting it back from the
+   heading would present it as a footnote to the heading rather than as the
+   substance of it. The measure comes from the global prose rule. */
+.body {
+  margin-top: var(--s5);
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+/* Three ways out: two further into the disclosures, the third into the
+   repository. They are links, and they look like links that have been given a
+   target area — not like a control that submits, which is the one thing this
+   page has none of. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.875rem; /* 46px — a comfortable pointer and touch target */
+  padding-inline: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Luminance and hue on the accent, never geometry. Focus is left to the global
+   :focus-visible ring, which is never removed and never narrowed. */
+.action:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* One emphasised link out of three, and it is the risk register — the page the
+   paragraph above has just told the reader they inherit. Emphasising the
+   repository instead would point a reader at the unreviewed code in the same
+   breath as the sentence warning them about it. */
+.actionPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition:
+    filter var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Brightening the filled link raises its contrast against the dark ink it
+   carries, so the hover state is more readable than the resting one rather
+   than less. The ink does not change: accent-on-accent is unreadable. */
+.actionPrimary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.12);
+}
+
+/* THE THREE LABELS DO NOT FIT ON ONE LINE IN A NARROW COLUMN, and left to wrap
+   on their own they break two-and-one — a pair followed by an orphan that
+   reads as an afterthought rather than as the third of three. These three are
+   long: measured in the built preview they occupy 179px, 199px and 193px, so a
+   single row needs about 595px of column, which the gutter does not leave until
+   the viewport is past ~650px. The breakpoint below is therefore 44rem rather
+   than the 30rem a shorter set of labels would want — it is derived from that
+   measurement, not from a device width, and it must be re-measured if a label
+   ever changes.
+
+   Below it they become one per line, which sets them as a deliberate list. The
+   column is bounded rather than full-bleed: at the top of the band a row of
+   three full-width bars is heavier than the paragraph above it, and bounding
+   the column keeps them reading as three links. Below the bound the column
+   shrinks with the page, so on the narrowest screen they are full width and
+   the target area is as large as it can be. */
+@media (max-width: 44rem) {
+  .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 22rem);
+    gap: var(--s2);
+  }
+
+  .action {
+    justify-content: center;
+    padding-inline: var(--s4);
+  }
+}

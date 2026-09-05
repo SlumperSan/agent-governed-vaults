@@ -1,0 +1,107 @@
+/* ===========================================================================
+   hiw-pricing — the oracle mechanism section of how-it-works.html
+   ---------------------------------------------------------------------------
+   Scoped to this section. Every colour, size, space and curve is a var() from
+   src/tokens.css; there is no literal below that a re-theme would have to find.
+
+   THE ONE DESIGN DECISION WORTH RECORDING. These five rows describe the three
+   checks the price path applies and then say, in the fourth row, that nothing
+   stands behind them. So the section is built to be read straight through: no
+   card, no chip, no colour that ranks one row above another. The two rows that
+   carry the residual — "What stands behind those three" and "There is no
+   rotation path" — look exactly like the three that carry the mechanism,
+   because giving them a status colour would let a reader skim past the plain
+   ones and giving the mechanism rows a status colour would read as approval.
+   Status tokens (--good / --warn / --crit) are therefore unused here.
+
+   A NOTE ON WORDING. Stylesheets are scanned as prose by the claims suite, so a
+   class name, a custom property or a comment is as exposed as a paragraph is.
+   The names below describe structure only.
+
+   MOTION lives in the component, not here: the rows are revealed by
+   src/motion/Reveal.tsx after hydration. The resting state written below IS the
+   prerendered state, so a reader with reduced motion, or with JavaScript
+   unavailable, gets the finished section rather than an empty one. The only
+   thing this file animates is the hover transition, and the global
+   prefers-reduced-motion rule in src/index.css collapses that.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* The section label. Mono and tracked-out so it reads as a tab rather than as
+   the first line of the prose underneath it. */
+.eyebrow {
+  margin-bottom: var(--s3);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+
+.heading {
+  max-width: 22ch;
+}
+
+.lede {
+  margin-top: var(--s5);
+  color: var(--muted);
+}
+
+/* --- the five rows --------------------------------------------------------
+   Two columns from 52rem up: the term holds a fixed rail on the left so the
+   five terms line up as a list a reader can scan, and the body keeps its own
+   measure rather than stretching to the full column. Below that width the term
+   sits above its body, which is the same reading order without the rail. */
+
+.rows {
+  margin-top: var(--s7);
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: grid;
+  gap: var(--s2);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+  transition: border-color var(--dur-fast) var(--ease-enter);
+}
+
+.term {
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.body {
+  max-width: var(--measure);
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+/* Hover raises luminance and nothing else — no size change, no shift, no
+   shadow. The row is not a control and must not behave like one. */
+@media (hover: hover) {
+  .row:hover {
+    border-bottom-color: var(--line-strong);
+  }
+
+  .row:hover .body {
+    color: var(--ink);
+  }
+}
+
+@media (min-width: 52rem) {
+  .row {
+    grid-template-columns: 14rem 1fr;
+    gap: var(--s5);
+    padding-block: var(--s6);
+  }
+
+  .term {
+    padding-top: 0.15em;
+  }
+}

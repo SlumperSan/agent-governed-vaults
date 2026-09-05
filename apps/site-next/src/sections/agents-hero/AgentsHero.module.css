@@ -1,0 +1,316 @@
+/* ===========================================================================
+   agents-hero — the restrained deep-page hero on agents.html
+   ---------------------------------------------------------------------------
+   Scoped to src/sections/agents-hero/ and imported only by AgentsHero.tsx.
+
+   Four typographic lines, three links and a hairline. No canvas, no pin, no
+   parallax: the build brief gives the one WebGL field and the one scroll
+   timeline to index.html and gives the six deep pages a restrained typographic
+   hero. A deep page that performs also charges five sibling pages for a chunk
+   none of them uses, and this is the page that ought to be the lightest on the
+   site — it is the one a machine reads.
+
+   WHY THE ENTER IS CSS AND NOT <Reveal>. src/motion/Reveal.tsx deliberately
+   leaves alone anything already inside the viewport (`if (isOnScreen(el))
+   return;`), because hiding an above-fold block until the animation chunk lands
+   blanks the top of the page for as long as the network takes. A hero is above
+   the fold by definition, so Reveal is structurally a no-op here. Five
+   keyframed elements cost no JavaScript, cannot blank the largest text on the
+   page while a module downloads, and use the same eight-pixel rise on the same
+   shared curve the primitive would have used. This is the reading
+   sections/hiw-hero and sections/ops-hero arrived at.
+
+   THE RESTING STATE IS STILL THE FINISHED STATE. Every from-state lives INSIDE
+   a keyframe, never as a base rule, so the prerendered markup renders at final
+   position and full opacity. A reader with scripting unavailable, and the
+   guards reading dist/agents.html, both see the finished page. The caret
+   follows the same rule the other way round — see its block below.
+
+   NO RAW COLOUR LITERAL. Every colour is var(--token) from src/tokens.css,
+   which is what keeps the palette a one-file change and what a grep over the
+   built stylesheet checks. No new token either: spacing, type sizes, radii,
+   curves and durations are read from the scale.
+
+   A NOTE ON WORDING IN THIS FILE. Component stylesheets are scanned as prose by
+   the claims suite, so a class name, a custom property or a comment is exposed
+   exactly as a paragraph is. Two ordinary CSS constructs match banned words on
+   their boundaries — the environment variable for a device's inset area, and
+   the overflow keyword of the same name that can follow the inline-alignment
+   property — and neither appears below. Nothing here is named for a result, a
+   funnel step, or a party who acts on a depositor's behalf.
+   =========================================================================== */
+
+/* THE HOST OF A BACKDROP OWES TWO DECLARATIONS. `position: relative` gives the
+   absolutely positioned picture something to sit in; `isolation: isolate` makes
+   this element a stacking context, so the backdrop's `z-index: -1` puts it
+   behind this section's own content and CANNOT reach past it to sit behind the
+   page. See src/assets/backdrop.module.css. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  padding-block: var(--s8) var(--s7);
+  border-bottom: 1px solid var(--line);
+}
+
+/* --- eyebrow and its caret ------------------------------------------------
+   The label above the headline. Mono and tracked so it reads as a category
+   marker rather than as the first line of the sentence beneath it. This is the
+   one eyebrow on the site that carries a caret, and it earns it: the page's
+   whole subject is the machine-readable path, and a terminal cursor is the
+   cheapest possible way to say so without adding a word. */
+.eyebrow {
+  position: relative;
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* THE CARET IS A PSEUDO-ELEMENT WITH NO CHARACTER IN IT, and that is
+   deliberate rather than incidental. `content: ''` plus a background gives a
+   block cursor that never enters the document text: it is absent from
+   dist/agents.html, absent from what get_page_text reads, and therefore absent
+   from every sentence count and every banned-phrase scan. A glyph — an
+   underscore, a block character, a pipe — would have been prose, and this
+   section's copy rule is that nothing is invented.
+
+   Sized in ch against the mono face beside it, so it is a cursor for THIS text
+   at every step of the fluid scale rather than a rectangle that happens to look
+   right at one width. */
+.eyebrow::after {
+  content: '';
+  display: inline-block;
+  width: 0.5ch;
+  height: 0.95em;
+  margin-left: 0.45ch;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  animation: caretBlink 0.6s steps(1, end) 0.6s 5;
+}
+
+/* The page's one <h1>. Sized by --step-display and set in the display serif by
+   the element defaults in index.css; only the measure is constrained here, so
+   the two sentences break onto their own lines at the largest step rather than
+   running the full column width. */
+.title {
+  max-width: 20ch;
+  margin-bottom: var(--s5);
+}
+
+.lede {
+  max-width: var(--measure);
+  margin-bottom: var(--s4);
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  color: var(--muted);
+}
+
+/* The deployment-status qualifier. Set smaller and behind a hairline so it
+   reads as the footnote to the lede that it is, rather than as a fifth claim.
+   The rule is --line-strong because at this size --line disappears. */
+.note {
+  max-width: var(--measure);
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line-strong);
+  font-size: var(--step-small);
+  line-height: 1.55;
+  color: var(--faint);
+}
+
+/* --- the three links ------------------------------------------------------
+   THE BREAKPOINT BELOW IS MEASURED FOR THESE THREE LABELS, and it is not the
+   one the closing section of faq.html uses. That section drops its links onto
+   their own lines below 34rem, a number measured for ITS labels; these are
+   different words at different widths, so inheriting the constant would be a
+   measurement nobody took.
+
+   MEASURED, in the section preview, at a device pixel ratio of 1: the three
+   links render 98 / 117 / 141 CSS pixels wide, so with two 12px gaps the row
+   needs 380. The reading column is the viewport less two gutters, and the
+   gutter is clamp(20px, 9.6px + 2.6vw, 48px), so the column reaches 380px at a
+   viewport of about 421px — 422 is the first integer width where all three fit
+   on one line.
+
+   THE QUERY IS SET A LITTLE ABOVE THAT, at 26.5rem = 424px, deliberately. Page
+   zoom produces fractional viewport widths, so an exact-integer boundary is not
+   a boundary a reader ever sits precisely on; a two-pixel margin on the side
+   that stacks is the robust direction to miss by. The cost is that three
+   viewport widths stack a list that would have fitted as a row. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+/* Three ways out of the page, and they are links that have been given a target
+   area — not controls that submit. There is nothing on this site that submits.
+   The minimum height is a comfortable pointer and touch target at every step of
+   the type scale. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.875rem; /* 46px */
+  padding-inline: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Luminance and hue on the accent, never geometry. A control that grows under
+   the pointer moves the two beside it. Focus is left to the global
+   :focus-visible ring in index.css, which is never removed and never narrowed. */
+.action:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* One emphasised link out of three, and it is llms.txt — the single free call
+   the lede has just said an agent starts from. Emphasising either repository
+   link instead would send a machine to a document written for a person. */
+.actionPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition:
+    filter var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Brightening the filled link raises its contrast against the dark ink it
+   carries, so the hover state is more readable than the resting one rather
+   than less. The ink does not change: accent-on-accent is unreadable. */
+.actionPrimary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.12);
+}
+
+/* Left to wrap on its own below the measured crossover the row breaks
+   two-and-one, and the third link reads as an afterthought rather than as the
+   third of three. One per line, full width, sets them as a deliberate list
+   instead. This block sits AFTER the .action rules on purpose: a media query
+   carries no extra specificity, so the same declaration written earlier in the
+   file would lose to the base rule below it. */
+@media (max-width: 26.5rem) {
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+  }
+
+  .action {
+    justify-content: center;
+    padding-inline: var(--s4);
+  }
+}
+
+/* --- enter ----------------------------------------------------------------
+   Opacity and an eight-pixel rise, 0.6s on the shared enter curve, staggered
+   80ms — the durations and offsets this section's brief entry specifies. 0.6s
+   is not one of the four --dur tokens; it sits inside the 0.24-0.8s band the
+   design system sets for interface motion, and it is written here as a literal
+   rather than added to the token set for one section's use.
+
+   Both animated properties are compositor properties, so nothing here triggers
+   layout. Nothing overshoots: --ease-enter is monotonic. */
+
+@keyframes heroEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+.eyebrow,
+.title,
+.lede,
+.note,
+.actions {
+  animation: heroEnter 0.6s var(--ease-enter) both;
+}
+
+.eyebrow {
+  animation-delay: 0s;
+}
+
+.title {
+  animation-delay: 0.08s;
+}
+
+.lede {
+  animation-delay: 0.16s;
+}
+
+.note {
+  animation-delay: 0.24s;
+}
+
+.actions {
+  animation-delay: 0.32s;
+}
+
+/* --- the caret's blink ----------------------------------------------------
+   THE BASE STATE IS SOLID, AND THE KEYFRAME DIPS OUT OF IT. Written the other
+   way round — a from-state of zero opacity — a reader with motion reduced would
+   be left with an invisible caret, which is the same failure the enter
+   animations above avoid by keeping their from-state inside the keyframe. Here
+   the finished state is "visible", so the keyframe is what turns it off and the
+   element is solid whenever the animation is not running.
+
+   IT IS FINITE, NOT PERPETUAL, and the count is the reason. WCAG 2.2.2 asks for
+   a way to stop blinking content that runs for more than five seconds; five
+   iterations at 0.6s is three seconds, after which the caret rests solid and
+   there is nothing left to stop. A terminal cursor that blinks forever beside a
+   headline is also just an animation competing with the sentence it sits above.
+
+   steps(1, end) rather than a smooth interpolation: a cursor snaps on and off.
+   The 0.6s delay lets the eyebrow finish arriving first, so the caret reads as
+   a cursor landing rather than as part of the text fading in. No fill mode, so
+   the base opacity is what holds before and after. */
+
+@keyframes caretBlink {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* The static branch, authored rather than inherited. index.css collapses every
+   animation-duration for a reader who asked for reduced motion, but it does not
+   touch animation-delay, so the staggered elements would still hold their
+   from-state for up to 320ms and then snap, and the caret would still hold its
+   delay. Removing the animations outright is the resting state, which is what
+   that reader should get: text at final position, caret solid. */
+@media (prefers-reduced-motion: reduce) {
+  .eyebrow,
+  .title,
+  .lede,
+  .note,
+  .actions {
+    animation: none;
+  }
+
+  .eyebrow::after {
+    animation: none;
+  }
+}

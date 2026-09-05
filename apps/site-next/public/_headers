@@ -1,0 +1,170 @@
+# Cloudflare Pages edge headers for the public site.
+#
+# SYNTAX. Pages reads this file from the root of the SERVED directory, which is
+# the build output. It therefore lives in public/, so the build copies it to
+# dist/_headers. (functions/ is the opposite case: Pages reads that from the
+# project root, not from the output.) A rule is a path pattern at column 0
+# followed by indented `Name: value` lines; a comment is a line beginning with
+# `#` at column 0. Cloudflare documents comments only at column 0 and says
+# nothing about indented ones, so every comment here sits at column 0 and the
+# rule block below contains header lines and nothing else. Malformed lines are
+# ignored rather than reported, so a header written at column 0 by accident
+# becomes a path pattern carrying no headers and does nothing, silently.
+#
+# WHAT CHANGED FROM THE PREVIOUS SITE, AND WHY. The old policy was
+# `default-src 'none'` with style-src and img-src, and it was true: those pages
+# carried zero <script> tags. This site is built from React and ships bundled
+# JavaScript, and since 2026-09-05 it carries one background clip, so exactly
+# TWO classes of thing are newly permitted — same-origin scripts and same-origin
+# media — and everything else is held or tightened. The owner's decision of
+# 2026-09-04 is "self-hosted React", and the property that decision must not
+# cost is "this site makes no external request". That property is stated below
+# in a form the browser enforces: every new directive is `'self'` and nothing is
+# `*`, `data:` or `blob:` that was not already.
+#
+# DIRECTIVE BY DIRECTIVE.
+#
+# default-src 'none'
+#   The deny-by-default floor is unchanged. Every fetch directive not named
+#   below inherits it. A directive that is not written here is 'none'.
+#
+# script-src 'self'
+#   THE ONE RELAXATION. The built module scripts, served from this origin. No
+#   'unsafe-inline' and no 'unsafe-eval', which has two consequences the build
+#   is configured around: Vite's modulepreload polyfill is an inline script, so
+#   `build.modulePreload.polyfill` is false in vite.config.ts; and any library
+#   that evaluates a string at runtime cannot be used here, whatever it does.
+#   There is no inline <script> and no `on*=` attribute anywhere in the output.
+#
+# style-src 'self'
+#   The one built stylesheet, same-origin. Deliberately still no
+#   'unsafe-inline': React sets styles through the CSSOM, which is not governed
+#   by this directive, so animation works without it. An inline `style=`
+#   attribute in the markup would be refused — and there are none.
+#
+# img-src 'self' data:
+#   Same-origin images: the favicons and the social-preview card. `data:` is
+#   permitted for images ONLY, because a WebGL hero legitimately builds
+#   textures from data URIs. Note the build sets `assetsInlineLimit: 0`, so
+#   nothing is inlined by the bundler; this is headroom for the canvas, not a
+#   general licence.
+#
+# media-src 'self'
+#   ONE FILE, AND IT IS THE ONLY REASON THIS DIRECTIVE EXISTS:
+#   /media/field-loop-1280.mp4, the background clip behind one section of the
+#   index page. It is muted, autoplaying, looping and playsinline, it carries no
+#   audio track at all, and it is added to the page after hydration and only for
+#   a reader who has not asked for reduced motion — see
+#   src/assets/Backdrop.tsx, which renders the poster in the server markup and
+#   the <video> element nowhere else. NOT `data:` and NOT `blob:`: a media
+#   element that can be fed a blob URL is a media element that can be fed bytes
+#   this origin never served, which is exactly the property the rest of this
+#   file spends its length establishing.
+#
+# font-src 'self'
+#   The three bundled woff2 faces. NOT `data:`: an inlined face would defeat
+#   the check that every font is a file this origin served, which is how the
+#   "no external request" claim is verified from the network panel. There is no
+#   fonts.googleapis.com and no fonts.gstatic.com, and one request to either is
+#   a rejection.
+#
+# connect-src 'self'
+#   There is no API call on this site. This is the floor for any future fetch,
+#   and it keeps a beacon or an analytics call from being added quietly.
+#
+# worker-src 'self'
+#   WebGL itself needs no worker, but a same-origin worker is permitted so the
+#   hero can move heavy work off the main thread without a policy change. No
+#   `blob:`: a blob worker is the standard way to smuggle in evaluated code.
+#
+# base-uri 'none'
+#   Every link is relative. An injected `<base href="https://evil.example/">`
+#   would repoint all of them without a line of JavaScript; this refuses it.
+#
+# form-action 'none'
+#   There is no form on this site and no place to submit one. If HTML injection
+#   ever puts one here — a credential prompt on a page carrying the protocol's
+#   own disclaimers is the obvious abuse — it has nowhere to POST to.
+#
+# frame-ancestors 'none'
+#   Nobody may frame these pages. The material value is not clickjacking but
+#   framing: the footer's legal paragraph is load-bearing legal text — it opens
+#   with the not-an-offer disclaimer and the deployment-status sentence, and
+#   since 2026-09-04 it is the only place every page states them — and a hostile
+#   page that frames this site with the footer cropped out has published the
+#   protocol's own words without its disclosures.
+#
+# object-src 'none'
+#   Written explicitly even though default-src already covers it. Plugin
+#   content is the one bypass that survives a strict script policy in older
+#   engines, and a reader of this file should not have to derive its absence.
+#
+# X-Content-Type-Options: nosniff
+#   This origin serves .html, .css, .js, .woff2, .txt, .xml, .svg, .ico, .png,
+#   .webp and .mp4. Sniffing is the mechanism by which a file served as one type
+#   is interpreted as another; nosniff makes the declared Content-Type binding.
+#   The last two joined the list on 2026-09-05 with the section backdrops.
+#
+# Referrer-Policy: no-referrer
+#   Off-site links go only to the project repository. Without this, following
+#   one tells github.com which page a visitor was reading, and /risks or
+#   /operators is a meaningful signal about a reader that this site has no
+#   reason to disclose. There is no analytics, so the strictest value costs
+#   nothing.
+
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+# The build emits content-hashed filenames under /assets/, so those files are
+# immutable by construction: a change produces a new name rather than new bytes
+# at the same name. The HTML is not hashed and must not be cached that way.
+#
+# THAT SENTENCE IS A RULE ABOUT WHAT MAY LIVE UNDER /assets/, not just a note.
+# Vite hashes what it processes; it copies public/ through verbatim, path and
+# all. So a file placed at public/assets/ serves from /assets/ with a FIXED name
+# and inherits a year of immutable caching it cannot satisfy — replacing it
+# would leave every cache that already holds it serving the old bytes until
+# 2027, with no way to bust it short of renaming. The social-preview card was
+# at public/assets/og-card.png for exactly that reason and was moved to
+# public/og-card.png on 2026-09-04; the og:image and twitter:image URLs on all
+# eight pages point at https://rwally.com/og-card.png. Nothing unhashed belongs
+# under this prefix. Put a verbatim public asset at the root of public/.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# /media/ HAS NO CACHE RULE, AND THAT IS NOT AN OVERSIGHT. The backdrops and the
+# clip are copied verbatim out of public/, so their names are fixed rather than
+# content-hashed — which is precisely the property the paragraph above says
+# disqualifies a file from the /assets/ prefix. A fixed name cannot carry a year
+# of immutable caching it has no way to bust. So these files take the origin's
+# default freshness, which for Cloudflare Pages is a short cache the edge
+# revalidates. The visual set is still being redrawn; a slot that can be
+# replaced is worth more here than a byte saved on the second visit.
+#
+# DELIBERATELY ABSENT. Each of these is a standard header that would do nothing
+# here, and a header that does nothing is a claim of protection the next reader
+# has to disprove:
+#
+#   X-Frame-Options    -- superseded by frame-ancestors in every browser that
+#                         ships CSP Level 2.
+#   Permissions-Policy -- gates browser APIs. Worth revisiting if the hero ever
+#                         wants a device sensor; it wants none today, and a
+#                         policy listing every feature this site does not use
+#                         is a list nobody maintains.
+#   X-XSS-Protection   -- removed from every current browser; its legacy
+#                         scanner introduced vulnerabilities of its own.
+#
+# STRICT-TRANSPORT-SECURITY REMAINS THE OWNER'S DECISION, NOT THIS FILE'S, and
+# is left commented out for the same reason as on the previous site: HSTS is
+# close to irreversible, and the zone may already set it under Cloudflare
+# SSL/TLS -> Edge Certificates, where two sources would disagree. The ramp, if
+# the owner wants it: max-age=86400, then 31536000 on the apex, then
+# includeSubDomains once every intended subdomain is HTTPS-only, then preload
+# as a deliberate decision to accept the removal process.
+#
+#   INDENT IT UNDER A PATH PATTERN WHEN ENABLING. The line below sits at column
+#   0, and an uncommented line at column 0 is a PATH PATTERN, not a header.
+#
+#       Strict-Transport-Security: max-age=86400

@@ -1,0 +1,110 @@
+/* ===========================================================================
+   hiw-invariant — the invariant / parameter split, how-it-works.html
+   ---------------------------------------------------------------------------
+   NO ANIMATION IN THIS FILE, AND THAT IS THE DESIGN. Two dense reference
+   blocks. Anything that fades, rises or staggers here delays reading the one
+   passage a reader most often arrives to check. There is no keyframe, no
+   transform and no opacity ramp below; the one transition is a link colour on
+   hover, which the global reduced-motion rule already flattens.
+
+   COLOUR CONTRACT. No raw colour literal — every value reaches the page as
+   var(--token) from src/tokens.css. Both rows stay on --ground rather than
+   being raised onto --surface, and that choice is load-bearing rather than
+   cosmetic: the measured ratios recorded in tokens.css are against --ground,
+   and a body set in --muted on a raised panel is a different ratio from the
+   one that was measured. One ground, one set of ratios. Labels are --ink
+   and bodies are --muted, at the figures recorded in src/tokens.css; nothing
+   here goes down to --faint,
+   which is the floor and has no headroom left for a surface change.
+
+   THE ONE PIECE OF VISUAL ENCODING. Each row carries a left hairline, and the
+   two differ: --accent-dim on the invariant row, --line-strong on the per-vault
+   row. That is the split rendered as a rule rather than as a badge, a chip or a
+   status colour — the accent is documented for data, links, focus and rules,
+   and a rule is exactly what this is. It adds no word to the page and makes no
+   claim of its own; a reader who cannot see it loses nothing, because both
+   <dt> labels already say which row is which.
+
+   WORDING. This stylesheet is walked by the claims suite exactly as a page is,
+   so a comment here reds the gate as readily as a paragraph would. Everything
+   above describes mechanics and measured values, never an outcome.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+.eyebrow {
+  margin-bottom: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.heading {
+  max-width: 22ch;
+  margin-bottom: var(--s7);
+}
+
+/* --- the two rows ---------------------------------------------------------
+   A definition list, one <div> per pair so the label and its body stay a unit
+   at every width. Two columns from 52rem up, stacked below it — a media query
+   rather than a measured viewport, because the initial render tree may not
+   branch on width without breaking hydration against the prerendered markup. */
+
+.rows {
+  display: grid;
+  gap: var(--s6);
+}
+
+.row {
+  display: grid;
+  gap: var(--s3);
+  padding-left: var(--s5);
+  border-left: 1px solid var(--line);
+}
+
+.rowInvariant {
+  border-left-color: var(--accent-dim);
+}
+
+.rowParameter {
+  border-left-color: var(--line-strong);
+}
+
+.label {
+  font-family: var(--sans);
+  font-size: var(--step-small);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.body {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* `isCapped()` is a function a reader can call on a vault, so it is set apart
+   from the prose around it in weight and in ink rather than in a second hue.
+   The mono family, size and tabular figures come from the global `code` rule. */
+.body code {
+  color: var(--ink);
+}
+
+@media (min-width: 52rem) {
+  .row {
+    grid-template-columns: 12rem minmax(0, 1fr);
+    gap: var(--s6);
+    align-items: start;
+  }
+
+  .label {
+    padding-top: 0.2em; /* optical: sits the small label on the body's first baseline */
+  }
+}

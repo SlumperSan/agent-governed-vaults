@@ -1,0 +1,191 @@
+/* ===========================================================================
+   ops-powers — a two-column opposition figure and one note on operators.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour is a custom property from
+   src/tokens.css, and so is every duration, every spacing step, and the type
+   step and tracking of the row label — so there is no colour literal below to
+   re-measure for contrast, and no token is redefined here.
+
+   THE LENGTHS THAT ARE NOT TOKENS are the structural bounds and grid figures
+   this section chooses for itself, and the sentence above is narrowed to
+   exclude them rather than written past them. Among them: the 58rem figure
+   bound, the 46rem note bound and its matching breakpoint, the 22ch heading
+   cap, the 60rem two-column threshold, the grid track and span values, and the
+   1px and 2px rules. The list is examples, not an inventory. One of them is
+   worth naming twice: a 22ch cap is font-relative, so it does not survive the
+   fallback-to-real swap unchanged — see the note in src/fonts.css.
+
+   THE SHAPE IS AN OPPOSITION. Two columns of equal width — Can on the left,
+   Cannot on the right — divided by a 1px rule, with "Is" spanning both
+   underneath. The columns are equal at 1fr each and are deliberately NOT
+   equalised in height: the right body is around four times the length of the
+   left one, the two are laid out from their top edges, and the dividing rule
+   runs the depth of the taller column, on past where the left one has ended.
+   That disparity is what the figure is for. Below the two-column threshold the
+   three blocks stack in source order and the same rules apply, minus the
+   division.
+
+   NOTHING SHRINKS THE LONG COLUMN. No truncation, no collapse, no clamp, no
+   line held behind an interaction, and no narrower track to make the two sides
+   match. The long body is an itemised list of specific capabilities and every
+   item in it carries weight; OpsPowers.tsx and copy.ts both say why at length.
+
+   COLOUR. The figure uses ink and hairlines only. --crit is used in one place,
+   the note, and there only on its left rule and its label — the note states a
+   condition with no repair path, which is what a status token is for. It
+   decorates nothing, and it is never a text colour for prose.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose, so a
+   comment here is exposed exactly as a paragraph is. These comments describe
+   layout mechanics and nothing else.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the eyebrow the rest of the site uses, at
+   the palette's secondary ink. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 22ch;
+  color: var(--ink);
+}
+
+/* --- the figure -----------------------------------------------------------
+   Bounded at 58rem, the same reading bound the sibling row sections use, so
+   the page's blocks share one right edge. */
+
+.figure {
+  margin: 0;
+  max-width: 58rem;
+}
+
+/* One of the three blocks. Stacked below the two-column threshold; placed into
+   the grid above it. The <dl>'s only children are these three blocks, so the
+   enter stagger walks exactly them. */
+.pole + .pole {
+  margin-block-start: var(--s6);
+}
+
+/* The term, set above its body rather than beside it, with the hairline that
+   separates the two. Mono and tracked at the size the site's other small
+   labels use. */
+.term {
+  margin: 0 0 var(--s4);
+  padding-block-end: var(--s3);
+  border-block-end: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* Hover raises the term's luminance and changes nothing else. No size change,
+   no movement, no rule appearing: a block of prose is not a control and must
+   not offer itself as one. */
+.pole:hover .term {
+  color: var(--ink);
+}
+
+/* --- the two-column figure ------------------------------------------------
+   From 60rem, where two columns of this measure still hold a readable line.
+   `align-items: start` is the whole mechanism: it lets each column end where
+   its own text ends, which is what leaves the left column short and the
+   dividing rule long. */
+
+@media (min-width: 60rem) {
+  .figure {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  /* The stacked spacing is the grid's job here. */
+  .pole + .pole {
+    margin-block-start: 0;
+  }
+
+  /* A channel of 2 x --s6 down the middle, with the rule on the column
+     boundary — so the division sits at the figure's centre by construction
+     rather than by a figure tuned to one column width. */
+  .poleCan {
+    padding-inline-end: var(--s6);
+  }
+
+  .poleCannot {
+    padding-inline-start: var(--s6);
+    border-inline-start: 1px solid var(--line);
+  }
+
+  /* "Is" is not one of the two poles. It spans them, below a rule of its own
+     that closes the figure across its full width. */
+  .poleIs {
+    grid-column: 1 / -1;
+    margin-block-start: var(--s7);
+    padding-block-start: var(--s5);
+    border-block-start: 1px solid var(--line);
+  }
+}
+
+/* --- the note -------------------------------------------------------------
+   One condition, stated once, with a rule down its left edge. Two decisions,
+   both carried from the current site's own note rule rather than invented:
+
+     - the rule and the label are the only things --crit touches. The body
+       stays full --ink at body size. A block whose text is greyed, tinted or
+       set on a coloured field reads as an aside the reader may skip, and this
+       is not an aside.
+     - the surrounding box is --surface, the same container the sibling notes
+       in this build use, so the page reads as one system. The left rule is 2px
+       rather than 1 so it survives a fractional device pixel ratio. */
+
+.note {
+  max-width: 46rem;
+  margin-top: var(--s7);
+  padding: var(--s5);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--crit);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--crit);
+}
+
+.noteBody {
+  margin: 0;
+  max-width: none;
+  color: var(--ink);
+}
+
+/* On the narrowest columns the note's own padding comes in one step. */
+@media (max-width: 46rem) {
+  .note {
+    padding: var(--s4);
+  }
+}

@@ -1,0 +1,241 @@
+/* ===========================================================================
+   index-hero — the page's one <h1>, the copy column, and the three-fact strip
+   ---------------------------------------------------------------------------
+   OWNED BY THE index-hero SECTION. Every value below is a var() from
+   src/tokens.css; there is no colour literal and no length that is not on the
+   rhythm scale.
+
+   WHAT USED TO BE HERE, AND WHY IT IS NOT. Until 2026-09-05 this stylesheet
+   carried a 96-degree gradient scrim over a WebGL particle field, together with
+   about four hundred lines working out the coverage that scrim put behind the
+   copy — arithmetic that had been recomputed three times as the section's
+   height changed under it. The owner replaced the field with the brand's
+   autoplaying loop the same day. The clip is a picture like any other picture
+   on this site, so the floor behind the copy is now the one bound stated once
+   in `src/assets/backdrop.module.css`: a var(--ground) ramp whose weakest stop
+   is 82%, which reads 5.53:1 against the brightest pixel any image can hold.
+   One bound, for every backdrop, holding whether the picture moves or not.
+
+   The removed arithmetic is not lost — it is in this file's history, and the
+   scrim it described is gone from the build, so keeping it here would be four
+   hundred lines describing nothing.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS spellings match banned words on their
+   boundaries — the inset-area environment variable, and the Greek letter used
+   for an opacity channel — and neither is used here.
+   =========================================================================== */
+
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: center;
+  min-height: 42rem;
+  min-height: clamp(38rem, 86svh, 58rem);
+  padding-block: var(--s8) var(--s7);
+
+  /* The backdrop is drawn to the section's edges and cropped with object-fit.
+     Without this a bleeding picture would put a horizontal scrollbar on the
+     document. */
+  overflow: hidden;
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- copy ----------------------------------------------------------------- */
+
+.eyebrow {
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+  animation: riseIn var(--dur-hero) var(--ease-enter) both;
+}
+
+.headline {
+  max-width: 44rem;
+  margin-bottom: var(--s5);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.12s both;
+}
+
+.lede {
+  max-width: var(--measure);
+  margin-bottom: var(--s4);
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.24s both;
+}
+
+/* --muted, not --faint. It is 14px of standing qualifier sitting directly over
+   the field, and --faint is the body-text floor on flat --ground with nothing
+   left over for a luminous point cloud behind it — see the instrumented pair in
+   the header. */
+
+.note {
+  max-width: var(--measure);
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line-strong);
+  font-size: var(--step-small);
+  line-height: 1.55;
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.36s both;
+}
+
+/* --- actions --------------------------------------------------------------
+   Hover changes luminance and never size: nothing in this section grows, and
+   the focus ring from index.css is never overridden. */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.48s both;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-size: var(--step-small);
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+.btn:hover {
+  color: var(--ink);
+  border-color: var(--accent-dim);
+  background: var(--accent-wash);
+}
+
+.btnLead {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btnLead:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 84%, var(--ink));
+  color: var(--accent-ink);
+}
+
+/* --- the backdrop caption --------------------------------------------------
+   Rendered text, describing the picture it sits in front of rather than the
+   headline it does not. It is capped at --measure and set to the right, so its
+   rag lands on the same edge .lede and .note end at.
+
+   IT IS NEVER HIDDEN, at any width. It was hidden below 52rem while the hero
+   drew a WebGL field, because under that breakpoint no canvas was mounted for
+   anybody and there was nothing for the sentence to disclaim. The backdrop
+   replacing that field is present at every width, so the sentence is too. */
+
+.caption {
+  max-width: var(--measure);
+  margin-top: var(--s7);
+  font-size: var(--step-small);
+  line-height: 1.55;
+  text-align: right;
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.6s both;
+}
+
+/* --- the three-fact strip -------------------------------------------------
+   Where a reference layout puts a row of partner logos. Each line links to the
+   thing that proves it. */
+
+.facts {
+  display: grid;
+  gap: var(--s5);
+  margin-top: var(--s5);
+  padding-top: var(--s5);
+  border-top: 1px solid var(--line);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.72s both;
+}
+
+.fact {
+  min-width: 0;
+}
+
+.factLink {
+  display: grid;
+  gap: var(--s2);
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.factLink:hover {
+  color: var(--ink);
+}
+
+.factText {
+  font-size: var(--step-small);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.factSource {
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* --- wide ------------------------------------------------------------------
+   Responsive decisions live in media queries and never in the render tree: a
+   component that branched on viewport width would produce a client tree that
+   differs from the prerendered one. */
+
+@media (min-width: 52rem) {
+  .facts {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--s6);
+  }
+}
+
+/* --- keyframes ------------------------------------------------------------- */
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* --- reduced motion --------------------------------------------------------
+   Read the note at the top of this file before removing any line of this
+   block. The delay is the part the global rule cannot reach. */
+
+@media (prefers-reduced-motion: reduce) {
+  .eyebrow,
+  .headline,
+  .lede,
+  .note,
+  .actions,
+  .caption,
+  .facts {
+    animation: none;
+  }
+}

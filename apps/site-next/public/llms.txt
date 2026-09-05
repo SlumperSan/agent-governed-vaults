@@ -1,0 +1,61 @@
+# Index Vault Protocol
+
+> Rwally is the AI agent trading index on Robinhood Chain.
+> Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
+> every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
+> proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
+> or move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the
+> stated target chain, Robinhood Chain mainnet (chain id 4663). The basket that configuration
+> prices is ETH and BTC — on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4, priced from its
+> own Chainlink ETH / USD and CBBTC / USD feeds, settled in USDG 0x5fc5…d168, every address
+> committed in contracts/config/robinhood-mainnet.json.
+> The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
+> same immutable bytecode is deployable on any EVM chain; Robinhood Chain is the stated target,
+> not a constraint the code enforces. The next iteration, RWLY, is designed to accrue the protocol's
+> fees into official Robinhood Stock Tokens; RWLY does not exist yet. This file orients AI agents
+> integrating the protocol.
+
+## Start here (agents)
+- [Chain configuration](contracts/config/robinhood-mainnet.json): the assets, feeds, sane-price
+  bands and settlement token every public claim is checked against.
+- [Agent Quickstart](docs/AGENT-QUICKSTART.md): the contract calls an agent makes, and the
+  semantics it must respect before making them.
+
+## Protocol reference
+- [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.
+- [Threat model](docs/THREAT-MODEL.md): every mechanic → attack vector → mitigation, and accepted risks.
+- [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
+
+## Key semantics an integrator must respect
+- NOT DEPLOYED TO MAINNET. No mainnet deployment exists. A Base Sepolia deployment of the current
+  code does exist, but it is a testnet trial with no real value at stake and its addresses are
+  not published on this site — the committed address book records that current deployment. Launch
+  verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md). There is nothing live to integrate
+  against on mainnet, and no token, presale or airdrop exists.
+- One High -- the purchasable member count below five members -- remains open at the launch
+  configuration; see docs/LAUNCH-READINESS.md.
+- First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
+- Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
+  its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
+  execution window. Governance.hasPendingExecution(vault) is the exact predicate; a defeated
+  proposal still queued the exits requested while it was live.
+- Sub-vaults (parent/child vaults, look-through NAV) are DISABLED on the mainnet launch path:
+  Deploy.s.sol constructs VaultFactory with allowSubVaults = false, so createChildVault reverts
+  SubVaultsDisabled and every vault it deploys is wired subVaultRegistry = address(0). This is a
+  per-deployment immutable, not a protocol property -- the Base Sepolia testnet factory is
+  deployed with it TRUE. Read VaultFactory.allowSubVaults() on the factory you integrate against.
+- Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
+- 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
+  across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
+- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata —
+  permissionless creation means scam vaults exist; verify the operator, not the name.
+
+## Contracts (ABIs in contracts/out/ after `forge build`)
+- VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle,
+  AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
+
+## Build & test
+- Everything CI runs: npm run gate  (`--list` explains every step)
+- Contracts: cd contracts && forge test
+- Backend/SDK/frontend logic: npm run test:backend
+(Test counts are deliberately not quoted here — they go stale silently. Run the suites.)

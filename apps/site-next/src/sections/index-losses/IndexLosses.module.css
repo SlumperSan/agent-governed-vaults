@@ -1,0 +1,160 @@
+/* ===========================================================================
+   index-losses — "Three ways this loses your money."
+   ---------------------------------------------------------------------------
+   THE DESIGN BRIEF FOR THIS SECTION IS RESTRAINT, and the restraint is the
+   point rather than a shortcut. This is the disclosure a reader must pass
+   before the page offers them anywhere to go. A section that performs here
+   asks to be watched; this one asks to be read. So:
+
+     - no scroll scrub, no pin, no parallax, no stagger;
+     - one 0.4s opacity fade for the whole block, added after hydration by
+       src/motion/Reveal.tsx and skipped entirely for a reader who asked for
+       reduced motion or whose script never arrives;
+     - no status colour anywhere. A --crit hairline down the total-loss
+       paragraph was drafted and cut: --crit is reserved for status, and
+       dressing a disclosure as an alert is the visual form of the reassurance
+       vocabulary the copy already refuses.
+
+   The one typographic move is the rule above the closing paragraph, which
+   separates the three named mechanisms from the sentence that generalises past
+   them. It is the same 1px hairline the rows already use.
+
+   NO RAW COLOUR LITERAL. Every colour below is var(--token) from tokens.css.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite scans stylesheets as prose,
+   so a class name, a custom property or a comment is as exposed as a paragraph
+   is. Two ordinary CSS constructions match banned words on their boundaries —
+   the environment variable for a device's inset area and the overflow keyword
+   of the same name that can follow justify-content — and neither appears here.
+   Describe what a value IS, never what it promises.
+   =========================================================================== */
+
+/* PADDING ONLY, NO RULE. A hairline above this section was the first draft and
+   was cut: whether one falls between two sections depends on what the six
+   sections either side of it do, and those are six other owners. A section
+   that draws its own top border reads as a separator only if every sibling
+   adopts the same convention, and as a stray line or a doubled one otherwise.
+   Inter-section separation is a shared decision, so it belongs to Shell — see
+   the hand-off note in the report. Vertical space composes correctly whatever
+   the neighbours choose. */
+.section {
+  padding-block: var(--s8);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  max-width: 52ch;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted); /* ratio in src/tokens.css. Tracked uppercase at this size */
+  /* needs the higher of the two secondary inks, not --faint. */
+}
+
+/* --- the three named mechanisms ------------------------------------------
+   A definition list, because that is what it is: a label and the mechanism it
+   names. The grid puts the label in its own column at the reading width and
+   stacks it above the body below that, which is the only responsive decision
+   in this file and it is made in CSS rather than in JS for the reason the
+   sections README gives. */
+
+.rows {
+  margin-top: var(--s6);
+  max-width: 94ch;
+  border-top: 1px solid var(--line);
+}
+
+.rows > div {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 14rem) minmax(0, 1fr);
+  gap: var(--s1) var(--s6);
+  padding-block: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.rows dt {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  /* An absolute line box equal to the body's size x its leading, so the label
+     and the first line of its body sit on one baseline by construction rather
+     than by a padding figure tuned to one platform's fonts. */
+  line-height: 1.6rem;
+}
+
+.rows dd {
+  margin: 0;
+  max-width: none; /* the grid column is the measure here, not --measure */
+  color: var(--ink);
+}
+
+@media (max-width: 41rem) {
+  .rows > div {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+
+  .rows dt {
+    line-height: 1.5;
+  }
+}
+
+/* --- the sentence the three rows generalise into --------------------------
+   Full --ink rather than --muted: it is the last thing read before the button
+   and it is not a caption on the rows above it. */
+
+.tight {
+  max-width: 62ch;
+  margin-top: var(--s6);
+  color: var(--ink);
+}
+
+/* --- the one way out of this section --------------------------------------
+   One link, and it goes to the register rather than to anything that asks for
+   something. Hover changes luminance and never size, so the row does not
+   reflow under the pointer. */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding-inline: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
+}
+
+.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink); /* ratio recorded in src/tokens.css */
+}
+
+/* Lighter, not larger. Mixing toward --ink raises the background's luminance,
+   which raises the contrast against --accent-ink rather than lowering it. */
+.btnPrimary:hover,
+.btnPrimary:focus-visible {
+  background: color-mix(in srgb, var(--accent) 84%, var(--ink));
+  border-color: color-mix(in srgb, var(--accent) 84%, var(--ink));
+  color: var(--accent-ink);
+}
