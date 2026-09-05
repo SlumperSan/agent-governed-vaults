@@ -355,12 +355,19 @@ test('the deploy script exempts the same three ids, so the two lists cannot drif
   // exempt sets disagree, which would be false: a guard that fails with the wrong explanation costs
   // more than one that does not fire.
   const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID'];
+  // Extracted BEFORE the loop, because the two assertions below need two different haystacks. The
+  // constants are declared at contract scope, OUTSIDE this function, so the declaration check has to
+  // read the whole file; the wiring check must read only the function body, or a constant named in a
+  // doc comment or in any other function satisfies it while the guard exempts something else. The
+  // match starts at the signature, so the doc comment above the function is outside `guard[0]`.
+  const guard = src.match(/function requiresSequencerUptimeFeed\(uint256 chainId\)[^}]*}/);
+  assert.ok(guard, 'requiresSequencerUptimeFeed is no longer a plain single-expression function');
   const declared = EXEMPT_CONSTANTS.map((name) => {
     const m = src.match(new RegExp(`uint256 constant ${name} = (\\d+);`));
     assert.ok(m, `${name} is no longer declared in DeployChainlinkOracle.s.sol`);
     // Declared is not enough: it must be wired into the guard, not merely sitting beside it.
     assert.ok(
-      new RegExp(`chainId != ${name}`).test(src),
+      new RegExp(`chainId != ${name}`).test(guard[0]),
       `${name} is declared but requiresSequencerUptimeFeed does not exempt it`,
     );
     return Number(m[1]);
@@ -372,8 +379,6 @@ test('the deploy script exempts the same three ids, so the two lists cannot drif
   );
   // The other direction, which naming the constants would otherwise lose: a FOURTH id exempted in
   // the guard and never added here. Count the terms in the guard rather than trusting the list.
-  const guard = src.match(/function requiresSequencerUptimeFeed\(uint256 chainId\)[^}]*}/);
-  assert.ok(guard, 'requiresSequencerUptimeFeed is no longer a plain single-expression function');
   assert.equal(
     [...guard[0].matchAll(/chainId != /g)].length,
     EXEMPT_CONSTANTS.length,
