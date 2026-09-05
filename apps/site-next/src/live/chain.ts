@@ -56,6 +56,27 @@ export const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 export const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168';
 
 /**
+ * RWLY, and it is NOT one of the seven and NOT in the deployment record.
+ *
+ * The two constants above are singletons from `contracts/config/deployments/
+ * robinhood-mainnet.json`. This one is not in that file and cannot be: it is a
+ * token launched through a third-party launchpad on 2026-09-05T21:51:57Z,
+ * thirteen hours after that record was written and certified byte-for-byte
+ * against source commit b1cde122. `git grep -i 2eed8ae7` returns nothing on the
+ * default branch, which is the same fact the page states in words.
+ *
+ * SO IT IS A CHIP AND NOT A LIVE READ, and the distinction is deliberate. The
+ * panel below reads the factory's own answers from the chain because those
+ * answers move. This address is a constant a reader copies into a block
+ * explorer to check the supply, the absence of an owner and the launch
+ * transaction for themselves. Nothing on this page calls it.
+ *
+ * Read back on 2026-09-05 rather than transcribed from a launch log: `name()`
+ * returns RWAlly, `symbol()` returns RWLY, `totalSupply()` returns 1e27.
+ */
+export const RWLY = '0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9';
+
+/**
  * The two Chainlink feed proxies this page reads, both on chain 4663, both
  * eight decimals.
  *

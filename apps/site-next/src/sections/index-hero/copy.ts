@@ -29,10 +29,16 @@
  *                 chain, both as `contracts/config/deployments/
  *                 robinhood-mainnet.json` records them.
  *
- * THE TWO ADDRESS CHIPS ARE NOT COPY AND ARE NOT HERE. They are read from
+ * THE THREE ADDRESS CHIPS ARE NOT COPY AND ARE NOT HERE. They are read from
  * `src/live/chain.ts`, which is the same file the live panel reads them from, so
  * a page cannot show one address in a chip and check a different one against the
  * chain forty lines further down.
+ *
+ * THE THIRD CHIP IS RWLY, ADDED 2026-09-05 WITH THE LAUNCH. The first two are
+ * singletons out of the deployment record; RWLY is not in that record and the
+ * note on the constant in `chain.ts` says why. It is a chip rather than a
+ * sentence because an address is the one thing on this page a reader can check
+ * without believing a word of it.
  */
 
 /** The lede under the headline. Corpus: apps/site/index.html, the h1. */
@@ -57,6 +63,7 @@ export const HOW_ANCHOR = '#how';
 export const CHIP_LABELS = {
   factory: 'Factory',
   usdg: 'USDG',
+  rwly: 'RWLY',
 } as const;
 
 /**

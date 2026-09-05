@@ -25,25 +25,24 @@
  * see the note on BANNER_STATUS in src/shell/pinned.ts about why Footer.tsx
  * cannot be made to carry it there instead), the no-token sentence, the RWLY
  * paragraph, the licence sentence, the jurisdiction/geofencing paragraph, and
- * the total-loss paragraph. FOOTER_TOKEN and FOOTER_LICENCE are imported from
- * pinned.ts rather than retyped, for the same byte-identity reason as always
- * — see the KNOWN CONFLICT note below.
+ * the total-loss paragraph. FOOTER_LICENCE is imported from pinned.ts rather
+ * than retyped, for the byte-identity reason that file's header gives.
  *
- * KNOWN CONFLICT, RECORDED RATHER THAN HIDDEN: Footer.tsx (frozen for this
- * pass) unconditionally renders FOOTER_TOKEN and FOOTER_LICENCE once on every
- * page, including this one. Corpus wants each to appear on disclaimers.html
- * exactly once and nowhere else; with Footer.tsx unchanged, this page now
- * renders each TWICE (once here, once in the footer's Standing facts column)
- * and the other eight pages still render each ONCE (only in the footer),
- * where corpus wants zero. The site.test.mjs guard constants for these counts
- * were set to match this actual, achievable shape rather than the corpus's
- * unreachable one — see that file's comment on FOOTER_SENTENCE_COUNTS.
+ * THE NO-TOKEN SENTENCE IS GONE FROM THIS FILE, 2026-09-05. This hero rendered
+ * FOOTER_TOKEN, which opened `No token.`, and that clause stopped being true
+ * when RWLY was created that evening. The constant is retired in pinned.ts, its
+ * per-page count in `test/site.test.mjs` is zero everywhere, and what stands in
+ * its place is the four-paragraph token block below. One consequence is worth
+ * stating because it constrains the replacement copy rather than merely
+ * recording it: with that sentence gone from the build there is no exemption
+ * left anywhere on this site for the two negated words it carried, so the new
+ * paragraphs say what the launch was not without reaching for either of them.
  */
 import type { JSX } from 'react';
 import { Pinned } from '../../shell/PinnedText';
 import { Reveal } from '../../motion/Reveal';
 import { RISE_HERO_PX, STAGGER } from '../../motion/easings';
-import { BANNER_OFFER, DEPLOYED_LINE, FOOTER_LICENCE, FOOTER_TOKEN } from '../../shell/pinned';
+import { BANNER_OFFER, DEPLOYED_LINE, FOOTER_LICENCE } from '../../shell/pinned';
 import s from './RisksHero.module.css';
 
 const EYEBROW = 'Disclaimers';
@@ -63,8 +62,58 @@ const LEDE =
 /** The deployment paragraph. Opens with DEPLOYED_LINE, verbatim from pinned.ts. */
 const DEPLOYMENT_PARAGRAPH = `${DEPLOYED_LINE} The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="index.html#live">live reads</a> on the homepage fetch the factory's own answers from the chain in your browser.`;
 
+/* ---------------------------------------------------------------------------
+ * THE TOKEN BLOCK, WHICH REPLACED THE NO-TOKEN BLOCK ON 2026-09-05.
+ *
+ * WHAT WENT, AND WHY IT COULD NOT BE KEPT. This hero carried two sentences
+ * here: `No token. No points. No airdrop. No presale.` (FOOTER_TOKEN in
+ * `src/shell/pinned.ts`) and `The next iteration, RWLY, is designed to accrue
+ * the protocol's fees into official Robinhood Stock Tokens. RWLY does not exist
+ * yet, so there is nothing here to buy, claim or hold.` Both were
+ * corpus-verbatim. RWLY was created at 2026-09-05T21:51:57Z, which is the
+ * timestamp of its creation block, so the first sentence opens on a false
+ * clause and the second closes on one. A sentence being pinned is a reason not
+ * to reword it for rhythm; it is not a reason to keep publishing it after the
+ * fact underneath it has changed.
+ *
+ * WHAT REPLACED IT is four paragraphs, and the order is the argument:
+ *
+ *   1. WHAT IT IS. The address first, because it is the only thing here a
+ *      reader can check without believing anything else on this page.
+ *   2. HOW IT TRADES. The curve's fee terms, where the creator fee rights sit,
+ *      and the shape of the instrument, because a bonding curve is not an order
+ *      book and a reader who thinks it is will misprice their own exit.
+ *   3. WHAT THE DEPLOYER TOOK. This paragraph is the reason the block exists in
+ *      this order rather than in the flattering one. The transaction is public
+ *      and the arithmetic is four lines, so the only question was whether this
+ *      site said it first.
+ *   4. WHAT IS STILL ONLY DESIGNED, which is everything the vision rests on.
+ *
+ * EVERY FIGURE IS AN ON-CHAIN READ from `rwly-flip-facts.md` and its companion
+ * `rwly-robinhood-mainnet.json`, which carry the reproduction commands. The
+ * negatives in paragraph 1 rest on call probes with positive controls rather
+ * than on a bytecode scan, and `no upgrade path` rests on the runtime carrying
+ * zero DELEGATECALL and zero CALLCODE opcodes, which is a stronger fact than
+ * any absence of function names.
+ *
+ * NUMBERS THAT MOVE ARE NOT HERE. The curve shifted roughly 45% of supply in
+ * the two minutes after launch, so no holder count, no price, no market
+ * capitalisation and no unsold-supply share appears in this block. The 7.3% in
+ * paragraph 3 is fixed rather than live: those tokens have not moved, which is
+ * itself one of the reads.
+ * ------------------------------------------------------------------------ */
+
+const TOKEN_LIVE_PARAGRAPH =
+  'RWLY is live on Robinhood Chain at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code>: an ERC-20 named RWAlly, with a fixed supply of 1,000,000,000, no owner, no mint function, no pause and no upgrade path. Any holder can destroy their own tokens, and nobody can destroy anyone else&rsquo;s beyond an allowance. It was launched on 2026-09-05 on Pons, a third-party launchpad this project did not write, and it trades on a bonding curve at <code>0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5</code> quoted in native ETH rather than in a stock token.';
+
+const CURVE_PARAGRAPH =
+  'The curve charges 100 basis points plus an 8 basis point creator tax on every trade into it. Pons takes 30% of the base fee; the rest, together with the whole creator tax, is the creator side, and the creator fee rights on this launch belong to a multisig this project controls at <code>0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c</code>. The launch graduates into a permanently locked Uniswap v4 position only if the curve raises 4.2 ETH, and it has not graduated. A bonding curve is a formula and not a market maker of last resort: a large sale moves the price against you and there is no floor under it.';
+
+const CREATOR_POSITION_PARAGRAPH =
+  'In the launch transaction the protocol&rsquo;s own deployer address took 72,978,672 RWLY, about 7.3% of the fixed supply, for 0.1337 ETH at the curve&rsquo;s opening price, and those tokens have not moved since. It paid no snipe tax, because the launchpad exempts the creator automatically while every other address in that block faced a tax decaying from 99% over three seconds. Nothing was minted aside from the one fixed supply and nothing was reserved before trading opened, and both halves of that belong together rather than only the flattering one.';
+
 const RWLY_PARAGRAPH =
-  'The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet, so there is nothing here to buy, claim or hold.';
+  'RWLY is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens, and that mechanism is design intent rather than code: no contract this protocol deployed references RWLY, there is no staking contract, no stRWLY, no epoch and no reward accrual on chain, and none of it can be pointed at the token without a new deployment.';
 
 const JURISDICTION_PARAGRAPH =
   'Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.';
@@ -105,7 +154,9 @@ export default function RisksHero(): JSX.Element {
           <Pinned as="p" className={s.lede} html={LEDE} />
           <Pinned as="p" html={BANNER_OFFER} />
           <Pinned as="p" html={DEPLOYMENT_PARAGRAPH} />
-          <Pinned as="p" className="standing-fact" html={FOOTER_TOKEN} />
+          <Pinned as="p" className="standing-fact" html={TOKEN_LIVE_PARAGRAPH} />
+          <Pinned as="p" html={CURVE_PARAGRAPH} />
+          <Pinned as="p" html={CREATOR_POSITION_PARAGRAPH} />
           <Pinned as="p" html={RWLY_PARAGRAPH} />
           <Pinned as="p" className="standing-fact" html={FOOTER_LICENCE} />
           <Pinned as="p" html={JURISDICTION_PARAGRAPH} />

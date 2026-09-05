@@ -36,7 +36,7 @@
 import type { JSX } from 'react';
 import { Particles } from '../../assets/Particles';
 import { Mark } from '../../brand/Mark';
-import { FACTORY, USDG } from '../../live/chain';
+import { FACTORY, RWLY, USDG } from '../../live/chain';
 import { APP_NAV, CTA, TAGLINE } from '../../shell/pinned';
 import { AddressChip } from './AddressChip';
 import { CHIP_LABELS, FACT, HOW_ANCHOR, LEDE } from './copy';
@@ -102,6 +102,12 @@ export default function IndexHero(): JSX.Element {
         <div className={styles.chips}>
           <AddressChip label={CHIP_LABELS.factory} address={FACTORY} />
           <AddressChip label={CHIP_LABELS.usdg} address={USDG} />
+          {/* THIRD CHIP, 2026-09-05. RWLY exists as of that evening, so the
+              address a reader would otherwise have to take on trust from the
+              closing beat is here, copyable, beside the two the protocol
+              deployed. It is deliberately last: the two singletons are what
+              this site is about, and the token is what it is asked about. */}
+          <AddressChip label={CHIP_LABELS.rwly} address={RWLY} />
         </div>
       </div>
     </section>

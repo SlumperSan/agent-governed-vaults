@@ -268,7 +268,13 @@ const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or finan
 // content (status.html's band, disclaimers.html's hero), not routed through the shared Footer, so
 // it renders exactly where the corpus says it should — see DEPLOYED_LINE_COUNTS below.
 const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
-const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
+// RETIRED AS A PINNED SENTENCE 2026-09-05, KEPT AS A COUNTED ABSENCE. This was FOOTER_TOKEN, the
+// corpus's `No token.` sentence, and it rendered once on disclaimers.html. RWLY was created at
+// 2026-09-05T21:51:57Z, so the sentence opens on a false clause and cannot be repaired by
+// rewording: the whole sentence exists to say a thing does not exist. It is not deleted from this
+// file, because a sentence that was true yesterday is exactly the sentence an editor restores from
+// a corpus page tomorrow: it is pinned at ZERO on every page instead, so a reappearance reds.
+const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
 // RENAMED 2026-09-05 by owner decision: the site is called Rwally, and
 // "Agent-Governed Vaults" survives only as the footer descriptor line.
@@ -407,8 +413,15 @@ const PERMITTED = [
 // still appears on disclaimers.html alone, because the homepage is capped at 150 to 250 visible
 // words by the same brief and does not spend nine of them restating a sentence the page it links to
 // states in full. A THIRD COPY OF EITHER, ANYWHERE, REDS THIS GUARD.
+//
+// CHANGED A THIRD TIME 2026-09-05, WITH THE LAUNCH. The no-token sentence is now pinned at ZERO on
+// every page, disclaimers.html included, because RWLY exists. Read that as a tightening rather
+// than a removal: the sentence used to be REQUIRED on one page and banned on the other, and it is
+// now banned on both, which is a strictly smaller set of builds that pass. The scrub() below
+// therefore strips no copy of it anywhere, so the two negated words it carried have no exemption
+// left and `BANNED_OUTSIDE_FOOTER` bans them outright on the whole site.
 const FOOTER_SENTENCE_COUNTS = {
-  [FOOTER_TOKEN]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
+  [RETIRED_NO_TOKEN]: { default: 0 },
   [FOOTER_LICENSE]: { default: 1, [DISCLAIMERS_PAGE]: 2 },
 };
 
@@ -651,10 +664,22 @@ t('DEPLOYED_LINE appears exactly where pinned, inside main and never in the foot
  * chain state from the public RPC in the reader's own browser, which `src/sections/index-live/`
  * renders with the call that produced each figure printed beside it.
  */
-t('the two standing sentences are stated once each, on the Disclaimers page', () => {
+// RENAMED AND HALVED 2026-09-05: it was `the two standing sentences are stated once each`, and one
+// of the two was the no-token sentence. What replaced that half is not nothing, and it is not a
+// weaker check either: the sentence must now be ABSENT from both pages, and the token block that
+// stands in its place is pinned by the RWLY leg further down, which requires the address, the fixed
+// supply figure and the creator-position disclosure to be on the page by name.
+t('the licence sentence is stated on the Disclaimers page, and the retired no-token sentence on neither', () => {
   const html = raw.get(DISCLAIMERS_PAGE) ?? '';
-  assert.ok(html.includes(FOOTER_TOKEN), `${DISCLAIMERS_PAGE}: missing exact no-token sentence`);
   assert.ok(html.includes(FOOTER_LICENSE), `${DISCLAIMERS_PAGE}: missing exact licence sentence`);
+  for (const p of PAGES) {
+    assert.ok(
+      !(raw.get(p) ?? '').includes(RETIRED_NO_TOKEN),
+      `${p}: carries the retired no-token sentence ${JSON.stringify(RETIRED_NO_TOKEN)}. RWLY was created at ` +
+        '2026-09-05T21:51:57Z and the sentence opens on a false clause. Do not reword it back in from a ' +
+        'corpus page that has not been through its own flip yet',
+    );
+  }
 });
 
 // The "banner precedes the nav on every page" test was deleted on 2026-09-04 rather than adapted.
@@ -1406,164 +1431,314 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
 });
 
 /**
- * RWLY DOES NOT EXIST, AND EVERY MENTION OF IT HAS TO SAY SO.
+ * RWLY EXISTS NOW, AND EVERY MENTION OF IT STILL HAS TO CARRY WHAT MAKES IT CHECKABLE.
  *
- * PORTED 2026-09-05, copy deck v2. THIS GUARD HAD NO COUNTERPART IN THIS FILE UNTIL NOW — the
- * original `apps/site-next` port (f14837b9) carried the RWLY-attribution ban (claims-lede-truth
- * guard 47/48) but never ported `apps/site/test/site.test.mjs`'s own "every mention of RWLY sits
- * beside the fact that it does not exist" check, the window-scoped one this file's sibling has
- * carried since PR #215. That gap predates the Vision page and predates this deck; it is closed
- * here because `vision.html` — a whole page of design intent about RWLY — is exactly the page a
- * missing qualifier check would miss the most.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════
+ * REWRITTEN 2026-09-05, THE EVENING THE TOKEN WAS CREATED. Read this before touching the regex.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════
+ * This leg used to require the literal qualifier `does not exist` within 160 characters of every
+ * `RWLY`. That was the right rule for a page describing a token that did not exist, and it became
+ * the wrong rule at 2026-09-05T21:51:57Z, the timestamp of the block that created RWLY. A guard
+ * that requires a false sentence is worse than no guard: it makes the falsehood load-bearing, so
+ * the next editor who corrects the copy sees a red suite and reverts the correction.
  *
- * The rule and the reasoning are `apps/site/test/site.test.mjs`'s, unchanged: a named future token
- * is the easiest thing on these pages to quote out of context into a claim that something is
- * buyable, so the qualifier ("does not exist") must sit within a 160-character window of every
- * "RWLY" on the eight non-Vision pages — window-scoped rather than sentence-scoped, because the
- * approved index.html lede is two sentences and three of this build's occurrences sit inside
- * `content="…"` meta attributes, which are in no `<p>`, `<dd>` or `<li>` at all.
+ * THE REPLACEMENT IS NOT WEAKER, AND THE SHAPE OF THE ARGUMENT MATTERS MORE THAN THE REGEX. The
+ * old rule protected exactly one property: a named token is the easiest thing on these pages to
+ * quote out of context into a claim that something is buyable, so no mention of it may travel
+ * alone. That property is unchanged. What changed is which neighbour discharges it. Three now do,
+ * and each is a fact a reader can check rather than a reassurance:
  *
- * `vision.html` BREAKS THE WINDOW RULE FOR THE SAME REASON IT DOES ON apps/site: `stRWLY` CONTAINS
- * `RWLY`, so every `stRWLY` is itself a match, and the page carries roughly thirty of them — see
- * vision-body/copy.ts. The device is the same one apps/site uses: every `<section>` opens with the
- * exact chip `Designed, not built. RWLY does not exist yet.` (vision-body's `RWLY_CHIP`), and this
- * test is section-scoped for `vision.html` only rather than window-scoped, checking that every
- * `<section>` mentioning RWLY carries that exact chip and that no mention sits outside every
- * `<section>` (the hero, the header or the footer). The window rule is UNCHANGED for the other
- * eight pages. Do not solve a future page's version of this problem by loosening `RWLY_QUALIFIER`
- * to accept a bare "designed" — that weakens the check on all nine pages to fix one.
+ *   THE ADDRESS. `0x2eed8ae7`, the STEM, not the full forty-two characters, and that distinction
+ *   is the one thing in this file most likely to be got wrong by someone tightening it. The hero
+ *   chip renders `shorten(RWLY)`, which is the first ten characters, an ellipsis and the last
+ *   eight. The full string exists on the homepage only inside the meta description and inside the
+ *   copy button's `aria-label`, and `publishedProse()` strips every tag, so matching on the full
+ *   address would red on correct copy at the chip's own `RWLY` label. Match the stem.
  *
- * THE FLOOR IS 40, WHICH IS THE MEASUREMENT. Summing `RWLY` occurrences across the nine built
- * pages plus `public/llms.txt` (byte-identical to the repository-root copy, and part of the shipped
- * surface exactly as it is for apps/site's own `siteFiles()` walk) gives 40, and
- * `apps/site/test/site.test.mjs` sets its own floor to 40 on the same corpus. The floor is
- * therefore set AT the measurement rather than below it, and the headroom is zero on purpose.
+ *   THE FIXED SUPPLY. `fixed supply`, case-insensitive, so the homepage's sentence-initial `Fixed
+ *   supply 1,000,000,000` counts. The supply being fixed and minted once is the fact that makes
+ *   every other number about this token stable, and it is the one an inflation claim would have
+ *   to contradict.
  *
- * RAISED FROM 36 ON 2026-09-05, after a claims review named it as a guard fitted to the code rather
- * than to the truth. The header used to justify 36 as "re-measured against this build's own count
- * of 40", which does not survive being read: the two counts were identical, so there was nothing to
- * re-measure, and a floor four below the measurement let four RWLY mentions be deleted from this
- * build without reddening anything. A named future token is the easiest thing on these pages to
- * quote out of context, so the qualifier count is exactly what must not be allowed to erode
- * quietly.
+ *   THE DESIGN-INTENT HEDGE. `design intent`, `designed to` or `not built`. This is the old rule's
+ *   real successor: it is what a mention of the STAKING, the epochs or the fee accrual must carry,
+ *   because none of those exists and `grep -ci rwly` still returns 0 in Governance.sol,
+ *   FeeEngine.sol and VaultCore.sol.
  *
- * WHAT TO DO IF THIS REDS. Read the `seen` value out of the failure message. If it is below 40,
- * mentions have been deleted and the deletion is the finding: restore them, or take an explicit
- * decision to retire them and move this number with the same care the corpus takes. Do not lower
- * the floor to make a red suite green.
+ * DO NOT ADD A FOURTH ALTERNATIVE. In particular do not add a bare `designed`, `planned`, `future`
+ * or `intends`: each of those is a word an editor can reach for while writing a sentence that
+ * promises something, and the point of a three-item list is that every item is checkable against
+ * either the chain or the absence of a contract.
+ *
+ * `does not exist` IS DELIBERATELY NOT IN THE LIST, even though it would be harmless as a
+ * qualifier, because it is not harmless as COPY. The absence assertion at the foot of this leg
+ * bans it outright on both pages: it is the exact sentence four other public surfaces still carry
+ * at the time of writing, and the way it comes back is somebody copying a paragraph across from a
+ * page that has not been flipped yet.
+ *
+ * `llms.txt` IS WALKED HERE AND IS NOT FLIPPED YET, AND THAT IS DELIBERATE RATHER THAN AN
+ * OVERSIGHT. The repository-root `llms.txt` is shared byte-for-byte with `apps/site`, whose own
+ * suite still requires `does not exist` beside every RWLY in it, so flipping it from here would
+ * red that suite and take a surface this pass does not own with it. It passes this leg on its
+ * `designed to` clause, which is true and stays true. It still carries one false clause, which is
+ * a separate ticket against `apps/site`, and this note is here so that nobody reads its green
+ * result as a statement that the file is correct.
+ *
+ * THE VISION-PAGE BRANCH IS GONE. `vision.html` was retired before this build shipped, `PAGES` is
+ * two entries, and the section-scoped chip check it carried had nothing left to walk. Its reason
+ * for existing (that `stRWLY` contains `RWLY`, so a page with thirty of them cannot satisfy a
+ * window rule) is preserved instead as the design-intent proximity check below, which walks
+ * `stRWLY`, `epoch` and `buyback` in their own right.
  */
 const RWLY_WINDOW = 160;
-const RWLY_QUALIFIER = /does not exist/i;
-const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
-const VISION_PAGE = 'vision.html';
-/*
- * LOWERED FROM 40 TO 8 ON 2026-09-05, AND THE NUMBER IS NOT THE POINT OF THIS COMMENT.
- *
- * This floor is a non-vacuity check, not a quota: it exists so that deleting every RWLY mention
- * cannot make the qualifier test pass by having nothing to qualify. It was 40 when the site had
- * nine pages and vision.html was a page-long treatment of the design intent. Seven pages are
- * retired and vision.html is one of them, so the site now names RWLY on the homepage's closing beat
- * and in two paragraphs on disclaimers.html, and the honest count is 15.
- *
- * THE COMMIT MESSAGE THIS GUARD'S OWN FAILURE TEXT ASKS FOR IS THE PARAGRAPH ABOVE: the mentions
- * were not deleted to duck the qualifier, they went with the pages that carried them, and every one
- * that remains is still checked. The floor is set below the current count with room, because a
- * floor set AT the count reds on the next legitimate edit and teaches whoever hits it to lower the
- * number rather than to look.
- */
-const RWLY_FLOOR = 8;
+
+/** The stem the page can actually show. See the note above before widening this to the full address. */
+const RWLY_ADDRESS_STEM = '0x2eed8ae7';
+const RWLY_SUPPLY = '1,000,000,000';
+
+/** The hedge, on its own, because the proximity check below needs it without the other two. */
+const DESIGN_INTENT = /design intent|designed to|not built/i;
+
+const RWLY_QUALIFIER = new RegExp(`${RWLY_ADDRESS_STEM}|fixed supply|${DESIGN_INTENT.source}`, 'i');
+
+/** The sentence the flip replaced, banned outright rather than merely no longer required. */
+const RETIRED_RWLY_CLAUSES = ['RWLY does not exist', 'does not exist yet'];
 
 /**
- * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
- * sections (asserted below rather than assumed silently) — true of this page's shell, built from
- * VisionBody.tsx, which nests no `<section>` inside another.
+ * Terms that name a thing which does not exist on chain, and must therefore travel with the hedge.
+ *
+ * `epochs?` is here rather than `hourly epoch` because the homepage says `the epochs` and the
+ * Disclaimers page says `no hourly epoch` and `no epoch`; pinning the longer phrase would check
+ * one of the three.
  */
-const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+const DESIGN_ONLY_TERMS = /stRWLY|epochs?|buyback/gi;
 
-t('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
+/** Purchase vocabulary. None of it belongs in a sentence that names the token. */
+const PURCHASE_VERB = /\b(?:buy|buys|buying|bought|purchase|purchases|purchasing|acquire|acquires|acquiring)\b/i;
+
+/** Purchase INVITATIONS, banned anywhere on a page whether or not RWLY is in the same sentence. */
+const PURCHASE_INVITE = [
+  /\bbuy\s+RWLY\b/i,
+  /\bbuy\s+the\s+token\b/i,
+  /\bhow\s+to\s+buy\b/i,
+  /\bwhere\s+to\s+buy\b/i,
+  /\byou\s+can\s+buy\b/i,
+  /\bbuy\s+now\b/i,
+  /\bavailable\s+to\s+(?:buy|purchase)\b/i,
+];
+
+/**
+ * The windows around every `RWLY` in a piece of prose that carry none of the three qualifiers.
+ *
+ * EXTRACTED AS A PURE FUNCTION SO THE PROBE BELOW CAN PROVE IT BITES. The old version of this leg
+ * inlined the same logic in its loop, which means the only evidence it worked was that it was
+ * green, and a window check is exactly the kind of guard that goes green by measuring the wrong
+ * distance. `claims-lede-truth.test.mjs` carries two probes of this shape for the same reason.
+ */
+const rwlyUnqualified = (prose) => {
+  const text = prose.replace(/\s+/g, ' ');
+  const out = [];
+  for (const m of text.matchAll(/RWLY/g)) {
+    const at = m.index ?? 0;
+    const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+    if (!RWLY_QUALIFIER.test(window)) out.push(window.trim().slice(0, 200));
+  }
+  return out;
+};
+
+/** The same, for the terms that name something with no on-chain existence at all. */
+const designOnlyUnhedged = (prose) => {
+  const text = prose.replace(/\s+/g, ' ');
+  const out = [];
+  for (const m of text.matchAll(DESIGN_ONLY_TERMS)) {
+    const at = m.index ?? 0;
+    const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+    if (!DESIGN_INTENT.test(window)) out.push(`${m[0]}: ${window.trim().slice(0, 200)}`);
+  }
+  return out;
+};
+
+/*
+ * RE-MEASURED 2026-09-05 AFTER THE FLIP, AND THE NUMBER MOVED FOR A REASON WORTH WRITING DOWN.
+ *
+ * It was 8 against a measured 15. The flip changes the count in both directions: the homepage's
+ * closing beat went from two mentions to one and gained a third address chip that carries the name
+ * as a label, the three meta descriptions went from two mentions each to two of a different shape,
+ * and the Disclaimers page's token block replaced one paragraph with four. Measured over this
+ * build the count is printed by the leg itself, so it never has to be taken on trust from this
+ * comment again.
+ *
+ * The floor stays BELOW the measurement with room, on the reasoning the previous author set it
+ * that way: a floor set AT the count reds on the next legitimate edit and teaches whoever hits it
+ * to lower the number rather than to look. It is a non-vacuity check (it exists so that deleting
+ * every mention cannot make the qualifier test pass by having nothing to qualify) and it is not a
+ * quota.
+ */
+const RWLY_FLOOR = 10;
+
+/**
+ * What each page must state about the token IN ITS OWN WORDS, not merely avoid getting wrong.
+ *
+ * THIS HALF IS WHY THE REWRITE IS A TIGHTENING. The old leg's one positive assertion pinned the
+ * sentence `RWLY does not exist yet.` on index.html, a requirement that the page carry a claim
+ * which is now false. Replacing it with nothing would have left the qualifier rule satisfiable by
+ * a page that never names the token at all. So each page is pinned to the facts that make the
+ * mention checkable: the address stem a reader pastes into an explorer, the supply figure, and on
+ * the Disclaimers page the two disclosures that a reader cannot reconstruct without effort and
+ * would resent learning from somewhere else.
+ */
+const RWLY_MUST_STATE = {
+  'index.html': [RWLY_ADDRESS_STEM, RWLY_SUPPLY, 'RWLY is live.'],
+  [DISCLAIMERS_PAGE]: [
+    RWLY_ADDRESS_STEM,
+    RWLY_SUPPLY,
+    // The creator position. It is the sentence the whole flip turns on: the transaction is public
+    // and the arithmetic is four lines, so the only question was whether this site said it first.
+    '7.3% of the fixed supply',
+    // Where the launch happened, and whose launchpad it is.
+    'Pons',
+    'design intent',
+  ],
+};
+
+t('every mention of RWLY carries the address, the fixed supply or the design-intent hedge', () => {
   let seen = 0;
   for (const p of PAGES) {
     const fileText = raw.get(p) ?? '';
-    // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
-    const text = fileText.replace(/\s+/g, ' ');
-    seen += (text.match(/RWLY/g) ?? []).length;
-
-    if (p === VISION_PAGE) {
-      const sections = sectionsOf(fileText);
-      assert.equal(
-        (fileText.match(/<section\b/gi) ?? []).length,
-        sections.length,
-        `${VISION_PAGE}: a <section> did not close before the next opened, or one is nested inside ` +
-          'another -- the section-scoped RWLY check assumes flat, non-overlapping sections',
-      );
-      for (const section of sections) {
-        if (!/RWLY/.test(section)) continue;
-        assert.ok(
-          section.includes(RWLY_CHIP),
-          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)}, ` +
-            JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
-        );
-      }
-      const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
-      assert.ok(
-        !/RWLY/.test(outsideSections),
-        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer), ` +
-          'the section-scoped chip check cannot see a mention that sits in no section',
-      );
-      continue;
-    }
+    seen += (fileText.replace(/\s+/g, ' ').match(/RWLY/g) ?? []).length;
 
     // TAGS STRIPPED FIRST, via the same publishedProse() every other window-style check in this
-    // file already uses (see the security-review and Mode-F checks below) — NOT apps/site's raw
-    // fileText.replace(/\s+/g, ' '). This build's markup carries a hashed CSS-module class on most
-    // elements (e.g. `class="_term_1xs2u_43"`), which apps/site's hand-written HTML never does; a
-    // 160-character window measured over raw bytes therefore counts characters of markup apps/site
-    // never had to budget for, and a two-sentence pair the reviewed source keeps well inside the
-    // window (verified: it passes on apps/site/disclaimers.html unmodified) can be pushed outside
-    // it here by attribute soup alone — measured, not hypothetical, on the two new dl rows this
-    // deck added to risks-scope-additions. Stripping tags measures the same thing apps/site
-    // measures: prose distance, not DOM distance.
-    const prose = publishedProse(fileText).replace(/\s+/g, ' ');
-    for (const m of prose.matchAll(/RWLY/g)) {
-      const at = m.index ?? 0;
-      const window = prose.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+    // file already uses. This build's markup carries a hashed CSS-module class on most elements
+    // (e.g. `class="_term_1xs2u_43"`), so a 160-character window measured over raw bytes counts
+    // characters of markup rather than of prose, and a pair the reviewed source keeps well inside
+    // the window can be pushed outside it by attribute soup alone. Stripping tags measures prose
+    // distance, which is what a reader experiences.
+    const prose = publishedProse(fileText);
+    assert.deepEqual(
+      rwlyUnqualified(prose),
+      [],
+      `${p}: names RWLY without the address stem ${RWLY_ADDRESS_STEM}, the words "fixed supply", or a ` +
+        `design-intent hedge within ${RWLY_WINDOW} characters. RWLY exists as of 2026-09-05T21:51:57Z, it is ` +
+        'a launchpad token no deployed contract of this protocol references, and everything designed around ' +
+        'it is still only designed. A mention that travels alone is a mention that gets quoted alone',
+    );
+
+    assert.deepEqual(
+      designOnlyUnhedged(prose),
+      [],
+      `${p}: names the staking token, an epoch or a buyback without a design-intent hedge within ` +
+        `${RWLY_WINDOW} characters. None of the three exists on chain: the curve's own buyback flag is ` +
+        'false on this launch, there is no epoch contract and no keeper, and there is no staking contract',
+    );
+
+    for (const clause of RETIRED_RWLY_CLAUSES) {
       assert.ok(
-        RWLY_QUALIFIER.test(window),
-        `${p}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
-          'NEXT ITERATION and is design intent only, there is no such token, no presale and nothing ' +
-          `to hold., ${JSON.stringify(window.trim().slice(0, 200))}`,
+        !fileText.includes(clause),
+        `${p}: carries the retired clause ${JSON.stringify(clause)}. It was true until 2026-09-05T21:51:57Z ` +
+          'and is not now. Four other public surfaces still carry it and are a separate ticket, so the way ' +
+          'this comes back is a paragraph copied across from one of them',
+      );
+    }
+
+    for (const re of PURCHASE_INVITE) {
+      const hit = fileText.match(re);
+      assert.equal(hit, null, `${p}: ${JSON.stringify(hit?.[0])} invites a purchase. This site has no venue link and no funnel`);
+    }
+
+    for (const s of sentencesOf(publishedProse(fileText))) {
+      if (!/\bRWLY\b/.test(s)) continue;
+      const hit = s.match(PURCHASE_VERB);
+      assert.equal(
+        hit,
+        null,
+        `${p}: a sentence naming RWLY also says ${JSON.stringify(hit?.[0])}. Describe what the launch ` +
+          `transaction did in the past tense against a named address, never what a reader might do, ` +
+          JSON.stringify(s.trim().slice(0, 200)),
+      );
+    }
+  }
+
+  for (const [p, musts] of Object.entries(RWLY_MUST_STATE)) {
+    const fileText = raw.get(p) ?? '';
+    for (const must of musts) {
+      assert.ok(
+        fileText.includes(must),
+        `${p}: must state ${JSON.stringify(must)}. A qualifier rule alone is satisfied by a page that ` +
+          'never names the token, which is how a disclosure disappears without any guard going red',
       );
     }
   }
 
   // public/llms.txt is byte-identical to the repository-root copy (asserted elsewhere in this
-  // file) and is part of the shipped surface exactly as apps/site's own siteFiles() walk treats its
-  // llms.txt, so it is walked here too rather than left for the byte-identity check alone to cover.
+  // file) and is part of the shipped surface, so it is walked here too. It is NOT flipped yet and
+  // the header note above says why: the root copy is shared with `apps/site`, whose suite still
+  // requires the retired clause in it. It passes on its `designed to` clause. Its remaining false
+  // sentence is a separate ticket against that surface, and the retired-clause assertion above is
+  // deliberately NOT applied to it for that reason.
   const llmsPath = path.join(APP, 'public', 'llms.txt');
   if (existsSync(llmsPath)) {
-    const text = readFileSync(llmsPath, 'utf8').replace(/\s+/g, ' ');
-    seen += (text.match(/RWLY/g) ?? []).length;
-    for (const m of text.matchAll(/RWLY/g)) {
-      const at = m.index ?? 0;
-      const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
-      assert.ok(
-        RWLY_QUALIFIER.test(window),
-        `public/llms.txt: names RWLY without "does not exist" within ${RWLY_WINDOW} characters, ` +
-          `${JSON.stringify(window.trim().slice(0, 200))}`,
-      );
-    }
+    const text = readFileSync(llmsPath, 'utf8');
+    seen += (text.replace(/\s+/g, ' ').match(/RWLY/g) ?? []).length;
+    assert.deepEqual(
+      rwlyUnqualified(text),
+      [],
+      `public/llms.txt: names RWLY without the address stem, "fixed supply", or a design-intent hedge ` +
+        `within ${RWLY_WINDOW} characters`,
+    );
   }
 
+  // PRINTED, NOT JUST ASSERTED, for the same reason the word budget is: a count that only appears
+  // on failure is a count nobody watches move.
+  console.log(`\n  RWLY named on ${seen} surfaces across ${PAGES.length} pages plus llms.txt (floor ${RWLY_FLOOR})\n`);
   assert.ok(
     seen >= RWLY_FLOOR,
-    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen}, if the mentions were deleted ` +
+    `expected RWLY to be named at least ${RWLY_FLOOR} times, found ${seen}. If the mentions were deleted ` +
       'rather than qualified, say so in the commit rather than letting this guard pass by absence',
   );
-  // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.
-  assert.ok(
-    (raw.get('index.html') ?? '').includes('RWLY does not exist yet.'),
-    'index.html: the lede must end on the exact sentence "RWLY does not exist yet."',
+});
+
+/**
+ * PROBE: the window rule bites, and it spares the three forms the flip approved.
+ *
+ * WITHOUT THIS THE LEG ABOVE IS UNFALSIFIED. A window check has two failure modes that both report
+ * green: measuring the wrong distance, and a qualifier alternation so wide that everything matches
+ * it. The `bad` cases below are the shapes an editor actually writes, including the one this file
+ * warns about twice: matching on the FULL address when the page can only render the stem.
+ */
+test('probe: the RWLY window rule catches a bare mention and spares the approved forms', () => {
+  const PAD = 'x'.repeat(RWLY_WINDOW + 40);
+  for (const bad of [
+    'RWLY is live.',
+    `RWLY trades today. ${PAD} It has a fixed supply.`,
+    `The staking is design intent. ${PAD} RWLY is a token.`,
+    'Hold RWLY.',
+  ]) {
+    assert.notDeepEqual(rwlyUnqualified(bad), [], `the window rule no longer catches: ${bad}`);
+  }
+  for (const ok of [
+    // The homepage's own beat, as prose.
+    'RWLY is live. Launched 2026-09-05 on Pons, a third-party launchpad, it trades on a bonding curve quoted in ETH. Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path.',
+    // The chip, which is a label and an address and nothing else.
+    'RWLY 0x2eed8ae7…b6B7FDF9 Copy',
+    // The hedge, which is what a mention of the unbuilt half has to carry.
+    'RWLY is designed to accrue the protocol’s fees into official Robinhood Stock Tokens, and that mechanism is design intent rather than code.',
+  ]) {
+    assert.deepEqual(rwlyUnqualified(ok), [], `the window rule reds approved copy: ${ok}`);
+  }
+
+  // The stem, not the full address. This is the assertion that documents the trap: the full string
+  // never survives publishedProse() on the homepage, so a guard written against it reds on correct
+  // copy at the chip's own label.
+  assert.deepEqual(rwlyUnqualified('RWLY 0x2eed8ae7…b6B7FDF9 Copy'), []);
+  assert.notDeepEqual(
+    rwlyUnqualified(`RWLY is a token. ${'y'.repeat(RWLY_WINDOW + 40)} 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9`),
+    [],
+    'an address far outside the window must not qualify a mention',
   );
+
+  // And the design-intent proximity check, which is the vision-page branch's successor.
+  assert.notDeepEqual(designOnlyUnhedged(`The buyback runs hourly. ${PAD} design intent`), []);
+  assert.deepEqual(designOnlyUnhedged('There is no buyback; it is design intent.'), []);
 });
 
 /**
@@ -2087,6 +2262,45 @@ const OWNER_AND_LIVE_STRINGS = [
   'The read failed.',
 ];
 
+/**
+ * SOURCE 4: the RWLY launch record, `rwly-flip-facts.md` and its companion
+ * `rwly-robinhood-mainnet.json`, measured against chain 4663 on 2026-09-05.
+ *
+ * WHY THIS SOURCE HAD TO EXIST AT ALL. The corpus is `apps/site`, and every sentence in it was
+ * written before RWLY was created at 2026-09-05T21:51:57Z. So the corpus cannot contain a true
+ * sentence about the token, and the homepage's closing beat, which used to quote the corpus word
+ * for word, has nothing left to quote. Source 3 was the wrong home for these: its entries are the
+ * owner's own wording and the live panel's labels, and its note is explicit that it is not a place
+ * to park a sentence that was inconvenient to source. These are neither. They are readings.
+ *
+ * PINNED HERE RATHER THAN READ FROM A PATH, for exactly the reason PROMO_SCRIPT is. The record
+ * lives in the session scratchpad the launch was verified in, not in this repository, and a source
+ * a test cannot open is not a source. Committing it would drag a 31 KB JSON readback into the
+ * `claims-lede-truth` walk for no gain to this commit. What the record is FOR is the review: every
+ * clause below is tagged in it with the `cast` call that establishes it, so a reviewer checks the
+ * sentence against the chain rather than against this file.
+ *
+ * WHAT EACH ONE RESTS ON, in one line each. The long form is in `index-next/copy.ts`.
+ *
+ *   the launch date        the creation block's own timestamp, equal to the curve's `launchedAt()`
+ *   Pons, third-party      the curve's `factory()` is the Pons v2 factory; nobody here wrote it
+ *   quoted in ETH          `pairToken()` is the zero address, `isNativeQuote()` is true
+ *   fixed supply           `totalSupply()` is 1e27, minted once, `mint(...)` reverts
+ *   no owner               `owner()`, `admin()`, `transferOwnership(...)` revert against a control
+ *   no upgrade path        zero DELEGATECALL and zero CALLCODE in the 3,248-byte runtime
+ *   no contract references `git grep -i 2eed8ae7` returns nothing on the default branch
+ *
+ * ADDING A SENTENCE HERE IS THE SAME DECISION AS ADDING ONE TO SOURCE 3, and the same rule
+ * applies: it belongs here only if it is a READING, and only if the reading is in the record with
+ * its reproduction command. A sentence about what the token will do is not a reading.
+ */
+const RWLY_LAUNCH_RECORD = [
+  'RWLY is live.',
+  'Launched 2026-09-05 on Pons, a third-party launchpad, it trades on a bonding curve quoted in ETH.',
+  'Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path.',
+  'No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent.',
+];
+
 /** Apostrophes, quotes and dashes normalised, so a typographic edit is not a provenance failure. */
 const normalise = (s) =>
   s
@@ -2148,6 +2362,7 @@ t('every sentence on the homepage comes from a source that was already checked',
     normalise(corpusText()),
     normalise(PROMO_SCRIPT.join('  ')),
     normalise(OWNER_AND_LIVE_STRINGS.join('  ')),
+    normalise(RWLY_LAUNCH_RECORD.join('  ')),
   ].join('  ');
 
   const sentences = homepageSentences();
@@ -2166,11 +2381,13 @@ t('every sentence on the homepage comes from a source that was already checked',
   assert.deepEqual(
     unsourced,
     [],
-    'Every sentence on the homepage must appear verbatim in one of three sources:\n' +
+    'Every sentence on the homepage must appear verbatim in one of four sources:\n' +
       '  1. the corpus, apps/site/*.html, which is guarded by apps/site/test/site.test.mjs\n' +
       '  2. PROMO_SCRIPT, the promo lines the owner approved on 2026-09-05\n' +
       '  3. OWNER_AND_LIVE_STRINGS, the tagline, two marquee phrases and the live panel labels\n' +
-      'Do not add a sentence to source 3 to make this pass. Source 3 is for strings that CANNOT\n' +
+      '  4. RWLY_LAUNCH_RECORD, the on-chain readings of the 2026-09-05 launch, each tagged with\n' +
+      '     its own cast call in rwly-flip-facts.md and rwly-robinhood-mainnet.json\n' +
+      'Do not add a sentence to source 3 or 4 to make this pass. Source 3 is for strings that CANNOT\n' +
       'exist in the corpus, and every entry in it carries the reason it cannot. If a sentence says\n' +
       'something the corpus already says, quote the corpus; if it says something new about the\n' +
       'protocol, it has not been read against the contracts yet and it does not belong on the page.\n' +

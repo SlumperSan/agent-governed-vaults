@@ -40,6 +40,18 @@
  * `apps/site/disclaimers.html` (grep any `<dt>` below), the reviewed source of
  * truth.
  *
+ * THREE ROWS NOW DIVERGE FROM THAT SOURCE, DELIBERATELY, AND THIS IS THE
+ * RECORD. `vision-is-design-intent`, `token-economics-not-live` and
+ * `treasury-buyback-not-live` were carried across saying that RWLY does not
+ * exist and that no fee mechanism does either. RWLY was created at
+ * 2026-09-05T21:51:57Z and the launchpad's curve charges a creator tax that
+ * reaches a multisig this project controls, so all three said something false
+ * the moment that block was mined. They are corrected here rather than left
+ * matching a corpus that has not been through its own flip yet; each carries a
+ * note at the row saying what changed. When `apps/site` is flipped, the
+ * byte-for-byte rule reasserts itself and these three should be re-checked
+ * against it rather than assumed still equal.
+ *
  * WHY EVERY BODY GOES THROUGH <Pinned>. `renderToString` escapes text children,
  * so `the factory's oracle allowlist` would reach the built page as
  * `the factory&#x27;s oracle allowlist`, and several bodies additionally carry
@@ -234,27 +246,38 @@ const ROWS: ReadonlyArray<{ key: string; term: string; body: string }> = [
   /* --- copy deck v2, 2026-09-05: four rows about the Vision page ---------- */
   {
     key: 'vision-is-design-intent',
-    term: 'Everything on the Vision page is design intent',
-    // "RWLY does not exist" leads this sentence rather than trailing it — that ordering is the
-    // corpus's own, not a stylistic choice this port made: it is what keeps this row's "RWLY"
-    // inside the 160-character qualifier window the site-next claims suite checks (apps/site's
-    // hand-written markup carries no CSS-module class attributes, so the same two sentences sit
-    // measurably closer together there; matching its exact word order is what carries that margin
-    // across).
+    term: 'Everything around the token is design intent',
+    // REWRITTEN 2026-09-05, TWICE OVER. The term used to read "Everything on the Vision page is
+    // design intent" and vision.html was retired before this build shipped, so it named a page
+    // no reader can reach. The body used to open "RWLY does not exist", which the launch that
+    // evening made false.
+    //
+    // THE WORD ORDER IS STILL LOAD-BEARING, for the same reason it was before: this build's
+    // markup carries a hashed CSS-module class on most elements, so a qualifier that sits
+    // comfortably close in apps/site's hand-written HTML can fall outside the site-next claims
+    // suite's window here. The qualifier is no longer "does not exist" but the address, the
+    // fixed supply and the phrase "design intent", and all three are pulled to the FRONT of the
+    // body so that both this row's "RWLY" and its "stRWLY" carry one inside the window.
     body:
-      'RWLY does not exist, and neither is the rest of the Vision page built: no stRWLY, no staking, no hourly epoch, no keeper, no treasury, no buyback and no stock index. What is on chain is seven contracts and no vault. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.',
+      'RWLY exists, at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code> and with a fixed supply of 1,000,000,000, and nothing else in that design does: no stRWLY, no staking, no hourly epoch, no keeper, no treasury contract, no buyback and no stock index, all of it design intent rather than code. What is on chain is seven contracts, no vault, and a token none of those seven references. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.',
   },
   {
     key: 'token-economics-not-live',
     term: 'The token economics are not live',
     body:
-      'RWLY does not exist. No token is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to any such token, so nothing on chain enforces any of it.',
+      'RWLY exists and its economics are design intent: nothing is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to it, so nothing on chain enforces any of it.',
   },
   {
     key: 'treasury-buyback-not-live',
     term: 'The treasury and the buyback are not live',
+    // CORRECTED 2026-09-05. The old body said "There is no treasury, no protocol-owned liquidity
+    // and no buyback" and then described one live fee stream. There are two, and the second one
+    // is new: the launchpad's own curve charges a creator tax that accrues to a multisig this
+    // project controls. A blanket "no fee mechanism exists" is now falsifiable in one
+    // transaction, so the row separates the fee stream that exists from the treasury contract
+    // that does not, rather than collapsing them into a single reassuring negative.
     body:
-      'There is no treasury, no protocol-owned liquidity and no buyback. The 10% performance fee that does exist accrues to an operator address and is claimed by that address; a fee reaching a treasury or a token holder is designed, not built.',
+      'There is no treasury contract, no protocol-owned liquidity and no buyback; each of those is design intent. Two live fee streams are not that. The 10% performance fee accrues to an operator address and is claimed by that address, and the launchpad curve&rsquo;s 8 basis point creator tax accrues to a multisig this project controls. Neither of them reaches a token holder, and a fee reaching a treasury contract or a holder is designed, not built.',
   },
   {
     key: 'stock-index-needs-different-oracle',

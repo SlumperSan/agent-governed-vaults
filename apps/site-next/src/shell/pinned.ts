@@ -138,7 +138,27 @@ export const FOOTER_DISCLAIMERS_HEADING = 'Disclaimers';
 export const FOOTER_DISCLAIMERS_BODY =
   'The risks, the legal position, and what has not been checked are on one page.';
 
-export const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
+/**
+ * FOOTER_TOKEN WAS DELETED HERE ON 2026-09-05, AND THE DELETION IS THE RECORD.
+ *
+ * It held `No token.` followed by three more negatives, it rendered once on
+ * disclaimers.html through `risks-hero`, and it was corpus-verbatim. RWLY was
+ * created at 2026-09-05T21:51:57Z, the timestamp of its creation block, so the
+ * sentence opens on a clause that is false and cannot be repaired by
+ * rewording: the whole sentence exists to say a thing does not exist.
+ *
+ * WHAT REPLACED IT is not another pinned sentence. `risks-hero` carries a
+ * four-paragraph token block instead, page-local rather than pinned, because
+ * nothing else on the site quotes it and a constant nobody shares is a
+ * constant that only invites a second copy. The homepage says the same thing
+ * in 49 words in `sections/index-next/copy.ts`.
+ *
+ * TWO CONSEQUENCES FOR WHOEVER EDITS THE COPY NEXT. The per-page count in
+ * `test/site.test.mjs` is zero on every page, so a reappearance reds rather
+ * than passes silently. And the two negated words that sentence carried had
+ * their only exemption on this site inside it, so with it gone they are banned
+ * outright everywhere and a replacement sentence may not reach for either.
+ */
 
 /** The em-dash is pinned. Do not normalise it to a hyphen. */
 export const FOOTER_LICENCE = 'Source-available under BUSL-1.1, not open source.';

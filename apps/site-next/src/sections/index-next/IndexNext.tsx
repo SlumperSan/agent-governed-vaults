@@ -9,10 +9,12 @@
  * was used as a character, which devalues the two places it is doing work.
  *
  * SO THIS SECTION IS TYPE ON GROUND, AND THAT SUITS WHAT IT SAYS. It is the one
- * quiet beat on a deliberately loud page: the heading says there is nothing to
- * claim, the paragraph says the next iteration does not exist, and the only
- * thing to do here is read the Disclaimers. Decorating that would be arguing
- * with it.
+ * quiet beat on a deliberately loud page: the heading says the token is live,
+ * the paragraph says what it is and what around it is still only drawn, and the
+ * only thing to do here is read the Disclaimers. Decorating that would be
+ * arguing with it, and decorating a launch announcement would be worse than
+ * that. There is no venue link, no price and no button on this beat, which is
+ * the whole reason it can carry the sentence it now carries.
  *
  * THE REVEAL SETS ITS PRE-STATE FROM JAVASCRIPT, NEVER FROM SHIPPED CSS. See
  * `src/motion/Reveal.tsx`: it writes `opacity: 0` through the CSSOM in a layout
@@ -26,7 +28,7 @@
 import type { JSX } from 'react';
 import { Reveal } from '../../motion/Reveal';
 import { DISCLAIMERS_PAGE_LABEL } from '../../shell/pinned';
-import { DESIGN_INTENT, HEADING } from './copy';
+import { BODY, HEADING } from './copy';
 import s from './IndexNext.module.css';
 
 export default function IndexNext(): JSX.Element {
@@ -38,7 +40,7 @@ export default function IndexNext(): JSX.Element {
           <h2 className={s.heading} id="next-heading">
             {HEADING}
           </h2>
-          <p className={s.body}>{DESIGN_INTENT}</p>
+          <p className={s.body}>{BODY}</p>
           <p className={s.action}>
             <a className={s.gate} href="disclaimers.html">
               {DISCLAIMERS_PAGE_LABEL}
