@@ -32,6 +32,7 @@
       <ul>
         <li><a href="index.html">Overview</a></li>
         <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html">Vision</a></li>
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
@@ -143,9 +144,11 @@
       <p class="eyebrow">The first vault</p>
       <h2>No vault has been created yet.</h2>
       <p class="tight">The singletons are on chain and the factory is open, and <code>factory.vaultCount()</code> returns 0. Until a vault exists there is nothing to deposit into and no address to check, which is why the row above says so rather than leaving a gap.</p>
-      <p class="tight">The parameters the first vault is planned to be created with are the reference configuration in <code>contracts/config/robinhood-mainnet.json</code>: settlement in USDG, the two assets in the oracle table above, a planned capacity cap of 50,000 USDG, a minimum deposit of 100 USDG, and governance parameters of commit 1 hour, reveal 1 hour, timelock 0, execution window 24 hours, quorum 25%, proposal threshold 5%, delegate concentration cap 40% and proposal cooldown 6 hours. <a href="how-it-works.html">How it works</a> renders that table in full. They are a configuration, not a vault; a vault freezes them only when it is funded.</p>
+      <p class="tight"><code>contracts/config/robinhood-mainnet.json</code> is the chain&rsquo;s configuration, not a plan for a vault.</p>
+      <p class="tight">It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.</p>
+      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters only when it is funded, and none has been.</p>
       <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
-      <p class="tight">There is no token. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens; RWLY does not exist yet, and this page will carry its record when it does.</p>
+      <p class="tight">There is no token. RWLY is designed to be the protocol&rsquo;s governance token and to accrue fees into stock; RWLY does not exist yet, and this page will carry its record when it does. The design is on the <a href="vision.html">Vision page</a>.</p>
     </div>
   </section>
 
@@ -180,6 +183,7 @@
         <ul>
           <li><a href="index.html">Overview</a></li>
           <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="vision.html">Vision</a></li>
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>

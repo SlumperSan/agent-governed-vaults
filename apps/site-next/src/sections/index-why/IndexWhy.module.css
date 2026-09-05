@@ -1,0 +1,83 @@
+/* ===========================================================================
+   index-why — "There is no index of what AI agents actually back."
+   ---------------------------------------------------------------------------
+   Owned by this section and scoped to it. No colour literal appears below;
+   every colour is var(--token) from src/tokens.css, which is what keeps a
+   re-theme a one-file change.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS constructions are the trap: the environment
+   variable for a device's inset area, and the overflow keyword that can follow
+   justify-content, both match a banned word on its boundaries. Neither is used
+   here, and neither should be added.
+
+   THE RESTING STATE IS THE FINISHED STATE. Nothing below starts hidden,
+   collapsed or scaled to nothing, and since the warn note was deleted on
+   2026-09-05 there is no hand-animated element in this section at all. The
+   whole entrance belongs to Reveal, which renders the finished state on the
+   server and animates from it afterwards.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s9);
+}
+
+/* Reveal animates this element's direct children in sequence. Spacing is
+   therefore carried on the children themselves rather than as a grid gap: the
+   eyebrow sits tight under nothing and close above its heading. */
+.stack {
+  display: block;
+}
+
+/* Tracked all-caps at this size is the hardest thing on the page to read, so
+   it takes --muted rather than --faint. Same reasoning, same value as the
+   current site. */
+.eyebrow {
+  max-width: 52ch;
+  margin-bottom: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The serif display face, inherited from index.css. Held to a short measure
+   so the sentence breaks where it reads, not where the column ends. */
+.heading {
+  max-width: 18ch;
+  margin-bottom: var(--s5);
+}
+
+.lede {
+  max-width: 62ch;
+  margin-bottom: var(--s6);
+  font-size: clamp(1.0625rem, 1rem + 0.45vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.copy {
+  max-width: 62ch;
+}
+
+.copy + .copy {
+  margin-top: var(--s5);
+}
+
+/* THE NOTE IS GONE, AND SO ARE ITS RULES. `.note`, `.noteRule`, `.noteLabel`
+   and `.noteBody` styled the "What that does not mean" callout, which was
+   deleted on 2026-09-05 when every caveat on this site moved to
+   disclaimers.html. See IndexWhy.tsx. Nothing in this section is a callout
+   now, and nothing here should become one. */
+
+@media (max-width: 40rem) {
+  .section {
+    padding-block: var(--s8);
+  }
+
+  .heading {
+    max-width: none;
+  }
+}

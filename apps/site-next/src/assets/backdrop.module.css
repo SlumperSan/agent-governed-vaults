@@ -1,0 +1,146 @@
+/* ===========================================================================
+   backdrop — the box a section's picture sits in, and the scrim over it
+   ---------------------------------------------------------------------------
+   OWNED BY src/assets/. Every value is a var() from src/tokens.css or a plain
+   geometric number; there is no colour literal here.
+
+   THE SCRIM IS THE WHOLE REASON THIS FILE EXISTS. The pictures are dark by
+   construction, but "dark" is not a contrast floor. The overlay below is a
+   var(--ground) ramp painted between the picture and the section's own
+   children: full ground across the copy side, and never thinner than 82% of it
+   anywhere else. So the worst pixel a picture can put behind a glyph is bounded
+   by arithmetic rather than by what the picture happens to contain.
+
+   THE ARITHMETIC. --muted is #a8a8bd, WCAG relative luminance 0.400042, so the
+   brightest background it reads 4.5:1 against has luminance
+   (0.400042 + 0.05) / 4.5 - 0.05 = 0.050009. --ground is #07070b, luminance
+   0.002213. Compositing a of --ground over a picture pixel p gives
+   a x --ground + (1 - a) x p; put the brightest pixel any image can hold —
+   pure white — behind it and the composite is (255 - 248a, 255 - 248a,
+   255 - 244a), whose luminance falls to 0.050009 at a = 0.7743. The opacity
+   scrim below is a ramp rather than one value, and its WEAKEST stop is 0.82 —
+   above that threshold with room to spare, and reading 5.53:1 against a
+   pure-white pixel. Every other stop on the ramp is more ground than that, so
+   0.82 is the bound for the whole frame. Computed 2026-09-05 from the WCAG 2.x
+   formulas and the token values in tokens.css; the same arithmetic, and the
+   same 0.7743, is written out at greater length in
+   index-hero/IndexHero.module.css.
+
+   IT IS A BOUND, NOT A MEASUREMENT, and it is deliberately the pessimistic
+   one: the brightest pixel in the current set is nowhere near white. A
+   replacement set inherits the bound without anybody re-measuring, which is
+   the property worth having while the picture set is still changing.
+   =========================================================================== */
+
+/* `z-index: -1` puts the picture behind the host's in-flow children without any
+   of them needing a z-index of their own. It cannot escape: the host declares
+   `isolation: isolate`, which makes it a stacking context, so the negative
+   layer is bounded by the host and the backdrop stays inside its own section. */
+.backdrop {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Both the still and the clip. One rule, because the box must not move when
+   the clip is added after mount. */
+.media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The generated frames put their detail in the right third and leave the left
+     two thirds empty, which is where the copy sits. Anchoring the crop to the
+     right keeps that arrangement when the box is narrower than the picture. */
+  object-position: right center;
+  /* THE LEFT EDGE IS CUT, NOT DIMMED. Borrowed from the prototype at
+     `Rwally Higgsfield/website/site.css` (.rw-hero__plate), which masks the
+     picture off the copy side rather than laying a flat film over the whole
+     frame. Masking can only REMOVE picture, so it can only make the composite
+     darker: the coverage floor the scrim below establishes is unaffected by it,
+     and holds whether or not a browser supports the property.
+
+     ONLY THE ALPHA OF A MASK IS READ, never its hue, so the opaque stop is
+     written as var(--ground) rather than a literal: this file may carry no
+     colour literal at all, and a token whose alpha is 1 masks identically to
+     one. */
+  mask-image: linear-gradient(90deg, transparent 6%, var(--ground) 62%);
+}
+
+/* THE SCRIM, AND WHY IT IS A RAMP RATHER THAN A FILM. `::after` rather than a
+   third element: it cannot be forgotten by a caller and it cannot be reordered
+   out of place.
+   The ramp is the second half of the same borrowed move: the copy side returns
+   to the exact ground colour, and the picture side keeps enough of the frame to
+   be worth having. What is NOT borrowed is the far stop — the prototype lets its
+   own gradient reach `transparent`, and this one does not go below 82% of
+   --ground anywhere on the frame. That is what keeps the arithmetic above true
+   at every x: the worst pixel is bounded by the weakest stop, and the weakest
+   stop here is 0.82. */
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    95deg,
+    var(--ground) 32%,
+    color-mix(in srgb, var(--ground) 88%, transparent) 70%,
+    color-mix(in srgb, var(--ground) 82%, transparent) 100%
+  );
+}
+
+/* THE NARROW-WIDTH RAMP, ADDED 2026-09-05 ROUND 8, AND WHY IT IS NOT THE ONE
+   ABOVE WIDENED.
+   ---------------------------------------------------------------------------
+   Two things make a narrow viewport the harder case, and only the second is
+   new. The copy column is capped at --measure, 38rem, which is wider than the
+   viewport below about 40rem: the copy therefore spans the whole frame and
+   crosses every stop of the ramp, where at 1440 it sits mostly over the
+   full-ground end. And when the hero box got shorter in round 8, `object-fit:
+   cover` stopped zooming the picture so hard to fill it, so more of the frame,
+   including its bright end, arrived behind the copy at the same width.
+
+   MEASURED, NOT REASONED. On the served build at 375x812, with the clip
+   mounted and sampled across fourteen frames, the worst (brightest) background
+   pixel under the hero copy read 6.346:1 against its ink before the round and
+   5.640:1 after it. That is a real regression and this block is the remedy for
+   it: the same ramp, moved along, so the full-ground stop reaches further
+   across the frame and the weakest stop is 0.90 of --ground rather than 0.82.
+
+   THE ARITHMETIC, on the same pessimistic basis as the block at the top of this
+   file. Compositing a of --ground over pure white gives (255 - 248a, 255 - 248a,
+   255 - 244a); at a = 0.90 that is luminance 0.01428, and --muted (#a8a8bd,
+   luminance 0.400042) reads (0.400042 + 0.05) / (0.01428 + 0.05) = 7.00:1
+   against it. So below 52rem the bound is not 5.53:1 but 7.00:1 for --muted
+   against the brightest pixel any picture can hold. The wide ramp is left where
+   it is: it did not move, its measurement did not regress, and 0.82 there keeps
+   the clip a clip on the width where the copy does not cross it.
+
+   IT IS STILL A BOUND, NOT A MEASUREMENT. The brightest pixel in the current
+   set is nowhere near white, which is why the measured figures above are the
+   ones that matter and both are recorded. */
+
+@media (max-width: 52rem) {
+  .backdrop::after {
+    background: linear-gradient(
+      95deg,
+      var(--ground) 55%,
+      color-mix(in srgb, var(--ground) 94%, transparent) 80%,
+      color-mix(in srgb, var(--ground) 90%, transparent) 100%
+    );
+  }
+}
+
+/* A reader who asked for reduced motion is served the poster and no clip at
+   all — Backdrop.tsx does not render the element — so there is nothing here to
+   pause. This block exists to state that, and to catch a future backdrop that
+   animates something in CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .media {
+    animation: none;
+    transition: none;
+  }
+}

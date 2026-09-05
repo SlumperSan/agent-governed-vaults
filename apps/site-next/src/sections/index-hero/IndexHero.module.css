@@ -1,0 +1,226 @@
+/* ===========================================================================
+   index-hero — the page's one <h1>, the copy column, and the three-fact strip
+   ---------------------------------------------------------------------------
+   OWNED BY THE index-hero SECTION. Every value below is a var() from
+   src/tokens.css; there is no colour literal and no length that is not on the
+   rhythm scale.
+
+   WHAT USED TO BE HERE, AND WHY IT IS NOT. Until 2026-09-05 this stylesheet
+   carried a 96-degree gradient scrim over a WebGL particle field, together with
+   about four hundred lines working out the coverage that scrim put behind the
+   copy — arithmetic that had been recomputed three times as the section's
+   height changed under it. The owner replaced the field with the brand's
+   autoplaying loop the same day. The clip is a picture like any other picture
+   on this site, so the floor behind the copy is now the one bound stated once
+   in `src/assets/backdrop.module.css`: a var(--ground) ramp whose weakest stop
+   is 82%, which reads 5.53:1 against the brightest pixel any image can hold.
+   One bound, for every backdrop, holding whether the picture moves or not.
+
+   The removed arithmetic is not lost — it is in this file's history, and the
+   scrim it described is gone from the build, so keeping it here would be four
+   hundred lines describing nothing.
+
+   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
+   so a class name, a custom property or a comment is exposed exactly as a
+   paragraph is. Two ordinary CSS spellings match banned words on their
+   boundaries — the inset-area environment variable, and the Greek letter used
+   for an opacity channel — and neither is used here.
+   =========================================================================== */
+
+
+/* THE HERO SHARES THE FIRST VIEWPORT, AND THAT IS WHAT SIZES IT.
+   ---------------------------------------------------------------------------
+   Owner decision, 2026-09-05, round 8: the two doors in index-doors must stand
+   inside the first viewport at 1440x900 together with the masthead and the
+   lede. Measured before this change, the doors' cards ran from 1233px to
+   1520px down a 900px viewport, 620px below the fold, because this section
+   was 1088px tall on its own. Nothing was deleted to close that; the rhythm
+   below was tightened and the fact strip moved into index-doors, which is
+   where it now reads as proof under the two cards rather than as a fourth
+   thing to get past before reaching them.
+
+   THE PANEL NO LONGER RESERVES 86svh. `min-height: clamp(38rem, 86svh, 58rem)`
+   resolved to 774px at a 900px viewport. That was slack while the content was
+   1088px and would have become the binding constraint the moment the copy
+   fitted: the section would have held 774px open and put the doors back below
+   the fold, with every other reduction in this file doing nothing. The floor is
+   now a floor: enough to keep the loop panel a panel rather than a strip, and
+   well under what the copy needs at either measured width.
+
+   `align-content: center` IS A NO-OP WHILE THAT FLOOR DOES NOT BIND, AND ONLY
+   WHILE. The copy is about 520px at 1440x900 against a 414px floor, so the
+   track is sized by content and centring moves nothing. On a viewport tall
+   enough for the floor to bind, or if this copy ever shortens past it, the
+   section grows and centres the copy inside it, and the doors move down by half
+   the difference. That is the intended behaviour of a panel with a floor, but
+   it is the one way the fold measurement above can change without anybody
+   editing this file, so it is written down rather than left to be rediscovered.
+   */
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: center;
+  min-height: 24rem;
+  min-height: clamp(22rem, 46svh, 30rem);
+  padding-block: var(--s5) var(--s4);
+
+  /* The backdrop is drawn to the section's edges and cropped with object-fit.
+     Without this a bleeding picture would put a horizontal scrollbar on the
+     document. */
+  overflow: hidden;
+}
+
+/* THE CLOSING EDGE OF THE FOLD, OWNED HERE RATHER THAN BY THE SEAM RULE.
+   index.css closes every non-final section on `var(--seam)`, 48px at 1440, with
+   `main#main > *:not(:last-child):not(.banner)`. That rule outranks a bare
+   module class, so the `padding-block` above governs only the opening edge and
+   this rule is what governs the closing one. It is written out rather than
+   folded into the seam because the seam is right everywhere else on the site:
+   one gap, every page, unchanged by this round. The hero-to-doors pair is the
+   one place a reader has to cross it before the two cards are on screen, and
+   index-doors owns the other half of it.
+
+   WHY THE CLASS IS REPEATED THREE TIMES. `:not()` takes its argument's
+   specificity, so index.css's closing rule is (1,2,1), not the (1,0,1) its
+   universal selector suggests. `main:global(#main) > .hero` is (1,1,1) and
+   loses outright. Doubling the class only TIES at (1,2,1), and a tie is broken
+   by the order the two stylesheets happen to be linked in, which is an output
+   of the chunk graph rather than a decision anybody made: it holds on the built
+   index.html today and would stop holding silently if that graph ever changed,
+   in exactly the way the `main#_main_<hash>` mistake below did. Three
+   occurrences make it (1,3,1), which wins outright and depends on nothing.
+   `:where()` around the two negations would have been the cleaner fix, but it
+   is a fix in index.css, which governs all nine pages, and this round changes
+   one fold. The weight is added here instead.
+
+   A NOTE ON `:global(#main)`. A CSS module scopes ids exactly as it scopes
+   classes, so a bare `main#main` compiles to `main#_main_<hash>` and matches
+   nothing at all, silently, which was caught here by measuring the built page
+   rather than by reading the source. `#main` is the shared shell's id and
+   belongs to index.css, so it is written `:global(#main)` and only this
+   section's own class is hashed. The wrapper changes no specificity. */
+main:global(#main) > .hero.hero.hero {
+  padding-block-end: var(--s4);
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- copy ----------------------------------------------------------------- */
+
+.eyebrow {
+  margin-bottom: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+  animation: riseIn var(--dur-hero) var(--ease-enter) both;
+}
+
+/* CAPPED, THE SAME WAY FOUR OTHER HEROES ON THIS SITE CAP IT. --step-display
+   tops out at 6rem, which set this headline over three lines and 299px tall at
+   1440. `min(var(--step-display), Nrem)` is the idiom faq-hero, risks-hero,
+   status-hero and who-hero already use; the cap here is 3.4rem because that is
+   the exact maximum `apps/site`'s own `h1` rule carries, so the two builds now
+   crest at the same size rather than at two sizes neither of which was chosen.
+   The scale is still --step-display, so a change to the token still lands here.
+   The measure widens with the cap: 48rem at 3.4rem holds the same line count
+   44rem held at 6rem, and it is what keeps the headline to two lines at 1440. */
+.headline {
+  max-width: 48rem;
+  margin-bottom: var(--s4);
+  font-size: min(var(--step-display), 3.4rem);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.12s both;
+}
+
+/* 1.45 rather than the --leading-body 1.6 the rest of the site sets. Three
+   paragraphs of eleven lines between them pay for that difference twice over,
+   and 1.45 at --step-body is still above the 1.4 where a multi-line paragraph
+   starts to knit together. Set here, never on the token: --leading-body governs
+   body copy on all nine pages and this is one block on one of them. */
+.lede {
+  max-width: var(--measure);
+  margin-bottom: var(--s3);
+  line-height: 1.45;
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.24s both;
+}
+
+/* --muted, not --faint. It is 14px of standing qualifier sitting directly over
+   the field, and --faint is the body-text floor on flat --ground with nothing
+   left over for a luminous point cloud behind it — see the instrumented pair in
+   the header. */
+
+.note {
+  max-width: var(--measure);
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line-strong);
+  font-size: var(--step-small);
+  line-height: 1.55;
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.36s both;
+}
+
+/* THE THREE ACTION BUTTONS ARE NOT HERE ANY MORE. They moved to index-doors
+   with the fact strip on 2026-09-05, round 8, and their rules went with them:
+   a rule for a class this section no longer renders is a rule the built-class
+   guard cannot see is dead. Their labels and destinations are unchanged. */
+
+/* --- the backdrop caption --------------------------------------------------
+   Rendered text, describing the picture it sits in front of rather than the
+   headline it does not. It is capped at --measure and set to the right, so its
+   rag lands on the same edge .lede and .note end at.
+
+   IT IS NEVER HIDDEN, at any width. It was hidden below 52rem while the hero
+   drew a WebGL field, because under that breakpoint no canvas was mounted for
+   anybody and there was nothing for the sentence to disclaim. The backdrop
+   replacing that field is present at every width, so the sentence is too. */
+
+.caption {
+  max-width: var(--measure);
+  margin-top: var(--s3);
+  font-size: var(--step-small);
+  line-height: 1.55;
+  text-align: right;
+  color: var(--muted);
+  animation: riseIn var(--dur-hero) var(--ease-enter) 0.6s both;
+}
+
+/* THE THREE-FACT STRIP IS NOT HERE ANY MORE. Its rules moved to
+   IndexDoors.module.css with FactStrip.tsx on 2026-09-05, round 8, so the two
+   doors could stand inside the first viewport. Nothing is left behind: a rule
+   for a class this section no longer renders is a rule the built-class guard
+   cannot see is dead. */
+
+/* --- keyframes ------------------------------------------------------------- */
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* --- reduced motion --------------------------------------------------------
+   Read the note at the top of this file before removing any line of this
+   block. The delay is the part the global rule cannot reach. */
+
+@media (prefers-reduced-motion: reduce) {
+  .eyebrow,
+  .headline,
+  .lede,
+  .note,
+  .caption {
+    animation: none;
+  }
+}

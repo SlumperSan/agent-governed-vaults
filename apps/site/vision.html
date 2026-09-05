@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vision | Rwally</title>
+<meta name="description" content="Where Rwally is going: an index of every stock token on Robinhood Chain that a Chainlink feed prices, decided hourly by a hive of agents and the people who stake alongside them. Designed, not built.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="canonical" href="https://rwally.com/vision">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rwally">
+<meta property="og:url" content="https://rwally.com/vision">
+<meta property="og:title" content="Where Rwally is going.">
+<meta property="og:description" content="Where Rwally is going: an index of every stock token on Robinhood Chain that a Chainlink feed prices, decided hourly by a hive of agents and the people who stake alongside them. Designed, not built.">
+<meta property="og:image" content="https://rwally.com/assets/og-card.png">
+<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark Rwally, and the deployment-status line Deployed on Robinhood Chain.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Where Rwally is going.">
+<meta name="twitter:description" content="Where Rwally is going: an index of every stock token on Robinhood Chain that a Chainlink feed prices, decided hourly by a hive of agents and the people who stake alongside them. Designed, not built.">
+<meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">Rwally</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html" aria-current="page">Vision</a></li>
+        <li><a href="agents.html">Agents</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Vision</p>
+      <h1>Where Rwally is going.</h1>
+      <p class="lede">An index of the stock tokens on Robinhood Chain, decided every hour by a hive of agents and by the people who stake alongside them.</p>
+      <p>None of what follows is built. The contracts on chain today price two assets, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner &mdash; so this index needs its own deployment on Robinhood Chain. That is a fact about the code, not a caveat about the plan.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>An agent can create a vault.</h2>
+      <p class="lede">That part is true today: vault creation is permissionless, and the contracts screen nobody.</p>
+      <p>Each vault is one index &mdash; one basket, one set of rules, frozen when it is funded.</p>
+      <p>Vault 1 is designed to be the overall index: not a strategy, but the whole market.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>Every stock a feed can price.</h2>
+      <p class="lede">Vault 1 is designed to accumulate the stock tokens on Robinhood Chain that a Chainlink feed prices &mdash; the whole set, gradually, as the feeds appear.</p>
+      <p>Only feed-priced tokens. A stock token with no Chainlink feed has no oracle-shaped price, and this protocol will not reach for a weaker source.</p>
+      <p>The equity feeds publish on market days. A weekend of silence measured at 52 hours exceeds the oracle&rsquo;s 86,400-second ceiling, so an all-stocks index needs oracle work that does not exist yet. This is the main reason vault 1 is designed, not deployed.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>The index buys itself.</h2>
+      <p class="lede">RWLY is designed to pair with stock tokens on the chain&rsquo;s Uniswap, and the treasury is designed to be the liquidity provider.</p>
+      <p>The fees those pools generate are designed to flow to the treasury and buy stock into vault 1.</p>
+      <p>SPY first. Then down the list, highest on-chain trading fees to lowest, as the fees allow.</p>
+      <p>Protocol-owned liquidity, on the chain&rsquo;s Uniswap.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>One staked token, one vote.</h2>
+      <p class="lede">RWLY is designed to be the governance token.</p>
+      <p>Every vote is designed to require staking: RWLY in, stRWLY out, and stRWLY is what votes.</p>
+      <p>Agents and humans on the same terms &mdash; one staked token, one vote, no separate class.</p>
+      <p>The contracts deployed on Robinhood Chain weigh votes by vault shares, stake-weighted at five or more members and by a signer-count-plus-stake rule below five, through commit and reveal. Nothing on chain reads a token.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>An epoch every hour.</h2>
+      <p class="lede">One vote per hour, so a person can keep pace with an agent.</p>
+      <p>When the epoch closes, anyone can execute it. A permissionless keeper call, open to anyone; Rwally runs one too.</p>
+      <p>The governance deployed on Robinhood Chain runs on a longer clock &mdash; a one-hour commit, a one-hour reveal and a 24-hour execution window in the reference configuration.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>Staked does not mean stuck.</h2>
+      <p class="lede">stRWLY is designed to swap back to RWLY at any time on a bonded curve, and to unstake free after a cooldown for anyone willing to wait.</p>
+      <p>Two doors out, priced differently: immediate at a curve price, or slow at none.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>Ten percent buys the token. Ninety buys the index.</h2>
+      <p class="lede">Pool fees are designed to collect in the treasury.</p>
+      <p>10% is designed to buy RWLY back, hourly, as a TWAP rather than in one order, delayed an hour so settlement is confirmed first.</p>
+      <p>90% is designed to go into vault 1 as stock.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>Rwally runs a hive, in public.</h2>
+      <p class="lede">Three to five agents, on different models, reasoning published.</p>
+      <p>It is a participant, not a referee. It proposes and votes on the same terms as anyone else, and it can be outvoted.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <span class="severity">Designed, not built. RWLY does not exist yet.</span>
+      <h2>Stake and you are in.</h2>
+      <p class="lede">Permissionless, as the contracts already are: they gate on amount and screen nobody.</p>
+      <dl class="rows">
+        <div>
+          <dt>Now</dt>
+          <dd>Docs, ABIs and a reference agent &mdash; today.</dd>
+        </div>
+        <div>
+          <dt>Designed</dt>
+          <dd>A hosted API and MCP &mdash; designed.</dd>
+        </div>
+        <div>
+          <dt>Designed</dt>
+          <dd>An agent console &mdash; designed.</dd>
+        </div>
+      </dl>
+      <dl class="rows">
+        <div>
+          <dt>Live today</dt>
+          <dd>The 10% performance fee is live in the contracts today.</dd>
+        </div>
+        <div>
+          <dt>Designed</dt>
+          <dd>RWLY rewards are designed, and depend on a token that does not exist.</dd>
+        </div>
+        <div>
+          <dt>Designed</dt>
+          <dd>A public leaderboard is designed.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="tight">Everything above is design intent, dated 2026-09-05. What is on chain today is on the status page. What can go wrong is on the Disclaimers.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="status.html">Status</a>
+        <a class="btn" href="disclaimers.html">Disclaimers</a>
+        <a class="btn" href="agents.html">The agent path</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="agents.html">Agents</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
+      </div>
+      <div>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
+      </div>
+    </div>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,171 @@
+/* ===========================================================================
+   @font-face — hand-written on purpose
+   ---------------------------------------------------------------------------
+   The three faces ship from this origin. There is no <link> to a font host,
+   no @import, no preconnect: the Content-Security-Policy in public/_headers
+   sets font-src 'self', so a remote face would not load and the browser would
+   say so in the console.
+
+   WHY THESE RULES ARE WRITTEN OUT RATHER THAN IMPORTED. The @fontsource
+   packages expose per-axis stylesheets (wght.css, opsz.css) but no per-subset
+   entrypoint. Importing one pulls latin, latin-ext, greek, cyrillic and
+   vietnamese — five files where this site needs one, on a page whose whole
+   design argument is that it loads nothing it does not use. Naming the latin
+   .woff2 directly is the only way to get one file per family.
+
+   The url() targets are package subpaths. Both @fontsource packages export
+   "./files/*.woff2", so the bundler resolves them out of node_modules and
+   emits a hashed copy into dist/assets — the built CSS carries a relative
+   path, never a bare specifier. If a build ever leaves the specifier
+   unrewritten, that is the failure to fix; do not paper over it with a
+   remote URL.
+
+   font-display: swap on all three. The prerendered headline is the largest
+   paint on every page, and it must not wait on a face.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   METRIC-ADJUSTED FALLBACKS — what makes `swap` cost no layout shift
+   ---------------------------------------------------------------------------
+   `font-display: swap` paints in the fallback and re-paints in the real face.
+   Between the two paints every line box changes height and every line changes
+   where it wraps, and on a page whose largest paint is a serif headline at up
+   to 6rem that is a visible jump. The budget is CLS 0, so the swap has to be
+   invisible rather than merely fast.
+
+   The two faces below are not fonts. Each is Georgia (or Segoe UI) re-declared
+   under a private family name with the REAL face's metrics forced onto it, so
+   the fallback occupies the same box: same line height, and — for text laid
+   out in a box the fallback and the real face agree on — the same wrap points,
+   at very nearly the same width. tokens.css puts each one in its stack
+   immediately after the face it stands in for.
+
+   THE QUALIFIER IN THAT SENTENCE IS LOAD-BEARING, and it is there because a
+   measurement caught it. `ch` is resolved against the USED font's advance for
+   "0", and size-adjust is derived from MEAN LOWERCASE advance, so the two are
+   not the same scaling and a box written in `ch` changes size at the swap. The
+   four digit advances, read from the binaries on 2026-09-04 by the method set
+   out below: Newsreader 1133/2000 em = 0.5665em per "0", Georgia 1257/2048 =
+   0.61377em which 97.28% scales to 0.597078em (the fallback box is 5.40%
+   WIDER); IBM Plex Sans 600/1000 = 0.600em, Segoe UI 1104/2048 = 0.539063em
+   which 102.37% scales to 0.551839em (the fallback box is 8.03% NARROWER).
+
+   ONE EXCEPTION WAS MEASURED AND IS NOW CLOSED. The risks-hero h1 re-wrapped
+   from two lines to three at 1440 when Newsreader replaced the fallback,
+   +67px, CLS 0.0227 — the only non-zero delta in that pass, which read dH = 0
+   for index and how-it-works at 1440 and for risks at 375. Its cap was `20ch`;
+   it is now the em equivalent, and RisksHero.module.css carries the
+   arithmetic.
+
+   WHAT IS STILL UNMEASURED, stated rather than left to be inferred. Grepping
+   src/sections for `max-width: <n>ch;` on 2026-09-04 found 43 of them across
+   33 stylesheets, from 18ch to 94ch, including the risks-hero lede in the rule
+   directly below the h1 that was fixed. Every one of those boxes changes size
+   at the swap by the percentage for its family above, and not one has been
+   instrumented. They are left as one set on purpose: they are
+   a single sweep to take or not take, not thirty-three separate judgements,
+   and converting them piecemeal breaks the comments that cross-reference each
+   other by their ch figures. The sentence at the top of this block holds for
+   the metrics; it does not by itself close a `ch` box.
+
+   HOW THE FOUR NUMBERS WERE DERIVED. Not copied from a generator — read out of
+   the font binaries in this repository and computed:
+
+     - The woff2 was parsed directly (header, table directory, brotli stream;
+       only glyf and loca are transformed, so head, hhea, OS/2, cmap and hmtx
+       are raw), and Georgia and Segoe UI were read as plain sfnt from
+       C:/Windows/Fonts.
+     - size-adjust is the ratio of mean lowercase advance width, in em: the
+       advance of each of a–z from hmtx via the format-4 cmap, averaged, over
+       unitsPerEm. Newsreader 0.485558 em (971.12/2000) against Georgia
+       0.499136 em (1022.23/2048) gives 97.28%. IBM Plex Sans 0.504962 em
+       (504.96/1000) against Segoe UI 0.493277 em (1010.23/2048) gives 102.37%.
+       Mean lowercase advance rather than OS/2 xAvgCharWidth, because that
+       field's definition changed between OS/2 versions and these files are not
+       all the same version — comparing them across fonts compares two
+       different quantities.
+     - The ascent/descent/line-gap overrides are the WEB face's own vertical
+       metrics as a fraction of its em, divided by size-adjust (the overrides
+       are resolved against the already-scaled em). Both web faces set
+       fsSelection USE_TYPO_METRICS and have hhea == OS/2 typo, so there is no
+       ambiguity about which pair a browser reads: Newsreader 1470/-530 of
+       2000, IBM Plex Sans 1025/-275 of 1000. Both have a zero line gap, so
+       line-gap-override is 0% rather than omitted — omitting it would let the
+       fallback's own gap through, and Georgia's is 198/2048 and Segoe UI's
+       269/2048, which is most of the shift this block exists to remove.
+
+   THE ONE HONEST LIMITATION. A set of override percentages is exact for ONE
+   fallback family; there is no way to write metrics that fit several. Each
+   face below therefore has a single `local()` source, and the numbers are
+   exact for that source and for nothing else. Where the named family is not
+   installed the whole @font-face is unusable and is skipped, and the stack in
+   tokens.css falls through to the next entry unadjusted — a reader on a
+   machine without Segoe UI loses the adjustment, which is what should happen.
+   They never get someone else's numbers.
+   --------------------------------------------------------------------------- */
+
+/* Newsreader's stand-in. Georgia ships with Windows and with macOS. */
+@font-face {
+  font-family: 'Newsreader fallback';
+  src: local('Georgia');
+  size-adjust: 97.28%;
+  ascent-override: 75.56%;
+  descent-override: 27.24%;
+  line-gap-override: 0%;
+}
+
+/* IBM Plex Sans's stand-in. Segoe UI is the Windows system UI face and the
+   family `system-ui` resolves to there; the macOS and Linux resolutions of
+   `system-ui` are different fonts with different metrics, and deliberately get
+   no adjustment rather than this one. */
+@font-face {
+  font-family: 'IBM Plex Sans fallback';
+  src: local('Segoe UI');
+  size-adjust: 102.37%;
+  ascent-override: 100.13%;
+  descent-override: 26.86%;
+  line-gap-override: 0%;
+}
+
+/* THERE IS NO ADJUSTED FALLBACK FOR THE MONO FACE, deliberately. It sets
+   numbers, addresses and route names — short runs inside a line whose height
+   is already set by the surrounding sans — so a swap moves characters within a
+   line rather than moving the lines, and `ui-monospace` resolves to a
+   different face on every platform, none of which these metrics would fit. */
+
+/* Newsreader Variable — the display serif. Weight axis 200-800. */
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* IBM Plex Sans Variable — body and interface. Weight axis 100-700. */
+@font-face {
+  font-family: 'IBM Plex Sans Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url('@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* IBM Plex Mono 400 — numbers, addresses, route names, file paths and code.
+   One weight only: a second static face is another network round trip for an
+   emphasis this design gets from colour instead. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

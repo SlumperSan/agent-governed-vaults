@@ -1,0 +1,107 @@
+/* ===========================================================================
+   hiw-fees — four definition rows on how-it-works.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour, length and duration below is a token
+   from src/tokens.css; there is no literal here to re-measure for contrast.
+
+   THE SHAPE IS A LEDGER, NOT A CARD GRID. The passage is four labelled facts
+   about value leaving a vault, and a reader compares them down the left edge.
+   So: one hairline-ruled list, a fixed label column, and a reading column held
+   to --measure. Cards would put each fact in its own box and stop the
+   comparison the section exists to invite.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose. Comments
+   here describe layout mechanics and nothing else — no outcome vocabulary, no
+   funnel vocabulary, no word about what any of these figures does for anybody.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the same eyebrow the current site uses, at
+   the dark palette's secondary ink. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 24ch;
+  color: var(--ink);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Label column then reading column. The label column is bounded at both ends:
+   below its minimum the longest label wraps to four lines, above its maximum
+   the gap between a label and its body reads as two unrelated columns. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s6);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+
+  /* An absolute line box equal to the body's first line — 1.125rem x 1.6 —
+     so a label and the first line of its body share a baseline by
+     construction rather than by a padding figure tuned to one platform's
+     fonts. */
+  line-height: 1.8rem;
+
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* Hover raises the label's luminance and changes nothing else. No size change,
+   no movement, no rule appearing: the row is not a control and must not offer
+   itself as one. */
+.row:hover .term {
+  color: var(--ink);
+}
+
+/* The one contract identifier in the passage. Mono comes from the global
+   `code` rule; this only lifts it out of the body's colour so it reads as a
+   name rather than as emphasis. */
+.body code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Under the two-column threshold the label sits directly above its body. The
+   label's fixed line box is released here — with nothing to align to, it only
+   adds a gap. */
+@media (max-width: 46rem) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+    padding-block: var(--s4);
+  }
+
+  .term {
+    line-height: 1.5;
+  }
+}

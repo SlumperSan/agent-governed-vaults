@@ -1,0 +1,208 @@
+/* ===========================================================================
+   agents-capabilities — four definition rows and one warn note on agents.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour, length and duration below is a token
+   from src/tokens.css; there is no literal here to re-measure for contrast.
+
+   IT DELIBERATELY LOOKS IDENTICAL TO THE SECTION ABOVE IT. agents-bootstrap
+   sits directly before this one on the same page and states four labelled
+   facts in the same shape. Giving the second list its own rhythm — a different
+   label column, a different rule weight — would read as two authors rather
+   than as one document, and the reader is comparing down the same left edge in
+   both. Same ledger: one hairline-ruled list, a bounded label column, a
+   reading column held to --measure.
+
+   THE NOTE IS THE SITE'S EXISTING note--warn SHAPE, matching hiw-exit: one
+   2px rule in --warn on the leading edge, a tinted label, a wash behind, and
+   body text at FULL --ink. The body is not dimmed on purpose — a callout whose
+   text is greyed reads as a footnote the reader may skip, and this one names
+   the four-hour window an integrator meets first and the irrevocable call that
+   trades it away.
+
+   NOTHING IN THIS FILE HIDES ANYTHING. There is no opacity: 0 start state and
+   no display rule that could leave a block collapsed. The resting state is the
+   finished state; the row enter animation is added after hydration by
+   AgentsCapabilities.tsx and only for a reader who has not asked otherwise.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose. Comments
+   here describe layout mechanics and nothing else — no outcome vocabulary, no
+   funnel vocabulary, and no word about what any of this does for anybody.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the site's one eyebrow, at the secondary
+   ink. Held to --muted rather than --faint because tracked all-caps at this
+   size is the hardest thing on the page to read. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+/* The serif display face, inherited from index.css. A short measure so the
+   sentence breaks where it reads rather than where the column ends. */
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 20ch;
+  color: var(--ink);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Label column then reading column, bounded at both ends: below the minimum a
+   two-word label wraps, above the maximum the gap between a label and its body
+   reads as two unrelated columns. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s6);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The label and its icon on one line. `inline-flex` rather than `flex` so the
+   absolute line box above still governs the row's baseline. */
+.termIcon {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  color: var(--accent);
+}
+
+.term {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+
+  /* An absolute line box equal to the body's first line — 1.125rem x 1.6 — so
+     a label and the first line of its body share a baseline by construction
+     rather than by a padding figure tuned to one platform's fonts. */
+  line-height: 1.8rem;
+
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* Hover raises the label's luminance and changes nothing else. No size change,
+   no movement, no rule appearing: the row is not a control and must not offer
+   itself as one. */
+.row:hover .term {
+  color: var(--ink);
+}
+
+/* The two emphasised clauses in the Exit row. Weight only — they already sit
+   at the body ink, and colouring them would put a third signal in a paragraph
+   that already carries a link. */
+.body strong {
+  font-weight: 600;
+}
+
+/* One italic word in the Vote row, marking a technique rather than a term. The
+   serif display face is not involved; this is the sans at its italic. */
+.body em {
+  font-style: italic;
+}
+
+/* `skipWindow()` and any other identifier. Mono and tabular figures come from
+   the global `code` rule in src/index.css; this only lifts them off the body
+   colour so they read as identifiers rather than as emphasis, and lets them
+   break — a mono string that cannot wrap pushes a horizontal scrollbar onto
+   the whole document at 375px. The wash is --surface-2 rather than the accent
+   wash, matching agents-bootstrap: on a page this dense with identifiers, an
+   accent tint on every one of them leaves links with nothing to be. */
+.body code,
+.note code {
+  padding: 0.1em 0.32em;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* --- the warn note --------------------------------------------------------
+   The only coloured surface in the section, and the only one that should be:
+   it names a gate that reads as a failure to an integrator who has not been
+   told about it. */
+
+.note {
+  margin-top: var(--s7);
+  max-width: 58rem;
+  padding: var(--s5) var(--s6);
+  border-left: 2px solid var(--warn);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--warn-wash);
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.note p {
+  color: var(--ink);
+}
+
+.note p + p {
+  margin-top: var(--s4);
+}
+
+/* Inside the wash, --surface-2 behind an identifier is nearly invisible, so
+   the code chip there takes a hairline instead of a fill. */
+.note code {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+
+/* --- narrow viewports -----------------------------------------------------
+   Responsive decisions live here rather than in a render-time branch on window
+   width: the server cannot know the viewport, and a tree that differs between
+   the two is a tree React discards — including the markup the guards read. */
+
+@media (max-width: 46rem) {
+  .section {
+    padding-block: var(--s7);
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+    padding-block: var(--s4);
+  }
+
+  /* With nothing to align to, the label's fixed line box only adds a gap. */
+  .term {
+    line-height: 1.5;
+  }
+
+  .note {
+    padding: var(--s5);
+  }
+}

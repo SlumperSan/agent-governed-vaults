@@ -1,0 +1,290 @@
+/* ===========================================================================
+   index-status — "Pre-launch, and specific about it."
+   ---------------------------------------------------------------------------
+   Owned by the index-status section. Nothing here is imported by another
+   section and nothing here redefines a token: every colour, size, space and
+   curve below is var(--…) from src/tokens.css, so a palette change stays a
+   one-file change and the built CSS carries no colour literal to grep.
+
+   THE DESIGN ARGUMENT. This is the section where the page admits what is not
+   done, so it is the section with the least to prove. Three plain cards on a
+   hairline grid, one flat note, one paragraph of attestation. The only chroma
+   is the accent rule on each card and the verdict chip, and the chip is the
+   one place a status colour is used — for an actual status.
+
+   HOVER CHANGES LUMINANCE, NEVER SIZE. A card that grows under the pointer
+   moves the text a reader is in the middle of. Background, border and title
+   colour shift; the box does not.
+
+   THE VERDICT DOES NOT PERFORM. It has no transition, no counter and no
+   entrance of its own. It is set in mono at eyebrow size, the same treatment
+   the section labels get, because a launch verdict typeset as a hero number is
+   a verdict being sold rather than reported.
+
+   WORDING IN THIS FILE. Stylesheets are scanned as prose here. Outcome
+   vocabulary, funnel vocabulary and discretionary-manager vocabulary red the
+   claims gate from a CSS comment exactly as they would from a paragraph, and
+   two ordinary CSS spellings are on the list — the inset-area environment
+   function, and the overflow keyword of the same name that can follow
+   justify-content. Neither appears below, and neither may be added.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s9);
+  border-top: 1px solid var(--line);
+}
+
+/* --- the opening block ----------------------------------------------------
+   `.intro` is the reveal group for the eyebrow, the h2 and the lede. It sets
+   no width of its own: the three children below carry their own measures, and
+   a wrapper that repeats a constraint is a second place to change it. */
+
+.intro {
+  display: block;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A short accent rule leading into the label. One hairline, no icon. */
+.eyebrow::before {
+  content: '';
+  flex: none;
+  width: var(--s6);
+  height: 1px;
+  background: var(--accent-dim);
+}
+
+.heading {
+  max-width: 22ch;
+  margin-bottom: var(--s5);
+  color: var(--ink);
+}
+
+.lede {
+  max-width: var(--measure);
+  font-size: var(--step-h3);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* --- the record paragraphs and action ------------------------------------
+   Added 2026-09-05 when this section's copy changed from the NO-GO verdict
+   cards to the corpus's plain "record" prose (a lede plus two paragraphs and
+   one action button, the same shape index-hero and index-why already use).
+   The .cards/.card/.verdict/.note/.review/.attestation/.caveat rules below
+   are left in place rather than deleted in this pass — they style content
+   this section no longer renders, and removing CSS is out of scope for a
+   copy sync — but nothing below imports them any more. */
+
+.body {
+  max-width: var(--measure);
+  margin-top: var(--s4);
+  font-size: var(--step-small);
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--s3) var(--s5);
+  font-size: var(--step-small);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+.btn:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
+.btnLead {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.btnLead:hover {
+  background: var(--accent);
+  opacity: 0.92;
+}
+
+/* --- the three status cards (unused since 2026-09-05, see note above) ----- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s8);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+/* The one line of chroma per card: a short rule above the title, in the dim
+   accent so three of them across a row do not read as three warnings. */
+.card::before {
+  content: '';
+  width: var(--s6);
+  height: 1px;
+  background: var(--accent-dim);
+}
+
+.card:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
+.cardTitle {
+  color: var(--ink);
+}
+
+.card:hover .cardTitle {
+  color: var(--accent);
+}
+
+.cardBody {
+  /* The global prose measure is narrower than a card column; inside a card the
+     column itself is the measure. */
+  max-width: none;
+  margin: 0;
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.cardBody code {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* --- the verdict ----------------------------------------------------------
+   A launch verdict is a status, which is the one thing --crit is for. No
+   transition and no entrance: it is reported, not revealed. */
+
+.verdict {
+  align-self: flex-start;
+  padding: var(--s1) var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--crit);
+  background: var(--crit-wash);
+  border: 1px solid color-mix(in srgb, var(--crit) 34%, transparent);
+  border-radius: var(--radius);
+}
+
+/* --- the outstanding-work note -------------------------------------------- */
+
+.note {
+  margin-top: var(--s6);
+  padding: var(--s5) var(--s5) var(--s5) var(--s6);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+
+.noteLabel {
+  display: block;
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.noteBody {
+  max-width: 58rem;
+  font-size: var(--step-small);
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.noteBody + .noteBody {
+  margin-top: var(--s4);
+}
+
+/* --- the security-review block -------------------------------------------- */
+
+.review {
+  margin-top: var(--s8);
+  padding-top: var(--s6);
+  border-top: 1px solid var(--line);
+}
+
+.reviewHeading {
+  margin-bottom: var(--s4);
+  color: var(--ink);
+}
+
+/* One paragraph, deliberately. It is long, so it takes the wider column and a
+   little more leading rather than being broken up for rhythm — the qualifier
+   and the claim it qualifies must stay in the same block. */
+.attestation {
+  max-width: 58rem;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.caveat {
+  max-width: 58rem;
+  margin-top: var(--s4);
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--faint);
+}
+
+/* --- narrow viewports -----------------------------------------------------
+   A media query, never a JS branch on width: the server cannot know the
+   viewport, and a render tree that differs from the prerendered one is the
+   markup the claims guards read being thrown away. */
+
+@media (max-width: 40rem) {
+  .section {
+    padding-block: var(--s8);
+  }
+
+  .cards {
+    margin-top: var(--s6);
+  }
+
+  .note {
+    padding: var(--s4) var(--s4) var(--s4) var(--s5);
+  }
+}

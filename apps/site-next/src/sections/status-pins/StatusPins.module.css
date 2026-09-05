@@ -1,0 +1,55 @@
+/* ===========================================================================
+   status-pins — "The first vault" on status.html
+   ---------------------------------------------------------------------------
+   NOTHING IN HERE ANIMATES. These are figures and facts a reader came to
+   check; a paragraph that arrives is a paragraph that can be missed, so it
+   renders finished. There is no reduced-motion rule below because there is no
+   motion to suppress.
+
+   NO RAW COLOUR LITERAL. Every colour is var(--token) from src/tokens.css.
+
+   2026-09-05 CORPUS SYNC. This file used to style a single left-ruled note
+   box holding one counted standing-fact sentence plus explanatory prose. The
+   corpus's "The first vault" section is four plain paragraphs with no special
+   emphasis on any one of them, so the note/label/pin treatment was replaced
+   with the same `.tight`-paragraph shape status-testnet and status-verify
+   already use for a run of plain paragraphs.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose. Comments
+   here describe layout mechanics and nothing else.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s5);
+  max-width: 20ch;
+  color: var(--ink);
+}
+
+.tight {
+  margin: 0 0 var(--s4);
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+.tight:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 40rem) {
+  .section {
+    padding-block: var(--s7);
+  }
+}

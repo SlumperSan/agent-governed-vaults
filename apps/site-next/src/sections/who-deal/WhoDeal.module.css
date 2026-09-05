@@ -1,0 +1,120 @@
+/* ===========================================================================
+   who-deal — four definition rows on who-its-for.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour, length and duration below is a token
+   from src/tokens.css; there is no literal here to re-measure for contrast.
+
+   THE SHAPE IS THE SAME LEDGER hiw-fees, hiw-pricing and ops-economics use:
+   one hairline-ruled list, a fixed label column, a reading column held to
+   --measure. Four labelled obligations that a reader compares down the left
+   edge are the same reading task those sections set, and a second layout
+   grammar for the same task would read as a different site.
+
+   ONE DEPARTURE, AND WHY. The other ledgers label their rows with short nouns
+   set in mono caps. These four labels are clauses of four to six words, and at
+   --step-label mono caps the longest wraps to four lines against a two-line
+   body.
+   So the label column here is the display serif at body size: it holds a clause
+   on two lines at the column's minimum width, and it keeps the labels reading
+   as sentences, which is what they are.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose. Comments
+   here describe layout mechanics and nothing else — no outcome vocabulary, no
+   funnel vocabulary, and no word about what any of this does for anybody.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the same eyebrow every other section uses,
+   at the palette's secondary ink. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+/* Two sentences, and they are meant to break between them rather than mid
+   clause. 22ch puts the break at the full stop at every step of the fluid
+   display scale. */
+.heading {
+  margin: 0 0 var(--s5);
+  max-width: 22ch;
+  color: var(--ink);
+}
+
+/* The paragraph that sets up the list. Held to the prose measure and separated
+   from the first row by a full step, so the rule below it reads as the top of a
+   list rather than as an underline on this paragraph. */
+.intro {
+  margin: 0 0 var(--s7);
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Label column then reading column. The label column is bounded at both ends:
+   below its minimum the longest label wraps to four lines, above its maximum
+   the gap between a label and its body reads as two unrelated columns. It is
+   wider than the mono ledgers' column because a clause needs more room than a
+   noun does. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 18rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s6);
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.125rem;
+  letter-spacing: 0;
+
+  /* An absolute line box, matched to the body's own first line — 1.125rem at
+     the body's leading — so a label and the first line of its body share a
+     baseline by construction rather than by a padding figure tuned to one
+     platform's fonts. */
+  line-height: 1.8rem;
+
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* Hover raises the label's luminance and changes nothing else. No size change,
+   no movement, no rule appearing: the row is not a control and must not offer
+   itself as one. */
+.row:hover .term {
+  color: var(--ink);
+}
+
+/* Under the two-column threshold the label sits directly above its body. The
+   label's fixed line box is released here — with nothing to align to, it only
+   adds a gap. */
+@media (max-width: 46rem) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+    padding-block: var(--s4);
+  }
+
+  .term {
+    line-height: 1.4;
+  }
+}

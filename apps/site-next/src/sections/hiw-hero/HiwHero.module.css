@@ -1,0 +1,113 @@
+/* ===========================================================================
+   hiw-hero — the restrained deep-page hero on how-it-works.html
+   ---------------------------------------------------------------------------
+   Three typographic lines and a hairline. No canvas, no pin, no parallax: the
+   section brief reserves those for index.html, which is the one page that
+   carries a canvas and the one page that carries a scroll timeline. A deep page
+   that performs also pays for the chunk on five sibling pages that do not.
+
+   WHY THE ENTER IS CSS AND NOT <Reveal>. src/motion/Reveal.tsx deliberately
+   leaves alone anything already inside the viewport (`if (isOnScreen(el))
+   return;`), because hiding an above-fold block until the animation chunk lands
+   blanks the top of the page for as long as the network takes. A hero is
+   above the fold by definition, so Reveal is structurally a no-op here. Three
+   keyframed elements cost no JavaScript, cannot blank the largest text on the
+   page while a module downloads, and are the same eight-pixel rise on the same
+   curve the shared primitive would have used.
+
+   THE RESTING STATE IS STILL THE FINISHED STATE. The from-state lives INSIDE
+   the keyframe, never as a base rule, so the prerendered markup renders at
+   final position and full opacity. A reader with scripting unavailable, and the
+   guards reading dist/how-it-works.html, both see the finished page.
+
+   A NOTE ON WORDING IN THIS FILE. Component stylesheets are scanned as prose by
+   the claims suite. No colour literal appears below, and no outcome, funnel or
+   discretionary-manager vocabulary appears in these comments — a word banned in
+   a paragraph is banned in a comment.
+   =========================================================================== */
+
+/* THE HOST OF A BACKDROP OWES TWO DECLARATIONS. `position: relative` gives the
+   absolutely positioned picture something to sit in; `isolation: isolate` makes
+   this element a stacking context, so the backdrop's `z-index: -1` puts it
+   behind this section's own content and CANNOT reach past it to sit behind the
+   page. See src/assets/backdrop.module.css. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  padding-block: var(--s8) var(--s7);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The label above the headline. Mono and tracked so it reads as a category
+   marker rather than as the first line of the sentence beneath it. */
+.eyebrow {
+  margin-bottom: var(--s4);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* The page's one <h1>. Sized by --step-display and set in the display serif by
+   the element defaults in index.css; only the measure is constrained here, so a
+   seven-verb headline breaks across lines rather than running the full column
+   width at the largest step. */
+.title {
+  max-width: 22ch;
+  margin-bottom: var(--s5);
+}
+
+.lede {
+  max-width: var(--measure);
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  color: var(--muted);
+}
+
+/* --- enter ----------------------------------------------------------------
+   Opacity and an eight-pixel rise, 0.6s on the shared enter curve, staggered
+   80ms — the durations and offsets the section brief specifies. 0.6s is not one
+   of the four --dur tokens; it sits inside the 0.24-0.8s band the design system
+   sets for interface motion, and it is written here as a literal rather than
+   added to the token set for one section's use.
+
+   Both animated properties are compositor properties, so nothing here triggers
+   layout. */
+
+@keyframes heroEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+.eyebrow,
+.title,
+.lede {
+  animation: heroEnter 0.6s var(--ease-enter) both;
+}
+
+.eyebrow {
+  animation-delay: 0s;
+}
+
+.title {
+  animation-delay: 0.08s;
+}
+
+.lede {
+  animation-delay: 0.16s;
+}
+
+/* The static branch, authored rather than inherited. index.css collapses every
+   animation-duration for a reader who asked for reduced motion, but it does not
+   touch animation-delay, so the staggered elements would still hold their
+   from-state for up to 160ms and then snap. Removing the animation outright is
+   the resting state, which is what that reader should get. */
+@media (prefers-reduced-motion: reduce) {
+  .eyebrow,
+  .title,
+  .lede {
+    animation: none;
+  }
+}

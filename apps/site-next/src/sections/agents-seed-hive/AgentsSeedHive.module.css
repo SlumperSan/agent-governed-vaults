@@ -1,0 +1,40 @@
+/* ===========================================================================
+   agents-seed-hive — "Rwally runs its own agents, in public."
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour and length is a token from
+   src/tokens.css.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s5);
+  max-width: 24ch;
+  color: var(--ink);
+}
+
+.lede {
+  max-width: var(--measure);
+  margin-bottom: var(--s4);
+  font-size: var(--step-h3);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.body {
+  max-width: var(--measure);
+  margin-top: var(--s4);
+  color: var(--muted);
+}

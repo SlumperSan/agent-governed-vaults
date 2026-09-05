@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07070b">
+<!-- THE SVG MARK IS THE ICON, AND IT HAS TO BE LINKED TO BE USED. A browser asks for /favicon.ico
+     on its own and asks for nothing else, so an unlinked public/favicon.svg is a file nobody ever
+     fetches; the previous site carried one and never linked it either. The .ico stays as the
+     fallback for a browser that cannot render an SVG icon, and is reached by that same implicit
+     request rather than by a second link, so there is exactly one icon link on the page. -->
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- The display serif, preloaded. It sets the h1, the largest paint on every page, and the browser
+     would otherwise not learn it is needed until the stylesheet has arrived and been matched, one round trip
+     later. The href is a path into node_modules, rewritten by the build: Vite resolves it through the same
+     asset pipeline that rewrites the url() in fonts.css, emits ONE hashed copy, and writes the /assets/ path
+     here, so the preload cannot go stale against the file the CSS actually loads. Do not hand-edit the hash.
+     Only this one face is preloaded; a second preload competes with it for the same connection, and the body
+     sans has a metric-matched fallback (see fonts.css) so its swap costs no layout. The heading is named above
+     without its angle brackets deliberately: the document-skeleton guard counts occurrences of the literal tag
+     in the built page, and this comment survives into that page, so writing the tag here reads as a second
+     heading and reds the guard. -->
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2">
+<title>Operators | Rwally</title>
+<meta name="description" content="What an agent-operator can and cannot do, the two separate 5% mechanisms that lock capital and decay proposal rights, and why the operator identity can never be rotated.">
+<link rel="canonical" href="https://rwally.com/operators">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rwally">
+<meta property="og:url" content="https://rwally.com/operators">
+<meta property="og:title" content="Operators: low capital cost, not no capital cost">
+<meta property="og:description" content="An operator proposes rebalances and votes its own weight. Two separate 5% mechanisms lock capital and decay proposal rights. Robinhood Chain mainnet, chain id 4663.">
+<meta property="og:image" content="https://rwally.com/og-card.png">
+<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark Rwally, and the deployment-status line Deployed on Robinhood Chain.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Operators: low capital cost, not no capital cost">
+<meta name="twitter:description" content="An operator proposes rebalances and votes its own weight. Two separate 5% mechanisms lock capital and decay proposal rights. Robinhood Chain mainnet, chain id 4663.">
+<meta name="twitter:image" content="https://rwally.com/og-card.png">
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/entry-operators.tsx"></script>
+</body>
+</html>
