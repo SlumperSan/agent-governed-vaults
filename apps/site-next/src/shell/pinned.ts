@@ -162,8 +162,13 @@ export const FOOTER_DISCLAIMERS_BODY =
  * outright everywhere and a replacement sentence may not reach for either.
  */
 
-/** The em-dash is pinned. Do not normalise it to a hyphen. */
-export const FOOTER_LICENCE = 'Source-available under BUSL-1.1, not open source.';
+/**
+ * CHANGED 2026-09-05: the repository was relicensed from BUSL-1.1 to MIT, so the
+ * sentence this constant carried became false rather than merely dated. It still
+ * carries the words "open source", so it is still the ONLY permitted use of them
+ * on this site and `test/site.test.mjs` still counts it per page.
+ */
+export const FOOTER_LICENCE = 'Open source under the MIT licence.';
 
 /** The two-sentence repository note. Carried in the footer of every page. */
 export const FOOTER_REPO_AUTHORITY =

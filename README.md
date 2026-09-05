@@ -233,4 +233,5 @@ See [docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md),
 [`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json),
 and [`/llms.txt`](llms.txt).
 
-License: BUSL-1.1; see [LICENSE](LICENSE).
+License: MIT; see [LICENSE](LICENSE). The repository was source-available under BUSL-1.1 until
+2026-09-05; see [LICENSE-HISTORY.md](LICENSE-HISTORY.md).

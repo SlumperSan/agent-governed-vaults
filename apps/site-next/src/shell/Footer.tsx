@@ -34,9 +34,8 @@
  * here, so neither is dropped on itself; the current one carries
  * `aria-current="page"`.
  *
- * THE LICENCE SENTENCE IS COUNTED. `Source-available under BUSL-1.1, not open
- * source.` is the only permitted use of the words "open source" anywhere on this
- * site, and `test/site.test.mjs` pins how many times it may appear per page.
+ * THE LICENCE SENTENCE IS COUNTED. `Open source under the MIT licence.` is the
+ * only permitted use of the words "open source" anywhere on this site, and `test/site.test.mjs` pins how many times it may appear per page.
  * Rendering it here puts one copy on both pages.
  */
 import { useRef, type JSX } from 'react';

@@ -109,8 +109,9 @@ strictly worse.
 
 `vendor/TickMath.sol` and `vendor/FullMath.sol` are **third-party code in their own files
 under their own SPDX headers**: GPL-2.0-or-later and MIT respectively, both derived from
-Uniswap v3-core. The rest of the repository is BUSL-1.1. Do not inline these constants into a
-BUSL-1.1 file; the separation is the license boundary. Only the `tick → sqrtPrice` direction
+Uniswap v3-core. The rest of the repository is MIT (BUSL-1.1 until 2026-09-05; see LICENSE-HISTORY.md). Do not
+inline these constants into a repository-licensed file; the separation is the license boundary and
+it survives the relicense, because GPL-2.0-or-later is not MIT either. Only the `tick → sqrtPrice` direction
 is vendored (`getTickAtSqrtRatio` is omitted rather than carried unused and unreviewed).
 
 Both are 0.7.6 → 0.8.26 ports: the bodies are `unchecked` (the algorithms depend on wrapping

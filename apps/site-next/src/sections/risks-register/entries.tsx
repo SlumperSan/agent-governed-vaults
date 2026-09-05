@@ -300,7 +300,7 @@ export const ENTRIES: readonly RiskEntry[] = [
     severityLabel: "Open, owner decision",
     heading: "13. An open licensing question",
     rows: [
-      { dt: "What it is", dd: "Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository." },
+      { dt: "What it is", dd: "Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms in a repository whose own licence is MIT. The MIT half now matches the repository; the GPL-2.0-or-later half does not." },
       { dt: "Worst case", dd: "The combination is judged incompatible, and the licensing of part of the tree has to change." },
       { dt: "What is done", dd: "It is recorded as an open owner decision rather than quietly left alone. It is disclosed here because you should know about it before you build on the repository, not after." },
     ],
