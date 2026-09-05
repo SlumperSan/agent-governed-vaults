@@ -20,9 +20,10 @@
  * to logs/soak-pids.txt, so `run-soak.ps1 -Stop` reaches it; that matters because SOAK_SIGNER_ARGS
  * names a `--password-file` the operator deletes once the run is over.
  *
- * Env: SOAK_SIGNER_ARGS (deployer), BASE_SEPOLIA_RPC, SOAK_STATE_DIR, SOAK_RESET=1. run-soak.ps1
- *      sets the first two for the whole run; it never sets SOAK_STATE_DIR, and only reads it to
- *      find the state file this script writes.
+ * Env: SOAK_SIGNER_ARGS (deployer), SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT,
+ *      SOAK_STATE_DIR, SOAK_RESET=1. run-soak.ps1 sets SOAK_SIGNER_ARGS and SOAK_RPC for the whole
+ *      run; it never sets SOAK_STATE_DIR, and only reads it to find the state file this script
+ *      writes.
  * Run:  node scripts/soak/drill5-gov-companion.mjs   (standalone: the agent must already hold
  *       shares — drill5-fasttrack.mjs is one way to get there)
  */
@@ -33,12 +34,9 @@ import {
   ROOT, RPC, log, assert, call, callU, send, tryCall, waitUntilChainTime,
   openState, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal, pollUntil, TOPIC,
 } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
 const VAULT = soak.smokeVault.address;
 const AGENT = '0x290caf006794a73bB1ba928a38c2A7f099015a6d';
@@ -48,6 +46,7 @@ const STATE_PATH = path.join(STATE_DIR, '.state-drill5gov.json');
 const { state, save, saveFirst } = openState(STATE_PATH, dep.factory);
 
 log('DRILL 5 COMPANION — deployer half of the agent governance round (smoke vault)');
+assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 assert(SIGNER_ARGS.length > 0, 'SOAK_SIGNER_ARGS is required');
 if (!state.signer) saveFirst('signer', cast(['wallet', 'address', ...SIGNER_ARGS], { interactive: true }).split('\n').pop().trim());
 

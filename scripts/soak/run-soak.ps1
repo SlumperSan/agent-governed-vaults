@@ -17,7 +17,14 @@
 #         powershell -ExecutionPolicy Bypass -File scripts\soak\run-soak.ps1 -Status
 #         powershell -ExecutionPolicy Bypass -File scripts\soak\run-soak.ps1 -Stop
 #
-# Env READ if you set it:  BASE_SEPOLIA_RPC (default https://sepolia.base.org)
+# Env READ if you set it:  SOAK_RPC         (default https://sepolia.base.org; BASE_SEPOLIA_RPC is
+#                                            read as a fallback so an existing environment still
+#                                            works. Set it together with SOAK_DEPLOYMENT when the
+#                                            run targets a chain other than Base Sepolia - every
+#                                            drill refuses a pair that disagrees, in
+#                                            deployment.mjs assertLiveChainId)
+#                          SOAK_DEPLOYMENT  (default contracts\config\deployments\base-sepolia.json,
+#                                            the address book that decides which chain is expected)
 #                          SOAK_API         (default http://127.0.0.1:8402)
 #                          SOAK_STATE_DIR   (default <repo>\scripts\soak - where the drills keep
 #                                            their resumable state; this script only reads it to
@@ -40,7 +47,6 @@ $ErrorActionPreference = 'Stop'
 $Root    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $LogDir  = Join-Path $Root 'logs'
 $PidFile = Join-Path $LogDir 'soak-pids.txt'
-$Deployer = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35'
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Location $Root
@@ -86,6 +92,20 @@ if (-not (Test-Path $SignerPasswordFile)) {
   throw "signer password file not found: $SignerPasswordFile`nCreate it with:`n  `"your-deployer-password`" | Out-File -NoNewline -Encoding ascii `"$SignerPasswordFile`""
 }
 
+# The address book, resolved exactly as deployment.mjs deploymentPath does, so the launcher and the
+# drills cannot disagree about which chain this run targets. Resolved HERE and not beside $PidFile:
+# $ErrorActionPreference is 'Stop', so a typo'd SOAK_DEPLOYMENT read above the -Status/-Stop blocks
+# would throw before -Stop could kill the pids - and -Stop is what reaches the detached companion
+# holding a --password-file.
+$Book = if ($env:SOAK_DEPLOYMENT) {
+          if ([System.IO.Path]::IsPathRooted($env:SOAK_DEPLOYMENT)) { $env:SOAK_DEPLOYMENT }
+          else { Join-Path $Root $env:SOAK_DEPLOYMENT }
+        } else { Join-Path $Root 'contracts\config\deployments\base-sepolia.json' }
+# Read the signer from that book rather than repeating it here. The preflight below unlocks a
+# keystore and compares the derived address against this value, so a second copy that drifted would
+# reject the correct key or accept the wrong one.
+$Deployer = (Get-Content -Raw $Book | ConvertFrom-Json).deployer
+
 $env:SOAK_SIGNER_ARGS = "--account deployer --password-file $SignerPasswordFile"
 
 # Prove the signer args work BEFORE launching anything long. This derives an address and
@@ -112,7 +132,13 @@ if ($runAgent -and -not (Test-Path $AgentPasswordFile)) {
   $runAgent = $false
 }
 
-$env:BASE_SEPOLIA_RPC = if ($env:BASE_SEPOLIA_RPC) { $env:BASE_SEPOLIA_RPC } else { 'https://sepolia.base.org' }
+# Resolve the endpoint once, in the order lib.mjs and agent-policy.mjs resolve it, and export it
+# under BOTH names: SOAK_RPC is what every soak script reads first, and BASE_SEPOLIA_RPC is left set
+# so a tool that only knows the old name still sees the same endpoint.
+$env:SOAK_RPC = if ($env:SOAK_RPC) { $env:SOAK_RPC }
+                elseif ($env:BASE_SEPOLIA_RPC) { $env:BASE_SEPOLIA_RPC }
+                else { 'https://sepolia.base.org' }
+$env:BASE_SEPOLIA_RPC = $env:SOAK_RPC
 $env:SOAK_API         = if ($env:SOAK_API) { $env:SOAK_API } else { 'http://127.0.0.1:8402' }
 # Drill 4's freeze-safety probe needs a member who actually HAS a pending deposit. The deployer
 # gets one during drill 1's and drill 2's 4h observation windows - that is the only window in
@@ -210,7 +236,7 @@ while ($true) {
   if (-not (Test-Path $statePath)) { Write-Host '  (no indexer state yet)'; continue }
   try {
     $last = (Get-Content $statePath -Raw | ConvertFrom-Json).lastBlock
-    $head = [int](cast block-number --rpc-url $env:BASE_SEPOLIA_RPC)
+    $head = [int](cast block-number --rpc-url $env:SOAK_RPC)
     $lag = $head - $last
     Write-Host ("  indexer at {0}, head {1} (lag {2} blocks)" -f $last, $head, $lag)
     if ($lag -le 20) { Write-Host '  caught up.' -ForegroundColor Green; break }

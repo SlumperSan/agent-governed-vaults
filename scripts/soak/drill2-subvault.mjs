@@ -37,7 +37,8 @@
  * Wall clock: parent deposit + 4h observation window, then 2 governance rounds of
  * (1h commit + 1h reveal) each. Budget ~8h, nearly all of it waiting. Resumable throughout.
  *
- * Env: SOAK_SIGNER_ARGS (required), BASE_SEPOLIA_RPC, SOAK_API, SOAK_STATE_DIR, SOAK_RESET=1.
+ * Env: SOAK_SIGNER_ARGS (required), SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_API,
+ *      SOAK_STATE_DIR, SOAK_RESET=1.
  * Run:  node scripts/soak/drill2-subvault.mjs
  */
 import fs from 'node:fs';
@@ -47,13 +48,10 @@ import {
   ROOT, RPC, log, assert, eq, call, callU, send, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
 } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
 const C = soak.childVault;
 const PARENT = soak.smokeVault.address;
@@ -80,8 +78,7 @@ const ALLOCATE_USDC = String(C.allocateUsdc ?? 2_000_000n);
 
 function preflight() {
   log(`rpc=${RPC}  parent=${PARENT}`);
-  const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
-  assert(chainId === dep.chainId, `RPC chain id ${chainId} != address-book chainId ${dep.chainId}`);
+  assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   if (!state.signer) {
     assert(SIGNER_ARGS.length > 0, 'SOAK_SIGNER_ARGS is required; this script never handles the key itself');

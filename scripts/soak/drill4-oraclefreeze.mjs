@@ -49,16 +49,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, log, assert, openState } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { deploymentPath, loadDeployment } from './deployment.mjs';
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer, oracleCanaryRows, verdictOf,
   freezeSafetyReport,
 } from './series-analysis.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series.jsonl');
 const CANARY_STATE = process.env.SOAK_CANARY_STATE ?? path.join(ROOT, 'data', 'canary-state.json');

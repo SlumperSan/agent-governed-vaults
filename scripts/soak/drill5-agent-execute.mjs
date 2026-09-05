@@ -56,7 +56,8 @@
  *
  * Env (required): SOAK_AGENT_KEYSTORE, SOAK_AGENT_KEYSTORE_PASSWORD,
  *                 AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS=yes
- * Env (optional): BASE_SEPOLIA_RPC, SOAK_API, SOAK_STATE_DIR, SOAK_TICK_MS, SOAK_MAX_TICKS,
+ * Env (optional): SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_API, SOAK_STATE_DIR,
+ *                 SOAK_TICK_MS, SOAK_MAX_TICKS,
  *                 SOAK_AGENT_CAP_USDC (x402 session spend cap per phase poll window, default
  *                 5.00 — see the cap note in buildAgent), SOAK_PHASE (run a single phase),
  *                 SOAK_RESET=1
@@ -69,14 +70,11 @@ import {
   budgetExhaustedFailure,
   readProposal, votableNow,
 } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { loadAccountFromKeystore, redact } from '../lib/keystore.mjs';
 import { resolveAgentRunConfig, policyFor, TESTNET_CHAIN_IDS, EXECUTE_ENV_VAR } from './agent-policy.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
 const VAULT = soak.smokeVault.address;
 
@@ -112,7 +110,7 @@ async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) 
       },
     },
     chain: {
-      rpcUrl: cfgIn.rpcUrl, chainId: dep.chainId, chainName: 'base-sepolia',
+      rpcUrl: cfgIn.rpcUrl, chainId: dep.chainId, chainName: dep.chainName,
       governance: dep.governance.toLowerCase(),
       subvaultRegistry: dep.subRegistry.toLowerCase(), // omit and the fee gate always blocks
       usdc: dep.usdc.toLowerCase(), usdcName: 'USDC', usdcVersion: '2',
@@ -190,7 +188,7 @@ const cfgIn = resolveAgentRunConfig(process.env);
 
 const chainId = Number(cast(['chain-id', '--rpc-url', cfgIn.rpcUrl]));
 assert(TESTNET_CHAIN_IDS.has(chainId), `refusing to run against chain ${chainId} — testnet only`);
-assert(chainId === dep.chainId, `RPC chain ${chainId} != address book ${dep.chainId}`);
+assertLiveChainId(dep, chainId);
 
 const account = await loadAccountFromKeystore(cfgIn.keystore, cfgIn.password);
 saveFirst('agent', account.address);
