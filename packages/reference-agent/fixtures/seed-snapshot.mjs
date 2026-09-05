@@ -5,9 +5,12 @@
  *
  * `node packages/reference-agent/fixtures/seed-snapshot.mjs [path]`
  *
- * The protocol has no deployment (issue #10), so there is no chain for the indexer to read and no
- * real history for the API to serve. Rather than demo against an empty snapshot — which yields
- * "0 vaults" and a narrative about nothing — this folds synthetic events through the REAL
+ * Nothing is deployed to mainnet: the only record in `contracts/config/deployments/` is
+ * `base-sepolia.json`, a testnet trial. The events here are synthetic for a reason no deployment
+ * changes, though. The demo needs a specific joint state across three vaults at once — see
+ * `fixtures/demo-chain.mjs`, down to a reveal-phase proposal against a commit the demo agent
+ * itself made — and no live chain can be relied on to be holding that at demo time. So rather than
+ * serve whatever a real snapshot happened to contain, this folds synthetic events through the REAL
  * projection code (`packages/indexer/src/projections.mjs`) and writes them with the REAL store
  * (`store.mjs`, whose round-trip is already covered by the existing suite).
  *
