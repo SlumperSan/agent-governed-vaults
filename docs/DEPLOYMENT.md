@@ -112,18 +112,22 @@ and on `SEQUENCER_EXEMPT_REASONS` in
 [`verify-chainlink-oracle.mjs`](../scripts/verify-chainlink-oracle.mjs), so a deploy there runs with
 `ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
 
-**One signal this switches off, and where the real fix lives.** `SEQUENCER_REQUIRED` is computed
-from the *config's* `chainId` (`verify-chainlink-oracle.mjs:105`) and never from the RPC, while the
-RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:78`) — so a `BASE_MAINNET_RPC` left
-exported from a Base session silently sends a run launched with the 4663 config to Base mainnet.
-Before this change that misdirected run **failed** the sequencer row, and something objected; on an
-exempt chain the row now **passes**, so the wrong-chain verification can come back green. The root
-cause is the missing chain binding rather than the exemption, and it is being fixed separately: PR
-#205 (`fix/verify-chainlink-oracle: bind the run to the chain the config names`) reads `eth_chainId`
-and refuses to verify when it differs from the config's `chainId`. Until that lands, clear
-`BASE_MAINNET_RPC` by hand — which is exactly what
+**One signal this switches off, and what already stops it mattering.** `SEQUENCER_REQUIRED` is
+computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:137`) and never from the RPC,
+while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:110`) — so a
+`BASE_MAINNET_RPC` left exported from a Base session still decides which endpoint a run launched
+with the 4663 config queries. Before this change that misdirected run **failed** the sequencer row,
+and something objected; on an exempt chain the row now **passes**, so on its own the exemption would
+let a wrong-chain verification come back green. The root cause was the missing chain binding rather
+than the exemption, and it was fixed separately and landed first: PR #205
+(`fix(verify-chainlink-oracle): bind the run to the chain the config names`) is on `protocol/main`
+as `89d0fbb6`, and this change is rebased on top of it. The script now reads `eth_chainId` from
+whichever RPC it resolved and refuses the entire run — before any feed is read (`:442`) — when that
+id differs from the config's `chainId`, so a misdirected run never reaches the sequencer row at all,
+exempt chain or not. Clearing `BASE_MAINNET_RPC` by hand, which
 [`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json)'s
-`chainlinkOracle.verification` list already instructs.
+`chainlinkOracle.verification` list still instructs, remains the right habit: the binding governs
+whether a verdict means anything, not which endpoint gets queried.
 
 **Why an exemption rather than a feed address.** Chainlink publishes no L2 Sequencer Uptime Feed for
 this chain and states it is no longer expanding that feed set to additional networks
@@ -174,7 +178,9 @@ in §0 above — and it is worth reading what its own status fields claim, becau
 the filename suggests. Its **top-level `status`** opens *"CONFIGURATION ONLY — NOTHING IS DEPLOYED ON
 CHAIN 4663"*; its **`chainlinkOracle.status`** reads *"VERIFIED-ON-CHAIN 2026-09-04 … VERIFIED means
 the addresses, decimals, descriptions, phases and answers below were read from that chain. IT DOES
-NOT MEAN DEPLOYED"*. What it supplies is §1 step 1's feed-address input and nothing beyond it:
+NOT MEAN DEPLOYED"*. What it supplies is three of §1 step 1's four inputs — real, on-chain-verified
+feed addresses, per-asset heartbeats and sane-price bounds, the same three §0 above enumerates — and
+deliberately not that step's fourth, the L2 sequencer uptime feed:
 `chainlinkOracle.assets` carries WETH (`0x0bd7…ad73`) priced from that chain's own `ETH / USD` feed
 `0x78F3…d3A9`, and cbBTC (`0xcec1…0be4`) priced from its `CBBTC / USD` feed `0x0009…a21a`, with every
 address, `decimals()`, `description()`, `phaseId()`, `aggregator()` and `latestRoundData()` read from
@@ -199,10 +205,11 @@ Four things remain blocking, and none of them is in this change's gift:
   against the second, so it wants its own reviewed change rather than arriving as a side effect of
   this one.
 
-`verify-chainlink-oracle.mjs` also has no default RPC for 4663 as the tree stands — `DEFAULT_RPC`
-(`:77`) carries 8453 and 84532 only — so it exits 1 until `BASE_RPC` names one, which is deliberate
-(guessing one would verify feeds against the wrong chain). PR #205 adds a 4663 entry there *and* the
-`eth_chainId` binding that makes a default safe; the two arrive together or not at all.
+`verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
+`4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`:104-109`), so a run against this
+config no longer exits 1 for want of an explicit `BASE_RPC`. What keeps that convenience honest is
+the `eth_chainId` binding that arrived in the same PR — whichever endpoint is resolved has to answer
+4663 before a single feed is read (`:442`) — so a default can pick an endpoint but never certify one.
 
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
