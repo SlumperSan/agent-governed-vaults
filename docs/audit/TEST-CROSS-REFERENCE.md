@@ -2,7 +2,7 @@
 
 Every mechanic in [THREAT-MODEL.md](../THREAT-MODEL.md) mapped to the test(s) covering it.
 Suite: 445 tests across 56 files (`contracts/test/`), measured 2026-09-03, including invariant/fuzz suites
-(256 runs × 16k calls). Rows with no dedicated test say so explicitly — traceability includes
+(256 runs × 16k calls). Rows with no dedicated test say so explicitly. Traceability includes
 the honest gaps.
 
 Test names abbreviated to `File::test`; all files live in `contracts/test/`.
@@ -21,7 +21,7 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | EE-6 in-kind + escrow isolation | `VaultCore::test_inKindRedemption_proRataAcrossAssets`, `::test_blockedAssetEscrows_redemptionStillCompletes` |
 | §4.6 NAVps non-decreasing + conservation + solvency | `VaultCoreInvariant::invariant_sharesConserved`, `::invariant_solvency`; system-level with children: `SystemInvariant::invariant_parentShareConservation`, `::invariant_parentSolvency`, `::invariant_childBacksParent` |
 | C-1 indicative 4626 views | `VaultCore::test_indicativeViews` |
-| EE-5/E7 latency arb | **Accepted residual** — no test; bounded by oracle ceiling + exit fee (see README §7) |
+| EE-5/E7 latency arb | **Accepted residual**, no test; bounded by oracle ceiling + exit fee (see README §7) |
 
 ## Module hardening (MO / S1 review fixes)
 
@@ -29,7 +29,7 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | --- | --- |
 | MO-1/H-1 reverting modules never block exits; governance failure → Mode I | `ModuleHardening::test_h1_revertingFeeEngineAndRegistry_exitStillSettles`, `::test_h1_revertingGovernance_fallsBackToModeI`, `::test_h1_moduleFailureEmitsEvent` |
 | MO-2/H-2 malformed-returndata / bomb token degrades to escrow | `ModuleHardening::test_h2_malformedReturnTokenEscrows_exitCompletes` |
-| MO-3/M-1 creator gate at queue time, not re-checked at settle | gate-at-queue asserted in `VaultCore::test_modeF_*` paths; settle-time non-recheck verified in S1 review — no dedicated regression test |
+| MO-3/M-1 creator gate at queue time, not re-checked at settle | gate-at-queue asserted in `VaultCore::test_modeF_*` paths; settle-time non-recheck verified in S1 review, no dedicated regression test |
 | MO-4/M-2 fee withheld uniformly across cash + in-kind legs | `ModuleHardening::test_m2_fullyInvestedVault_feeStillCollected` |
 
 ## Fees, carry, registry (CM / SF-4/5)
@@ -42,7 +42,7 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | CM-4 fresh identity sheds carry, restarts record | `FeesAndRegistry::test_carryIsPerOperator_freshIdentityGetsNoOffset` |
 | CM-5 attestation gate (factory-only, canonical) | `FeesAndRegistry::test_factoryAttestsAndAutoRegistersOperator`, `::test_unattestedVaultCannotRecordOrBeFeeAssessed`, `::test_onlyFactoryAttests` |
 | SF-4/SF-5 monotone leaderboard, history retained | `FeesAndRegistry::test_statsAreMonotone_closedVaultHistoryRetained`, `FeeCarryInvariant::invariant_lifetimeMonotone`, `FeesAndRegistry::test_operatorClaimsFees` |
-| G3/CM-5 carry farming | **Accepted residual** — economic deterrent, no test |
+| G3/CM-5 carry farming | **Accepted residual**, economic deterrent, no test |
 | G5 fee/carry non-atomicity | covered indirectly by `invariant_carryMatchesGhost`; divergence unreachable at current gas params (S6 review) |
 
 ## Governance / voting (VO / CM-6/7/8)
@@ -52,9 +52,9 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | Lifecycle propose→commit→reveal→finalize→timelock→execute | `Governance::test_fullLifecycle_passAndExecute` |
 | VO-2/K-3 quorum floor; defaults tally-only | `Governance::test_quorumFloorDefeats`, `::test_defaultCountsInTallyNeverQuorum` |
 | VO-3 default 72h TTL | `Governance::test_defaultExpiresAfter72h` |
-| VO-3 TTL vs the commit phase — usable window is `DEFAULT_TTL - commitDuration`, and `COMMIT_HARD_CAP = DEFAULT_TTL - 1` keeps it non-empty (**T-1**) | `AuditStandingDefaultTtlVsCommit::test_T1_commitPhaseLongerThanTtl_isRejectedAtRegistration`, `::test_T1_theCapIsPinnedToTheTtl`, `::test_T1_commitDurationCapBoundary_partitionsExactly`, `::test_T1_aVaultAtTheCapStillHasAUsableDefaultWindow`, `::test_T1b_commitPhaseConsumesPartOfTheTtl_bounded` |
+| VO-3 TTL vs the commit phase: usable window is `DEFAULT_TTL - commitDuration`, and `COMMIT_HARD_CAP = DEFAULT_TTL - 1` keeps it non-empty (**T-1**) | `AuditStandingDefaultTtlVsCommit::test_T1_commitPhaseLongerThanTtl_isRejectedAtRegistration`, `::test_T1_theCapIsPinnedToTheTtl`, `::test_T1_commitDurationCapBoundary_partitionsExactly`, `::test_T1_aVaultAtTheCapStillHasAUsableDefaultWindow`, `::test_T1b_commitPhaseConsumesPartOfTheTtl_bounded` |
 | VO-4 defaults structurally Rebalance-only | `Governance::test_defaultOnlyForRebalanceType` |
-| G4 default must predate proposal (`setAt < createdAt`) | `AuditStandingDefaultTtlVsCommit::test_T1_f4LowerBoundIsStrict_sameSecondDefaultIsRejected` — added 2026-09-01. This row previously read "no dedicated regression test", and it was right: flipping the strict `<` to `<=` survived all 395 tests. Found by the T-1 mutation gate; the bound itself was already correct. |
+| G4 default must predate proposal (`setAt < createdAt`) | `AuditStandingDefaultTtlVsCommit::test_T1_f4LowerBoundIsStrict_sameSecondDefaultIsRejected`, added 2026-09-01. This row previously read "no dedicated regression test", and it was right: flipping the strict `<` to `<=` survived all 395 tests. Found by the T-1 mutation gate; the bound itself was already correct. |
 | VO-5/G1 delegation + concentration cap on received weight only | `Governance::test_delegationCranksOntoDelegateDirection`, `::test_concentrationCapBlocksExcessDelegation`, `::test_ownWeightIsNeverConcentrationCapped`, `::test_selfVoteBeatsDelegation` |
 | VO-6 unrevealed commits forfeit | `Governance::test_unrevealedCommitIsForfeit` |
 | VO-9 flash-stake zero weight (snapshot at createdAt−1) | `Governance::test_postCreationDepositHasZeroWeight`, `GovernanceInvariant::invariant_revealedNeverExceedsSnapshot` |
@@ -63,7 +63,7 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | CM-8/K-2 RuleChange full consensus | `Governance::test_ruleChangeRequiresFullConsensus`, `::test_ruleChangeFullConsensusPassesAndApplies` |
 | VO-8 timelock hard cap | `Governance::test_timelockHardCapEnforced` |
 | Tally/round bookkeeping | `GovernanceInvariant::invariant_roundAccountingConsistent` |
-| GA-2/VO-7 mid-reveal tally visibility | **Accepted residual** — commit-binding is the defense, no test |
+| GA-2/VO-7 mid-reveal tally visibility | **Accepted residual**, commit-binding is the defense, no test |
 
 ## Oracle (SF-1/2, E2/E6)
 
@@ -85,8 +85,8 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | EX-3 measured-delta minOut, never router's word | `Execution::test_adapterEnforcesMinOutOnMeasuredDelta`, `::test_adapterRequiresMinOut`, `::test_rebalanceRejectsRogueOutputToken`, `DirectPoolAdapter::test_directAdapterEnforcesMinOutOnMeasuredDelta` |
 | Deadline enforcement | `Execution::test_adapterEnforcesDeadline` |
 | C-2 venue abstraction (2 structurally different adapters) | `DirectPoolAdapter::test_governedRebalanceThroughDirectPoolAdapter`, `::test_directAdapterRejectsTokenNotInPair` |
-| E3 fix: leftover sweep from per-swap delta | fix verified in S6 review; escrow non-absorption covered indirectly by `SystemInvariant::invariant_parentSolvency` / `VaultCoreInvariant::invariant_solvency` — no dedicated regression test |
-| Adapter refunds this order's own delta, not its whole balance (donation DoS + cross-order sweep) | `AuditAdapterScopedSweep::test_donationCannotBrickTheVaultsRebalance`, `::test_donationBelowThePullDoesNotDriftTheVaultsAccounting`, `::test_griefersOneUnitOrderCannotExtractTheDonation`, `::test_partialFillRefundsExactlyAmountInMinusSpent`, `::test_routerPullingNothingRefundsTheWholeOrder`, `::test_midRoutePushBackIsCappedAtAmountIn`, `::test_adapterRefundNeverIncludesPreExistingBalance`, `::test_saturatingFloorIsReachableWithAFeeOnTransferTokenIn`, `::test_clampBindsAtExactlyAmountInPlusOne`, `::test_preExistingTokenOutIsNotSweptIntoTheOrdersOutput` — **7 of the 10 fail against `protocol/main`'s adapter**, three with `Panic(0x11)`. The last three were added after review: the refund line carries **three** guards and only two had tests, the clamp's threshold test sat 500e6 clear of the boundary (so `> amountIn + 1` survived the whole suite), and the `tokenOut` payout leg had no test at all (so deleting `- outBefore` survived it too) |
+| E3 fix: leftover sweep from per-swap delta | fix verified in S6 review; escrow non-absorption covered indirectly by `SystemInvariant::invariant_parentSolvency` / `VaultCoreInvariant::invariant_solvency`, no dedicated regression test |
+| Adapter refunds this order's own delta, not its whole balance (donation DoS + cross-order sweep) | `AuditAdapterScopedSweep::test_donationCannotBrickTheVaultsRebalance`, `::test_donationBelowThePullDoesNotDriftTheVaultsAccounting`, `::test_griefersOneUnitOrderCannotExtractTheDonation`, `::test_partialFillRefundsExactlyAmountInMinusSpent`, `::test_routerPullingNothingRefundsTheWholeOrder`, `::test_midRoutePushBackIsCappedAtAmountIn`, `::test_adapterRefundNeverIncludesPreExistingBalance`, `::test_saturatingFloorIsReachableWithAFeeOnTransferTokenIn`, `::test_clampBindsAtExactlyAmountInPlusOne`, `::test_preExistingTokenOutIsNotSweptIntoTheOrdersOutput`: **7 of the 10 fail against `protocol/main`'s adapter**, three with `Panic(0x11)`. The last three were added after review: the refund line carries **three** guards and only two had tests, the clamp's threshold test sat 500e6 clear of the boundary (so `> amountIn + 1` survived the whole suite), and the `tokenOut` payout leg had no test at all (so deleting `- outBefore` survived it too) |
 | Adapter non-reentrancy (interface-level invariant) | `AdapterReentrancy::test_nestedSwapCannotSweepTheOuterOrdersInput`, `::test_lockReleasesAfterASwallowedNestedRevert`, `::test_lockReleasesAfterAnOuterRevert`, `::test_directPoolAdapterRefusesNestedSwap`, `::test_partialFillRefundsUnspentInput` |
 | End-to-end governed rebalance + Mode-F settle | `Execution::test_e2e_governedRebalance_modeFExitSettlesAtPostNav` |
 
@@ -112,22 +112,22 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 | --- | --- |
 | One-shot wiring, locked back-references, valid order | `Deploy::test_deployWiresAndLocks`, `DeployTestnet::test_testnetDeployWiresFullStack` (both also assert the factory's immutable `vaultDeployer` pin) |
 | EIP-170 deployability of every contract (#10) | `Eip170::test_everyDeployedContractFitsUnderEip170` (budgets far tighter than the cap, so re-embedding VaultCore's creation code fails loudly), `::test_vaultCoreCreationCodeFitsInsideTheDeployersInitcode` (the EIP-3860 bound the fix trades onto) |
-| PX-4 (a) deployer confers no attestation | `Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested` (bypass vault is byte-identical to a factory vault, immutables included — only attestation differs), `::test_attestationRemainsFactoryOnly`, `::test_factoryPinsItsDeployerImmutably` |
+| PX-4 (a) deployer confers no attestation | `Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested` (bypass vault is byte-identical to a factory vault, immutables included. Only attestation differs), `::test_attestationRemainsFactoryOnly`, `::test_factoryPinsItsDeployerImmutably` |
 | PX-4 (b) CREATEd bytes are compile-time-pinned, not caller-supplied | `Eip170::test_deployerCreationCodeIsTheCompiledVaultCore`, `::test_codeChunksAreInertData` |
 | Factory behaviour preserved across the deployer hop | `Eip170::test_deployedVaultBindsTheSameSingletonsAndCreator`, `::test_vaultCoreConstructorRevertsStillBubbleThroughTheFactory`; the pre-existing suites are unchanged and still cover attestation, edge registration and basket-subset (`FeesAndRegistry`, `SubVaults`, `Sprint6Fixes`) |
 
 ## What this cross-reference deliberately does not cover
 
 **The canary and the reference agent are out of contract-audit scope, and no row below maps to
-them.** `packages/canary/` (PR #11 — a read-only post-launch watcher) and
-`packages/reference-agent/` (PR #12 — a policy-driven vault member) are off-chain TypeScript.
+them.** `packages/canary/` (PR #11, a read-only post-launch watcher) and
+`packages/reference-agent/` (PR #12, a policy-driven vault member) are off-chain TypeScript.
 Neither ships a Solidity file: `git diff protocol/main...sprint-5/canary -- contracts/` and the
 same for `sprint-6/reference-agent` are both **empty**. They custody nothing, hold no keys, and
 cannot affect on-chain state that the contracts do not already gate. They are covered by the
 backend suite, not by this document, exactly as `packages/indexer`, `apps/api` and `apps/web` are.
 Stated explicitly so their absence reads as a scope decision rather than a coverage gap.
 
-Both are also **unmerged as of the audit tag** — see
+Both are also **unmerged as of the audit tag**: see
 [CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) for what the tagged tree does and does not
 contain.
 
@@ -136,9 +136,9 @@ contain.
 1. **MO-3 settle-time non-recheck** and **G4 lower-bound** have review-verified fixes but no
    dedicated regression tests.
 2. **E3 sweep** (the VaultCore-side refund) is covered only indirectly through solvency
-   invariants. The *adapter*-side counterpart of the same lesson — the whole-balance sweep in
-   `AggregationRouterAdapter` — now has a dedicated, discriminating regression file
+   invariants. The *adapter*-side counterpart of the same lesson (the whole-balance sweep in
+   `AggregationRouterAdapter`) now has a dedicated, discriminating regression file
    (`test/audit/AuditAdapterScopedSweep.t.sol`); it was an open gap until 2026-09-01.
 3. Accepted residuals (EE-5/E7 latency arb, G3 carry farming, K-4 induced staleness cost,
-   VO-7 tally visibility) are deliberately untested — they are economic/design bounds, not
+   VO-7 tally visibility) are deliberately untested. They are economic/design bounds, not
    code properties.

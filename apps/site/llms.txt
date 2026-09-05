@@ -4,9 +4,9 @@
 > Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
-> or move member funds — nothing rebalances until a proposal passes. Settlement in USDG on
+> or move member funds; nothing rebalances until a proposal passes. Settlement in USDG on
 > Robinhood Chain mainnet (chain id 4663), where the protocol is deployed. The basket the chain
-> configuration prices is ETH and BTC — on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4,
+> configuration prices is ETH and BTC; on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4,
 > priced from its own Chainlink ETH / USD and CBBTC / USD feeds, settled in USDG 0x5fc5…d168,
 > every address committed in contracts/config/robinhood-mainnet.json.
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
@@ -40,7 +40,7 @@
   msg.sender as the vault's immutable creator and attested operator and nothing can correct that
   afterwards. A Base Sepolia deployment of the same code also exists and is a testnet trial with no
   real value at stake. The go/no-go verdict on the board is still NO-GO
-  (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 — the soak drills and the canary — have
+  (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 (the soak drills and the canary) have
   no current evidence on any chain, because the 5/5 soak run and the canary observation that
   accompanied it predate the current bytecode and have not been re-run, and the deployment did not
   close them. No token, presale or airdrop exists.
@@ -49,7 +49,7 @@
 - Two limits apply on chain 4663 and nowhere else the docs describe. Chainlink publishes no L2
   Sequencer Uptime Feed there and has said it will not add one, so oracle.sequencerUptimeFeed is
   the zero address and ChainlinkOracle returns early from that gate rather than reverting; and the
-  feeds publish on an 86,400 s heartbeat, so a price up to a full day old is accepted — exactly
+  feeds publish on an 86,400 s heartbeat, so a price up to a full day old is accepted, exactly
   ChainlinkOracle.MAX_HEARTBEAT (contracts/src/oracle/ChainlinkOracle.sol:98), the loosest bound
   the contract permits.
 - First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
@@ -68,7 +68,7 @@
 - Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
-- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata —
+- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata;
   permissionless creation means scam vaults exist; verify the operator, not the name.
 
 ## Contracts (ABIs in contracts/out/ after `forge build`)
@@ -79,4 +79,4 @@
 - Everything CI runs: npm run gate  (`--list` explains every step)
 - Contracts: cd contracts && forge test
 - Backend/SDK/frontend logic: npm run test:backend
-(Test counts are deliberately not quoted here — they go stale silently. Run the suites.)
+(Test counts are deliberately not quoted here; they go stale silently. Run the suites.)

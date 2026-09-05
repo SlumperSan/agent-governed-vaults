@@ -1,4 +1,4 @@
-# External Audit Package — Reviewer Entry Point
+# External Audit Package: Reviewer Entry Point
 
 > ## ⚠ SCOPE HAS MOVED SINCE THIS PACKAGE WAS WRITTEN — read before you scope anything
 >
@@ -59,10 +59,10 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 
 - [walkthroughs/VaultCore.md](walkthroughs/VaultCore.md) — **critical**, holds all funds
 - [walkthroughs/Governance.md](walkthroughs/Governance.md) — **critical**, authorizes fund movement
-- [walkthroughs/OracleAggregator.md](walkthroughs/OracleAggregator.md) — **RETIRED (C-6)**, now
+- [walkthroughs/OracleAggregator.md](walkthroughs/OracleAggregator.md) **RETIRED (C-6)**, now
   `contracts/test/retired/OracleAggregator.sol`, out of production scope. Pricing is done by
   `contracts/src/oracle/ChainlinkOracle.sol` (single Chainlink feed per asset, enforced by
-  VaultFactory's blessed-oracle allowlist); it has no walkthrough yet — read the source
+  VaultFactory's blessed-oracle allowlist); it has no walkthrough yet. Read the source
 - [walkthroughs/FeeEngine.md](walkthroughs/FeeEngine.md)
 - [walkthroughs/OperatorRegistry.md](walkthroughs/OperatorRegistry.md)
 - [walkthroughs/AggregationRouterAdapter.md](walkthroughs/AggregationRouterAdapter.md)
@@ -72,7 +72,7 @@ Per-contract walkthroughs (state, entry points, invariants, trickiest paths, acc
 - [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md) — **new in Sprint 7**;
   adversarially reviewed in Sprint 10 (see §6)
 
-**RETIRED — do not scope these unless you are reviewing the C-4/C-6 evidence.** Added in Sprint 11
+**RETIRED: do not scope these unless you are reviewing the C-4/C-6 evidence.** Added in Sprint 11
 as additive `IPriceSource` implementations, outside the `v0.2.0-audit` freeze and with **zero**
 internal review passes (see [../CHANGES-SINCE-REVIEWS.md](../CHANGES-SINCE-REVIEWS.md) §5). They now
 live under `contracts/test/retired/` and no deployed vault can use them:
@@ -97,7 +97,7 @@ Cross-references:
                        │  createVault / createChildVault → attest       │  the ONLY attestation path
                        │            │ CREATEs via (immutable pin)       │
                        │            ▼                                   │
-                       │      VaultDeployer — holds VaultCore's         │  no authority of its
+                       │      VaultDeployer: holds VaultCore's         │  no authority of its
                        │      creation code (EIP-170, #10)              │  own (PX-4)
                        └───────┬───────────────────┬────────────────────┘
                      attests   │                   │ registers child edge
@@ -110,8 +110,8 @@ Cross-references:
           carry reads /      │                     │ parentOf (quorum floor,
           realization writes │                     │ voting exclusion, edges)
                              │                     │
-┌───────────────┐  executes  ┌▼─────────────────┐  │        ┌──────────────────┐
-│  Governance   │───────────►│    VaultCore     │──┘ prices │ OracleAggregator │
+┌───────────────┐  executes  ┌▼─────────────────┐  │ prices  ┌──────────────────┐
+│  Governance   │───────────►│    VaultCore     │──┘         │ OracleAggregator │
 │ commit-reveal │ rebalance/ │  shares / NAV /  │◄──────────│ ≥3-source median │
 │ quorum/deleg. │ child-alloc│  deposits/exits  │ + breaker │ + staleness trip │
 │ timelock      │◄───────────│  sub-vault flows │           └──────────────────┘
@@ -129,9 +129,9 @@ Cross-references:
 
 | Contract | LoC | Role | Risk |
 | --- | --- | --- | --- |
-| `VaultCore.sol` | ~850 | Shares/NAV, deposits + observation window, two-mode exits, in-kind redemption + escrow, rebalance execution, sub-vault allocate/redeem/look-through, creator gate, exit fee, capacity cap, voting-stake checkpoints | **Critical** — holds all funds |
-| `Governance.sol` | ~490 | Proposals (3 types), commit-reveal, 3 quorum regimes, standing defaults, delegation + concentration cap, timelock, execute | **Critical** — authorizes every fund movement |
-| `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker. **RETIRED (C-6)** — moved to `contracts/test/retired/`, not production source. Assets are priced by `src/oracle/ChainlinkOracle.sol` | Out of production scope — was **Critical** |
+| `VaultCore.sol` | ~850 | Shares/NAV, deposits + observation window, two-mode exits, in-kind redemption + escrow, rebalance execution, sub-vault allocate/redeem/look-through, creator gate, exit fee, capacity cap, voting-stake checkpoints | **Critical**: holds all funds |
+| `Governance.sol` | ~490 | Proposals (3 types), commit-reveal, 3 quorum regimes, standing defaults, delegation + concentration cap, timelock, execute | **Critical**: authorizes every fund movement |
+| `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker. **RETIRED (C-6)**: moved to `contracts/test/retired/`, not production source. Assets are priced by `src/oracle/ChainlinkOracle.sol` | Out of production scope: was **Critical** |
 | `FeeEngine.sol` | ~130 | 10% perf fee netted against registry carry; operator fee claims per token | High |
 | `OperatorRegistry.sol` | ~150 | Operator identity, (member, operator) loss carryforward, monotone leaderboard stats | High |
 | `AggregationRouterAdapter.sol` | ~76 | Off-chain-routed DEX-aggregation execution (pinned router + selector allowlist) | High — external calls |
@@ -158,14 +158,14 @@ The protocol has **four distinct trust tiers**. Getting these straight matters b
 defenses only make sense against the right adversary:
 
 1. **Protocol singletons (trusted-by-all, immutable):** `OperatorRegistry`, `FeeEngine`,
-   `Governance`, `SubVaultRegistry`, `VaultFactory`, and — since Sprint 7 — `VaultDeployer`,
+   `Governance`, `SubVaultRegistry`, `VaultFactory`, and since Sprint 7, `VaultDeployer`,
    which holds VaultCore's creation code because EIP-170 leaves it nowhere else to live (#10).
    The deployer is a singleton by position only: it carries **no authority whatsoever** and is
    trusted by nobody for anything (see
    [walkthroughs/VaultDeployer.md](walkthroughs/VaultDeployer.md)). One canonical set, deployed and one-shot
    wired together (§5 below). No admin functions exist after wiring. Vaults deployed by the
    canonical factory reference these; the factory is what makes carry marks and leaderboard
-   rows trustworthy (CM-5) — nothing stops someone deploying a *look-alike* stack, but it
+   rows trustworthy (CM-5). Nothing stops someone deploying a *look-alike* stack, but it
    won't be attested in the canonical registry.
 2. **Per-vault creator choices (trusted by that vault's members only):** the
    `OracleAggregator` instance, the adapter allowlist, the basket, fee/capacity/window
@@ -176,7 +176,7 @@ defenses only make sense against the right adversary:
 3. **Modules as adversaries on the exit path:** even the *canonical* governance/feeEngine/
    registry are treated as potentially faulty where member liveness is at stake. Every module
    call on the exit path is gas-bounded (300k), returndata-bounded (1 word), and non-blocking
-   (H-1 fix): a failing module forfeits its own bookkeeping, never a member's exit. Value is
+   (H-1 fix): a failing module forfeits its own bookkeeping but never a member's exit. Value is
    separately bounded by the 10%-of-gain fee clamp.
 4. **Members, tokens, and children as adversaries:** every member is assumed potentially
    malicious (snapshots, commit binding, reentrancy locks); basket tokens may misbehave
@@ -259,7 +259,7 @@ The threat model's "Sprint 6 adversarial pass" table maps every finding ID (E1�
 GA-1/GA-2) to its disposition. Each walkthrough's "Accepted risks" section lists what applies
 to that contract.
 
-## 7. Known residuals — please pressure-test, but don't re-report as new
+## 7. Known residuals: please pressure-test, but don't re-report as new
 
 | ID | What | Why accepted |
 | --- | --- | --- |

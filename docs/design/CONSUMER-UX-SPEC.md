@@ -1,4 +1,4 @@
-# Consumer UX / IA Spec — Agent-Governed Index Vault Protocol
+# Consumer UX / IA Spec: Agent-Governed Index Vault Protocol
 
 Product Design (UX/IA) scoping document for the **consumer-facing** front end. This is a
 build/design brief, not code. It specs the *real* product that replaces the read-only
@@ -25,17 +25,17 @@ state, and disclosure decision below serves this spine.
 
 | # | Moment | What is irreversible | Where in docs |
 | --- | --- | --- | --- |
-| S-1 | **Oracle breaker trips** | Every NAV-reading path reverts — deposits, activation, exits, execution. No hatch, by design. Capital is frozen until sources are fresh. | K-4, SF-2, §11 |
+| S-1 | **Oracle breaker trips** | Every NAV-reading path reverts: deposits, activation, exits, execution. No hatch, by design. Capital is frozen until sources are fresh. | K-4, SF-2, §11 |
 | S-2 | **Mode-F exit is queued** | Irrevocable; settles later at post-execution NAV; the shares *also* lose voting eligibility at queue time. | §4.4, EE-10 |
 | S-3 | **Observation-window skip opt-in** | Permanent, once per agent per vault, cannot be undone. Buys immediate shares, forfeits the 4-hour cancel option forever. | §5, EE-3 |
 | S-4 | **Forgotten vote reveal** | Committed-but-unrevealed vote is forfeit (counts as abstain). The single highest-severity *human-specific* failure in the product. | §8, §14.4 |
 
 **Design consequence:** these four get full-screen, high-friction confirmations with explicit
-plain-language statements of what becomes irreversible — never a color-only pill, never a
+plain-language statements of what becomes irreversible: never a color-only pill, never a
 one-line toast. Support-escalation and "emergency withdraw" affordances are **prohibited** on the
 frozen state (S-1): they would be lies. The honest message is "nothing moves until the oracle
 recovers," plus what the user *can* still do (read positions/history; possibly cancel a pending
-deposit — see Open Question OQ-1).
+deposit: see Open Question OQ-1).
 
 ---
 
@@ -46,7 +46,7 @@ gas, and the idea of a vault; *not* expected to know what forward pricing, commi
 high-water mark is. The product's core job is to translate agent-governance mechanics into human
 decisions without dumbing down the risk.
 
-### Persona A — "Rina," the yield allocator (primary, ~70% of usage)
+### Persona A: "Rina," the yield allocator (primary, ~70% of usage)
 Holds USDC, wants curated exposure to a crypto index run by a track-recorded operator. Does not
 want to run an agent or vote actively.
 - **JTBD-A1** Discover vaults and judge which operator to trust (legit vs. scam).
@@ -55,9 +55,9 @@ want to run an agent or vote actively.
 - **JTBD-A3** Deposit USDC and understand why shares don't appear for 4 hours.
 - **JTBD-A4** Monitor position value and exit cleanly when she wants out.
 - **Governance posture:** wants to *delegate* or set a standing default and otherwise be left
-  alone — but must never silently lose money by ignoring a vote.
+  alone, but must never silently lose money by ignoring a vote.
 
-### Persona B — "Devin," the active governor (~25%)
+### Persona B: "Devin," the active governor (~25%)
 Runs meaningful stake, participates in rebalance votes, cares about proposal outcomes.
 - **JTBD-B1** See active proposals across their vaults and never miss a reveal deadline (S-4).
 - **JTBD-B2** Cast a commit-reveal vote correctly across two steps and two sessions/devices.
@@ -65,7 +65,7 @@ Runs meaningful stake, participates in rebalance votes, cares about proposal out
 - **JTBD-B4** Understand the timelock × forward-pricing interplay (VO-8) when deciding whether to
   exit before a rebalance executes.
 
-### Persona C — "Sam," the operator-follower / due-diligence user (~5%, high influence)
+### Persona C: "Sam," the operator-follower / due-diligence user (~5%, high influence)
 Evaluating operators before committing size; may manage several positions.
 - **JTBD-C1** Compare operators on the leaderboard with **loss history included** (no
   cherry-picking, SF-4/SF-5).
@@ -116,7 +116,7 @@ existing metered route.
 | Discovery card | **NAV, NAVps, operator display name, attested badge** | NAV/NAVps **[C]**; name **[X]** (only `operatorId` **[P]**, `0`=unattested); attested = `operatorId>0` **[P]** |
 | Vault detail · Overview | basket composition & weights, idle USDC, NAV history | idleUsdc **[P]**; **basket composition [C]**; history **[X]** |
 | Vault detail · Fees | per-level exit fee ceilings, HWM 10% perf, stacked totals | stacked math **[P]** (`fees.mjs`); **per-vault exit-fee params [C]** (immutable at creation) |
-| Vault detail · Governance | active proposal, phase, quorum, timelock, mode I/F | **entirely [X]** — no proposal projection exists |
+| Vault detail · Governance | active proposal, phase, quorum, timelock, mode I/F | **entirely [X]**: no proposal projection exists |
 | Vault detail · Risk | capacity %, oracle status, sub-vault chain, non-transferability | capacity **[P]**; **oracle status [C]**; chain **[P]** |
 | Deposit flow | capacity headroom, window state, indicative shares | headroom **[P]**; indicative NAV **[C]** |
 | Portfolio position | shares held, current value, net-of-fee P&L, HWM carry | shares/holders **[P]**; **value/NAVps [C]**; **HWM carry [X]** (see OQ-3) |
@@ -135,7 +135,7 @@ existing metered route.
 
 ## 3. Key user flows
 
-Notation for the payment/signing boundary — this is the single most important architectural fact
+Notation for the payment/signing boundary. This is the single most important architectural fact
 in the product:
 
 - **[SIGN]** = an on-chain wallet signature / transaction (deposit, activate, cancel, commit,
@@ -152,7 +152,7 @@ coupling. A consumer will not sign an EIP-3009 authorization per page view. **Re
 1. **Discovery, vault detail, leaderboard, and portfolio reads are a FREE public tier.** The web
    app pays x402 **server-side** on the user's behalf from a session read-budget, or serves a
    cached free projection. The end user never sees a 402 while browsing.
-2. **x402 appears in the consumer UI only for genuinely premium reads** — signal feeds, deep
+2. **x402 appears in the consumer UI only for genuinely premium reads**: signal feeds, deep
    historical analytics, CSV/PDF exports. There it surfaces as a clear "unlock for $X USDC"
    micro-purchase with the [x402] treatment, and even then it is one wallet interaction, not
    per-call.
@@ -205,7 +205,7 @@ Decision points: **amount → window-vs-skip → sign**. Confirmations: standard
 ### 3.2 Casting a commit-reveal vote (two steps, S-4 is the danger)
 
 The hard part: voting is two on-chain steps separated by time, and **forgetting the second step
-forfeits the vote** (§8, §14.4 — Kleros abandoned commit-reveal because voters *forget*, not
+forfeits the vote** (§8, §14.4: Kleros abandoned commit-reveal because voters *forget*, not
 grief). The UX's job is to make the reveal impossible to forget and impossible to lose across
 devices.
 
@@ -236,19 +236,19 @@ Phase 2  REVEAL  [SIGN]  ← the forfeit risk
 
 **Anti-forfeit design (this is the product's most important governance feature):**
 - Reveal-deadline **countdown surfaced everywhere the user looks**: portfolio header, governance
-  inbox badge, and OS/email notifications — not only on the proposal page (S-4).
+  inbox badge, and OS/email notifications, not only on the proposal page (S-4).
 - Escalating reminders: at reveal-open, at 50% elapsed, at T-1h, at T-15m.
 - A persistent "1 vote awaiting reveal" banner until revealed or deadline.
-- Because the salt is wallet-derived, the reveal CTA works from any device with the wallet —
-  document this to the user ("you can reveal from any device").
+- Because the salt is wallet-derived, the reveal CTA works from any device with the wallet.
+  Document this to the user ("you can reveal from any device").
 - Standing defaults (§8) and delegation (§3.4) are the *opt-out* path for Persona A who does not
-  want two-step voting at all — surface them prominently to reduce the population exposed to S-4.
+  want two-step voting at all: surface them prominently to reduce the population exposed to S-4.
 
-### 3.3 Exit — Mode I (instant) and Mode F (forward-priced)
+### 3.3 Exit: Mode I (instant) and Mode F (forward-priced)
 
 The hard part: whether an exit settles instantly or *later at a different price* depends on
-whether the vault has a pending execution (§4.4) — `Governance.hasPendingExecution`, true from the
-active proposal's reveal start and for any proposal type — which the user did not cause and may not
+whether the vault has a pending execution (§4.4), `Governance.hasPendingExecution`, true from the
+active proposal's reveal start and for any proposal type, which the user did not cause and may not
 know about. And the default payout is **a basket of tokens, not USDC** (§4.5).
 
 ```
@@ -311,40 +311,40 @@ with the two-warning screen for Mode F (S-2)**. Payment: [SIGN] only.
 Principle: **disclose by decision proximity, not all at once.** Three tiers. Never dump the whole
 threat model on a card; never bury a fund-losing risk behind a hover.
 
-### Tier 1 — Ambient (always visible, glanceable, on cards & headers)
-- **Attested badge** (canonical-factory attested vs. unattested) — see §5.
+### Tier 1: Ambient (always visible, glanceable, on cards & headers)
+- **Attested badge** (canonical-factory attested vs. unattested): see §5.
 - **Mode I / Mode F** status with **text + icon shape**, never color alone (fixes the demo's
   color-only pill, WCAG 1.4.1).
 - **Oracle status** dot with a text label ("Live" / "Frozen").
 - **Capacity %** bar with numeric label.
 - **Stacked effective fee** headline for sub-vaults ("19.00% effective perf across 2 levels").
 
-### Tier 2 — On-decision (expanded inline at the deposit/exit moment)
-- **Exit-fee decay widget** — the single best fee disclosure available. A small chart/readout:
+### Tier 2: On-decision (expanded inline at the deposit/exit moment)
+- **Exit-fee decay widget**: the single best fee disclosure available. A small chart/readout:
   "Exit today: 1.00% · in 30 days: 0.50% · after decay: 0.00%," driven by
   `feeMax·max(0,1 − tenure/decay)` (§4.6). Show that the fee **goes to remaining members**.
-- **HWM performance fee** — "10% of realized profit, charged only when you exit in profit, and
+- **HWM performance fee**: "10% of realized profit, charged only when you exit in profit, and
   only above your high-water mark" (§6, §7). If per-member HWM carry is available (OQ-3), show
   "you currently owe fee on $X of gains"; if not, show the *rule* and flag the number as
-  unavailable — do not fabricate it.
-- **Stacked sub-vault fees** — reuse the `fees.mjs` model exactly (contract-mirrored): perf
+  unavailable. Do not fabricate it.
+- **Stacked sub-vault fees**: reuse the `fees.mjs` model exactly (contract-mirrored): perf
   compounds on net-of-fee value (19% at depth 2, *not* 20%), exit-fee ceiling sums across the
   chain (§10). Render the per-level breakdown table (as the demo's fee-stack does) with real
   `<th scope>` headers.
-- **Capacity cap** — headroom and what happens at the cap (deposit reverts, SF-3).
-- **In-kind payout preview** — the itemized basket you'll receive on exit (§4.5).
+- **Capacity cap**: headroom and what happens at the cap (deposit reverts, SF-3).
+- **In-kind payout preview**: the itemized basket you'll receive on exit (§4.5).
 
-### Tier 3 — Deep (Risk tab + /learn, linked contextually)
-- **Oracle-freeze-traps-exits (K-4/SF-2)** — the headline systemic risk. Plain language:
+### Tier 3: Deep (Risk tab + /learn, linked contextually)
+- **Oracle-freeze-traps-exits (K-4/SF-2)**: the headline systemic risk. Plain language:
   "Each asset is priced from ONE Chainlink feed with no fallback. If that feed goes past its
-  heartbeat, prices outside its sane band, or the Base sequencer is down, the vault FREEZES —
+  heartbeat, prices outside its sane band, or the Base sequencer is down, the vault FREEZES:
   deposits, exits, and rebalances all stop until it recovers. There is no emergency withdrawal, by
   design. Your capital is trapped for the whole of that period, and permanently if the feed is
   retired rather than merely late." (Pre-C-6 this paragraph said "loses enough trusted sources" and
-  "temporarily trapped"; there is no source set to lose any more, and a deprecation is permanent —
+  "temporarily trapped"; there is no source set to lose any more, and a deprecation is permanent:
   see LAUNCH-READINESS §4 rows 12/13.) Link from the Risk tab and from any deposit confirm. This
   is the one risk that must be *acknowledged* (checkbox) before a first deposit.
-- **Forward-pricing / timelock interplay (VO-8)** — explainer for why a mid-vote exit settles
+- **Forward-pricing / timelock interplay (VO-8)**: explainer for why a mid-vote exit settles
   later.
 - **Non-transferability (EE-7)**, **near-immutability of rules (K-2/CM-8)**, **USDC blacklist
   risk (PX-1)**, **creator withdrawal gate (CM-2)**.
@@ -358,10 +358,10 @@ threat model on a card; never bury a fund-losing risk behind a hover.
 
 ---
 
-## 5. Trust & safety — legit operators vs. scam vaults
+## 5. Trust & safety: legit operators vs. scam vaults
 
 Permissionless creation means scam vaults exist (PX-3). The **registry is the signal**, and it is
-machine-checkable — this is the key insight the UI must exploit.
+machine-checkable. This is the key insight the UI must exploit.
 
 **The hard discriminator:** in `projections.mjs`, `operatorId` is set only by the `VaultAttested`
 event. Therefore **`operatorId === 0` means the vault is *unattested* by the canonical factory.**
@@ -385,10 +385,10 @@ Design rules:
    member-count-weighted** views so dust/wash vaults can't top the board (SF-4 requires both).
 5. **No cherry-picking, and say so.** Wound-down/closed vaults stay in the operator's aggregate
    permanently (SF-5). The operator profile shows the **full** vault set including closed ones,
-   labeled — and a short UI note explains *why* ("operators can't hide their losers"). This is a
+   labeled, and a short UI note explains *why* ("operators can't hide their losers"). This is a
    trust feature; make it legible, not just correct.
 6. **Fee routing transparency.** Prominently state that exit fees go to remaining members and
-   performance fees follow HWM — the protocol's operator-can't-skim posture is a selling point
+   performance fees follow HWM: the protocol's operator-can't-skim posture is a selling point
    (§4.6, EE-9).
 
 ---
@@ -399,31 +399,31 @@ Every screen needs the standard trio plus the protocol-specific states below. Th
 non-negotiable custom states are **oracle-frozen** and **observation-window**.
 
 ### Global / cross-cutting states
-- **Wallet-disconnected** — discovery and reads work (free tier, §3.0); deposit/vote/exit CTAs
+- **Wallet-disconnected**: discovery and reads work (free tier, §3.0); deposit/vote/exit CTAs
   prompt connect.
-- **Loading** — skeletons for cards/tables; never block discovery on a paid read.
-- **Read-budget exhausted** (if server-side x402 budget is used, §3.0) — degrade to cached data
+- **Loading**: skeletons for cards/tables; never block discovery on a paid read.
+- **Read-budget exhausted** (if server-side x402 budget is used, §3.0): degrade to cached data
   with a "data may be delayed" note, never a 402 in the user's face.
 
-### Oracle-FROZEN state (S-1 / K-4 / SF-2) — highest priority
+### Oracle-FROZEN state (S-1 / K-4 / SF-2): highest priority
 - **Trigger:** breaker tripped; NAV-reading paths revert.
 - **Treatment:** a persistent, unmistakable banner on affected vaults and any open deposit/exit
   flow. Deposit/exit/activate/vote-execute CTAs are **disabled with an explanation**, not hidden.
 - **Copy (must be true):** "This vault is FROZEN. Its price oracle has lost too many trusted
   sources, so all deposits, exits, and rebalances are paused until the sources recover. There is
-  no emergency withdrawal — this is a deliberate safety design (it prevents anyone exiting at a
+  no emergency withdrawal: this is a deliberate safety design (it prevents anyone exiting at a
   manipulated price). Your positions and history remain visible below."
 - **Still available:** viewing positions and history; **possibly** cancelling a pending deposit
-  (OQ-1 — engineering must confirm `cancelPending()` doesn't read NAV; if it doesn't, this is the
+  (OQ-1: engineering must confirm `cancelPending()` doesn't read NAV; if it doesn't, this is the
   *one* action offered in the frozen state and the copy changes materially).
 - **Prohibited:** any "contact support," "request withdrawal," or "emergency exit" affordance.
 - **Source detail (progressive):** show per-source freshness so a technical user understands
   *why* it's frozen and roughly when it might clear.
 
-### Observation-window state (§5) — "your deposit is pending"
+### Observation-window state (§5): "your deposit is pending"
 - **Trigger:** first deposit escrowed, shares not yet minted.
 - **Treatment:** a distinct "Pending" position card in `/portfolio/pending` with a **live
-  countdown to activation**, "0 shares yet — this is expected," and two CTAs: **Cancel** (100%
+  countdown to activation**, "0 shares yet: this is expected," and two CTAs: **Cancel** (100%
   refund, available for the whole window) and, at/after T+4h, **Activate**.
 - Make clear the money is escrowed and earning nothing, and that cancel is free and instant.
 
@@ -433,7 +433,7 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
 | Discovery | "No vaults match" | Registry read failed → cached + stale note |
 | Vault detail | — | Frozen banner; unattested warning; capacity-full ("deposits closed at cap") |
 | Deposit | — | Above capacity (blocked); frozen (blocked); pending-exists |
-| Portfolio | "No positions yet" → link to discovery | Frozen vault held; **queued Mode-F exit**; **creator-withdrawals-frozen** (if user is a creator below 5%, CM-2 — likely rare in consumer app, note in OQ-7) |
+| Portfolio | "No positions yet" → link to discovery | Frozen vault held; **queued Mode-F exit**; **creator-withdrawals-frozen** (if user is a creator below 5%, CM-2: likely rare in consumer app, note in OQ-7) |
 | Pending | "No pending deposits" | Window elapsed, awaiting activate |
 | Governance inbox | "No proposals in your vaults" | **Vote committed, awaiting reveal** (persistent); **reveal window closing** (urgent); **reveal missed** (forfeited, past tense) |
 | Proposal detail | — | Commit phase / reveal phase / timelock / executed / expired-unexecuted |
@@ -449,21 +449,21 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
   spine actions (S-1..S-4) must not be a cramped modal. Resumability ties to the wallet-derived
   salt (§3.2): a user can commit on desktop and reveal on mobile.
 - Discovery cards → single column; fee-stack and leaderboard tables → horizontal scroll inside a
-  bounded container (the demo already does `.tablescroll` — keep it, and make the whole page never
+  bounded container (the demo already does `.tablescroll`, keep it, and make the whole page never
   scroll horizontally).
 - Countdowns and the "awaiting reveal" / "pending activation" banners must be reachable in one tap
   from anywhere (persistent header affordance).
 
-### Accessibility — specifics, not boilerplate
+### Accessibility: specifics, not boilerplate
 - **1.4.1 (color alone):** Mode I/F, oracle status, attested/unattested, and P&L sign must all
   carry **text + shape/icon**, not just the demo's green/amber pills. This is a real fix, not a
   nicety.
 - **4.1.3 / live regions:** the observation-window and reveal-deadline countdowns use
-  `aria-live="polite"` announced **at thresholds** (open, 50%, T-1h, T-15m, close) — **not per
+  `aria-live="polite"` announced **at thresholds** (open, 50%, T-1h, T-15m, close), **not per
   second**, which would flood a screen reader.
 - **2.2.1 (timing):** these countdowns are **protocol deadlines** (block-timestamp driven) and
   qualify for the real-time exception. **Document that** rather than offering an extend/dismiss
-  control the protocol cannot honor — a false "extend" would be worse than none.
+  control the protocol cannot honor. A false "extend" would be worse than none.
 - **1.3.1 / tables:** fee-stack and leaderboard tables need real `<th scope="col/row">`;
   numeric cells keep `tabular-nums`.
 - **Forms & confirms:** the typed hard-confirms (S-2, S-3) need programmatic
@@ -471,7 +471,7 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
 - **Focus management:** full-screen confirm sheets trap focus and restore it on close; the frozen
   banner is announced when it appears.
 - **Contrast:** verify the demo's `--muted`/`--faint` on `--surface` meet 4.5:1 in both themes
-  before reuse — several are borderline for body text.
+  before reuse. Several are borderline for body text.
 
 ---
 
@@ -479,52 +479,52 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
 
 Ordered by how hard they block the build.
 
-- **OQ-1 (blocks frozen-state design) — Does `cancelPending()` revert under a tripped breaker?**
+- **OQ-1 (blocks frozen-state design): Does `cancelPending()` revert under a tripped breaker?**
   §5 says pending deposits are excluded from NAV and cancellable before activation, implying
   cancel may not read NAV. If it doesn't, "cancel your pending deposit" is the *one* action
   available in the frozen state and the frozen-state screen changes materially. Two-branch spec;
   engineering must confirm.
-- **OQ-2 (blocks vote flow) — Is a wallet-derived (deterministic) salt compatible with the
+- **OQ-2 (blocks vote flow): Is a wallet-derived (deterministic) salt compatible with the
   commit hash?** The anti-forfeit design (§3.2) depends on reconstructing the salt from a wallet
   signature on any device. Confirm the contract's `commit = hash(support, salt)` accepts a
   client-chosen salt with no server-stored randomness, and that the derivation message is
   domain-separated per (vault, proposal).
-- **OQ-3 (blocks net-of-fee P&L) — There is no HWM-carry projection.** "What performance fee will
+- **OQ-3 (blocks net-of-fee P&L): There is no HWM-carry projection.** "What performance fee will
   I pay?" is unanswerable today: HWM is a per-`(member, operator)` USDC loss carryforward (§7)
   with no indexer projection behind it. Decide whether v1 shows true net-of-fee returns (needs a
   new projection) or shows gross + the fee *rule* only. This gates whether the portfolio can even
   display net returns.
-- **OQ-4 (leaderboard correctness) — `operators[].vaultCount` is always 0.** It's initialized to
+- **OQ-4 (leaderboard correctness): `operators[].vaultCount` is always 0.** It's initialized to
   0 and never incremented (`VaultAttested` sets `operatorId` but nothing bumps `vaultCount`;
   `projections.mjs` §OperatorRegistered/VaultAttested). Either fix the projection or hide the
   column. Ship-blocker for the leaderboard's credibility.
-- **OQ-5 (x402 product model) — Confirm the free-tier / server-side-payment model (§3.0).** The
+- **OQ-5 (x402 product model): Confirm the free-tier / server-side-payment model (§3.0).** The
   strong recommendation is: free public discovery + server-side x402 read budget, with consumer
   x402 only for premium reads, and **never** in deposit/vote/exit. Needs sign-off because it
-  affects API auth, cost, and rate-limiting design. (Recommended, not open — but it needs an
+  affects API auth, cost, and rate-limiting design. (Recommended, not open, but it needs an
   owner's yes.)
-- **OQ-6 (new projections) — Prioritize the missing indexer projections.** Consumer product
+- **OQ-6 (new projections): Prioritize the missing indexer projections.** Consumer product
   requires, minimally: proposal/governance state, per-member position + value, per-member pending
   deposit, Mode-F queue state, operator display-name registry, and NAV/NAVps + basket
   composition. Sequence these against sprint plan; the IA (§2.2) tags each.
-- **OQ-7 (scope confirmation) — Vault creation and creator-gate states.** Creation is out of v1
+- **OQ-7 (scope confirmation): Vault creation and creator-gate states.** Creation is out of v1
   consumer scope (operator tool). But if any consumer can also be a creator, the
   **creator-withdrawals-frozen** portfolio state (CM-2: redemptions revert below 5% while members
   remain) needs a home. Decide whether to handle it minimally or defer with a clear message.
-- **OQ-8 (notifications infra) — The anti-forfeit reveal reminders (§3.2) need a delivery
+- **OQ-8 (notifications infra): The anti-forfeit reveal reminders (§3.2) need a delivery
   channel.** In-app is insufficient for S-4 (users leave). Decide: email opt-in, push, wallet-
   based messaging, or a watcher the user runs. Without out-of-app reminders, S-4 forfeitures will
   happen.
-- **OQ-9 (delegation/standing-default UX depth) — How much governance tooling in v1?** Persona A
+- **OQ-9 (delegation/standing-default UX depth): How much governance tooling in v1?** Persona A
   wants to *never* two-step vote. Delegation (concentration-capped, §8) and standing defaults
   (routine-rebalance only, 72h expiry, §8) are the escape hatch. Decide whether v1 ships both or
   just delegation.
 
 ---
 
-## Executive summary — recommended consumer product shape
+## Executive summary: recommended consumer product shape
 
-1. **Build the whole product around four irreversible moments** — oracle freeze (K-4), Mode-F
+1. **Build the whole product around four irreversible moments**: oracle freeze (K-4), Mode-F
    queued exit (§4.4), permanent window-skip opt-in (§5), and forgotten vote-reveal (§8). These
    get full-screen, plain-language, high-friction confirmations; everything else is progressive
    disclosure.
@@ -535,17 +535,17 @@ Ordered by how hard they block the build.
    countdown and a free cancel, frame skip as a permanent forfeit behind a hard confirm, and never
    promise exact shares before activation (forward pricing, §4.3).
 4. **Engineer the vote reveal to be un-forgettable and device-portable:** wallet-derived salt (no
-   stored secret), reveal countdowns everywhere, out-of-app reminders — and push Persona A toward
+   stored secret), reveal countdowns everywhere, out-of-app reminders, and push Persona A toward
    delegation/standing defaults so most users never two-step vote at all.
 5. **Turn the registry into the trust layer:** attested (`operatorId>0`) vs. unattested is the
-   non-spoofable scam discriminator — quarantine unattested vaults, lead with registry identity
+   non-spoofable scam discriminator: quarantine unattested vaults, lead with registry identity
    over display names, and show operator losses and wound-down vaults (no cherry-picking).
 6. **Disclose fees where the decision is made:** an exit-fee decay widget, an itemized in-kind
-   payout preview, and the contract-mirrored stacked sub-vault math — with the trust-positive
+   payout preview, and the contract-mirrored stacked sub-vault math, with the trust-positive
    truth that exit fees accrue to members, not the operator.
 7. **The current data layer cannot back this product.** New indexer projections (proposal state,
    per-member position/pending, Mode-F queue, HWM carry, NAV/basket, operator names) are a
-   precondition, and `vaultCount` is currently broken — these are ship-blockers, not polish.
+   precondition, and `vaultCount` is currently broken. These are ship-blockers, not polish.
 8. **Net:** a calm, disclosure-forward allocator app for crypto-literate humans that makes
-   agent-governance mechanics legible and honest — refusing the dark-pattern shortcuts exactly
+   agent-governance mechanics legible and honest, refusing the dark-pattern shortcuts exactly
    where the protocol's irreversibility makes them dangerous.

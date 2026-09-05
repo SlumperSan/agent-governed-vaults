@@ -89,7 +89,7 @@ const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
 // the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
 // which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the
 // site's title.
-const TITLE_SUFFIX = ' — Rwally';
+const TITLE_SUFFIX = ' | Rwally';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';

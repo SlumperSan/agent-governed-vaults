@@ -1,8 +1,9 @@
 # SubVaultRegistry
 
 The registry of parent/child vault edges: depth cap, exit-fee stacking, and quorum-floor
-inheritance. `contracts/src/SubVaultRegistry.sol`. **DORMANT-AT-LAUNCH** — sub-vaults are disabled
-on the Base mainnet launch factory built by `Deploy.s.sol`, though not on every factory (see below); read `VaultFactory.allowSubVaults()` on the factory you integrate against.
+inheritance. `contracts/src/SubVaultRegistry.sol`. **DORMANT-AT-LAUNCH**: sub-vaults are disabled
+on the Base mainnet launch factory built by `Deploy.s.sol`, though not on every factory (see
+below); read `VaultFactory.allowSubVaults()` on the factory you integrate against.
 
 ## Why it matters
 
@@ -21,7 +22,7 @@ a real child vault to exercise.
 ## Structural properties (SV-1..SV-7)
 
 - **Edges are creation-time only.** A vault becomes a child ONLY at factory deployment, never
-  retroactively — so cycles are impossible by construction (a pre-existing vault can never be
+  retroactively, so cycles are impossible by construction (a pre-existing vault can never be
   re-registered as a child), and vault-to-vault deposits are permitted solely along registered
   parent→child edges (SV-3, checked by `VaultCore.allocateToChild`).
 - **Depth hard-capped at 3** (`MAX_DEPTH`): root = depth 0, deepest child = depth 2 ⇒ 3 levels.
@@ -41,17 +42,17 @@ a real child vault to exercise.
 
 ## Entry points
 
-- `wire(factory)` — one-shot, deployer-only, locked after first call.
-- `registerChild(parent, child, childExitFeeMaxBps)` — **factory-only**, creation-time only; runs
+- `wire(factory)`: one-shot, deployer-only, locked after first call.
+- `registerChild(parent, child, childExitFeeMaxBps)`: **factory-only**, creation-time only; runs
   the depth and fee-stack checks.
 
 ## Findings
 
 The sub-vault criticals/highs (C-1, H-5, H-6, H-7, H-9) are all closed **as a class** by disabling
-sub-vaults at the factory — see [[root-vaults-only]] and [[vaultfactory]]. This registry carries no
+sub-vaults at the factory; see [[root-vaults-only]] and [[vaultfactory]]. This registry carries no
 open finding of its own; its risk surface is simply switched off. The related VaultCore look-through
 machinery (recursive `_fullNavWad`, child-shortfall unwind, `pullChildEscrow`) is likewise dead at
-launch — documented in [[vaultcore]].
+launch, documented in [[vaultcore]].
 
 ## Links
 

@@ -11,8 +11,8 @@ the local git config. Do not change it, and do not commit with a different name 
 
 ## Claims accuracy
 
-Every public claim must be **literally true against the contracts, verified by reading the source**
-— not by assertion, and not by paraphrasing another document that says it.
+Every public claim must be **literally true against the contracts, verified by reading the source**,
+not by assertion, and not by paraphrasing another document that says it.
 
 This is enforced in CI by `scripts/test/claims-lede-truth.test.mjs`, which matches banned claim
 *shapes* rather than fixed phrasings. Assume your file is walked: it takes every `.md`, `.html`,
@@ -28,7 +28,7 @@ Three rules that guard has already had to be widened to catch:
   sole recipient of the 10% performance fee, so a blanket negative about what the operator holds
   on-chain is falsifiable in one transaction. Write "operatorship confers no authority to vote,
   execute, pause, reprice, or move member funds". Note that guard 6 matches the banned *shape*, so
-  it reds a file that quotes the wide form even to prohibit it — this paragraph is written the long
+  it reds a file that quotes the wide form even to prohibit it. This paragraph is written the long
   way round for that reason.
 - **Members pool and vote; an AI operator does neither on-chain.** `Governance.propose` gates on
   stake, not operatorship, and `Governance.sol` contains zero occurrences of "operator".
@@ -48,7 +48,7 @@ where your change is, not in the shared checkout.
 
 A pull request merges only when all four hold on the exact landing SHA:
 
-1. A fresh independent verdict — not the author, not the original reviewer, not the fixer. A fixer
+1. A fresh independent verdict: not the author, not the original reviewer, not the fixer. A fixer
    saying "addressed" does not clear a REJECT.
 2. CI green **matched by `headSha`** via `gh run list`. Never `gh pr checks`, which reports a
    different thing. Every job's step count must be greater than zero; `steps: 0` means the run never
@@ -71,16 +71,16 @@ Two mechanics that are easy to get wrong and cost a full CI round trip each:
   `protocol/main`, so it cannot see itself. The automatic `pull_request` run has the same shape and
   will show that blocker whenever it finishes before CI does; re-dispatch once CI is green.
 
-## Worktrees — do not create one unless you are going to commit
+## Worktrees: do not create one unless you are going to commit
 
 Default to working in the shared checkout. Worktrees accumulated to 186 directories and 1.6 GB
 across sessions, and they are not free: `scripts/test/config-doc-truth.test.mjs` walks the
 filesystem and reads other sessions' worktrees, so a stale one turns a local test run red for
 reasons unrelated to the change being tested.
 
-- **Reviewing, investigating, casting a verdict — no worktree.** Read the shared tree, and read
+- **Reviewing, investigating, casting a verdict: no worktree.** Read the shared tree, and read
   other refs with `git show <ref>:<path>`, `git diff`, and `gh`. This covers most work here.
-- **Committing and pushing — one worktree, under the session scratchpad, removed when done.**
+- **Committing and pushing: one worktree, under the session scratchpad, removed when done.**
   Two agents cannot `git checkout` in one directory without destroying each other's work, and the
   repository root periodically runs long-lived jobs that a checkout underneath would break.
 - **Never use the harness's own worktree isolation.** It writes to `.claude/worktrees/`, which is
@@ -100,17 +100,17 @@ Around ten agent sessions share this checkout.
 ## Where the rest of the conventions live
 
 This file holds the decisions that were expensive to learn. It is not the whole rulebook, and it
-deliberately points rather than copies — two statements of one rule drift, and then neither can be
+deliberately points rather than copies. Two statements of one rule drift, and then neither can be
 trusted.
 
-- **`docs/SWARM.md`** — how concurrent sessions work here. §7 the definition of done, §8 git
-  discipline (branch names prefixed by intent — `fix/`, `feat/`, `test/`, `chore/`, `docs/`; one
+- **`docs/SWARM.md`**: how concurrent sessions work here. §7 the definition of done, §8 git
+  discipline (branch names prefixed by intent: `fix/`, `feat/`, `test/`, `chore/`, `docs/`; one
   small single-purpose commit per change; no `git stash`, `git reset --hard`, or `git checkout --`
   on files you did not create), §9 one PR per coherent change rather than one per file, and §10 the
   escalate-do-not-act list: anything needing a private key, a funded account or `--broadcast`,
   mainnet deploys and fund movement, changes to launch parameters, and weakening a security gate to
   make something pass.
-- **`docs/NOW.md`** — the current state of the project, and the launch parameters that §10 puts out
+- **`docs/NOW.md`**: the current state of the project, and the launch parameters that §10 puts out
   of bounds.
 
 Read both before your first commit here. Where either disagrees with this file, say so in your
