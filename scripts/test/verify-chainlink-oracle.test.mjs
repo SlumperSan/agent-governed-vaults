@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SEQUENCER_EXEMPT_CHAIN_IDS,
+  SEQUENCER_EXEMPT_REASONS,
   bandBoundsTwoDecimalDrift,
   chainBindingVerdict,
   compareAggregatorPin,
@@ -371,6 +372,67 @@ test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
     [4663, 31337, 84532].sort((a, b) => a - b),
     'an id was added to or removed from the exempt set; the deploy-script allowlist must match',
   );
+});
+
+/**
+ * THE 4663 REASON IS PRINTED, so it is a public claim and not a comment.
+ *
+ * `SEQUENCER_EXEMPT_REASONS.get(4663)` is interpolated into the `sequencer uptime feed` row detail
+ * ("guard intentionally skipped on exempt chain 4663: <reason>"), so whatever it says is what an
+ * operator reads off a passing pre-deploy run. It said "leaving the per-asset heartbeat as the only
+ * guard", which undercounts: `priceWad` keeps the staleness bound AND the sane-price band when the
+ * uptime feed is address(0). docs/DEPLOYMENT.md, apps/site/how-it-works.html, apps/site/risks.html
+ * and contracts/config/robinhood-mainnet.json all already said two, so the printed string was the
+ * one place a reader was told one.
+ *
+ * Pinned against the CONTRACT rather than against the other prose, because agreeing with a document
+ * that is itself wrong is the failure this class of test exists to catch. Both cited lines are also
+ * required to fall inside `priceWad` — the band is enforced twice, once in the constructor
+ * (ChainlinkOracle.sol:218-220) and once at read time, and only the read-time one survives an
+ * outage, so a cite that drifted onto the constructor check would be the wrong claim spelled right.
+ */
+test('the 4663 exemption reason names BOTH surviving guards, and both cites land inside priceWad', () => {
+  const reason = SEQUENCER_EXEMPT_REASONS.get(4663);
+  assert.ok(reason, '4663 is no longer in SEQUENCER_EXEMPT_REASONS; the printed row has no reason to state');
+
+  // Both guards named. Two assertions, not one combined regex, so the failure says which vanished.
+  const heartbeat = reason.match(/heartbeat[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+  assert.ok(heartbeat, 'the 4663 reason no longer names the per-asset heartbeat/staleness bound with a line cite');
+  const band = reason.match(/sane-price band[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+  assert.ok(band, 'the 4663 reason no longer names the sane-price band with a line cite');
+
+  // The undercount itself, banned by shape rather than by the one phrasing that was there before.
+  assert.doesNotMatch(
+    reason,
+    /only guard|as the only|only remaining|heartbeat alone|sole guard/i,
+    'the 4663 reason is back to claiming a single surviving guard; two survive a zero uptime feed',
+  );
+
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
+  const lines = src.split(/\r?\n/);
+
+  // Read-time, not construction-time: the cites must sit inside priceWad's own braces.
+  const fn = extractFunctionSource(src, 'function priceWad(address asset) external view returns (uint256)');
+  assert.ok(fn, 'priceWad(address) is no longer declared in ChainlinkOracle.sol with that signature');
+  const firstLine = src.slice(0, src.indexOf(fn)).split(/\r?\n/).length;
+  const lastLine = firstLine + fn.split(/\r?\n/).length - 1;
+
+  const at = (cite, label) => {
+    const n = Number(cite);
+    assert.ok(
+      n >= firstLine && n <= lastLine,
+      `the ${label} cite ChainlinkOracle.sol:${n} is outside priceWad (lines ${firstLine}-${lastLine})`,
+    );
+    return lines[n - 1] ?? '';
+  };
+
+  const heartbeatLine = at(heartbeat[1], 'heartbeat');
+  assert.match(heartbeatLine, /updatedAt < minUpdated/, `ChainlinkOracle.sol:${heartbeat[1]} is not the staleness bound`);
+  assert.match(heartbeatLine, /revert StaleOracle/, `ChainlinkOracle.sol:${heartbeat[1]} no longer fails closed`);
+
+  const bandLine = at(band[1], 'sane-price band');
+  assert.match(bandLine, /cfg\.maxPriceWad != 0/, `ChainlinkOracle.sol:${band[1]} is not the sane-price band check`);
+  assert.match(bandLine, /cfg\.minPriceWad/, `ChainlinkOracle.sol:${band[1]} no longer compares against the band floor`);
 });
 
 test('the deploy script exempts the same three ids, so the two lists cannot drift apart', () => {
