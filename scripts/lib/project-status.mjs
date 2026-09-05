@@ -222,6 +222,254 @@ function departments(vaultRoot) {
   return out.sort((a, b) => b.updated - a.updated);
 }
 
+// ---------------------------------------------------------------- per-head CI
+
+/**
+ * Per-head verification state for every open PR, in ONE API call.
+ *
+ * WHY THIS EXISTS. Six sessions in one night each re-derived by hand whether a given PR head had
+ * verified CI, and the answer was published wrong twice. A per-head fact that several sessions need
+ * belongs in the shared status tool, not in each session's head -- publish the QUERY, not the answer.
+ *
+ * FOUR TRAPS THIS CODE IS SHAPED AROUND. Each is a mistake that was actually made here, so the
+ * structure that prevents it is load-bearing, not decorative:
+ *
+ * 1. MATCH BY COMMIT, NEVER BY PR ASSOCIATION. `gh pr checks` lists runs attached to a PR without
+ *    saying which commit they ran on -- one branch showed three greens on three different heads and
+ *    a PR was nearly merged on a green belonging to a previous commit. This query reads
+ *    `commits(last:1) { commit { checkSuites, status } }`, so every value below is scoped to a
+ *    commit BY CONSTRUCTION rather than by our remembering to filter. We still verify
+ *    `commit.oid === headRefOid` per PR and refuse to report the row if it ever disagrees.
+ *
+ * 2. A RUN'S CONCLUSION IS NOT THE STATUS IT POSTS. `merge-preflight` reports
+ *    `conclusion: success` while the commit status it posted reads `failure` -- it succeeded at
+ *    posting a red. Four sessions in one night conflated the two. So this reports two DIFFERENT
+ *    artifacts from two different places and never merges them into one verdict:
+ *      ci        <- the CI workflow RUN's own conclusion  (checkSuites)
+ *      preflight <- the POSTED COMMIT STATUS              (commit.status.contexts)
+ *    The renderer labels them `CI run=` and `preflight status=` for the same reason.
+ *
+ * 3. ABSENT EVIDENCE IS NOT A PASS AND NOT A FAILURE. A head with no run reports `none`, never
+ *    `fail` and never a blank. `none` is the case the whole "green belongs to a commit" rule exists
+ *    for, so it gets a name of its own.
+ *
+ * 4. AN INFRASTRUCTURE STOP LOOKS EXACTLY LIKE A CODE FAILURE. A run with no runner assigned
+ *    concludes `failure` in 2-3 seconds having executed zero steps. This repo has lost ~72h to that
+ *    twice and misdiagnosed it as its own code both times. The suite timestamps are already in this
+ *    response, so a suspiciously fast failure is flagged `fail(no-runner?)` for free. The QUESTION
+ *    MARK is the honest part: confirming it costs `gh run view <id> --json jobs` per run (~1.6s
+ *    each), so confirmation is opt-in via `--ci-jobs`.
+ *
+ *    AND `--ci-jobs` NAMES THE CAUSE, because "no runner" is a symptom with at least two causes that
+ *    demand OPPOSITE responses: capacity exhaustion clears itself, so you wait; a billing or
+ *    spending-limit stop never clears, so you escalate to the account owner. They are
+ *    indistinguishable in every field above -- the only artifact that separates them is the job's
+ *    annotations, quoted verbatim. Verified 2026-09-02: what four sessions (and this file's own
+ *    first draft) called "Actions capacity" was actually *"recent account payments have failed or
+ *    your spending limit needs to be increased"*. Paraphrasing is exactly how that happened.
+ *
+ * COST. One GraphQL call covers every open PR: ~0.9s against a ~1.9s baseline, versus 2+ REST calls
+ * per PR (36+ calls, ~20s) for the same answer. It is on by default because a fact behind a flag is
+ * still a fact each session has to know to ask for, which is half the failure this exists to fix.
+ * `--no-ci` skips it; `--no-gh` already skipped everything.
+ */
+
+/** GraphQL display name of the workflow whose RUN conclusion answers "did CI pass at this head". */
+const CI_WORKFLOW = 'CI';
+/** Commit-status context that the merge gate POSTS. Deliberately not a workflow name -- see trap 2. */
+const PREFLIGHT_CONTEXT = 'merge-preflight';
+/** A completed run this fast never reached a runner. Generous: real jobs here take 400-500s. */
+const NO_RUNNER_SECONDS = 15;
+
+const PER_HEAD_QUERY = `
+query($owner:String!,$name:String!){
+  repository(owner:$owner,name:$name){
+    pullRequests(states:OPEN, first:50, orderBy:{field:UPDATED_AT,direction:DESC}){
+      nodes{
+        number
+        headRefName
+        headRefOid
+        baseRefName
+        commits(last:1){nodes{commit{
+          oid
+          status{contexts{context state description}}
+          checkSuites(first:30){nodes{
+            status conclusion createdAt updatedAt
+            workflowRun{databaseId url workflow{name}}
+          }}
+        }}}
+      }
+    }
+  }
+}`;
+
+/** owner/name of `origin`, from the remote URL. No API call, and no assumption about the repo. */
+function originRepo() {
+  const url = sh('git', ['remote', 'get-url', 'origin']);
+  const m = /[:/]([^/:]+)\/([^/]+?)(?:\.git)?$/.exec(url);
+  return m ? { owner: m[1], name: m[2] } : null;
+}
+
+const secondsBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 1000);
+
+/**
+ * Classify the CI workflow RUN for one head. Returns a label from a CLOSED set, so a reader never
+ * has to interpret a raw API enum: none | pending | pass | fail | fail(no-runner?) | fail(<reason>).
+ */
+export function classifyCi(suites) {
+  // Filter by workflow NAME, then take the LATEST by createdAt -- never nodes[0]. A re-run leaves
+  // two CI suites on one head (the old red and the new green); reading array order would report the
+  // stale red, which is `green-belongs-to-a-commit` committed inside the tool built to prevent it.
+  const mine = suites
+    .filter((s) => s.workflowRun?.workflow?.name === CI_WORKFLOW)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+  if (!mine.length) {
+    // Trap 3, one level in: "no run for this head" and "no run NAMED CI" are different bugs. If the
+    // workflow is ever renamed, every head would silently read `none` -- so name what we did see.
+    const others = [...new Set(suites.map((s) => s.workflowRun?.workflow?.name).filter(Boolean))];
+    return { label: 'none', note: others.length ? `no suite named ${CI_WORKFLOW}; saw ${others.join(', ')}` : '', runId: null, url: null, seconds: null, suites: 0 };
+  }
+
+  const s = mine[mine.length - 1];
+  const base = { runId: s.workflowRun?.databaseId ?? null, url: s.workflowRun?.url ?? null, suites: mine.length, note: mine.length > 1 ? `${mine.length} CI suites on this head, showing latest` : '' };
+  // A queued or running suite has conclusion === null. Not a pass, not a failure, not `null`.
+  if (s.status !== 'COMPLETED') return { ...base, label: 'pending', seconds: null };
+
+  const secs = secondsBetween(s.createdAt, s.updatedAt);
+  const c = (s.conclusion || '').toLowerCase();
+  if (c === 'success') return { ...base, label: 'pass', seconds: secs };
+  if (c === 'failure') {
+    return { ...base, label: secs <= NO_RUNNER_SECONDS ? 'fail(no-runner?)' : 'fail', seconds: secs };
+  }
+  // cancelled / timed_out / startup_failure / action_required / skipped / neutral -- name it rather
+  // than folding it into pass or fail. Anything we do not recognise is not evidence of a green.
+  return { ...base, label: `fail(${c || 'unknown'})`, seconds: secs };
+}
+
+/**
+ * Classify the POSTED COMMIT STATUS for one head -- a different artifact from the run above.
+ * `commit.status === null` means nothing was ever posted, which is not a pass and not a failure.
+ */
+export function classifyPreflight(status) {
+  if (!status || !status.contexts?.length) return { label: 'none', note: '' };
+  const ctx = status.contexts.find((c) => c.context === PREFLIGHT_CONTEXT);
+  if (!ctx) {
+    const seen = status.contexts.map((c) => c.context).join(', ');
+    return { label: 'none', note: `no ${PREFLIGHT_CONTEXT} context; saw ${seen}` };
+  }
+  return { label: (ctx.state || 'unknown').toLowerCase(), note: ctx.description || '' };
+}
+
+/**
+ * @param {{ jobs?: boolean }} [opts] jobs: confirm the no-runner heuristic with one extra API call
+ *   per suspected run (~1.6s each). Opt-in; the default only ever says `fail(no-runner?)`.
+ */
+function perHeadCi(opts = {}) {
+  const repo = originRepo();
+  if (!repo) return { up: false, reason: 'no origin remote', rows: [] };
+
+  const raw = sh('gh', ['api', 'graphql', '-f', `query=${PER_HEAD_QUERY}`, '-F', `owner=${repo.owner}`, '-F', `name=${repo.name}`], 25_000);
+  const j = jsonOr(raw, null);
+  const nodes = j?.data?.repository?.pullRequests?.nodes;
+  // gh missing, unauthenticated, offline, rate-limited or a schema change all land here. The board
+  // prints "unavailable" and everything else on it still renders -- same contract as `gh pr list`.
+  if (!Array.isArray(nodes)) return { up: false, reason: 'gh graphql unavailable', rows: [] };
+
+  // What `behind` is measured AGAINST -- each PR's OWN base, never a hardcoded branch, because a PR
+  // targeting something else would otherwise be measured against the wrong ref and reported as
+  // behind when it is not. It is a LOCAL ref either way, so the renderer names it AND its SHA:
+  // `behind 0` otherwise reads as authoritative when it means "0 vs whatever I last fetched".
+  const baseShaOf = (ref) => {
+    if (!(ref in baseShaOf.cache)) baseShaOf.cache[ref] = sh('git', ['rev-parse', '--short', `origin/${ref}`]) || null;
+    return baseShaOf.cache[ref];
+  };
+  baseShaOf.cache = {};
+
+  const rows = nodes.map((p) => {
+    const commit = p.commits?.nodes?.[0]?.commit ?? null;
+    // The one structural guarantee that everything below belongs to THIS head. If it ever fails we
+    // report nothing rather than another commit's evidence -- that is `gh pr checks`'s exact defect.
+    const matches = Boolean(commit && commit.oid === p.headRefOid);
+    if (!matches) {
+      return { number: p.number, head: p.headRefOid, branch: p.headRefName, headMismatch: true, ci: { label: 'head?' }, preflight: { label: 'head?' }, behind: null };
+    }
+    // Local, so free -- and `?` when the object is not fetched, which is honest rather than 0.
+    const behindRaw = baseShaOf(p.baseRefName) ? sh('git', ['rev-list', '--count', `${p.headRefOid}..origin/${p.baseRefName}`]) : '';
+    return {
+      number: p.number,
+      head: p.headRefOid,
+      branch: p.headRefName,
+      base: p.baseRefName,
+      headMismatch: false,
+      ci: classifyCi(commit.checkSuites?.nodes ?? []),
+      preflight: classifyPreflight(commit.status),
+      behind: /^\d+$/.test(behindRaw) ? Number(behindRaw) : null,
+    };
+  });
+
+  // Opt-in confirmation of trap 4. `steps=0` with no runner assigned across every job means no
+  // runner was ever allocated; anything else is a real failure and must stop being excused as
+  // infrastructure.
+  //
+  // AND THEN NAME THE CAUSE, because "no runner" is a symptom with at least two causes that behave
+  // COMPLETELY differently: capacity exhaustion clears itself, whereas a billing/spending-limit stop
+  // never does and only the account owner can lift it. A session told "capacity" waits; a session
+  // told "billing" escalates. Verified 2026-09-02 -- what looked like a capacity outage was in fact
+  // "recent account payments have failed or your spending limit needs to be increased", and the ONLY
+  // artifact carrying that sentence is the job's annotations. One more call per probed run, on a
+  // flag that is already opt-in and already spending one.
+  let probed = 0;
+  if (opts.jobs) {
+    for (const r of rows) {
+      if (r.ci?.label !== 'fail(no-runner?)' || !r.ci.runId) continue;
+      probed += 1;
+      const jr = jsonOr(sh('gh', ['run', 'view', String(r.ci.runId), '--json', 'jobs'], 20_000), null);
+      const jobs = jr?.jobs;
+      if (!Array.isArray(jobs) || !jobs.length) continue;
+      const starved = jobs.every((x) => (x.steps?.length ?? 0) === 0 && !x.runnerName);
+      if (!starved) {
+        r.ci.label = 'fail';
+        r.ci.note = `${jobs.length} job(s) ran steps — a real failure, not infrastructure`;
+        continue;
+      }
+      r.ci.label = 'fail(no-runner)';
+      // Every starved job, not `jobs[0]` -- that is the same `nodes[0]` shape excluded from
+      // classifyCi above, and it would report ONE job's cause as the whole run's. Today all three
+      // jobs carry the same billing annotation, but a run starved for two different reasons must not
+      // be summarised by whichever job sorted first. Deduped, so the common case stays one line.
+      const seen = new Set();
+      for (const j of jobs) {
+        if (!j?.databaseId) continue;
+        const notes = jsonOr(sh('gh', ['api', `repos/${repo.owner}/${repo.name}/check-runs/${j.databaseId}/annotations`], 20_000), null);
+        if (Array.isArray(notes)) for (const n of notes) if (n?.message) seen.add(n.message.trim());
+      }
+      // Report the annotation VERBATIM. A paraphrase is how "billing, escalate" became "capacity,
+      // wait" in the first place, and the two imply opposite actions.
+      r.ci.note = seen.size
+        ? [...seen].join(' | ')
+        : `${jobs.length} job(s), all steps=0 runner="" — no runner allocated; no annotation says why`;
+    }
+  }
+
+  rows.sort((a, b) => a.number - b.number);
+  // Name the base ONLY when every PR shares one -- a single header line over mixed bases would be a
+  // false label on some rows, which is the class of error this whole block exists to stop.
+  const bases = [...new Set(rows.map((r) => r.base).filter(Boolean))];
+  const baseRef = bases.length === 1 ? `origin/${bases[0]}` : "each PR's own base";
+  const baseSha = bases.length === 1 ? baseShaOf(bases[0]) : null;
+  return {
+    up: true,
+    reason: null,
+    rows,
+    baseRef,
+    baseSha,
+    // `first: 50` in the query. Say so rather than silently reporting a subset as if it were all --
+    // an under-reported list of open PRs is exactly the stale-snapshot failure this replaces.
+    truncated: nodes.length >= 50,
+    jobsProbed: opts.jobs ? probed : null,
+  };
+}
 // ---------------------------------------------------------------- now
 
 function rightNow() {
@@ -236,10 +484,14 @@ function rightNow() {
 // ---------------------------------------------------------------- collect
 
 /**
- * @param {{ gh?: boolean, vault?: string }} [opts]
+ * @param {{ gh?: boolean, vault?: string, ci?: boolean, ciJobs?: boolean }} [opts]
+ *   ci:     per-head CI + preflight for every open PR. One extra API call, ~0.9s. Default on.
+ *   ciJobs: additionally confirm each `fail(no-runner?)` against the run's job list. One API call
+ *           per suspected run (~1.6s each), so opt-in.
  */
 export function collect(opts = {}) {
   const useGh = opts.gh !== false;
+  const useCi = useGh && opts.ci !== false;
   const vaultRoot = opts.vault ?? 'C:/Users/Micha/desktop/Obsidian Vault/Agent-Governed Vaults';
 
   let prs = [];
@@ -247,7 +499,10 @@ export function collect(opts = {}) {
   let ghUp = false;
   if (useGh) {
     // mergeable is computed asynchronously by GitHub, so it can legitimately come back UNKNOWN.
-    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,mergeable', '--limit', '40'], 20_000);
+    // --limit 50 to match the per-head query's `first: 50`. At 40 the two lists silently disagreed
+    // between 41 and 50 open PRs -- two counts of "the open PRs" in one screen, which is the class
+    // of divergence this board exists to remove.
+    const p = sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,mergeable', '--limit', '50'], 20_000);
     const i = sh('gh', ['issue', 'list', '--state', 'open', '--json', 'number,title', '--limit', '40'], 20_000);
     if (p || i) {
       prs = jsonOr(p, []);
@@ -266,5 +521,8 @@ export function collect(opts = {}) {
     departments: departments(vaultRoot),
     now: rightNow(),
     github: { up: ghUp, prs, issues },
+    // Its own `up` flag, deliberately: this degrades INDEPENDENTLY of the PR list above, so a
+    // GraphQL hiccup costs the per-head column and nothing else on the board.
+    perHead: useCi ? perHeadCi({ jobs: Boolean(opts.ciJobs) }) : { up: false, reason: 'skipped (--no-ci)', rows: [] },
   };
 }
