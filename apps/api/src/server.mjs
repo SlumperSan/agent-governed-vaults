@@ -16,6 +16,22 @@
  * **x402 IS the rate limiter** for them — every metered read costs the caller real USDC through a
  * facilitator settlement, so flooding them is a purchase, not a denial-of-service. Method, URL
  * length and request-body size are capped before any work happens. See ratelimit.mjs.
+ *
+ * X402 IS A PER-CHAIN CAPABILITY (`deps.x402`, resolved from the chain config by
+ * `packages/chain-config/src/x402.mjs`). Omitted, or `{enabled:true}`, is the behaviour above and
+ * the default. `{enabled:false}` — chain 4663, where the owner's decision of 2026-09-05 is that
+ * there is no x402 — changes exactly two things and nothing else:
+ *
+ *   - the routes marked "paid" above are served straight through, same body, same status, with no
+ *     402, no challenge and no payment headers. A caller needs no wallet and signs nothing.
+ *   - the token bucket covers EVERY route rather than just the free ones. That follows directly
+ *     from the paragraph above: the metered routes are unbucketed only because payment was the
+ *     rate limit, so removing the payment without extending the limiter would leave them an
+ *     unbounded scrape surface. (`rateLimit` is still optional; a deployment that configures no
+ *     limiter gets none, as before.)
+ *
+ * The discovery document reports the capability either way, so an agent bootstrapping from
+ * `/.well-known/x402` is told the truth rather than quoted a price it will never be charged.
  */
 
 import { createServer } from 'node:http';
@@ -26,6 +42,9 @@ import { leaderboard, vaultView, memberPosition, listVaults } from '../../../pac
 
 /** Routes served without payment — and therefore the routes the rate limiter guards. */
 export const FREE_ROUTES = ['/health', '/.well-known/x402', '/metrics'];
+
+/** Routes metered over x402 wherever the chain has the capability. Advertised by discovery. */
+export const METERED_ROUTES = ['/vaults', '/vaults/{address}', '/vaults/{address}/members/{member}', '/operators/leaderboard'];
 
 /**
  * Caps applied before any handler work. Deliberately small: this is a GET-only read API, so a
@@ -56,11 +75,16 @@ function jsonStringify(obj) {
  * @param {ReturnType<typeof createMetrics>} [deps.metrics]
  * @param {typeof DEFAULT_LIMITS} [deps.limits]
  * @param {boolean} [deps.trustProxy]  honour x-forwarded-for (only true behind a proxy that sets it)
+ * @param {{enabled:boolean, chainId?:number|null, chainName?:string|null, source?:string}} [deps.x402]
+ *        the chain's x402 capability (see the module header). Omitted = enabled, i.e. unchanged.
  * @param {{debug?:Function, info?:Function, warn?:Function, error?:Function}} [deps.log]
  */
-export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false, rateLimit = null, metrics = createMetrics(), limits = DEFAULT_LIMITS, trustProxy = false, log = {} }) {
+export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false, rateLimit = null, metrics = createMetrics(), limits = DEFAULT_LIMITS, trustProxy = false, x402 = { enabled: true }, log = {} }) {
   const seenNonces = new Set();
   const lim = { ...DEFAULT_LIMITS, ...limits };
+  // Only an explicit `false` turns metering off; anything else — including a malformed capability
+  // object — leaves the gate exactly where it is. A payment gate must fail closed.
+  const metering = x402?.enabled !== false;
 
   metrics.gauge('vault_indexer_last_block', () => state.lastBlock);
   metrics.gauge('vault_api_seen_nonces', () => seenNonces.size);
@@ -90,8 +114,9 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
     const path = url.split('?')[0];
 
     // Free routes are cheap and unpriced, which makes them the only thing worth flooding. Bucket
-    // them per IP. The metered routes below are NOT bucketed: see the module header.
-    if (rateLimit && FREE_ROUTES.includes(path)) {
+    // them per IP. The metered routes below are NOT bucketed: see the module header — unless this
+    // chain has no x402, in which case they are not metered either and the bucket is all there is.
+    if (rateLimit && (!metering || FREE_ROUTES.includes(path))) {
       const verdict = rateLimit.take(ctx.ip || 'unknown');
       if (!verdict.allowed) {
         metrics.inc('vault_api_rate_limited_total');
@@ -113,30 +138,37 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       return { status: 200, headers: { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' }, body: metrics.render() };
 
     // Free discovery document — agents bootstrap from here (pricing, routes, spec pointer).
+    // `enabled` is the capability, stated rather than implied: with it false the price is null and
+    // every route is listed as free, so an SDK cannot read a price it will never be charged.
     if (path === '/.well-known/x402')
       return json(200, {}, {
         x402Version: 2,
-        price: { asset: price.asset, amount: price.amount, payTo: price.payTo, network: price.network },
+        enabled: metering,
+        price: metering ? { asset: price.asset, amount: price.amount, payTo: price.payTo, network: price.network } : null,
         routes: {
-          free: FREE_ROUTES,
-          metered: ['/vaults', '/vaults/{address}', '/vaults/{address}/members/{member}', '/operators/leaderboard'],
+          free: metering ? FREE_ROUTES : [...FREE_ROUTES, ...METERED_ROUTES],
+          metered: metering ? METERED_ROUTES : [],
         },
         openapi: 'docs/api/openapi.yaml',
         llms: '/llms.txt',
       });
 
-    // Everything else is metered.
-    const lc = {};
-    for (const [k, v] of Object.entries(headers)) lc[k.toLowerCase()] = v;
-    const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces });
-    if (verdict.status === 402) {
-      metrics.inc('vault_api_payment_required_total');
-      return { status: 402, headers: verdict.headers, body: jsonStringify(verdict.body) };
+    // Everything else is metered — except on a chain whose config switches x402 off, where the
+    // same reads are served straight through with no challenge and no payment headers.
+    let paidHeaders = {};
+    if (metering) {
+      const lc = {};
+      for (const [k, v] of Object.entries(headers)) lc[k.toLowerCase()] = v;
+      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces });
+      if (verdict.status === 402) {
+        metrics.inc('vault_api_payment_required_total');
+        return { status: 402, headers: verdict.headers, body: jsonStringify(verdict.body) };
+      }
+      metrics.inc('vault_api_settlements_total');
+      paidHeaders = verdict.headers;
     }
-    metrics.inc('vault_api_settlements_total');
 
-    // Paid — resolve the resource.
-    const paidHeaders = verdict.headers;
+    // Resolve the resource.
     if (path === '/operators/leaderboard')
       return { status: 200, headers: paidHeaders, body: jsonStringify({ leaderboard: leaderboard(state) }) };
 

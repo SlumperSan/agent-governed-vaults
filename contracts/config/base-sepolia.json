@@ -96,6 +96,11 @@
     }
   ],
   "testnetCompromise": "Base Sepolia has exactly ONE Chainlink feed per pair, so the >=3-source constructor floor is met by deploying three ChainlinkSourceAdapter instances over the same canonical feed (distinct source addresses). This satisfies the OracleAggregator constructor mechanically but NOT the SF-1 mechanism-diversity listing criterion, and M-1's distinctness check cannot catch it either: the ADDRESSES differ, the upstream feed does not. Quorum is 3-of-3 since the H-1 remediation (quorum must reach MIN_MEDIAN=3, because a 2-element lower median is a minimum); on this testnet that costs nothing, as all three adapters read one feed and fail together anyway. A mainnet config MUST list >=5 sources per asset with quorum 3 - see base-mainnet.json oracleRemediationRequired.",
+  "x402": {
+    "enabled": true,
+    "note": "x402 metering is ON here and this changes nothing about it — Base Sepolia behaves exactly as it always has: every non-free route answers an unpaid request with 402 and a PAYMENT-REQUIRED challenge, the paid retry settles through the facilitator, and only the free routes are token-bucketed. The block is written out rather than left implicit so this file and `robinhood-mainnet.json` diff field for field on a capability that now differs between them. An ABSENT block also means enabled, which is what keeps `base-mainnet.json` and every caller that passes no chain id byte-identical; see `packages/chain-config/src/x402.mjs`, which resolves this by chain id.",
+    "liveEvidenceNote": "This is the chain the live x402 settlement run was executed on and recorded against — `docs/X402-LIVE-REPORT.md` and `docs/evidence/x402-live-run.json`. `scripts/live-x402-run.mjs` refuses any chain id outside its testnet set (84532, 11155111, 31337, 1337), so that evidence remains a Base Sepolia fact and no capability switch elsewhere can move it."
+  },
   "smoke": {
     "capacityCapUsdc": "1000000000",
     "minDepositUsdc": "1000000",
