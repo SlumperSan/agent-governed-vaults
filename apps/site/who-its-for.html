@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Who it is for — Agent-Governed Vaults</title>
-<meta name="description" content="The assumptions this design makes about whoever uses it, what governing a vault demands every week, and the four groups this is explicitly not for at launch.">
+<title>Who it is for — Rwally</title>
+<meta name="description" content="The assumptions this design makes about whoever uses it, and what governing a vault actually demands each week.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/who-its-for">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/who-its-for">
-<meta property="og:title" content="Who it is for, and who it is not for">
-<meta property="og:description" content="For people who weigh no pause, no upgrade, no seize above almost everything else, and the four groups this is wrong for. Not deployed to mainnet.">
+<meta property="og:title" content="Who it is for">
+<meta property="og:description" content="For people who weigh no pause, no upgrade, no seize above almost everything else. Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Who it is for, and who it is not for">
-<meta name="twitter:description" content="For people who weigh no pause, no upgrade, no seize above almost everything else, and the four groups this is wrong for. Not deployed to mainnet.">
+<meta name="twitter:title" content="Who it is for">
+<meta name="twitter:description" content="For people who weigh no pause, no upgrade, no seize above almost everything else. Robinhood Chain mainnet, chain id 4663.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html" aria-current="page">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html">Questions</a></li>
       </ul>
     </nav>
@@ -68,11 +67,11 @@
         </div>
         <div>
           <dt>You have to accept being outvoted</dt>
-          <dd>Your exit queues from the moment the reveal phase opens on any live proposal (not from the moment one passes). It settles after the swap executes. You carry the execution you voted against, and a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is the cost of closing the free option of leaving at pre-vote prices while already knowing the result.</dd>
+          <dd>Your exit queues from the moment the reveal phase opens on any live proposal (not from the moment one passes). It settles after the swap executes. That is the cost of closing the free option of leaving at pre-vote prices while already knowing the result, and what it means for you is in the <a href="disclaimers.html">Disclaimers</a>.</dd>
         </div>
         <div>
-          <dt>You have to accept a frozen door</dt>
-          <dd>If a price feed goes stale, everything that reads NAV reverts, including your exit. There is no escape hatch, and adding one would recreate the exact stale-price exit the breaker exists to prevent. Only capital still inside an un-activated observation window stays reclaimable. If the feed is deprecated or retired rather than merely late, the freeze does not end: a vault's oracle address is fixed at construction and cannot be replaced by anyone. That is <a href="risks.html#r15">risk 15</a>.</dd>
+          <dt>You have to watch your own share</dt>
+          <dd>Proposal rights are a percentage of voting-eligible stake, and other members' deposits move it. Nothing re-checks it for you.</dd>
         </div>
       </dl>
     </div>
@@ -80,34 +79,9 @@
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">Not for you if</p>
-      <h2>Four groups this is explicitly wrong for at launch.</h2>
-      <div class="grid">
-        <div>
-          <h3>DAO treasuries and larger allocators</h3>
-          <p>The first vault's planned capacity cap is 50,000 USDG, and a capacity cap is immutable per vault. That cannot absorb a treasury, and the cap on <em>this</em> vault will not be raised. The recorded plan is a second, larger vault of at least 250,000 USDG after at least 30 incident-free days. That is a different deployment on a later date. It is a plan, not a commitment.</p>
-        </div>
-        <div>
-          <h3>Anyone who wants set-and-forget</h3>
-          <p>There is no autopilot. Skipping votes does not park your position neutrally: it moves quorum and wastes your commit; it hands the outcome to whoever did turn up.</p>
-        </div>
-        <div>
-          <h3>Anyone who cannot survive a total loss</h3>
-          <p>Spot crypto assets fall. The code cannot be patched. There is no insurance fund and no backstop. Nobody makes anyone whole. Deposit only what you can lose entirely.</p>
-        </div>
-        <div>
-          <h3>Anyone in a restricted jurisdiction</h3>
-          <p>Interests in these vaults may be treated as securities or as collective investment scheme interests where you live. Front-end geofencing is intended, but it is a good-faith measure and not a guarantee. The contracts are permissionless and can be called directly by anyone. Take your own advice about your own jurisdiction.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
       <p class="eyebrow">The cap</p>
       <h2>A planned 50,000 USDG is a blast radius, not a queue.</h2>
-      <p class="tight">A small first vault is not scarcity and it is not a signal to hurry. The reason that matters to a depositor is blast radius: it is the largest amount this team is willing to have permanently trapped by a bug that survived review, at a point where nothing can be patched and nothing can be paused. If the code is wrong, the cap is the ceiling on how wrong it can be for anyone. Other reasons are on record; that is the one to weigh.</p>
+      <p class="tight">The first vault's planned capacity cap is 50,000 USDG, and a capacity cap is immutable per vault. A small first vault is not scarcity and it is not a signal to hurry. It is the ceiling on how much any single unknown can reach.</p>
       <div class="note note--flat">
         <span class="label">What that means in practice</span>
         <p>There is no allocation to claim, no queue to join, no priority to earn, and nothing on this site to sign up for. If a vault is full, it is full; the answer is a different vault, later, not a place in line.</p>
@@ -118,10 +92,10 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Before you decide</p>
-      <h2>Read the risks page in full, then decide.</h2>
-      <p class="tight">Fifteen named risks, each with its worst case and what is actually done about it, including the seven where the honest answer is that nothing is done and the risk is simply accepted. That page is the most useful thing on this site.</p>
+      <h2>Read the Disclaimers in full, then decide.</h2>
+      <p class="tight">Fifteen named risks, each with its worst case and what is actually done about it. That page is the most useful thing on this site.</p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">The fifteen risks</a>
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
         <a class="btn" href="faq.html">The awkward questions</a>
         <a class="btn" href="how-it-works.html">The mechanism in detail</a>
       </div>
@@ -140,9 +114,9 @@
           <li><a href="how-it-works.html">How it works</a></li>
           <li><a href="agents.html">Agents</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
           <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -151,15 +125,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 

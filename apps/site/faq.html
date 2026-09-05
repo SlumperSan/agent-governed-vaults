@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Questions — Agent-Governed Vaults</title>
-<meta name="description" content="Direct answers to the hard questions: is there a token, is it running anywhere, can you rug me, can I always get out, what does the operator earn, and what licence the code is under.">
+<title>Questions — Rwally</title>
+<meta name="description" content="Direct answers to the hard questions: is there a token, is it running, can you rug me, when can I get out, what does the operator earn, and what licence the code is under.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/faq">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/faq">
 <meta property="og:title" content="Questions, answered the way they were asked">
-<meta property="og:description" content="Can you rug me, can you pause it, can I always get out, what does the operator earn, what licence is the code under. Not deployed to mainnet.">
+<meta property="og:description" content="The questions people ask when they have been burned before. Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Questions, answered the way they were asked">
-<meta name="twitter:description" content="Can you rug me, can you pause it, can I always get out, what does the operator earn, what licence is the code under. Not deployed to mainnet.">
+<meta name="twitter:description" content="The questions people ask when they have been burned before. Robinhood Chain mainnet, chain id 4663.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html" aria-current="page">Questions</a></li>
       </ul>
     </nav>
@@ -57,63 +56,55 @@
 
       <article class="qa">
         <h2>Is there a token?</h2>
-        <p>No. No token, no points programme, no distribution event, no pre-launch sale, and nothing to farm. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens &mdash; and RWLY does not exist yet, so there is still nothing here to buy, claim or farm.</p>
-        <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
+        <p>No. There is nothing to buy and nothing to claim. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens &mdash; and RWLY does not exist yet.</p>
+        <p>The standing form of that answer is on the <a href="disclaimers.html">Disclaimers</a>.</p>
       </article>
 
       <article class="qa">
-        <h2>Is it running anywhere yet?</h2>
-        <p>No. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Sepolia deployments are not interchangeable and the difference matters: the current one runs the code on <code>protocol/main</code> today, while earlier ones are superseded. The contracts changed after them, the oracle, the vault core and the factory among them. The lifecycle has since been re-run against the current deployment and passed, all ten phases settling, with the per-phase record in the repository; the soak and canary evidence earned against the earlier bytecode is still marked stale pending a re-run against the current stack.</p>
-        <p>There are no mainnet addresses to publish, which is why this site publishes none. The current testnet addresses are not published on this site either. The address book in the repository records the current Base Sepolia deployment, and notes that its execution adapter carries both of the security fixes the retired adapter predated. Anyone showing you a mainnet address for this protocol is not showing you this protocol.</p>
+        <h2>Is it running?</h2>
+        <p>Yes. The protocol is on Robinhood Chain mainnet, chain id 4663, broadcast on 2026-09-05 from <code>protocol/main</code> at <code>b1cde122</code>.</p>
+        <p>Every address is on the <a href="status.html">status page</a> and in the committed deployment record, <code>contracts/config/deployments/robinhood-mainnet.json</code>. Anyone showing you an address that is not in that record is not showing you this protocol.</p>
       </article>
 
       <article class="qa">
         <h2>Can you rug me?</h2>
-        <p>Not through the contracts. As written they are non-custodial, with no seize function, no privileged withdrawal and no admin key. An operator cannot withdraw another member's funds, and neither can anyone else. Operatorship confers no authority to execute an unpassed rebalance, pause, reprice, upgrade, skip the timelock, or move, freeze or seize member funds. Its one power beyond proposing and voting like any member of equal stake is economic: the operator identity receives the 10% performance fee, which no other member does.</p>
-        <p>This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
-        <p>You can still lose everything. A bug can do it. So can the market, and so can a governance majority you disagree with. Those are different failure modes and they are all on the <a href="risks.html">risks page</a>.</p>
+        <p>Not through the contracts. They are non-custodial, with no seize function, no privileged withdrawal and no admin key. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds. Its one power beyond proposing and voting like any member of equal stake is economic: the operator identity receives the 10% performance fee, which no other member does.</p>
+        <p>You can still lose money. The <a href="disclaimers.html">Disclaimers</a> set out how.</p>
       </article>
 
       <article class="qa">
         <h2>Can you pause it?</h2>
-        <p>No. As written, the contracts contain no pause function, no proxy and no upgrade path. Nobody can stop a vault. Not the operator. Not the members. Not the people who wrote it. The only thing that halts a vault is the oracle staleness breaker, and that is a property of the code rather than a switch anyone holds.</p>
+        <p>No. The contracts carry no pause function, no proxy and no upgrade path. Nobody can stop a vault. Not the operator. Not the members. Not the people who wrote it. The only thing that halts a vault is the oracle staleness breaker, and that is a property of the code rather than a switch anyone holds.</p>
       </article>
 
       <article class="qa">
-        <h2>What happens if the oracle breaks?</h2>
-        <p>The vault freezes. Every function that reads NAV reverts: deposits, rebalance execution and redemptions. Exits are included. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent.</p>
-        <p>The one thing that stays reclaimable during a freeze is capital still sitting in an un-activated observation window, because cancelling a pending deposit reads no oracle. Active share capital is trapped for as long as the feed stays past its bound. If the feed is deprecated or retired rather than merely late, that is permanent: a vault's oracle address is fixed at construction and cannot be replaced by anyone. That is <a href="risks.html#r15">risk 15</a>.</p>
+        <h2>What happens if the oracle stops answering?</h2>
+        <p>Every function that reads NAV reverts: deposits, rebalance execution and redemptions. Capital still sitting in an un-activated observation window stays reclaimable, because cancelling a pending deposit reads no oracle.</p>
+        <p>What that means for capital already in shares is in the <a href="disclaimers.html#r2">Disclaimers</a>.</p>
       </article>
 
       <article class="qa">
-        <h2>Can I always get out?</h2>
-        <p>No. Two situations stop you.</p>
-        <p>During an oracle freeze you cannot exit at all, at any price, for as long as the feed stays past its bound, and permanently if it is retired rather than late.</p>
-        <p>And from the moment the reveal phase opens on any live proposal (not from the moment one passes), your request queues in forward settlement mode: it is irrevocable once submitted and it settles at post-execution NAV, so you carry the execution whether you voted for it or not. The window lasts until that proposal executes, is defeated, or its execution window lapses, so a proposal that is ultimately defeated still forced your exit into the queue while it was live. Between request and settlement your shares stay outstanding. They still gain and lose with the vault, but they are locked, non-transferable and excluded from voting-eligible stake.</p>
+        <h2>When can I get out?</h2>
+        <p>Instantly, unless a live proposal has reached its reveal phase. From that moment until the proposal executes, is defeated, or its execution window lapses, the request is queued and settles at post-execution NAV. <code>Governance.hasPendingExecution(vault)</code> is the exact predicate.</p>
+        <p>The cases where you cannot get out at all are in the <a href="disclaimers.html">Disclaimers</a>.</p>
       </article>
 
       <article class="qa">
         <h2>What does the operator earn, and what do they have to lock?</h2>
-        <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows that operator identity across vaults. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code. There is no management fee.</p>
+        <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows that operator identity across vaults. There is no management fee.</p>
         <p>The exit fee is never routed to the operator identity. But the operator is also a member, and the fee stays in the vault where it raises the value of every share. So an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</p>
-        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDG that is 2,500 USDG. The 50,000 is a planned first-vault cap that has not been deployed. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference mainnet configuration, and still an open launch decision. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
+        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDG that is 2,500 USDG, and 50,000 USDG is the first vault's planned capacity cap. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference configuration. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
       </article>
 
       <article class="qa">
-        <h2>Why is the cap so small?</h2>
-        <p>Because nothing can be patched and nothing can be paused. The reason that matters to a depositor is blast radius: a planned 50,000 USDG is the largest amount this team is willing to have permanently trapped by a bug that survived review. Other reasons are on record; that is the one you should weigh. It is not a scarcity mechanic. There is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault, not editing this one.</p>
-      </article>
-
-      <article class="qa">
-        <h2>Has it been security reviewed?</h2>
-        <p>An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
-        <p>Read that precisely. An attestation you cannot check is weaker evidence than a report you can, and this site will not use a word that implies you can check it.</p>
+        <h2>Why is the cap 50,000 USDG?</h2>
+        <p>Because nothing can be patched and nothing can be paused, so the cap is the ceiling on how much any single unknown can reach. A planned 50,000 USDG is the largest amount this team is willing to have permanently trapped by a bug that survived review. It is not a scarcity mechanic. There is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault.</p>
       </article>
 
       <article class="qa">
         <h2>Can I fork it? What licence is the code under?</h2>
-        <p>Source-available under BUSL-1.1 — not open source. You can read every line, and you should. You cannot treat it as freely reusable, and the licence terms in the repository govern what you may do with it. That restriction is on the source, not on the chain: a deployed vault has no admin key and no setters, so no one can gate or revoke anyone's access to it once it exists.</p>
-        <p>One thing to know before you build on it: vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository. That is an open licensing question the owner has recorded as open, and it is disclosed on the <a href="risks.html#r13">risks page</a> rather than left for you to find.</p>
+        <p>The licence is BUSL-1.1, and the exact standing sentence for it is on the <a href="disclaimers.html">Disclaimers</a>. You can read every line, and you should. You cannot treat it as freely reusable, and the licence terms in the repository govern what you may do with it. That restriction is on the source, not on the chain: a vault on Robinhood Chain has no admin key and no setters, so no one can gate or revoke anyone's access to it once it exists.</p>
+        <p>There is an open licensing question about vendored third-party mathematics in the tree; it is set out on the <a href="disclaimers.html#r13">Disclaimers</a>.</p>
       </article>
 
       <article class="qa">
@@ -125,31 +116,20 @@
 
       <article class="qa">
         <h2>What happens if everyone leaves?</h2>
-        <p>The vault empties out in order. Redemption is pro-rata and in kind, so each member takes their share of every basket asset plus their share of the idle USDG. In kind means tokens, not dollars: you receive WETH and cbBTC, and converting them back is your transaction, your routing and your cost. The exit fee decays with tenure and is waived entirely for the last member out, so the final redeemer is not penalised for turning the lights off.</p>
+        <p>The vault empties out in order. Redemption is pro-rata and in kind, so each member takes their share of every basket asset plus their share of the idle USDG. In kind means tokens, not dollars: you receive the ETH and BTC the vault holds, as the wrapped ERC-20s the <a href="status.html">status page</a> names by address, and converting them back is your transaction, your routing and your cost. The exit fee decays with tenure and is waived entirely for the last member out, so the final redeemer is not penalised for turning the lights off.</p>
         <p>The creator's withdrawal gate binds only while at least one non-creator member remains; once they are gone, the creator can redeem in full. While members remain it binds hard: a creator diluted below 5% has every redemption revert, not merely the part below the line. Nothing lingers, and there is no residual claim on an empty vault.</p>
       </article>
 
       <article class="qa">
         <h2>Am I an investor?</h2>
-        <p>We will not characterize your position for you, and you should not take a characterization from a marketing page.</p>
-        <p>Mechanically, you hold shares in a vault whose rules you govern by on-chain vote, alongside other members. That vote is stake-weighted at five or more members, and follows a signer-count-plus-stake rule below that. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. Whether that makes you an investor in a security or a collective investment scheme where you live is a legal question with a jurisdiction-specific answer. It is unresolved, and it is listed as risk 11. Take your own advice.</p>
-      </article>
-
-      <article class="qa">
-        <h2>Which jurisdictions?</h2>
-        <p>Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end. That is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end.</p>
-        <p>Nothing on this site is an offer, a solicitation, or financial advice, and none of it is directed at anyone in a jurisdiction where it would be unlawful.</p>
+        <p>Mechanically, you hold shares in a vault whose rules you govern by on-chain vote, alongside other members. That vote is stake-weighted at five or more members, and follows a signer-count-plus-stake rule below five. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote.</p>
+        <p>Whether that makes you an investor where you live is a legal question. The <a href="disclaimers.html">Disclaimers</a> say what is known and what is not.</p>
       </article>
 
       <article class="qa">
         <h2>How do I get in?</h2>
-        <p>You do not, yet. Nothing is running.</p>
-        <p>There is no list to join, no allocation to claim, no priority to earn, no form on this site and no wallet connection on this site. If someone offers you a place in a queue for this protocol, they are not connected to it.</p>
-      </article>
-
-      <article class="qa">
-        <h2>What is x402 doing here?</h2>
-        <p>Nothing that touches your money. Metered read access to vault data is paid per request in USDC over x402, entirely inside the off-chain API. The contracts have no x402 dependency, and depositing, voting and redeeming never involve it.</p>
+        <p>Deposit USDG into a vault. There is no list to join, no allocation to claim and no priority to earn. The contracts gate on amount alone and screen nobody.</p>
+        <p>There is no form on this site and no wallet connection on this site. If someone offers you a place in a queue for this protocol, they are not connected to it.</p>
       </article>
 
       <article class="qa">
@@ -163,9 +143,9 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Still reading</p>
-      <h2>The risks page answers more than this one does.</h2>
+      <h2>The Disclaimers answer more than this page does.</h2>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">Fifteen named risks</a>
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
         <a class="btn" href="how-it-works.html">The mechanism</a>
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Read the code</a>
       </div>
@@ -185,8 +165,8 @@
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -195,15 +175,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 

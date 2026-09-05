@@ -47,27 +47,49 @@ const REPO = path.resolve(SITE, '..', '..');
 // 86400, which is ChainlinkOracle.MAX_HEARTBEAT exactly) and chainlinkOracle.sequencerUptimeFeed
 // (a Base address -> empty, because Chainlink publishes no L2 Sequencer Uptime Feed for 4663).
 // So the entire numeric blast radius of this line is ONE table row on how-it-works.html and one
-// prose figure on risks.html, both of which move from 3,600 seconds to 86,400.
+// prose figure on disclaimers.html, both of which move from 3,600 seconds to 86,400.
 //
 // base-mainnet.json is NOT deleted and must not be: scripts/test/config-doc-truth.test.mjs reads
 // it directly and asserts its sequencer uptime feed is still a real address.
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// Eight since 2026-09-04: status.html joined by owner decision. It is NOT in the header nav --
-// it is reached from the footer of every page -- but it is a public page and every guard in this
-// file walks it, which is the whole reason it is a member of this array rather than a special case.
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'risks.html', 'faq.html', 'status.html'];
+// Still eight. `risks.html` was RETIRED on 2026-09-05 and `disclaimers.html` took its slot: the
+// owner's instruction is that every negative statement on this site lives on one page, so the
+// fifteen risks, the legal position and every caveat lifted out of the other seven pages are all
+// there. The page count did not change and neither did the parser -- the risk articles keep their
+// `<article class="risk" id="rN">` shape, and every leg below that used to read risks.html now
+// reads disclaimers.html.
+//
+// TWO of these eight are NOT in the header nav -- status.html since 2026-09-04 and
+// disclaimers.html since 2026-09-05 -- and both are reached from the footer of every page. They are
+// public pages and every guard in this file walks them, which is why they are members of this array
+// rather than special cases.
+const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'disclaimers.html', 'faq.html', 'status.html'];
+
+/** The one page every negative claim lives on, and the one every footer must link to. */
+const DISCLAIMERS_PAGE = 'disclaimers.html';
 
 /** Everything else the banned-phrase list must also cover: the README and both stylesheets. */
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 
 // The exact strings the spec pins. Any drift in punctuation or dashes is a failure, by design.
-const BANNER_STATUS = 'Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake.';
+//
+// BANNER_STATUS -- 'Not deployed to mainnet. The only deployment is a testnet trial with no real
+// value at stake.' -- was RETIRED on 2026-09-05 rather than reworded, because it is false: the
+// protocol is on Robinhood Chain mainnet. An absolute is what breaks the day it stops being true,
+// so its replacement states the deployment and can be checked against the committed record rather
+// than against nothing. What the old constant protected -- that every page tells a reader where the
+// code is -- is carried by DEPLOYED_LINE below plus the mandatory footer link to the Disclaimers.
+const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
-const TITLE_SUFFIX = ' — Agent-Governed Vaults';
+// Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names Rwally, and
+// the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
+// which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the
+// site's title.
+const TITLE_SUFFIX = ' — Rwally';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
@@ -145,22 +167,30 @@ const PERMITTED = [
   'a good-faith measure and not a guarantee',
   'no guarantee of any outcome',
   'treating a parameter as a guarantee is how people get hurt',
-  // "sign up" -- every occurrence denies that there is anything to sign up for; status.html
-  // added a third on 2026-09-04, which is why this no longer says "both".
-  'There is nothing to sign up for.',
+  // "sign up" -- every occurrence denies that there is anything to sign up for.
+  //
+  // 'There is nothing to sign up for.' WAS DELETED HERE ON 2026-09-05, and the deletion is the
+  // remedy this list's rot test asks for rather than collateral. It was the index page's "Next"
+  // heading; that heading is now 'There is nothing to claim here.', so the entry covered nothing
+  // and would have been a standing hole for a banned phrase to walk through later. The remaining
+  // entry is still in use, on who-its-for.html.
   'nothing on this site to sign up for',
 ];
 
 /**
- * How many times each exact footer sentence may appear on a given page. The footer carries one.
- * faq.html deliberately repeats BOTH in its body -- the no-token sentence answers "Is there a
- * token?" and the licence sentence answers "What licence is the code under?", and those are the
- * two answers people quote. Counted rather than blanket-stripped: the old scrub() removed every
- * occurrence, so a stray copy anywhere on a page went unnoticed.
+ * How many times each exact standing sentence may appear on a given page.
+ *
+ * OWNER DECISION, 2026-09-05: every disclaimer lives on one page. Both of these sentences moved off
+ * the eight footers and onto disclaimers.html, where each appears once, and every page's footer
+ * carries a link to that page instead. So the default is now ZERO rather than one, and that is a
+ * TIGHTENING, not a relaxation: with a permitted count of zero, scrub() strips nothing on the other
+ * seven pages, so "airdrop", "presale" and "open source" are banned outright everywhere except
+ * inside the two sentences on disclaimers.html. The old shape permitted one copy of each on every
+ * page and therefore permitted those three words on every page.
  */
 const FOOTER_SENTENCE_COUNTS = {
-  [FOOTER_TOKEN]: { default: 1, 'faq.html': 2, 'status.html': 2 },
-  [FOOTER_LICENSE]: { default: 1, 'faq.html': 2 },
+  [FOOTER_TOKEN]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
+  [FOOTER_LICENSE]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
 };
 
 /** @type {Map<string, string>} */
@@ -247,43 +277,54 @@ test('each footer sentence appears exactly the number of times it is permitted t
 });
 
 /**
- * THE STATUS BLOCK MOVED, AND THESE THREE TESTS SAY EXACTLY WHERE IT WENT.
+ * THE DISCLOSURE MOVED TWICE, AND THESE TESTS SAY EXACTLY WHERE IT IS NOW.
  *
  * Owner decision, 2026-09-04: "Claims should not be a header page, it should be a link in the
- * footer." The `.pre-launch` band that sat above the nav on all seven pages is deleted from every
- * one of them and now appears once, on status.html, inside `<main>`.
+ * footer." The `.pre-launch` band that sat above the nav on all seven pages moved to status.html.
  *
- * THE DISCLOSURE DID NOT MOVE WITH IT, and that is the fact that makes the change safe rather than
- * a deletion. Both pinned sentences have always ALSO been the opening of every page's footer
- * paragraph -- the not-an-offer sentence first, the deployment-status sentence second -- so every
- * page carried each of them twice, and removing the band leaves each page stating each of them
- * exactly once. Nothing was dropped; a duplicate was.
+ * Owner decision, 2026-09-05: every disclaimer lives on ONE page. `risks.html` is retired,
+ * `disclaimers.html` takes its slot, and the four sentences that used to be repeated in eight
+ * footers -- not-an-offer, deployment status, no-token, the licence -- are stated once, there.
  *
- * Three tests, because there are three separate ways to get this wrong and a single combined
- * assertion would report the wrong one:
+ * WHY THAT IS NOT A WEAKENING, stated rather than assumed, because "we consolidated the
+ * disclaimers" is exactly how a disclosure gets quietly deleted:
  *
- *   1. `the top status band is gone …` -- a page the sweep missed, or a band re-added later.
- *   2. `every page states the deployment status …` -- a footer edit that drops the disclosure now
- *      that nothing above the nav repeats it. This is the assertion that actually protects the
- *      reader, and it is the reason the count is pinned per page rather than merely `>= 1`.
- *   3. `status.html carries the full block` -- the status page quietly emptied into a link.
+ *   - The reader protection the per-page footer count gave -- the disclosure is never more than one
+ *     scroll away -- is carried by a MANDATORY footer link on every page, asserted below with the
+ *     link text pinned, in the same shape the status link has been pinned since 2026-09-04.
+ *   - The count-and-position discipline itself survives, on the two pages that now carry the
+ *     sentences. Exactly one occurrence each, inside `<main>`, not buried in a footer.
+ *   - FOOTER_SENTENCE_COUNTS defaulting to zero makes "airdrop", "presale" and "open source" banned
+ *     OUTRIGHT on the other seven pages, where before one copy of each was permitted per page.
  *
- * The counts are per page and enumerated, in the same shape as FOOTER_SENTENCE_COUNTS and for the
- * same reason: faq.html answers "Is it deployed?" by quoting the deployment-status sentence in its
- * body, which is deliberate and is the one place the repetition earns itself, and status.html
- * carries both sentences in its band as well as in its footer.
+ * The deployment-status sentence is the one that changed content as well as place. It used to be an
+ * absolute -- "Not deployed to mainnet." -- and the protocol is now on Robinhood Chain mainnet, so
+ * the absolute is false. DEPLOYED_LINE replaces it and names the chain id, which is what makes it
+ * checkable: `scripts/test/claims-robinhood-deployment.test.mjs` binds every surface that cites the
+ * deployment to the committed record at contracts/config/deployments/robinhood-mainnet.json.
  */
 const STATUS_PAGE = 'status.html';
 
-const STATUS_SENTENCE_COUNTS = {
-  [BANNER_STATUS]: { default: 1, 'faq.html': 2, [STATUS_PAGE]: 2 },
-  [BANNER_OFFER]: { default: 1, [STATUS_PAGE]: 2 },
+/**
+ * Where each pinned sentence may appear, and how often. Zero everywhere it is not named: a stray
+ * copy on a seventh page is as much a drift as a missing one.
+ */
+const PINNED_SENTENCE_COUNTS = {
+  [DEPLOYED_LINE]: { default: 0, [STATUS_PAGE]: 1, [DISCLAIMERS_PAGE]: 1 },
+  [BANNER_OFFER]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
 };
 
-/** The `.pre-launch` band of a page, markup and all, or null when the page has none. */
+/**
+ * The status band of a page, markup and all, or null when the page has none.
+ *
+ * The class name is still `pre-launch` and that is deliberate rather than left over: `site.css`
+ * styles that class, and the "cannot be hidden by the stylesheet" test below reads those rules by
+ * name. Renaming the class to match the copy would move a styling contract and a guard in the same
+ * commit for a cosmetic gain. The class is a selector; the copy inside it is the claim.
+ */
 const statusBand = (html) => (html.match(/<div class="pre-launch">[\s\S]*?<\/div>\s*<\/div>/) ?? [null])[0];
 
-test('the top status band is gone from every marketing page and lives only on the status page', () => {
+test('the status band lives only on the status page', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     const bands = (html.match(/class="pre-launch"/g) ?? []).length;
@@ -299,21 +340,23 @@ test('the top status band is gone from every marketing page and lives only on th
   }
 });
 
-test('every page states the deployment status the permitted number of times, and always in its footer', () => {
+test('each pinned sentence appears exactly where it is pinned, and inside main', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
+    const mainAt = html.indexOf('<main id="main"');
     const footerAt = html.indexOf('<footer');
     assert.ok(footerAt !== -1, `${p}: missing <footer>`);
-    for (const [sentence, allowed] of Object.entries(STATUS_SENTENCE_COUNTS)) {
+    for (const [sentence, allowed] of Object.entries(PINNED_SENTENCE_COUNTS)) {
       const want = /** @type {Record<string, number>} */ (allowed)[p] ?? allowed.default;
       const got = count(html, sentence);
-      assert.equal(got, want, `${p}: expected ${want} occurrence(s) of ${JSON.stringify(sentence)}, found ${got}`);
-      // The LAST occurrence is the footer's. This is the assertion that catches a footer edit
-      // dropping the disclosure now that no band above the nav repeats it.
-      assert.ok(
-        html.lastIndexOf(sentence) > footerAt,
-        `${p}: the footer must carry ${JSON.stringify(sentence.slice(0, 40))}… — it is the only place every page states it since the top band was removed`,
+      assert.equal(
+        got,
+        want,
+        `${p}: expected ${want} occurrence(s) of ${JSON.stringify(sentence)}, found ${got}. Both pinned sentences live on ${DISCLAIMERS_PAGE} since 2026-09-05, and every other page links there rather than repeating them.`,
       );
+      if (want === 0) continue;
+      const at = html.indexOf(sentence);
+      assert.ok(at > mainAt && at < footerAt, `${p}: ${JSON.stringify(sentence.slice(0, 40))}… must sit inside <main>, not in the footer or above the nav`);
     }
   }
 });
@@ -322,8 +365,11 @@ test('status.html carries the full status block, inside main rather than above t
   const html = raw.get(STATUS_PAGE) ?? '';
   const band = statusBand(html);
   assert.ok(band, `${STATUS_PAGE}: the status band is missing entirely`);
-  assert.ok(band.includes(BANNER_STATUS), `${STATUS_PAGE}: the band is missing the exact deployment-status string`);
-  assert.ok(band.includes(BANNER_OFFER), `${STATUS_PAGE}: the band is missing the exact not-an-offer string`);
+  assert.ok(band.includes(DEPLOYED_LINE), `${STATUS_PAGE}: the band is missing the exact deployment string`);
+  assert.ok(
+    band.includes('contracts/config/deployments/robinhood-mainnet.json'),
+    `${STATUS_PAGE}: the band must name the record the deployment claim is checked against — a deployment sentence with no source is the shape this page exists to refuse`,
+  );
   const at = html.indexOf(band);
   assert.ok(at > html.indexOf('<main id="main"'), `${STATUS_PAGE}: the band must sit inside <main>, not above the nav`);
   assert.ok(at < html.indexOf('<footer'), `${STATUS_PAGE}: the band must sit inside <main>, not in the footer`);
@@ -345,12 +391,36 @@ test('status.html carries the full status block, inside main rather than above t
   );
 });
 
-test('every page carries both footer strings verbatim', () => {
+/**
+ * THE LINK THAT REPLACES THE REPEATED DISCLAIMER.
+ *
+ * This is the assertion that makes the 2026-09-05 consolidation safe. Every page used to state the
+ * not-an-offer sentence and the deployment status in its own footer; now one page states them and
+ * the other seven point at it. If that pointer is ever dropped from a page, the reader on that page
+ * has no route to any of it, so the link text is pinned exactly as the status link's is -- a link
+ * labelled "more" or "legal" is a link a reader does not follow.
+ */
+test('every page links to the Disclaimers, with the link text pinned', () => {
   for (const p of PAGES) {
-    const html = raw.get(p) ?? '';
-    assert.ok(html.includes(FOOTER_TOKEN), `${p}: missing exact no-token footer sentence`);
-    assert.ok(html.includes(FOOTER_LICENSE), `${p}: missing exact licence footer sentence`);
+    assert.ok(
+      /<footer[\s\S]*?href="disclaimers\.html"[^>]*>Disclaimers<\/a>[\s\S]*?<\/footer>/.test(raw.get(p) ?? ''),
+      `${p}: the footer must carry a link reading exactly "Disclaimers" — since 2026-09-05 that link is the only route from this page to the risks, the legal position and the licence`,
+    );
   }
+  assert.ok(
+    /href="disclaimers\.html" aria-current="page"/.test(raw.get(DISCLAIMERS_PAGE) ?? ''),
+    `${DISCLAIMERS_PAGE}: its own footer link must carry aria-current="page" — it is not in the header nav, so the footer list is where a reader locates the page they are on`,
+  );
+  assert.ok(
+    !/<nav[\s\S]*?disclaimers\.html[\s\S]*?<\/nav>/.test(raw.get(DISCLAIMERS_PAGE) ?? ''),
+    `${DISCLAIMERS_PAGE}: like status.html it is deliberately footer-only, not in the header nav`,
+  );
+});
+
+test('the two standing sentences are stated once each, on the Disclaimers page', () => {
+  const html = raw.get(DISCLAIMERS_PAGE) ?? '';
+  assert.ok(html.includes(FOOTER_TOKEN), `${DISCLAIMERS_PAGE}: missing exact no-token sentence`);
+  assert.ok(html.includes(FOOTER_LICENSE), `${DISCLAIMERS_PAGE}: missing exact licence sentence`);
 });
 
 // The "banner precedes the nav on every page" test was deleted on 2026-09-04 rather than adapted.
@@ -587,14 +657,29 @@ test('the operator page states the capital obligation exactly, and never denies 
   assert.ok(/withdrawal gate/i.test(ops), 'operators.html must name the creator withdrawal gate');
 });
 
-test('no page implies a live deployment', () => {
+/**
+ * THIS TEST TURNED AROUND ON 2026-09-05, AND THE RESIDUE IS THE HALF WORTH KEEPING.
+ *
+ * It used to ban "is live", "mainnet is live", "launched on", "now trading" and "goes live", on the
+ * reasoning that nothing was deployed and a page implying otherwise was false. The protocol is now
+ * on Robinhood Chain mainnet, so that ban is backwards: the pages must be ABLE to say where the code
+ * is, and the leg below this one is what holds those sentences to the record.
+ *
+ * What was always useful in it, and is still useful, is the TIMING-AND-HYPE half. "Launching soon",
+ * "coming soon", "any day now" are the sentences that manufacture urgency around a thing nobody can
+ * check yet -- and they were never about deployment status, which is why they survive the reversal.
+ * Retiring the whole test would have left that gap open, so the list is replaced rather than deleted.
+ */
+test('no page manufactures urgency or a price expectation', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
-    assert.equal(html.match(/\bis (?:now )?live\b/i), null, `${p}: implies a live deployment`);
-    assert.equal(html.match(/\bmainnet is (?:live|up)\b/i), null, `${p}: implies a live deployment`);
-    assert.equal(html.match(/\blaunched on\b/i), null, `${p}: implies a live deployment`);
-    assert.equal(html.match(/\bnow trading\b/i), null, `${p}: implies a live deployment`);
-    assert.equal(html.match(/\bgo(?:es)? live\b/i), null, `${p}: implies a live deployment`);
+    // `\bhurry\b` is deliberately NOT here: who-its-for.html says the small first vault "is not a
+    // signal to hurry", which is the correct sentence and which a bare word ban would red. Ban
+    // phrases, never bare words -- the rule this file opens with.
+    for (const re of [/\blaunch(?:ing)? soon\b/i, /\bcoming soon\b/i, /\bnext week\b/i, /\bany day now\b/i, /\bto the moon\b/i, /\bdon'?t miss out\b/i]) {
+      const hit = html.match(re);
+      assert.equal(hit, null, `${p}: ${JSON.stringify(hit?.[0])} sets a clock or a price expectation this site has no business setting`);
+    }
   }
 });
 
@@ -616,13 +701,37 @@ const sentencesOf = (text) => text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
 // swallow an unqualified sentence is gaming the check rather than fixing the sentence.
 const NEGATED = /\bnot\b|\bno\b|\bnever\b|\bnothing\b|\bnone\b|\bnor\b|\bcannot\b|\bsuperseded\b|\bwould be\b/i;
 
-test('every "deployed" sits inside a sentence that negates it', () => {
+/**
+ * The chain a deployment sentence must name, or the record it must cite, to be checkable. Same two
+ * tokens `scripts/test/claims-robinhood-deployment.test.mjs` uses, so the two guards converge rather
+ * than drift: naming 4663 or the record path is what lets that file bind the sentence to the
+ * committed address book.
+ */
+const DEPLOY_CITED = /\brobinhood\b|\b4663\b|contracts\/config\/deployments\/robinhood-mainnet\.json/i;
+
+test('every "deployed" either negates itself or names the chain and the record', () => {
   // Sentence-scoped, not page-scoped. A page-wide check is what let "Whatever gets deployed is
   // what runs" ship next to a banner three thousand characters away that said "Not deployed."
+  //
+  // THE RULE CHANGED SHAPE ON 2026-09-05 RATHER THAN LOOSENING, and the distinction is the whole
+  // point. Requiring a NEGATION was only ever a proxy for requiring TRUTH, and it worked while
+  // nothing was deployed. Now that the protocol is on Robinhood Chain mainnet, "the protocol is
+  // deployed on Robinhood Chain mainnet, chain id 4663" is both true and unnegatable, so the proxy
+  // would red the one sentence the site most needs to state plainly.
+  //
+  // The successor requirement is stricter than a negation, not weaker: a sentence that says
+  // "deployed" must say WHERE, in the same sentence, in a token another guard can bind to the
+  // committed record. A vague "it is deployed" now fails where before it only had to avoid the word
+  // "not". Do not replace this with a page-scoped check, and do not drop the record token: without
+  // it, "deployed on mainnet" passes and names nothing a reader can open.
   for (const p of PAGES) {
     for (const s of sentencesOf(publishedProse(raw.get(p) ?? ''))) {
       if (!/\bdeployed\b/i.test(s)) continue;
-      assert.ok(NEGATED.test(s), `${p}: "deployed" in a sentence that does not negate it — ${JSON.stringify(s.trim())}`);
+      if (NEGATED.test(s)) continue;
+      assert.ok(
+        DEPLOY_CITED.test(s),
+        `${p}: "deployed" in a sentence that neither negates it nor says where — name Robinhood Chain, the chain id 4663, or contracts/config/deployments/robinhood-mainnet.json in the same sentence — ${JSON.stringify(s.trim())}`,
+      );
     }
   }
 });
@@ -733,7 +842,7 @@ test('the sane-price bands on the site match the config', () => {
   for (const asset of config.chainlinkOracle.assets) {
     const lo = wadDollars(asset.minPriceWad);
     const hi = wadDollars(asset.maxPriceWad);
-    for (const p of ['how-it-works.html', 'risks.html']) {
+    for (const p of ['how-it-works.html', DISCLAIMERS_PAGE]) {
       const html = raw.get(p) ?? '';
       assert.ok(html.includes(lo), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band floor renders as ${lo} in the config and does not appear on the page`);
       assert.ok(html.includes(hi), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band ceiling renders as ${hi} in the config and does not appear on the page`);
@@ -747,7 +856,7 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
   // silently: a config edit changes the true answer and leaves the sentence standing.
   const gov = config.smoke.gov;
   const modeFHours = (gov.timelockDuration + gov.executionWindow) / 3600;
-  for (const p of ['how-it-works.html', 'risks.html']) {
+  for (const p of ['how-it-works.html', DISCLAIMERS_PAGE]) {
     assert.ok(
       (raw.get(p) ?? '').includes(`${modeFHours} hours in the reference configuration`),
       `${p} is stale relative to ${CONFIG_NAME}: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
@@ -764,52 +873,104 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
   // sentence it pins had to change, and this comment is the record of why.
   const SEATS = 4;
   const capture = (SEATS * Number(BigInt(config.smoke.minDepositUsdc))) / 1e6;
-  const risks = raw.get('risks.html') ?? '';
+  const disclaimers = raw.get(DISCLAIMERS_PAGE) ?? '';
   assert.ok(
-    risks.includes(`reference ${usdg(config.smoke.minDepositUsdc)} minimum deposit`),
-    `risks.html is stale relative to ${CONFIG_NAME}: the minimum deposit renders as ${usdg(config.smoke.minDepositUsdc)}`,
+    disclaimers.includes(`reference ${usdg(config.smoke.minDepositUsdc)} minimum deposit`),
+    `${DISCLAIMERS_PAGE} is stale relative to ${CONFIG_NAME}: the minimum deposit renders as ${usdg(config.smoke.minDepositUsdc)}`,
   );
   assert.ok(
-    risks.includes(`about ${capture.toLocaleString('en-US')} USDG`),
-    `risks.html is stale relative to ${CONFIG_NAME}: ${SEATS} seats at ${usdg(config.smoke.minDepositUsdc)} is about ${capture.toLocaleString('en-US')} USDG`,
+    disclaimers.includes(`about ${capture.toLocaleString('en-US')} USDG`),
+    `${DISCLAIMERS_PAGE} is stale relative to ${CONFIG_NAME}: ${SEATS} seats at ${usdg(config.smoke.minDepositUsdc)} is about ${capture.toLocaleString('en-US')} USDG`,
   );
+});
+
+/**
+ * THE BASKET IS WRITTEN IN THE WORDS PEOPLE USE, AND ANCHORED TO THE TOKENS ACTUALLY HELD.
+ *
+ * Owner decision, 2026-09-05: "users dont say WETH or cbBTC, they say ETH/Ethereum or BTC/Bitcoin."
+ * So the page prose says ETH and BTC. That is a simplification, and a simplification about what a
+ * vault holds is exactly the kind that turns into a false claim if it is ever the ONLY thing the
+ * site says: the vault holds wrapped ERC-20s at specific addresses, not ether and not bitcoin.
+ *
+ * This leg ties the two together. If any page names the basket in the short form, then status.html
+ * AND disclaimers.html must each carry a single sentence naming both tokens by their contract
+ * symbol and their address as `contracts/config/robinhood-mainnet.json` records them. One sentence,
+ * not two facts scattered down a page, because the reader has to be able to see which word maps to
+ * which token in one read.
+ *
+ * The addresses are read from the config rather than typed here, on the same rule as every other
+ * numeric leg in this file: the config is the source of truth and the page is the copy of it.
+ */
+const BASKET_SHORT_FORM = /\bETH\b|\bBTC\b|\bEthereum\b|\bBitcoin\b/;
+/** The tokens the launch oracle prices, symbol and address, straight out of the config. */
+const basketTokens = config.chainlinkOracle.assets.map((/** @type {any} */ a) => ({ symbol: String(a.symbol), address: String(a.asset) }));
+
+test('every short-form basket mention is anchored to the tokens actually held', () => {
+  const short = PAGES.filter((p) => BASKET_SHORT_FORM.test(publishedProse(raw.get(p) ?? '')));
+  assert.ok(
+    short.length > 0,
+    'no page names the basket at all. This leg exists to keep the short form honest, not to make it optional — if the short form is gone, say so in the commit rather than letting the anchor requirement pass by absence',
+  );
+  assert.ok(basketTokens.length >= 2, `${CONFIG_NAME}: expected at least two priced assets, found ${basketTokens.length}`);
+  for (const anchor of [STATUS_PAGE, DISCLAIMERS_PAGE]) {
+    const prose = publishedProse(raw.get(anchor) ?? '');
+    const naming = sentencesOf(prose).find((s) =>
+      basketTokens.every((t) => s.includes(t.symbol) && s.toLowerCase().includes(t.address.toLowerCase())),
+    );
+    assert.ok(
+      naming,
+      `${anchor}: pages say "${short.join('", "')}" name the basket as ETH and BTC, so this page must carry ONE sentence naming every token it is actually held as — ` +
+        basketTokens.map((t) => `${t.symbol} (${t.address})`).join(' and ') +
+        ` — read from ${CONFIG_NAME}. Without it the short form is an unanchored claim about what the vault holds.`,
+    );
+  }
 });
 
 // ────────────────────────────── the 2026-08-29 corrections ──────────────────────────────
 
-/** The "What is done" cells of the risks page, as plain text, in document order. */
+/**
+ * The "What is done" cells of the Disclaimers page, as plain text, in document order.
+ *
+ * REPOINTED 2026-09-05 from risks.html, which is retired. The parser is unchanged because the
+ * markup is: the fifteen risk articles moved page intact, `<article class="risk" id="rN">` and all,
+ * so the count-derivation below still reads the entries themselves rather than a number somebody
+ * typed. That derivation is the leg that stops the lede drifting from the entries, and it is the
+ * reason the move is a repoint rather than a rewrite.
+ */
 function whatIsDoneCells() {
-  const html = raw.get('risks.html') ?? '';
+  const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   return [...html.matchAll(/<dt>What is done<\/dt><dd>([\s\S]*?)<\/dd>/g)].map((m) => m[1].replace(/<[^>]*>/g, '').trim());
 }
 
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen'];
 
-test('the risks page states the true number of unmitigated risks, and so does who-its-for', () => {
+/**
+ * The who-its-for half of this assertion was DROPPED on 2026-09-05, not lost. That page used to
+ * repeat the count ("including the seven where the honest answer is that nothing is done") and now
+ * sends the reader to the Disclaimers instead of restating a number it does not own. A cross-page
+ * count that nothing derives is a number that goes stale silently — which is what this whole test
+ * exists to prevent — so the second copy went with the second page.
+ */
+test('the Disclaimers page states the true number of unmitigated risks', () => {
   const cells = whatIsDoneCells();
-  assert.ok(cells.length >= 15, `risks.html: expected at least fifteen risk entries, parsed ${cells.length}`);
+  assert.ok(cells.length >= 15, `${DISCLAIMERS_PAGE}: expected at least fifteen risk entries, parsed ${cells.length}`);
   const unmitigated = cells.filter((c) => c.startsWith('Nothing')).length;
   const word = NUMBER_WORDS[unmitigated];
-  assert.ok(word, `risks.html: ${unmitigated} unmitigated risks is off the end of NUMBER_WORDS`);
-  const risks = raw.get('risks.html') ?? '';
-  const who = raw.get('who-its-for.html') ?? '';
+  assert.ok(word, `${DISCLAIMERS_PAGE}: ${unmitigated} unmitigated risks is off the end of NUMBER_WORDS`);
+  const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   assert.ok(
-    risks.includes(`${word.charAt(0).toUpperCase()}${word.slice(1)} of these have no mitigation`),
-    `risks.html: ${unmitigated} "What is done" cells begin with "Nothing", so the lede must say "${word.charAt(0).toUpperCase()}${word.slice(1)} of these have no mitigation"`,
-  );
-  assert.ok(
-    who.includes(`the ${word} where the honest answer is that nothing is done`),
-    `who-its-for.html: risks.html now has ${unmitigated} unmitigated risks, so this page must say "the ${word} where the honest answer is that nothing is done"`,
+    html.includes(`${word.charAt(0).toUpperCase()}${word.slice(1)} of these have no mitigation`),
+    `${DISCLAIMERS_PAGE}: ${unmitigated} "What is done" cells begin with "Nothing", so the lede must say "${word.charAt(0).toUpperCase()}${word.slice(1)} of these have no mitigation"`,
   );
 });
 
 test('every named risk has an anchor and a contents entry, including r15', () => {
-  const html = raw.get('risks.html') ?? '';
+  const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   const ids = [...html.matchAll(/<article class="risk" id="(r\d+)">/g)].map((m) => m[1]);
-  assert.ok(ids.includes('r15'), 'risks.html must carry the oracle-rotation risk at #r15');
-  for (const id of ids) assert.ok(html.includes(`href="#${id}"`), `risks.html: #${id} has no contents entry`);
+  assert.ok(ids.includes('r15'), `${DISCLAIMERS_PAGE} must carry the oracle-rotation risk at #r15`);
+  for (const id of ids) assert.ok(html.includes(`href="#${id}"`), `${DISCLAIMERS_PAGE}: #${id} has no contents entry`);
   const word = NUMBER_WORDS[ids.length];
-  assert.ok(html.includes(`All ${word}.`), `risks.html: ${ids.length} risks, so the contents heading must read "All ${word}."`);
+  assert.ok(html.includes(`All ${word}.`), `${DISCLAIMERS_PAGE}: ${ids.length} risks, so the contents heading must read "All ${word}."`);
 });
 
 test('the corrections from the 2026-08-29 review have not been undone', () => {
@@ -821,7 +982,7 @@ test('the corrections from the 2026-08-29 review have not been undone', () => {
     // A7: the creator gate is a withdrawal gate, not a top-up obligation.
     assert.ok(!/must be topped up/i.test(html), `${p}: the creator gate is a withdrawal gate, not a top-up obligation`);
     // C7: there is no population of vaults to generalise from.
-    assert.ok(!/set lower by many vaults/i.test(html), `${p}: there are no other vaults — nothing has been deployed`);
+    assert.ok(!/set lower by many vaults/i.test(html), `${p}: there is no population of vaults to generalise from`);
     // A1: Mode F opens at reveal start, not at passage.
     assert.ok(!/rebalance has passed but has not yet executed/i.test(html), `${p}: Mode F opens at reveal start, not when a proposal passes`);
     // A4: the pre-audit findings are not all closed.
@@ -834,10 +995,10 @@ test('the corrections from the 2026-08-29 review have not been undone', () => {
 });
 
 test('the sequencer guard is not presented as a proven mitigation', () => {
-  const html = raw.get('risks.html') ?? '';
+  const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   const r5 = html.slice(html.indexOf('id="r5"'), html.indexOf('id="r6"'));
-  assert.ok(!/severity--mitigated/.test(r5), 'risks.html: risk 5 must not carry the green mitigated chip — the guard has never run against a real uptime feed');
-  assert.ok(/never (?:run|executed) against a real/i.test(r5), 'risks.html: risk 5 must say the sequencer path has never executed against a real feed');
+  assert.ok(!/severity--mitigated/.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must not carry the green mitigated chip — the guard has never run against a real uptime feed`);
+  assert.ok(/never (?:run|executed) against a real/i.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must say the sequencer path has never executed against a real feed`);
 });
 
 /**
@@ -915,6 +1076,49 @@ test('the status band cannot be hidden by the stylesheet', () => {
     assert.ok(!/visibility\s*:\s*hidden/i.test(block), `site.css hides the status band: ${block.replace(/\s+/g, ' ')}`);
     assert.ok(!/(?:^|[;{])\s*height\s*:\s*0/i.test(block), `site.css collapses the status band: ${block.replace(/\s+/g, ' ')}`);
     assert.ok(!/font-size\s*:\s*0/i.test(block), `site.css collapses the status band: ${block.replace(/\s+/g, ' ')}`);
+  }
+});
+
+/**
+ * EVERY ADDRESS THE SITE PUBLISHES MUST BE IN A REPOSITORY RECORD.
+ *
+ * status.html is the only page that publishes contract addresses, deliberately, and thirteen of
+ * them are twenty-byte hex strings a reader cannot check by eye. The failure mode is transcription:
+ * one wrong nibble in a singleton nobody reads twice, and the page sends a reader to a contract that
+ * is not this protocol. Nothing above catches that — the numeric legs read the CONFIG, and an
+ * address is not a number they render.
+ *
+ * So this leg reads it the other way round: every `0x…` on the page must appear in one of the two
+ * files the page cites as its source — the deployment record and the chain configuration. It cannot
+ * prove the record is right; it proves the PAGE agrees with the record, which is the half the site
+ * is responsible for.
+ *
+ * IT DOES NOT SKIP WHEN THE RECORD IS ABSENT, and that branch matters as much as the other. The
+ * deployment record lands with its own pull request; until it does, the addresses on the page can
+ * only be checked against the chain configuration, and the leg still asserts that the page publishes
+ * addresses at all — a status page that quietly stopped listing them would otherwise pass this test
+ * by having nothing to check.
+ */
+const ADDRESS_SOURCES = [
+  path.join(REPO, 'contracts', 'config', 'deployments', 'robinhood-mainnet.json'),
+  CONFIG_PATH,
+];
+
+test('every address the status page publishes appears in a repository record', () => {
+  const html = raw.get(STATUS_PAGE) ?? '';
+  const addresses = [...html.matchAll(/0x[0-9a-fA-F]{40}/g)].map((m) => m[0]);
+  assert.ok(
+    addresses.length >= 3,
+    `${STATUS_PAGE}: publishes ${addresses.length} contract addresses. It is the one page that carries them, so an empty address book here is a page that has quietly stopped doing its job`,
+  );
+  const haystack = ADDRESS_SOURCES.filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, 'utf8').toLowerCase())
+    .join('\n');
+  for (const a of addresses) {
+    assert.ok(
+      haystack.includes(a.toLowerCase()),
+      `${STATUS_PAGE}: publishes ${a}, which appears in neither contracts/config/deployments/robinhood-mainnet.json nor ${CONFIG_NAME}. Addresses are transcribed from a record or they are not published — there is no third option`,
+    );
   }
 });
 

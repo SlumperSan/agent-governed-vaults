@@ -21,7 +21,7 @@
 #   - zero `<img>`, `<svg>`, `<iframe>`, `<form>`, `<video>`, `<object>`.
 #   - zero `url()` in either stylesheet, zero `data:` URIs anywhere.
 #   - off-site URLs point only to the project repository on github.com — the repository root and
-#     three deep links into docs/ from the agents page. Every one is an `<a href>` top-level
+#     a deep link into docs/ from the agents page. Every one is an `<a href>` top-level
 #     navigation, which is not governed by CSP at all.
 # The favicon is the only addition to that list, and a favicon is fetched under `img-src`.
 #
@@ -69,7 +69,7 @@
 #
 # Referrer-Policy: no-referrer
 #   Off-site links go only to the project repository. Without this, following one tells github.com
-#   which page a visitor was reading, and /risks or /operators is a meaningful signal about a
+#   which page a visitor was reading, and /disclaimers or /operators is a meaningful signal about a
 #   reader that this site has no reason to disclose. Nothing here wants a referrer -- there is no
 #   analytics -- so the strictest value costs nothing.
 
