@@ -139,13 +139,41 @@ html.lenis body {
 
 /* --- headings and prose --------------------------------------------------- */
 
+/* THE DISPLAY HEADING IS INKED, AND THAT IS THE WHOLE POINT OF THIS RULE.
+   ---------------------------------------------------------------------------
+   Anton is one weight and it is already black, so `font-weight: 400` below is
+   the face's only cut and not a light one; `font-synthesis-weight: none` on
+   body is what stops a browser drawing a faux-bold second version of it.
+
+   The tracking is POSITIVE here where it was negative. --track-display is
+   -0.02em, drawn for a serif at display size that sets loose. Anton sets tight
+   by construction: it is a condensed poster face whose sidebearings are
+   already minimal, and -0.02em closes the counters until the word is a block.
+   0.012em opens it back to where the letters read as letters. The token is
+   left alone rather than changed, because a section that wants the serif
+   tracking on something else still reads it.
+
+   THE INK OUTLINE IS FIVE SHADOWS AND EVERY ONE OF THEM IS DOING A JOB. Four
+   offsets of --ground ring the letter at --ink-outline, which is what a comic
+   letter's black keyline is on a page whose ground is the ink; and one offset
+   of --accent-deep at --ink-drop falls behind it, which is the flat colour
+   block the reference drops behind display type. No blur on any of the five:
+   a blurred shadow is a glow, and this brand's own token set says light here
+   is a rim and not a glow. text-shadow changes no layout box, so none of this
+   can move a line or widen the document. */
 h1,
 h2 {
   font-family: var(--display);
   font-weight: 400;
-  letter-spacing: var(--track-display);
+  letter-spacing: 0.012em;
   line-height: var(--leading-display);
   text-wrap: balance;
+  text-shadow:
+    var(--ink-outline) 0 0 var(--ground),
+    calc(-1 * var(--ink-outline)) 0 0 var(--ground),
+    0 var(--ink-outline) 0 var(--ground),
+    0 calc(-1 * var(--ink-outline)) 0 var(--ground),
+    var(--ink-drop) var(--ink-drop) 0 var(--accent-deep);
 }
 
 h1 {
@@ -156,12 +184,24 @@ h2 {
   font-size: var(--step-h2);
 }
 
+/* THE THIRD LEVEL TAKES THE DISPLAY FACE TOO, AND ONLY THE RING. It is the
+   card title: the door headings, the risk titles, the step names. Leaving it
+   in the sans at 600 put a hard break between an inked h2 and the cards under
+   it, which is where a page stops looking drawn and starts looking typeset
+   again. The violet drop is NOT repeated here: at --step-h3 it is 5px against
+   a 24px letter, which reads as a printing misregistration rather than as a
+   deliberate block, and there are up to fifteen of these on one page. */
 h3 {
-  font-family: var(--sans);
+  font-family: var(--display);
   font-size: var(--step-h3);
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.014em;
+  text-shadow:
+    var(--ink-outline) 0 0 var(--ground),
+    calc(-1 * var(--ink-outline)) 0 0 var(--ground),
+    0 var(--ink-outline) 0 var(--ground),
+    0 calc(-1 * var(--ink-outline)) 0 var(--ground);
 }
 
 p {
@@ -177,6 +217,32 @@ pre,
   font-family: var(--mono);
   font-size: 0.92em;
   font-variant-numeric: tabular-nums;
+}
+
+/* THE ONE THING THIS SITE SETS THAT CANNOT BREAK AT A SPACE. A repository path
+   or a contract call written as one token is a single unbreakable word, and
+   `contracts/config/deployments/robinhood-mainnet.json` measures 347px at the
+   mono size against 298px of column inside a panel at 375. Measured, on
+   disclaimers.html and faq.html, at 375 after the panel frame took 22px of
+   width off the column: the document's scrollWidth went 18px and 24px past its
+   clientWidth on those two pages and nowhere else.
+
+   `anywhere` rather than `break-word`, because the two differ exactly where it
+   matters: only `anywhere` is counted when a container's min-content width is
+   worked out, so a grid or flex track holding one of these paths stops being
+   sized by the unbreakable word. Neither one breaks anything that fits, so an
+   address on a wide screen is untouched.
+
+   `pre` IS DELIBERATELY NOT IN THIS SELECTOR. Its default `white-space: pre`
+   allows no wrapping at all, which makes overflow-wrap a no-op there, and the
+   three code blocks on this site are scroll containers by design: a wrapped
+   line in a listing is a different line from the one the reader is being asked
+   to compare against a file. */
+code,
+kbd,
+samp,
+.mono {
+  overflow-wrap: anywhere;
 }
 
 /* Numbers never jitter and never re-lay-out while they move. */
@@ -291,20 +357,28 @@ hr {
    behind this element to show through or to blur, and a translucent background
    with a backdrop-filter — which is what stood here until that date — bought a
    compositing layer for a difference that never renders. */
+/* THE RULE UNDER THE MASTHEAD IS THE PAGE'S TOP INK, at --panel-rule and in
+   the same bone the panel keylines are drawn in. A 1px --line hairline under a
+   page of 3px frames reads as an unfinished edge. */
 .masthead {
   position: relative;
   z-index: var(--z-masthead);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--panel-rule) solid var(--panel-line);
   background: var(--ground);
 }
 
+/* --s3, not --s4. The lockup went from 48px to 64px in the rule below and the
+   masthead is the first thing between the top of the window and the two doors
+   that have to stand inside it at 1440x900. Four pixels off each side of the
+   bar buys eight of the sixteen the taller artwork costs, and 12px against a
+   64px lockup is still more clear space than the brand set asks for. */
 .masthead .wrap {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--s3) var(--s5);
-  padding-block: var(--s4);
+  padding-block: var(--s3);
 }
 
 /* --- the brand lockup -----------------------------------------------------
@@ -312,12 +386,19 @@ hr {
    element, so the hover below moves the whole thing at once — which is the
    reason the mark is inline SVG rather than an <img>: an image cannot inherit
    currentColor. See src/brand/Mark.tsx. */
+/* THE SANS, NOT THE DISPLAY FACE, AND THE CHANGE IS DELIBERATE. This read
+   `var(--display)` while the display face was a serif at 17px, which a serif
+   sets happily. The display face is now Anton: a condensed poster letter whose
+   whole design is to be large, and which at 17px is a solid dark block rather
+   than a word. The name beside the mark is small interface type, so it takes
+   the interface face. Same decision, same reason, at .footer-descriptor. */
 .brand {
   display: inline-flex;
   align-items: baseline;
   gap: 0.5em;
-  font-family: var(--display);
+  font-family: var(--sans);
   font-size: 1.0625rem;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
   text-decoration: none;
@@ -329,10 +410,20 @@ hr {
    markup at every width and this pair of rules chooses — see Masthead.tsx for
    why it cannot be a render branch. `width: auto` resolves through the SVG's
    intrinsic aspect ratio, so the box is the artwork rather than the column. */
+/* 66px, RAISED FROM 48px, AND THE NUMBER COMES FROM THE ARTWORK RATHER THAN
+   FROM TASTE. The lockup is the full-colour comic drawing now, and the brand
+   set records a measured minimum for it: 240px wide, below which "the comic
+   mark's speed lines collapse into noise". Its viewBox is 1124.5 by 303.5, so
+   width follows height at 3.705:1. 48px gave 178px, well inside the range that
+   file calls noise; 64px gives 237px, which lands three pixels short of the
+   floor; 66px gives 244px and clears it. That is the whole derivation, and it
+   is why the height is an odd-looking number instead of a round one. Below
+   52rem the lockup is still replaced by the mark and the name in text, for the
+   same reason: no masthead a phone can give it reaches 240px. */
 .brand-lockup {
   display: block;
   width: auto;
-  height: 48px;
+  height: 66px;
 }
 
 .brand-compact {
@@ -459,19 +550,120 @@ main {
    closes it on its border rather than collapsing it. The opening rule is left
    alone deliberately: the section after the band still opens on a full seam,
    which is the spacing every other page already has. */
-main#main > * + * {
-  padding-block-start: var(--seam);
+/* THE SEAM IS NOW A GUTTER, AND EVERY SECTION IS A PANEL.
+   ---------------------------------------------------------------------------
+   THE CHANGE, stated plainly because it inverts the block above rather than
+   extending it. The seam used to be PADDING on the two edges where two
+   sections meet, so the gap between them was interior space belonging to each.
+   It is now MARGIN, so the gap is a gutter that belongs to neither, and the
+   space that used to be the gap is the frame around a panel.
+
+   That is the comic page's own structure. A comic page is panels with ink
+   between them; a run of full-bleed bands with generous air between them is a
+   magazine spread, which is what this site was. The panel below is the frame,
+   var(--seam) is the ink between two frames, and --ground showing through that
+   ink is what reads as the heavy black outline of the reference look. Drawing
+   a black keyline on a near-black page would draw nothing at all.
+
+   THE GUTTER IS SMALLER THAN THE SEAM WAS, and it has to be: 1.75rem to 3rem
+   was right for air between bands and is far too wide for ink between frames,
+   which in print is a few millimetres. It is also the reason this change does
+   not push the page down. The seam it replaces was interior padding on both
+   sides of every join, and the sections keep their own padding-block, so the
+   net vertical change at each join is the gutter minus what the seam added.
+
+   MARGINS COLLAPSE AND THAT IS WANTED HERE. Two adjacent siblings' facing
+   margins collapse to the larger of the two rather than summing, so a single
+   `margin-block-start` on every element after the first gives exactly one
+   gutter per join. The old rule needed a second declaration and a
+   `:not(:last-child):not(.banner)` to keep padding off the closing edge;
+   margin needs neither, because the last panel simply has no sibling after it
+   and .site-footer brings its own margin-top.
+
+   WHY `main#main` AND NOT `main`. Unchanged from the rule this replaces. A
+   section root is a CSS-module class, specificity (0,1,0), and `main > *` is
+   (0,0,2), so the section would win and this would silently do nothing. The id
+   raises it to (1,0,1) with no `!important`, and the id is a stable thing to
+   depend on: `<main id="main">` is asserted by name in the document-skeleton
+   guard and is the skip link's target.
+
+   `* + *` rather than `section + section` because four pages open with a
+   `<div>` hero rather than a `<section>`; the gutter is a position in the
+   flow, not a tag name.
+
+   ONE SECTION STILL OVERRIDES ITS OWN PADDING AT HIGHER SPECIFICITY, and it is
+   left alone: IndexHero writes `main:global(#main) > .hero.hero.hero` to close
+   the fold, which is (1,3,1) and beats everything here. It sets padding, this
+   sets margin, and the two do not meet. */
+main#main {
+  /* The page edge. Panels inset from the viewport by this much at every width,
+     so the outermost ink runs down both sides of the page rather than the
+     panel's own keyline sitting on the screen edge. */
+  padding-inline: clamp(0.5rem, 0.25rem + 0.7vw, 1.25rem);
+
+  /* THE HALFTONE, AND IT IS ON THE INK RATHER THAN ON THE PANELS.
+     ------------------------------------------------------------------------
+     A dot screen drawn as one repeating radial-gradient: no request, no
+     raster, and it scales with the element instead of tiling a fixed image.
+
+     IT SITS UNDER THE PANELS AND NEVER UNDER A WORD, and that placement is a
+     contrast decision rather than a compositional one. Every panel paints an
+     opaque --panel over this layer, so the only places it shows are the ink
+     between two frames and the margins either side of the column, and both are
+     empty by construction. Screening the dots across the panels instead would
+     lighten the local background under every paragraph by the dot's own
+     transparency,
+     and --faint on --panel is 4.57:1, which has 0.07 of headroom over the 4.5
+     floor and would lose it. The texture is worth having; it is not worth
+     paying for it in the one ratio on this page that is close. */
+  background-color: var(--ground);
+  background-image: radial-gradient(var(--halftone-page) 1.1px, transparent 1.2px);
+  background-size: var(--halftone-pitch) var(--halftone-pitch);
 }
 
-main#main > *:not(:last-child):not(.banner) {
-  padding-block-end: var(--seam);
+main#main > * {
+  position: relative;
+
+  /* The panel is the width of the reading column, not of the viewport. A
+     full-bleed frame at 1440 is a band, and a band is the thing this rule is
+     replacing. The .wrap inside it keeps its own padding-inline, which becomes
+     the panel's interior padding. */
+  width: 100%;
+  max-width: var(--wrap);
+  margin-inline: auto;
+
+  border: var(--panel-rule) solid var(--panel-line);
+  background: var(--panel);
+
+  /* THE OFFSET BLOCK. Hard, unblurred, one direction, in the illustration
+     violet: the flat drop a comic panel casts on the page. box-shadow is
+     painted outside the border box and takes part in no layout, so it can
+     neither widen the document nor move the panel below it. */
+  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--accent-deep);
+}
+
+/* THE SECOND HUE ALTERNATES DOWN THE PAGE. The brand set gives --teal one job,
+   "the second state in any pair", and a page of identical violet drops is a
+   pattern rather than a rhythm. Every second panel takes the teal instead,
+   which is a fill and not a status: the four status tokens are untouched. */
+main#main > *:nth-child(even) {
+  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--teal);
+  background: var(--panel-2);
+}
+
+main#main > * + * {
+  margin-block-start: var(--seam);
 }
 
 /* --- footer --------------------------------------------------------------- */
 
+/* THE PAGE CLOSES ON THE SAME INK IT OPENS ON. The masthead's bottom rule and
+   this one are the two edges of the comic page, and both are drawn at
+   --panel-rule in the keyline bone. A 1px hairline here, under a column of 3px
+   frames, read as the page trailing off rather than ending. */
 .site-footer {
   margin-top: var(--s9);
-  border-top: 1px solid var(--line);
+  border-top: var(--panel-rule) solid var(--panel-line);
   background: var(--surface);
   padding-block: var(--s7) var(--s6);
 }
@@ -532,7 +724,7 @@ main#main > *:not(:last-child):not(.banner) {
 
 .footer-descriptor {
   margin: 0;
-  font-family: var(--display);
+  font-family: var(--sans);
   font-size: var(--step-small);
   letter-spacing: -0.01em;
   color: var(--muted);

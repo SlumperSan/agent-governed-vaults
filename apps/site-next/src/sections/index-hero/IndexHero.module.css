@@ -72,37 +72,76 @@
   overflow: hidden;
 }
 
-/* THE CLOSING EDGE OF THE FOLD, OWNED HERE RATHER THAN BY THE SEAM RULE.
-   index.css closes every non-final section on `var(--seam)`, 48px at 1440, with
-   `main#main > *:not(:last-child):not(.banner)`. That rule outranks a bare
-   module class, so the `padding-block` above governs only the opening edge and
-   this rule is what governs the closing one. It is written out rather than
-   folded into the seam because the seam is right everywhere else on the site:
-   one gap, every page, unchanged by this round. The hero-to-doors pair is the
-   one place a reader has to cross it before the two cards are on screen, and
-   index-doors owns the other half of it.
+/* THE RULE THAT USED TO STAND HERE IS GONE, AND ITS ABSENCE IS THE NOTE.
+   ---------------------------------------------------------------------------
+   Until 2026-09-05 this file carried `main:global(#main) > .hero.hero.hero {
+   padding-block-end: var(--s4) }`, with about thirty lines working out why the
+   class had to appear three times. index.css closed every non-final section on
+   `var(--seam)` as PADDING through `main#main > *:not(:last-child):not(.banner)`,
+   `:not()` takes its argument's specificity so that selector was (1,2,1) rather
+   than the (1,0,1) its universal suggests, and the only way for this section to
+   set its own closing edge was to out-weigh it.
 
-   WHY THE CLASS IS REPEATED THREE TIMES. `:not()` takes its argument's
-   specificity, so index.css's closing rule is (1,2,1), not the (1,0,1) its
-   universal selector suggests. `main:global(#main) > .hero` is (1,1,1) and
-   loses outright. Doubling the class only TIES at (1,2,1), and a tie is broken
-   by the order the two stylesheets happen to be linked in, which is an output
-   of the chunk graph rather than a decision anybody made: it holds on the built
-   index.html today and would stop holding silently if that graph ever changed,
-   in exactly the way the `main#_main_<hash>` mistake below did. Three
-   occurrences make it (1,3,1), which wins outright and depends on nothing.
-   `:where()` around the two negations would have been the cleaner fix, but it
-   is a fix in index.css, which governs all nine pages, and this round changes
-   one fold. The weight is added here instead.
+   That rule no longer exists. The seam is a margin now, applied as a gutter
+   between two drawn panels rather than as padding inside them, so nothing in
+   index.css touches this section's padding at all and `.hero`'s own
+   `padding-block: var(--s5) var(--s4)` above already says everything the
+   deleted rule said. A tripled class fighting a rule that is not there is not a
+   safeguard, it is a puzzle for the next reader, so it is deleted rather than
+   left in place. The arithmetic is in this file's history.
 
-   A NOTE ON `:global(#main)`. A CSS module scopes ids exactly as it scopes
-   classes, so a bare `main#main` compiles to `main#_main_<hash>` and matches
-   nothing at all, silently, which was caught here by measuring the built page
-   rather than by reading the source. `#main` is the shared shell's id and
-   belongs to index.css, so it is written `:global(#main)` and only this
-   section's own class is hashed. The wrapper changes no specificity. */
-main:global(#main) > .hero.hero.hero {
-  padding-block-end: var(--s4);
+   /* THE DOT SCREEN OVER THE PICTURE, AND ONLY OVER THE PICTURE.
+   ---------------------------------------------------------------------------
+   A halftone is what makes a flat cel-shaded image read as printed rather than
+   as rendered, and it is the one texture the reference look never omits. It is
+   drawn here as a single repeating radial-gradient: no request, no raster, and
+   it scales with the section instead of tiling a fixed image.
+
+   THE MASK IS THE WHOLE SAFETY ARGUMENT, AND IT IS WRITTEN IN LENGTHS RATHER
+   THAN PERCENTAGES BECAUSE A PERCENTAGE GOT IT WRONG. A dot screen raises the
+   local ground under a glyph by however transparent the dot is, and the ratio
+   that has to hold is the one at a dot centre: this screen composites to
+   #2a2933 over --panel, where --muted is 6.15:1 against the 8.43:1 it measures
+   on the flat fill. Under the 7:1 body floor. So no dot may fall under a word,
+   and the mask is what guarantees it.
+
+   The first attempt faded in from 40% to 80% of the section's width, and 40%
+   of a 992px panel is 397px, which is inside a copy column that runs to
+   --measure at 608px. It was worse at 375, where 40% of 355px is 142px and the
+   copy fills the whole width: every paragraph on a phone sat on dots.
+
+   The stops are therefore the copy column's own width plus the padding beside
+   it, so the layer starts where the words stop rather than at a fraction of a
+   box whose size has nothing to do with them. Two consequences, both wanted:
+   at 1440 the screen occupies the right quarter of the panel, over the picture
+   and nothing else; and at 375 the first stop is already past the panel's
+   whole width, so the mask is transparent everywhere and a phone gets no
+   screen at all, which is the right answer on a viewport where the copy IS the
+   full width.
+
+   `var(--ground)` IS THE OPAQUE END OF THE MASK, not a colour choice. A mask
+   gradient reads transparency and ignores hue, and this stylesheet may carry no
+   colour literal, so the token that is simply opaque does the job that `black`
+   would do in a file that were allowed to say it.
+
+   IT SITS AT z-index 0, between the backdrop at -1 and the copy at 1, because
+   the screen belongs to the picture and not to the page: `isolation: isolate`
+   on .hero above keeps all three inside this section's own stacking context.
+   `pointer-events: none` because it is a texture and nothing else. */
+.hero::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--halftone-ink) 1.2px, transparent 1.4px);
+  background-size: var(--halftone-pitch) var(--halftone-pitch);
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(var(--measure) + var(--gutter) + var(--s5)),
+    var(--ground) calc(var(--measure) + var(--gutter) + var(--s8))
+  );
 }
 
 .inner {
@@ -134,7 +173,7 @@ main:global(#main) > .hero.hero.hero {
 .headline {
   max-width: 48rem;
   margin-bottom: var(--s4);
-  font-size: min(var(--step-display), 3.4rem);
+  font-size: min(var(--step-display), 3.1rem);
   animation: riseIn var(--dur-hero) var(--ease-enter) 0.12s both;
 }
 

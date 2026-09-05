@@ -10,17 +10,20 @@
      fallback for a browser that cannot render an SVG icon, and is reached by that same implicit
      request rather than by a second link, so there is exactly one icon link on the page. -->
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<!-- The display serif, preloaded. It sets the h1, the largest paint on every page, and the browser
+<!-- The display face, preloaded. It sets the h1, the largest paint on every page, and the browser
      would otherwise not learn it is needed until the stylesheet has arrived and been matched, one round trip
      later. The href is a path into node_modules, rewritten by the build: Vite resolves it through the same
      asset pipeline that rewrites the url() in fonts.css, emits ONE hashed copy, and writes the /assets/ path
      here, so the preload cannot go stale against the file the CSS actually loads. Do not hand-edit the hash.
      Only this one face is preloaded; a second preload competes with it for the same connection, and the body
-     sans has a metric-matched fallback (see fonts.css) so its swap costs no layout. The heading is named above
-     without its angle brackets deliberately: the document-skeleton guard counts occurrences of the literal tag
-     in the built page, and this comment survives into that page, so writing the tag here reads as a second
-     heading and reds the guard. -->
-<link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2">
+     sans has a metric-matched fallback (see fonts.css) so its swap costs no layout. This preload matters MORE
+     than it did on 2026-09-04, and the reason is in fonts.css: the display face was a serif standing in front
+     of Georgia wearing its metrics, and it is now Anton, which has no metric-matched stand-in because its
+     three platform fallbacks are three different faces. The preload is what keeps that swap early instead of
+     accurate. The heading is named above without its angle brackets deliberately: the document-skeleton guard
+     counts occurrences of the literal tag in the built page, and this comment survives into that page, so
+     writing the tag here reads as a second heading and reds the guard. -->
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource/anton/files/anton-latin-400-normal.woff2">
 <title>The agent path | Rwally</title>
 <meta name="description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
 <link rel="canonical" href="https://rwally.com/agents">

@@ -14,14 +14,15 @@
   padding-block: var(--s8);
 }
 
-/* THE OPENING EDGE OF THE FOLD, OWNED HERE RATHER THAN BY THE SEAM RULE.
-   `main#main > * + *` in index.css opens every section after the first on
-   `var(--seam)`, 48px at 1440, and at (1,0,1) it outranks the bare module class
-   above, so that rule and not this section's own `padding-block` governs the
-   edge the doors open on. This one carries the id too, at (1,1,1), so it lands.
-   The seam itself is untouched everywhere else on the site: it is right
-   everywhere else, and the hero-to-doors pair is the one place a reader has to
-   cross it before the two cards are on screen. index-hero owns the other half.
+/* THE OPENING EDGE OF THE FOLD, AND WHAT IT IS FOR CHANGED ON 2026-09-05.
+   This rule used to exist to out-weigh index.css's seam, which was padding at
+   (1,0,1) and beat the bare `.section` class above. The seam is a margin now,
+   so it no longer competes for this property at all and the only thing this
+   rule overrides is `.section { padding-block: var(--s8) }` on the line above.
+   It is still needed, and for the original reason: 4.5rem of panel padding
+   above the two cards is 72px the doors do not have at 1440x900, where the
+   whole page from the top of the window to the bottom of the second card
+   measures 894px including the offset block. --s4 is what fits.
 
    A NOTE ON `:global(#main)`. A CSS module scopes ids exactly as it scopes
    classes, so a bare `main#main` compiles to `main#_main_<hash>` and matches
@@ -30,7 +31,7 @@
    belongs to index.css, so it is written `:global(#main)` and only this
    section's own class is hashed. The wrapper changes no specificity. */
 main:global(#main) > .section {
-  padding-block-start: var(--s5);
+  padding-block-start: var(--s4);
 }
 
 /* The heading is for the landmark and for a screen reader's document outline.
@@ -60,14 +61,53 @@ main:global(#main) > .section {
   }
 }
 
+/* THE TWO DOORS ARE THE TWO SATURATED BLOCKS ON THIS PAGE.
+   ---------------------------------------------------------------------------
+   They were two hairlined cards on --surface, which is to say two rectangles
+   very slightly lighter than the page. They are now the deep violet and the
+   deep teal from the comic layer in tokens.css, each with the panel keyline
+   around it, a hard unblurred offset block behind it, and a dot screen over
+   the fill. The two hues are the brand set's own pairing rule, "the second
+   state in any pair": one door is the member's way in and the other is the
+   agent's, and they are the pair this page is built on.
+
+   THE BODY COPY TURNS TO --ink IN THE RULE BELOW, and this is where the reason
+   belongs. --muted measures 7.36:1 on --block-violet and 6.16:1 on
+   --block-teal. The first clears the 7:1 body floor and the second does not,
+   so a --muted paragraph is available in one door and not in the other. Two
+   doors set in two different inks to satisfy a ratio would be a worse answer
+   than one ink that clears both, and --ink is 14.35:1 and 12.03:1 on them.
+
+   THE DOT SCREEN IS SAFE HERE FOR THE SAME REASON. The dots lighten the local
+   ground under the text by however transparent they are, which is what ruled
+   them out
+   across the panels where --faint sits at 4.57:1 with no room. Nothing in a
+   door is set in --faint, and --ink starts at 12:1, so the screen costs a
+   ratio that has ten points of headroom rather than one that has none. */
 .door {
   display: grid;
   align-content: start;
   gap: var(--s3);
   padding: var(--s5);
-  border: 1px solid var(--line);
+  border: var(--panel-rule) solid var(--panel-line);
   border-radius: var(--radius);
-  background: var(--surface);
+  background-color: var(--block-violet);
+  background-image: radial-gradient(var(--halftone-accent) 1.1px, transparent 1.2px);
+  background-size: var(--halftone-pitch) var(--halftone-pitch);
+  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--accent-deep);
+}
+
+/* The second state of the pair. Same construction, the other hue, and the
+   screen over it is the teal dot rather than the violet one so the texture
+   belongs to the block it sits on. */
+.door:nth-child(2) {
+  background-color: var(--block-teal);
+  background-image: radial-gradient(var(--halftone-teal) 1.1px, transparent 1.2px);
+  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--teal);
+}
+
+.door:nth-child(2) .doorIcon {
+  color: var(--teal-bright);
 }
 
 .doorIcon {
@@ -88,15 +128,22 @@ main:global(#main) > .section {
    `apps/site/assets/site.css` sets a card body at 15px against that build's
    larger running text, so a card body a step under running text is a decision
    already made there rather than one invented here. Nothing else about that
-   rule is borrowed; it also sets --ink, and this one keeps --muted. --muted on
-   --surface is 8.23:1, recorded in tokens.css, and that is the same ratio at
-   both sizes. */
+   rule is borrowed; it also sets --ink, and so, since 2026-09-05, does this
+   one.
+
+   THE COLOUR CHANGED WITH THE BLOCKS UNDER IT. This read --muted while both
+   doors sat on --surface, where --muted is 8.23:1. They now sit on
+   --block-violet and --block-teal, where --muted measures 7.36:1 and 6.16:1,
+   and the second of those is under the 7:1 body floor. The full reasoning is
+   in the .door block above; the short version is that one ink clearing both
+   blocks beats two inks chosen by a ratio, and --ink is 14.35:1 and 12.03:1
+   on them. */
 .doorBody {
   margin: 0;
   max-width: var(--measure);
   font-size: var(--step-small);
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--ink);
 }
 
 /* The link, not a button: it navigates, and dressing a navigation as a control
@@ -135,14 +182,24 @@ main:global(#main) > .section {
 .btn {
   display: inline-block;
   padding: 0.55rem 1.1rem;
-  border: 1px solid var(--line-strong);
+  border: var(--panel-rule) solid var(--panel-line);
   border-radius: var(--radius);
   font-size: var(--step-small);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
   text-decoration: none;
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  background: var(--surface-2);
+
+  /* THE BUTTON IS A SMALL PANEL. Same keyline, same hard offset block, half
+     the offset because the control is a fraction of the frame's size. The
+     block moves to nothing on hover and the button moves into its place, so
+     the control depresses under the pointer rather than lighting up: an
+     inked object behaves like an object. transform is on the compositor and
+     moves no neighbour. */
+  box-shadow: 4px 4px 0 0 var(--accent-deep);
   transition:
+    transform var(--dur-fast) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease-enter),
     color var(--dur-fast) var(--ease-enter),
     background-color var(--dur-fast) var(--ease-enter),
     border-color var(--dur-fast) var(--ease-enter);
@@ -150,21 +207,27 @@ main:global(#main) > .section {
 
 .btn:hover {
   color: var(--ink);
-  border-color: var(--accent-dim);
-  background: var(--accent-wash);
+  border-color: var(--panel-line);
+  background: var(--surface-3);
+  transform: translate3d(4px, 4px, 0);
+  box-shadow: 0 0 0 0 var(--accent-deep);
 }
 
+/* The one lead control on the page, and the only place a bright accent is a
+   FILL rather than a rule. --accent-ink on --accent is 7.65:1, which is the
+   pairing tokens.css already records for the skip link. The keyline stays bone
+   so the lead button is the same drawn object as the other two, filled. */
 .btnLead {
-  border-color: transparent;
   background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 600;
+  box-shadow: 4px 4px 0 0 var(--teal);
 }
 
 .btnLead:hover {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--accent) 84%, var(--ink));
+  border-color: var(--panel-line);
+  background: var(--accent);
   color: var(--accent-ink);
+  box-shadow: 0 0 0 0 var(--teal);
 }
 
 /* --- the three-fact strip -------------------------------------------------
@@ -179,12 +242,17 @@ main:global(#main) > .section {
    enters through <Reveal> like the cards above it and the keyframes stay in the
    section that still uses them. */
 
+/* The three standing facts close the fold, and the rule above them is the
+   ledger rule at the panel's weight rather than a hairline: it separates the
+   two doors from the evidence under them, which is exactly the job the brand
+   set gives a 2px rule and this page gives 3px because every other drawn line
+   on it is 3px. */
 .facts {
   display: grid;
   gap: var(--s5);
   margin-top: var(--s6);
   padding-top: var(--s5);
-  border-top: 1px solid var(--line);
+  border-top: var(--panel-rule) solid var(--panel-line);
 }
 
 .fact {
