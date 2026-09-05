@@ -348,20 +348,35 @@ test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
 
 test('the deploy script exempts the same three ids, so the two lists cannot drift apart', () => {
   const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
-  // The constants the guard is written in terms of. Reading the CONSTANTS rather than the return
-  // expression is deliberate: a constant renamed but left at the same value still binds, and a
-  // constant whose VALUE changed is exactly the drift this test exists to catch.
-  const declared = [...src.matchAll(/uint256 constant \w+_CHAIN_ID = (\d+);/g)].map((m) => Number(m[1]));
+  // NAMED constants, not every `*_CHAIN_ID` in the file. A sweep would also collect a constant that
+  // has nothing to do with this guard -- `runWithSequencer`'s Base-mainnet band rule still compares
+  // a bare `block.chainid != 8453`, and tidying that into a `BASE_MAINNET_CHAIN_ID` constant is a
+  // correct refactor that touches nothing here. Under a sweep that refactor would go red saying the
+  // exempt sets disagree, which would be false: a guard that fails with the wrong explanation costs
+  // more than one that does not fire.
+  const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID'];
+  const declared = EXEMPT_CONSTANTS.map((name) => {
+    const m = src.match(new RegExp(`uint256 constant ${name} = (\\d+);`));
+    assert.ok(m, `${name} is no longer declared in DeployChainlinkOracle.s.sol`);
+    // Declared is not enough: it must be wired into the guard, not merely sitting beside it.
+    assert.ok(
+      new RegExp(`chainId != ${name}`).test(src),
+      `${name} is declared but requiresSequencerUptimeFeed does not exempt it`,
+    );
+    return Number(m[1]);
+  });
   assert.deepEqual(
     declared.sort((a, b) => a - b),
     [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
     'DeployChainlinkOracle declares a different set of exempt chain ids than this script exempts',
   );
-  // …and each one is actually wired into the guard, not merely declared beside it.
-  for (const name of ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID']) {
-    assert.ok(
-      new RegExp(`chainId != ${name}`).test(src),
-      `${name} is declared but requiresSequencerUptimeFeed does not exempt it`,
-    );
-  }
+  // The other direction, which naming the constants would otherwise lose: a FOURTH id exempted in
+  // the guard and never added here. Count the terms in the guard rather than trusting the list.
+  const guard = src.match(/function requiresSequencerUptimeFeed\(uint256 chainId\)[^}]*}/);
+  assert.ok(guard, 'requiresSequencerUptimeFeed is no longer a plain single-expression function');
+  assert.equal(
+    [...guard[0].matchAll(/chainId != /g)].length,
+    EXEMPT_CONSTANTS.length,
+    'requiresSequencerUptimeFeed exempts a different NUMBER of ids than EXEMPT_CONSTANTS names',
+  );
 });
