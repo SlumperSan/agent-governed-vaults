@@ -201,6 +201,7 @@ Production notes:
 
 | Var | Required | Default | Meaning |
 |---|---|---|---|
+| `CHAIN_ID` | | unset | the chain this API serves. Its only effect: resolve `x402.enabled` from `contracts/config/<chain>.json`. A chain that switches it off (`4663`) is served with **no 402 gate** and the rate limiter below covers every route. Unset, or a chain with no config or no `x402` block, meters as always |
 | `PRICE_ASSET` | ✅ | — | USDC contract address (payment denomination) |
 | `PRICE_PAYTO` | ✅ | — | recipient of metered-read payments |
 | `PRICE_AMOUNT` | | `10000` | price in USDC base units (6dp); `10000` = $0.01 |
@@ -211,8 +212,8 @@ Production notes:
 | `PORT` | | `8402` | HTTP listen port |
 | `RELOAD_MS` | | `5000` | snapshot re-read cadence |
 | `CORS` | | off | `1`/`true` to enable CORS + preflight (browser live mode) |
-| `RATE_LIMIT_PER_SEC` | | `5` | per-IP sustained rate on the FREE routes; `0` disables (§8.4) |
-| `RATE_LIMIT_BURST` | | `60` | per-IP burst on the free routes |
+| `RATE_LIMIT_PER_SEC` | | `5` | per-IP sustained rate on the FREE routes — on every route where `CHAIN_ID` disables x402, since payment is no longer the limiter; `0` disables (§8.4) |
+| `RATE_LIMIT_BURST` | | `60` | per-IP burst on the same routes |
 | `RATE_LIMIT_MAX_IPS` | | `10000` | cap on tracked IPs |
 | `TRUST_PROXY` | | off | honour `x-forwarded-for` — ONLY behind a proxy that overwrites it |
 | `MAX_URL_BYTES` | | `2048` | longer request-target → `414` |

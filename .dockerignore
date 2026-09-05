@@ -1,6 +1,15 @@
 .git
 node_modules
-contracts
+# `contracts/*` and not `contracts`, deliberately: the per-chain configuration is now RUNTIME data
+# and not only deploy input — packages/chain-config/src/x402.mjs reads `contracts/config/*.json` to
+# decide whether this chain meters reads over x402 — so it has to survive into the image. Excluding
+# the CHILDREN and re-including one of them is the `*` + `!x` form, which keeps `contracts` itself
+# walkable; excluding the directory outright and re-including underneath it is the form that can
+# prune the subtree before the exception is ever considered. Everything heavy (out/, cache/, lib/,
+# src/, test/, script/, broadcast/) is still excluded, and a new sibling directory stays excluded
+# by default rather than silently entering the image.
+contracts/*
+!contracts/config
 docs
 data
 **/*.md

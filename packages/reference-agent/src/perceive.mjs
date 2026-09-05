@@ -104,7 +104,14 @@ export async function perceive({ client, chainReader, budget, config, member, lo
   let discovery = null;
   try {
     discovery = await client.discovery();
-    log.perceive(`discovery: x402 v${discovery.x402Version}, $${Number(discovery.price?.amount ?? 0) / 1e6} per metered read on ${discovery.price?.network}`);
+    // An API on a chain without x402 answers `enabled: false` and a null price. Say so rather than
+    // printing "$0 per metered read on undefined"; the reads below then simply succeed unpaid, and
+    // the budget's signer backstop still catches any 402 that turns up anyway.
+    log.perceive(
+      discovery.enabled === false
+        ? `discovery: x402 v${discovery.x402Version} is OFF on this chain — every route is free, no payment will be signed`
+        : `discovery: x402 v${discovery.x402Version}, $${Number(discovery.price?.amount ?? 0) / 1e6} per metered read on ${discovery.price?.network}`,
+    );
   } catch (err) {
     gaps.push('discovery unreachable');
     log.warn(`discovery failed — ${String(err?.message ?? err)}`);

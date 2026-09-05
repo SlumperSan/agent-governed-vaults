@@ -32,6 +32,12 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY packages ./packages
 COPY apps ./apps
 
+# The per-chain configuration is runtime data, not only deploy input: the API resolves whether this
+# chain meters reads over x402 from `contracts/config/<chain>.json` (packages/chain-config). Data
+# only — no Solidity, no artifacts; .dockerignore re-includes exactly this subtree. Omit it and the
+# lookup degrades to "x402 enabled", leaving the payment gate on for a chain that switched it off.
+COPY contracts/config ./contracts/config
+
 # Snapshot lives on a mounted volume so indexer (writer) and API (reader) share it.
 ENV STATE_PATH=/data/indexer-state.json
 VOLUME /data

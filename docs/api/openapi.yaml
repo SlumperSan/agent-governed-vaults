@@ -27,7 +27,8 @@ paths:
                 type: object
                 properties:
                   x402Version: { type: integer, enum: [2] }
-                  price: { type: object }
+                  enabled: { type: boolean, description: "false = this chain does not meter reads over x402; price is null and every route is listed under routes.free" }
+                  price: { type: [object, 'null'] }
                   routes: { type: object }
                   openapi: { type: string }
                   llms: { type: string }

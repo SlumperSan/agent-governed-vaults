@@ -486,8 +486,17 @@ Run each check against the live addresses:
 
 - Point `packages/indexer/src/chain.mjs` at the RPC and the deployed factory/registry addresses;
   run the poller from block = deploy block.
-- Deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on Base).
-  Set the price spec (asset = USDC, payTo = your treasury, network).
+- Set `CHAIN_ID` for `apps/api`. It resolves whether that chain meters reads over x402 from
+  `contracts/config/<chain>.json`, and the rest of this bullet depends on the answer:
+  - **Chains that meter** (Base Sepolia; anything with no `x402` block, which is the default):
+    deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on
+    Base). Set the price spec (asset = USDC, payTo = your treasury, network).
+  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: false` — the owner's decision of
+    2026-09-05. There is no facilitator to deploy behind and no price spec to set: the same reads
+    are served with no 402 gate. `PRICE_ASSET`/`PRICE_PAYTO` are still required env (the API
+    validates them at startup, unchanged) but are never quoted to a caller. Set
+    `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` deliberately here rather than taking the defaults:
+    with metering off they are the only limit on the read routes, where payment used to be.
 
 ## 7. Canary monitoring (post-launch)
 

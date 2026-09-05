@@ -39,6 +39,22 @@ Settlement is USDC on Base via EIP-3009, executed by the facilitator per the x40
 
 Request caps (method, URL length, body size) are applied before any handler work.
 
+## Per-chain capability (2026-09-05)
+
+The split above holds wherever x402 is present, which is everywhere by default. It is now read per
+chain from `contracts/config/<chain>.json` (`x402.enabled`, resolved by
+`packages/chain-config/src/x402.mjs` off the API's `CHAIN_ID`); an absent block means enabled, so
+`base-mainnet.json` and every caller that passes no chain id are unaffected. **Chain 4663
+(Robinhood Chain) sets it false** — the owner's decision that there will be no x402 there. On that
+chain the "Paid" routes above are served with no 402, no challenge and no payment headers, and the
+token bucket is applied to *every* route instead: the paid routes were exempted only because
+payment was the limiter, so removing the payment without extending the bucket would leave them
+unbounded. Nothing is deleted — the gate, the facilitator, the SDK loop and the agent budget are
+untouched, and flipping one config value back to `true` restores metering on that chain.
+
+The boundary claim above is unaffected either way: this is an off-chain switch, no contract reads
+it, and zero contract coupling is exactly why it can be one.
+
 ## Observability
 
 `src/metrics.mjs` exposes plain-text counters, including
