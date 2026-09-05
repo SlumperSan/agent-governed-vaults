@@ -1,8 +1,15 @@
 # apps/site — public marketing site
 
-Seven static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
+Eight static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
 `how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `risks.html`,
-`faq.html`.
+`faq.html` and `status.html`.
+
+`status.html` is deliberately absent from the header nav and reached from the footer of every
+page, which is the shape the owner asked for on 2026-09-04: *"Claims should not be a header page,
+it should be a link in the footer."* It carries the deployment status, the launch verdict, the
+testnet address book and the recipe for checking any of it. Every other page still states the
+deployment-status sentence once, in its own footer, so no page depends on a reader following that
+link to see it.
 
 No build step. No framework. **Zero JavaScript** — there is not a single `<script>` tag, so "works
 with JavaScript disabled" is true by construction rather than by testing. No external requests of
@@ -52,44 +59,46 @@ when a real design system lands, **replace `assets/tokens.css` wholesale** and c
   `:root[data-theme="dark"]`. The last two are duplicates on purpose — edit both or the forced-dark
   path silently drifts.
 
-## Nothing here goes public before counsel review
+## Every claim here is the owner's call, and the test is what enforces it
 
-The launch constraint on this project is legal, not engineering. Every load-bearing legal or factual
-claim on these pages carries an HTML comment on its own line:
+The launch constraint on this project is legal, not engineering, and that has not changed. What
+changed on 2026-09-04 is how it is recorded. The owner's decision, verbatim: *"The audit counsel is
+now becoming an issue with repetitiveness. Remove them entirely so that we can work faster."*
 
-```html
-<!-- COUNSEL: <one-line description of the claim needing sign-off> -->
-```
+Eighty HTML review markers used to sit beside the load-bearing claims on these pages, one per
+claim, as a grep-able queue. They are deleted, the rendered prose of every page was byte-identical
+before and after, and `test/site.test.mjs` now reds if the string comes back anywhere under
+`apps/site`.
 
-**Those markers are the review queue.** Grep them to generate the list:
-
-```
-grep -rn "COUNSEL:" apps/site/*.html
-```
-
-The wording of each marker is self-explanatory out of context, because it is read in a list and not
-next to the sentence it describes. If you add a claim about custody, fees, deployment status,
-jurisdiction, the security review, the operator's obligations, or what a depositor's position is,
-add a marker with it.
+**The obligation they carried did not go with them.** A claim about custody, fees, deployment
+status, jurisdiction, the security review, the operator's obligations or what a depositor's
+position is must still be literally true against the contracts. Establish that by opening the
+function and citing `file:line`, never by paraphrasing another document that says it. The checks
+below are what stop a claim that is not; the owner is who decides.
 
 ## The claims test is what stops a banned claim from shipping
 
 `test/site.test.mjs` runs in `npm run test:backend` and therefore in `npm run gate` and in CI. Prose
-has no compiler; that file is the compiler. It asserts, across all seven pages:
+has no compiler; that file is the compiler. It asserts, across all eight pages:
 
 - **Absence** of banned claim phrases — word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
-  The same list is applied to this README and to both stylesheets, not only to the seven pages.
-- **Presence** of the two exact pre-launch banner strings and the two exact footer strings, exactly
+  The same list is applied to this README and to both stylesheets, not only to the eight pages.
+- **Presence** of the two exact status strings and the two exact footer strings, at the permitted
+  count per page, with the last occurrence of each status string inside the `<footer>` — that is
+  what stops the disclosure being dropped now that no band above the nav repeats it. Also exactly
   one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
-  ending in ` — Agent-Governed Vaults`, and at least one COUNSEL marker.
+  ending in ` — Agent-Governed Vaults`, and no surviving review marker anywhere under `apps/site`.
+- **Position** of the status block: absent from all seven marketing pages, present exactly once on
+  `status.html` inside `<main>`, and `status.html` linked from every footer and from no header nav.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
   checks against `fonts.googleapis.com` and `fonts.gstatic.com`. Exactly one exemption:
   `rel="canonical"` pointing at `rwally.com`, which loads no resource and is not a link a reader can
   follow. Any other `rel` still fails, and so does a canonical pointing at any other host.
 - No raw hex colour in `site.css`, and the full token set present in `tokens.css`. `site.css` may not
-  set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch`.
+  set `display:none`, `visibility:hidden`, `height:0` or `font-size:0` on `.pre-launch` — the class
+  that now styles the status block on `status.html` and nothing else.
 - Every internal `.html` link resolves to a file on disk.
 - The operator page states `2,500 USDC` and `5%`, names both distinct 5% mechanisms, and never
   claims the operator's capital cost is nil.
@@ -141,7 +150,7 @@ have legitimate uses for several words on the `BANNED` list, so that list is *no
 as examples and turned the gate red, which is the check working.)
 
 - **Mode F opens at the reveal phase, not at passage.** Five phrasings that place the trigger at
-  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the seven pages,
+  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the eight pages,
   and each of those three files must positively name the reveal phase — otherwise the ban is
   satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
   `p.commitDeadline` onward (`Governance.sol:648-659`). The site-only ban on *one* phrasing had

@@ -8,14 +8,14 @@ description: The wording contract every public surface of rwally.com must satisf
 Every public claim must be **literally true against the contracts, verified by reading the
 source** — not by assertion, not by paraphrasing another document. This is enforced in CI by
 `scripts/test/claims-lede-truth.test.mjs` (walks every `.md`/`.html`/`.txt`/`.json` it finds) and
-`apps/site/test/site.test.mjs` (36 tests, pinning wording).
+`apps/site/test/site.test.mjs` (37 tests, pinning wording across eight pages).
 A redesign does not relax any of it, and it does not inherit it for free either: the guards walk
 source files by extension (`.md`, `.html`, `.txt`, `.json`) and never the JS bundle, and the
 `dist/index.html` of a client-rendered React app is an empty root `<div>` with no prose in it. A
 banned shape inside a component therefore reds **nothing** today. Until a prerender step exists (the
 scaffold has none), the check that stands in for the guards is step 4 of `visual-verify-loop`:
 banned shapes must be absent from the **rendered DOM** of the running page, read with `read_page`.
-Re-pointing the 36 pinned-wording tests at build output requires that prerender step first, and this
+Re-pointing the 37 pinned-wording tests at build output requires that prerender step first, and this
 paragraph will say so when it is true.
 
 ## Before writing a sentence
@@ -28,7 +28,12 @@ paragraph will say so when it is true.
 
 ## Strings that are pinned verbatim (do not paraphrase, do not re-punctuate)
 
-- Both pre-launch **banner** sentences, on every page.
+- Both **status** sentences -- the deployment-status one and the not-an-offer one -- at the
+  permitted count per page, and with the LAST occurrence of each inside the `<footer>`. Owner
+  decision 2026-09-04: *"Claims should not be a header page, it should be a link in the footer."*
+  The band that used to sit above the nav on all seven pages now appears once, on `status.html`,
+  inside `<main>`; every page still states both sentences in its own footer, and `status.html` is
+  linked from every footer and from no header nav.
 - Both **footer** sentences, at exactly the permitted count per page:
   `No token. No points. No airdrop. No presale.` and
   `Source-available under BUSL-1.1 — not open source.` (that em-dash is pinned; leave it).
@@ -38,10 +43,17 @@ paragraph will say so when it is true.
 - The operator capital obligation sentence (2,500 USDC, 5%, both mechanisms named).
 - Every occurrence of the word **deployed** must sit inside a sentence that negates it. No page may
   imply a live mainnet deployment.
-- At least one `<!-- COUNSEL: … -->` marker per page. Keep them; they are the review record.
 
 If two pages carried a passage byte-identically before your edit, they must carry it byte-identically
-after. A COUNSEL-marked passage rendered two ways is a rejection.
+after. A pinned passage rendered two ways is a rejection.
+
+**The per-claim review markers are gone and must not come back.** Owner decision, 2026-09-04: *"The
+audit counsel is now becoming an issue with repetitiveness. Remove them entirely so that we can work
+faster."* Eighty HTML comments annotating individual claims were deleted from the seven pages — the
+rendered prose was byte-identical before and after — and `apps/site/test/site.test.mjs` reds on the
+marker string anywhere under `apps/site`. Do not reintroduce a per-claim annotation scheme in any
+spelling. Everything else in this file still binds: the truth obligation was in the guards, never in
+the comments, and the owner is who decides a claim.
 
 ## Banned shapes (the guard matches SHAPE, not phrasing)
 

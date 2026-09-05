@@ -21,18 +21,9 @@
 <meta name="twitter:title" content="No admin key. No pause. No upgrade. No undo.">
 <meta name="twitter:description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. Not deployed to mainnet.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
-<!-- COUNSEL: social-preview metadata. The og:/twitter: title and description are the sentence a reader sees before deciding to click, and are often the only sentence they read, so they are published copy and not configuration. Each description ends in the deployment-status sentence and is kept under the ~160 characters a preview shows, so the status cannot be truncated away. -->
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-
-<div class="pre-launch">
-  <div class="wrap">
-    <span class="tag">Pre-launch</span>
-    <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
-    <!-- COUNSEL: sitewide pre-launch banner — the deployment-status disclosure and the "not an offer, not a solicitation, not advice" disclaimer. Appears on all seven pages, above the nav. Revised 2026-09-02: a Base Sepolia deployment of the current code now exists, so the previous absolute "no testnet deployment" sentence became false and was replaced rather than left standing. -->
-  </div>
-</div>
 
 <header class="masthead">
   <div class="wrap">
@@ -59,7 +50,6 @@
       <h1>No admin key. No pause. No upgrade. No undo.</h1>
       <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds. For the same reason, nobody can patch a bug after it ships.</p>
       <p class="lede-note">This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
-      <!-- COUNSEL: hero positioning claim — "no admin key / no pause / no upgrade" describes contract SOURCE, is immediately paired with the irreversibility cost, and carries the standing qualifier that nothing is deployed to mainnet. -->
       <div class="actions">
         <a class="btn btn--primary" href="risks.html">Read the risks first</a>
         <a class="btn" href="how-it-works.html">How it works</a>
@@ -86,7 +76,6 @@
     <div class="wrap">
       <p class="eyebrow">What this is</p>
       <h2>A protocol, not a product that someone runs for you.</h2>
-      <!-- COUNSEL: the "protocol, not a fund" framing — members govern their own vault; there is no discretionary manager acting on a depositor's behalf. Load-bearing for the collective-investment-scheme analysis (Howey, FSMA s.235, AIFMD). -->
       <dl class="rows">
         <div>
           <dt>Who decides</dt>
@@ -107,7 +96,6 @@
         <div>
           <dt>What we hold</dt>
           <dd>No custody of your funds and no control over them. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares. (The operator identity does earn the 10% performance fee. That is compensation, not custody or control; the operators page sets it out.)</dd>
-          <!-- COUNSEL: the non-custodial claim, recast as a statement about source — no party, including the operator or the deploying team, can move another member's funds. Nothing is deployed to mainnet, so re-verify against the launch tree before publication and against bytecode if anything is ever deployed there. -->
         </div>
       </dl>
     </div>
@@ -117,7 +105,6 @@
     <div class="wrap">
       <p class="eyebrow">Immutability</p>
       <h2>Four things the contracts, as written, cannot do.</h2>
-      <!-- COUNSEL: the "cannot pause / upgrade / seize" claim set, recast as statements about SOURCE. Each item is an assertion about code that is not deployed to mainnet; all four must be re-verified against the launch tree before publication, and against bytecode if anything is ever deployed there. -->
       <div class="grid">
         <div>
           <h3>Cannot be paused or upgraded</h3>
@@ -130,7 +117,6 @@
         <div>
           <h3>Cannot route the exit fee to the operator</h3>
           <p>The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — but the operator is also a member, and its shares carry the fee up like anyone else's.</p>
-          <!-- COUNSEL: exit-fee description — protocol cap of 100 bps, tenure decay, retained in-vault, waived for the final redeemer, and the correction that "never routed to the operator" is a statement about routing rather than about who benefits. -->
         </div>
         <div>
           <h3>Cannot change the rules behind you</h3>
@@ -150,7 +136,6 @@
     <div class="wrap">
       <p class="eyebrow">Before you read anything else</p>
       <h2>Three ways this loses your money.</h2>
-      <!-- COUNSEL: risk-of-total-loss language on the landing page. The intent is that a reader cannot reach the calls-to-action without passing an unhedged loss disclosure. -->
       <dl class="rows">
         <div>
           <dt>A permanent bug</dt>
@@ -198,12 +183,10 @@
         <p>Operational work and legal review. The remaining engineering items are a soak and a canary re-run against the current testnet deployment.</p>
         <p>A deposit, vote, rebalance and redeem cycle has been recorded end to end against the current Base Sepolia deployment, built from this repository at commit 8a0e1155: all ten phases settled, and the per-phase record is in the repository. The soak and canary evidence still describes earlier bytecode and is treated as stale until it is re-run against that deployment.</p>
         <p>Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker.</p>
-        <!-- COUNSEL: the launch-status block — the gate-clearance statement carries the repository's own countervailing sentence, and the open High-severity finding is named rather than folded into "no known security defect". -->
       </div>
 
       <h3>On the security review</h3>
       <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
-      <!-- COUNSEL: the security-review attestation sentence. The owner's attestation and the absence of any public report must always travel together; this paragraph may not be shortened, excerpted or paraphrased in any channel. -->
       <p class="tight small">Read that as it is written. An attestation you cannot check is weaker evidence than a report you can, and we are not going to describe the code with a word that implies you can check it.</p>
     </div>
   </section>
@@ -236,6 +219,7 @@
           <li><a href="operators.html">Operators</a></li>
           <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html">Status and claims</a></li>
         </ul>
       </div>
       <div>
@@ -245,17 +229,14 @@
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
         <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
-        <!-- COUNSEL: the repository-link note. Revised 2026-09-02: the repository became public, so the prior note saying it was private and that these links resolved only for people with access was false and was replaced. -->
       </div>
       <div>
         <h2>Standing facts</h2>
         <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
-        <!-- COUNSEL: the no-token statement and the licence characterisation. Both are pinned to every page footer and must not be reworded. -->
       </div>
     </div>
     <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
-    <!-- COUNSEL: jurisdiction and geofencing language — front-end geofencing described as a good-faith measure with an explicit statement that the contracts themselves remain permissionless and directly callable. -->
   </div>
 </footer>
 

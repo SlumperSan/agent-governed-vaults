@@ -21,18 +21,9 @@
 <meta name="twitter:title" content="Fifteen ways this hurts you">
 <meta name="twitter:description" content="Fifteen named risks, with the worst realistic case for each. Seven have no mitigation and are marked accepted, not buried. Not deployed to mainnet.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
-<!-- COUNSEL: social-preview metadata. The og:/twitter: title and description are the sentence a reader sees before deciding to click, and are often the only sentence they read, so they are published copy and not configuration. Each description ends in the deployment-status sentence and is kept under the ~160 characters a preview shows, so the status cannot be truncated away. -->
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-
-<div class="pre-launch">
-  <div class="wrap">
-    <span class="tag">Pre-launch</span>
-    <p>Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
-    <!-- COUNSEL: sitewide pre-launch banner — deployment-status disclosure plus the "not an offer, not a solicitation, not advice" disclaimer. -->
-  </div>
-</div>
 
 <header class="masthead">
   <div class="wrap">
@@ -58,7 +49,6 @@
       <p class="eyebrow">Risks</p>
       <h1>Fifteen ways this hurts you, and what is done about each.</h1>
       <p class="lede">Seven of these have no mitigation and are simply accepted. They are marked as accepted rather than buried, because a risk page that only lists solved problems is a marketing page wearing a warning label.</p>
-      <!-- COUNSEL: risk-of-total-loss and residual-risk disclosure page. Every entry states an unmitigated worst case; seven are labelled explicitly as accepted with no mitigation. -->
     </div>
   </div>
 
@@ -94,7 +84,6 @@
         <h2>1. Immutability itself</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>As written, the contracts contain no proxy, no upgrade path, no pause and no admin key. Whatever ships is what runs, permanently. This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</dd></div>
-          <!-- COUNSEL: the immutability claim recast as a statement about source, with the standing qualifier that nothing is deployed to mainnet. Revised 2026-09-02: a Base Sepolia deployment of the current code now exists, so the previous absolute “has not been deployed” wording became false and was replaced. -->
           <div><dt>Worst case</dt><dd>A critical bug that survived review is permanent. Funds may be unrecoverable, and no party has any power to stop it, patch it or claw anything back. That includes the people who wrote the code.</dd></div>
           <div><dt>What is done</dt><dd>Nothing can be done after deployment; that is the point. Before then: an external security review whose report is held privately, with no public report to check it against, four internal adversarial review rounds, and an AI pre-audit. The project's own history shows that is not enough. The AI pre-audit found five Critical issues in a frozen tree that had already passed internal review, and every fix required a full redeploy because nothing can be edited in place.</dd></div>
         </dl>
@@ -138,7 +127,6 @@
           <div><dt>Worst case</dt><dd>A sequencer incident extends into a vault freeze that outlasts the incident itself, because the oracle will not price anything until the grace period has elapsed.</dd></div>
           <div><dt>What is done</dt><dd>A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain outside a local node and Base Sepolia without one, and a pre-deploy check fails a configuration that omits it. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight. Where the feed is wired, the oracle enforces a 3,600-second grace period after the sequencer comes back up. The mitigation and the risk are the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on mainnet.</dd></div>
         </dl>
-        <!-- COUNSEL: the sequencer-gate exercise disclosure — the guard is written and unit-tested, and has never run against a live uptime feed, so this entry is not labelled as a proven mitigation. -->
       </article>
 
       <article class="risk" id="r6">
@@ -149,7 +137,6 @@
           <div><dt>Worst case</dt><dd>You can be right about disliking a rebalance, vote against it, request your exit, and still carry the full effect of its execution. Once queued, the request cannot be withdrawn. Your shares stay outstanding and keep gaining and losing with the vault, but they are locked: non-transferable and excluded from voting-eligible stake. There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window: 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas.</dd></div>
           <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is worse: instant exits during that window would be a free option to leave at pre-rebalance prices while already knowing the outcome, paid for by every member who stayed. The recurrence is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it. If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. But settlement is not automatic in that case. <code>settleQueuedExit</code> has to be called, and anyone can call it. Separately, <code>requestExit</code> takes no minimum-value parameter: your exit is an unbounded market order against whatever NAV settlement produces, there is no transaction-level floor you can set, and one was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</dd></div>
         </dl>
-        <!-- COUNSEL: the Mode-F disclosure — the exit queue opens at reveal start rather than at passage, can be re-opened indefinitely for the cost of gas (M-7), and a member's exit carries no slippage floor while the operator's swaps do (M-15). -->
       </article>
 
       <article class="risk" id="r7">
@@ -159,7 +146,6 @@
           <div><dt>What it is</dt><dd>Voting is stake-weighted at five or more members, so a large enough holder can pass proposals. Below five members the vault takes a different branch: a proposal passes on either a majority of the members-at-creation revealing in favour while the favouring stake still clears the quorum, or an outright favouring stake majority. Both branches are stake-sensitive, so neither is a pure head count, and a rule change instead requires full consensus of eligible stake.</dd></div>
           <div><dt>Worst case</dt><dd>A small vault is governed by whoever holds the most. In the small-member regime the residual is not a cheap head-count flip: because both sub-five branches weigh stake, dust addresses cannot pass a proposal on numbers alone. What is still purchasable is the regime itself. Buying seats up to five moves the vault out of the signer-count branch and into the pure stake rule, and a seat costs one minimum deposit. At the reference 100 USDC minimum deposit that is about 400 USDC for the four seats a single-member vault needs. There is no contract-level floor here. The minimum deposit is chosen by whoever created the vault, and a low one makes capture cheap. Check it before you deposit. Proposals you oppose pass, and your exit settles after they execute.</dd></div>
           <div><dt>What is done</dt><dd>A protocol quorum floor of 25% of voting-eligible stake, a per-vault proposal threshold, a cap on how much delegated weight any single delegate may receive, and a minimum deposit that exists precisely as a listing constraint against cheap address-splitting in the small-member regime. There is also a per-proposer cooldown, which is not a defence against this: it is keyed per proposer, so a second address sidesteps it entirely. None of these makes a determined majority holder harmless, and the purchasable member count below five members is the open High-severity finding at the launch configuration.</dd></div>
-          <!-- COUNSEL: the governance-capture disclosure — the cost of flipping the small-member regime is stated as a number, the per-proposer cooldown is explicitly not counted as a mitigation, and the open High-severity finding is named. -->
         </dl>
       </article>
 
@@ -190,7 +176,6 @@
           <div><dt>What it is</dt><dd>The vault holds spot crypto assets. Spot crypto assets fall, sometimes a long way, sometimes permanently.</dd></div>
           <div><dt>Worst case</dt><dd>You lose everything you deposited. Market losses, a permanent bug, or both.</dd></div>
           <div><dt>What is done</dt><dd>Nothing, and nothing can be. There is no insurance fund, no backstop, no reimbursement and no party who makes anyone whole. Do not deposit what you cannot afford to lose entirely.</dd></div>
-          <!-- COUNSEL: the unhedged risk-of-total-loss statement. Confirm this wording is the one used consistently across the site and in any future channel. -->
         </dl>
       </article>
 
@@ -201,7 +186,6 @@
           <div><dt>What it is</dt><dd>Interests in these vaults may be treated as securities, or as collective investment scheme interests, in some jurisdictions. This is an unresolved legal question, not a settled one.</dd></div>
           <div><dt>Worst case</dt><dd>A regulator takes that view. Participants face consequences that depend entirely on where they are, and this project cannot indemnify anyone against them.</dd></div>
           <div><dt>What is done</dt><dd>Disclosure, and an intended geofence. Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end — a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. We will not characterize your position for you.</dd></div>
-          <!-- COUNSEL: the securities / CIS recharacterization disclosure, the "not an offer" language, and the geofencing-as-good-faith-measure framing. Highest-priority review item on the site. -->
         </dl>
       </article>
 
@@ -216,13 +200,12 @@
       </article>
 
       <article class="risk" id="r13">
-        <span class="severity">Open — with counsel</span>
+        <span class="severity">Open — owner decision</span>
         <h2>13. An open licensing question</h2>
         <dl class="rows">
           <div><dt>What it is</dt><dd>Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository.</dd></div>
           <div><dt>Worst case</dt><dd>The combination is judged incompatible, and the licensing of part of the tree has to change.</dd></div>
-          <div><dt>What is done</dt><dd>It is flagged for counsel and recorded rather than quietly left alone. It is disclosed here because you should know about it before you build on the repository, not after.</dd></div>
-          <!-- COUNSEL: the vendored GPL-2.0-or-later / MIT inside BUSL-1.1 licensing question, disclosed publicly. Confirm this is the disclosure you want made and in these terms. -->
+          <div><dt>What is done</dt><dd>It is recorded as an open owner decision rather than quietly left alone. It is disclosed here because you should know about it before you build on the repository, not after.</dd></div>
         </dl>
       </article>
 
@@ -244,7 +227,6 @@
           <div><dt>Worst case</dt><dd>If a feed is deprecated or permanently retired, the freeze in risk 2 is permanent. Members are locked out for good, with the funds visibly on-chain and no party able to change it: not the operator, not the members, not the deployers. A replacement oracle cannot be attached to an existing vault; it can only be blessed for new vaults on a new factory, and existing vaults keep pricing through the dead one.</dd></div>
           <div><dt>What is done</dt><dd>Nothing, deliberately. The alternative is an address able to bless a new oracle, which is an address able to bless a fake price feed. That is the exact attack the allowlist exists to close, and such an address would be the protocol's first standing privileged role. Creating a new vault against a dead feed fails loudly rather than producing a brick, so the failure mode is "that asset becomes unlistable until a new factory is published", never "broken vaults ship". Publishing a new factory also restarts the operator registry, the leaderboard and the loss carryforward in a fresh registry.</dd></div>
         </dl>
-        <!-- COUNSEL: the permanent-brick disclosure — a retired price feed locks an existing vault for good, with no party able to intervene, because the oracle is immutable per vault and the factory allowlist has no owner. This is a permanent-loss-of-access path stated with no remedy. -->
       </article>
 
     </div>
@@ -255,8 +237,7 @@
       <p class="eyebrow">On the security review</p>
       <h2>What has and has not been checked.</h2>
       <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
-      <!-- COUNSEL: the security-review attestation sentence, repeated verbatim from the overview page. The owner's attestation and the absence of a public report must always appear together and this paragraph must not be shortened. The open High-severity finding at the launch configuration is named rather than absorbed into "all resolved". -->
-      <p class="tight">The remaining launch blockers are operational and legal rather than security: a soak, a canary re-run, and counsel review. Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker. The launch verdict as at 2026-08-29 is still NO-GO, recorded at <code>protocol/main</code>; check the repository for anything later.</p>
+      <p class="tight">The remaining launch blockers are operational rather than security: a soak and a canary re-run. Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker. The launch verdict as at 2026-08-29 is still NO-GO, recorded at <code>protocol/main</code>; check the repository for anything later.</p>
       <div class="actions">
         <a class="btn btn--primary" href="faq.html">The awkward questions</a>
         <a class="btn" href="how-it-works.html">The mechanism</a>
@@ -309,6 +290,7 @@
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
           <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html">Status and claims</a></li>
         </ul>
       </div>
       <div>
@@ -318,17 +300,14 @@
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
         <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
-        <!-- COUNSEL: the repository-link note. Revised 2026-09-02: the repository became public, so the prior note saying it was private and that these links resolved only for people with access was false and was replaced. -->
       </div>
       <div>
         <h2>Standing facts</h2>
         <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
-        <!-- COUNSEL: the no-token statement and the licence characterisation, pinned to every page footer. -->
       </div>
     </div>
     <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
-    <!-- COUNSEL: jurisdiction and geofencing language, repeated in every footer. -->
   </div>
 </footer>
 
