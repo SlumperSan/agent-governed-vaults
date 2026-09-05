@@ -71,10 +71,10 @@
  *        Whichever of those supplied the RPC, it must answer `eth_chainId` with the config's own
  *        chainId or the run refuses — so an override for the wrong chain is rejected rather than
  *        verified, and a default is a convenience rather than the thing being trusted.
- *        The L2 sequencer feed is REQUIRED on every chain except local 31337 and Base Sepolia 84532,
- *        whose config leaves it empty by design (the guard is skipped there and mock-tested in
- *        ChainlinkOracle.t.sol). Same allowlist, same fail-closed default, as the on-chain rule in
- *        DeployChainlinkOracle.s.sol — keep the two in sync.
+ *        The L2 sequencer feed is REQUIRED on every chain except the ids in
+ *        SEQUENCER_EXEMPT_REASONS below, each of which carries its own reason. Same allowlist, same
+ *        fail-closed default, as the on-chain rule in DeployChainlinkOracle.s.sol — the two are
+ *        held in sync by scripts/test/verify-chainlink-oracle.test.mjs, which pins the exact set.
  * Run:  node scripts/verify-chainlink-oracle.mjs [--json]                 # mainnet (default)
  *       CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs   # testnet
  */
@@ -116,11 +116,24 @@ if (!RPC) {
   process.exit(1);
 }
 // Which chains may ship WITHOUT an L2 sequencer uptime feed: an ALLOWLIST of the ids known to have
-// none (local anvil; Base Sepolia, whose config leaves it empty by design), fail-closed for every
-// other id — this mirrors DeployChainlinkOracle.requiresSequencerUptimeFeed, which is the guard that
-// actually blocks the deploy. Previously this was `chainId === 8453`, so a config for any OTHER L2
-// passed verification with an empty sequencer feed, matching the deploy-script hole (fixed 2026-08-29).
-const SEQUENCER_EXEMPT_CHAIN_IDS = new Set([31337, 84532]);
+// none, fail-closed for every other id — this mirrors DeployChainlinkOracle.requiresSequencerUptimeFeed,
+// which is the guard that actually blocks the deploy. Previously this was `chainId === 8453`, so a
+// config for any OTHER L2 passed verification with an empty sequencer feed, matching the deploy-script
+// hole (fixed 2026-08-29).
+//
+// The REASON is stored beside the id rather than written once into the pass message, because the ids
+// are not exempt for the same reason and a single message cannot be true of all of them: 31337 and
+// 84532 are test environments, 4663 is a mainnet whose vendor publishes no feed at all. The set is
+// derived from these keys, so an id can never be exempted without a reason being written down.
+const SEQUENCER_EXEMPT_REASONS = new Map([
+  [31337, 'local anvil / forge — no sequencer exists to have an uptime feed'],
+  [84532, 'Base Sepolia — the committed config leaves it empty by design (contracts/config/base-sepolia.json, sequencerUptimeFeedNote); the uptime gate itself is mock-tested in ChainlinkOracle.t.sol'],
+  [
+    4663,
+    'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage, leaving the per-asset heartbeat as the only guard. See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
+  ],
+]);
+export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());
 const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);
 const CAST = process.env.CAST ?? 'cast';
 const JSON_OUT = process.argv.includes('--json');
@@ -438,7 +451,9 @@ function main() {
     return finish();
   }
 
-  // 1. Sequencer uptime feed — mandatory on every chain outside the exempt allowlist.
+  // 1. Sequencer uptime feed — mandatory on every chain outside the exempt allowlist. An exempt
+  // chain PASSES this row with an empty feed, and the row states that chain's own reason: the
+  // three exempt ids are exempt for different reasons and only one of them is a test environment.
   const seq = co.sequencerUptimeFeed;
   if (!seq || seq === ZERO) {
     check(
@@ -446,7 +461,7 @@ function main() {
       !SEQUENCER_REQUIRED,
       SEQUENCER_REQUIRED
         ? `empty/zero — REQUIRED on chain ${CFG.chainId} (the deploy script refuses it; without the feed the oracle would price through a sequencer outage)`
-        : 'empty/zero — guard intentionally skipped on an exempt chain (testnet exercise; mock-tested in ChainlinkOracle.t.sol)',
+        : `empty/zero — guard intentionally skipped on exempt chain ${CFG.chainId}: ${SEQUENCER_EXEMPT_REASONS.get(CFG.chainId)}`,
     );
   } else {
     const hasCode = code(seq).length > 2;

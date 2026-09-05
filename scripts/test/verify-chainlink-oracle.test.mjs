@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  SEQUENCER_EXEMPT_CHAIN_IDS,
   bandBoundsTwoDecimalDrift,
   chainBindingVerdict,
   compareAggregatorPin,
@@ -323,4 +324,108 @@ test('end to end: matching ids proceed into the sweep, which then judges the con
     'the run must reach the feed checks — this fixture then fails them, which is the config being judged rather than the chain',
   );
   assert.doesNotMatch(r.stderr, /unexpected invocation/, 'no cast subcommand beyond chain-id should have been needed');
+});
+
+// ---------------------------------------------------------------------------
+// THE SEQUENCER EXEMPT SET — two lists, one rule.
+//
+// `DeployChainlinkOracle.requiresSequencerUptimeFeed` is the guard that actually blocks a deploy;
+// this script's SEQUENCER_EXEMPT_CHAIN_IDS is the pre-deploy mirror of it. Nothing but a test makes
+// them agree, and they have drifted before in the other direction (the script used to exempt
+// `chainId === 8453` while the deploy script used a denylist, fixed 2026-08-29). Pinning the set
+// EXACTLY -- not `.has(4663)` -- is what makes an id added to one list and not the other go red.
+// ---------------------------------------------------------------------------
+
+const REPO = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+
+/**
+ * The source of one Solidity function, from its signature to the `}` that CLOSES it -- counted,
+ * not guessed. Returns null if the signature is absent or the braces never balance.
+ *
+ * Written because the regex this replaces (`...\(uint256 chainId\)[^}]*}`) stopped at the first
+ * `}` in the file after the signature. While the body is one `return` expression that is the right
+ * `}`; the moment it is not, the match silently becomes a PREFIX of the function, and every
+ * assertion downstream is made about a fragment. The dangerous direction is a pass, not a failure:
+ * `if (chainId != A && chainId != B && chainId != C) { return true; } return true;` truncates to a
+ * fragment carrying all three terms and the right term count, so the old form reported the wiring
+ * as correct while the function exempted nothing. Braces inside string literals and comments would
+ * defeat this counter too, which is why the single-expression assertion at the call site stays: the
+ * two together are what make the haystack trustworthy.
+ */
+function extractFunctionSource(src, signature) {
+  const start = src.indexOf(signature);
+  if (start < 0) return null;
+  const open = src.indexOf('{', start);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+  }
+  return null;
+}
+
+test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
+  assert.deepEqual(
+    [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
+    [4663, 31337, 84532].sort((a, b) => a - b),
+    'an id was added to or removed from the exempt set; the deploy-script allowlist must match',
+  );
+});
+
+test('the deploy script exempts the same three ids, so the two lists cannot drift apart', () => {
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
+  // NAMED constants, not every `*_CHAIN_ID` in the file. A sweep would also collect a constant that
+  // has nothing to do with this guard -- `runWithSequencer`'s Base-mainnet band rule still compares
+  // a bare `block.chainid != 8453`, and tidying that into a `BASE_MAINNET_CHAIN_ID` constant is a
+  // correct refactor that touches nothing here. Under a sweep that refactor would go red saying the
+  // exempt sets disagree, which would be false: a guard that fails with the wrong explanation costs
+  // more than one that does not fire.
+  const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID'];
+  // Extracted BEFORE the loop, because the two assertions below need two different haystacks. The
+  // constants are declared at contract scope, OUTSIDE this function, so the declaration check has to
+  // read the whole file; the wiring check must read only the function body, or a constant named in a
+  // doc comment or in any other function satisfies it while the guard exempts something else. The
+  // slice starts at the signature, so the doc comment above the function is outside `guard`.
+  //
+  // BALANCED BRACES, not the `[^}]*}` this used to be. That regex stopped at the FIRST `}`, so a
+  // body that ever gained one -- an `if (...) { ... }` fast path, an `unchecked` block -- truncated
+  // the haystack SILENTLY: the fragment can still carry all three `chainId != NAME` terms and the
+  // right term count while the code after the truncation point does something else entirely.
+  // Counting braces makes the haystack the whole function no matter what the body grows into.
+  const guard = extractFunctionSource(src, 'function requiresSequencerUptimeFeed(uint256 chainId)');
+  assert.ok(guard, 'requiresSequencerUptimeFeed(uint256 chainId) is no longer declared in DeployChainlinkOracle.s.sol');
+  // The single-expression property, now ASSERTED rather than implied. The old `assert.ok(guard, ...)`
+  // carried this message while checking nothing of the kind -- `[^}]*}` matched a multi-statement
+  // body just as happily, it merely matched less of it. Asserted as an invariant of the BODY (no
+  // nested block, exactly one statement) rather than as a signature regex, so an unrelated edit --
+  // reordering `public pure`, rewording the NatSpec, renaming a constant -- does not red this test
+  // with the wrong explanation, which is the failure mode the comment above warns about.
+  const guardBody = guard.slice(guard.indexOf('{') + 1, guard.lastIndexOf('}'));
+  assert.ok(
+    !guardBody.includes('{') && [...guardBody.matchAll(/;/g)].length === 1,
+    'requiresSequencerUptimeFeed is no longer a plain single-expression function',
+  );
+  const declared = EXEMPT_CONSTANTS.map((name) => {
+    const m = src.match(new RegExp(`uint256 constant ${name} = (\\d+);`));
+    assert.ok(m, `${name} is no longer declared in DeployChainlinkOracle.s.sol`);
+    // Declared is not enough: it must be wired into the guard, not merely sitting beside it.
+    assert.ok(
+      new RegExp(`chainId != ${name}`).test(guard),
+      `${name} is declared but requiresSequencerUptimeFeed does not exempt it`,
+    );
+    return Number(m[1]);
+  });
+  assert.deepEqual(
+    declared.sort((a, b) => a - b),
+    [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
+    'DeployChainlinkOracle declares a different set of exempt chain ids than this script exempts',
+  );
+  // The other direction, which naming the constants would otherwise lose: a FOURTH id exempted in
+  // the guard and never added here. Count the terms in the guard rather than trusting the list.
+  assert.equal(
+    [...guard.matchAll(/chainId != /g)].length,
+    EXEMPT_CONSTANTS.length,
+    'requiresSequencerUptimeFeed exempts a different NUMBER of ids than EXEMPT_CONSTANTS names',
+  );
 });

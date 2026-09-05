@@ -9,9 +9,11 @@ import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 /// Proves the L2 sequencer guard in the curated-oracle deploy script is L2-GENERIC and FAIL-CLOSED.
 ///
 /// The rule under test (`DeployChainlinkOracle.requiresSequencerUptimeFeed`): the L2 sequencer uptime
-/// feed is mandatory on EVERY chain except an allowlist of ids known to have none — local 31337 and
-/// Base Sepolia 84532, whose committed config leaves `sequencerUptimeFeed` empty by design. It
-/// replaces a DENYLIST of one id (`block.chainid != 8453`) under which a deploy to any other L2 — or
+/// feed is mandatory on EVERY chain except an allowlist of ids known to have none — local 31337;
+/// Base Sepolia 84532, whose committed config leaves `sequencerUptimeFeed` empty by design; and
+/// Robinhood Chain 4663, for which Chainlink publishes no uptime feed (owner-approved 2026-09-04;
+/// the doc comment on ROBINHOOD_CHAIN_ID in the script states what the exemption costs at price
+/// time). The allowlist replaces a DENYLIST of one id (`block.chainid != 8453`) under which a deploy to any other L2 — or
 /// to a mis-pointed RPC — silently produced an IMMUTABLE oracle with the sequencer guard off, free to
 /// serve prices computed while that chain's sequencer was down.
 ///
@@ -28,7 +30,7 @@ contract DeployChainlinkOracleTest is Test {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
 
     string constant SEQUENCER_REQUIRED_REVERT =
-        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337 and Base Sepolia 84532";
+        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532 and Robinhood Chain 4663";
 
     DeployChainlinkOracle script;
 
@@ -65,12 +67,13 @@ contract DeployChainlinkOracleTest is Test {
 
     // ─────────────────────────── the classification itself ───────────────────────────
 
-    /// @notice Fail-closed by construction: the ONLY exempt ids are the two known-feedless ones, and
-    /// every other id — Base mainnet, other L2 mainnets, testnets this script has never seen, and a
-    /// garbage id from a wrong RPC — requires the feed.
+    /// @notice Fail-closed by construction: the ONLY exempt ids are the three known-feedless ones,
+    /// and every other id — Base mainnet, other L2 mainnets, testnets this script has never seen,
+    /// and a garbage id from a wrong RPC — requires the feed.
     function test_requiresSequencerUptimeFeedIsAnAllowlist() public view {
         assertFalse(script.requiresSequencerUptimeFeed(31337), "local 31337 exempt");
         assertFalse(script.requiresSequencerUptimeFeed(84532), "Base Sepolia 84532 exempt");
+        assertFalse(script.requiresSequencerUptimeFeed(4663), "Robinhood Chain 4663 exempt");
         assertTrue(script.requiresSequencerUptimeFeed(8453), "Base mainnet required");
         assertTrue(script.requiresSequencerUptimeFeed(10), "Optimism mainnet required");
         assertTrue(script.requiresSequencerUptimeFeed(42161), "Arbitrum One required");
@@ -79,6 +82,10 @@ contract DeployChainlinkOracleTest is Test {
         );
         assertTrue(script.requiresSequencerUptimeFeed(11155420), "an unlisted testnet required");
         assertTrue(script.requiresSequencerUptimeFeed(999_999_999), "an unknown id required");
+        assertTrue(
+            script.requiresSequencerUptimeFeed(4664),
+            "an id adjacent to Robinhood Chain required (the exemption is one id, not a range)"
+        );
     }
 
     // ─────────────────────────── the deploys that must be refused ───────────────────────────
@@ -134,6 +141,28 @@ contract DeployChainlinkOracleTest is Test {
         _mockFeed(ETH_USD_FEED, 1917e8);
         ChainlinkOracle oracle = script.runWithSequencer(address(0));
         assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed locally");
+    }
+
+    /// @notice Robinhood Chain 4663 deploys with NO sequencer feed, and the oracle it produces
+    /// prices anyway — the exemption's cost, pinned rather than described. Chainlink publishes no
+    /// uptime feed for this chain, so the fail-closed default would refuse the deploy outright;
+    /// the owner approved the weakening on 2026-09-04. The second assertion is the point: with
+    /// `sequencerUptimeFeed` at address(0), `_requireSequencerUp` returns early and `priceWad`
+    /// answers, so nothing here would revert during a sequencer outage on this chain.
+    function test_robinhoodChainDeploysWithoutSequencerFeed() public {
+        vm.chainId(4663);
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        ChainlinkOracle oracle = script.runWithSequencer(address(0));
+        assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed on Robinhood Chain");
+        assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
+    }
+
+    /// @notice The exemption is scoped to the one id: an ADJACENT id still fails closed. A range or
+    /// a typo'd comparison would pass the allowlist test above and fail here.
+    function test_chainAdjacentToRobinhoodStillRequiresSequencerFeed() public {
+        vm.chainId(4664);
+        vm.expectRevert(bytes(SEQUENCER_REQUIRED_REVERT));
+        script.runWithSequencer(address(0));
     }
 
     /// @notice Supplying the feed satisfies the guard on a chain that requires it, and the feed is

@@ -100,6 +100,117 @@ allowlist. So the oracle is deployed **before** the factory:
 
 > A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive).
 
+### Robinhood Chain 4663 — the sequencer-uptime-feed exemption (owner-approved 2026-09-04)
+
+**Recorded because it weakens a security gate, and the record is the only place that says so.** On
+2026-09-04 the owner approved deploying on Robinhood Chain (chain id 4663, an Arbitrum Nitro Orbit
+chain) and, on being told that exempting it from the sequencer-uptime-feed requirement weakens a
+security gate, answered: *"Approve the sequencer exemption, I'll fund the deployer now"*. Chain 4663
+is therefore on `requiresSequencerUptimeFeed`'s exempt allowlist
+([`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol), `ROBINHOOD_CHAIN_ID`)
+and on `SEQUENCER_EXEMPT_REASONS` in
+[`verify-chainlink-oracle.mjs`](../scripts/verify-chainlink-oracle.mjs), so a deploy there runs with
+`ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
+
+**One signal this switches off, and what already stops it mattering.** `SEQUENCER_REQUIRED` is
+computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:137`) and never from the RPC,
+while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:110`) — so a
+`BASE_MAINNET_RPC` left exported from a Base session still decides which endpoint a run launched
+with the 4663 config queries. Before this change that misdirected run **failed** the sequencer row,
+and something objected; on an exempt chain the row now **passes**, so on its own the exemption would
+let a wrong-chain verification come back green. The root cause was the missing chain binding rather
+than the exemption, and it was fixed separately and landed first: PR #205
+(`fix(verify-chainlink-oracle): bind the run to the chain the config names`) is on `protocol/main`
+as `89d0fbb6`, and this change is rebased on top of it. The script now reads `eth_chainId` from
+whichever RPC it resolved and refuses the entire run — before any feed is read (`:442`) — when that
+id differs from the config's `chainId`, so a misdirected run never reaches the sequencer row at all,
+exempt chain or not. Clearing `BASE_MAINNET_RPC` by hand, which
+[`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json)'s
+`chainlinkOracle.verification` list still instructs, remains the right habit: the binding governs
+whether a verdict means anything, not which endpoint gets queried.
+
+**Why an exemption rather than a feed address.** Chainlink publishes no L2 Sequencer Uptime Feed for
+this chain and states it is no longer expanding that feed set to additional networks
+([docs.chain.link/data-feeds/l2-sequencer-feeds](https://docs.chain.link/data-feeds/l2-sequencer-feeds),
+read 2026-09-04). There is no address to supply, so the fail-closed default refuses the deploy
+outright rather than costing the operator one argument — which is the case the allowlist exists for.
+
+**The residual risk, in plain words.** With `sequencerUptimeFeed` at `address(0)`,
+`ChainlinkOracle._requireSequencerUp` returns on its first line
+([`ChainlinkOracle.sol:314`](../contracts/src/oracle/ChainlinkOracle.sol)) and never reverts, so
+`priceWad` answers normally. A sequencer outage on 4663 would therefore **not** freeze pricing, and
+the 3,600-second `GRACE_PERIOD` after a restart (`ChainlinkOracle.sol:79`) never applies there
+either. 4663 is a Stage 0 chain with a centralised sequencer
+([l2beat.com/scaling/projects/robinhood](https://l2beat.com/scaling/projects/robinhood), retrieved
+2026-09-04), so that is the outage shape most likely to occur. What members are left with is the
+per-asset heartbeat/staleness bound and the sane-price band — the same two guards that carry every
+other bad-price case, now carrying this one alone. The heartbeat is only as tight as the value the
+deployer passes: the constructor accepts `[600, 86400]` seconds (`MIN_HEARTBEAT` / `MAX_HEARTBEAT`,
+`ChainlinkOracle.sol:97-98`), and a heartbeat set at the 86,400-second maximum admits a full day of
+staleness before it fires.
+
+**And that maximum is the value the committed config carries, on measurement rather than on
+preference.** [`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json) sets
+`chainlinkOracle.assets[].heartbeatSeconds` to `86400` on both WETH and cbBTC, which its
+`heartbeatNote` records is `ChainlinkOracle.MAX_HEARTBEAT` exactly. The evidence is
+`usdcReferenceFeeds.usdgFeedCadenceNote`: the eleven inter-round gaps across this chain's USDG/USD
+aggregator rounds 81-92 measured **86,403-86,427 s** (median 86,424), and a stablecoin resting at
+1.0000 never trips a deviation threshold, so its publish cadence is this chain's bare Chainlink
+heartbeat and nothing else. Read the claim as narrowly as the config states it: the two basket feeds
+do **not** publish on that cadence, and `feedCadenceSecondsNote` says so — eleven ETH/USD gaps with
+a median of 557 s and eleven CBBTC/USD gaps with a median of 690 s, bursty and deviation-driven — it
+is the feeds' behaviour *at rest* that the heartbeat governs, corroborated by the latest round of
+each sitting 41,131 s and 37,306 s old at the 2026-09-04 read with no incident. The consequence for
+this section is the one the `heartbeatNote` draws: any bound below the published heartbeat can be
+breached by a feed behaving exactly to spec, so on 4663 the only remaining staleness guard sits at
+its loosest legal setting, and a NAV priced off a feed that may legitimately be a day stale is a
+materially different instrument from the Base one. That is an owner decision, and it is recorded
+rather than tuned here.
+
+**Two things this exemption does not do.** It does not change any other chain: `DeployChainlinkOracle`
+still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
+by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it does
+not make a 4663 deploy actionable.
+
+A config for that chain does now exist — #209 landed
+[`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
+in §0 above — and it is worth reading what its own status fields claim, because they claim less than
+the filename suggests. Its **top-level `status`** opens *"CONFIGURATION ONLY — NOTHING IS DEPLOYED ON
+CHAIN 4663"*; its **`chainlinkOracle.status`** reads *"VERIFIED-ON-CHAIN 2026-09-04 … VERIFIED means
+the addresses, decimals, descriptions, phases and answers below were read from that chain. IT DOES
+NOT MEAN DEPLOYED"*. What it supplies is three of §1 step 1's four inputs — real, on-chain-verified
+feed addresses, per-asset heartbeats and sane-price bounds, the same three §0 above enumerates — and
+deliberately not that step's fourth, the L2 sequencer uptime feed:
+`chainlinkOracle.assets` carries WETH (`0x0bd7…ad73`) priced from that chain's own `ETH / USD` feed
+`0x78F3…d3A9`, and cbBTC (`0xcec1…0be4`) priced from its `CBBTC / USD` feed `0x0009…a21a`, with every
+address, `decimals()`, `description()`, `phaseId()`, `aggregator()` and `latestRoundData()` read from
+chain 4663 by read-only JSON-RPC on 2026-09-04 (`chainlinkOracle.verifiedOnChain`). `sequencerUptimeFeed`
+is empty there under this same exemption, and `chainlinkOracle.verification` says the verifier passes
+that row only once 4663 is on its exempt allowlist — which is what this change adds.
+
+Four things remain blocking, and none of them is in this change's gift:
+
+- **There is no deployment record.** `contracts/config/deployments/` holds `base-sepolia.json` and
+  nothing else. No contract from this repository exists on chain 4663, or on any mainnet.
+- **The funding and one immutable launch parameter are still open owner questions,** both already
+  recorded in §0 above: how much USDG the creator Safe (`creator` `0xC73B…AD4c`) holds before the
+  first deposit, and which `minDepositUsdc` vault #1 takes — the config reproduces
+  `base-mainnet.json`'s 100-unit value verbatim while the owner's vault-1 decision records 0.01, and
+  the field is immutable once `createVault` has run.
+- **The owner has to broadcast it.** §1 step 2 and §2 both need a funded key and `--broadcast`,
+  which `docs/SWARM.md` §10 places outside an agent's authority entirely.
+- **The public claims still say the opposite.** All eight pages of `apps/site` carry the status
+  line *"Not deployed to mainnet."*, and [LAUNCH-READINESS.md](LAUNCH-READINESS.md) opens
+  **VERDICT: NO-GO**. A 4663 deploy falsifies the first the moment it lands and has to be argued
+  against the second, so it wants its own reviewed change rather than arriving as a side effect of
+  this one.
+
+`verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
+`4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`:104-109`), so a run against this
+config no longer exits 1 for want of an explicit `BASE_RPC`. What keeps that convenience honest is
+the `eth_chainId` binding that arrived in the same PR — whichever endpoint is resolved has to answer
+4663 before a single feed is read (`:442`) — so a default can pick an endpoint but never certify one.
+
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
 The six protocol singletons + their one-shot wiring deploy in one transaction via
