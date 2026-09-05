@@ -101,7 +101,7 @@ export function Footer({ page }: { page: PageId }): JSX.Element {
             THE DESCRIPTOR LINE, AND ITS ONLY PLACE ON THE SITE. Owner decision,
             2026-09-05: the site is called Rwally, and "Agent-Governed Vaults"
             survives as the descriptor rather than as the name. It is not a
-            heading and it is not a claim — it is the gloss under the mark that
+            heading and it is not a claim, it is the gloss under the mark that
             says what Rwally is, and it renders exactly once per page.
           */}
           <p className="footer-descriptor">{BRAND}</p>
@@ -110,7 +110,7 @@ export function Footer({ page }: { page: PageId }): JSX.Element {
           The closing line. One sentence with the page name as its only link,
           exactly as the corpus writes it: `Read the <a>Disclaimers</a>.` The
           anchor text is the page's own label, so the link makes sense read out
-          of context — which is what a screen reader's link list does to it.
+          of context, which is what a screen reader's link list does to it.
         */}
         <p className="small footer-legal">
           Read the <a href="disclaimers.html">{DISCLAIMERS_PAGE_LABEL}</a>.

@@ -165,7 +165,7 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r1",
     severityClass: "severity severity--accepted",
-    severityLabel: "Structural — no mitigation exists",
+    severityLabel: "Structural, no mitigation exists",
     heading: "1. Immutability itself",
     rows: [
       { dt: "What it is", dd: "The contracts carry no proxy, no upgrade path, no pause and no admin key, and they are deployed on Robinhood Chain mainnet, chain id 4663, broadcast on 2026-09-05. What runs is what runs, permanently." },
@@ -198,7 +198,7 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r4",
     severityClass: "severity severity--accepted",
-    severityLabel: "Accepted — no mitigation",
+    severityLabel: "Accepted, no mitigation",
     heading: "4. USDG is pinned at $1.00 in the oracle",
     rows: [
       { dt: "What it is", dd: "The oracle does not price the settlement token. It assumes one dollar for USDG." },
@@ -253,7 +253,7 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r9",
     severityClass: "severity severity--accepted",
-    severityLabel: "Accepted — no recovery path",
+    severityLabel: "Accepted, no recovery path",
     heading: "9. Operator identity cannot be rotated",
     rows: [
       { dt: "What it is", dd: "The operator identity is attested by the registry at vault creation and is immutable for that vault. There is no rebind, and the payout address is permanent." },
@@ -275,12 +275,12 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r11",
     severityClass: "severity severity--accepted",
-    severityLabel: "Open — unresolved",
+    severityLabel: "Open, unresolved",
     heading: "11. Securities and collective investment scheme recharacterization",
     rows: [
       { dt: "What it is", dd: "Interests in these vaults may be treated as securities, or as collective investment scheme interests, in some jurisdictions. This is an unresolved legal question, not a settled one." },
       { dt: "Worst case", dd: "A regulator takes that view. Participants face consequences that depend entirely on where they are, and this project cannot indemnify anyone against them." },
-      { dt: "What is done", dd: "Disclosure, and an intended geofence. Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end — a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. This site will not characterize your position for you." },
+      { dt: "What is done", dd: "Disclosure, and an intended geofence. Nothing on this site is an offer, a solicitation, or financial advice, and no part of it is intended to induce anyone to part with money. Access from restricted jurisdictions is intended to be geofenced at the front end, a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone, with or without a front end. Take your own advice about your own jurisdiction. This site will not characterize your position for you." },
     ],
   },
   {
@@ -297,7 +297,7 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r13",
     severityClass: "severity",
-    severityLabel: "Open — owner decision",
+    severityLabel: "Open, owner decision",
     heading: "13. An open licensing question",
     rows: [
       { dt: "What it is", dd: "Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository." },
@@ -319,7 +319,7 @@ export const ENTRIES: readonly RiskEntry[] = [
   {
     id: "r15",
     severityClass: "severity severity--accepted",
-    severityLabel: "Accepted — no recovery path",
+    severityLabel: "Accepted, no recovery path",
     heading: "15. There is no oracle rotation path",
     rows: [
       { dt: "What it is", dd: "Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is fixed in its constructor with no add, no remove and no owner, and it governs only which oracle a <em>new</em> vault may be created with." },

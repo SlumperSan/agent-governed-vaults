@@ -87,7 +87,7 @@ const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
-const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
+const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
 // Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names Rwally, and
 // the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
 // which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the

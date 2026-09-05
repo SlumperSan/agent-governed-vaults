@@ -51,7 +51,7 @@
  * day renamed the site to Rwally; "Agent-Governed Vaults" survives only as the
  * descriptor line in the footer (see BRAND below), not as the title suffix.
  */
-export const TITLE_SUFFIX = ' — Rwally';
+export const TITLE_SUFFIX = ' | Rwally';
 
 /* ---------------------------------------------------------------------------
  * PRE-LAUNCH BANNER — one block, on status.html, inside <main>.
@@ -141,7 +141,7 @@ export const FOOTER_DISCLAIMERS_BODY =
 export const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 
 /** The em-dash is pinned. Do not normalise it to a hyphen. */
-export const FOOTER_LICENCE = 'Source-available under BUSL-1.1 — not open source.';
+export const FOOTER_LICENCE = 'Source-available under BUSL-1.1, not open source.';
 
 /** The two-sentence repository note. Carried in the footer of every page. */
 export const FOOTER_REPO_AUTHORITY =
@@ -181,7 +181,7 @@ export const FOOTER_REPO_PUBLIC =
  * Render it as one <p>. Do not break it into two.
  */
 export const SECURITY_REVIEW_ATTESTATION =
-  'An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.';
+  'An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High, the purchasable member count below five members, remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.';
 
 /**
  * The launch-status paragraph naming the open High.
@@ -195,7 +195,7 @@ export const SECURITY_REVIEW_ATTESTATION =
  * the corpus first.
  */
 export const LAUNCH_STATUS =
-  'Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker.';
+  'Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High, the purchasable member count below five members, remains open at the launch configuration and is not classified as a launch blocker.';
 
 /**
  * The Mode-F trigger clause. It appears inside longer sentences on

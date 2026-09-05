@@ -10,7 +10,7 @@
      fallback for a browser that cannot render an SVG icon, and is reached by that same implicit
      request rather than by a second link, so there is exactly one icon link on the page. -->
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<!-- The display serif, preloaded. It sets the h1 — the largest paint on every page — and the browser
+<!-- The display serif, preloaded. It sets the h1, the largest paint on every page, and the browser
      would otherwise not learn it is needed until the stylesheet has arrived and been matched, one round trip
      later. The href is a path into node_modules, rewritten by the build: Vite resolves it through the same
      asset pipeline that rewrites the url() in fonts.css, emits ONE hashed copy, and writes the /assets/ path
@@ -21,7 +21,7 @@
      in the built page, and this comment survives into that page, so writing the tag here reads as a second
      heading and reds the guard. -->
 <link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2">
-<title>Questions — Rwally</title>
+<title>Questions | Rwally</title>
 <meta name="description" content="Direct answers to the hard questions: is there a token, is it running, can you rug me, when can I get out, what does the operator earn, and what licence the code is under.">
 <link rel="canonical" href="https://rwally.com/faq">
 <meta property="og:type" content="website">

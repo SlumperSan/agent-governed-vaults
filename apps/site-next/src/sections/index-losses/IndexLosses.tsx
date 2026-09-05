@@ -79,7 +79,7 @@ export default function IndexLosses(): JSX.Element {
           {/* risks.html was retired 2026-09-05; disclaimers.html is its
               replacement and every page is asserted to link to it with the
               label "Disclaimers" exactly. The label comes from the shared CTA
-              table rather than being written here — the banned conversion
+              table rather than being written here, the banned conversion
               phrases are exactly what a freshly written button label reaches
               for, and the ones already in use are known to pass. */}
           <a className={`${s.btn} ${s.btnPrimary}`} href="disclaimers.html">

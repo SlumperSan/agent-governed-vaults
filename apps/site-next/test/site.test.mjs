@@ -219,7 +219,7 @@ const DISCLAIMERS_PAGE = 'disclaimers.html';
  * the lazy page reads below never happen either.
  */
 const BUILT = existsSync(SITE);
-const SKIP = 'apps/site-next/dist is not built — run `npm run build` in apps/site-next first';
+const SKIP = 'apps/site-next/dist is not built, run `npm run build` in apps/site-next first';
 /** @type {(name: string, fn: () => void | Promise<void>) => void} */
 const t = (name, fn) => test(name, BUILT ? {} : { skip: SKIP }, fn);
 
@@ -259,10 +259,10 @@ const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or finan
 // it renders exactly where the corpus says it should — see DEPLOYED_LINE_COUNTS below.
 const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
-const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
+const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
 // RENAMED 2026-09-05 by owner decision: the site is called Rwally, and
 // "Agent-Governed Vaults" survives only as the footer descriptor line.
-const TITLE_SUFFIX = ' — Rwally';
+const TITLE_SUFFIX = ' | Rwally';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
@@ -447,7 +447,7 @@ test('no banned claim appears in the README or either stylesheet either', () => 
 t('every permitted negation is actually in use, so the exemption list cannot rot', () => {
   const all = [...PAGES.map((p) => raw.get(p) ?? ''), ...PROSE_FILES.map((f) => readFileSync(path.join(APP, f), 'utf8'))].join('\n');
   for (const phrase of PERMITTED) {
-    assert.ok(all.includes(phrase), `PERMITTED carries a phrase no page uses: ${JSON.stringify(phrase)} — delete it rather than leaving a standing exemption`);
+    assert.ok(all.includes(phrase), `PERMITTED carries a phrase no page uses: ${JSON.stringify(phrase)}, delete it rather than leaving a standing exemption`);
   }
 });
 
@@ -543,7 +543,7 @@ t('the top status band is gone from every marketing page and lives only on the s
     assert.equal(
       bands,
       0,
-      `${p}: the top status band was moved to ${STATUS_PAGE} by owner decision 2026-09-04 — link to it from the footer instead of restoring it here`,
+      `${p}: the top status band was moved to ${STATUS_PAGE} by owner decision 2026-09-04, link to it from the footer instead of restoring it here`,
     );
   }
 });
@@ -614,7 +614,7 @@ t('status.html carries the full status block, inside main rather than above the 
   for (const p of PAGES) {
     assert.ok(
       /href="status\.html"[^>]*>Status and claims<\/a>/.test(raw.get(p) ?? ''),
-      `${p}: the footer must link to the status page — that link is the only route to it`,
+      `${p}: the footer must link to the status page, that link is the only route to it`,
     );
   }
   assert.ok(
@@ -730,7 +730,7 @@ test('no per-claim review marker survives in the source or in the build', () => 
       const text = readFileSync(path.join(root, f), 'utf8');
       assert.ok(
         !text.includes(MARKER_TOKEN),
-        `${label}/${f}: the per-claim review markers were removed by owner decision 2026-09-04 — do not reintroduce them`,
+        `${label}/${f}: the per-claim review markers were removed by owner decision 2026-09-04, do not reintroduce them`,
       );
     }
   }
@@ -982,7 +982,7 @@ test('src/tokens.css is the only stylesheet permitted a colour literal', () => {
     assert.equal(
       hex,
       null,
-      `${path.relative(APP, f)} must reference tokens only, found raw colour ${JSON.stringify(hex?.[0])} — add a token to src/tokens.css instead`,
+      `${path.relative(APP, f)} must reference tokens only, found raw colour ${JSON.stringify(hex?.[0])}, add a token to src/tokens.css instead`,
     );
   }
 });
@@ -1059,7 +1059,7 @@ test('every non-generic family named in a token stack has a same-origin @font-fa
     assert.ok(first, `a token stack names no primary family: ${m[1].trim()}`);
     assert.ok(
       faces.has(first),
-      `the first family in a stack is ${JSON.stringify(first)}, which src/fonts.css does not declare — the page cannot fetch it and would silently render the fallback`,
+      `the first family in a stack is ${JSON.stringify(first)}, which src/fonts.css does not declare, the page cannot fetch it and would silently render the fallback`,
     );
   }
   assert.equal(stacks, 3, `expected --display, --sans and --mono in src/tokens.css, found ${stacks}`);
@@ -1153,7 +1153,7 @@ t('every "deployed" either negates itself or names the chain and the record', ()
       if (NEGATED.test(s)) continue;
       assert.ok(
         DEPLOY_CITED.test(s),
-        `${p}: "deployed" in a sentence that neither negates it nor says where — name Robinhood Chain, the chain id 4663, or contracts/config/deployments/robinhood-mainnet.json in the same sentence — ${JSON.stringify(s.trim())}`,
+        `${p}: "deployed" in a sentence that neither negates it nor says where, name Robinhood Chain, the chain id 4663, or contracts/config/deployments/robinhood-mainnet.json in the same sentence, ${JSON.stringify(s.trim())}`,
       );
     }
   }
@@ -1189,7 +1189,7 @@ t('the security-review attestation carries its qualifier in the same block', () 
       assert.ok(enclosing, `${p}: "external security review" appears outside any paragraph or list item`);
       assert.ok(
         /no public report/i.test(enclosing.text),
-        `${p}: names the external security review without the "no public report" qualifier in the same block — ${JSON.stringify(enclosing.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 160))}`,
+        `${p}: names the external security review without the "no public report" qualifier in the same block, ${JSON.stringify(enclosing.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 160))}`,
       );
     }
   }
@@ -1223,7 +1223,7 @@ t('the security-review attestation carries its qualifier in the same block', () 
 // pages now state Robinhood Chain's figures, and checking them against Base's would pass on
 // nothing and red on the one row where the two files genuinely differ.
 const HAS_CONFIG = existsSync(CONFIG_PATH);
-const CONFIG_SKIP = `${CONFIG_NAME} is not in this checkout. It landed on protocol/main with the target-chain decision of 2026-09-04 and this branch predates it — rebase onto protocol/main and re-run`;
+const CONFIG_SKIP = `${CONFIG_NAME} is not in this checkout. It landed on protocol/main with the target-chain decision of 2026-09-04 and this branch predates it, rebase onto protocol/main and re-run`;
 /** @type {(name: string, fn: () => void | Promise<void>) => void} */
 const tc = (name, fn) => test(name, BUILT && HAS_CONFIG ? {} : { skip: BUILT ? CONFIG_SKIP : SKIP }, fn);
 const config = HAS_CONFIG ? JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) : null;
@@ -1387,11 +1387,11 @@ t('the corrections from the 2026-08-29 review have not been undone', () => {
     const html = raw.get(p) ?? '';
     // A3: the exit fee is not routed to the operator IDENTITY, but the operator holds shares and
     // the fee reaches them through share value. "No share of the exit fee" was simply false.
-    assert.ok(!/no share of the exit fee/i.test(html), `${p}: "no share of the exit fee" is false — the operator's mandatory 5% collects it through share value`);
+    assert.ok(!/no share of the exit fee/i.test(html), `${p}: "no share of the exit fee" is false, the operator's mandatory 5% collects it through share value`);
     // A7: the creator gate is a withdrawal gate, not a top-up obligation.
     assert.ok(!/must be topped up/i.test(html), `${p}: the creator gate is a withdrawal gate, not a top-up obligation`);
     // C7: there is no population of vaults to generalise from.
-    assert.ok(!/set lower by many vaults/i.test(html), `${p}: there are no other vaults — nothing has been deployed`);
+    assert.ok(!/set lower by many vaults/i.test(html), `${p}: there are no other vaults, nothing has been deployed`);
     // A1: Mode F opens at reveal start, not at passage.
     assert.ok(!/rebalance has passed but has not yet executed/i.test(html), `${p}: Mode F opens at reveal start, not when a proposal passes`);
     // A4: the pre-audit findings are not all closed.
@@ -1406,7 +1406,7 @@ t('the corrections from the 2026-08-29 review have not been undone', () => {
 t('the sequencer guard is not presented as a proven mitigation', () => {
   const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   const r5 = html.slice(html.indexOf('id="r5"'), html.indexOf('id="r6"'));
-  assert.ok(!/severity--mitigated/.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must not carry the green mitigated chip — the guard has never run against a real uptime feed`);
+  assert.ok(!/severity--mitigated/.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must not carry the green mitigated chip, the guard has never run against a real uptime feed`);
   assert.ok(/never (?:run|executed) against a real/i.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must say the sequencer path has never executed against a real feed`);
 });
 
@@ -1478,14 +1478,14 @@ t('every mention of RWLY on this site sits beside the fact that it does not exis
         if (!/RWLY/.test(section)) continue;
         assert.ok(
           section.includes(RWLY_CHIP),
-          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)} — ` +
+          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)}, ` +
             JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
         );
       }
       const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
       assert.ok(
         !/RWLY/.test(outsideSections),
-        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer) — ` +
+        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer), ` +
           'the section-scoped chip check cannot see a mention that sits in no section',
       );
       continue;
@@ -1508,8 +1508,8 @@ t('every mention of RWLY on this site sits beside the fact that it does not exis
       assert.ok(
         RWLY_QUALIFIER.test(window),
         `${p}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
-          'NEXT ITERATION and is design intent only — there is no such token, no presale and nothing ' +
-          `to hold. — ${JSON.stringify(window.trim().slice(0, 200))}`,
+          'NEXT ITERATION and is design intent only, there is no such token, no presale and nothing ' +
+          `to hold., ${JSON.stringify(window.trim().slice(0, 200))}`,
       );
     }
   }
@@ -1526,7 +1526,7 @@ t('every mention of RWLY on this site sits beside the fact that it does not exis
       const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
       assert.ok(
         RWLY_QUALIFIER.test(window),
-        `public/llms.txt: names RWLY without "does not exist" within ${RWLY_WINDOW} characters — ` +
+        `public/llms.txt: names RWLY without "does not exist" within ${RWLY_WINDOW} characters, ` +
           `${JSON.stringify(window.trim().slice(0, 200))}`,
       );
     }
@@ -1534,7 +1534,7 @@ t('every mention of RWLY on this site sits beside the fact that it does not exis
 
   assert.ok(
     seen >= RWLY_FLOOR,
-    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
+    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen}, if the mentions were deleted ` +
       'rather than qualified, say so in the commit rather than letting this guard pass by absence',
   );
   // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.
@@ -1562,7 +1562,7 @@ t('the status band cannot be hidden by the stylesheet', () => {
   const blocks = shell.match(/\.banner[^{]*\{[^}]*\}/g) ?? [];
   assert.ok(
     blocks.length > 0,
-    'src/index.css contains no .banner rule. Either the status band is unstyled, or its class was renamed and this guard is now checking nothing — follow the class rather than deleting the check. The band is on status.html only since 2026-09-04, and the reasoning is unchanged and sharper for it: a status block that exists in the markup and renders at zero height passes every presence assertion above while showing a reader nothing',
+    'src/index.css contains no .banner rule. Either the status band is unstyled, or its class was renamed and this guard is now checking nothing, follow the class rather than deleting the check. The band is on status.html only since 2026-09-04, and the reasoning is unchanged and sharper for it: a status block that exists in the markup and renders at zero height passes every presence assertion above while showing a reader nothing',
   );
   for (const block of blocks) {
     assert.ok(!/display\s*:\s*none/i.test(block), `index.css hides the status band: ${block.replace(/\s+/g, ' ')}`);
@@ -1645,7 +1645,7 @@ t('no surface places the Mode-F trigger at proposal passage instead of reveal', 
       assert.equal(
         hit,
         null,
-        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase — Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:653)`,
+        `${f}: ${JSON.stringify(hit?.[0])} places the Mode-F trigger at passage. It opens at the reveal phase, Governance.hasPendingExecution is true from p.commitDeadline (Governance.sol:653)`,
       );
     }
   }
@@ -1664,7 +1664,7 @@ t('every surface that describes Mode F names the reveal phase as its trigger', (
   for (const [f, text] of repoProse) {
     assert.ok(
       /reveal phase/i.test(text),
-      `${f} describes forward settlement but never names the reveal phase as the trigger — state when the window opens, do not merely avoid stating when it does not`,
+      `${f} describes forward settlement but never names the reveal phase as the trigger, state when the window opens, do not merely avoid stating when it does not`,
     );
   }
 });
@@ -1705,11 +1705,11 @@ t('the "open High at the launch configuration" claim always names the finding', 
       seen++;
       assert.ok(
         OPEN_HIGH_CLASS.test(s),
-        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the purchasable member count in the <5-member quorum regime — name it in the same sentence — ${JSON.stringify(s.trim().slice(0, 160))}`,
+        `${where}: claims a High "remains open at the launch configuration" without naming it. It is H-8, the purchasable member count in the <5-member quorum regime, name it in the same sentence, ${JSON.stringify(s.trim().slice(0, 160))}`,
       );
     }
   }
-  assert.ok(seen >= 3, `expected the open-High claim on at least three surfaces, found ${seen} — if it was deleted rather than qualified, say so in the commit`);
+  assert.ok(seen >= 3, `expected the open-High claim on at least three surfaces, found ${seen}, if it was deleted rather than qualified, say so in the commit`);
 });
 
 /**
@@ -1762,8 +1762,8 @@ t('the served and source llms.txt are both byte-identical to the repository root
   // file is the source of both.
   const root = readFileSync(path.join(REPO, 'llms.txt'), 'utf8');
   const FIX = {
-    'public/llms.txt': 'copy the root file across rather than editing this one — cp llms.txt apps/site-next/public/llms.txt',
-    'dist/llms.txt': 'the build copies public/ verbatim, so this one is fixed by rebuilding — npm run build in apps/site-next. If public/llms.txt is also failing, fix that first',
+    'public/llms.txt': 'copy the root file across rather than editing this one, cp llms.txt apps/site-next/public/llms.txt',
+    'dist/llms.txt': 'the build copies public/ verbatim, so this one is fixed by rebuilding, npm run build in apps/site-next. If public/llms.txt is also failing, fix that first',
   };
   for (const [rel, fix] of Object.entries(FIX)) {
     assert.equal(

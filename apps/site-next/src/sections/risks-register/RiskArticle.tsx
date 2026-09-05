@@ -67,8 +67,8 @@ export function RiskArticle({ entry }: { entry: RiskEntry }): JSX.Element {
     <article className="risk" id={entry.id}>
       <Reveal className={s.head} duration={CHIP_AND_HEADING_SECONDS} rise={0}>
         {/*
-          The chip carries the source's own global class string — `severity`,
-          or `severity severity--accepted` — rather than a hashed module class,
+          The chip carries the source's own global class string, `severity`,
+          or `severity severity--accepted`, rather than a hashed module class,
           because the guard that keeps r5 honest looks for `severity--mitigated`
           in the page text between `id="r5"` and `id="r6"`. Keeping the class
           names the ones the reviewed page uses means that check reads the same

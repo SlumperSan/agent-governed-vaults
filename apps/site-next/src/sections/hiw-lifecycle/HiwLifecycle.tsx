@@ -64,7 +64,7 @@ export default function HiwLifecycle(): JSX.Element {
                   The icon sits BESIDE the heading, not in place of it, and it is
                   aria-hidden: it is the same claim the heading already makes,
                   drawn. A step with no icon in the brand set renders the heading
-                  alone — see the note on Step.icon in copy.ts for why one is
+                  alone, see the note on Step.icon in copy.ts for why one is
                   deliberately bare rather than approximated.
                 */}
                 <h3 className={s.stepHeading}>

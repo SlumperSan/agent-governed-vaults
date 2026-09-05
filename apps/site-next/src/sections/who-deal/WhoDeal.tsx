@@ -112,7 +112,7 @@ const INTRO =
   'The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote. So the work does not stop at the deposit, and the protocol will not chase anyone for it.';
 
 const SHOW_UP =
-  'Voting is commit then reveal: two phases with deadlines. A commit you never reveal is forfeit and counts as an abstain. Miss the reveal window and your vote simply does not exist — not as a "no", not as anything.';
+  'Voting is commit then reveal: two phases with deadlines. A commit you never reveal is forfeit and counts as an abstain. Miss the reveal window and your vote simply does not exist, not as a "no", not as anything.';
 
 const READ_THE_VAULT =
   'Quorum, timelock, exit-fee schedule, minimum deposit, capacity and the commit and reveal durations are all chosen by whoever created the vault and frozen when it is funded. Two vaults built on the same contracts can behave very differently. Nothing on this page tells you what a particular vault\'s rules are.';

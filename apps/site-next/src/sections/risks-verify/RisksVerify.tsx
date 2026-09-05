@@ -199,13 +199,13 @@ export function RisksVerify(): JSX.Element {
         {/*
           THE PAGE'S OWN SELF-REFERENCE. Every OTHER page's footer closes with "Read the
           Disclaimers." linking here; the corpus's disclaimers.html footer closes with this exact
-          self-referential form instead — "You are reading the Disclaimers." — because a reader
+          self-referential form instead, "You are reading the Disclaimers.", because a reader
           already on the page does not need to be told to go somewhere.
           `src/shell/Footer.tsx` cannot render this: it is a single shared component whose Pages-list
           filter drops the current page for every page except status.html (a pre-existing special
           case written before this page existed), so disclaimers.html gets no self-link from the
-          footer at all. Rather than edit that frozen file, the self-reference — and the literal
-          href="disclaimers.html" a reader's own page should carry — lives here instead, as the
+          footer at all. Rather than edit that frozen file, the self-reference, and the literal
+          href="disclaimers.html" a reader's own page should carry, lives here instead, as the
           close of the page's last content section.
         */}
         <Pinned as="p" className={s.selfRef} html={SELF_REFERENCE} />

@@ -77,7 +77,7 @@ export const CARD_1_BODY =
 /** CARD_2_BODY is OPERATOR_ENUMERATED, imported from src/shell/pinned.ts. */
 
 export const CARD_3_BODY =
-  "The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — and the operator is also a member, so its shares carry the fee up like anyone else's.";
+  "The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity, and the operator is also a member, so its shares carry the fee up like anyone else's.";
 
 export const CARD_4_BODY =
   'Once a vault is funded its rules are immutable, except by full consensus of voting-eligible stake plus a timelock. Nobody can raise a fee or shorten a delay after you deposit.';

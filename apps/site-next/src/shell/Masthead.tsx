@@ -28,13 +28,13 @@ export function Masthead({ page }: { page: PageId }): JSX.Element {
         {/*
           BOTH FORMS ARE RENDERED AND CSS PICKS ONE. Owner decision, 2026-09-05:
           the comic horizontal lockup at 48px on desktop, and the ledger R mark
-          beside the name in text on mobile — the lockup's wordmark stops
+          beside the name in text on mobile, the lockup's wordmark stops
           reading at that size, which is the same reason the brand set names the
           ledger R as the mark for small sizes.
 
           A media query, not a render branch: `src/shell/App.tsx` forbids
           branching the tree on the viewport, because the server cannot know it
-          and React discards the mismatched subtree — which is the markup the
+          and React discards the mismatched subtree, which is the markup the
           claims guards just verified. So both are in the markup at every width
           and `src/index.css` hides one.
 
@@ -70,7 +70,7 @@ export function Masthead({ page }: { page: PageId }): JSX.Element {
               </li>
             ))}
             {/*
-              The App slot. Renders nothing until app.rwally.com exists — see
+              The App slot. Renders nothing until app.rwally.com exists, see
               APP_NAV in pinned.ts for why this is an absent element rather than
               a hidden one. `rel="noopener"` because it leaves this origin.
             */}

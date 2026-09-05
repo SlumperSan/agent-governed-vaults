@@ -81,7 +81,7 @@ export default function RisksHero(): JSX.Element {
         {/*
           THE RESTING STATE IS WHAT RENDERS. <Reveal> prerenders its children at
           their final position and full opacity and only then, in a layout
-          effect, pushes them back to animate forward — so every sentence here
+          effect, pushes them back to animate forward, so every sentence here
           is in dist/disclaimers.html whether or not anything scrolls, and a
           reader with reduced motion gets the finished page rather than an
           empty one.

@@ -127,7 +127,7 @@ const LEDE_CLOSE =
  * is deployed to mainnet" would be false now that the factory is live; this
  * caption says only what is still true.
  */
-const FIELD_CAPTION = 'Illustrative. It shows the lifecycle, not a holding — no vault has been created yet.';
+const FIELD_CAPTION = 'Illustrative. It shows the lifecycle, not a holding, no vault has been created yet.';
 
 export default function IndexHero(): JSX.Element {
   return (
