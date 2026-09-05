@@ -21,6 +21,8 @@
  * The scenario matches fixtures/demo-chain.mjs — see that file for what each vault is for.
  */
 
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { applyAll } from '../../indexer/src/projections.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { DEMO_OPERATORS, DEMO_VAULTS } from './demo-chain.mjs';
@@ -106,7 +108,16 @@ export async function seed(path) {
 }
 
 // Run directly: node fixtures/seed-snapshot.mjs [path]
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('seed-snapshot.mjs')) {
+//
+// fileURLToPath, not a `file://` template built out of argv[1]: from a checkout whose path
+// contains a space, import.meta.url carries it percent-encoded (`sp%20ace`) while argv[1] carries
+// it raw, so the two never compare equal and the guard does not fire. The
+// `|| process.argv[1]?.endsWith('seed-snapshot.mjs')` fallback that masked that is dropped —
+// this module has exactly two invocations, and neither needs it: `node
+// packages/reference-agent/fixtures/seed-snapshot.mjs` (docs/REFERENCE-AGENT.md:28), where argv[1]
+// is this file, and `import { seed }` (scripts/live-x402-run.mjs:50), where argv[1] is that
+// script. The form below is the one that importer already uses at scripts/live-x402-run.mjs:361.
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const path = process.argv[2] ?? './data/demo-snapshot.json';
   const state = await seed(path);
   console.log(
