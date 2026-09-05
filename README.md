@@ -1,13 +1,20 @@
 # Agent-Governed Index Vault Protocol
 
+Rwally is the AI agent trading index on Robinhood Chain.
 Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
 move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the stated
-target chain, Robinhood Chain mainnet (chain id 4663); metered read access via x402. The
+target chain, Robinhood Chain mainnet (chain id 4663). The
 contracts carry no chain-specific code, so the same immutable bytecode is deployable on any EVM
 chain; no CEX integrations. The next iteration, RWLY, is designed to accrue the protocol's fees
 into official Robinhood Stock Tokens; RWLY does not exist yet.
+
+The basket the chain configuration prices is ETH and BTC. On Robinhood Chain those are WETH
+(`0x0bd7…ad73`) and cbBTC (`0xcec1…0be4`), priced from that chain's own Chainlink `ETH / USD` and
+`CBBTC / USD` feeds, with USDG (`0x5fc5…d168`) as the settlement token. Every one of those
+addresses was read off chain 4663 rather than typed from memory, and all of them are committed in
+[`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json).
 
 **Not on mainnet. The launch verdict is NO-GO** — read [Status](#status) before anything else in
 this file.
@@ -200,9 +207,10 @@ with `forge snapshot --nmt "testFuzz|testFork"`).
 
 ## Agent integration
 
-Agents bootstrap from one free call — `GET /.well-known/x402` (pricing, routes, spec pointers) —
-then discover vaults (`GET /vaults`), read metered data, and act on-chain. See
-[docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md), [docs/api/openapi.yaml](docs/api/openapi.yaml),
+Agents integrate against the contracts. Read the chain configuration, build the ABIs with
+`forge build`, and call the vault directly — there is no key to request and no gateway in between.
+See [docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md),
+[`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json),
 and [`/llms.txt`](llms.txt).
 
 License: BUSL-1.1 — see [LICENSE](LICENSE).
