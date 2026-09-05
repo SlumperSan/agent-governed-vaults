@@ -67,7 +67,7 @@ unchanged.
   `AuditOracleAllowlist.t.sol`. Mainnet deployment is guarded by `Deploy.s.sol` (PR #53) which
   **reverts if the `BLESSED_ORACLES` allowlist is empty**, preventing accidental unsafe deploys. Gate 0
   is **GO (root-only)**: the *mechanism* is complete and the external audit (gate 1) is complete on
-  owner attestation. The mainnet deploy must still populate the allowlist with real addresses — a
+  owner attestation. Any mainnet deploy must still populate the allowlist with real addresses — for the live Robinhood Chain factory, what was blessed is in `contracts/config/deployments/robinhood-mainnet.json` and readable on-chain via `factory.isAllowedOracle(...)` and `factory.oracleAllowlistEnforced()`; a
   deploy step, not an open Critical.
 
 The child path also enforces same-USDC and basket-subset-of-parent, so in-kind child redemptions

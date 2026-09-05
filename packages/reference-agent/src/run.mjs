@@ -120,9 +120,18 @@ async function main() {
   }
 
   // ── chain reader ───────────────────────────────────────────────────────────
-  // No RPC ⇒ the stub, loudly marked. Nothing is deployed to mainnet; the one record in
-  // contracts/config/deployments/ is base-sepolia.json, a testnet trial. Without an --rpc there is
-  // no node to read at all, so the demo run answers from the fixture and does not pretend to.
+  // No RPC ⇒ the stub, loudly marked. contracts/config/deployments/ holds base-sepolia.json (a
+  // testnet trial) and robinhood-mainnet.json (Robinhood Chain mainnet since 2026-09-05: the
+  // singletons are wired and no vault has been created on it yet). Without an --rpc there is no
+  // node to read at all, so the demo run
+  // answers from the fixture and does not pretend to.
+  //
+  // These comments are swept BY HAND. `.mjs` is in no claims guard's walk — not
+  // claims-lede-truth's PUBLIC_EXT, not config-doc-truth's PROSE_EXT — so five sites in this
+  // package carried "the protocol is not deployed" for months after it was, were narrowed to
+  // "mainnet" on 2026-09-04 (#197), and were falsified again by the Robinhood Chain deployment of
+  // 2026-09-05. Do not narrow one of these to the boundary that happens to be visible;
+  // name the chain, or name the directory and let the reader look.
   let chainReader;
   let entryMarks = {};
   if (config.chain.rpcUrl) {

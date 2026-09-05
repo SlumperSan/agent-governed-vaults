@@ -42,9 +42,14 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   Check `Governance.hasPendingExecution(vault)` before every `requestExit`.
 - **Oracle breaker:** the vault prices its basket from **one genuine Chainlink Data Feed per
   asset** (`ChainlinkOracle`; WETH via ETH/USD, cbBTC via BTC/USD, USDC pinned). If that feed
-  breaches its heartbeat or the sane-price band, or the Base sequencer is down or inside its
-  post-recovery grace period, `priceWad` reverts and **everything freezes, including exits** — by
-  design, and with **no fallback source**. The oracle is immutable per vault, so check
+  breaches its heartbeat or the sane-price band, or — **on Base only** — the sequencer is down or
+  inside its post-recovery grace period, `priceWad` reverts and **everything freezes, including
+  exits** — by design, and with **no fallback source**. Predicting a freeze on chain 4663 uses a
+  shorter list: no Chainlink L2 sequencer uptime feed exists for it, so `sequencerUptimeFeed` is
+  `address(0)`, `_requireSequencerUp` returns early and that trigger cannot fire there; and its
+  feeds publish on an 86,400 s heartbeat, exactly `MAX_HEARTBEAT`
+  (`contracts/src/oracle/ChainlinkOracle.sol:98`), so the staleness trigger fires only after a feed
+  has been stopped for more than a day. The oracle is immutable per vault, so check
   `VaultCore.oracle()` against the blessed set before you deposit and don't strand funds in a vault
   whose feeds you don't trust. Un-activated (observation-window) deposits stay reclaimable during a
   freeze via `cancelPending`, which reads no oracle.

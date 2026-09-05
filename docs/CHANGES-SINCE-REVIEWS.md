@@ -78,7 +78,7 @@ it went too.) `VaultFactory` measured 27,241 B and was undeployable on any chain
 
 Stated because the absence is easy to misread.
 
-- **A Base Sepolia deployment now exists; no mainnet deployment does.**
+- **A Base Sepolia deployment exists, and since 2026-09-05 a Robinhood Chain mainnet one (chain 4663) does too; no Base mainnet deployment does.**
   [TESTNET-REPORT.md](TESTNET-REPORT.md) *was* a pre-flight record only, and this section said so
   for the life of the freeze. That is **no longer true**: PR #18 deployed the protocol to Base
   Sepolia — 17 transactions, deploy block 45784186, every address and wire confirmed by direct

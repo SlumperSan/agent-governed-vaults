@@ -10,7 +10,7 @@ An AI pre-audit run against the frozen contracts on 2026-08-25 (tag `v0.3.0-audi
 `ad9396d7`) produced **41 findings — 5 Critical, 9 High, 15 Medium, 7 Low, 5 Informational**. A
 2026-08-27 remediation pass closed twelve; the 2026-08-28 Phase-2 re-verification then surfaced a
 **sixth Critical (C-6)** by converting an *inferred* C-4 closure into an *executed* refutation. The
-launch verdict is **NO-GO — but for OPERATIONAL reasons, not security or audit** (this had been
+Base mainnet launch verdict is **NO-GO — but for OPERATIONAL reasons, not security or audit** (this had been
 NO-GO on gate 0/gate 1; corrected 2026-09-03 to match [[launch-readiness-gates]] / LAUNCH-READINESS.md,
 the authority). **Gate 0 is GO (root-only):** C-6 is resolved by the Chainlink-direct pivot (the
 custom aggregator is non-selectable via the VaultFactory oracle allowlist) and C-1 is closed by

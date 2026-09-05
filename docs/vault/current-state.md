@@ -1,6 +1,9 @@
 # Current State
 
-What is true right now. The launch verdict is **NO-GO** — but no longer for security reasons.
+What is true right now. The **Base mainnet** launch verdict is **NO-GO** — but no longer for
+security reasons — and since 2026-09-05 the protocol is deployed on **Robinhood Chain
+mainnet (chain 4663)**, on the owner's decision of 2026-09-04 and without that board's soak and
+canary gates. No vault has been created on it yet, so nothing there holds member money.
 
 > **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
 > [docs/NOW.md](../NOW.md); the argued go/no-go board is
@@ -15,7 +18,13 @@ This protocol is immutable at deployment, so "ship" is a one-way door. This note
 to read the current posture without reconstructing it from PRs and audit prose. If a row here says
 NO-GO, real money should not go in.
 
-## Launch verdict: NO-GO — on operational gates only
+**And a contradiction that is stated rather than smoothed away:** on 2026-09-04 the owner decided
+to deploy to Robinhood Chain mainnet and to fund it, while the board this note mirrors said
+NO-GO. That verdict is about the Base mainnet launch and was not applied to chain 4663 — but the
+sentence above is advice, not a jurisdictional claim, and the deployment went against it. A reader
+should know that, and should not be left to reconcile the two from a date stamp.
+
+## Base mainnet launch verdict: NO-GO — on operational gates only
 
 Every **security** gate is cleared ([[launch-readiness-gates]]):
 
@@ -29,7 +38,9 @@ Every **security** gate is cleared ([[launch-readiness-gates]]):
   not in the repo. The scope list and the Low/Informational findings have **not** been published,
   and the gate reads *findings remediated*, not *no criticals*. **Do not describe this protocol as
   "audited" without that qualifier.**
-- **Gate 5 — mainnet oracle stack: GO with a named residual.** See below.
+- **Gate 5 — mainnet oracle stack: GO with a named residual**, earned against BASE feeds and the
+  Base L2 sequencer uptime feed. It says nothing about chain 4663, which has no sequencer uptime
+  feed and runs its feeds at the 86,400 s `MAX_HEARTBEAT` ceiling. See below.
 
 What still blocks GO is operational, not more code: the operational gates **3/6** (soak, canary) —
 gate 2 (testnet full lifecycle) is GO since 2026-09-03 — which [[launch-readiness-gates]] and
@@ -53,7 +64,9 @@ Chainlink answer; there is no second source to cross-check against. A feed depre
 fails that asset **CLOSED with no fallback** — every NAV path in a vault holding it, exits included,
 reverts until the feed recovers. A vault's oracle is `immutable` and the factory allowlist gates
 *creation* only, so there is **no rotation lever** (residual 12, "curation immobility"). The
-sequencer guard has never run against a real uptime feed outside the fork tests.
+sequencer guard has never run against a real uptime feed outside the fork tests — and the Robinhood
+Chain mainnet deployment did not change that, because Chainlink publishes no uptime feed for chain
+4663 to wire.
 
 The retired stack — `OracleAggregator.sol`, `PythSource.sol`, `UniswapV3TwapSource.sol` and the
 vendored `FullMath`/`TickMath` — now lives under **`contracts/test/retired/`**, kept solely as the
@@ -61,7 +74,16 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 
 ## Deployment state
 
-- **Deployed on Base Sepolia** (testnet only; nothing has ever been broadcast to mainnet).
+- **Deployed on Robinhood Chain mainnet (chain 4663) on 2026-09-05** — record
+  at `contracts/config/deployments/robinhood-mainnet.json`, `VaultFactory`
+  `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp). The singletons are
+  deployed and wired and **no vault has been created on it yet**: `smokeVault` is null in that
+  record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block
+  54,991,182, so no member funds are at stake there. Vault #1 is the creator Safe
+  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create.
+  **No Base mainnet deployment exists.** This line previously read
+  "testnet only; nothing has ever been broadcast to mainnet", which one transaction falsified.
+- **Deployed on Base Sepolia** (a testnet trial, no real value at stake).
   **The committed address book now IS the current deployment**, as of 2026-09-03.
   `contracts/config/deployments/base-sepolia.json` records `sourceCommit 8a0e1155`, deploy block
   46,307,173, factory `0xc1cb7824…9743`, and the adapter it names carries both the reentrancy mutex

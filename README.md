@@ -4,8 +4,8 @@ Rwally is the AI agent trading index on Robinhood Chain.
 Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the stated
-target chain, Robinhood Chain mainnet (chain id 4663). The
+move member funds — nothing rebalances until a proposal passes. Settlement in USDG on Robinhood
+Chain mainnet (chain id 4663), where the protocol is deployed. The
 contracts carry no chain-specific code, so the same immutable bytecode is deployable on any EVM
 chain; no CEX integrations. The next iteration, RWLY, is designed to accrue the protocol's fees
 into official Robinhood Stock Tokens; RWLY does not exist yet.
@@ -16,8 +16,9 @@ The basket the chain configuration prices is ETH and BTC. On Robinhood Chain tho
 addresses was read off chain 4663 rather than typed from memory, and all of them are committed in
 [`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json).
 
-**Not on mainnet. The launch verdict is NO-GO** — read [Status](#status) before anything else in
-this file.
+**Deployed on Robinhood Chain mainnet (chain 4663), and the launch verdict on the board is still
+NO-GO** — those are two different facts, and the second did not stop the first. Read
+[Status](#status) before anything else in this file.
 
 ## Why it exists
 
@@ -37,10 +38,27 @@ correct, and it is not a forecast.
 
 ## Status
 
-**Launch verdict: NO-GO.** The argued board is
-[docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) — nine gates, each with its evidence — and it
-is the authority whenever this section and that document disagree. What is in flight right now is
-[docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
+**Deployed 2026-09-05 on Robinhood Chain mainnet (chain id 4663), on the owner's decision
+of 2026-09-04, and on no other mainnet.** The address book is
+[`contracts/config/deployments/robinhood-mainnet.json`](contracts/config/deployments/robinhood-mainnet.json):
+`VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. That file is written from what
+the chain returned and is the authority for every address in it; nothing in this README is.
+
+**The singletons are deployed and wired, and no vault has been created on it yet.** `smokeVault` is
+null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at
+block 54,991,182. So there is nothing to deposit into there and no member funds are at stake. Vault
+#1 is the creator Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create: `createVault` fixes
+`msg.sender` as the vault's immutable creator and attested operator, and no later transaction can
+correct that. Two
+limits apply there and are stated wherever the chain is named: Chainlink publishes no L2 Sequencer
+Uptime Feed for 4663 and has said it will not add one, so `oracle.sequencerUptimeFeed` is the zero
+address and the gate returns early rather than reverting; and the feeds publish on an 86,400 s
+heartbeat, so a price up to a full day old is accepted — exactly `ChainlinkOracle.MAX_HEARTBEAT`.
+
+**Launch verdict: NO-GO.** That verdict is unchanged and was not cleared by deploying. The argued
+board is [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) — nine gates, each with its evidence
+— and it is the authority whenever this section and that document disagree. What is in flight right
+now is [docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
 
 **What remains is operational, legal and calendar-bound.** Two gates are open on the board: the
 soak drills (gate 3) and the canary re-run (gate 6), both marked STALE because the evidence behind
@@ -57,7 +75,7 @@ Low/Informational findings have been published. Do not describe this protocol as
 that qualifier. Whether that attestation currently stands as the basis for the gate is recorded in
 gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md), not here.
 
-**Base Sepolia only — never mainnet.** The full lifecycle has been run end to end on testnet —
+**The lifecycle evidence is Base Sepolia, and only Base Sepolia.** The full lifecycle has been run end to end on testnet —
 create, deposit, activate, propose, commit, reveal, finalize, execute, exit — and gate 2 of the
 board records that run and its stated limits. The address book committed at
 [`contracts/config/deployments/base-sepolia.json`](contracts/config/deployments/base-sepolia.json)
@@ -73,8 +91,8 @@ One qualifier, because "current" is narrower than it sounds: the only `contracts
 between `8a0e1155` and `protocol/main` is a NatSpec-only edit to `VaultDeployer.sol`, and with
 solc's default `ipfs` metadata that still changes `VaultDeployer`'s own bytecode trailer. The
 **vaults** it produces are byte-identical to a `protocol/main` build, because `VaultCore.sol` is
-unchanged. The address book's `bytecodeCurrency` block states this precisely. Nothing here is
-deployed to mainnet, and the gate board remains the authority on what is proven.
+unchanged. The address book's `bytecodeCurrency` block states this precisely. No testnet run is
+evidence about the mainnet deployment, and the gate board remains the authority on what is proven.
 
 ## Contracts
 

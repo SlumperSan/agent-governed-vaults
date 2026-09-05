@@ -445,6 +445,19 @@ const SEQUENCER_FAILS_CLOSED = [
  * this guard exists to stop is a reader believing the RUNTIME protects them, and a sentence that
  * names deploy-time enforcement is telling them the truth about where the protection lives.
  */
+// COMPANION GUARD, 2026-09-04 — read this before trusting the exemption below.
+//
+// This escape hatch says: a sentence attributing the enforcement to DEPLOY time is making the true
+// claim, so let it through. That was airtight while `requiresSequencerUptimeFeed` covered every
+// chain but local and Base Sepolia. It is not any more: chain 4663 is exempt, so on the chain the
+// protocol is deployed on there is no deploy-time enforcement either, and a sentence saying "mandatory,
+// enforced at deploy time" now walks past this guard while being false about that chain.
+//
+// The leg that closes it is NOT here, deliberately — it needs the deployment record to be
+// meaningful, and this suite must not depend on a file that only exists after a broadcast. It is
+// `scripts/test/claims-robinhood-deployment.test.mjs`, "every sentence crediting deploy-time
+// enforcement of the sequencer feed says which chains it does not cover". If that file is ever
+// deleted, this exemption is open again.
 const SEQ_DEPLOY_TIME_ENFORCEMENT = /deploy[- ]time|deploy script|at deploy|DeployChainlinkOracle|verify-chainlink-oracle/i;
 
 /**

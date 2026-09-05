@@ -35,7 +35,7 @@ the blessed set, and members see it at deposit time.
   the exploitable direction for share issuance (audit C-4). M-1 also rejects literal address
   duplication (`[S,S,S]`).
 - Consequence, stated openly: at three sources this leaves zero failure headroom, so an asset needs
-  **five** sources for integrity *and* tolerance — which is why `base-mainnet.json` is now
+  **five** sources for integrity *and* tolerance — which is why `base-mainnet.json`, the BASE reference configuration, is now
   NOT-DEPLOYABLE (#41). Freezes are deliberately **more** likely now (E2/E6): a quiet TWAP pool
   withholds (H-2) rather than quoting a stale tick as fresh.
 

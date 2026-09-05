@@ -30,7 +30,7 @@
 > - Remaining Mediums/Lows: dispositioned (accepted design-tradeoffs / off-chain / dormant) in the
 >   report's §1 table.
 >
-> **Launch is NO-GO on two external gates:** (1) the mainnet deploy config must supply
+> **The BASE mainnet launch is NO-GO on two external gates:** (1) the Base mainnet deploy config must supply
 > **real, on-chain-verified Base Chainlink feed addresses** (the `chainlinkOracle` block in
 > `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
@@ -95,7 +95,14 @@ The adapter warning that used to sit here is retired. The live adapter is
 the #108 scoped refund — established by ancestry against `8a0e1155`, not asserted. The earlier
 adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft path, is superseded.
 
-**No mainnet deployment exists.** The audit surface is the source at the tag above. Treat every
+**No Base mainnet deployment exists.** A Robinhood Chain mainnet deployment (chain 4663) does, made
+on 2026-09-05 and recorded at `contracts/config/deployments/robinhood-mainnet.json`. It was not
+audited as a deployment, and it holds no member funds: no vault has been created on it yet, so
+`smokeVault` is null in that record and `verifiedWiring["factory.vaultCount()"]` is 0. What is live
+there is the seven contracts and their wiring, and a reviewer should read the record's
+`bytecodeCurrency` block, which establishes byte-for-byte that all seven are what `sourceCommit`
+`b1cde122` builds. The audit surface is the source at the tag
+above. Treat every
 testnet instance as evidence about the bytecode it actually ran, and check which commit that was
 before relying on it.
 
