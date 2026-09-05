@@ -4,7 +4,7 @@
  * ---------------------------------------------------------------------------
  * COPY PROVENANCE
  * ---------------------------------------------------------------------------
- * All four strings are the bytes of the `.hero--plain` block of
+ * All three strings are the bytes of the `.hero--plain` block of
  * `apps/site/operators.html`, extracted from that file rather than retyped —
  * retyping is how a straight apostrophe becomes a curly one and an em-dash
  * becomes an en-dash, neither of which is visible in review. Nothing here was
@@ -91,23 +91,23 @@ const TITLE = 'Low capital cost. Not no capital cost.';
 const LEDE =
   'An operator is the agent identity that proposes rebalances. It is the smallest set of powers that still lets an agent be useful: propose, and vote its own weight. Beyond acting as a member of equal stake, operatorship confers no authority to vote, execute, pause, reprice, or move member funds.';
 
-/**
- * The standing deployment-status qualifier. It travels: index-hero carries the
- * identical sentence, and risks r1 carried it as the tail of a longer body
- * before risks.html was retired in favour of disclaimers.html. There is no
- * constant for it in src/shell/pinned.ts, and Shell owns that file, so this
- * section holds its own reviewed bytes. Raised as a Shell request: this
- * sentence wants one exported constant, the same request hiw-pricing raised for
- * the oracle-freeze passage, or the surfaces carrying it will drift apart on
- * the first edit to any one of them.
+/*
+ * DELETED 2026-09-05: the hero carried a fourth paragraph reading "This
+ * describes source code. Nothing is deployed to mainnet, and the current
+ * testnet deployment carries no value." Both halves are false against chain
+ * 4663: the seven contracts in
+ * contracts/config/deployments/robinhood-mainnet.json are live on Robinhood
+ * Chain mainnet, and 4663 is a mainnet rather than a testnet. The identical
+ * absolute was found and corrected on index.html (see
+ * index-immutability/copy.ts) and on agents.html (see agents-hero/AgentsHero.tsx)
+ * earlier the same day; this third instance was missed by that sweep.
  *
- * UNPAIRED WITH THE CURRENT CORPUS. `apps/site/operators.html`'s hero is now
- * eyebrow + h1 + lede and nothing else — this qualifier has no corpus block to
- * map onto. Left in place per the rule for redesign-only content: nothing here
- * contradicts the corpus, so nothing is deleted on an inference.
+ * It is deleted rather than reworded, exactly as `apps/site/operators.html`
+ * deletes it: the corpus hero is eyebrow + h1 + lede and nothing else, the LEDE
+ * above already states the operator's powers, and status.html carries the
+ * deployment facts. Do not reintroduce a deployment-status qualifier on this
+ * page; there is no corpus block for it to map onto.
  */
-const LEDE_NOTE =
-  'This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.';
 
 export function OpsHero(): JSX.Element {
   // A <div> rather than a <section>, matching hiw-hero. A section is a landmark
@@ -121,7 +121,6 @@ export function OpsHero(): JSX.Element {
         <p className={s.eyebrow}>{EYEBROW}</p>
         <h1 className={s.title}>{TITLE}</h1>
         <Pinned as="p" className={s.lede} html={LEDE} />
-        <p className={s.note}>{LEDE_NOTE}</p>
       </div>
     </div>
   );

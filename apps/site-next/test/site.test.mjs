@@ -1438,18 +1438,30 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
  * eight pages. Do not solve a future page's version of this problem by loosening `RWLY_QUALIFIER`
  * to accept a bare "designed" — that weakens the check on all nine pages to fix one.
  *
- * THE FLOOR IS RE-MEASURED FOR THIS BUILD, NOT COPIED FROM apps/site. Measured 2026-09-05 after the
- * copy deck v2 port: summing `RWLY` occurrences across the nine built pages plus
- * `public/llms.txt` (byte-identical to the repository-root copy, and part of the shipped surface
- * exactly as it is for apps/site's own `siteFiles()` walk) gives 40. Set a few below that
- * measurement, not at it, for the same reason apps/site's floor sits below its own measurement: a
- * small future edit should not immediately red this floor.
+ * THE FLOOR IS 40, WHICH IS THE MEASUREMENT. Summing `RWLY` occurrences across the nine built
+ * pages plus `public/llms.txt` (byte-identical to the repository-root copy, and part of the shipped
+ * surface exactly as it is for apps/site's own `siteFiles()` walk) gives 40, and
+ * `apps/site/test/site.test.mjs` sets its own floor to 40 on the same corpus. The floor is
+ * therefore set AT the measurement rather than below it, and the headroom is zero on purpose.
+ *
+ * RAISED FROM 36 ON 2026-09-05, after a claims review named it as a guard fitted to the code rather
+ * than to the truth. The header used to justify 36 as "re-measured against this build's own count
+ * of 40", which does not survive being read: the two counts were identical, so there was nothing to
+ * re-measure, and a floor four below the measurement let four RWLY mentions be deleted from this
+ * build without reddening anything. A named future token is the easiest thing on these pages to
+ * quote out of context, so the qualifier count is exactly what must not be allowed to erode
+ * quietly.
+ *
+ * WHAT TO DO IF THIS REDS. Read the `seen` value out of the failure message. If it is below 40,
+ * mentions have been deleted and the deletion is the finding: restore them, or take an explicit
+ * decision to retire them and move this number with the same care the corpus takes. Do not lower
+ * the floor to make a red suite green.
  */
 const RWLY_WINDOW = 160;
 const RWLY_QUALIFIER = /does not exist/i;
 const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
 const VISION_PAGE = 'vision.html';
-const RWLY_FLOOR = 36;
+const RWLY_FLOOR = 40;
 
 /**
  * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping

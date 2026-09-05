@@ -20,9 +20,9 @@
    property — and neither appears below. Nothing here is named for an outcome,
    a funnel step, or a party who acts on a depositor's behalf.
 
-   WHY IT MOVES SO LITTLE. The paragraph tells a reader not to point unreviewed
-   code at real capital, and then three links point onward. A closing block
-   that performs would be the design arguing with that instruction. The only
+   WHY IT MOVES SO LITTLE. Three links point onward and nothing else does. A
+   closing block that performs would be the design arguing with the page above
+   it, which is a page about what an operator owes. The only
    movement is the 0.4s opacity transition OpsReferenceAgent.tsx adds through
    <Reveal>; the only state change here is a luminance shift on hover and
    focus. Nothing changes size, ever — a control that grows under the pointer
@@ -39,33 +39,10 @@
   padding-block: var(--s8) var(--s6);
 }
 
-.eyebrow {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: var(--step-eyebrow);
-  letter-spacing: var(--track-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-/* The last display line on the page. It takes the h2 step from the global
-   sheet; only the space around it and its measure belong to this section. The
-   ceiling keeps the sentence to two lines at the widest column, which is where
-   it reads as one statement rather than as a paragraph. */
-.heading {
-  max-width: 26ch;
-  margin-top: var(--s3);
-  color: var(--ink);
-}
-
-/* Full ink, not the secondary tone. It is three sentences of instruction, and
-   the last clause is the reason the section exists; setting it back from the
-   heading would present it as a footnote to the heading rather than as the
-   substance of it. The measure comes from the global prose rule. */
-.body {
-  margin-top: var(--s5);
-  color: var(--ink);
-}
+/* `.eyebrow`, `.heading` and `.body` were deleted on 2026-09-05 with the
+   markup they styled: the reference-agent caveat this section repeated is
+   numbered risk 12 on disclaimers.html, and the corpus's closing block on
+   operators.html is actions-only. See OpsReferenceAgent.tsx. */
 
 .actions {
   display: flex;
@@ -76,7 +53,7 @@
 
 /* Three ways out: two further into the disclosures, the third into the
    repository. They are links, and they look like links that have been given a
-   target area — not like a control that submits, which is the one thing this
+   target area, not like a control that submits, which is the one thing this
    page has none of. */
 .action {
   display: inline-flex;
@@ -105,10 +82,10 @@
   color: var(--accent);
 }
 
-/* One emphasised link out of three, and it is the risk register — the page the
-   paragraph above has just told the reader they inherit. Emphasising the
-   repository instead would point a reader at the unreviewed code in the same
-   breath as the sentence warning them about it. */
+/* One emphasised link out of three, and it is the Disclaimers page, where
+   every warning, limit and unresolved question on this site now sits.
+   Emphasising the repository instead would point a reader at unreviewed code
+   ahead of the page that says it is unreviewed. */
 .actionPrimary {
   border-color: var(--accent);
   background: var(--accent);
@@ -140,7 +117,7 @@
 
    Below it they become one per line, which sets them as a deliberate list. The
    column is bounded rather than full-bleed: at the top of the band a row of
-   three full-width bars is heavier than the paragraph above it, and bounding
+   three full-width bars is heavier than the section above it, and bounding
    the column keeps them reading as three links. Below the bound the column
    shrinks with the page, so on the narrowest screen they are full width and
    the target area is as large as it can be. */

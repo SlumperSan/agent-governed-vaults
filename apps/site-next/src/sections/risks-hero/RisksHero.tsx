@@ -34,7 +34,7 @@
  * page, including this one. Corpus wants each to appear on disclaimers.html
  * exactly once and nowhere else; with Footer.tsx unchanged, this page now
  * renders each TWICE (once here, once in the footer's Standing facts column)
- * and the other seven pages still render each ONCE (only in the footer),
+ * and the other eight pages still render each ONCE (only in the footer),
  * where corpus wants zero. The site.test.mjs guard constants for these counts
  * were set to match this actual, achievable shape rather than the corpus's
  * unreachable one — see that file's comment on FOOTER_SENTENCE_COUNTS.
@@ -50,8 +50,15 @@ const EYEBROW = 'Disclaimers';
 
 const TITLE = 'Everything that can go wrong, in one place.';
 
+/**
+ * CORRECTED 2026-09-05: the count read "The other seven pages". The site has
+ * nine pages, so excluding this one there are eight; the seven was stale from
+ * before vision.html was added. `apps/site/disclaimers.html:51` says eight,
+ * risks-scope-additions says eight in its own heading on this same page, and
+ * this sentence disagreed with both.
+ */
 const LEDE =
-  'Every warning, limit and unresolved question on this site is on this page. The other seven pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.';
+  'Every warning, limit and unresolved question on this site is on this page. The other eight pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.';
 
 /** The deployment paragraph. Opens with DEPLOYED_LINE, verbatim from pinned.ts. */
 const DEPLOYMENT_PARAGRAPH = `${DEPLOYED_LINE} The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.`;

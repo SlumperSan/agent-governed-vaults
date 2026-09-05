@@ -2,21 +2,25 @@
  * ops-reference-agent — the closing section of operators.html, and the last
  * thing that page says.
  *
- * WHAT IT IS FOR. The four sections above it describe what an operator owes,
- * what an operator may and may not do, and what an operator earns. This one
- * describes the software in the repository that an operator might reach for,
- * and it does so by naming its limits: it is beta code, and the contract
- * security review did not cover it. The page therefore closes on a warning
- * rather than on an invitation, and then hands the reader onward — the risk
- * register first, the mechanism second, the source third. There is no field,
- * no control that submits, and nothing here that asks the reader for anything.
+ * WHAT IT IS FOR. It hands the reader onward, and that is all it does now: the
+ * Disclaimers page first, the mechanism second, the source third. There is no
+ * field, no control that submits, and nothing here that asks the reader for
+ * anything.
+ *
+ * WHAT IT USED TO CARRY, AND WHY IT DOES NOT. Until 2026-09-05 this section
+ * also carried an eyebrow, an h2 and a paragraph saying the reference agent is
+ * beta code and outside the contract review's scope. That caveat is numbered
+ * risk 12 on disclaimers.html and renders there correctly, so the page body was
+ * stating it a second time in weaker wording. `apps/site/operators.html`
+ * carries no such block, and the owner's 2026-09-05 decision puts every risk,
+ * warning and caveat on one page. See ./copy.ts for the deleted strings.
  *
  * WHY IT MOVES AS LITTLE AS IT DOES. A 0.4s fade on the block as a whole: no
  * rise, no stagger, nothing per-item. The brief pins this section to a plain
- * fade, and a staggered three-button flourish under a paragraph telling a
- * reader not to point unreviewed code at real capital would be the design
- * arguing with the copy in the last thing they see. `<Reveal rise={0}>` is a
- * pure opacity transition; nothing here travels.
+ * fade, and a staggered three-button flourish at the foot of a page about what
+ * an operator owes would be the design arguing with the copy in the last thing
+ * a reader sees. `<Reveal rise={0}>` is a pure opacity transition; nothing here
+ * travels.
  *
  * THE STATIC BRANCH IS `<Reveal>` ITSELF, not a second path beside it. It
  * starts nothing for a reader who asked for reduced motion, nothing for an
@@ -38,20 +42,15 @@
  *      reader with motion reduced or with JavaScript unavailable keeps.
  *      Nothing branches on `matchMedia` or on viewport width, so the subtree
  *      the guards verified is the subtree hydration keeps.
- *   3. THE COPY IS BYTES, NOT TEXT CHILDREN, wherever a guard could read it.
- *      `renderToString` escapes text children; a guard matching the raw file
- *      does not match an escaped entity. See ./copy.ts and
- *      src/shell/PinnedText.tsx.
+ *   3. ANY COPY ADDED BACK IS BYTES, NOT TEXT CHILDREN, wherever a guard could
+ *      read it. `renderToString` escapes text children; a guard matching the
+ *      raw file does not match an escaped entity. See ./copy.ts and
+ *      src/shell/PinnedText.tsx. Nothing in this section is prose today.
  *
- * WHY THE `<section>` SITS OUTSIDE `<Reveal>`. The landmark is named by
- * `aria-labelledby` pointing at its own heading, so it carries no invented
- * prose; `<Reveal>` takes no arbitrary attributes, so it wraps the reading
- * column instead. That is also the right thing to animate — a landmark that
- * fades is a landmark briefly missing from what a screen reader can see.
- *
- * THE HEADING ID IS DERIVED FROM THE SECTION KEY. Four other sections land on
- * operators.html and each names its own landmark the same way, so collision is
- * avoided by construction rather than by luck.
+ * WHY THE `<section>` SITS OUTSIDE `<Reveal>`. `<Reveal>` takes no arbitrary
+ * attributes, so it wraps the reading column rather than the section element.
+ * That is also the right thing to animate: a landmark that fades is a landmark
+ * briefly missing from what a screen reader can see.
  *
  * WHAT THIS FILE MAY NOT DO, restated because it is easy to drift into: it
  * owns `src/sections/ops-reference-agent/` and nothing else. `wrap` is the
@@ -61,8 +60,7 @@
  */
 import type { JSX } from 'react';
 import { Reveal } from '../../motion/Reveal';
-import { Pinned } from '../../shell/PinnedText';
-import { ACTIONS, BODY, EYEBROW, HEADING } from './copy';
+import { ACTIONS } from './copy';
 import s from './OpsReferenceAgent.module.css';
 
 /**
@@ -73,25 +71,24 @@ import s from './OpsReferenceAgent.module.css';
  */
 const FADE_SECONDS = 0.4;
 
-/**
- * The heading's id, used to name the section landmark. A `<section>` with no
- * accessible name is a generic container rather than a landmark, and naming it
- * from the heading already on the page means the landmark carries no new
- * sentence.
+/*
+ * NO `aria-labelledby`, AND NO HEADING TO POINT ONE AT. The section carried an
+ * h2 until 2026-09-05; it was deleted with the rest of the reference-agent
+ * caveat (see ./copy.ts), which leaves this block as the corpus's own
+ * actions-only closing `<section>`. An unnamed `<section>` is not exposed as a
+ * landmark at all, which is correct for a row of links and is what
+ * `apps/site/operators.html` renders. An `aria-labelledby` pointing at an id
+ * that no longer exists would be worse than no name, so it goes with the
+ * heading rather than being left dangling.
  */
-const HEADING_ID = 'reference-agent-heading';
 
 export function OpsReferenceAgent(): JSX.Element {
   return (
-    <section className={s.section} aria-labelledby={HEADING_ID}>
+    <section className={s.section}>
       {/* One target, one fade. `rise={0}` is the whole motion spec: opacity
-          only, so the three links do not slide up under the warning above
+          only, so the three links do not slide up under the section above
           them. */}
       <Reveal as="div" className="wrap" duration={FADE_SECONDS} rise={0}>
-        <p className={s.eyebrow}>{EYEBROW}</p>
-        <Pinned as="h2" id={HEADING_ID} className={s.heading} html={HEADING} />
-        <Pinned as="p" className={s.body} html={BODY} />
-
         <div className={s.actions}>
           {ACTIONS.map((a) => (
             <a

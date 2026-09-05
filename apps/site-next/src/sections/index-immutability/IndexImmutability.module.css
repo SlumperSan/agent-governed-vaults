@@ -137,39 +137,10 @@
   transition: color var(--dur-mid) var(--ease-enter);
 }
 
-/* --- the note that reads every card the other way --------------------------
-   Status colour, used as status: this block exists to say the four cards above
-   are also four limitations. The hairline is on the inline start edge so the
-   reversal is visible before the first word is read. */
-
-.noteWarn {
-  max-width: 46rem;
-  padding: var(--s5) var(--s6);
-  border-inline-start: 2px solid var(--warn);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--warn-wash);
-}
-
-.label {
-  display: block;
-  margin-bottom: var(--s3);
-  font-family: var(--mono);
-  font-size: var(--step-eyebrow);
-  letter-spacing: var(--track-eyebrow);
-  text-transform: uppercase;
-  color: var(--warn);
-}
-
-.noteWarn p {
-  max-width: none;
-  color: var(--ink);
-}
-
-/* Spacing only. BOTH paragraphs sit at --ink, deliberately: the second one is
-   the sentence that scopes all four cards to source rather than to running
-   code, and dimming it would rank a deployment negation below the paragraph
-   above it. The reviewed original renders the two at equal weight; same facts,
-   same strength, same scope means the luminance travels too. */
-.noteWarn p + p {
-  margin-top: var(--s4);
-}
+/* --- the note that read every card the other way, DELETED 2026-09-05 -------
+   `.noteWarn`, `.label` and their two descendant rules styled a callout that
+   restated the four cards as four limitations. The callout is on
+   disclaimers.html now, under `Immutability, read the other way`, because the
+   owner's 2026-09-05 decision puts every caveat on that one page. See
+   IndexImmutability.tsx and ./copy.ts. Nothing in this section is a callout,
+   and nothing here should become one. */

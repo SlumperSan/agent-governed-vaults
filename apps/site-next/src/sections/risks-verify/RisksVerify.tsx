@@ -18,15 +18,15 @@
  *
  * PARTLY CARRIED HERE, AND THE REST IS STILL OPEN. The corpus's "The limits of
  * every claim on this site" section, the one immediately BEFORE this one in
- * document order, is a large block: a seventeen-entry `<dl>` restating a
+ * document order, is a large block: a twenty-two-entry `<dl>` restating a
  * caveat from each of the other pages (grep `Immutability, read the other way`
  * for its start), followed by a "Four groups this is wrong for" four-item grid.
- * Two rounds have taken pieces of it. `risks-scope-additions` carries the FOUR
- * `<dl>` rows copy deck v2 added, and, since round 8, the four-item grid, which
- * moved out of who-its-for.html to the page and the position the corpus has
- * kept it in since PR #220. What is still corpus-only is the THIRTEEN
- * pre-existing `<dl>` rows: no new component is invented for those here, and
- * they are reported as a corpus-only block with no redesign counterpart.
+ * `risks-scope-additions` now carries all of it. It arrived in three rounds:
+ * the four `<dl>` rows copy deck v2 added, then the four-item grid in round 8,
+ * which moved out of who-its-for.html to the page and the position the corpus
+ * has kept it in since PR #220, then on 2026-09-05 the eighteen pre-existing
+ * `<dl>` rows that a claims review found the redesign was not disclosing.
+ * Nothing in that corpus section is corpus-only any more.
  *
  * NO MOTION. The brief's motion line for this section is "None." — so there is
  * no `Reveal`, no effect and no `useReducedMotion` call in this file. The

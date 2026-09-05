@@ -6,17 +6,17 @@
  * holds` for the heading, `Cannot be paused or upgraded` for the first card).
  * Nothing here was rewritten, re-punctuated or tightened, and nothing in the
  * four cards is new: this section writes no card sentence the current site
- * does not already carry. The NOTE_LABEL/NOTE_PARAGRAPH_* block below the
- * cards is the one exception — it has no corpus counterpart at all; see its
- * own comment.
+ * does not already carry. Since 2026-09-05 the four cards are the whole of it;
+ * the warn note that used to sit below them is gone, and the note at the foot
+ * of this file records where it went and why.
  *
  * WHY BYTES RATHER THAN TEXT. `renderToString` escapes text children, so an
  * apostrophe reaches `dist/index.html` as `&#x27;` and a byte-comparison
  * against the reviewed original fails on markup that looks perfect in a
  * browser. These are rendered through `<Pinned>` (src/shell/PinnedText.tsx),
- * which writes them straight onto the semantic element. Three of the strings
- * below carry an apostrophe or an em-dash for exactly that reason; the rest are
- * held the same way so the section has one rule rather than two.
+ * which writes them straight onto the semantic element. One of the strings
+ * below carries an apostrophe for exactly that reason; the rest are held the
+ * same way so the section has one rule rather than two.
  *
  * WHAT IS NOT HERE. The `Cannot take your funds` body is `OPERATOR_ENUMERATED`
  * in `src/shell/pinned.ts` and is imported from there, not retyped. It is the
@@ -82,23 +82,23 @@ export const CARD_3_BODY =
 export const CARD_4_BODY =
   'Once a vault is funded its rules are immutable, except by full consensus of voting-eligible stake plus a timelock. Nobody can raise a fee or shorten a delay after you deposit.';
 
-/* --- the warn note ---------------------------------------------------------
-   The reversal. Every card above is restated as a limitation, and the second
-   paragraph scopes all four to SOURCE rather than to anything running. */
+/* --- the warn note, DELETED 2026-09-05 -------------------------------------
+   `NOTE_LABEL` ("The same fact, read the other way"), `NOTE_PARAGRAPH_1` (the
+   reversal of all four cards) and `NOTE_PARAGRAPH_2` (the source-versus-live
+   scoping) are gone, with the markup that rendered them.
 
-export const NOTE_LABEL = 'The same fact, read the other way';
+   WHY. The owner's 2026-09-05 decision puts every risk, warning, caveat and
+   negative statement on disclaimers.html and leaves page bodies positive and
+   factual. `apps/site/index.html` carries no note under this section, and the
+   reversal is on the Disclaimers page in the corpus's own words, as the row
+   headed `Immutability, read the other way` in
+   src/sections/risks-scope-additions/RisksScopeAdditions.tsx.
 
-export const NOTE_PARAGRAPH_1 =
-  'Every line above is also a limitation. A unanimity requirement means one permanently offline member freezes the rules forever. No pause means no circuit breaker if something is wrong. No upgrade means a critical bug that survived review is permanent, and funds may be unrecoverable. We are not going to pretend those are features.';
+   NOTE_PARAGRAPH_2 had already been corrected once, on 2026-09-05, because its
+   original form asserted that nothing was deployed to mainnet and the seven
+   contracts on Robinhood Chain had falsified that. It is deleted rather than
+   carried: index-status states the deployment and the empty factory on this
+   same page, so nothing true is lost with it.
 
-/**
- * CORRECTED 2026-09-05: was "Nothing is deployed to mainnet, so none of it can
- * be checked against mainnet bytecode today." That is now false — the core
- * contracts are on Robinhood Chain mainnet (see status.html) — so the claim is
- * rescoped to what is actually still true: no vault exists yet to exercise any
- * of these four rules against. This whole note has no corpus counterpart (see
- * the file-level comment); flagged as such rather than silently carried over
- * with a stale claim inside it.
- */
-export const NOTE_PARAGRAPH_2 =
-  'All four describe source. The core contracts are on Robinhood Chain mainnet, but no vault has been created yet, so none of this has been exercised by a live vault.';
+   Do not restore a note to this section. The four cards state what nobody can
+   do; the Disclaimers page states what that costs a reader. */

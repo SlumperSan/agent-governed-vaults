@@ -1,6 +1,6 @@
 /**
  * disclaimers.html — risks.html's replacement, the fifteen-entry register
- * plus the standing disclosures the other seven pages used to repeat, in
+ * plus the standing disclosures the other eight pages used to repeat, in
  * document order.
  *
  * RisksContents' heading AND its own closing paragraph are both COMPUTED by
@@ -22,8 +22,8 @@ import RisksVerify from '../sections/risks-verify/RisksVerify';
 
 // ORDER MATCHES apps/site/disclaimers.html: hero, contents, the fifteen-entry
 // register, the security-review status, then "The limits of every claim on
-// this site" (RisksScopeAdditions — see that file for why it carries only
-// four rows rather than the corpus's full seventeen), then "How to check
+// this site" (RisksScopeAdditions, which since 2026-09-05 carries all
+// twenty-two of the corpus's rows and its intro sentence), then "How to check
 // every claim on this page." (RisksVerify).
 export default function DisclaimersPage() {
   return (

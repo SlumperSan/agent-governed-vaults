@@ -63,17 +63,10 @@
   color: var(--muted);
 }
 
-/* The standing deployment-status qualifier. Set smaller and behind a hairline
-   so it reads as the footnote to the lede that it is, rather than as a fifth
-   claim. The rule is --line-strong because at this size --line disappears. */
-.note {
-  max-width: var(--measure);
-  padding-left: var(--s4);
-  border-left: 1px solid var(--line-strong);
-  font-size: var(--step-small);
-  line-height: 1.55;
-  color: var(--faint);
-}
+/* `.note` was deleted on 2026-09-05 along with the paragraph it styled: the
+   hero's deployment-status qualifier was false against chain 4663. See
+   OpsHero.tsx for the full record. The corpus hero is eyebrow + h1 + lede, and
+   so is this one. */
 
 /* --- enter ----------------------------------------------------------------
    Opacity and an eight-pixel rise, 0.6s on the shared enter curve, staggered
@@ -94,8 +87,7 @@
 
 .eyebrow,
 .title,
-.lede,
-.note {
+.lede {
   animation: heroEnter 0.6s var(--ease-enter) both;
 }
 
@@ -111,10 +103,6 @@
   animation-delay: 0.16s;
 }
 
-.note {
-  animation-delay: 0.24s;
-}
-
 /* The static branch, authored rather than inherited. index.css collapses every
    animation-duration for a reader who asked for reduced motion, but it does not
    touch animation-delay, so the staggered elements would still hold their
@@ -123,8 +111,7 @@
 @media (prefers-reduced-motion: reduce) {
   .eyebrow,
   .title,
-  .lede,
-  .note {
+  .lede {
     animation: none;
   }
 }

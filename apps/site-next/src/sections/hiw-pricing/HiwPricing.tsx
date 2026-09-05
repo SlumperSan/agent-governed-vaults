@@ -73,12 +73,14 @@ const CLOSING =
 /**
  * The Staleness breaker body carries the ORACLE-FREEZE PASSAGE, which the build
  * brief lists among the passages that travel between pages and must stay
- * byte-identical wherever they land — hiw-pricing, disclaimers, faq, who-its-for,
- * agents-capabilities and index-losses all state it.
+ * byte-identical wherever they land: hiw-pricing, disclaimers, faq, who-its-for
+ * and agents-capabilities all state it. index-losses used to be a sixth; it was
+ * deleted on 2026-09-05 when the home page's caveat blocks moved to
+ * disclaimers.html.
  *
  * `src/shell/pinned.ts` exports no constant for it, and Shell owns that file, so
  * this section holds its own reviewed bytes here. Raised as a Shell request: the
- * passage wants one exported constant, or the other five surfaces will each
+ * passage wants one exported constant, or the other four surfaces will each
  * retype it and the first edit will split them.
  */
 const ROWS: ReadonlyArray<{ term: string; body: string }> = [

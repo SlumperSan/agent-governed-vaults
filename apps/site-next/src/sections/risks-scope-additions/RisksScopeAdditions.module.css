@@ -1,5 +1,5 @@
 /* ===========================================================================
-   risks-scope-additions — four new disclosures added by copy deck v2
+   risks-scope-additions: the whole of "The limits of every claim on this site"
    ---------------------------------------------------------------------------
    Owned by this section. Every colour and length below is a token from
    src/tokens.css. Deliberately the same shape as risks-verify's own <dl> —
@@ -26,6 +26,15 @@
   margin: 0 0 var(--s6);
   max-width: 22ch;
   color: var(--ink);
+}
+
+/* The intro sentence, between the heading and the list. Same shape as
+   risks-verify's own lede, which sits immediately below this section: the two
+   read as one run of static disclosures rather than as two components. */
+.lede {
+  margin: 0 0 var(--s6);
+  max-width: var(--measure);
+  color: var(--muted);
 }
 
 .rows {
