@@ -1,6 +1,7 @@
 /**
  * risks-scope-additions — the four new caveats copy deck v2 adds to
- * disclaimers.html's "The limits of every claim on this site" section.
+ * disclaimers.html's "The limits of every claim on this site" section, and the
+ * "Four groups this is wrong for" grid that closes the same corpus section.
  *
  * ---------------------------------------------------------------------------
  * WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT
@@ -9,12 +10,25 @@
  * claim on this site" (eyebrow) / "What the other eight pages leave out."
  * (h2): a seventeen-entry `<dl>` restating a caveat from each of the other
  * pages, followed by a "Four groups this is wrong for" grid.
- * `risks-verify/RisksVerify.tsx` records, as of the 2026-09-05 site-next port,
- * that this whole block has NO redesign counterpart — "Per the build brief,
- * no new component is invented for it here; it is reported as a corpus-only
- * block with no redesign counterpart." That decision predates this file and
- * is NOT reopened here: the thirteen pre-existing rows and the "Four groups"
- * grid still have no home in this build.
+ * `risks-verify/RisksVerify.tsx` recorded, as of the 2026-09-05 site-next
+ * port, that this whole block had NO redesign counterpart: "Per the build
+ * brief, no new component is invented for it here; it is reported as a
+ * corpus-only block with no redesign counterpart." That decision is only
+ * half-reopened here: the THIRTEEN pre-existing `<dl>` rows still have no home
+ * in this build and this round does not give them one.
+ *
+ * THE "FOUR GROUPS" GRID NOW DOES HAVE A HOME, and it is this section, in the
+ * document position the corpus puts it in, after the `<dl>`, inside the same
+ * `<section>`, under an `<h3>`. It did not arrive from nowhere: this build
+ * rendered the identical four entries on who-its-for.html, as a section headed
+ * `Not for you if` / `Four groups this is explicitly wrong for at launch.`,
+ * which is the shape `apps/site/who-its-for.html` carried until PR #220
+ * (`2faed164`) deleted it there and put the four groups here under the shorter
+ * corpus heading below. Round 8 completes that migration rather than starting
+ * one: two strings the corpus had already retired go with it, and the eight
+ * that remain, four titles and four bodies, are byte-identical to
+ * `apps/site/disclaimers.html`. See `groups.ts` for the provenance of each and
+ * for why who-its-for.html needs no new pointer sentence.
  *
  * What changed on 2026-09-05 (copy deck v2, the hive story and the pivot to
  * an all-stocks index) is that FOUR NEW rows were added to that same corpus
@@ -46,11 +60,37 @@
  */
 import type { JSX } from 'react';
 import { Pinned } from '../../shell/PinnedText';
+import {
+  CARD_1_BODY,
+  CARD_1_TITLE,
+  CARD_2_BODY,
+  CARD_2_TITLE,
+  CARD_3_BODY,
+  CARD_3_TITLE,
+  CARD_4_BODY,
+  CARD_4_TITLE,
+} from './groups';
 import s from './RisksScopeAdditions.module.css';
 
 const EYEBROW = 'The limits of every claim on this site';
 
 const HEADING = 'What the other eight pages leave out.';
+
+/**
+ * The corpus's own <h3>, byte for byte from `apps/site/disclaimers.html`.
+ * Shorter than the `Four groups this is explicitly wrong for at launch.` this
+ * build printed on who-its-for.html, because PR #220 shortened it when it moved
+ * the block; the corpus wording is the current one and this is now the site's
+ * only copy of either.
+ */
+const GROUPS_HEADING = 'Four groups this is wrong for';
+
+const GROUPS: ReadonlyArray<{ title: string; body: string }> = [
+  { title: CARD_1_TITLE, body: CARD_1_BODY },
+  { title: CARD_2_TITLE, body: CARD_2_BODY },
+  { title: CARD_3_TITLE, body: CARD_3_BODY },
+  { title: CARD_4_TITLE, body: CARD_4_BODY },
+];
 
 /**
  * NOT the corpus's full seventeen-entry list — see the file header. These are
@@ -107,6 +147,21 @@ export function RisksScopeAdditions(): JSX.Element {
             </div>
           ))}
         </dl>
+
+        {/* An h3 under this section's own h2, and an h4 per entry: the corpus's
+            heading levels, and the reason this block is not a section of its
+            own. It closes the same run of disclosures the dl above opens. */}
+        <h3 className={s.groupsHeading}>{GROUPS_HEADING}</h3>
+        <div className={s.groups}>
+          {GROUPS.map((group) => (
+            <div className={s.entry} key={group.title}>
+              <h4 className={s.entryTitle}>{group.title}</h4>
+              {/* CARD_4_BODY carries the exempted good-faith clause and the
+                  jurisdiction sentence, from one string. */}
+              <Pinned as="p" className={s.entryBody} html={group.body} />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

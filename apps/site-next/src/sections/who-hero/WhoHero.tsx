@@ -90,9 +90,15 @@
  * NO NUMBERS
  * ---------------------------------------------------------------------------
  * This section states no figure, so there is no value to cite to a contract
- * line. Every quantity on who-its-for.html — the planned 50,000 USDG capacity
- * cap, the 250,000 USDG second vault, the 30 incident-free days — is stated
- * further down the page and belongs to who-not-for and who-cap.
+ * line. NEITHER DOES THE PAGE ANY MORE, and that is worth stating because this
+ * note used to enumerate three quantities that were here: the planned 50,000
+ * USDG capacity cap, the 250,000 USDG second vault and the 30 incident-free
+ * days. Copy deck v2 dropped all three with the pilot vault they described
+ * (`grep -c` finds none of them in `apps/site/who-its-for.html` or in this
+ * build's `dist/who-its-for.html`), and round 8 moved the four groups this
+ * design is wrong for to disclaimers.html, so the only figure-bearing section
+ * left on the page is who-cap, whose figure is `factory.vaultCount()`
+ * returning 0.
  *
  * ---------------------------------------------------------------------------
  * MOTION

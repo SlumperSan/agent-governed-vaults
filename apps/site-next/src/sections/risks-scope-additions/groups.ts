@@ -1,14 +1,34 @@
 /**
- * who-not-for — the reviewed copy, held as HTML source bytes.
+ * The four groups this is wrong for: the reviewed copy, held as HTML source
+ * bytes. Rendered by RisksScopeAdditions, on disclaimers.html.
+ *
+ * IT MOVED HERE ON 2026-09-05, ROUND 8, OUT OF who-its-for.html, and the move
+ * is the corpus's own rather than a judgement made here. PR #220
+ * (`2faed164`, "site: Rwally, one Disclaimers page, and the guards rewritten
+ * to match") deleted the `Not for you if` section from
+ * `apps/site/who-its-for.html` outright and put these four groups on
+ * `apps/site/disclaimers.html` under `<h3>Four groups this is wrong for</h3>`,
+ * with this build's port never following. Its commit message states the rule
+ * it was applying: page bodies are positive and factual, and the Disclaimers
+ * page carries every risk, warning and caveat. Four headings that open "Anyone
+ * who cannot..." are caveats by that rule, so they belong on the page that
+ * holds them, and who-its-for keeps the factual half: what the design assumes,
+ * what the deal is, and that nothing is capped because nothing is created.
+ *
+ * NO POINTER SENTENCE WAS ADDED TO who-its-for TO REPLACE THEM. It already
+ * closes on `who-decide` ("Read the Disclaimers in full, then decide." with
+ * the Disclaimers link as its lead action), which is the pointer, and it is
+ * the pointer `apps/site/who-its-for.html` itself closes on. Writing a second
+ * one here would put a sentence in this build that the corpus does not carry,
+ * and text-for-text sync with that corpus is the point of the pairing.
  *
  * WHERE IT CAME FROM. Every string below is lifted byte-for-byte from the
- * `Not for you if` section of `apps/site/who-its-for.html` (lines 93-114 at the
- * time of writing). Nothing here was rewritten, re-punctuated or tightened, and
- * nothing here is new: this section writes no sentence the current site does
- * not already carry.
+ * `Four groups this is wrong for` grid of `apps/site/disclaimers.html`.
+ * Nothing here was rewritten, re-punctuated or tightened, and nothing here is
+ * new: this section writes no sentence the current site does not already carry.
  *
  * WHY BYTES RATHER THAN TEXT. `renderToString` escapes text children, so an
- * apostrophe reaches `dist/who-its-for.html` as `&#x27;` and a byte-comparison
+ * apostrophe reaches `dist/disclaimers.html` as `&#x27;` and a byte-comparison
  * against the reviewed original fails on markup that looks perfect in a
  * browser. These are rendered through `<Pinned>` (src/shell/PinnedText.tsx),
  * which writes them straight onto the semantic element. Two of the four bodies

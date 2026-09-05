@@ -101,7 +101,7 @@
  *      `planned` sits beside it. The site prints USDG here because
  *      `apps/site/operators.html` does: the stated target chain's settlement
  *      token is USDG, not Circle USDC, and the underlying figure is unchanged
- *      (see who-not-for/copy.ts for the same rename traced to
+ *      (see risks-scope-additions/groups.ts for the same rename traced to
  *      `contracts/config/robinhood-mainnet.json`). That word `planned` is also
  *      load-bearing for the build: site.test.mjs:648-651 fails any page
  *      containing `50,000` that does not also contain `planned`. This row is

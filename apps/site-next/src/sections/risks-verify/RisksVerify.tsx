@@ -16,15 +16,17 @@
  * section gained a closing actions block (three buttons) that did not exist
  * before — carried across here rather than left off.
  *
- * NOT CARRIED HERE: the corpus's "The limits of every claim on this site"
- * section — the one immediately BEFORE this one in document order, headed
- * "What the other seven pages leave out." — has no counterpart anywhere in
- * this redesign's disclaimers.html sections. It is a large block: a
- * seventeen-entry `<dl>` restating a caveat from each of the other seven pages
- * (grep `Immutability, read the other way` for its start), followed by a
- * "Four groups this is wrong for" four-item grid. Per the build brief, no new
- * component is invented for it here; it is reported as a corpus-only block
- * with no redesign counterpart.
+ * PARTLY CARRIED HERE, AND THE REST IS STILL OPEN. The corpus's "The limits of
+ * every claim on this site" section, the one immediately BEFORE this one in
+ * document order, is a large block: a seventeen-entry `<dl>` restating a
+ * caveat from each of the other pages (grep `Immutability, read the other way`
+ * for its start), followed by a "Four groups this is wrong for" four-item grid.
+ * Two rounds have taken pieces of it. `risks-scope-additions` carries the FOUR
+ * `<dl>` rows copy deck v2 added, and, since round 8, the four-item grid, which
+ * moved out of who-its-for.html to the page and the position the corpus has
+ * kept it in since PR #220. What is still corpus-only is the THIRTEEN
+ * pre-existing `<dl>` rows: no new component is invented for those here, and
+ * they are reported as a corpus-only block with no redesign counterpart.
  *
  * NO MOTION. The brief's motion line for this section is "None." — so there is
  * no `Reveal`, no effect and no `useReducedMotion` call in this file. The
