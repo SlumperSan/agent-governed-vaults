@@ -51,10 +51,11 @@ contract DeployChainlinkOracle is Script {
     /// could supply — the fail-closed default would block the deploy outright rather than cost one
     /// argument. WHAT IT COSTS: with `sequencerUptimeFeed` left at address(0),
     /// `ChainlinkOracle._requireSequencerUp` returns early (ChainlinkOracle.sol:314) and `priceWad`
-    /// serves prices through a sequencer outage instead of reverting. On this chain the per-asset
-    /// heartbeat/staleness bound is therefore the only guard left standing between a stalled chain
-    /// and a priced vault. This is a deliberate weakening of a security gate, approved by the owner
-    /// on 2026-09-04 in those terms; see docs/DEPLOYMENT.md "Robinhood Chain 4663".
+    /// serves prices through a sequencer outage instead of reverting. Two guards are therefore left
+    /// standing between a stalled chain and a priced vault, not one: the per-asset staleness bound
+    /// (the heartbeat, ChainlinkOracle.sol:294) and the sane-price band (ChainlinkOracle.sol:299).
+    /// This is a deliberate weakening of a security gate, approved by the owner on 2026-09-04 in
+    /// those terms; see docs/DEPLOYMENT.md "Robinhood Chain 4663".
     uint256 constant ROBINHOOD_CHAIN_ID = 4663;
 
     /// @notice Does a deploy on `chainId` have to supply ORACLE_SEQUENCER?

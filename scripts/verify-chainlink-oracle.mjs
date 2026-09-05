@@ -125,12 +125,15 @@ if (!RPC) {
 // are not exempt for the same reason and a single message cannot be true of all of them: 31337 and
 // 84532 are test environments, 4663 is a mainnet whose vendor publishes no feed at all. The set is
 // derived from these keys, so an id can never be exempted without a reason being written down.
-const SEQUENCER_EXEMPT_REASONS = new Map([
+// Exported for scripts/test/verify-chainlink-oracle.test.mjs, which pins the 4663 reason: the
+// string below is PRINTED as that row's detail, so it is a public claim about what still guards
+// pricing on 4663 and a test has to hold it to the contract.
+export const SEQUENCER_EXEMPT_REASONS = new Map([
   [31337, 'local anvil / forge — no sequencer exists to have an uptime feed'],
   [84532, 'Base Sepolia — the committed config leaves it empty by design (contracts/config/base-sepolia.json, sequencerUptimeFeedNote); the uptime gate itself is mock-tested in ChainlinkOracle.t.sol'],
   [
     4663,
-    'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage, leaving the per-asset heartbeat as the only guard. See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
+    'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage. Two guards survive that, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:294) and the sane-price band (ChainlinkOracle.sol:299). See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
   ],
 ]);
 export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());
@@ -453,7 +456,8 @@ function main() {
 
   // 1. Sequencer uptime feed — mandatory on every chain outside the exempt allowlist. An exempt
   // chain PASSES this row with an empty feed, and the row states that chain's own reason: the
-  // three exempt ids are exempt for different reasons and only one of them is a test environment.
+  // three exempt ids are exempt for different reasons, and only one of them — 4663, a mainnet — is
+  // NOT a test environment (SEQUENCER_EXEMPT_REASONS above states that split the same way).
   const seq = co.sequencerUptimeFeed;
   if (!seq || seq === ZERO) {
     check(
