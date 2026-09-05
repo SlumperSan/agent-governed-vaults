@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>An index nobody can edit, not yet on mainnet — Agent-Governed Vaults</title>
-<meta name="description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No proxy, no admin key, no pause, and no way to patch a bug once it ships. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
+<title>The AI agent trading index — Rwally</title>
+<meta name="description" content="Rwally is the AI agent trading index on Robinhood Chain. Members deposit USDG into a shared vault holding a spot basket of ETH and BTC, and ratify every rebalance by on-chain vote. No proxy, no upgrade path, no pause, no admin key. The next iteration, RWLY, is designed to accrue the protocol's fees into official Robinhood Stock Tokens; RWLY does not exist yet.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/">
-<meta property="og:title" content="No admin key. No pause. No upgrade. No undo.">
-<meta property="og:description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
+<meta property="og:title" content="What you read is what runs.">
+<meta property="og:description" content="Rwally is the AI agent trading index on Robinhood Chain. Members deposit USDG into a shared vault holding a spot basket of ETH and BTC, and ratify every rebalance by on-chain vote. No proxy, no upgrade path, no pause, no admin key. The next iteration, RWLY, is designed to accrue the protocol's fees into official Robinhood Stock Tokens; RWLY does not exist yet.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="No admin key. No pause. No upgrade. No undo.">
-<meta name="twitter:description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
+<meta name="twitter:title" content="What you read is what runs.">
+<meta name="twitter:description" content="Rwally is the AI agent trading index on Robinhood Chain. Members deposit USDG into a shared vault holding a spot basket of ETH and BTC, and ratify every rebalance by on-chain vote. No proxy, no upgrade path, no pause, no admin key. The next iteration, RWLY, is designed to accrue the protocol's fees into official Robinhood Stock Tokens; RWLY does not exist yet.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html" aria-current="page">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html">Questions</a></li>
       </ul>
     </nav>
@@ -46,13 +45,13 @@
 
   <div class="hero">
     <div class="wrap">
-      <p class="eyebrow">Member-governed index vaults on Robinhood Chain</p>
-      <h1>No admin key. No pause. No upgrade. No undo.</h1>
-      <p class="lede">Members deposit USDG into a shared vault holding a spot basket of WETH and cbBTC on Robinhood Chain. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds. For the same reason, nobody can patch a bug after it ships. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet.</p>
-      <p class="lede-note">This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
+      <p class="eyebrow">Robinhood Chain mainnet &middot; chain id 4663</p>
+      <h1>What you read is what runs.</h1>
+      <p class="lede">Rwally is the AI agent trading index on Robinhood Chain. Members deposit USDG into a shared vault holding a spot basket of ETH and BTC. An agent-operator proposes each rebalance. Members ratify it by commit-reveal vote, on-chain, before anything executes. The contracts carry no proxy, no upgrade path, no pause function and no admin key.</p>
+      <p class="lede">The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet. <a href="disclaimers.html">Read the Disclaimers.</a></p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">Read the risks first</a>
-        <a class="btn" href="how-it-works.html">How it works</a>
+        <a class="btn btn--primary" href="how-it-works.html">How it works</a>
+        <a class="btn" href="status.html">The record</a>
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Source and docs</a>
       </div>
     </div>
@@ -65,10 +64,6 @@
       <p class="lede">The S&amp;P 500 tells you what five hundred companies are worth, because someone writes down the weights and everyone can check them. Nothing tells you what autonomous agents would hold if they had to argue for it in public and win a vote.</p>
       <p>A vault here is one answer to that, made checkable. An agent-operator proposes a basket and a weighting. The members whose money it is vote the proposal up or down by commit-reveal. What executes is recorded on-chain, permanently, next to the proposal that asked for it and the votes that carried it.</p>
       <p>So the holdings are not an opinion published by anyone. They are a timestamped record of what an agent argued for and what people were willing to fund. The contracts cannot be edited, so the record cannot be revised afterwards.</p>
-      <div class="note note--warn">
-        <span class="label">What that does not mean</span>
-        <p>An index of agent conviction is not a claim that the conviction is correct, and none of this is a reason to expect any particular outcome. A public record of what was proposed and funded is exactly that, and nothing more. Read it as evidence about what agents proposed, never as a forecast.</p>
-      </div>
     </div>
   </section>
 
@@ -79,23 +74,23 @@
       <dl class="rows">
         <div>
           <dt>Who decides</dt>
-          <dd>The members do. The operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote.</dd>
+          <dd>The members do. An operator can open a proposal and vote the weight of its own stake. Nothing executes without a member vote.</dd>
         </div>
         <div>
           <dt>What it holds</dt>
-          <dd>A spot index basket. At launch that is WETH and cbBTC, plus whatever USDG is idle. Spot only: no leverage, no derivatives, no perpetuals.</dd>
+          <dd>A spot index basket: ETH and BTC, plus whatever USDG is idle. The <a href="status.html">status page</a> names the two ERC-20 tokens those words stand for, with their addresses. Spot only: no leverage, no derivatives, no perpetuals.</dd>
         </div>
         <div>
           <dt>Who can create one</dt>
-          <dd>Anyone. Vault creation is permissionless, and most of the parameters that matter (quorum, timelock, exit-fee schedule, capacity, minimum deposit) are chosen by the creator and frozen when the vault is funded. Read the vault, not the marketing.</dd>
+          <dd>Anyone. Vault creation is permissionless, and the parameters that matter &mdash; quorum, timelock, exit-fee schedule, capacity, minimum deposit &mdash; are chosen by the creator and frozen when the vault is funded. Read the vault, not the description of it.</dd>
         </div>
         <div>
           <dt>How you leave</dt>
-          <dd>Pro-rata, in kind. You get your share of every basket asset plus your share of the idle USDG, minus the exit fee. Shares burn at settlement, never at request.</dd>
+          <dd>Pro-rata, in kind. You take your share of every basket asset plus your share of the idle USDG, minus the exit fee. Shares burn at settlement, never at request.</dd>
         </div>
         <div>
           <dt>What we hold</dt>
-          <dd>No custody of your funds and no control over them. As written, the contracts are non-custodial: an operator cannot withdraw another member's funds, and no address in the system can seize, freeze or reassign your shares. (The operator identity does earn the 10% performance fee. That is compensation, not custody or control; the operators page sets it out.)</dd>
+          <dd>No custody of your funds and no control over them. The contracts are non-custodial: no address in the system can seize, freeze or reassign your shares. The operator identity does receive the 10% performance fee; the <a href="operators.html">operators page</a> sets that out.</dd>
         </div>
       </dl>
     </div>
@@ -104,97 +99,45 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Immutability</p>
-      <h2>Four things the contracts, as written, cannot do.</h2>
+      <h2>Four powers nobody holds.</h2>
       <div class="grid">
         <div>
           <h3>Cannot be paused or upgraded</h3>
-          <p>As written, the contracts contain no proxy, no upgrade path, no pause function and no admin key. Whatever ships is what runs, for as long as Robinhood Chain runs.</p>
+          <p>The contracts carry no proxy, no upgrade path, no pause function and no admin key. What shipped is what runs, for as long as Robinhood Chain runs.</p>
         </div>
         <div>
           <h3>Cannot take your funds</h3>
-          <p>There is no seize function and no privileged withdrawal. Operatorship confers no authority to execute a rebalance the members did not pass, to pause, reprice, upgrade, skip the timelock, or move, freeze or seize another member's funds. Its one power beyond proposing and voting like any member of equal stake is economic: the operator identity receives the 10% performance fee, which no other member does.</p>
+          <p>There is no seize function and no privileged withdrawal. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds. Its one power beyond proposing and voting like any member of equal stake is economic: the operator identity receives the 10% performance fee, which no other member does.</p>
         </div>
         <div>
           <h3>Cannot route the exit fee to the operator</h3>
-          <p>The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity — but the operator is also a member, and its shares carry the fee up like anyone else's.</p>
+          <p>The protocol caps the exit fee at 1%. It decays to zero with tenure, and is waived entirely for the last member out. The fee fraction stays in the vault rather than being paid out, so it remains with the vault's share value. It is never routed to the operator identity &mdash; and the operator is also a member, so its shares carry the fee up like anyone else's.</p>
         </div>
         <div>
           <h3>Cannot change the rules behind you</h3>
-          <p>Once a vault is funded its rules are immutable, except by 100% of voting-eligible stake plus a timelock. Nobody can quietly raise a fee or shorten a delay after you deposit.</p>
+          <p>Once a vault is funded its rules are immutable, except by full consensus of voting-eligible stake plus a timelock. Nobody can raise a fee or shorten a delay after you deposit.</p>
         </div>
-      </div>
-
-      <div class="note note--warn">
-        <span class="label">The same fact, read the other way</span>
-        <p>Every line above is also a limitation. A unanimity requirement means one permanently offline member freezes the rules forever. No pause means no circuit breaker if something is wrong. No upgrade means a critical bug that survived review is permanent, and funds may be unrecoverable. We are not going to pretend those are features.</p>
-        <p>All four describe source. Nothing is deployed to mainnet, so none of it can be checked against mainnet bytecode today.</p>
       </div>
     </div>
   </section>
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">Before you read anything else</p>
-      <h2>Three ways this loses your money.</h2>
-      <dl class="rows">
-        <div>
-          <dt>A permanent bug</dt>
-          <dd>Nothing can be patched. An external security review whose report is held privately, with no public report to check it against, and four internal adversarial rounds are not proof of correctness. An AI pre-audit of a tree that had already passed internal review still found five Critical issues, and every fix required a full redeploy because nothing can be edited in place.</dd>
-        </div>
-        <div>
-          <dt>An oracle freeze</dt>
-          <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault for as long as the feed is stale. If the feed is retired rather than merely late, that is permanent, because a vault's oracle cannot be replaced.</dd>
-        </div>
-        <div>
-          <dt>A USDG depeg</dt>
-          <dd>The oracle pins the settlement token, USDG on the stated target chain, at $1.00. There is no median and no second source to outvote that pin, so a sustained depeg is mispriced by exactly the size of the depeg. This is accepted, not solved.</dd>
-        </div>
-      </dl>
-      <p class="tight">Spot crypto assets fall. Nobody in this system makes anyone whole, and there is no insurance fund, no backstop and no guarantee of any outcome. Do not deposit anything you cannot afford to lose entirely.</p>
+      <p class="eyebrow">The record</p>
+      <h2>On Robinhood Chain mainnet. Here is the ledger.</h2>
+      <p class="lede">The protocol was broadcast to Robinhood Chain mainnet, chain id 4663, on 2026-09-05, from <code>protocol/main</code> at <code>b1cde122</code>. Ten transactions, every receipt status 1, the six singletons in one block.</p>
+      <p>Every address, block and wiring readback is on the status page, and every one of them was read back on-chain rather than transcribed from a deploy log. The factory was constructed with <code>allowSubVaults = false</code>, so it deploys root vaults only. The oracle allowlist is enforced, and one oracle is blessed on it. No vault has been created yet: <code>factory.vaultCount()</code> returns 0.</p>
+      <p>This page publishes no addresses. The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, the status page reads it out, and that file rather than either page is the authority.</p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">All fifteen named risks</a>
+        <a class="btn btn--primary" href="status.html">The full ledger</a>
       </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <p class="eyebrow">Where this stands</p>
-      <h2>Pre-launch, and specific about it.</h2>
-      <p class="lede">The whole proposition is that nothing can be fixed after it ships. A project making that claim does not get to be in a hurry, so this page states what has been done, what has not, and what nobody can check.</p>
-      <div class="grid">
-        <div>
-          <h3>Not on mainnet</h3>
-          <p>No mainnet deployment exists, and this site publishes no addresses of any kind. The stated target is Robinhood Chain mainnet, chain id 4663, whose parameters are the reference configuration <code>contracts/config/robinhood-mainnet.json</code>; nothing from this repository is deployed there. The address book in the repository records the current Base Sepolia deployment, and a testnet address book is not the place to look for mainnet addresses either. Mainnet addresses will be published in the repository when they exist.</p>
-        </div>
-        <div>
-          <h3>On Base Sepolia, for testing</h3>
-          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value. No testnet run is evidence about mainnet, and on Robinhood Chain the L2 sequencer guard never executes at price time at all, because Chainlink publishes no uptime feed for that chain.</p>
-        </div>
-        <div>
-          <h3>Checked in the open</h3>
-          <span class="stat">NO-GO</span>
-          <p>The launch verdict as at 2026-08-29, recorded at <code>protocol/main</code> and not softened for this page. The contracts, the docs, every review round and the board itself are public in the repository; check it for anything later.</p>
-        </div>
-      </div>
-
-      <div class="note note--flat">
-        <span class="label">What is still outstanding</span>
-        <p>Operational work and legal review. The remaining engineering items are a soak and a canary re-run against the current testnet deployment.</p>
-        <p>A deposit, vote, rebalance and redeem cycle has been recorded end to end against the current Base Sepolia deployment, built from this repository at commit 8a0e1155: all ten phases settled, and the per-phase record is in the repository. The soak and canary evidence still describes earlier bytecode and is treated as stale until it is re-run against that deployment.</p>
-        <p>Every security gate the team defined is cleared. That still certifies that the gates ran, not that the protocol is secure. One High — the purchasable member count below five members — remains open at the launch configuration and is not classified as a launch blocker.</p>
-      </div>
-
-      <h3>On the security review</h3>
-      <p class="tight">An external security review was commissioned against the launch tree. The owner attests it returned no major issues. The report is held privately and no public report exists to verify that attestation. Alongside it, four internal adversarial review rounds and an AI pre-audit were run; the AI pre-audit found 41 issues including 5 Critical. All five Criticals are resolved or closed by launch configuration. One High — the purchasable member count below five members — remains open at the launch configuration, and a set of Medium and Low findings are accepted residuals that will not be fixed. A further class is dormant only because sub-vaults are disabled at launch: those are not repaired in code and would return if sub-vaults were ever enabled.</p>
-      <p class="tight small">Read that as it is written. An attestation you cannot check is weaker evidence than a report you can, and we are not going to describe the code with a word that implies you can check it.</p>
     </div>
   </section>
 
   <section>
     <div class="wrap">
       <p class="eyebrow">Next</p>
-      <h2>There is nothing to sign up for.</h2>
+      <h2>There is nothing to claim here.</h2>
       <p class="tight">No mailing list, no allocation, no queue, no wallet connection on this site. The only things to do here are read, and read the code.</p>
       <div class="actions">
         <a class="btn btn--primary" href="how-it-works.html">How a vault actually works</a>
@@ -217,9 +160,9 @@
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
           <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -228,15 +171,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 

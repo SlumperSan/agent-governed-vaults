@@ -95,6 +95,12 @@
  * CONSTRUCTIONS (an agent *pooling*, an agent *governing*, a *universal* weighting claim), never the
  * product name.
  *
+ * Since 2026-09-05 the same applies to the positioning phrase `the AI agent trading index`, which is
+ * masked by name in `PRODUCT_PHRASES` before guard 1 runs, and whose exemption has its own probe
+ * immediately after that guard. It used to pass by accident — the verb alternation carried
+ * `trade|trades` and not `trading` — and an accident is not an exemption: the participles are banned
+ * now, and the phrase is permitted deliberately.
+ *
  * Likewise "stake-weighted" is not banned outright — it is TRUE at five or more members, and
  * `THREAT-MODEL.md` AG-3/SV-1 use it correctly as analysis. Guard 3 is a CO-OCCURRENCE rule: a file
  * may say "stake-weighted" only if it also carries the sub-five qualifier. That leaves correct
@@ -199,8 +205,16 @@ const report = (hits) =>
 // "agent identity that proposes rebalances" match as agent + <gap> + `rebalances`, reading a NOUN
 // object as the verb and reddening `operators.html`, which describes the operator role correctly.
 const AGENT_ACTS = [
-  // "AI agents pool ...", "agents govern ...", "the agent manages ..."
-  /\b(?:AI\s+)?agents?\b(?:\s+(?:also|only|then|now|actually|jointly|collectively|therefore))*\s+\b(?:pool|pools|govern|governs|manage|manages|trade|trades|rebalance|rebalances)\b/gi,
+  // "AI agents pool ...", "agents govern ...", "the agent manages ...", "agents trading ..."
+  //
+  // THE -ING FORMS WERE ADDED 2026-09-05, and the reason is worth recording because it was luck
+  // rather than design that the gap did no damage. The owner's positioning phrase is "the AI agent
+  // trading index", and this alternation carried `trade|trades` but not `trading` — so the phrase
+  // passed a guard that would have reddened "agents trade" one letter away. A guard that permits a
+  // phrase by oversight permits everything else the oversight covers, and the next editor closes it
+  // without knowing the product name depends on the hole. So: the participles are banned like every
+  // other form, and the product phrase is permitted BY NAME in PRODUCT_PHRASES below.
+  /\b(?:AI\s+)?agents?\b(?:\s+(?:also|only|then|now|actually|jointly|collectively|therefore))*\s+\b(?:pool|pools|pooling|govern|governs|governing|manage|manages|managing|trade|trades|trading|rebalance|rebalances|rebalancing)\b/gi,
   // "... governed by AI agents", "... pooled by agents"
   /\b(?:governed|pooled|managed|traded|controlled)\s+by\s+(?:\w+\s+){0,2}(?:AI\s+)?agents?\b/gi,
   // "agent-governed index baskets" used as a MECHANIC (a basket the agent governs), as distinct
@@ -208,10 +222,28 @@ const AGENT_ACTS = [
   /\bagent-governed\s+(?:\w+\s+){0,2}baskets?\b/gi,
 ];
 
+/**
+ * Product names, permitted BY NAME rather than by an accident of the alternation above.
+ *
+ * `the AI agent trading index` is the owner's positioning phrase of 2026-09-05 and it names WHAT
+ * THE INDEX IS ABOUT — what autonomous agents would hold if they had to argue for it and win a vote
+ * — not who executes. It is not the banned shape, which is an agent as the SUBJECT of pooling or
+ * governing: `Governance.propose` gates on stake, and `Governance.sol` contains zero occurrences of
+ * "operator". The two read alike to a regex and differ entirely to a reader, so the phrase is masked
+ * character-for-character before the scan, the way this repository's other guards mask a legal form.
+ *
+ * Keep this list to exact product phrases. It is not a place to park a sentence that is merely
+ * inconvenient: anything added here stops being checked, everywhere, forever.
+ */
+const PRODUCT_PHRASES = /\bAI agent trading index\b/gi;
+
+/** The text with every permitted product phrase blanked to the same length, so offsets survive. */
+const maskProductPhrases = (s) => s.replace(PRODUCT_PHRASES, (m) => ' '.repeat(m.length));
+
 test('no public surface says an AI agent pools capital or governs a vault', () => {
   const hits = [];
   for (const { file, text } of surfacesWithText()) {
-    const hay = flat(text);
+    const hay = maskProductPhrases(flat(text));
     for (const re of AGENT_ACTS) {
       for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
     }
@@ -227,6 +259,34 @@ test('no public surface says an AI agent pools capital or governs a vault', () =
       'to STAKE ("proposal rights follow stake, not operatorship"), never to operatorship.\n' +
       `Offending text:\n${report(hits)}`,
   );
+});
+
+test('probe: the product-phrase exemption covers the phrase and nothing around it', () => {
+  const caught = (s) => {
+    const hay = maskProductPhrases(flat(s));
+    return AGENT_ACTS.some((re) => {
+      re.lastIndex = 0;
+      return re.test(hay);
+    });
+  };
+  // The permitted phrase, in the shapes it actually ships in.
+  for (const ok of [
+    'Rwally is the AI agent trading index on Robinhood Chain.',
+    'An AI agent trading index, made checkable.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds the owner's own product phrase: ${ok}`);
+  }
+  // …and the banned shapes must still be caught, including the participles added with it and a
+  // sentence that opens with the permitted phrase and then makes the false claim anyway.
+  for (const bad of [
+    'AI agents pool USDC into spot crypto index baskets.',
+    'Agents trading the basket decide what it holds.',
+    'The AI agent trading index is governed by AI agents.',
+    'Rwally is the AI agent trading index, and its agents govern every rebalance.',
+    'agent-governed index baskets rebalance on a schedule',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

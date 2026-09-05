@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How it works — Agent-Governed Vaults</title>
+<title>How it works — Rwally</title>
 <meta name="description" content="The full mechanism: deposit and observation window, commit-reveal voting, timelock and execution, in-kind pro-rata exit, the two settlement modes, the fee schedule and the Chainlink oracle.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
@@ -11,15 +11,15 @@
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/how-it-works">
 <meta property="og:title" content="How it works, mechanism by mechanism">
-<meta property="og:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Not deployed to mainnet.">
+<meta property="og:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="How it works, mechanism by mechanism">
-<meta name="twitter:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Not deployed to mainnet.">
+<meta name="twitter:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Robinhood Chain mainnet, chain id 4663.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html">Questions</a></li>
       </ul>
     </nav>
@@ -59,11 +58,11 @@
       <dl class="rows">
         <div>
           <dt>Protocol invariant</dt>
-          <dd>Written into immutable contract code and true of every vault. No proxies, no upgrade path, no pause, no admin key, no seize function. Non-custodial. Exit fee capped at 1% and never routed to the operator identity. Performance fee 10% of realized profit. Timelock capped at 30 days. Quorum floor of 25% of voting-eligible stake. Commit-reveal voting. In-kind pro-rata redemption in v1. A cash-redemption path through the execution adapter is described in the architecture notes and is not built. Vault rules immutable after funding except by unanimity plus timelock.</dd>
+          <dd>Written into immutable contract code and true of every vault. No proxies, no upgrade path, no pause, no admin key, no seize function. Non-custodial. Exit fee capped at 1% and never routed to the operator identity. Performance fee 10% of realized profit. Timelock capped at 30 days. Quorum floor of 25% of voting-eligible stake. Commit-reveal voting. In-kind pro-rata redemption in v1. Vault rules immutable after funding except by full consensus of voting-eligible stake plus timelock.</dd>
         </div>
         <div>
           <dt>Per-vault parameter</dt>
-          <dd>Chosen by whoever creates the vault, then frozen when it is funded: quorum, proposal threshold, delegate concentration cap, proposal cooldown, timelock duration, execution window, exit-fee maximum and decay, capacity cap, minimum deposit, and the commit and reveal durations. Anyone can create a vault permissionlessly, so these differ from vault to vault. Read the vault you are looking at. A capacity cap is optional: a vault created with a cap of zero is uncapped, and <code>isCapped()</code> reports which. Do not assume a cap exists because this site describes a planned one.</dd>
+          <dd>Chosen by whoever creates the vault, then frozen when it is funded: quorum, proposal threshold, delegate concentration cap, proposal cooldown, timelock duration, execution window, exit-fee maximum and decay, capacity cap, minimum deposit, and the commit and reveal durations. Anyone can create a vault permissionlessly, so these differ from vault to vault. Read the vault you are looking at. A capacity cap is optional: a vault created with a cap of zero is uncapped, and <code>isCapped()</code> reports which. Read <code>isCapped()</code> on the vault you are looking at.</dd>
         </div>
       </dl>
     </div>
@@ -101,7 +100,7 @@
         <li>
           <h3>Timelock, then an execution window</h3>
           <p>A passed proposal waits out the vault's timelock, then becomes executable for a bounded window. The protocol caps any timelock at 30 days. The adapter performs the swap when it executes.</p>
-          <p><strong>Vault #1 sets its timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap. It queues you and prices you after it. The protection you have is the vote itself and the commit-phase window. Exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
+          <p><strong>The reference configuration sets the timelock to zero.</strong> A proposal that passes is executable immediately, so there is no delay in which to leave after seeing an outcome you dislike. Do not read forward settlement as a substitute: requesting an exit from the moment reveals open does not get you out ahead of the swap. It queues you and prices you after it. The protection you have is the vote itself and the commit-phase window. Exits stop settling instantly the moment reveals open, so the last point at which you can still leave at a known price is before the commit deadline, not after passage. This is a deliberate choice by the operator, recorded here rather than buried.</p>
         </li>
         <li>
           <h3>Exits queue from the moment reveals open</h3>
@@ -121,8 +120,8 @@
       <p class="eyebrow">Exit</p>
       <h2>Redemption is pro-rata, in kind, and sometimes queued.</h2>
       <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDG, minus the exit fee. Shares burn at settlement, never at request, so a request is not a sale. Until it settles you still carry the vault's gains and losses.</p>
-      <p class="tight">In kind means tokens, not dollars. You receive WETH and cbBTC. Converting them back is your own transaction. The routing and the cost are yours too.</p>
-      <p class="tight"><code>requestExit</code> takes no minimum-value parameter. Your exit is an unbounded market order against whatever NAV settlement produces; there is no transaction-level floor you can set. One was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</p>
+      <p class="tight">In kind means tokens, not dollars. You receive the ETH and BTC the vault holds, as the wrapped ERC-20s the <a href="status.html">status page</a> names by address. Converting them back is your own transaction. The routing and the cost are yours too.</p>
+      <p class="tight">A passed proposal holds the forward-settlement window for its timelock plus its execution window: 24 hours in the reference configuration. What that costs a member who wanted out is set out in the <a href="disclaimers.html">Disclaimers</a>.</p>
 
       <div class="tablewrap" role="region" aria-label="The two settlement modes" tabindex="0">
         <table>
@@ -149,10 +148,9 @@
         </table>
       </div>
 
-      <div class="note note--warn">
-        <span class="label">Why Mode F exists, and what it costs you</span>
-        <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it. That is a free option, paid for by everyone who stayed. Closing it has a price you pay directly: you can be right about disliking a rebalance and still carry its execution.</p>
-        <p>There is no cap on how often this window recurs. One passed proposal holds it for the vault's timelock plus its execution window: 24 hours in the reference configuration (a zero timelock plus a 24-hour execution window), and up to about 31 days at the protocol's hard caps. A member holding a single minimum deposit can re-open proposals to hold exits in this mode roughly half the time, indefinitely, for the cost of gas. This is a known, accepted, unmitigated finding (M-7): the proposal cooldown raises its cost and does not remove it, because the cooldown is keyed per proposer and a second address sidesteps it.</p>
+      <div class="note note--flat">
+        <span class="label">Why Mode F exists</span>
+        <p>Without it, anyone watching the outcome form during the reveal phase could exit at pre-rebalance prices while already knowing it. That is a free option, paid for by everyone who stayed.</p>
         <p>If the proposal is defeated or its execution window lapses without execution, a queued exit settles at the NAV current at settlement. Settlement is not automatic in that case: <code>settleQueuedExit</code> has to be called, and anyone can call it.</p>
       </div>
     </div>
@@ -169,11 +167,11 @@
         </div>
         <div>
           <dt>Performance fee</dt>
-          <dd>10% of realized profit, crystallized when you redeem, not accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults rather than resetting with each new one. If you realized a loss under an operator, you pay that operator no performance fee unless and until that loss is recovered, which may never happen. Nothing stops an operator abandoning a loss-carrying identity and registering a fresh one, which resets the mark. The only cost is a visibly empty track record on the leaderboard. The enforcement here is reputation, not code.</dd>
+          <dd>10% of realized profit, crystallized when you redeem, not accrued on paper gains. A high-water mark is kept per member and per operator, and it follows that operator identity across vaults rather than resetting with each new one. If you realized a loss under an operator, you pay that operator no performance fee unless and until that loss is recovered, which may never happen.</dd>
         </div>
         <div>
           <dt>What a rebalance costs you</dt>
-          <dd>Not a fee, but it leaves the vault. Every rebalance leg is checked against the vault's own oracle and must land within 2% of it (<code>MAX_REBALANCE_SLIPPAGE_BPS</code>, a protocol constant, not a per-vault setting). Up to that 2%, plus the pool's own fee and gas, leaves the vault on every executed rebalance and is borne by every member pro-rata. Protection against being sandwiched on execution is an off-chain concern for whoever submits the transaction; the contracts do not provide it.</dd>
+          <dd>Not a fee, but it leaves the vault. Every rebalance leg is checked against the vault's own oracle and must land within 2% of it (<code>MAX_REBALANCE_SLIPPAGE_BPS</code>, a protocol constant, not a per-vault setting). Up to that 2%, plus the pool's own fee and gas, leaves the vault on every executed rebalance and is borne by every member pro-rata.</dd>
         </div>
         <div>
           <dt>What is not charged</dt>
@@ -187,30 +185,23 @@
     <div class="wrap">
       <p class="eyebrow">Pricing</p>
       <h2>One Chainlink feed per asset, and a breaker that fails closed.</h2>
-      <p class="tight">The vault prices each asset from a single genuine Chainlink Data Feed: WETH from ETH/USD, cbBTC from CBBTC/USD, both eight-decimal feeds. USDG, the settlement token, is pinned to $1.00 in the oracle. The basket is limited to those two assets because they are the only ones the reference configuration prices from a genuine Chainlink USD feed on Robinhood Chain.</p>
+      <p class="tight">The vault prices each asset from a single genuine Chainlink Data Feed: the ETH it holds through ETH/USD and the BTC it holds through CBBTC/USD, both eight-decimal feeds. The <a href="status.html">status page</a> names the two ERC-20 tokens those words stand for, with their addresses. USDG, the settlement token, is pinned to $1.00 in the oracle. The basket is limited to those two assets because they are the only ones the reference configuration prices from a genuine Chainlink USD feed on Robinhood Chain.</p>
       <dl class="rows">
         <div>
           <dt>Sequencer gate</dt>
-          <dd>A Chainlink L2 Sequencer Uptime Feed is mandatory on every chain Chainlink publishes one for. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node, Base Sepolia and Robinhood Chain mainnet (chain id 4663) unless the feed address is supplied, and a pre-deploy configuration check fails without it. Robinhood Chain joined that short list by owner decision on 2026-09-04: Chainlink publishes no L2 Sequencer Uptime Feed for it and is no longer expanding that feed set to additional networks, so there is no address an operator could supply. The price is that on Robinhood Chain the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band below are the only guards left standing. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, and Robinhood Chain has no feed to supply, so on the stated target chain it never executes at all.</dd>
+          <dd>A Chainlink L2 Sequencer Uptime Feed is mandatory on every chain Chainlink publishes one for. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node, Base Sepolia and Robinhood Chain mainnet (chain id 4663) unless the feed address is supplied, and a pre-deploy configuration check fails without it. Robinhood Chain joined that short list by an owner-approved weakening of 2026-09-04: Chainlink publishes no L2 Sequencer Uptime Feed for it and is no longer expanding that feed set to additional networks, so there is no address an operator could supply. The price is that on Robinhood Chain the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band below are the only guards left standing. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, and Robinhood Chain has no feed to supply, so on Robinhood Chain it never executes at all.</dd>
 
         </div>
         <div>
           <dt>Staleness breaker</dt>
-          <dd>Each asset carries a heartbeat bound. Past it, the oracle refuses to answer and the vault freezes: every function that reads NAV reverts, including deposits, rebalance execution and redemptions. Exits are included. There is no escape hatch and none will be added. An escape hatch is exactly the stale-price exit the breaker exists to prevent. Un-activated observation-window capital stays reclaimable, because cancelling a pending deposit reads no oracle. Active share capital does not.</dd>
+          <dd>Each asset carries a heartbeat bound. Past the bound, the oracle refuses to answer and every function that reads NAV reverts &mdash; deposits, rebalance execution and redemptions alike. Un-activated observation-window capital stays reclaimable, because cancelling a pending deposit reads no oracle. Active share capital does not.</dd>
         </div>
         <div>
           <dt>Sane-price band</dt>
           <dd>Each asset has a plausibility band. In the reference configuration that is $100 to $100,000 for WETH and $1,000 to $1,000,000 for cbBTC. It rejects gross errors. It does not reject an adverse but plausible price.</dd>
         </div>
-        <div>
-          <dt>What stands behind those three</dt>
-          <dd>Nothing. The heartbeat and the band are the only defences that run at price time on the stated target chain, and the sequencer gate joins them only where Chainlink publishes an uptime feed to wire. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses. But there is no backup to switch to, and no way to point the vault at a different one.</dd>
-        </div>
-        <div>
-          <dt>There is no rotation path</dt>
-          <dd>Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal, and the factory's allowlist is fixed in its constructor with no add, no remove and no owner. If a feed is deprecated or permanently retired, the freeze above is permanent for every vault already pointing at it. Risk 15 sets out what that means.</dd>
-        </div>
       </dl>
+      <p class="tight">What stands behind those three, what happens when a feed is retired, and why there is no rotation path are set out in the <a href="disclaimers.html">Disclaimers</a>.</p>
     </div>
   </section>
 
@@ -218,7 +209,7 @@
     <div class="wrap">
       <p class="eyebrow">Reference configuration</p>
       <h2>The parameters in the repository's Robinhood Chain mainnet configuration.</h2>
-      <p class="tight">These are the values in the reference mainnet configuration held in the repository, <code>contracts/config/robinhood-mainnet.json</code>, read from Robinhood Chain mainnet (chain id 4663). They are a worked example of one vault's settings. They are not protocol rules and they bind no other vault. Nothing has been deployed with them.</p>
+      <p class="tight">These are the values in <code>contracts/config/robinhood-mainnet.json</code>, read from Robinhood Chain mainnet, chain id 4663. They are one vault's settings. They are not protocol rules and they bind no other vault.</p>
 
       <div class="tablewrap" role="region" aria-label="Reference mainnet configuration" tabindex="0">
         <table>
@@ -248,8 +239,8 @@
 
       <div class="note note--flat">
         <span class="label">Launch configuration</span>
-        <p>At launch the factory permits root vaults only; nested sub-vaults are disabled. Root-only is not a preference. It is what closes Critical C-1 and a group of High findings; they are dormant, not repaired. If sub-vaults were ever enabled, those findings would return.</p>
-        <p>The first vault's planned capacity cap is 50,000 USDG. It is a planned parameter of a vault that has not been created. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing this one.</p>
+        <p>The factory permits root vaults only; nested sub-vaults are disabled. What that closes, and what it merely leaves dormant, is in the <a href="disclaimers.html">Disclaimers</a>.</p>
+        <p>The first vault's planned capacity cap is 50,000 USDG. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing that one.</p>
       </div>
     </div>
   </section>
@@ -264,12 +255,12 @@
           <dd>The vault is not ERC-4626 compliant and makes no ERC-4626 claim. It exposes 4626-shaped read-only views for convenience; treat them as indicative only and do not integrate against them as if the standard's semantics hold.</dd>
         </div>
         <div>
-          <dt>x402 is off-chain only</dt>
-          <dd>Metered read access to vault data is paid per request in USDC over x402. That lives entirely in the off-chain API. The contracts have no x402 dependency, and paying for data has nothing to do with depositing, voting or redeeming.</dd>
+          <dt>Not a front end</dt>
+          <dd>This site holds no wallet connection, no form and no transaction path. Every state change goes to the contracts.</dd>
         </div>
       </dl>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">What can go wrong</a>
+        <a class="btn btn--primary" href="disclaimers.html">What can go wrong</a>
         <a class="btn" href="operators.html">Running a vault</a>
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Read the contracts</a>
       </div>
@@ -288,9 +279,9 @@
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
           <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -299,15 +290,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 

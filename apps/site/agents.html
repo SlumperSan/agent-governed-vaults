@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The agent path — Agent-Governed Vaults</title>
-<meta name="description" content="How an autonomous agent reads this protocol and acts on it: one free discovery call, metered reads over x402, and state changes sent straight to the contracts. Not deployed to mainnet.">
+<title>The agent path — Rwally</title>
+<meta name="description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
 <link rel="canonical" href="https://rwally.com/agents">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/agents">
 <meta property="og:title" content="The agent path">
-<meta property="og:description" content="An agent needs one free discovery call, metered reads over x402, and the contracts. The whole integration surface. Not deployed to mainnet.">
+<meta property="og:description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="The agent path">
-<meta name="twitter:description" content="An agent needs one free discovery call, metered reads over x402, and the contracts. The whole integration surface. Not deployed to mainnet.">
+<meta name="twitter:description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html" aria-current="page">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html">Questions</a></li>
       </ul>
     </nav>
@@ -48,12 +47,11 @@
     <div class="wrap">
       <p class="eyebrow">The machine-readable path</p>
       <h1>Every page here is for a person. This one is not.</h1>
-      <p class="lede">An agent does not need the rest of this site. It needs one free call that describes the interface, a way to pay for reads, and the contract addresses. That is the whole integration surface. It is documented rather than negotiated.</p>
-      <p class="lede-note">This describes source code and a published interface. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
+      <p class="lede">An agent does not need the rest of this site. It needs the chain id, the contract addresses, and an ABI. That is the whole integration surface. There is no key to request, no allowlist to join, and no gateway between an agent and a vault.</p>
       <div class="actions">
         <a class="btn btn--primary" href="llms.txt">llms.txt</a>
-        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/AGENT-QUICKSTART.md">Quickstart</a>
-        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/api/openapi.yaml">OpenAPI spec</a>
+        <a class="btn" href="status.html">The address ledger</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
       </div>
     </div>
   </div>
@@ -61,27 +59,25 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Bootstrap</p>
-      <h2>One free call, then everything else follows from it.</h2>
-      <p>Discovery is unmetered on purpose. An agent should be able to learn what a service costs before it has spent anything, and it should learn it from the service rather than from a blog post that has since drifted.</p>
+      <h2>Three reads and you are integrated.</h2>
       <dl class="rows">
         <div>
-          <dt>Free</dt>
-          <dd><code>GET /.well-known/x402</code> returns pricing, the route list, and pointers to the specs. <code>GET /health</code> and <code>GET /metrics</code> are free as well. Every other route is metered.</dd>
+          <dt>The chain</dt>
+          <dd>Robinhood Chain mainnet, chain id 4663. The settlement token is USDG.</dd>
         </div>
         <div>
-          <dt>Metered</dt>
-          <dd>Reads over the projected index state: the vault list, a single vault, the operator leaderboard. Each returns <code>402</code> with a <code>PAYMENT-REQUIRED</code> header naming the scheme, asset, amount, recipient and nonce.</dd>
+          <dt>The addresses</dt>
+          <dd>The factory, the governance contract, the fee engine, the operator registry and the oracle are listed on the <a href="status.html">status page</a> and committed to <code>contracts/config/deployments/robinhood-mainnet.json</code>, each read back on-chain.</dd>
         </div>
         <div>
-          <dt>Payment</dt>
-          <dd>Build an EIP-3009 <code>TransferWithAuthorization</code> for that quote, sign it EIP-712 with the agent's own wallet, and retry with a <code>PAYMENT-SIGNATURE</code> header. The response carries a <code>PAYMENT-RESPONSE</code> receipt. A facilitator verifies and settles on-chain; the API server holds no keys.</dd>
+          <dt>The ABIs</dt>
+          <dd>Build the contracts and read them out of <code>contracts/out/</code>: VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle, AggregationRouterAdapter, SubVaultRegistry, VaultFactory.</dd>
         </div>
         <div>
-          <dt>Acting</dt>
-          <dd>The metered API is read-only. Deposit, activate, propose, commit, reveal, exit: every state change goes straight to the contracts. The API is a convenience for reading, never a path to authority.</dd>
+          <dt>The wiring you must check yourself</dt>
+          <dd>Read <code>VaultFactory.allowSubVaults()</code> on the factory you integrate against; it is a per-deployment immutable, not a protocol property. Read <code>OperatorRegistry.operatorOf(vault)</code> rather than a display name: vault creation is permissionless, so verify the operator, not the label.</dd>
         </div>
       </dl>
-      <p class="tight">There is no key to request and no allowlist to join, and nothing on this site to sign up for. An agent that can sign an EIP-712 message and send a transaction has everything it needs.</p>
     </div>
   </section>
 
@@ -92,7 +88,7 @@
       <dl class="rows">
         <div>
           <dt>Deposit</dt>
-          <dd>Permissionless. The contracts gate on amount alone (a minimum deposit and a capacity cap) and screen nobody. Any address meeting those can join. Vault #1 will screen at the front end, which is a different thing and binds nothing on-chain.</dd>
+          <dd>Permissionless. The contracts gate on amount alone &mdash; a minimum deposit and a capacity cap &mdash; and screen nobody. Any address meeting those can join.</dd>
         </div>
         <div>
           <dt>Propose</dt>
@@ -100,17 +96,18 @@
         </div>
         <div>
           <dt>Vote</dt>
-          <dd>Commit then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference agent solves that by <em>deriving</em> the salt from a signature it can reproduce rather than storing it. That is a client technique, not a protocol property, and an integrator writing their own client gets it only by implementing it.</dd>
+          <dd>Commit, then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference client derives the salt from a signature it can reproduce rather than storing it. That is a client technique, not a protocol property; an integrator writing their own client gets it only by implementing it.</dd>
         </div>
         <div>
           <dt>Exit</dt>
-          <dd>Pro-rata and in kind, and subject to two conditions worth reading before you build around it. <strong>From the moment the reveal phase opens on any live proposal (not from the moment one passes) until that proposal executes, is defeated, or its execution window lapses</strong>, the request is queued and settles at post-execution NAV; a proposal that is ultimately defeated still forced your exit into the queue while it was live. That is a delay. <strong>An oracle freeze is not.</strong> Every function that reads NAV reverts while a price feed is stale, exits included, and there is no escape hatch — you cannot leave at any price until the feed recovers. If the feed is retired rather than late, that is permanent. See <a href="risks.html">the risks page</a>.</dd>
+          <dd>Pro-rata and in kind. From the moment the reveal phase opens on any live proposal &mdash; not from the moment one passes &mdash; the request is queued and settles at post-execution NAV. <code>Governance.hasPendingExecution(vault)</code> is the exact predicate. What that costs you, and what an oracle freeze does to it, is in the <a href="disclaimers.html">Disclaimers</a>.</dd>
         </div>
       </dl>
-      <div class="note note--warn">
+
+      <div class="note note--flat">
         <span class="label">The gate that will surprise an integrator first</span>
-        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately checks its balance will read zero. That is correct, not a failure.</p>
-        <p><code>skipWindow()</code> opts out and activates a pending deposit immediately. It is irrevocable, and the cost is not obvious: pending capital is the only capital that stays reclaimable while the oracle is frozen. Opting out forfeits that permanently.</p>
+        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately reads its balance will read zero. That is correct, not a failure.</p>
+        <p><code>skipWindow()</code> opts out and activates a pending deposit immediately. It is irrevocable, and what it forfeits is set out in the <a href="disclaimers.html">Disclaimers</a>.</p>
       </div>
     </div>
   </section>
@@ -119,8 +116,8 @@
     <div class="wrap">
       <p class="eyebrow">Reference client</p>
       <h2>There is a working agent in the repository.</h2>
-      <p>It reads the metered API and the chain, decides whether to join, vote or exit, and prints the exact calls it would make. It is dry-run by default and cannot sign without an explicit environment gate.</p>
-      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as product code. It sits outside the scope of the contract security review, and running it live is what exposed two launch-class bugs in it. One gate could never admit a new operator. A deposit path set no token allowance and therefore reverted in every configuration as shipped. Both are fixed with regression tests. Both were invisible to mocks.</p>
+      <p>It reads the chain, decides whether to join, vote or exit, and prints the exact calls it would make. It is dry-run by default and cannot sign without an explicit environment gate.</p>
+      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as production code. Its review scope, and the two launch-class bugs running it live exposed, are in the <a href="disclaimers.html">Disclaimers</a>.</p>
       <div class="actions">
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/REFERENCE-AGENT.md">Reference agent</a>
         <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
@@ -131,10 +128,10 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Before you point anything at this</p>
-      <h2>Read the risks page too.</h2>
-      <p class="tight">An autonomous integrator is exactly the reader most likely to skip it, and the failure modes are not ones a retry loop recovers from. A stale price feed freezes every function that reads NAV, exits included. A bug cannot be patched, because the contracts cannot be changed. Nobody makes anyone whole, and there is no guarantee of any outcome.</p>
+      <h2>Then read the Disclaimers.</h2>
+      <p class="tight">An autonomous integrator is the reader most likely to skip them, and the failure modes are not ones a retry loop recovers from.</p>
       <div class="actions">
-        <a class="btn btn--primary" href="risks.html">All fifteen named risks</a>
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
         <a class="btn" href="how-it-works.html">The mechanism in full</a>
         <a class="btn" href="faq.html">Questions</a>
         <a class="btn" href="who-its-for.html">Who it is for</a>
@@ -155,9 +152,9 @@
           <li><a href="how-it-works.html">How it works</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
           <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -166,15 +163,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 

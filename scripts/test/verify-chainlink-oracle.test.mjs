@@ -381,7 +381,7 @@ test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
  * ("guard intentionally skipped on exempt chain 4663: <reason>"), so whatever it says is what an
  * operator reads off a passing pre-deploy run. It said "leaving the per-asset heartbeat as the only
  * guard", which undercounts: `priceWad` keeps the staleness bound AND the sane-price band when the
- * uptime feed is address(0). docs/DEPLOYMENT.md, apps/site/how-it-works.html, apps/site/risks.html
+ * uptime feed is address(0). docs/DEPLOYMENT.md, apps/site/how-it-works.html, apps/site/disclaimers.html
  * and contracts/config/robinhood-mainnet.json all already said two, so the printed string was the
  * one place a reader was told one.
  *

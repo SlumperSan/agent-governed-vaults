@@ -1,15 +1,22 @@
 # apps/site — public marketing site
 
-Eight static HTML pages describing the Agent-Governed Vaults protocol: `index.html`,
-`how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `risks.html`,
+Eight static HTML pages for Rwally, the Agent-Governed Vaults protocol: `index.html`,
+`how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `disclaimers.html`,
 `faq.html` and `status.html`.
 
-`status.html` is deliberately absent from the header nav and reached from the footer of every
-page, which is the shape the owner asked for on 2026-09-04: *"Claims should not be a header page,
-it should be a link in the footer."* It carries the deployment status, the launch verdict, the
-testnet address book and the recipe for checking any of it. Every other page still states the
-deployment-status sentence once, in its own footer, so no page depends on a reader following that
-link to see it.
+`risks.html` was retired on 2026-09-05 and `disclaimers.html` took its slot. The owner's
+instruction is that every negative statement on this site lives on one page, so the fifteen risks
+moved across intact, and so did every caveat that used to sit at the bottom of one of the other
+seven pages. `/risks` redirects to `/disclaimers` with a 301 in `_redirects`; the reason is written
+above the rule there.
+
+`status.html` and `disclaimers.html` are both deliberately absent from the header nav and reached
+from the footer of every page. For `status.html` that is the shape the owner asked for on
+2026-09-04: *"Claims should not be a header page, it should be a link in the footer."* It carries
+the address ledger for Robinhood Chain mainnet and the recipe for checking any of it.
+`disclaimers.html` carries the risks, the legal position and the two standing sentences that used
+to be repeated in eight footers. Every page's footer links to both, with both link texts pinned by
+the test, because the link is now the only route a reader has to either.
 
 No build step. No framework. **Zero JavaScript** — there is not a single `<script>` tag, so "works
 with JavaScript disabled" is true by construction rather than by testing. No external requests of
@@ -84,13 +91,19 @@ has no compiler; that file is the compiler. It asserts, across all eight pages:
 - **Absence** of banned claim phrases — word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
   The same list is applied to this README and to both stylesheets, not only to the eight pages.
-- **Presence** of the two exact status strings and the two exact footer strings, at the permitted
-  count per page, with the last occurrence of each status string inside the `<footer>` — that is
-  what stops the disclosure being dropped now that no band above the nav repeats it. Also exactly
-  one `<h1>`, `lang="en"`, a skip link to `#main`, `<main id="main">`, a meta description, a title
-  ending in ` — Agent-Governed Vaults`, and no surviving review marker anywhere under `apps/site`.
-- **Position** of the status block: absent from all seven marketing pages, present exactly once on
+- **Presence** of the pinned sentences at the permitted count per page, and inside `<main>` rather
+  than in a footer. Since 2026-09-05 that is `Deployed on Robinhood Chain mainnet, chain id 4663.`
+  once on `status.html` and once on `disclaimers.html`, the not-an-offer sentence once on
+  `disclaimers.html`, and the no-token and licence sentences once each on `disclaimers.html` — zero
+  everywhere else, which is stricter than the old per-page count and not looser: with nothing
+  permitted on the other seven pages, `airdrop`, `presale` and `open source` are banned outright
+  there. What the repeated footer disclosure protected is carried by a mandatory footer link to
+  `disclaimers.html` on every page, with the link text pinned. Also exactly one `<h1>`, `lang="en"`,
+  a skip link to `#main`, `<main id="main">`, a meta description, a title ending in ` — Rwally`, and
+  no surviving review marker anywhere under `apps/site`.
+- **Position** of the status block: absent from all seven other pages, present exactly once on
   `status.html` inside `<main>`, and `status.html` linked from every footer and from no header nav.
+  The same two properties are asserted for `disclaimers.html`'s footer link.
 - **Zero JavaScript**: no `<script` tag and no inline event-handler attribute.
 - **No external host** in any `src`/`href` other than the project's GitHub repository, with explicit
   checks against `fonts.googleapis.com` and `fonts.gstatic.com`. Exactly one exemption:
@@ -126,8 +139,8 @@ directly and asserts its sequencer uptime feed is still a real address.
 
 The settlement-asset LABEL moved with the config. Chain 4663 settles in USDG (Global Dollar), not
 Circle USDC, so the test's `usdg()` helper renders ` USDG` and three site figures changed with it
-— the `Minimum deposit` row, and `risks.html`'s `reference 100 USDG minimum deposit` and `about
-400 USDG`. The third of those is spelled out inline in the test rather than built by the helper,
+— the `Minimum deposit` row, and `disclaimers.html`'s `reference 100 USDG minimum deposit` and
+`about 400 USDG`. The third of those is spelled out inline in the test rather than built by the helper,
 which is exactly how half a rename ships; it is named in a comment there for that reason. The
 field names in the config still read `usdc` / `minDepositUsdc` because the config keeps them, and
 nothing in `contracts/` reads a symbol — the settlement token is identified by address and
@@ -136,12 +149,25 @@ measured with `decimals()`. The numbers did not change at all.
 Three checks that used to be page-scoped are now scoped to the sentence or block they belong to,
 because a page-scoped check is satisfied by a disclaimer thousands of characters away:
 
-- every occurrence of `deployed` must sit inside a sentence that negates it;
+- every occurrence of `deployed` must sit inside a sentence that negates it, **or** name Robinhood
+  Chain, the chain id `4663` or the path `contracts/config/deployments/robinhood-mainnet.json` in
+  that same sentence. The rule changed shape on 2026-09-05 rather than loosening: requiring a
+  negation was a proxy for requiring truth, and it worked only while nothing was deployed. Naming
+  where, in the same sentence, is stricter — a vague "it is deployed" fails now where before it only
+  had to avoid the word "not";
 - the `no public report` qualifier must sit in the same paragraph or list item as the phrase
   `external security review`, wherever that phrase appears;
-- the risks page's stated count of unmitigated risks is derived from the page itself — the number of
-  `What is done` cells whose text begins with `Nothing` — and `who-its-for.html` must state the same
-  number. Change one and the gate names the other.
+- the Disclaimers page's stated count of unmitigated risks is derived from the page itself — the
+  number of `What is done` cells whose text begins with `Nothing`. Change an entry and the gate
+  names the lede. The `who-its-for.html` half of this was dropped with the consolidation: that page
+  no longer restates a number it does not own;
+- every address `status.html` publishes must appear in `contracts/config/deployments/robinhood-mainnet.json`
+  or in `contracts/config/robinhood-mainnet.json`. It is the only page that carries addresses, and a
+  twenty-byte hex string is the one figure on this site a reader cannot sanity-check by eye;
+- the basket is written as ETH and BTC because that is what people call them, so `status.html` and
+  `disclaimers.html` must each carry one sentence naming the ERC-20s those words stand for —
+  `WETH` and `cbBTC`, with the addresses the chain configuration records. A simplification about
+  what a vault holds is only honest while it is anchored.
 
 ### RWLY does not exist, and every mention of it has to say so (added 2026-09-05)
 
@@ -159,22 +185,30 @@ tried first. The approved lede is two sentences — one names RWLY, the next say
 three mentions that live inside `content="…"` meta attributes, which sit in no `<p>`, `<dd>` or
 `<li>`. 160 is measured against the copy: the widest gap on the site today is 108 characters.
 
-The pinned footer sentence `No token. No points. No airdrop. No presale.` is unaffected and stays
-byte-identical — it is true precisely because RWLY does not exist.
+The pinned sentence `No token. No points. No airdrop. No presale.` is unaffected and stays
+byte-identical — it is true precisely because RWLY does not exist. Since 2026-09-05 it is stated
+once, on `disclaimers.html`, rather than in eight footers.
 
 ### The negation exceptions
 
 A few banned words have exactly one legitimate use here, and it is always inside a negation: the
-geofencing clause that appears in every footer, the hero's no-outcome sentence, the two statements
-of the invariant/parameter split, the two places the site denies having anything to join, and the
-two standing-fact footer sentences. Those exact clauses — never bare words — are enumerated in
-`PERMITTED` and in `FOOTER_SENTENCE_COUNTS` in the test, stripped before the
-absence checks run, and the presence checks run against the unstripped source. Two rules keep that
-from becoming a loophole: every entry in `PERMITTED` is itself asserted to be in use, and the two
-footer sentences are counted rather than blanket-stripped — one occurrence per page, except
-`faq.html`, which deliberately repeats both in its body because those two answers are the ones
-people quote. If you change any of those sentences, or repeat one somewhere new, change the test in
-the same commit.
+geofencing clause and the no-outcome sentence on `disclaimers.html`, the invariant/parameter split
+on `how-it-works.html`, the one place the site denies having anything to join
+(`who-its-for.html`), and the two standing sentences. Those exact clauses — never bare words — are
+enumerated in `PERMITTED` and in `FOOTER_SENTENCE_COUNTS` in the test, stripped before the absence
+checks run, and the presence checks run against the unstripped source. Two rules keep that from
+becoming a loophole: every entry in `PERMITTED` is itself asserted to be in use, and the two
+standing sentences are counted rather than blanket-stripped — one occurrence on
+`disclaimers.html`, zero everywhere else.
+
+One `PERMITTED` entry was DELETED on 2026-09-05 rather than left standing: the old `index.html`
+"Next" heading, whose wording is not quoted here for the same reason `CLAUDE.md` gives about
+quoting a banned shape in order to prohibit it — this file is scanned by the same ban list, and
+with the exemption gone the quotation would trip it. The heading is now
+`There is nothing to claim here.`, so the entry covered nothing, and an exemption covering nothing
+is a hole a banned word walks through later. The rot test names that case; deleting the entry is
+the remedy it asks for. If you change any of these sentences, or repeat one somewhere new, change
+the test in the same commit.
 
 ### It also guards the claim surface outside this directory (added 2026-09-01)
 

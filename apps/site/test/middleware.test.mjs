@@ -37,11 +37,11 @@ test('every pages.dev hostname is redirected to the zone — the geofence hole',
     'aa060edf.rwally.pages.dev', // a per-deployment hostname
     'protocol-main.rwally.pages.dev', // a per-branch alias
   ]) {
-    const res = await onRequest(ctx(`https://${host}/risks`));
+    const res = await onRequest(ctx(`https://${host}/disclaimers`));
     assert.equal(res.status, 301, `${host} was served instead of redirected`);
     assert.equal(
       res.headers.get('location'),
-      'https://rwally.com/risks',
+      'https://rwally.com/disclaimers',
       `${host} did not land on the canonical zone`
     );
   }

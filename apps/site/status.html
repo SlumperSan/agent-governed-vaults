@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Status — Agent-Governed Vaults</title>
-<meta name="description" content="The launch verdict, the go/no-go gates, the Base Sepolia testnet address book, and how to check every claim on this site against the repository. No mainnet deployment of the current code exists.">
+<title>Status — Rwally</title>
+<meta name="description" content="The address ledger: what is on Robinhood Chain mainnet, in which block, at which commit, and how each value was read back.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/status">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent-Governed Vaults">
+<meta property="og:site_name" content="Rwally">
 <meta property="og:url" content="https://rwally.com/status">
 <meta property="og:title" content="Status and claims">
-<meta property="og:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
+<meta property="og:description" content="Every address, the block it landed in, the commit it was built from, and the file each figure is read out of. Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
+<meta property="og:image:alt" content="A plain card carrying the words Agent-Governed Vaults and the retired pre-launch status line it has not yet been regenerated to drop.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Status and claims">
-<meta name="twitter:description" content="The launch verdict, the gates that block it, the testnet address book, and the files that let you check all of it. Not deployed to mainnet.">
+<meta name="twitter:description" content="Every address, the block it landed in, the commit it was built from, and the file each figure is read out of. Robinhood Chain mainnet, chain id 4663.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -27,7 +27,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Agent-Governed Vaults</a>
+    <a class="brand" href="index.html">Rwally</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
@@ -35,7 +35,6 @@
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
-        <li><a href="risks.html">Risks</a></li>
         <li><a href="faq.html">Questions</a></li>
       </ul>
     </nav>
@@ -46,65 +45,27 @@
 
   <div class="pre-launch">
     <div class="wrap">
-      <span class="tag">Pre-launch</span>
-      <p>Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Nothing on this site is an offer, a solicitation, or financial advice.</p>
+      <span class="tag">The record</span>
+      <p>Deployed on Robinhood Chain mainnet, chain id 4663. The ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and every address below was read back on-chain rather than transcribed from a deploy log.</p>
     </div>
   </div>
 
   <div class="hero hero--plain">
     <div class="wrap">
       <p class="eyebrow">Status</p>
-      <h1>Where this stands, and how to check it.</h1>
-      <p class="lede">Until 2026-09-04 the block above sat at the top of all seven pages. It now lives here, one page linked from every footer, and every page still states the same status sentence in its own footer. Every figure below is read out of a named file in the public repository, and nothing on this page asks to be taken on trust.</p>
+      <h1>Every address, and how it was checked.</h1>
+      <p class="lede">Every figure on this page is read out of a named file in the public repository. Nothing here asks to be taken on trust.</p>
     </div>
   </div>
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">The board</p>
-      <h2>The launch verdict is NO-GO.</h2>
-      <p class="tight">It is recorded in the verdict line at the top of <code>docs/LAUNCH-READINESS.md</code>, and §1 of that file is the go/no-go checklist that decides it. What holds it there is operational rather than security. Two gates are marked STALE, and each is earned back by running a drill against the current testnet deployment, which needs a funded testnet key nobody but the owner holds.</p>
+      <p class="eyebrow">The address book</p>
+      <h2>What is on chain 4663.</h2>
 
-      <div class="tablewrap" role="region" aria-label="The three gates that moved most recently" tabindex="0">
+      <div class="tablewrap" role="region" aria-label="Robinhood Chain mainnet address book" tabindex="0">
         <table>
-          <caption>The three gates that moved most recently, as docs/LAUNCH-READINESS.md §1 records them</caption>
-          <thead>
-            <tr>
-              <th scope="col">Gate</th>
-              <th scope="col">Status on the board</th>
-              <th scope="col">What that means</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">2. Testnet full lifecycle</th><td>GO, re-run 2026-09-03</td><td>All ten phases ran against a deployment of the current code and passed, from vault creation through to a member exit. Every receipt was re-read from the chain after the run</td></tr>
-            <tr><th scope="row">3. Soak drills</th><td>STALE</td><td>The reason this was stale is retired: a deployment of the current code exists on Base Sepolia. The row stays stale anyway, because five drills have to run against it and have not. It needs a funded testnet key</td></tr>
-            <tr><th scope="row">6. Canary operational</th><td>STALE</td><td>Earned by observation and by nothing else. It closes when the canary runs against the current deployment alongside the soak and its transitions reconcile to specific drill actions</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <p class="tight">Gates 0, 1, 4, 5, 7 and 8 are recorded GO, gate 5 with a named residual: single-provider dependency, because the launch oracle prices each asset from one Chainlink Data Feed, and on the stated target chain a heartbeat and a sane-price band are the only protocol-side defences against a bad answer from it &mdash; the sequencer gate is available only where Chainlink publishes an uptime feed. <code>docs/LAUNCH-READINESS.md</code> §1 is the authority for every row here. This table is a summary of that file, never a second source for it, and where the two differ the file is right.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <p class="eyebrow">The target chain</p>
-      <h2>Robinhood Chain is the target, and nothing is deployed there.</h2>
-      <p class="tight">The stated target chain is Robinhood Chain mainnet, chain id 4663, and its parameters are the reference configuration <code>contracts/config/robinhood-mainnet.json</code>. Nothing from this repository is deployed there, or on any other mainnet. That file is a configuration read back from the chain by read-only JSON-RPC on 2026-09-04, not a deployment record, and it says so in its own <code>status</code> field.</p>
-      <p class="tight">Two things about that chain differ from the configuration this site used to quote, and both are stated here rather than left to a diff. The settlement token is USDG, the Global Dollar, not Circle USDC. And Chainlink publishes no L2 Sequencer Uptime Feed for chain 4663, so the sequencer gate never runs at price time there and the per-asset heartbeat and sane-price band carry that risk alone &mdash; an owner-approved weakening dated 2026-09-04, recorded in <code>docs/DEPLOYMENT.md</code>.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <p class="eyebrow">Testnet</p>
-      <h2>What exists on Base Sepolia, and what it is worth.</h2>
-      <p class="tight">A Base Sepolia deployment of the current code exists. It is a testnet trial with no real value at stake, its USDC is test USDC, and no mainnet deployment of the current code exists. The addresses below are the committed address book, <code>contracts/config/deployments/base-sepolia.json</code>, whose own note records that every address in it was read back independently on-chain rather than transcribed from the deploy log.</p>
-
-      <div class="tablewrap" role="region" aria-label="Base Sepolia address book" tabindex="0">
-        <table>
-          <caption>Base Sepolia, from contracts/config/deployments/base-sepolia.json</caption>
+          <caption>Robinhood Chain mainnet, from contracts/config/deployments/robinhood-mainnet.json</caption>
           <thead>
             <tr>
               <th scope="col">Record</th>
@@ -112,47 +73,100 @@
             </tr>
           </thead>
           <tbody>
-            <tr><th scope="row">Chain</th><td>Base Sepolia, chain id 84532</td></tr>
-            <tr><th scope="row">VaultFactory</th><td><code>0xc1cb782471e506c71ae91feb91adcefc34a99743</code></td></tr>
-            <tr><th scope="row">Smoke vault</th><td><code>0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98</code></td></tr>
-            <tr><th scope="row">Singletons deploy block</th><td>46,307,173, all eleven receipts in that one block</td></tr>
-            <tr><th scope="row">Smoke vault created in block</th><td>46,307,218</td></tr>
-            <tr><th scope="row">Block timestamp of the deploy block</th><td>2026-09-02, 20:57:14 UTC</td></tr>
-            <tr><th scope="row">Source commit</th><td><code>8a0e1155</code></td></tr>
+            <tr><th scope="row">Chain</th><td>Robinhood Chain mainnet, chain id 4663</td></tr>
+            <tr><th scope="row">Broadcast</th><td>2026-09-05</td></tr>
+            <tr><th scope="row">Source commit</th><td><code>b1cde122</code></td></tr>
+            <tr><th scope="row">ChainlinkOracle</th><td><code>0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB</code></td></tr>
+            <tr><th scope="row">OperatorRegistry</th><td><code>0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568</code></td></tr>
+            <tr><th scope="row">SubVaultRegistry</th><td><code>0x692385262C05df7515560886f167c4eDD0814025</code></td></tr>
+            <tr><th scope="row">FeeEngine</th><td><code>0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232</code></td></tr>
+            <tr><th scope="row">Governance</th><td><code>0x790A308f1ac06FeD4C79884BAD25d0C721C5B125</code></td></tr>
+            <tr><th scope="row">VaultDeployer</th><td><code>0xc36198FD2c7C62738159ED1FF965679105FAF05a</code></td></tr>
+            <tr><th scope="row">VaultFactory</th><td><code>0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</code></td></tr>
+            <tr><th scope="row">Vaults created</th><td>none &mdash; <code>factory.vaultCount()</code> returns 0</td></tr>
+            <tr><th scope="row">Oracle deploy block</th><td>54,989,143</td></tr>
+            <tr><th scope="row">Singletons deploy block</th><td>54,989,195, all seven receipts plus three wire calls in that one block</td></tr>
           </tbody>
         </table>
       </div>
 
-      <p class="tight">The smoke vault is the one the ten-phase lifecycle ran against. It is fully exited: <code>totalShares()</code> reads 0 on-chain, so it holds no funds and is kept as evidence rather than as a working vault. The per-phase transaction table is <code>docs/evidence/testnet-lifecycle-run.json</code>. One limit the address book states plainly and this page repeats rather than drops: the sequencer guard did not execute during that run, because Base Sepolia leaves the sequencer uptime feed at the zero address by design, and Robinhood Chain, the stated target chain, publishes no uptime feed for it to execute against at all.</p>
+      <p class="tight">The VaultFactory is the address to verify against. Everything else hangs off it and can be read from it. No execution adapter is deployed as a singleton here: adapters are not protocol singletons, so each vault creator supplies its own and it is bound in that vault's constructor.</p>
     </div>
   </section>
 
   <section>
     <div class="wrap">
-      <p class="eyebrow">Standing facts</p>
-      <h2>Four sentences the guard pins.</h2>
-      <div class="note note--flat">
-        <span class="label">Pinned to every page footer</span>
-        <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p>There is nothing to buy, nothing to claim, and nothing on this site to sign up for. That line is not editorial: the wording guard asserts it verbatim, counts its occurrences on every page, and reds on any rewording, so it cannot be softened by an edit that still leaves CI green. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens; RWLY does not exist yet, and the same guard requires every mention of RWLY on this site to sit beside that fact, so a design intention cannot be written up here as a thing you can hold.</p>
+      <p class="eyebrow">Wiring, read back</p>
+      <h2>What the chain returned when each value was read back.</h2>
+      <ul>
+        <li><code>factory.registry</code>, <code>factory.governance</code>, <code>factory.feeEngine</code> and <code>factory.vaultDeployer</code> each point at the singleton in the table above.</li>
+        <li><code>registry.factory</code> points back at the factory.</li>
+        <li><code>governance.subVaultRegistry</code> points at the SubVaultRegistry.</li>
+        <li><code>factory.oracleAllowlistEnforced()</code> is true, and <code>factory.isAllowedOracle(oracle)</code> is true for the oracle above.</li>
+        <li><code>factory.allowSubVaults()</code> is false, so this factory deploys root vaults only and every vault it deploys is wired <code>subVaultRegistry = address(0)</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The oracle</p>
+      <h2>Two assets, one Chainlink Data Feed each.</h2>
+      <p class="tight">The basket is written on this site as ETH and BTC because that is what people call them, and on Robinhood Chain it is held as WETH at <code>0x0bd7d308f8e1639fab988df18a8011f41eacad73</code> and cbBTC at <code>0xcec185eb182c47d1ba1efc84e6959e18cd620be4</code>.</p>
+
+      <div class="tablewrap" role="region" aria-label="Oracle configuration" tabindex="0">
+        <table>
+          <caption>Oracle configuration, from contracts/config/robinhood-mainnet.json</caption>
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+              <th scope="col">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">ETH/USD feed</th><td><code>0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9</code>, eight decimals</td></tr>
+            <tr><th scope="row">CBBTC/USD feed</th><td><code>0x0009cD492adf8167f9eEBf1293556A673530a21a</code>, eight decimals</td></tr>
+            <tr><th scope="row">Staleness bound</th><td>86,400 seconds per asset, which is ChainlinkOracle's MAX_HEARTBEAT ceiling</td></tr>
+            <tr><th scope="row">Sane-price bands</th><td>$100 to $100,000 for WETH; $1,000 to $1,000,000 for cbBTC</td></tr>
+            <tr><th scope="row">Settlement token</th><td>USDG at <code>0x5fc5360d0400a0fd4f2af552add042d716f1d168</code>, valued at one dollar in the oracle</td></tr>
+            <tr><th scope="row">Sequencer uptime feed</th><td>the zero address</td></tr>
+          </tbody>
+        </table>
       </div>
+
+      <p class="tight">Chainlink publishes no L2 Sequencer Uptime Feed for chain 4663, so there is no address to wire. The deploy-time requirement exempts 4663 alongside a local node and Base Sepolia, by an owner-approved weakening of 2026-09-04. What that costs is set out in the <a href="disclaimers.html#r5">Disclaimers</a>.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The first vault</p>
+      <h2>No vault has been created yet.</h2>
+      <p class="tight">The singletons are on chain and the factory is open, and <code>factory.vaultCount()</code> returns 0. Until a vault exists there is nothing to deposit into and no address to check, which is why the row above says so rather than leaving a gap.</p>
+      <p class="tight">The parameters the first vault is planned to be created with are the reference configuration in <code>contracts/config/robinhood-mainnet.json</code>: settlement in USDG, the two assets in the oracle table above, a planned capacity cap of 50,000 USDG, a minimum deposit of 100 USDG, and governance parameters of commit 1 hour, reveal 1 hour, timelock 0, execution window 24 hours, quorum 25%, proposal threshold 5%, delegate concentration cap 40% and proposal cooldown 6 hours. <a href="how-it-works.html">How it works</a> renders that table in full. They are a configuration, not a vault; a vault freezes them only when it is funded.</p>
+      <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
+      <p class="tight">There is no token. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens; RWLY does not exist yet, and this page will carry its record when it does.</p>
     </div>
   </section>
 
   <section>
     <div class="wrap">
       <p class="eyebrow">Verification</p>
-      <h2>How to verify these claims.</h2>
-      <p class="tight">Every claim on this page is a file you can open. The repository is public, including the launch-readiness board and every review round.</p>
+      <h2>How to check every line above.</h2>
       <ul>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/base-sepolia.json">The address book</a>: every address above, plus the note recording how each was read back on-chain and what the record deliberately does not prove.</li>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/evidence/testnet-lifecycle-run.json">The lifecycle transaction table</a>: the ten phases, block by block, with the receipts.</li>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/robinhood-mainnet.json">The reference configuration</a>: every parameter this site quotes for the target chain, each annotated with how it was read from chain 4663 and what was not checked.</li>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/LAUNCH-READINESS.md">The go/no-go board</a>: the verdict, all nine gates, and the residual-risk register behind them.</li>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences above, bans the claim shapes these pages may not make, and reads the contract configuration to catch a page that has gone stale against it.</li>
-        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a> and <a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/config-doc-truth.test.mjs">the config-versus-docs guard</a>: the same discipline applied to the documentation, so a claim cannot escape by moving out of the site.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/robinhood-mainnet.json">The deployment record</a>: every address above, plus the note recording how each was read back on-chain.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/robinhood-mainnet.json">The chain configuration</a>: every parameter this site quotes for chain 4663, each annotated with how it was read.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences here and reads the contract configuration to catch a page that has gone stale against it.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a>.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-robinhood-deployment.test.mjs">The record guard</a>: it binds every Robinhood Chain claim in this repository to the deployment record, so a claim cannot land before the fact it describes.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/config-doc-truth.test.mjs">The config-versus-docs guard</a>.</li>
       </ul>
-      <p class="tight">All three suites run in CI on every change. Green is necessary and not sufficient, which is why the files themselves are linked rather than a badge: read the contracts rather than this description of them.</p>
+      <p class="tight">All of these run in CI on every change. Read the contracts rather than this description of them.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
+        <a class="btn" href="how-it-works.html">The mechanism</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
+      </div>
     </div>
   </section>
 
@@ -169,9 +183,9 @@
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
-          <li><a href="risks.html">Risks</a></li>
           <li><a href="faq.html">Questions</a></li>
           <li><a href="status.html" aria-current="page">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
         </ul>
       </div>
       <div>
@@ -180,15 +194,14 @@
           <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
         </ul>
         <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
-        <p class="small">It is public, including the launch-readiness board and every review round. Read the contracts rather than this description of them.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
       </div>
       <div>
-        <h2>Standing facts</h2>
-        <p class="small footer-pins">No token. No points. No airdrop. No presale.</p>
-        <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
   </div>
 </footer>
 
