@@ -31,7 +31,7 @@
  */
 
 import { CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, ORACLE_VIEWS, EXIT_FROZEN_SELECTORS } from '../abis.mjs';
-import { ok, alert, skipped, detectorBroken, shortAddr } from '../signal.mjs';
+import { ok, alert, notApplicable, detectorBroken, shortAddr } from '../signal.mjs';
 import { checkOracleFreshness } from './oracle-freshness.mjs';
 
 /**
@@ -216,7 +216,8 @@ export async function checkChainlinkOracle({ reader, vault, oracle, assets, nowS
   for (const asset of assets) {
     out.push(await assetLeg({
       reader, vault, oracle, asset, nowSec, pinned,
-      sequencerCause: seq.cause, stalenessWarnPct, cadenceByAsset,
+      sequencerCause: seq.cause, sequencerGateActive: !isZero(sequencerFeed),
+      stalenessWarnPct, cadenceByAsset,
     }));
   }
 
@@ -242,15 +243,30 @@ async function sequencerLeg({ reader, vault, oracle, sequencerFeed, nowSec, grac
   const base = { signal: SIGNAL, vault, key: 'sequencer' };
 
   if (isZero(sequencerFeed)) {
-    // Not a detector fault and not health: the contract's own guard is inert here, so there is
-    // nothing to watch. Off a sequencer L2 that is correct; on Base mainnet it means the deployment
-    // shipped with NO sequencer guard at all, which is worth exactly one loud line either way.
+    // NOT APPLICABLE, not skipped. `sequencerUptimeFeed` is immutable (ChainlinkOracle.sol:75), so
+    // a zero here is a permanent fact about this deployment, and `_requireSequencerUp` returns
+    // without reading a feed (ChainlinkOracle.sol:314) on every call for the rest of its life.
+    // There is no sequencer state that could ever freeze this vault, so there is nothing for this
+    // leg to measure — ever, on any sweep, on any vault on this oracle.
+    //
+    // It used to report `skipped` with a two-clause reason ("correct off a sequencer L2; on Base
+    // mainnet it means no guard"), which cost twice over. A `skipped` leg is not-OK forever: it
+    // rides in every heartbeat's notOk tally and in `unhealthy()`, so the standing count never
+    // reaches zero and a real degradation has to be spotted inside a permanent one. And on a
+    // sequencer L2 that HAS no vendor uptime feed both clauses are false at once — the deployment
+    // is not off a sequencer L2, and it is not on Base.
+    //
+    // Which chains may ship without an uptime feed is not this file's judgement to make and never
+    // was: it is decided before the oracle exists, by `DeployChainlinkOracle.requiresSequencerUptimeFeed`
+    // (contracts/script/DeployChainlinkOracle.s.sol:59), which blocks the broadcast, and re-checked
+    // read-only by scripts/verify-chainlink-oracle.mjs. A monitor watching an already-immutable
+    // contract cannot revisit that decision, so it states what is wired and stops.
     return {
       cause: null,
-      result: skipped({
+      result: notApplicable({
         ...base,
-        message: `sequencer gate not configured on the oracle at ${shortAddr(oracle)} for vault ${shortAddr(vault)}: sequencerUptimeFeed is address(0), so ChainlinkOracle._requireSequencerUp is a no-op and this sub-check cannot run. Correct off a sequencer L2 (local/testnet); on Base mainnet it means the deployment has no sequencer guard`,
-        detail: { vault, oracle, sequencerUptimeFeed: ZERO, configured: false },
+        message: `sequencer check inactive on this deployment (vault ${shortAddr(vault)}, oracle ${shortAddr(oracle)}): the oracle was constructed with no uptime feed, so ChainlinkOracle._requireSequencerUp returns without reading a feed (ChainlinkOracle.sol:314) and no sequencer state can freeze this vault. The rest of priceWad is unaffected — an unlisted feed, a dead or non-positive answer, an unset or future timestamp, the heartbeat and the sane-price band still freeze the asset they apply to (ChainlinkOracle.sol:285-304), and this signal still measures each of them per asset. Whether a chain may ship without an uptime feed is settled at deploy time by DeployChainlinkOracle.requiresSequencerUptimeFeed, not here`,
+        detail: { vault, oracle, sequencerUptimeFeed: ZERO, configured: false, sequencerGate: 'inert' },
       }),
     };
   }
@@ -343,7 +359,7 @@ async function sequencerLeg({ reader, vault, oracle, sequencerFeed, nowSec, grac
 // ── one basket asset ─────────────────────────────────────────────────────────
 
 /** @returns {Promise<import('../signal.mjs').SignalResult>} */
-async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequencerCause, stalenessWarnPct, cadenceByAsset }) {
+async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequencerCause, sequencerGateActive, stalenessWarnPct, cadenceByAsset }) {
   const base = { signal: SIGNAL, vault, key: asset };
 
   const cfgRead = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'feedOf', [asset]);
@@ -367,7 +383,7 @@ async function assetLeg({ reader, vault, oracle, asset, nowSec, pinned, sequence
   if (pinned && eqAddr(asset, pinned)) {
     return ok({
       ...base,
-      message: `asset ${shortAddr(asset)} on vault ${shortAddr(vault)} is the oracle's pinned USDC leg — priceWad returns $1.00 and can never go stale (it can still be frozen by the sequencer gate, which has its own key)`,
+      message: `asset ${shortAddr(asset)} on vault ${shortAddr(vault)} is the oracle's pinned USDC leg — priceWad returns $1.00 and can never go stale${sequencerGateActive ? ' (it can still be frozen by the sequencer gate, which has its own key)' : ' (and this oracle has no uptime feed, so the sequencer gate cannot freeze it either — see the sequencer key)'}`,
       measured: 'pinned 1e18', threshold: 'pinned',
       detail: { vault, oracle, asset, pinned: true },
     });

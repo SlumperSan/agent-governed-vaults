@@ -286,14 +286,100 @@ test('feedOf reverting on an oracle that claimed to be a ChainlinkOracle is a BR
 
 // ── the L2 sequencer gate ────────────────────────────────────────────────────
 
-test('the sequencer gate is DEGRADED, not OK, when no uptime feed is configured', async () => {
-  // Correct off a sequencer L2 (Base Sepolia leaves it address(0) by design) — but it is a check
-  // that cannot run, and on mainnet it would mean the deployment shipped with no guard at all.
+test('with no uptime feed the sequencer leg is NOT-APPLICABLE, not a check that failed to run', async () => {
+  // `sequencerUptimeFeed` is immutable (ChainlinkOracle.sol:75) and `_requireSequencerUp` returns
+  // without reading a feed when it is zero (ChainlinkOracle.sol:314). Nothing about this can change
+  // while the oracle exists, so `skipped` — "could not be measured" — was the wrong word: it made
+  // the leg not-OK on every sweep of every vault for the life of the deployment.
   const s = forSequencer(await run(readerFor()));
-  assert.equal(s.status, 'skipped');
+  assert.equal(s.status, 'ok');
+  assert.equal(s.detail.notApplicable, true);
   assert.equal(s.detail.configured, false);
-  assert.equal(s.detail.detectorBroken, undefined, 'a known-state skip must not escalate as a broken detector');
-  assert.match(s.message, /no sequencer guard/);
+  assert.equal(s.detail.sequencerGate, 'inert');
+  assert.equal(s.detail.detectorBroken, undefined, 'a deployment fact must not escalate as a broken detector');
+});
+
+test('the not-applicable line states the contract behaviour, and claims no chain it cannot know', async () => {
+  const s = forSequencer(await run(readerFor()));
+  assert.match(s.message, /sequencer check inactive on this deployment/);
+  assert.match(s.message, /ChainlinkOracle\.sol:314/, 'cite the line where the gate returns');
+  assert.match(s.message, /DeployChainlinkOracle\.requiresSequencerUptimeFeed/,
+    'the deploy-time guard owns the may-this-chain-ship-without-one decision, not the canary');
+  // The replaced line asserted two things a canary cannot read off an oracle: that the deployment
+  // is off a sequencer L2, and that it is on Base. Both are false at once on a sequencer L2 whose
+  // vendor publishes no uptime feed — the case that motivated this change.
+  assert.ok(!/Base mainnet/.test(s.message), 'the canary does not know which chain it is on');
+  assert.ok(!/local\/testnet/.test(s.message), 'nor that a chain without a feed is a testnet');
+  assert.equal(s.measured, undefined, 'nothing was measured, so nothing is reported as measured');
+  assert.equal(s.threshold, undefined);
+});
+
+test('a zero uptime feed produces ONE notice and then silence, however long the canary runs', async () => {
+  // The whole point. A `skipped` leg re-states itself as a standing not-OK forever; this states the
+  // fact once, marked NOTICE rather than RECOVERED (nothing recovered) or DEGRADED (nothing is).
+  const reader = readerFor();
+  const tracker = createTransitionTracker();
+  const lines = [];
+  for (let poll = 1; poll <= 30; poll += 1) {
+    for (const t of tracker.observe(await run(reader), { poll })) lines.push({ poll, line: t.line });
+  }
+  assert.equal(lines.length, 1, 'exactly one line, at the first sighting');
+  assert.equal(lines[0].poll, 1);
+  assert.match(lines[0].line, /^NOTICE \[oracle-freshness\] sequencer check inactive on this deployment/);
+  assert.ok(!/DEGRADED|RECOVERED|ALERT/.test(lines[0].line));
+});
+
+test('the not-applicable leg never counts as unhealthy, so the standing notOk tally can reach zero', async () => {
+  // `unhealthy()` feeds the heartbeat line and the off-host summary. Under `skipped` this leg sat
+  // in that tally permanently, so a real degradation had to be spotted inside a standing one.
+  const tracker = createTransitionTracker();
+  tracker.observe(await run(readerFor()), { poll: 1 });
+  assert.deepEqual(tracker.unhealthy(), []);
+});
+
+test('upgrading over a state file that recorded the old `skipped` emits one NOTICE, not a RECOVERED', async () => {
+  // The first sweep after this change reads a snapshot written by the previous build, where the
+  // leg is `skipped`. That is a real status change, so it emits — and it must not read as a
+  // recovery from a fault that never existed.
+  const tracker = createTransitionTracker({
+    initial: { [`oracle-freshness|${VAULT}|sequencer`]: { status: 'skipped', since: 0, pendingStatus: null, pendingCount: 0 } },
+  });
+  const emitted = tracker.observe(await run(readerFor()), { poll: 1 }).filter((t) => t.key === 'sequencer');
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].from, 'skipped');
+  assert.equal(emitted[0].to, 'ok');
+  assert.match(emitted[0].line, /^NOTICE \[oracle-freshness\]/);
+  assert.ok(!/RECOVERED/.test(emitted[0].line));
+});
+
+test('a CONFIGURED uptime feed is untouched: the leg measures, and says nothing while healthy', async () => {
+  // The guard on the other half of the change. Everything above is about the zero-feed deployment;
+  // a deployment that has a feed must still be measured, and must still emit nothing when up.
+  const reader = readerFor({ sequencerUptimeFeed: SEQ_FEED });
+  const s = forSequencer(await run(reader));
+  assert.equal(s.status, 'ok');
+  assert.equal(s.detail.notApplicable, undefined, 'a measured leg is not a not-applicable one');
+  assert.equal(s.detail.sequencerUptimeFeed, SEQ_FEED);
+  assert.match(s.message, /sequencer up for/);
+  const tracker = createTransitionTracker();
+  for (let poll = 1; poll <= 5; poll += 1) {
+    assert.deepEqual(tracker.observe(await run(reader), { poll }), [], `poll ${poll} broke the silence`);
+  }
+});
+
+test('the pinned USDC leg does not promise a sequencer freeze on an oracle that has no uptime feed', async () => {
+  // The parenthetical named the ONE thing that can still freeze a pinned leg. With no uptime feed
+  // that thing does not exist, so on a zero-feed deployment the sentence was simply untrue.
+  const withGate = forAsset(await run(
+    readerFor({ usdcPin: USDC, sequencerUptimeFeed: SEQ_FEED }),
+    { assets: [USDC] },
+  ), USDC);
+  assert.equal(withGate.detail.pinned, true);
+  assert.match(withGate.message, /can still be frozen by the sequencer gate/);
+
+  const withoutGate = forAsset(await run(readerFor({ usdcPin: USDC }), { assets: [USDC] }), USDC);
+  assert.equal(withoutGate.detail.pinned, true);
+  assert.match(withoutGate.message, /the sequencer gate cannot freeze it either/);
 });
 
 test('a DOWN sequencer alerts vault-wide, and says pricing resumes AFTER the restart, not at it', async () => {

@@ -2,7 +2,9 @@
 /**
  * Runnable canary entrypoint. Point it at a deployed testnet and it stays SILENT until something
  * is genuinely wrong: one line per signal TRANSITION (OK→ALERT, ALERT→OK, OK→DEGRADED), nothing
- * at all while every signal is healthy.
+ * at all while every signal is healthy. The one exception is a NOTICE: a check with no subject in
+ * this deployment states that once, on its first sighting, and is silent for good after it (see
+ * `notApplicable()` in signal.mjs).
  *
  * STRICTLY READ-ONLY. It builds a viem *public* client (see reader.mjs) and issues only
  * eth_blockNumber / eth_getBlockByNumber / eth_call / eth_getLogs. It never sends a transaction,
@@ -29,7 +31,8 @@
  *                              waking-hours half is the receiver's to implement; nothing in this
  *                              process knows the time of day or promises a response.
  *   LOG_WEBHOOK_URL            POST one JSON body per LOG-tier transition — everything else,
- *                              including every DEGRADED/DETECTOR BROKEN line and feed-identity.
+ *                              including every DEGRADED/DETECTOR BROKEN/NOTICE line and
+ *                              feed-identity.
  *   ALERT_WEBHOOK_URL          back-compat fallback: used for whichever of PAGE_WEBHOOK_URL /
  *                              LOG_WEBHOOK_URL is unset. Set only this and behaviour is unchanged
  *                              from before tiering existed — every transition to one URL.
@@ -86,8 +89,8 @@
  *                              §5.2: with it off, a dead canary and a healthy protocol are the same
  *                              observation. This does NOT touch "silence means healthy" for
  *                              transition lines — that claim is about the per-signal ALERT/
- *                              RECOVERED/DEGRADED lines, which still say nothing while every
- *                              signal stays OK. The heartbeat is a separate, deliberately-noisy
+ *                              RECOVERED/DEGRADED/NOTICE lines, which still say nothing while
+ *                              every signal stays OK (a NOTICE is emitted once, then never again). The heartbeat is a separate, deliberately-noisy
  *                              liveness beat.
  *
  * Run: `RPC_URL=… STATE_PATH=… node packages/canary/src/canary-runner.mjs`

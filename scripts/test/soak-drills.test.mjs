@@ -623,11 +623,14 @@ test('isAssetSubject accepts an address and rejects every per-vault meta key', (
   assert.equal(isAssetSubject(undefined), false);
 });
 
-test('a permanently-skipped `sequencer` row does NOT count as the canary tracking a freeze', () => {
-  // PR #89 added a per-vault `sequencer` row under the `oracle-freshness` signal name. On Base
-  // Sepolia sequencerUptimeFeed is address(0), so that row is permanently `skipped` — under the old
+test('a not-OK `sequencer` row does NOT count as the canary tracking a freeze', () => {
+  // PR #89 added a per-vault `sequencer` row under the `oracle-freshness` signal name. Where
+  // sequencerUptimeFeed is address(0) that row was permanently `skipped` — under the old
   // `rows.some(r => r.status !== 'ok')` it satisfied the assertion by itself, whether or not any
-  // asset row ever left OK. That is a drill certifying nothing while exiting 0.
+  // asset row ever left OK. That is a drill certifying nothing while exiting 0. The canary now
+  // reports that case as not-applicable `ok`, so this exact fixture is a state file written by an
+  // older build; the guard is kept because the exclusion must hold on STATUS-blind grounds — the
+  // `flavor` row below is `skipped` today and would otherwise walk straight back through.
   const byAsset = summarize([liveSample('t1', 1, { asset: { priceReverts: true, frozenCauseKey: 'heartbeat-exceeded' } })]);
   const rows = oracleCanaryRows({
     transitions: {
@@ -661,6 +664,27 @@ test('an asset row that left ok DOES count, so the fix does not simply disable t
     },
   });
   assert.equal(verdictOf(byAsset, rows).canaryTracked, true);
+});
+
+test('drill 4 does not claim the sequencer row is permanently skipped on a zero-feed oracle', () => {
+  // WHY A TEXT PIN. The two comments above describe an allowlist whose only runtime consumer is
+  // drill4-oraclefreeze.mjs, which executes at import and prints this rationale in the assertion
+  // message it fails with — so no fixture in this file reaches that prose. Nor does a guard:
+  // scripts/test/config-doc-truth.test.mjs and scripts/test/claims-lede-truth.test.mjs walk
+  // `.md`/`.html`/`.txt`/`.json`, and `.mjs` is in neither set. This is a text pin over the
+  // source, the same instrument the run-soak.ps1 tests below use, and it catches the defect that
+  // did happen: the claim was rewritten here and in series-analysis.mjs and left standing in the
+  // drill. On a zero `sequencerUptimeFeed` the leg returns `notApplicable`
+  // (packages/canary/src/signals/oracle-health.mjs:266), which is an `ok`, so a present-tense
+  // "permanently skipped" is false about the deployment the drill actually runs against.
+  const drill4 = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'soak', 'drill4-oraclefreeze.mjs'),
+    'utf8',
+  );
+  assert.doesNotMatch(drill4, /sequencer row is permanently skipped/,
+    'the sequencer row on a zero-feed oracle now reports ok (not-applicable), never skipped');
+  assert.match(drill4, /neither evidences anything about an asset/,
+    'the exclusion rests on status-blind grounds, so the rationale must survive the status change — without this the pin above would also pass on a deleted message');
 });
 
 // ───────────────── insufficient evidence is not "no event" ─────────────────
