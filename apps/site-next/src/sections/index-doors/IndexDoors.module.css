@@ -148,18 +148,31 @@ main:global(#main) > .section {
 
 /* The link, not a button: it navigates, and dressing a navigation as a control
    is what makes a reader expect something to happen in place. The underline is
-   the affordance; --accent-dim is 5.51:1 on --ground, recorded in tokens.css. */
+   the affordance.
+
+   THE UNDERLINE COLOUR CHANGED WITH THE GROUND UNDER IT, and the figure that
+   stood in this comment is why the rule changed rather than only the prose. It
+   read "--accent-dim is 5.51:1 on --ground, recorded in tokens.css", which was
+   true while the door sat on the page's own ground and stopped being true the
+   moment the door became a deep colour block: --accent-dim measures 4.70:1 on
+   --block-violet and 3.94:1 on --block-teal. Both still clear the 3:1 floor a
+   non-text graphic has to meet, so the old value was not unsafe, but a figure
+   that names a surface the element is not on is the exact failure tokens.css
+   spends four hundred words on. --accent is the same hue two steps brighter
+   and measures 6.68:1 and 5.60:1 on the two blocks. The thickness goes to 2px
+   with it, because a 1px hairline under a page of 3px keylines is the one line
+   on the door that is not drawn. */
 .doorLink {
   justify-self: start;
   color: var(--ink);
   text-decoration: underline;
-  text-decoration-color: var(--accent-dim);
-  text-decoration-thickness: 1px;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
   text-underline-offset: 0.18em;
 }
 
 .doorLink:hover {
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--ink);
 }
 
 /* --- the three action buttons ---------------------------------------------

@@ -150,8 +150,11 @@ html.lenis body {
    by construction: it is a condensed poster face whose sidebearings are
    already minimal, and -0.02em closes the counters until the word is a block.
    0.012em opens it back to where the letters read as letters. The token is
-   left alone rather than changed, because a section that wants the serif
-   tracking on something else still reads it.
+   left alone rather than changed, and grepping src/ for it on 2026-09-05 finds
+   its own declaration and this paragraph and nothing else: it is now an unread
+   token rather than a wrong one, which is a thing to delete on a round that is
+   editing tokens.css for its own reasons and not a thing to fold into a
+   re-theme.
 
    THE INK OUTLINE IS FIVE SHADOWS AND EVERY ONE OF THEM IS DOING A JOB. Four
    offsets of --ground ring the letter at --ink-outline, which is what a comic
@@ -232,6 +235,19 @@ pre,
    worked out, so a grid or flex track holding one of these paths stops being
    sized by the unbreakable word. Neither one breaks anything that fits, so an
    address on a wide screen is untouched.
+
+   NO CONTRACT ADDRESS BREAKS BECAUSE OF THIS RULE, and that was measured
+   rather than assumed, because a hex address split across two lines is a
+   transcription hazard and not a cosmetic one. Eleven section stylesheets
+   already set `overflow-wrap: anywhere` deliberately, status-board and
+   status-testnet among them, and every address on status.html and
+   disclaimers.html computes `anywhere` from those rules with this one
+   neutralised. Measured at 375 by overriding this declaration back to `normal`
+   in the built pages: the set of tokens that wrap is unchanged for every
+   address, and the only two that stop wrapping are the repository path and
+   `Governance.hasPendingExecution(vault)`, at which point disclaimers.html
+   scrolls to 378 and faq.html to 384 against a 375 viewport. This rule moves
+   those two and nothing else.
 
    `pre` IS DELIBERATELY NOT IN THIS SELECTOR. Its default `white-space: pre`
    allows no wrapping at all, which makes overflow-wrap a no-op there, and the
