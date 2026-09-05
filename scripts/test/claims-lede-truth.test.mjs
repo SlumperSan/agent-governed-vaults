@@ -512,6 +512,128 @@ test('no public surface claims the contracts screen who may deposit', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// Guard 7 — RWLY is never the object of a protocol transfer verb, and never a governance or
+// entitlement subject. Legs 47/48 of the 2026-09-05 copy deck v2 (its own legs D and E).
+//
+// Landed NOW, before RWLY exists, on the same reasoning `claims-robinhood-deployment.test.mjs`
+// applies to the record it guards: landing the ban before the false sentence can be written stops
+// it being written at all, rather than being caught the day of a token launch when everyone is
+// busy. `vision.html` is a whole page of sentences about fees, treasuries and a token — precisely
+// where "the protocol routes fees to RWLY" gets written by accident — which is why this deck is the
+// occasion for it.
+//
+// Matched by SHAPE, permanently, exempting nothing (unlike guard 4's dated-record exemption): this
+// is the claim a well-meaning editor writes by accident once RWLY is on the page, and no register —
+// design intent included — makes it true. `grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol
+// and VaultCore.sol; `FeeEngine.claimFees` pays `claimableFees[msg.sender]` to the CALLER, and the
+// caller is the operator address, not a token. Approved register: "the treasury intends to",
+// "is designed to", "a multisig moves" — all SUBJECT-first with RWLY or the treasury as the actor,
+// never the protocol/contracts/vault/governance/FeeEngine as the actor moving something TO RWLY.
+// ---------------------------------------------------------------------------------------------
+/**
+ * Sentence-scoped, on the same rule `flat` applies elsewhere in this file: a mention and its status
+ * split across a line break still count as one sentence.
+ */
+const sentencesOf = (text) => text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
+
+const RWLY_ATTRIBUTION = [
+  // A protocol-ish subject, a transfer verb, then RWLY as the object -- in either order the deck's
+  // leg D regex was written for. The subject/verb gap and the verb/RWLY gap are both capped so an
+  // unrelated RWLY three sentences later cannot complete the shape.
+  /\b(?:the\s+)?(?:contracts?|protocol|vault|governance|feeengine|fee\s+engine)\b[^.;:!?]{0,60}\b(?:routes?|pays?|distributes?|accrues?|credits?|sends?|allocates?)\b[^.;:!?]{0,40}\bRWLY\b/gi,
+  // RWLY holders as the subject of a governance or entitlement verb.
+  /\bRWLY\s+holders?\s+(?:votes?|governs?|decides?|receives?|earns?|claims?)\b/gi,
+  // RWLY as a weighting term, or as something staked/locked/required to participate.
+  /\bRWLY-weighted\b/gi,
+  /\bstake\s+RWLY\b/gi,
+];
+
+// "backed by the vault(s)" as a description of RWLY -- sentence-scoped, on the deck's own
+// instruction ("near RWLY" rather than a fixed-shape regex), the same scoping `sentencesOf` already
+// gives guard 6's neighbours in `site.test.mjs`.
+const RWLY_BACKED_BY_VAULT = /\bbacked\s+by\s+the\s+vaults?\b/i;
+
+test('no public surface says the protocol pays, routes or accrues anything to RWLY, or makes RWLY a governance or entitlement subject', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of RWLY_ATTRIBUTION) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+    for (const s of sentencesOf(text)) {
+      if (/\bRWLY\b/.test(s) && RWLY_BACKED_BY_VAULT.test(s)) hits.push({ file, quote: s.trim().slice(0, 160) });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    '`grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol and VaultCore.sol. `FeeEngine.claimFees`\n' +
+      'pays `claimableFees[msg.sender]` to the CALLER, which is the operator address, not a token.\n' +
+      'RWLY is design intent only: say "the treasury intends to", "is designed to" or "a multisig\n' +
+      'moves" with RWLY or the treasury as the actor — never that the protocol, the contracts, the\n' +
+      'vault, Governance or FeeEngine routes, pays, distributes, accrues, credits, sends or allocates\n' +
+      'anything TO RWLY; never RWLY holders as a governance or entitlement subject; never RWLY as a\n' +
+      'weighting term or as something staked to participate; never RWLY described as backed by a vault.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the RWLY attribution ban catches the shape and spares the approved register', () => {
+  const caught = (s) => {
+    const hay = flat(s);
+    const shapeHit = RWLY_ATTRIBUTION.some((re) => {
+      re.lastIndex = 0; // these patterns carry /g and are reused across probe cases
+      return re.test(hay);
+    });
+    if (shapeHit) return true;
+    return sentencesOf(s).some((sentence) => /\bRWLY\b/.test(sentence) && RWLY_BACKED_BY_VAULT.test(sentence));
+  };
+  // The banned shape, in the forms an editor reaches for once RWLY is on the page.
+  for (const bad of [
+    'The protocol routes fees to RWLY.',
+    'FeeEngine accrues the performance fee to RWLY holders.',
+    'RWLY holders vote on every rebalance.',
+    'Governance is RWLY-weighted.',
+    'You have to stake RWLY to participate.',
+    'RWLY is backed by the vaults.',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
+  // The deck's own approved register, subject-first with RWLY or the treasury as the actor —
+  // this is the register guard 7 exists to leave alone, not the shape it exists to catch.
+  for (const ok of [
+    'RWLY is designed to pair with stock tokens on the chain’s Uniswap.',
+    '10% is designed to buy RWLY back, hourly, as a TWAP rather than in one order.',
+    'The fees those pools generate are designed to flow to the treasury and buy stock into vault 1.',
+    'The treasury intends to use the protocol’s fees to acquire official Robinhood Stock Tokens.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds the deck's own approved copy: ${ok}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Guard 8 — RWLY stays absent from contracts/src, permanently. Leg 48 (v1 leg E).
+//
+// Cheap, and it is the fact every "is designed to" / "does not exist yet" sentence about RWLY
+// across the whole site rests on. If this ever goes red, every one of those sentences is false and
+// has to be rewritten — which is the correct outcome for a guard to force, not a nuisance.
+// ---------------------------------------------------------------------------------------------
+const RWLY_ABSENT_FROM = ['contracts/src/Governance.sol', 'contracts/src/FeeEngine.sol', 'contracts/src/VaultCore.sol'];
+
+test('RWLY is absent from contracts/src entirely', () => {
+  for (const f of RWLY_ABSENT_FROM) {
+    const text = readFileSync(path.join(REPO, f), 'utf8');
+    assert.equal(
+      (text.match(/rwly/gi) ?? []).length,
+      0,
+      `${f}: contains "RWLY" — every design-intent sentence about RWLY on every public surface assumes ` +
+        'grep -ci rwly returns 0 here. If a future design wires the token into a contract, this leg is ' +
+        'meant to go red and every RWLY sentence in the repository has to be rewritten to match.',
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
 // COVERAGE, NOT A GUARD — the walk must actually REACH the redesign's prerendered pages.
 //
 // The header draws this file's scope on two axes, the STORE (repo vs vault) and the FILE TYPE
@@ -564,6 +686,7 @@ const PRERENDERED = [
   'who-its-for.html',
   'operators.html',
   'faq.html',
+  'vision.html',
   'status.html',
   'disclaimers.html',
 ].map((page) => `${SITE_NEXT}/dist/${page}`);

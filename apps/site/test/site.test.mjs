@@ -54,18 +54,21 @@ const REPO = path.resolve(SITE, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// Still eight. `risks.html` was RETIRED on 2026-09-05 and `disclaimers.html` took its slot: the
+// Nine now, not eight. `risks.html` was RETIRED on 2026-09-05 and `disclaimers.html` took its slot: the
 // owner's instruction is that every negative statement on this site lives on one page, so the
-// fifteen risks, the legal position and every caveat lifted out of the other seven pages are all
-// there. The page count did not change and neither did the parser -- the risk articles keep their
-// `<article class="risk" id="rN">` shape, and every leg below that used to read risks.html now
-// reads disclaimers.html.
+// fifteen risks, the legal position and every caveat lifted out of the other pages are all
+// there. The page count did not change for that move and neither did the parser -- the risk articles
+// keep their `<article class="risk" id="rN">` shape, and every leg below that used to read risks.html
+// now reads disclaimers.html.
 //
-// TWO of these eight are NOT in the header nav -- status.html since 2026-09-04 and
+// `vision.html` was ADDED on 2026-09-05 (copy deck v2, the gen-2 design intent page), which is why
+// the count moved from eight to nine here and in every "all N pages" leg below.
+//
+// TWO of these nine are NOT in the header nav -- status.html since 2026-09-04 and
 // disclaimers.html since 2026-09-05 -- and both are reached from the footer of every page. They are
 // public pages and every guard in this file walks them, which is why they are members of this array
 // rather than special cases.
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'disclaimers.html', 'faq.html', 'status.html'];
+const PAGES = ['index.html', 'how-it-works.html', 'vision.html', 'agents.html', 'who-its-for.html', 'operators.html', 'disclaimers.html', 'faq.html', 'status.html'];
 
 /** The one page every negative claim lives on, and the one every footer must link to. */
 const DISCLAIMERS_PAGE = 'disclaimers.html';
@@ -222,8 +225,8 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-test('all eight pages exist', () => {
-  assert.equal(PAGES.length, 8, 'PAGES must list all eight public pages');
+test('all nine pages exist', () => {
+  assert.equal(PAGES.length, 9, 'PAGES must list all nine public pages');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -602,7 +605,7 @@ test('every internal .html link resolves to a file on disk', () => {
   }
 });
 
-test('every page links to all eight pages', () => {
+test('every page links to all nine pages', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {
@@ -1019,25 +1022,86 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
  * <p>, <dd> or <li> at all. A character window handles markup and prose with one rule.
  *
  * 160 CHARACTERS, chosen against the copy rather than picked round. Measured over the site as it
- * stands, the widest gap between an "RWLY" and its nearest "does not exist" is 108 characters (the
- * lede, whose first sentence carries the whole Stock Tokens clause). 160 leaves room for a modest
- * rewrite and still refuses a qualifier parked a paragraph away.
+ * stood before `vision.html`, the widest gap between an "RWLY" and its nearest "does not exist" is
+ * 108 characters (the lede, whose first sentence carries the whole Stock Tokens clause). 160 leaves
+ * room for a modest rewrite and still refuses a qualifier parked a paragraph away.
  *
  * The floor is the other half. A window rule alone is satisfiable by deleting every mention, which
  * would silently drop a fact the owner put on the page; the count assertion means the only way to
  * pass is to keep the mentions and keep them qualified. Same reasoning as the open-High check.
+ *
+ * VISION.HTML BREAKS THE WINDOW RULE, AND THIS IS THE SPLIT THAT FIXES IT WITHOUT WEAKENING IT.
+ * `vision.html` (added 2026-09-05, copy deck v2) is a whole page of design intent about RWLY,
+ * stRWLY, staking and the treasury. `stRWLY` CONTAINS `RWLY`, so every `stRWLY` is itself a match,
+ * and the page produces roughly thirty of them. A 160-character window over flowing prose cannot be
+ * satisfied that many times without repeating "RWLY does not exist" almost every sentence, which is
+ * unreadable rather than honest.
+ *
+ * The device the page uses instead: every `<section>` opens with one exact status chip,
+ * `Designed, not built. RWLY does not exist yet.` -- SECTION-scoped rather than window-scoped,
+ * following the shape the security-review attestation check above already uses in this file (find
+ * the enclosing block, require the qualifier IN it). For `vision.html` only, this test checks that
+ * every `<section>` containing an `RWLY` match also contains that exact chip, and separately -- so a
+ * mention sitting in the hero or between sections cannot silently escape either half -- that no
+ * `RWLY` mention on the page sits outside every `<section>` at all. The 160-character window rule is
+ * UNCHANGED for the other eight pages and every non-page surface (README.md, llms.txt, the
+ * stylesheets, sitemap.xml, `_redirects`): this is a second rule for one file, not a widening of the
+ * first rule for all of them. Do not solve a future page's version of this problem by loosening
+ * `RWLY_QUALIFIER` to accept a bare "designed" — that weakens the check on all nine pages to fix one.
  */
 const RWLY_WINDOW = 160;
 const RWLY_QUALIFIER = /does not exist/i;
+const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
+const VISION_PAGE = 'vision.html';
+// MEASURED 2026-09-05, after vision.html shipped: siteFiles() finds 46 occurrences of `RWLY` across
+// apps/site (test/ and images excluded, per siteFiles() below) -- 18 of them on vision.html alone.
+// Set a few below that measurement, not at it, so a small future edit does not immediately red this
+// floor; re-measure and move this number the next time RWLY mentions are added or removed anywhere
+// under apps/site.
+const RWLY_FLOOR = 40;
+
+/**
+ * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
+ * sections (asserted below rather than assumed silently) -- true of this page's shell, which has no
+ * section nested inside another.
+ */
+const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
 
 test('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
   const files = siteFiles();
   let seen = 0;
   for (const f of files) {
+    const fileText = readFileSync(path.join(SITE, f), 'utf8');
     // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
-    const text = readFileSync(path.join(SITE, f), 'utf8').replace(/\s+/g, ' ');
+    const text = fileText.replace(/\s+/g, ' ');
+    seen += (text.match(/RWLY/g) ?? []).length;
+
+    if (f === VISION_PAGE) {
+      const sections = sectionsOf(fileText);
+      assert.equal(
+        (fileText.match(/<section\b/gi) ?? []).length,
+        sections.length,
+        `${VISION_PAGE}: a <section> did not close before the next opened, or one is nested inside ` +
+          'another -- the section-scoped RWLY check assumes flat, non-overlapping sections',
+      );
+      for (const section of sections) {
+        if (!/RWLY/.test(section)) continue;
+        assert.ok(
+          section.includes(RWLY_CHIP),
+          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)} — ` +
+            JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
+        );
+      }
+      const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
+      assert.ok(
+        !/RWLY/.test(outsideSections),
+        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer) — ` +
+          'the section-scoped chip check cannot see a mention that sits in no section',
+      );
+      continue;
+    }
+
     for (const m of text.matchAll(/RWLY/g)) {
-      seen++;
       const at = m.index ?? 0;
       const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
       assert.ok(
@@ -1049,8 +1113,8 @@ test('every mention of RWLY on this site sits beside the fact that it does not e
     }
   }
   assert.ok(
-    seen >= 6,
-    `expected RWLY to be named on at least six surfaces, found ${seen} — if the mentions were deleted ` +
+    seen >= RWLY_FLOOR,
+    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
       'rather than qualified, say so in the commit rather than letting this guard pass by absence',
   );
   // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.

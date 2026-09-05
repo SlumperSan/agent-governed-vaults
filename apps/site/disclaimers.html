@@ -32,6 +32,7 @@
       <ul>
         <li><a href="index.html">Overview</a></li>
         <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html">Vision</a></li>
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
@@ -47,7 +48,7 @@
     <div class="wrap">
       <p class="eyebrow">Disclaimers</p>
       <h1>Everything that can go wrong, in one place.</h1>
-      <p class="lede">Every warning, limit and unresolved question on this site is on this page. The other seven pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.</p>
+      <p class="lede">Every warning, limit and unresolved question on this site is on this page. The other eight pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.</p>
       <p>Nothing on this site is an offer, a solicitation, or financial advice.</p>
       <p>Deployed on Robinhood Chain mainnet, chain id 4663. The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.</p>
       <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
@@ -222,7 +223,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>New contracts, a new governance mechanism and a new operator model, none of it battle-tested by time or volume.</dd></div>
           <div><dt>Worst case</dt><dd>Something nobody on this page thought of.</dd></div>
-          <div><dt>What is done</dt><dd>The first vault's planned capacity cap is 50,000 USDG, a deliberate limit on how much any single unknown can reach. That is a bound on the blast radius, not a defence. Do not deposit what you cannot afford to lose entirely.</dd></div>
+          <div><dt>What is done</dt><dd>A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound in place today. Do not deposit what you cannot afford to lose entirely.</dd></div>
         </dl>
       </article>
 
@@ -251,7 +252,7 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">The limits of every claim on this site</p>
-      <h2>What the other seven pages leave out.</h2>
+      <h2>What the other eight pages leave out.</h2>
       <p class="lede">Each entry below was lifted from the page it used to sit on, so that a reader who wants the caveats finds all of them together instead of one per page.</p>
       <dl class="rows">
         <div>
@@ -326,13 +327,29 @@
           <dt>The vendored-mathematics licensing question</dt>
           <dd>Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.</dd>
         </div>
+        <div>
+          <dt>Everything on the Vision page is design intent</dt>
+          <dd>RWLY does not exist, and neither is the rest of the Vision page built: no stRWLY, no staking, no hourly epoch, no keeper, no treasury, no buyback and no stock index. What is on chain is seven contracts and no vault. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.</dd>
+        </div>
+        <div>
+          <dt>The token economics are not live</dt>
+          <dd>RWLY does not exist. No token is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to any such token, so nothing on chain enforces any of it.</dd>
+        </div>
+        <div>
+          <dt>The treasury and the buyback are not live</dt>
+          <dd>There is no treasury, no protocol-owned liquidity and no buyback. The 10% performance fee that does exist accrues to an operator address and is claimed by that address; a fee reaching a treasury or a token holder is designed, not built.</dd>
+        </div>
+        <div>
+          <dt>The stock index needs a different oracle</dt>
+          <dd>The oracle deployed on Robinhood Chain prices two assets, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. The Robinhood equity feeds publish on market days, and a weekend silence measured at 52 hours exceeds the oracle&rsquo;s 86,400-second ceiling &mdash; so on the design deployed today an all-stocks index would freeze every weekend. That is unsolved design work, not a parameter.</dd>
+        </div>
       </dl>
 
       <h3>Four groups this is wrong for</h3>
       <div class="grid">
         <div>
           <h4>DAO treasuries and larger allocators</h4>
-          <p>The first vault's planned capacity cap is 50,000 USDG, and a capacity cap is immutable per vault. That cannot absorb a treasury, and the cap on <em>that</em> vault will not be raised. The recorded plan is a second, larger vault of at least 250,000 USDG after at least 30 incident-free days. That is a plan, not a commitment.</p>
+          <p>A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no cap sized for a treasury to check against, and no vault this site can point to as able to absorb one.</p>
         </div>
         <div>
           <h4>Anyone who wants set-and-forget</h4>
@@ -399,6 +416,7 @@
         <ul>
           <li><a href="index.html">Overview</a></li>
           <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="vision.html">Vision</a></li>
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>
