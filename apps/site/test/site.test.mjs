@@ -403,7 +403,7 @@ test('status.html carries the full status block, inside main rather than above t
 test('every page links to the Disclaimers, with the link text pinned', () => {
   for (const p of PAGES) {
     assert.ok(
-      /href="disclaimers\.html"[^>]*>Disclaimers<\/a>/.test(raw.get(p) ?? ''),
+      /<footer[\s\S]*?href="disclaimers\.html"[^>]*>Disclaimers<\/a>[\s\S]*?<\/footer>/.test(raw.get(p) ?? ''),
       `${p}: the footer must carry a link reading exactly "Disclaimers" — since 2026-09-05 that link is the only route from this page to the risks, the legal position and the licence`,
     );
   }
