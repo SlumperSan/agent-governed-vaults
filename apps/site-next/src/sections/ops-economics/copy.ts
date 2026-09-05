@@ -127,8 +127,12 @@ const EARNED =
 const NOT_ROUTED =
   'No management fee. No deposit fee. No spread. Nothing accrues while a member simply holds. The exit fee is never routed to the operator identity, but you are also a member, and the fee stays in the vault where it raises the value of every share. So an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.';
 
-const ADDS_UP =
-  '10% of realized profit on a vault at the planned 50,000 USDG cap. This page will not model it, illustrate it, or put a number on it.';
+// REPOINTED 2026-09-05, copy deck v2: the planned-50,000-USDG-cap clause is
+// gone. Owner: "I haven't created the safe vault yet. I want the pivot to the
+// all-stocks index." There is no vault to size an example against any more,
+// so the sentence states the fee rate alone. ops-obligation's P_FIGURE now
+// carries this page's only 50,000/"planned" co-occurrence.
+const ADDS_UP = '10% of realized profit. This page will not model it, illustrate it, or put a number on it.';
 
 const ON_OFFER =
   'A public, attributable, on-chain record of your decisions. Every proposal you opened, every vote you cast and every execution that followed is permanently attached to an identity that cannot be rotated away from a bad quarter. That record is the point. It is worth exactly as much as your decisions turn out to be worth, and no more.';

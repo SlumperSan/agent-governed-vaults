@@ -83,6 +83,11 @@
   text-wrap: pretty;
 }
 
+/* Two body paragraphs since the 2026-09-05 pivot; the second needs air above it. */
+.body + .body {
+  margin-top: var(--s4);
+}
+
 /* --- the flat note --------------------------------------------------------
    Matches index-status's note so the two read as one component. */
 

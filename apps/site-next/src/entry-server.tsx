@@ -1,6 +1,6 @@
 /**
  * The SSR entry. `scripts/prerender.mjs` imports this once at build time and
- * calls `render()` for each of the eight pages.
+ * calls `render()` for each public page.
  *
  * THIS IS THE INTERFACE INTEGRATE BUILDS AGAINST. `render(pageId)` returns the
  * inner HTML of `<div id="root">` for that page. It is defined now, while the
@@ -12,7 +12,7 @@ import { App } from './shell/App';
 import { PAGE_COMPONENT, pickPage } from './shell/pageBody';
 import { PAGE_IDS, type PageId } from './shell/pinned';
 
-// All eight pages in one eager glob. Allowed here and nowhere else: the SSR
+// Every page in one eager glob. Allowed here and nowhere else: the SSR
 // bundle is never sent to a reader, so there is no budget to blow. The client
 // entries glob their own page only — see pageBody.ts.
 const pageModules = import.meta.glob('./pages/*Page.{tsx,jsx}', { eager: true });

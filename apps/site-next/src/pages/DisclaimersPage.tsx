@@ -17,8 +17,14 @@ import RisksHero from '../sections/risks-hero/RisksHero';
 import RisksContents from '../sections/risks-contents/RisksContents';
 import RisksRegister from '../sections/risks-register/RisksRegister';
 import RisksReviewStatus from '../sections/risks-review-status/RisksReviewStatus';
+import RisksScopeAdditions from '../sections/risks-scope-additions/RisksScopeAdditions';
 import RisksVerify from '../sections/risks-verify/RisksVerify';
 
+// ORDER MATCHES apps/site/disclaimers.html: hero, contents, the fifteen-entry
+// register, the security-review status, then "The limits of every claim on
+// this site" (RisksScopeAdditions — see that file for why it carries only
+// four rows rather than the corpus's full seventeen), then "How to check
+// every claim on this page." (RisksVerify).
 export default function DisclaimersPage() {
   return (
     <>
@@ -26,6 +32,7 @@ export default function DisclaimersPage() {
       <RisksContents />
       <RisksRegister />
       <RisksReviewStatus />
+      <RisksScopeAdditions />
       <RisksVerify />
     </>
   );

@@ -43,7 +43,7 @@
 import type { JSX } from 'react';
 import { Reveal } from '../../motion/Reveal';
 import { Pinned } from '../../shell/PinnedText';
-import { BODY, EYEBROW, HEADING, NOTE_BODY, NOTE_LABEL } from './copy';
+import { BODY, BODY_TWO, EYEBROW, HEADING, NOTE_BODY, NOTE_LABEL } from './copy';
 import s from './WhoCap.module.css';
 
 /**
@@ -65,6 +65,7 @@ export default function WhoCap(): JSX.Element {
         <p className={s.eyebrow}>{EYEBROW}</p>
         <Pinned as="h2" id={HEADING_ID} className={s.heading} html={HEADING} />
         <Pinned as="p" className={s.body} html={BODY} />
+        <Pinned as="p" className={s.body} html={BODY_TWO} />
 
         <div className={s.note}>
           <span className={s.noteLabel}>{NOTE_LABEL}</span>

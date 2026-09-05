@@ -76,13 +76,17 @@ const NOTE_ROOT_ONLY =
   'The factory permits root vaults only; nested sub-vaults are disabled. What that closes, and what it merely leaves dormant, is in the <a href="disclaimers.html">Disclaimers</a>.';
 
 /**
- * The capacity-cap paragraph. It is also this page's supply of the word
- * `planned`, which every page mentioning 50,000 is required to contain —
- * the number is a parameter of a vault that does not exist, and the word is
- * what stops it reading as a live figure.
+ * REMOVED 2026-09-05, copy deck v2. Owner: "I haven't created the safe vault
+ * yet. I want the pivot to the all-stocks index." This paragraph used to
+ * describe a first vault's planned 50,000 USDG capacity cap; apps/site's
+ * `how-it-works.html` deletes that sentence outright rather than requalifying
+ * it (grep the "Launch configuration" note there — it now carries only
+ * NOTE_ROOT_ONLY). The twelve-row reference-configuration table above is
+ * untouched: it still lists `capacityCapUsdc` nowhere as its own row, so
+ * removing this paragraph drops the site's ONLY "50,000" mention on this
+ * page, and the page-wide 50,000/"planned" pairing this constant used to
+ * supply is no longer needed here.
  */
-const NOTE_CAP =
-  "The first vault's planned capacity cap is 50,000 USDG. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing that one.";
 
 /** The h2 names the section for assistive technology; no new copy is invented. */
 const HEADING_ID = 'reference-configuration';
@@ -125,7 +129,6 @@ export default function HiwReferenceConfig(): JSX.Element {
         <div className={s.note}>
           <span className={s.noteLabel}>{NOTE_LABEL}</span>
           <Pinned as="p" html={NOTE_ROOT_ONLY} />
-          <Pinned as="p" html={NOTE_CAP} />
         </div>
       </div>
     </section>

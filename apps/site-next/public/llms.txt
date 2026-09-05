@@ -4,13 +4,13 @@
 > Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
-> or move member funds — nothing rebalances until a proposal passes. Settlement in USDG on the
-> stated target chain, Robinhood Chain mainnet (chain id 4663). The basket that configuration
-> prices is ETH and BTC — on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4, priced from its
-> own Chainlink ETH / USD and CBBTC / USD feeds, settled in USDG 0x5fc5…d168, every address
-> committed in contracts/config/robinhood-mainnet.json.
+> or move member funds — nothing rebalances until a proposal passes. Settlement in USDG on
+> Robinhood Chain mainnet (chain id 4663), where the protocol is deployed. The basket the chain
+> configuration prices is ETH and BTC — on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4,
+> priced from its own Chainlink ETH / USD and CBBTC / USD feeds, settled in USDG 0x5fc5…d168,
+> every address committed in contracts/config/robinhood-mainnet.json.
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
-> same immutable bytecode is deployable on any EVM chain; Robinhood Chain is the stated target,
+> same immutable bytecode is deployable on any EVM chain; Robinhood Chain is where it was deployed,
 > not a constraint the code enforces. The next iteration, RWLY, is designed to accrue the protocol's
 > fees into official Robinhood Stock Tokens; RWLY does not exist yet. This file orients AI agents
 > integrating the protocol.
@@ -27,13 +27,31 @@
 - [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
 
 ## Key semantics an integrator must respect
-- NOT DEPLOYED TO MAINNET. No mainnet deployment exists. A Base Sepolia deployment of the current
-  code does exist, but it is a testnet trial with no real value at stake and its addresses are
-  not published on this site — the committed address book records that current deployment. Launch
-  verdict is NO-GO (docs/LAUNCH-READINESS.md, docs/NOW.md). There is nothing live to integrate
-  against on mainnet, and no token, presale or airdrop exists.
+- DEPLOYED 2026-09-05 on Robinhood Chain mainnet (chain id 4663), on the owner's decision
+  of 2026-09-04, and on no other mainnet. The address book is
+  contracts/config/deployments/robinhood-mainnet.json: VaultFactory
+  0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1. Read that file rather than this one for anything you
+  intend to send a transaction to.
+- THERE IS NOTHING TO DEPOSIT INTO ON 4663. The singletons are deployed and wired, and no vault
+  has been created on it yet: smokeVault is null in that record and
+  verifiedWiring["factory.vaultCount()"] is 0, both read from chain 4663 at block 54,991,182. No
+  member funds are at stake there. Vault #1 is the creator Safe
+  0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c's to create, because VaultFactory.createVault fixes
+  msg.sender as the vault's immutable creator and attested operator and nothing can correct that
+  afterwards. A Base Sepolia deployment of the same code also exists and is a testnet trial with no
+  real value at stake. The go/no-go verdict on the board is still NO-GO
+  (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 — the soak drills and the canary — have
+  no current evidence on any chain, because the 5/5 soak run and the canary observation that
+  accompanied it predate the current bytecode and have not been re-run, and the deployment did not
+  close them. No token, presale or airdrop exists.
 - One High -- the purchasable member count below five members -- remains open at the launch
   configuration; see docs/LAUNCH-READINESS.md.
+- Two limits apply on chain 4663 and nowhere else the docs describe. Chainlink publishes no L2
+  Sequencer Uptime Feed there and has said it will not add one, so oracle.sequencerUptimeFeed is
+  the zero address and ChainlinkOracle returns early from that gate rather than reverting; and the
+  feeds publish on an 86,400 s heartbeat, so a price up to a full day old is accepted — exactly
+  ChainlinkOracle.MAX_HEARTBEAT (contracts/src/oracle/ChainlinkOracle.sol:98), the loosest bound
+  the contract permits.
 - First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
 - Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
   its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
@@ -43,7 +61,10 @@
   Deploy.s.sol constructs VaultFactory with allowSubVaults = false, so createChildVault reverts
   SubVaultsDisabled and every vault it deploys is wired subVaultRegistry = address(0). This is a
   per-deployment immutable, not a protocol property -- the Base Sepolia testnet factory is
-  deployed with it TRUE. Read VaultFactory.allowSubVaults() on the factory you integrate against.
+  deployed with it TRUE. Neither script's value may be assumed for the live Robinhood Chain
+  factory: read verifiedWiring["factory.allowSubVaults()"] in
+  contracts/config/deployments/robinhood-mainnet.json, or call VaultFactory.allowSubVaults() on the
+  factory you integrate against.
 - Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.

@@ -1,0 +1,85 @@
+/* ===========================================================================
+   index-doors — two cards of equal weight
+   ---------------------------------------------------------------------------
+   OWNED BY THE index-doors SECTION. Every value is a var() from src/tokens.css;
+   there is no colour literal and no length off the rhythm scale.
+
+   EQUAL WEIGHT IS ENFORCED BY THE GRID, not by discipline. `1fr 1fr` and one
+   `.door` rule mean there is no way to make one card heavier without editing a
+   rule that visibly applies to both — which is the point of the owner's
+   decision that neither door is the recommended one.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* The heading is for the landmark and for a screen reader's document outline.
+   The cards carry the meaning on screen, and a visible "Two ways in" above two
+   obviously-parallel cards is a label nobody needs. Clipped rather than
+   `display: none`, so it keeps its place in the reading order. */
+.heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.doors {
+  display: grid;
+  gap: var(--s6);
+}
+
+@media (min-width: 52rem) {
+  .doors {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s7);
+  }
+}
+
+.door {
+  display: grid;
+  align-content: start;
+  gap: var(--s4);
+  padding: var(--s6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.doorIcon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--accent);
+}
+
+.doorTitle {
+  margin: 0;
+  color: var(--ink);
+}
+
+.doorBody {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+/* The link, not a button: it navigates, and dressing a navigation as a control
+   is what makes a reader expect something to happen in place. The underline is
+   the affordance; --accent-dim is 5.51:1 on --ground, recorded in tokens.css. */
+.doorLink {
+  justify-self: start;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-dim);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.doorLink:hover {
+  text-decoration-color: var(--accent);
+}

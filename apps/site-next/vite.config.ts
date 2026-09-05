@@ -72,6 +72,7 @@ export default defineConfig(({ isSsrBuild }) => ({
             operators: entry('operators.html'),
             disclaimers: entry('disclaimers.html'),
             faq: entry('faq.html'),
+            vision: entry('vision.html'),
             status: entry('status.html'),
           },
         },

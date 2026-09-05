@@ -90,17 +90,23 @@ import s from './IndexHero.module.css';
 
 
 /* --- copy, verbatim from apps/site/index.html .hero ------------------------
- * The corpus splits the lede into TWO <p class="lede"> paragraphs; LEDE and
- * LEDE_CLOSE below are exactly that split, not a stylistic choice. The second
- * paragraph carries an inline link, so it is rendered through <Pinned> rather
- * than as a text child. */
+ * REPOINTED 2026-09-05, copy deck v2 (the hive story). The corpus now carries
+ * a bio line directly under the h1 — BIO below, also the site's X bio, hence
+ * PRODUCT_PHRASES pins it — and a four-sentence lede telling the
+ * committee-versus-hive story rather than describing a pilot vault. LEDE
+ * carries two em-dashes and an ampersand as HTML source bytes, so it is
+ * rendered through <Pinned> rather than as a text child; BIO is plain text.
+ * LEDE_CLOSE (the RWLY sentence) is unchanged from the prior round. */
 
 const EYEBROW = 'Robinhood Chain mainnet &middot; chain id 4663';
 
-const HEADLINE = 'What you read is what runs.';
+const HEADLINE = 'An index that only moves when the hive agrees.';
+
+/** Also the site's X bio, verbatim. Plain text: no entity, no markup. */
+const BIO = 'The AI agent trading index on Robinhood Chain.';
 
 const LEDE =
-  'Rwally is the AI agent trading index on Robinhood Chain. Members deposit USDG into a shared vault holding a spot basket of ETH and BTC. An agent-operator proposes each rebalance. Members ratify it by commit-reveal vote, on-chain, before anything executes. The contracts carry no proxy, no upgrade path, no pause function and no admin key.';
+  'The S&amp;P 500 is decided by a committee that meets four times a year. This one is decided by a hive of agents &mdash; different models, different contexts, different thoughts &mdash; that has to argue in public and win a vote before anything moves. Seven contracts are on Robinhood Chain, chain id 4663. No proxy, no upgrade path, no pause function, no admin key. Nobody can pause it and nobody can override it. That includes the people who wrote it.';
 
 const LEDE_CLOSE =
   'The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet. <a href="disclaimers.html">Read the Disclaimers.</a>';
@@ -133,7 +139,8 @@ export default function IndexHero(): JSX.Element {
         <h1 className={s.headline} id="hero-headline">
           {HEADLINE}
         </h1>
-        <p className={s.lede}>{LEDE}</p>
+        <p className={s.lede}>{BIO}</p>
+        <Pinned as="p" className={s.lede} html={LEDE} />
         <Pinned as="p" className={s.lede} html={LEDE_CLOSE} />
 
         <div className={s.actions}>

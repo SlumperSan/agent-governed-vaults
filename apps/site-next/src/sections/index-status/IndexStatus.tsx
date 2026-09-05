@@ -42,7 +42,7 @@ const LEDE =
   'The protocol was broadcast to Robinhood Chain mainnet, chain id 4663, on 2026-09-05, from <code>protocol/main</code> at <code>b1cde122</code>. Ten transactions, every receipt status 1, the six singletons in one block.';
 
 const BODY_ONE =
-  'Every address, block and wiring readback is on the status page, and every one of them was read back on-chain rather than transcribed from a deploy log. The factory was constructed with <code>allowSubVaults = false</code>, so it deploys root vaults only. The oracle allowlist is enforced, and one oracle is blessed on it. No vault has been created yet: <code>factory.vaultCount()</code> returns 0.';
+  'Every address, block and wiring readback is on the status page, and every one of them was read back on-chain rather than transcribed from a deploy log. The factory was constructed with <code>allowSubVaults = false</code>, so it deploys root vaults only. The oracle allowlist is enforced, and one oracle is blessed on it. No vault has been created yet: <code>factory.vaultCount()</code> returns 0. The index vault below is not among them: no vault has been created, and the all-stocks index needs its own deployment.';
 
 const BODY_TWO =
   'This page publishes no addresses. The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, the status page reads it out, and that file rather than either page is the authority.';

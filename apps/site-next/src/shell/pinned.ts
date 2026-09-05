@@ -74,7 +74,7 @@ export const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, o
  * record. `BANNER_STATUS` was the absolute "Not deployed to mainnet. The only
  * deployment is a testnet trial with no real value at stake."; `BANNER_PARAGRAPH`
  * joined it to the not-an-offer line for the pre-launch band; `FOOTER_LEGAL`
- * opened with it in the footer of all eight pages. The protocol is deployed on
+ * opened with it in the footer of every page. The protocol is deployed on
  * Robinhood Chain mainnet, so all three said something false, and the corpus
  * retired them in the same change that consolidated the disclosures onto one
  * page. `DEPLOYED_LINE` below is what replaced the claim; the footer's link to
@@ -143,7 +143,7 @@ export const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 /** The em-dash is pinned. Do not normalise it to a hyphen. */
 export const FOOTER_LICENCE = 'Source-available under BUSL-1.1 — not open source.';
 
-/** The two-sentence repository note. Carried in the footer of all eight pages. */
+/** The two-sentence repository note. Carried in the footer of every page. */
 export const FOOTER_REPO_AUTHORITY =
   'The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.';
 
@@ -260,7 +260,7 @@ export const HIGH_WATER_MARK_RESET =
  * NAVIGATION
  *
  * The .html suffix stays. `site.test.mjs` asserts that every page literally
- * contains `href="<other>.html"` for all eight, and Cloudflare Pages already
+ * contains `href="<other>.html"` for every page, and Cloudflare Pages already
  * 301s a bare page path (e.g. the retired /risks.html) onto the extensionless
  * form, so the suffix costs a redirect nobody sees and dropping it reds eight
  * checks.
@@ -280,6 +280,7 @@ export const PAGE_IDS = [
   'who-its-for.html',
   'operators.html',
   'faq.html',
+  'vision.html',
   'status.html',
   'disclaimers.html',
 ] as const;
@@ -290,16 +291,40 @@ export type PageId = (typeof PAGE_IDS)[number];
  * Label and href for each page the HEADER nav carries, in nav order.
  *
  * status.html and disclaimers.html are deliberately absent — see the note above.
- * Add a page here and it appears in the masthead of all eight pages.
+ * Add a page here and it appears in the masthead of every page.
  */
 export const NAV: ReadonlyArray<{ id: PageId; label: string }> = [
   { id: 'index.html', label: 'Overview' },
   { id: 'how-it-works.html', label: 'How it works' },
+  { id: 'vision.html', label: 'Vision' },
   { id: 'agents.html', label: 'Agents' },
   { id: 'who-its-for.html', label: 'Who it is for' },
   { id: 'operators.html', label: 'Operators' },
   { id: 'faq.html', label: 'Questions' },
 ];
+
+/**
+ * THE APP SLOT, AND WHY IT IS DECLARED BEFORE IT EXISTS.
+ *
+ * Owner decision, 2026-09-05: the masthead gets an "App" entry pointing at
+ * app.rwally.com, and it stays hidden until that host answers. Declaring it here
+ * with `href: null` rather than leaving it out is the difference between a slot
+ * with a rule and an edit somebody has to remember: `Masthead` renders nothing
+ * while the href is null, and turning it on is one value in this file.
+ *
+ * IT IS NOT A CSS TOGGLE. A hidden nav item still reaches a screen reader, still
+ * reaches a crawler, and still reaches the "every page links to every page"
+ * guard — so a `display: none` version of this would publish a link to a host
+ * that 404s. Nothing is rendered at all.
+ *
+ * WHEN app.rwally.com EXISTS: set `href` to it. It is an off-site absolute URL,
+ * so it is deliberately NOT a `PageId` — nothing prerenders it, nothing walks
+ * it, and the internal-link guards do not apply to it.
+ */
+export const APP_NAV: { readonly label: string; readonly href: string | null } = {
+  label: 'App',
+  href: null,
+};
 
 /** The label the footer gives the disclaimers page. Not a header-nav label. */
 export const DISCLAIMERS_PAGE_LABEL = 'Disclaimers';

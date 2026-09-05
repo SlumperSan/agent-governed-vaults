@@ -54,7 +54,7 @@ const ROWS: ReadonlyArray<{ term: string; detail: string }> = [
   {
     term: 'What it holds',
     detail:
-      'A spot index basket: ETH and BTC, plus whatever USDG is idle. The <a href="status.html">status page</a> names the two ERC-20 tokens those words stand for, with their addresses. Spot only: no leverage, no derivatives, no perpetuals.',
+      'The contracts on chain price two assets, ETH and BTC. The <a href="status.html">status page</a> names the two ERC-20 tokens those words stand for, with their addresses. The all-stocks index is designed, not deployed. Spot only: no leverage, no derivatives, no perpetuals.',
   },
   {
     term: 'Who can create one',

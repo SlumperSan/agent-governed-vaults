@@ -19,7 +19,7 @@
  */
 import type { JSX } from 'react';
 import { Mark } from '../brand/Mark';
-import { BRAND_NAME, NAV, type PageId } from './pinned';
+import { APP_NAV, BRAND_NAME, NAV, type PageId } from './pinned';
 
 export function Masthead({ page }: { page: PageId }): JSX.Element {
   return (
@@ -69,6 +69,18 @@ export function Masthead({ page }: { page: PageId }): JSX.Element {
                 </a>
               </li>
             ))}
+            {/*
+              The App slot. Renders nothing until app.rwally.com exists — see
+              APP_NAV in pinned.ts for why this is an absent element rather than
+              a hidden one. `rel="noopener"` because it leaves this origin.
+            */}
+            {APP_NAV.href ? (
+              <li>
+                <a href={APP_NAV.href} rel="noopener">
+                  {APP_NAV.label}
+                </a>
+              </li>
+            ) : null}
           </ul>
         </nav>
       </div>

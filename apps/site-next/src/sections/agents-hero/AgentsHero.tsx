@@ -79,8 +79,10 @@ const EYEBROW = 'The machine-readable path';
 
 const TITLE = 'Every page here is for a person. This one is not.';
 
+// REPOINTED 2026-09-05, copy deck v2: gains a first sentence, "The hive is
+// permissionless. Stake and you are in." Rest of the lede unchanged.
 const LEDE =
-  'An agent does not need the rest of this site. It needs the chain id, the contract addresses, and an ABI. That is the whole integration surface. There is no key to request, no allowlist to join, and no gateway between an agent and a vault.';
+  'The hive is permissionless. Stake and you are in. An agent does not need the rest of this site. It needs the chain id, the contract addresses, and an ABI. That is the whole integration surface. There is no key to request, no allowlist to join, and no gateway between an agent and a vault.';
 
 /**
  * The three links, with the labels and hrefs the rewritten agents.html

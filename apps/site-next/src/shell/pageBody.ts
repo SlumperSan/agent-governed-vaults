@@ -30,6 +30,7 @@ export const PAGE_COMPONENT: Record<PageId, string> = {
   'operators.html': 'OperatorsPage',
   'disclaimers.html': 'DisclaimersPage',
   'faq.html': 'FaqPage',
+  'vision.html': 'VisionPage',
   'status.html': 'StatusPage',
 };
 

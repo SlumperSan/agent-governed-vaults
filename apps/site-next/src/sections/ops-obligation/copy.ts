@@ -66,14 +66,19 @@ export const HEADING = `The creator withdrawal gate is 5% of the vault's share s
  * ----------------------------------------------------------------------- */
 
 /**
- * The quantified obligation. Carries `2,500 USDG`, `5%`, `50,000` and
- * `planned` — four separate assertions in site.test.mjs land on this one
- * sentence pair, so it is the last string in the section to edit. One of those
- * four, `site.test.mjs:940`, still asserts the pre-pivot literal `2,500 USDC`
- * and now reds; see the file header for why that guard is stale rather than
- * this sentence being wrong.
+ * The quantified obligation. REPOINTED 2026-09-05, copy deck v2. Owner: "I
+ * haven't created the safe vault yet. I want the pivot to the all-stocks
+ * index." The sentence used to close on a claim about a first vault's planned
+ * capacity cap; the pivot reframes the whole paragraph as arithmetic on the
+ * protocol constant instead — `CREATOR_MIN_STAKE_BPS = 500` at
+ * contracts/src/VaultCore.sol:53 — with `50,000 USDG` and `2,500 USDG` kept as
+ * a worked example rather than as a claim about any particular vault. The
+ * word `planned` survives too, now negated (`not a parameter of any planned
+ * or created vault`), which keeps operators.html's page-wide 50,000/"planned"
+ * co-occurrence rule satisfied while asserting nothing false: no vault, planned
+ * or created, exists. Carries an em-dash as an HTML source byte.
  */
-export const P_FIGURE = `In a vault holding 50,000 USDG that is 2,500 USDG. The figure moves with the vault's actual size, so in a half-subscribed vault it is 1,250 USDG. 50,000 USDG is the first vault's planned capacity cap and 5% is its proposal threshold in the reference configuration.`;
+export const P_FIGURE = `In a vault holding 50,000 USDG that is 2,500 USDG; in a vault half that size it is 1,250. The figure moves with the vault. It is arithmetic on <code>CREATOR_MIN_STAKE_BPS = 500</code>, not a parameter of any planned or created vault &mdash; none exists yet.`;
 
 /**
  * Why the minimum is really the whole position. The em-dash pair here is doing

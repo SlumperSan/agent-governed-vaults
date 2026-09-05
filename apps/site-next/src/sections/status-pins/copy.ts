@@ -30,9 +30,20 @@ export const EYEBROW = 'The first vault';
 
 export const HEADING = 'No vault has been created yet.';
 
+// REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the safe
+// vault yet. I want the pivot to the all-stocks index." The paragraph
+// describing the first vault's PLANNED parameters (including the 50,000 USDG
+// cap) is gone — no vault is planned any more, so it is replaced with three
+// shorter paragraphs describing contracts/config/robinhood-mainnet.json as
+// what it actually is: the chain's configuration, not a plan for a vault. The
+// closing paragraph is rewritten to point at the Vision page instead of
+// naming Robinhood Stock Tokens directly, matching vision.html's fuller
+// design-intent account.
 export const PARAGRAPHS: readonly string[] = [
   'The singletons are on chain and the factory is open, and <code>factory.vaultCount()</code> returns 0. Until a vault exists there is nothing to deposit into and no address to check, which is why the row above says so rather than leaving a gap.',
-  'The parameters the first vault is planned to be created with are the reference configuration in <code>contracts/config/robinhood-mainnet.json</code>: settlement in USDG, the two assets in the oracle table above, a planned capacity cap of 50,000 USDG, a minimum deposit of 100 USDG, and governance parameters of commit 1 hour, reveal 1 hour, timelock 0, execution window 24 hours, quorum 25%, proposal threshold 5%, delegate concentration cap 40% and proposal cooldown 6 hours. <a href="how-it-works.html">How it works</a> renders that table in full. They are a configuration, not a vault; a vault freezes them only when it is funded.',
+  '<code>contracts/config/robinhood-mainnet.json</code> is the chain&rsquo;s configuration, not a plan for a vault.',
+  'It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.',
+  '<a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters only when it is funded, and none has been.',
   "Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.",
-  'There is no token. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens; RWLY does not exist yet, and this page will carry its record when it does.',
+  'There is no token. RWLY is designed to be the protocol&rsquo;s governance token and to accrue fees into stock; RWLY does not exist yet, and this page will carry its record when it does. The design is on the <a href="vision.html">Vision page</a>.',
 ];

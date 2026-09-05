@@ -175,18 +175,32 @@ export const ENTRIES: readonly QaEntry[] = [
       { kind: 'p', html: EXIT_FEE_CORRECTION },
       {
         kind: 'p',
-        html: `They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDG that is 2,500 USDG, and 50,000 USDG is the first vault's planned capacity cap. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference configuration. The full breakdown is on the <a href="operators.html">operators page</a>.`,
+        html: `They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. The figure moves with the vault, and none has been created yet. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference configuration. The full breakdown is on the <a href="operators.html">operators page</a>.`,
       },
     ],
   },
 
   {
-    question: 'Why is the cap 50,000 USDG?',
-    id: 'cap',
+    // REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the safe
+    // vault yet. I want the pivot to the all-stocks index." The whole
+    // question was about a planned 50,000 USDG pilot vault that will not be
+    // created, so it is replaced rather than edited. Carried verbatim from
+    // the question that opens `apps/site/faq.html`'s "What can the contracts
+    // on chain today actually hold?" answer.
+    question: 'What can the contracts on chain today actually hold?',
+    id: 'what-it-can-hold',
     blocks: [
       {
         kind: 'p',
-        html: `Because nothing can be patched and nothing can be paused, so the cap is the ceiling on how much any single unknown can reach. A planned 50,000 USDG is the largest amount this team is willing to have permanently trapped by a bug that survived review. It is not a scarcity mechanic. There is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault.`,
+        html: `Two assets. The oracle prices ETH and BTC, held as WETH and cbBTC.`,
+      },
+      {
+        kind: 'p',
+        html: `The factory's oracle allowlist is fixed in its constructor with no add, no remove and no owner, so that set cannot be extended on this deployment.`,
+      },
+      {
+        kind: 'p',
+        html: `The all-stocks index needs its own deployment. What it is designed to be is on the <a href="vision.html">Vision page</a>.`,
       },
     ],
   },

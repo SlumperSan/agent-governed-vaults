@@ -72,14 +72,24 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    CARD_1_BODY carries `<em>this</em>`, and the emphasis is load-bearing: it is
    what restricts "will not be raised" to the first vault rather than letting it
    read as a statement about every vault the factory can ever deploy. It also
-   supplies both halves of the page-level pairing the claims suite checks — the
-   figure 50,000 and the word "planned" — in one sentence.
+   REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the safe
+   vault yet. I want the pivot to the all-stocks index." CARD_1_BODY used to
+   carry the page-level 50,000/"planned" pairing on its own; that figure
+   described a vault that will not be created, so it comes out entirely
+   rather than being requalified. Carried verbatim from the "DAO treasuries
+   and larger allocators" entry of the "Four groups this is wrong for" list
+   on `apps/site/disclaimers.html` as of this deck — apps/site consolidated
+   this list onto the Disclaimers page in an earlier round (PR #220) while
+   this build still renders the equivalent four cards on who-its-for.html;
+   that page placement predates this change and is not something this pass
+   relocates, but the sentence itself is the reviewed, current wording either
+   way.
 
    CARD_1_BODY is also why this section is the one that must not be
    summarised. Every clause in it is a scope limit on the clause before it. */
 
 export const CARD_1_BODY =
-  "The first vault's planned capacity cap is 50,000 USDG, and a capacity cap is immutable per vault. That cannot absorb a treasury, and the cap on <em>this</em> vault will not be raised. The recorded plan is a second, larger vault of at least 250,000 USDG after at least 30 incident-free days. That is a different deployment on a later date. It is a plan, not a commitment.";
+  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no cap sized for a treasury to check against, and no vault this site can point to as able to absorb one.';
 
 export const CARD_2_BODY =
   'There is no autopilot. Skipping votes does not park your position neutrally: it moves quorum and wastes your commit; it hands the outcome to whoever did turn up.';

@@ -101,11 +101,17 @@
  *       p.revealedWeight == p.snapshotTotal && p.forWeight >= p.snapshotTotal
  *     contracts/src/Governance.sol:531      passing starts the timelock
  *
- *   r14  "planned capacity cap is 50,000 USDG"
- *     A planned parameter of a vault that has not been created. Any page
- *     carrying the figure must also carry the word "planned"; this cell
- *     supplies both, in the same sentence.
+ *   r14  REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the
+ *     safe vault yet. I want the pivot to the all-stocks index." The cell
+ *     used to name a planned 50,000 USDG capacity cap; that figure described
+ *     a vault that will not be created, so the cell states the honest,
+ *     figure-free version instead — a capacity cap is a per-vault parameter
+ *     and no vault exists. Its opening word is load-bearing: it must not
+ *     start with "Nothing", or the risks-hero "Seven of these have no
+ *     mitigation" count (derived from cells that DO start with "Nothing")
+ *     goes to eight.
  *
+
  *   r6  the Mode-F trigger
  *     contracts/src/Governance.sol:648-659  hasPendingExecution returns true
  *       from p.commitDeadline onward — the reveal phase, not passage.
@@ -307,7 +313,7 @@ export const ENTRIES: readonly RiskEntry[] = [
     rows: [
       { dt: "What it is", dd: "New contracts, a new governance mechanism and a new operator model, none of it battle-tested by time or volume." },
       { dt: "Worst case", dd: "Something nobody on this page thought of." },
-      { dt: "What is done", dd: "The first vault's planned capacity cap is 50,000 USDG, a deliberate limit on how much any single unknown can reach. That is a bound on the blast radius, not a defence. Do not deposit what you cannot afford to lose entirely." },
+      { dt: "What is done", dd: "A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound in place today. Do not deposit what you cannot afford to lose entirely." },
     ],
   },
   {

@@ -7,6 +7,8 @@
  * each renders its own landmark and its own vertical rhythm.
  */
 import IndexHero from '../sections/index-hero/IndexHero';
+import IndexDoors from '../sections/index-doors/IndexDoors';
+import IndexPromise from '../sections/index-promise/IndexPromise';
 import IndexWhy from '../sections/index-why/IndexWhy';
 import IndexWhat from '../sections/index-what/IndexWhat';
 import IndexImmutability from '../sections/index-immutability/IndexImmutability';
@@ -14,10 +16,14 @@ import IndexLosses from '../sections/index-losses/IndexLosses';
 import IndexStatus from '../sections/index-status/IndexStatus';
 import IndexNext from '../sections/index-next/IndexNext';
 
+// ORDER MATCHES apps/site/index.html, copy deck v2 (2026-09-05): the hero,
+// then the two doors, then the design-intent promise, then the rest unchanged.
 export default function IndexPage() {
   return (
     <>
       <IndexHero />
+      <IndexDoors />
+      <IndexPromise />
       <IndexWhy />
       <IndexWhat />
       <IndexImmutability />

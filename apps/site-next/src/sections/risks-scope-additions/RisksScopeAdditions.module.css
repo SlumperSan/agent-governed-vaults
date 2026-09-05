@@ -1,0 +1,59 @@
+/* ===========================================================================
+   risks-scope-additions — four new disclosures added by copy deck v2
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour and length below is a token from
+   src/tokens.css. Deliberately the same shape as risks-verify's own <dl> —
+   this section sits immediately before it in document order and reads as
+   part of the same run of static disclosures, not as a new component style.
+   NOTHING HERE MOVES: no Reveal, no transition, no hover affordance.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 22ch;
+  color: var(--ink);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: block;
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0 0 var(--s2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+@media (max-width: 46rem) {
+  .row {
+    padding-block: var(--s4);
+  }
+}

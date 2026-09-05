@@ -127,12 +127,21 @@ The network panel must show zero non-self hosts. One request to a font host is a
   Titles end ` — Rwally`. "Agent-Governed Vaults" survives only as the descriptor line, rendered
   once per page in the footer.
 - **`risks.html` is now `disclaimers.html`**, in the footer rather than the header nav, which is why
-  `NAV` carries six and `FOOTER_PAGES` carries eight. Still eight pages.
+  `NAV` carries seven and `FOOTER_PAGES` carries nine. Nine pages since `vision.html` landed.
 - **The brand's secondary hue is in the theme.** `--teal` and `--teal-bright`, adopted from the
   brand token set with both ratios recomputed here (8.30:1 and 12.72:1 on the ground). It has one
   job, which that set states: the second state in a pair. It is not a fourth status colour.
-- **The eight brand line icons are inline SVG**, declared once as path data in `src/brand/icons.ts`
-  so one CSS rule colours all eight through `currentColor`.
+- **The brand line icons are inline SVG**, declared once as path data in `src/brand/icons.ts` so
+  one CSS rule colours them through `currentColor`. Six are on the how-it-works lifecycle steps and
+  four on the agents entry points; the reveal step takes `--teal`, which is the one job the brand
+  token set gives that hue — "the second state in any pair". One lifecycle step, Quorum, is
+  deliberately bare: nothing in the set draws a count of stake, and a wrong icon is worse than none.
+- **`vision.html` exists as a route with a placeholder body.** The copy deck writes that page; the
+  entry, the nav slot, the sitemap entry and the build wiring are in place and guarded so the words
+  are the only thing the deck has to add.
+- **The masthead has an App slot that renders nothing** until `app.rwally.com` exists. `APP_NAV.href`
+  is `null`, and `Masthead` emits no element at all rather than hiding one — a hidden link still
+  reaches a screen reader, a crawler and the link guards.
 
 - **The brand mark, at the size the brand says to use it.** Owner rule, 2026-09-05: the illustrated
   comic lockup is the logo everywhere except favicon and small-avatar sizes, where it collapses, and
