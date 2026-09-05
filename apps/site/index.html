@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An index nobody can edit, not yet on mainnet — Agent-Governed Vaults</title>
-<meta name="description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. As written, the contracts contain no proxy, no admin key, no pause and no seize function. There is also no way to patch a bug once it ships. Not deployed to mainnet.">
+<meta name="description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No proxy, no admin key, no pause, and no way to patch a bug once it ships. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
 <link rel="canonical" href="https://rwally.com/">
@@ -14,12 +14,12 @@
 <meta property="og:site_name" content="Agent-Governed Vaults">
 <meta property="og:url" content="https://rwally.com/">
 <meta property="og:title" content="No admin key. No pause. No upgrade. No undo.">
-<meta property="og:description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. Not deployed to mainnet.">
+<meta property="og:description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: not deployed to mainnet.">
+<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="No admin key. No pause. No upgrade. No undo.">
-<meta name="twitter:description" content="Members pool USDC into a spot basket and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. Not deployed to mainnet.">
+<meta name="twitter:description" content="Members pool USDG into a spot basket of WETH and cbBTC on Robinhood Chain and ratify every rebalance by on-chain vote. No admin key, no pause, no upgrade. The next iteration, RWLY, does not exist yet. Not deployed to mainnet.">
 <meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
 </head>
 <body>
@@ -46,9 +46,9 @@
 
   <div class="hero">
     <div class="wrap">
-      <p class="eyebrow">Member-governed index vaults on Base</p>
+      <p class="eyebrow">Member-governed index vaults on Robinhood Chain</p>
       <h1>No admin key. No pause. No upgrade. No undo.</h1>
-      <p class="lede">Members deposit USDC into a shared vault holding a spot basket of WETH and cbBTC. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds. For the same reason, nobody can patch a bug after it ships.</p>
+      <p class="lede">Members deposit USDG into a shared vault holding a spot basket of WETH and cbBTC on Robinhood Chain. An agent-operator proposes rebalances. Members vote them in by commit-reveal. As written, the contracts contain no pause function, no proxy, no upgrade path and no admin key: nobody can pause the vault, upgrade the contracts, reprice your shares or move your funds. For the same reason, nobody can patch a bug after it ships. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet.</p>
       <p class="lede-note">This describes source code. Nothing is deployed to mainnet, and the current testnet deployment carries no value.</p>
       <div class="actions">
         <a class="btn btn--primary" href="risks.html">Read the risks first</a>
@@ -83,7 +83,7 @@
         </div>
         <div>
           <dt>What it holds</dt>
-          <dd>A spot index basket. At launch that is WETH and cbBTC, plus whatever USDC is idle. Spot only: no leverage, no derivatives, no perpetuals.</dd>
+          <dd>A spot index basket. At launch that is WETH and cbBTC, plus whatever USDG is idle. Spot only: no leverage, no derivatives, no perpetuals.</dd>
         </div>
         <div>
           <dt>Who can create one</dt>
@@ -91,7 +91,7 @@
         </div>
         <div>
           <dt>How you leave</dt>
-          <dd>Pro-rata, in kind. You get your share of every basket asset plus your share of the idle USDC, minus the exit fee. Shares burn at settlement, never at request.</dd>
+          <dd>Pro-rata, in kind. You get your share of every basket asset plus your share of the idle USDG, minus the exit fee. Shares burn at settlement, never at request.</dd>
         </div>
         <div>
           <dt>What we hold</dt>
@@ -108,7 +108,7 @@
       <div class="grid">
         <div>
           <h3>Cannot be paused or upgraded</h3>
-          <p>As written, the contracts contain no proxy, no upgrade path, no pause function and no admin key. Whatever ships is what runs, for as long as Base runs.</p>
+          <p>As written, the contracts contain no proxy, no upgrade path, no pause function and no admin key. Whatever ships is what runs, for as long as Robinhood Chain runs.</p>
         </div>
         <div>
           <h3>Cannot take your funds</h3>
@@ -146,8 +146,8 @@
           <dd>If a price feed goes stale, every function that reads NAV reverts. That includes exits. There is no escape hatch and none will be added, because any escape hatch is exactly the stale-price exit the breaker exists to prevent. Active capital stays in the vault for as long as the feed is stale. If the feed is retired rather than merely late, that is permanent, because a vault's oracle cannot be replaced.</dd>
         </div>
         <div>
-          <dt>A USDC depeg</dt>
-          <dd>The oracle pins USDC at $1.00. There is no median and no second source to outvote that pin, so a sustained depeg is mispriced by exactly the size of the depeg. This is accepted, not solved.</dd>
+          <dt>A USDG depeg</dt>
+          <dd>The oracle pins the settlement token, USDG on the stated target chain, at $1.00. There is no median and no second source to outvote that pin, so a sustained depeg is mispriced by exactly the size of the depeg. This is accepted, not solved.</dd>
         </div>
       </dl>
       <p class="tight">Spot crypto assets fall. Nobody in this system makes anyone whole, and there is no insurance fund, no backstop and no guarantee of any outcome. Do not deposit anything you cannot afford to lose entirely.</p>
@@ -165,11 +165,11 @@
       <div class="grid">
         <div>
           <h3>Not on mainnet</h3>
-          <p>No mainnet deployment exists, and this site publishes no addresses of any kind. The address book in the repository records the current Base Sepolia deployment, and a testnet address book is not the place to look for mainnet addresses either. Mainnet addresses will be published in the repository when they exist.</p>
+          <p>No mainnet deployment exists, and this site publishes no addresses of any kind. The stated target is Robinhood Chain mainnet, chain id 4663, whose parameters are the reference configuration <code>contracts/config/robinhood-mainnet.json</code>; nothing from this repository is deployed there. The address book in the repository records the current Base Sepolia deployment, and a testnet address book is not the place to look for mainnet addresses either. Mainnet addresses will be published in the repository when they exist.</p>
         </div>
         <div>
           <h3>On Base Sepolia, for testing</h3>
-          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value. No testnet run is evidence about mainnet; the L2 sequencer guard executes for the first time on Base mainnet.</p>
+          <p>A deployment of the current code runs on the Base Sepolia testnet. Testnet tokens have no value. No testnet run is evidence about mainnet, and on Robinhood Chain the L2 sequencer guard never executes at price time at all, because Chainlink publishes no uptime feed for that chain.</p>
         </div>
         <div>
           <h3>Checked in the open</h3>
@@ -236,7 +236,7 @@
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
   </div>
 </footer>
 

@@ -20,10 +20,11 @@
  *
  * WHAT THE 2026-08-29 ADVERSARIAL REVIEW CHANGED. Two independent reviewers demonstrated that
  * this file was partly cosmetic: it passed 18/18 over a page that contradicted the repository.
- * The numeric checks now read `contracts/config/base-mainnet.json` and compare it to the site's
- * reference-configuration table, so a config edit turns the gate red instead of silently
- * desynchronizing the site; the deployment-status check is sentence-scoped rather than page-scoped;
- * and the security-attestation qualifier must sit in the same block as the claim it qualifies.
+ * The numeric checks now read the reference mainnet configuration named by CONFIG_PATH below and
+ * compare it to the site's reference-configuration table, so a config edit turns the gate red
+ * instead of silently desynchronizing the site; the deployment-status check is sentence-scoped
+ * rather than page-scoped; and the security-attestation qualifier must sit in the same block as
+ * the claim it qualifies.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,7 +36,23 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // is a workspace glob), so the suite is always run from the repo root by `npm run test:backend`.
 const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = path.resolve(SITE, '..', '..');
-const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'base-mainnet.json');
+// REPOINTED 2026-09-05 by owner decision ("Remove the language for base. Just do robinhood for
+// now."). The site's stated target chain is Robinhood Chain mainnet, chain id 4663, so the
+// reference configuration the pages are checked against is that chain's file rather than Base's.
+//
+// The repoint is small because the two files are numerically identical for EVERY value this suite
+// renders except one. smoke.gov (3600/3600/0/86400, 2500/500/4000/21600), smoke.minDepositUsdc
+// (100000000), exitFeeMaxBps (50), exitFeeDecayPeriod (604800) and both sane-price bands match
+// value for value. The only divergences are chainlinkOracle.assets[].heartbeatSeconds (3600 ->
+// 86400, which is ChainlinkOracle.MAX_HEARTBEAT exactly) and chainlinkOracle.sequencerUptimeFeed
+// (a Base address -> empty, because Chainlink publishes no L2 Sequencer Uptime Feed for 4663).
+// So the entire numeric blast radius of this line is ONE table row on how-it-works.html and one
+// prose figure on risks.html, both of which move from 3,600 seconds to 86,400.
+//
+// base-mainnet.json is NOT deleted and must not be: scripts/test/config-doc-truth.test.mjs reads
+// it directly and asserts its sequencer uptime feed is still a real address.
+const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
+const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
 // Eight since 2026-09-04: status.html joined by owner decision. It is NOT in the header nav --
 // it is reached from the footer of every page -- but it is a public page and every guard in this
@@ -46,7 +63,7 @@ const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.ht
 const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 
 // The exact strings the spec pins. Any drift in punctuation or dashes is a failure, by design.
-const BANNER_STATUS = 'Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake.';
+const BANNER_STATUS = 'Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
@@ -562,7 +579,7 @@ test('tokens.css defines the full inherited token set, so a real design system i
 
 test('the operator page states the capital obligation exactly, and never denies it', () => {
   const ops = raw.get('operators.html') ?? '';
-  assert.ok(ops.includes('2,500 USDC'), 'operators.html must state the 2,500 USDC figure');
+  assert.ok(ops.includes('2,500 USDG'), 'operators.html must state the 2,500 USDG figure');
   assert.ok(ops.includes('5%'), 'operators.html must state the 5% figure');
   assert.ok(!/zero capital cost/i.test(ops), 'operators.html must never claim zero capital cost');
   // The two distinct 5% mechanisms must both be named; conflating them is the documented failure mode.
@@ -635,7 +652,8 @@ test('the security-review attestation carries its qualifier in the same block', 
 // ─────────────────────────── the site against the repository ───────────────────────────
 //
 // THE SINGLE HIGHEST-VALUE CHECK IN THIS FILE. Every number in the reference-configuration table
-// is read out of contracts/config/base-mainnet.json and compared to what the page renders. Before
+// is read out of the reference mainnet configuration named by CONFIG_PATH above and compared to
+// what the page renders. Before
 // this existed the table was pinned only to itself, so a config edit silently desynchronized the
 // site and the gate stayed green. Every failure message here says the SITE is stale, never the
 // config: the config is the source of truth and the page is the copy of it.
@@ -658,10 +676,21 @@ function percents(bps) {
   return [`${pct}%`, `${pct.toFixed(2)}%`, `${bps} bps`];
 }
 
-const usdc = (units) => `${(Number(BigInt(units)) / 1e6).toLocaleString('en-US')} USDC`;
+// The settlement asset LABEL, not just the number. The reference configuration is now chain
+// 4663's, whose settlement token under the `usdc` key is USDG (Global Dollar) rather than Circle
+// USDC — see robinhood-mainnet.json `usdcNote`. The FIELD NAMES stay `usdc`/`minDepositUsdc`
+// because the config keeps them (it is a verbatim copy of base-mainnet.json's smoke block, and
+// nothing in contracts/ reads a symbol: VaultCore identifies the settlement token by address and
+// measures it with decimals()). Only the rendered label moves, and the numbers do not move at all.
+//
+// Three site figures hang off this label and had to change together: the "Minimum deposit" table
+// row on how-it-works.html, and risks.html's "reference 100 USDG minimum deposit" and "about 400
+// USDG". The third of those is spelled out INLINE below rather than through this helper, which is
+// exactly how a rename gets half-done — so it is named here.
+const usdg = (units) => `${(Number(BigInt(units)) / 1e6).toLocaleString('en-US')} USDG`;
 const wadDollars = (wad) => `$${(Number(BigInt(wad)) / 1e18).toLocaleString('en-US')}`;
 
-test('the reference-configuration table matches contracts/config/base-mainnet.json row for row', () => {
+test(`the reference-configuration table matches ${CONFIG_NAME} row for row`, () => {
   const html = raw.get('how-it-works.html') ?? '';
   /** @type {Map<string, string>} */
   const rows = new Map();
@@ -683,7 +712,7 @@ test('the reference-configuration table matches contracts/config/base-mainnet.js
     ['Proposal threshold', percents(gov.proposalThresholdBps)],
     ['Delegate concentration cap', percents(gov.concentrationCapBps)],
     ['Proposal cooldown', durations(gov.proposalCooldown)],
-    ['Minimum deposit', [usdc(config.smoke.minDepositUsdc)]],
+    ['Minimum deposit', [usdg(config.smoke.minDepositUsdc)]],
     ['Exit fee maximum', percents(config.smoke.exitFeeMaxBps)],
     ['Exit fee decay period', durations(config.smoke.exitFeeDecayPeriod)],
     ['Oracle staleness bound', durations(staleness[0])],
@@ -691,10 +720,10 @@ test('the reference-configuration table matches contracts/config/base-mainnet.js
 
   for (const [label, accepted] of expected) {
     const cell = rows.get(label);
-    assert.ok(cell !== undefined, `how-it-works.html is stale: its reference-configuration table has no "${label}" row, but base-mainnet.json sets one`);
+    assert.ok(cell !== undefined, `how-it-works.html is stale: its reference-configuration table has no "${label}" row, but ${CONFIG_NAME} sets one`);
     assert.ok(
       accepted.some((v) => cell.includes(v)),
-      `how-it-works.html is stale relative to contracts/config/base-mainnet.json: "${label}" renders ${JSON.stringify(cell)}, and the config value renders as one of ${JSON.stringify(accepted)}`,
+      `how-it-works.html is stale relative to ${CONFIG_NAME}: "${label}" renders ${JSON.stringify(cell)}, and the config value renders as one of ${JSON.stringify(accepted)}`,
     );
   }
 });
@@ -706,8 +735,8 @@ test('the sane-price bands on the site match the config', () => {
     const hi = wadDollars(asset.maxPriceWad);
     for (const p of ['how-it-works.html', 'risks.html']) {
       const html = raw.get(p) ?? '';
-      assert.ok(html.includes(lo), `${p} is stale relative to base-mainnet.json: the ${asset.symbol} band floor renders as ${lo} in the config and does not appear on the page`);
-      assert.ok(html.includes(hi), `${p} is stale relative to base-mainnet.json: the ${asset.symbol} band ceiling renders as ${hi} in the config and does not appear on the page`);
+      assert.ok(html.includes(lo), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band floor renders as ${lo} in the config and does not appear on the page`);
+      assert.ok(html.includes(hi), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band ceiling renders as ${hi} in the config and does not appear on the page`);
     }
   }
 });
@@ -721,7 +750,7 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
   for (const p of ['how-it-works.html', 'risks.html']) {
     assert.ok(
       (raw.get(p) ?? '').includes(`${modeFHours} hours in the reference configuration`),
-      `${p} is stale relative to base-mainnet.json: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
+      `${p} is stale relative to ${CONFIG_NAME}: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
     );
   }
   // What four seats BUY changed with the H-8/CM-7 remediation, while the arithmetic did not.
@@ -737,12 +766,12 @@ test('the figures the site DERIVES from the config are pinned to it as well', ()
   const capture = (SEATS * Number(BigInt(config.smoke.minDepositUsdc))) / 1e6;
   const risks = raw.get('risks.html') ?? '';
   assert.ok(
-    risks.includes(`reference ${usdc(config.smoke.minDepositUsdc)} minimum deposit`),
-    `risks.html is stale relative to base-mainnet.json: the minimum deposit renders as ${usdc(config.smoke.minDepositUsdc)}`,
+    risks.includes(`reference ${usdg(config.smoke.minDepositUsdc)} minimum deposit`),
+    `risks.html is stale relative to ${CONFIG_NAME}: the minimum deposit renders as ${usdg(config.smoke.minDepositUsdc)}`,
   );
   assert.ok(
-    risks.includes(`about ${capture.toLocaleString('en-US')} USDC`),
-    `risks.html is stale relative to base-mainnet.json: ${SEATS} seats at ${usdc(config.smoke.minDepositUsdc)} is about ${capture.toLocaleString('en-US')} USDC`,
+    risks.includes(`about ${capture.toLocaleString('en-US')} USDG`),
+    `risks.html is stale relative to ${CONFIG_NAME}: ${SEATS} seats at ${usdg(config.smoke.minDepositUsdc)} is about ${capture.toLocaleString('en-US')} USDG`,
   );
 });
 
@@ -809,6 +838,65 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
   const r5 = html.slice(html.indexOf('id="r5"'), html.indexOf('id="r6"'));
   assert.ok(!/severity--mitigated/.test(r5), 'risks.html: risk 5 must not carry the green mitigated chip — the guard has never run against a real uptime feed');
   assert.ok(/never (?:run|executed) against a real/i.test(r5), 'risks.html: risk 5 must say the sequencer path has never executed against a real feed');
+});
+
+/**
+ * RWLY DOES NOT EXIST, AND EVERY MENTION OF IT HAS TO SAY SO.
+ *
+ * Owner decision, 2026-09-05: the lede now names the next iteration -- "The next iteration, RWLY,
+ * is designed to accrue the protocol's fees into official Robinhood Stock Tokens." -- and the
+ * standing rule from 2026-09-04 is that this site keeps saying no token exists until one does. A
+ * named future token is the single easiest thing on these pages to quote out of context into a
+ * claim that something is buyable, so the qualifier travels with the name rather than sitting in a
+ * disclaimer further down the page.
+ *
+ * WINDOW-SCOPED, not sentence-scoped, and the reason is the copy this guard has to permit. The
+ * approved lede is TWO sentences: the first names RWLY and the second says it does not exist yet.
+ * A sentence-scoped rule reds the exact wording the owner directed, which is a guard failing its
+ * own copy. Block scoping (the shape used by the security-review check above) does not work either,
+ * because three of the twelve occurrences are inside `content="…"` meta attributes, which sit in no
+ * <p>, <dd> or <li> at all. A character window handles markup and prose with one rule.
+ *
+ * 160 CHARACTERS, chosen against the copy rather than picked round. Measured over the site as it
+ * stands, the widest gap between an "RWLY" and its nearest "does not exist" is 108 characters (the
+ * lede, whose first sentence carries the whole Stock Tokens clause). 160 leaves room for a modest
+ * rewrite and still refuses a qualifier parked a paragraph away.
+ *
+ * The floor is the other half. A window rule alone is satisfiable by deleting every mention, which
+ * would silently drop a fact the owner put on the page; the count assertion means the only way to
+ * pass is to keep the mentions and keep them qualified. Same reasoning as the open-High check.
+ */
+const RWLY_WINDOW = 160;
+const RWLY_QUALIFIER = /does not exist/i;
+
+test('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
+  const files = siteFiles();
+  let seen = 0;
+  for (const f of files) {
+    // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
+    const text = readFileSync(path.join(SITE, f), 'utf8').replace(/\s+/g, ' ');
+    for (const m of text.matchAll(/RWLY/g)) {
+      seen++;
+      const at = m.index ?? 0;
+      const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+      assert.ok(
+        RWLY_QUALIFIER.test(window),
+        `${f}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
+          'NEXT ITERATION and is design intent only — there is no such token, no presale and nothing ' +
+          `to hold. — ${JSON.stringify(window.trim().slice(0, 200))}`,
+      );
+    }
+  }
+  assert.ok(
+    seen >= 6,
+    `expected RWLY to be named on at least six surfaces, found ${seen} — if the mentions were deleted ` +
+      'rather than qualified, say so in the commit rather than letting this guard pass by absence',
+  );
+  // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.
+  assert.ok(
+    (raw.get('index.html') ?? '').includes('RWLY does not exist yet.'),
+    'index.html: the lede must end on the exact sentence "RWLY does not exist yet."',
+  );
 });
 
 /**

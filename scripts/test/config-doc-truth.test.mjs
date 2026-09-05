@@ -304,7 +304,7 @@ test('the exit-fee decay period in the mainnet config matches the site reference
   // apps/site/test/site.test.mjs already pins how-it-works.html to the config. This cross-check
   // only makes the dependency explicit so a future edit of that test cannot silently drop it.
   const siteTest = read('apps', 'site', 'test', 'site.test.mjs');
-  assert.match(siteTest, /config\.smoke\.exitFeeDecayPeriod/, 'site.test.mjs no longer pins the exit-fee decay row to base-mainnet.json');
+  assert.match(siteTest, /config\.smoke\.exitFeeDecayPeriod/, 'site.test.mjs no longer pins the exit-fee decay row to the reference mainnet configuration it reads (CONFIG_PATH)');
 });
 
 test("Governance.sol has no proposalThresholdBps floor, and every config's govDefencesNote says so", () => {

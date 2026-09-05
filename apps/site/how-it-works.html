@@ -16,7 +16,7 @@
 <meta property="og:title" content="How it works, mechanism by mechanism">
 <meta property="og:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Not deployed to mainnet.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: not deployed to mainnet.">
+<meta property="og:image:alt" content="A plain card carrying the site name, Agent-Governed Vaults, and the pre-launch status line: built for Robinhood Chain, not deployed.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="How it works, mechanism by mechanism">
 <meta name="twitter:description" content="Deposit, observe, propose, commit, reveal, timelock, execute — one rebalance in full, invariants and parameters labelled apart. Not deployed to mainnet.">
@@ -120,7 +120,7 @@
     <div class="wrap">
       <p class="eyebrow">Exit</p>
       <h2>Redemption is pro-rata, in kind, and sometimes queued.</h2>
-      <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDC, minus the exit fee. Shares burn at settlement, never at request, so a request is not a sale. Until it settles you still carry the vault's gains and losses.</p>
+      <p class="tight">By default you receive your share of every asset in the basket plus your share of the idle USDG, minus the exit fee. Shares burn at settlement, never at request, so a request is not a sale. Until it settles you still carry the vault's gains and losses.</p>
       <p class="tight">In kind means tokens, not dollars. You receive WETH and cbBTC. Converting them back is your own transaction. The routing and the cost are yours too.</p>
       <p class="tight"><code>requestExit</code> takes no minimum-value parameter. Your exit is an unbounded market order against whatever NAV settlement produces; there is no transaction-level floor you can set. One was deliberately dropped for contract-size reasons. The operator's rebalance swaps do carry a minimum-out bound. Your principal does not.</p>
 
@@ -187,11 +187,11 @@
     <div class="wrap">
       <p class="eyebrow">Pricing</p>
       <h2>One Chainlink feed per asset, and a breaker that fails closed.</h2>
-      <p class="tight">The vault prices each asset from a single genuine Chainlink Data Feed: WETH from ETH/USD, cbBTC from BTC/USD, both eight-decimal feeds. USDC is pinned to $1.00 in the oracle. The basket is limited to those two assets because they are the assets Base has Chainlink USD feeds for.</p>
+      <p class="tight">The vault prices each asset from a single genuine Chainlink Data Feed: WETH from ETH/USD, cbBTC from CBBTC/USD, both eight-decimal feeds. USDG, the settlement token, is pinned to $1.00 in the oracle. The basket is limited to those two assets because they are the only ones the reference configuration prices from a genuine Chainlink USD feed on Robinhood Chain.</p>
       <dl class="rows">
         <div>
           <dt>Sequencer gate</dt>
-          <dd>On Base a Chainlink L2 Sequencer Uptime Feed is mandatory. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node, Base Sepolia and Robinhood Chain mainnet (chain id 4663) unless the feed address is supplied, and a pre-deploy configuration check fails without it. Robinhood Chain joined that short list by owner decision on 2026-09-04: Chainlink publishes no L2 Sequencer Uptime Feed for it and is no longer expanding that feed set to additional networks, so there is no address an operator could supply. The price is that on Robinhood Chain the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band below are the only guards left standing. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, so its first real execution would be on Base mainnet.</dd>
+          <dd>A Chainlink L2 Sequencer Uptime Feed is mandatory on every chain Chainlink publishes one for. The enforcement sits at deploy time rather than in the oracle: the deploy script refuses to deploy on any chain but a local node, Base Sepolia and Robinhood Chain mainnet (chain id 4663) unless the feed address is supplied, and a pre-deploy configuration check fails without it. Robinhood Chain joined that short list by owner decision on 2026-09-04: Chainlink publishes no L2 Sequencer Uptime Feed for it and is no longer expanding that feed set to additional networks, so there is no address an operator could supply. The price is that on Robinhood Chain the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band below are the only guards left standing. The oracle contract itself does not re-check. Handed a zero address, it skips the gate and prices as though the chain had no sequencer at all. After the sequencer comes back up the oracle enforces a 3,600-second grace period before it will price anything again. This path has never executed against a real sequencer feed. Testnet leaves the feed address at zero by design, and Robinhood Chain has no feed to supply, so on the stated target chain it never executes at all.</dd>
 
         </div>
         <div>
@@ -204,7 +204,7 @@
         </div>
         <div>
           <dt>What stands behind those three</dt>
-          <dd>Nothing. The heartbeat, the band and the sequencer gate are the only defences against a bad answer. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses. But there is no backup to switch to, and no way to point the vault at a different one.</dd>
+          <dd>Nothing. The heartbeat and the band are the only defences that run at price time on the stated target chain, and the sequencer gate joins them only where Chainlink publishes an uptime feed to wire. There is one price provider, no second provider and no fallback. A feed deprecation or freeze fails that asset closed — the vault stops rather than guesses. But there is no backup to switch to, and no way to point the vault at a different one.</dd>
         </div>
         <div>
           <dt>There is no rotation path</dt>
@@ -217,8 +217,8 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">Reference configuration</p>
-      <h2>The parameters in the repository's Base mainnet configuration.</h2>
-      <p class="tight">These are the values in the reference mainnet configuration held in the repository. They are a worked example of one vault's settings. They are not protocol rules and they bind no other vault. Nothing has been deployed with them.</p>
+      <h2>The parameters in the repository's Robinhood Chain mainnet configuration.</h2>
+      <p class="tight">These are the values in the reference mainnet configuration held in the repository, <code>contracts/config/robinhood-mainnet.json</code>, read from Robinhood Chain mainnet (chain id 4663). They are a worked example of one vault's settings. They are not protocol rules and they bind no other vault. Nothing has been deployed with them.</p>
 
       <div class="tablewrap" role="region" aria-label="Reference mainnet configuration" tabindex="0">
         <table>
@@ -238,10 +238,10 @@
             <tr><th scope="row">Proposal threshold</th><td>5% of voting-eligible stake</td></tr>
             <tr><th scope="row">Delegate concentration cap</th><td>a delegate's received weight ≤ 40% of snapshot stake</td></tr>
             <tr><th scope="row">Proposal cooldown</th><td>6 hours</td></tr>
-            <tr><th scope="row">Minimum deposit</th><td>100 USDC</td></tr>
+            <tr><th scope="row">Minimum deposit</th><td>100 USDG</td></tr>
             <tr><th scope="row">Exit fee maximum</th><td>0.50% (50 bps)</td></tr>
             <tr><th scope="row">Exit fee decay period</th><td>7 days</td></tr>
-            <tr><th scope="row">Oracle staleness bound</th><td>3,600 seconds per asset</td></tr>
+            <tr><th scope="row">Oracle staleness bound</th><td>86,400 seconds per asset</td></tr>
           </tbody>
         </table>
       </div>
@@ -249,7 +249,7 @@
       <div class="note note--flat">
         <span class="label">Launch configuration</span>
         <p>At launch the factory permits root vaults only; nested sub-vaults are disabled. Root-only is not a preference. It is what closes Critical C-1 and a group of High findings; they are dormant, not repaired. If sub-vaults were ever enabled, those findings would return.</p>
-        <p>The first vault's planned capacity cap is 50,000 USDC. It is a planned parameter of a vault that has not been created. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing this one.</p>
+        <p>The first vault's planned capacity cap is 50,000 USDG. It is a planned parameter of a vault that has not been created. A capacity cap is immutable per vault, so raising it means creating a new vault rather than editing this one.</p>
       </div>
     </div>
   </section>
@@ -307,7 +307,7 @@
         <p class="small footer-pins">Source-available under BUSL-1.1 — not open source.</p>
       </div>
     </div>
-    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. No mainnet deployment of the current code exists, and a Base Sepolia deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
+    <p class="small">Nothing on this site is an offer, a solicitation, or financial advice. Not deployed to mainnet. The only deployment is a testnet trial with no real value at stake. Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
   </div>
 </footer>
 
