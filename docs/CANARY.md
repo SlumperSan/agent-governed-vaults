@@ -565,8 +565,8 @@ re-assert on a backoff until fixed:
 | `ORACLE DETECTOR BLIND … answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig()` | the vault's oracle is a flavor this canary does not know | the canary needs a new oracle implementation before this vault is monitored at all — do not treat the vault as healthy |
 | `vault … is unreadable` | wrong address, wrong chain, or the RPC is failing | check `RPC_URL`/`CHAIN_ID` and the address. **Every** signal for that vault is suspended |
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
-| `FEED IDENTITY DETECTOR BLIND … did not answer description() / decimals()` | the proxy stopped answering the two reads the harm checks compare against | the asset is unmonitored for aggregator-swap drift. A feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry |
-| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()` | the feed is not an `EACAggregatorProxy`, or both reads are failing | the harm checks (decimals, denomination) **did** run and passed; it is the swap *notice* that is blind |
+| `FEED IDENTITY DETECTOR BLIND … did not answer description() or decimals()`, or `… description() or decimals() … could not be read` | one branch, two wordings. `did not answer` needs every one of those reads that failed to be a confirmed revert — the proxy stopped answering the reads the harm checks compare against. `could not be read` means at least one of those reads failed without a confirmed revert — including an `eth_call` that came back empty, which classifies `transport` (`call-error.mjs:19-21`), so the feed may well have answered | the asset is unmonitored for aggregator-swap drift. On `did not answer`: a feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape — check it against Chainlink's feed registry. On `could not be read`: check the RPC's rate limit first, but an empty `eth_call` return lands here too — three consecutive sweeps is the feed, not the network (`feed-identity.mjs:72-76`) |
+| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()`, or `… neither aggregator() nor phaseId() … could be read` | one branch, two wordings, same rule: `answered neither` needs both reads to be confirmed reverts — the feed is not an `EACAggregatorProxy`. `could be read` means at least one failed without a confirmed revert — an `eth_call` that came back empty classifies `transport` too (`call-error.mjs:19-21`) — and evidences neither | the harm checks (decimals, denomination) **did** run and passed either way; it is the swap *notice* that is blind |
 | `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket) — no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
 | `ORACLE DETECTOR BLIND … priceWad() … could not be read` | the ground-truth price read failed in transit | as above. Whether the asset is frozen is unknown, so it is not reported either way |
 | `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound — this line means the unreadable sources are what decides it |
@@ -581,8 +581,8 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 and explicitly not evidence of a fault.
 
 **`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
-blind branches (`feed-identity.mjs:178, 210, 258, 289`) carry
-`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:100`), so they escalate only on the third
+blind branches (`feed-identity.mjs:179, 211, 266, 308`) carry
+`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:101`), so they escalate only on the third
 consecutive sweep. The case that earned the damping is an `eth_call` coming back empty — one empty
 return is noise where three consecutive is the feed — but that is the case it was written for, not
 the only one it covers: each branch is reachable on a confirmed revert too, and on a transport
@@ -596,8 +596,10 @@ consecutive observations before the tracker flips its status — `alert` and `ok
 `transitions.mjs:146` gates every status flip on `need`, not only the blind ones. A result is
 unpinned either because the caller passed no `atBlock` (`share-conservation.mjs:39`) or because the
 pinned read failed and the archive fallback re-read at chain head (`share-conservation.mjs:44-51`);
-that failure is transport-classified, so RPC noise is one of the two paths into this damping rather
-than something it is unrelated to.
+that retry is `if (!res.ok && pinned)` and is deliberately NOT gated on `kind` (`:46-48`), so it
+takes any failed pinned read — but the failure it exists for is the pruned node's "missing trie
+node", which classifies transport. RPC noise is therefore one of the two paths into this damping
+rather than something it is unrelated to.
 
 Do not read the branch count off the table, because rows and branches do not correspond one to one:
 only two rows above carry the literal `FEED IDENTITY DETECTOR BLIND` prefix, and the last row folds
