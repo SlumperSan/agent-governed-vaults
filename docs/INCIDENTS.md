@@ -37,9 +37,30 @@ reader can run. Never state a recovery time you cannot evidence.
 > C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
 > root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
-> owner attestation — so gates 0 and 1 are **GO**. The protocol remains **NO-GO for mainnet on the
-> OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on security
-> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
+> owner attestation — so gates 0 and 1 are **GO**. The protocol remains **NO-GO for BASE mainnet on
+> the OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on
+> security ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
+>
+> **THIS RUNBOOK NOW COVERS A LIVE DEPLOYMENT.** Since 2026-09-05 the protocol's singletons are
+> deployed and wired on Robinhood Chain mainnet (chain 4663): `VaultFactory`
+> `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp), address book
+> [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json).
+>
+> **What that does and does not put in scope.** No vault has been created on it yet — `smokeVault`
+> is null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain
+> 4663 at block 54,991,182 — so no member funds are at stake there and every incident below that
+> begins with a deposit, a proposal or an exit is still hypothetical on that chain. What is already
+> live there is the deployment itself: the factory, the registries, the fee engine, governance and
+> the oracle are on-chain and immutable, so §§ about a wrong or unwired singleton, a bad oracle
+> configuration or an unusable address book apply from today. Vault #1 is the creator Safe
+> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create, and this banner is what has to be
+> rewritten on the day it does.
+>
+> Two of that chain's properties change what an on-call reader should expect once a vault exists:
+> there is no Chainlink L2 sequencer uptime feed for 4663, so
+> that gate cannot freeze a vault there, and its feeds publish on an 86,400 s heartbeat — exactly
+> `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`) — so the staleness breaker only
+> fires after a feed has been stopped for more than a day.
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
 > Read it before relying on any "the contract's own defences are the response" line here.
@@ -226,13 +247,16 @@ rebalance.
 >
 > **Update 2026-08-28 (Phase 2):** the operational rule at the bottom of this box — "do not create
 > sub-vaults, do not allocate parent capital into a child" — is now an **enforced contract
-> invariant**, not an operator instruction. The mainnet launch path (`Deploy.s.sol`) constructs
+> invariant**, not an operator instruction. The Base mainnet launch path (`Deploy.s.sol`) constructs
 > `VaultFactory` with `allowSubVaults = false` — a constructor immutable, so it binds *that
 > factory*: on it `createChildVault` reverts `SubVaultsDisabled` and every vault it deploys is
 > wired root-only, so no funded child can exist and the C-1 capture below has no target. C-1 is
 > thereby **closed as a class at launch** (together with the sub-vault-only Highs H-5/H-6/H-7/H-9).
 > On a factory built with `true` — `DeployTestnet.s.sol`, and the live Base Sepolia deployment —
-> none of that holds, which is where the SV-* drills run. The rest of this box
+> none of that holds, which is where the SV-* drills run. For the live Robinhood Chain factory the
+> value is neither assumed nor inherited from either script: read
+> `verifiedWiring["factory.allowSubVaults()"]` in that chain's address book, or call
+> `VaultFactory.allowSubVaults()` on it. The rest of this box
 > describes the sub-vault risk that applies **only** to a future release that re-enables sub-vaults
 > with the parent-casts-child-vote mechanism; on a launch (root-only) deployment it is dormant.
 >

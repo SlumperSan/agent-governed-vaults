@@ -5,9 +5,11 @@
  *
  * `node packages/reference-agent/fixtures/seed-snapshot.mjs [path]`
  *
- * Nothing is deployed to mainnet: the only record in `contracts/config/deployments/` is
- * `base-sepolia.json`, a testnet trial. The events here are synthetic for a reason no deployment
- * changes, though. The demo needs a specific joint state across three vaults at once — see
+ * `contracts/config/deployments/` holds `base-sepolia.json`, a testnet trial, and
+ * `robinhood-mainnet.json`, a Robinhood Chain mainnet deployment of 2026-09-05 whose singletons
+ * are wired and on which no vault has been created yet. The events here are synthetic for a reason
+ * no deployment changes, though.
+ * The demo needs a specific joint state across three vaults at once — see
  * `fixtures/demo-chain.mjs`, down to a reveal-phase proposal against a commit the demo agent
  * itself made — and no live chain can be relied on to be holding that at demo time. So rather than
  * serve whatever a real snapshot happened to contain, this folds synthetic events through the REAL

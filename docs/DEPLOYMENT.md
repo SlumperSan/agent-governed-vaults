@@ -1,6 +1,7 @@
 # Deployment Runbook
 
-Sprint 9. Covers testnet bring-up (Base Sepolia), the mandatory wiring order, post-deploy
+Sprint 9. Covers testnet bring-up (Base Sepolia) and the mainnet bring-up this runbook was actually
+used for — Robinhood Chain (chain 4663), 2026-09-05 — the mandatory wiring order, post-deploy
 verification, and canary monitoring. Contracts are immutable — there is no upgrade path, so
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
@@ -31,7 +32,8 @@ unwired registry cannot be fixed after the fact).
   from a file.
 - The canonical USDC address for the chain (Base Sepolia: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`).
 - **Launch oracle (C-6): one genuine Chainlink Data Feed per basket asset**, plus the Base L2
-  sequencer uptime feed. These go in `base-mainnet.json`'s `chainlinkOracle` block and are deployed
+  sequencer uptime feed **on the chains that have one**. These go in `base-mainnet.json`'s
+  `chainlinkOracle` block — the Base reference configuration — and are deployed
   as a curated `ChainlinkOracle` in **§1** (the launch model — not the per-vault multi-source
   aggregator, which C-6 retired). Verify every address on-chain (`verify-chainlink-oracle.mjs`)
   before deploying — the oracle is immutable.
@@ -40,7 +42,7 @@ unwired registry cannot be fixed after the fact).
   [`base-mainnet.json`](../contracts/config/base-mainnet.json) and described in §3; **UNVERIFIED-ON-CHAIN**
   and not for a mainnet launch.
 
-### A second mainnet configuration exists, and nothing is deployed with it (2026-09-04)
+### A second mainnet configuration for chain 4663, and where its deployment is recorded instead (2026-09-04)
 
 **Added 2026-09-04:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json),
 for Robinhood Chain (chain id 4663). It is modelled key for key on `base-mainnet.json` so the two
@@ -52,12 +54,24 @@ description, aggregator phase and answer in it was read from chain 4663 by read-
 of chain time, and the file records the earliest and latest samples alongside the one its feed ages
 are measured against.
 
-**Nothing was deployed with it.** At the time it landed no contract from this repository existed on
-chain 4663 or on any mainnet; the deployment came the next day and is recorded in the subsection
-below, "The chain-4663 deployment, and where it is recorded". The file is configuration evidence
-rather than deployment evidence, and it changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md). What it supplies for that chain is three of §1 step
-1's four inputs — real, on-chain-verified feed addresses (never invented ones), per-asset heartbeats
-and sane-price bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
+**What this file is, and what it is not.** It is configuration evidence for chain 4663, and a
+configuration is not an address book: it records what was read off that chain on the date above,
+never what exists on it now. What exists on chain 4663 is recorded separately, in
+[`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json),
+written from what the chain returned and described in the subsection below, "The chain-4663
+deployment, and where it is recorded". **Do not read either file as evidence about the other.** The
+one link between them that either file can settle is that the record's
+`oracle.sequencerUptimeFeed` and `oracle.maxStalenessSeconds` agree with this file's
+`chainlinkOracle` block, and `scripts/test/claims-robinhood-deployment.test.mjs` asserts exactly
+that and nothing wider — in particular, nothing here establishes which configuration any broadcast
+actually read, and the open questions at the end of this section are the reason that matters.
+
+No contract from this repository exists on Base mainnet. Neither this file nor the deployment on
+chain 4663 changes a row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md) — §0 of that file records
+which of its gates were not run on that chain, and gates 3 and 6 are still STALE and still hold Base
+at NO-GO. What this configuration supplies for chain 4663 is three of §1 step 1's four inputs — real,
+on-chain-verified feed addresses (never invented ones), per-asset heartbeats and sane-price
+bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
 uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-approved exemption dated
 2026-09-04, because Chainlink publishes no L2 Sequencer Uptime Feed for that chain. The file's
 `sequencerUptimeFeedNote` states what `ChainlinkOracle` does with a zero feed, and
@@ -153,7 +167,7 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive).
+> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about chain 4663; what the Robinhood Chain factory actually enforces is `factory.oracleAllowlistEnforced()` and `factory.isAllowedOracle(...)` in `contracts/config/deployments/robinhood-mainnet.json`, read back on-chain, and that is the only place to look for it.
 
 ### Robinhood Chain 4663 — the sequencer-uptime-feed exemption (owner-approved 2026-09-04)
 
@@ -231,10 +245,14 @@ not, by itself, make a 4663 deploy actionable: the deploy happened on 2026-09-05
 A config for that chain does now exist — #209 landed
 [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
 in §0 above — and it is worth reading what its own status fields claim, because they claim less than
-the filename suggests. Its **top-level `status`** opens *"CONFIGURATION ONLY — NOTHING IS DEPLOYED ON
-CHAIN 4663"*; its **`chainlinkOracle.status`** reads *"VERIFIED-ON-CHAIN 2026-09-04 … VERIFIED means
-the addresses, decimals, descriptions, phases and answers below were read from that chain. IT DOES
-NOT MEAN DEPLOYED"*. What it supplies is three of §1 step 1's four inputs — real, on-chain-verified
+the filename suggests. Its **top-level `status`** opens *"THE DEPLOYMENT'S CONFIGURATION, NOT ITS
+ADDRESS BOOK"*; its **`chainlinkOracle.status`** reads *"VERIFIED-ON-CHAIN 2026-09-04 … VERIFIED
+means the addresses, decimals, descriptions, phases and answers below were read from that chain. IT
+DOES NOT MEAN DEPLOYED, AND THIS BLOCK IS NOT AN ADDRESS"* — the live `ChainlinkOracle` is
+`0x79279FBa…`, in the deployment record. Both fields were rewritten on 2026-09-05: they previously
+said nothing was deployed on chain 4663 and that no `ChainlinkOracle` instance existed there, which
+was true on the day the config was written and was falsified by the broadcast the next day. What
+the config supplies is three of §1 step 1's four inputs — real, on-chain-verified
 feed addresses, per-asset heartbeats and sane-price bounds, the same three §0 above enumerates — and
 deliberately not that step's fourth, the L2 sequencer uptime feed:
 `chainlinkOracle.assets` carries WETH (`0x0bd7…ad73`) priced from that chain's own `ETH / USD` feed
@@ -258,11 +276,12 @@ gift. Two have since closed and two remain:
 - **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
   `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
   ran both scripts, and the record was written from on-chain readback afterwards.
-- **The public claims still say the opposite.** All eight pages of `apps/site` carry the status
-  line *"Not deployed to mainnet."*, and [LAUNCH-READINESS.md](LAUNCH-READINESS.md) opens
-  **VERDICT: NO-GO**. The 4663 deploy falsified the first the moment it landed and has to be argued
-  against the second, so the claims flip is its own reviewed change rather than a side effect of
-  this one.
+- **The public claims have been flipped.** All eight pages of `apps/site` used to carry the status
+  line *"Not deployed to mainnet."*; the 4663 deploy falsified it the moment it landed, and the
+  replacement states the deployment and cites the record in the same sentence, so a reader can check
+  it. That flip was its own reviewed change rather than a side effect of this one, and it did not
+  touch [LAUNCH-READINESS.md](LAUNCH-READINESS.md)'s **VERDICT: NO-GO**, which is about Base mainnet
+  and was not cleared by deploying somewhere else.
 
 `verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
 `4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`:104-109`), so a run against this
@@ -322,7 +341,9 @@ allowlist makes it non-selectable there anyway).
    and defeat the latter — a single upstream wearing three hats. That is exactly the
    `testnetCompromise` recorded in
    [`base-sepolia.json`](../contracts/config/base-sepolia.json), acceptable only because Base
-   Sepolia has one feed per pair and no real capital. **A mainnet stack is:**
+   Sepolia has one feed per pair and no real capital. **A BASE mainnet stack is:** (Base-shaped, and
+   not the universal mainnet shape — the Robinhood Chain stack has no sequencer leg at all and runs
+   its feeds at the 86,400 s `MAX_HEARTBEAT` ceiling)
 
    | Class | Adapter | Fails when | `updatedAt` |
    | --- | --- | --- | --- |
@@ -440,7 +461,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > post-audit feature. To enable sub-vaults you must deploy a factory with `allowSubVaults = true`,
 > which is only appropriate once that mechanism has shipped and been audited. See
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The protocol is
-> **NO-GO for mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key); the
+> **NO-GO for BASE mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key), and those two gates were not run before the Robinhood Chain mainnet deployment of 2026-09-05 either; the
 > security gates are cleared and the external audit is complete on owner attestation. Enabling
 > sub-vaults is additionally gated on the post-launch look-through mechanism shipping and being audited.
 >
@@ -448,7 +469,11 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
-> holding members' money.
+> holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
+> no vault has been created on it yet and so nothing there holds anyone's money. Confirm
+> `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
+> the value read back at deployment is in that chain's address book under
+> `verifiedWiring["factory.allowSubVaults()"]`.
 
 ## 5. Post-deploy verification (before any real capital)
 
@@ -468,10 +493,14 @@ Run each check against the live addresses:
 - [ ] `oracle.feedOf(asset)` matches the config for each asset: right feed address, right
       heartbeat, and a sane-price band that brackets the current price with room for a real move
       but not for a deprecated min/maxAnswer clamp value.
-- [ ] `oracle.sequencerUptimeFeed()` is the **Base L2 sequencer uptime feed**, not `address(0)`.
-      A mainnet deploy without it has no sequencer guard at all. Confirm `latestRoundData()`
-      answers `0` (up) and that `block.timestamp - startedAt > 3600` (outside the grace period),
-      or `priceWad` will revert for every asset.
+- [ ] `oracle.sequencerUptimeFeed()` — **on a chain that has one.** On Base it must be the Base L2
+      sequencer uptime feed and not `address(0)`; confirm `latestRoundData()` answers `0` (up) and
+      that `block.timestamp - startedAt > 3600` (outside the grace period), or `priceWad` will
+      revert for every asset. A deploy without it has no sequencer guard at all, and that is the
+      accepted state on **Robinhood Chain (4663)**, where Chainlink publishes no uptime feed and
+      has said it will not add one: `address(0)` there is the intended configuration, nothing
+      compensates for the missing guard, and this checklist item is satisfied by confirming the
+      zero rather than by finding a feed.
 - [ ] `factory.isAllowedOracle(<oracle>)` is true and `factory.oracleAllowlistEnforced()` is true
       — the C-6 curation gate. An unenforced allowlist on mainnet ships the finding.
 - [ ] **Know what has no check:** there is exactly one feed per asset, so there is nothing to
@@ -587,6 +616,19 @@ Do **not** deploy to mainnet before: (a) an external audit consuming
 [AUDIT-HANDOFF.md](AUDIT-HANDOFF.md), (b) audit findings remediated + re-reviewed, (c) a
 staged-value guardrail period on testnet, (d) `capacityCapUsdc` set conservatively for the
 initial vaults.
+
+**What was satisfied for the Robinhood Chain mainnet deployment of 2026-09-05, stated
+rather than left to inference** (added 2026-09-04): (a) the external audit was commissioned and
+owner-attested against the launch tree, so it was satisfied for the source but not for the
+`requiresSequencerUptimeFeed` change made after it; (b) the pre-audit and audit findings were
+remediated and re-reviewed on that same tree; (c) a staged-value guardrail period on testnet was
+**NOT** completed — gates 3 and 6 have no current evidence on any chain: the five drills and the
+canary alongside them ran on Base Sepolia on 2026-08-24/25 and passed 5/5
+([SOAK-REPORT.md](SOAK-REPORT.md)), but against bytecode that has since changed, and they have not
+been re-run; (d) no vault has been created on chain 4663, so no `capacityCapUsdc` has been fixed
+there yet — the cap vault #1 is created with will be immutable and readable on-chain from the
+moment the creator Safe creates it. The deployment proceeded on the owner's decision of
+2026-09-04 with (c) outstanding.
 
 ## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)
 

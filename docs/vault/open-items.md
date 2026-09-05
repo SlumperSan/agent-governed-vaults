@@ -1,10 +1,10 @@
 # Open Items
 
-The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Everything that keeps [[current-state]] at NO-GO, plus the accepted residuals.
+The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Everything that keeps [[current-state]] at NO-GO for **Base mainnet**, plus the accepted residuals. Since 2026-09-05 every item below is also owed against a live Robinhood Chain mainnet deployment — the singletons are deployed and wired and no vault has been created on it yet, so none of these items was closed by deploying. The two gates at the top of the list (soak, canary) have no current evidence on any chain: the 5/5 soak run and the canary observation alongside it are real and are recorded in [[../SOAK-REPORT]], but they were earned against superseded bytecode and have not been re-run.
 
 ## Why it matters
 
-Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gate 0 root-only (C-6 resolved by the Chainlink pivot), gate 1 on owner attestation. The launch is still NO-GO, but on the OPERATIONAL gates (3/6, soak + canary), which need the five-drill soak re-run against the current deployment with the canary observed alongside it. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
+Gate 0 and gate 1 are the rows that speak to safety, and both are **GO** — gate 0 root-only (C-6 resolved by the Chainlink pivot), gate 1 on owner attestation. The Base launch is still NO-GO, but on the OPERATIONAL gates (3/6, soak + canary), which need the five-drill soak re-run against the current deployment with the canary observed alongside it. This note separates the launch-blocking work from the accepted residuals so nobody mistakes a documented, accepted tradeoff for an unfinished task — or vice versa.
 
 ## Launch-blocking
 

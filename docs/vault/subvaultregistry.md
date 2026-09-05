@@ -2,7 +2,7 @@
 
 The registry of parent/child vault edges: depth cap, exit-fee stacking, and quorum-floor
 inheritance. `contracts/src/SubVaultRegistry.sol`. **DORMANT-AT-LAUNCH** — sub-vaults are disabled
-on the mainnet launch factory, though not on every factory (see below).
+on the Base mainnet launch factory built by `Deploy.s.sol`, though not on every factory (see below); read `VaultFactory.allowSubVaults()` on the factory you integrate against.
 
 ## Why it matters
 

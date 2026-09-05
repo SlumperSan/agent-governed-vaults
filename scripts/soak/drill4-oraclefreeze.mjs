@@ -21,7 +21,9 @@
  *
  * What Base Sepolia additionally cannot exercise is the SEQUENCER leg: the testnet oracle leaves
  * `sequencerUptimeFeed` at `address(0)` by design, so `_requireSequencerUp` is a no-op and the
- * grace-tail path's first real execution is still mainnet.
+ * grace-tail path has never executed. Being deployed to a mainnet did not discharge that either:
+ * Chainlink publishes no L2 sequencer uptime feed for Robinhood Chain (4663) and has said it will
+ * not add one, so its first real execution waits for a chain that has a feed to wire.
  *
  * So a "no freeze occurred" outcome is NOT a weaker version of this drill — it is the expected
  * outcome on a healthy feed, and #21 anticipates it: *"if none occurs within the soak window,
@@ -109,7 +111,8 @@ if (gaps.length) {
 log(`sequencer gate: ${JSON.stringify(sequencer.states)}`);
 if (!sequencer.exercised) {
   log('  the sequencer leg was NOT exercised in this window (sequencerUptimeFeed is address(0) — Base Sepolia by design).');
-  log('  That is an unexecuted code path, not a passing sub-check: its first real execution is mainnet.');
+  log('  That is an unexecuted code path, not a passing sub-check: a first real execution waits for a chain');
+  log('  that has an uptime feed to wire, which Robinhood Chain (4663) does not.');
 } else if (sequencer.notUpSamples) {
   log(`  *** the sequencer was not fully up in ${sequencer.notUpSamples} sample(s); earliest computed resume ${sequencer.earliestResumesAtSec ?? 'n/a'} ***`);
 }

@@ -339,7 +339,16 @@ the scope of the contract security review.** Do not point it at funds you would 
 This section previously said the opposite — that the contracts were not deployed, that
 [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) blocked it, and that no
 transaction this agent constructs had ever been mined. **All three are false.** Issue #10 is closed,
-the protocol has been deployed to Base Sepolia, and the agent ran its full loop there in execute
+the protocol has been deployed to Base Sepolia — and, since 2026-09-05, to Robinhood Chain
+mainnet (chain 4663), which makes the warning below sharper rather than softer: this agent can now
+be pointed at a chain whose USDG is real money, and at a factory that will create a real vault for
+whoever calls it. No vault has been created on it yet, so there is nothing there to join today —
+but the guard below is about the key, not about the vault, and a key configured against 4663 signs
+whatever it is asked to sign. Note the one guard that already exists and its exact
+limit: `--demo-wallet` is refused off a known testnet (`TESTNET_CHAIN_IDS` in
+`packages/reference-agent/src/run.mjs` is `{84532, 11155111, 31337, 1337}`, and 4663 is not in it),
+so a throwaway key cannot sign there — but nothing stops a real key being configured against 4663.
+The agent ran its full loop on Base Sepolia in execute
 mode — join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
 priced on its own, and settle, every phase with a transaction hash. See
 [SOAK-REPORT.md](SOAK-REPORT.md) §5.
@@ -349,8 +358,13 @@ it walks `.md`, `.html`, `.txt` and `.json`, not `.mjs`. Five sites across
 `fixtures/demo-chain.mjs`, `fixtures/seed-snapshot.mjs`, `src/chain.mjs` and `src/run.mjs` still
 said the protocol was not deployed; all five were corrected on 2026-09-04
 ([#197](https://github.com/SlumperSan/agent-governed-vaults/issues/197)). The absence is now scoped
-to mainnet, where it is true: `contracts/config/deployments/` holds one record,
-[`base-sepolia.json`](../contracts/config/deployments/base-sepolia.json), and no mainnet one.
+to Base mainnet, where it is true. **And that scoping was itself falsified by the Robinhood Chain
+deployment of 2026-09-05** — the third time in three days that a deployment absolute in this repository had to be narrowed rather
+than replaced. `contracts/config/deployments/` now holds two records,
+[`base-sepolia.json`](../contracts/config/deployments/base-sepolia.json) and
+[`robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json), and no Base
+mainnet one. The lesson is recorded here rather than overwritten: the defect is not the wrong word,
+it is narrowing a claim to the boundary that happens to be visible today.
 
 **The live run is what makes the warning above stronger, not weaker.** It surfaced two launch-class
 bugs that no amount of mock testing had found: `requireProvenOperator: false` was inert, so no

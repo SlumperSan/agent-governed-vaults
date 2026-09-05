@@ -51,7 +51,7 @@ EE-8, EE-9, CM-4 and disagreed with E7/EE-5, PX-1, E4, E5, VO-7 (residuals large
 
 ## Sub-vault rows disabled at launch
 
-The entire **SV** section (SV-1..SV-7) is unreachable on the mainnet launch factory — `Deploy.s.sol`
+The entire **SV** section (SV-1..SV-7) is unreachable on the Base mainnet launch factory — `Deploy.s.sol`
 constructs `VaultFactory` with `allowSubVaults = false` (see [[root-vaults-only]]). It is a
 constructor immutable, so those rows ARE reachable on a factory built with `true`, which is why the
 SV-* soak drills run against the testnet deployment. They remain the threat model for the future

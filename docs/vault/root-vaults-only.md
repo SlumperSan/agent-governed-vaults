@@ -1,6 +1,6 @@
 # Root Vaults Only
 
-The mainnet launch path (`Deploy.s.sol`) constructs `VaultFactory` with `allowSubVaults = false`. It is a constructor immutable, so this is a property of **that factory**, not of the protocol: on it `createChildVault` reverts and every vault it deploys is wired root-only. This is the C-1 fix. `DeployTestnet.s.sol` passes `true`, so the live Base Sepolia factory does allow children — the SV-7 look-through drill needs one. **DECIDED / FIXED (2026-08-28, Phase 2).**
+The Base mainnet launch path (`Deploy.s.sol`) constructs `VaultFactory` with `allowSubVaults = false`. It is a constructor immutable, so this is a property of **that factory**, not of the protocol: on it `createChildVault` reverts and every vault it deploys is wired root-only. This is the C-1 fix. `DeployTestnet.s.sol` passes `true`, so the live Base Sepolia factory does allow children — the SV-7 look-through drill needs one. For the live Robinhood Chain factory, neither script's value may be assumed: read `verifiedWiring["factory.allowSubVaults()"]` in `contracts/config/deployments/robinhood-mainnet.json`, or call `VaultFactory.allowSubVaults()` on it. That is the whole point of the framing above — the value binds a factory, and there are now three. **DECIDED / FIXED (2026-08-28, Phase 2).**
 
 ## Why it matters
 

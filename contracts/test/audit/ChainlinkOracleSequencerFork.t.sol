@@ -22,11 +22,13 @@ interface IAggregatorV3Extra {
 ///
 /// WHY THIS FILE EXISTS. Every other test of `_requireSequencerUp` runs against `MockAggregatorV3`,
 /// which is a mock the repo wrote to the semantics the repo BELIEVES. Base Sepolia deliberately
-/// leaves `sequencerUptimeFeed` at `address(0)` (documented asymmetry), and no mainnet deployment
-/// exists — so before this file, the FIRST execution of that guard against a genuine Chainlink
-/// uptime feed would have been on Base mainnet with live member capital. A polarity or `startedAt`
-/// mistake there is a permanent, immutable brick (config is immutable by design). This file moves
-/// that first execution into CI.
+/// leaves `sequencerUptimeFeed` at `address(0)` (documented asymmetry), and no BASE mainnet
+/// deployment exists — so before this file, the FIRST execution of that guard against a genuine
+/// Chainlink uptime feed would have been on Base mainnet with live member capital. The Robinhood
+/// Chain mainnet deployment of 2026-09-05 does not change that: Chainlink publishes no
+/// uptime feed for chain 4663, so `sequencerUptimeFeed` is `address(0)` there too and the guard is
+/// skipped. A polarity or `startedAt` mistake there is a permanent, immutable brick (config is
+/// immutable by design). This file moves that first execution into CI.
 ///
 /// The three Chainlink semantics that are easy to get backwards, and what is asserted about each:
 ///   1. POLARITY IS INVERTED. `answer == 0` means the sequencer is UP; `answer == 1` means DOWN.

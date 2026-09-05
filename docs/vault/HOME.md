@@ -7,7 +7,7 @@
 **Repo:** `github.com/SlumperSan/agent-governed-vaults` (private) · **base:** `protocol/main`
 **One-liner:** permissionless USDC index vaults whose members ratify every rebalance by
 on-chain commit-reveal vote — proposal rights follow stake, not operatorship — with x402-metered
-off-chain access. **Launch verdict:** NO-GO — for OPERATIONAL reasons only (the soak and canary gates need the five-drill soak re-run against the current deployment with the canary observed alongside it). Every security gate is cleared: gate 0 GO (root-only, C-6 resolved by the Chainlink pivot), gate 1 GO on owner attestation. See [[launch-readiness-gates]].
+off-chain access. **Base mainnet launch verdict:** NO-GO — for OPERATIONAL reasons only (the soak and canary gates need the five-drill soak re-run against the current Base Sepolia deployment with the canary observed alongside it). **Robinhood Chain mainnet (4663):** deployed 2026-09-05 on the owner's decision of 2026-09-04, without those two gates. No vault has been created on it yet — `smokeVault` is null and `verifiedWiring["factory.vaultCount()"]` is 0 in `contracts/config/deployments/robinhood-mainnet.json` — so no member funds are at stake there. See [[current-state]]. Every security gate is cleared: gate 0 GO (root-only, C-6 resolved by the Chainlink pivot), gate 1 GO on owner attestation. See [[launch-readiness-gates]].
 
 ## Conventions (for consistency across the graph)
 

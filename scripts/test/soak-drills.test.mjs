@@ -720,7 +720,13 @@ test('unreadableObservations sums ACROSS assets — two assets contribute two pe
 test('an unconfigured sequencer leg reports exercised:false — an unexecuted path, not a pass', () => {
   const q = summarizeSequencer([liveSample('t1', 1), liveSample('t2', 2)]);
   assert.deepEqual(q.states, { 'not-configured': 2 });
-  assert.equal(q.exercised, false, 'Base Sepolia never runs this code; the first execution is mainnet');
+  // Not 'the first execution is mainnet': a mainnet deployment on Robinhood Chain did not discharge
+  // this, because Chainlink publishes no uptime feed for chain 4663 to wire.
+  assert.equal(
+    q.exercised,
+    false,
+    'an unconfigured feed means this code never runs; a first execution waits for a chain that has one',
+  );
   assert.equal(q.configuredSamples, 0);
 });
 

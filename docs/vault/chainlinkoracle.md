@@ -20,7 +20,7 @@ surface disappears. This is the [[chainlink-direct-pivot]] decision made concret
 ## Deploy scaffolding (Phase 3)
 
 Fully merged and ready for operator handoff:
-- **`DeployChainlinkOracle.s.sol`** — deployment script; populates `base-mainnet.json` feed config at runtime.
+- **`DeployChainlinkOracle.s.sol`** — deployment script; populates the chain's feed config at runtime (`base-mainnet.json` for Base). Its `requiresSequencerUptimeFeed(chainId)` is the deploy-time sequencer enforcement, and it is an ENUMERATION of exempt chains rather than a universal: a local node, Base Sepolia, and — on the owner's decision of 2026-09-04 — Robinhood Chain (4663), for which Chainlink publishes no uptime feed and has said it will not add one. On an exempt chain there is no deploy-time refusal and no price-time gate, so nothing enforces the feed there at all.
 - **`scripts/verify-chainlink-oracle.mjs`** — on-chain verifier confirms each feed is live and responsive before go-live.
 - **Integration test** (`AuditC6Integration.t.sol`) — ChainlinkOracle × VaultCore end-to-end flow.
 - **Fuzz suite** — property-based safety of price staleness, bounds-checking, sequencer uptime, and feed failure paths.
