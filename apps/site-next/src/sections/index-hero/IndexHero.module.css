@@ -1,265 +1,213 @@
 /* ===========================================================================
-   index-hero — the page's one <h1>, the copy column, and the three-fact strip
-   ---------------------------------------------------------------------------
-   OWNED BY THE index-hero SECTION. Every value below is a var() from
-   src/tokens.css; there is no colour literal and no length that is not on the
-   rhythm scale.
+   THE HERO.
 
-   WHAT USED TO BE HERE, AND WHY IT IS NOT. Until 2026-09-05 this stylesheet
-   carried a 96-degree gradient scrim over a WebGL particle field, together with
-   about four hundred lines working out the coverage that scrim put behind the
-   copy — arithmetic that had been recomputed three times as the section's
-   height changed under it. The owner replaced the field with the brand's
-   autoplaying loop the same day. The clip is a picture like any other picture
-   on this site, so the floor behind the copy is now the one bound stated once
-   in `src/assets/backdrop.module.css`: a var(--ground) ramp whose weakest stop
-   is 82%, which reads 5.53:1 against the brightest pixel any image can hold.
-   One bound, for every backdrop, holding whether the picture moves or not.
+   IT IS TALL BUT IT IS NOT 100vh, and that is deliberate. A viewport-height
+   hero on a phone is a screen the reader has to scroll before learning that
+   there is anything below it, and on a short laptop it crops the address chips
+   out of the first view. `min-height` with a `dvh` term and a cap keeps the
+   film-title proportion on a desktop and lets the content set the height on
+   anything smaller. `dvh` rather than `vh` because on mobile Safari `100vh` is
+   taller than the visible viewport while the address bar is showing.
 
-   The removed arithmetic is not lost — it is in this file's history, and the
-   scrim it described is gone from the build, so keeping it here would be four
-   hundred lines describing nothing.
-
-   A NOTE ON WORDING IN THIS FILE. The claims suite reads stylesheets as prose,
-   so a class name, a custom property or a comment is exposed exactly as a
-   paragraph is. Two ordinary CSS spellings match banned words on their
-   boundaries — the inset-area environment variable, and the Greek letter used
-   for an opacity channel — and neither is used here.
+   THE RADIAL WASH IS THE ONLY GRADIENT ON THE PAGE. It sits behind the star
+   field and lifts the middle of the section a few percent off --ground, which
+   is what stops the near-black from reading as a flat void at 1440. It is drawn
+   from --accent-wash so it re-themes with everything else.
    =========================================================================== */
-
-
-/* THE HERO SHARES THE FIRST VIEWPORT, AND THAT IS WHAT SIZES IT.
-   ---------------------------------------------------------------------------
-   Owner decision, 2026-09-05, round 8: the two doors in index-doors must stand
-   inside the first viewport at 1440x900 together with the masthead and the
-   lede. Measured before this change, the doors' cards ran from 1233px to
-   1520px down a 900px viewport, 620px below the fold, because this section
-   was 1088px tall on its own. Nothing was deleted to close that; the rhythm
-   below was tightened and the fact strip moved into index-doors, which is
-   where it now reads as proof under the two cards rather than as a fourth
-   thing to get past before reaching them.
-
-   THE PANEL NO LONGER RESERVES 86svh. `min-height: clamp(38rem, 86svh, 58rem)`
-   resolved to 774px at a 900px viewport. That was slack while the content was
-   1088px and would have become the binding constraint the moment the copy
-   fitted: the section would have held 774px open and put the doors back below
-   the fold, with every other reduction in this file doing nothing. The floor is
-   now a floor: enough to keep the loop panel a panel rather than a strip, and
-   well under what the copy needs at either measured width.
-
-   `align-content: center` IS A NO-OP WHILE THAT FLOOR DOES NOT BIND, AND ONLY
-   WHILE. The copy is about 520px at 1440x900 against a 414px floor, so the
-   track is sized by content and centring moves nothing. On a viewport tall
-   enough for the floor to bind, or if this copy ever shortens past it, the
-   section grows and centres the copy inside it, and the doors move down by half
-   the difference. That is the intended behaviour of a panel with a floor, but
-   it is the one way the fold measurement above can change without anybody
-   editing this file, so it is written down rather than left to be rediscovered.
-   */
 
 .hero {
   position: relative;
-  isolation: isolate;
-  display: grid;
-  align-content: center;
-  min-height: 24rem;
-  min-height: clamp(22rem, 46svh, 30rem);
-  padding-block: var(--s5) var(--s4);
-
-  /* The backdrop is drawn to the section's edges and cropped with object-fit.
-     Without this a bleeding picture would put a horizontal scrollbar on the
-     document. */
+  display: flex;
+  align-items: center;
   overflow: hidden;
+  min-height: min(46rem, 100dvh);
+  padding-block: calc(var(--masthead-clear) + var(--s7)) var(--s8);
+  padding-inline: var(--gutter);
 }
 
-/* THE RULE THAT USED TO STAND HERE IS GONE, AND ITS ABSENCE IS THE NOTE.
-   ---------------------------------------------------------------------------
-   Until 2026-09-05 this file carried `main:global(#main) > .hero.hero.hero {
-   padding-block-end: var(--s4) }`, with about thirty lines working out why the
-   class had to appear three times. index.css closed every non-final section on
-   `var(--seam)` as PADDING through `main#main > *:not(:last-child):not(.banner)`,
-   `:not()` takes its argument's specificity so that selector was (1,2,1) rather
-   than the (1,0,1) its universal suggests, and the only way for this section to
-   set its own closing edge was to out-weigh it.
-
-   That rule no longer exists. The seam is a margin now, applied as a gutter
-   between two drawn panels rather than as padding inside them, so nothing in
-   index.css touches this section's padding at all and `.hero`'s own
-   `padding-block: var(--s5) var(--s4)` above already says everything the
-   deleted rule said. A tripled class fighting a rule that is not there is not a
-   safeguard, it is a puzzle for the next reader, so it is deleted rather than
-   left in place. The arithmetic is in this file's history.
-
-   /* THE DOT SCREEN OVER THE PICTURE, AND ONLY OVER THE PICTURE.
-   ---------------------------------------------------------------------------
-   A halftone is what makes a flat cel-shaded image read as printed rather than
-   as rendered, and it is the one texture the reference look never omits. It is
-   drawn here as a single repeating radial-gradient: no request, no raster, and
-   it scales with the section instead of tiling a fixed image.
-
-   THE MASK IS THE WHOLE SAFETY ARGUMENT, AND IT IS WRITTEN IN LENGTHS RATHER
-   THAN PERCENTAGES BECAUSE A PERCENTAGE GOT IT WRONG. A dot screen raises the
-   local ground under a glyph by however transparent the dot is, and the ratio
-   that has to hold is the one at a dot centre: this screen composites to
-   #2a2933 over --panel, where --muted is 6.15:1 against the 8.43:1 it measures
-   on the flat fill. Under the 7:1 body floor. So no dot may fall under a word,
-   and the mask is what guarantees it.
-
-   The first attempt faded in from 40% to 80% of the section's width, and 40%
-   of a 992px panel is 397px, which is inside a copy column that runs to
-   --measure at 608px. It was worse at 375, where 40% of 355px is 142px and the
-   copy fills the whole width: every paragraph on a phone sat on dots.
-
-   The stops are therefore the copy column's own width plus the padding beside
-   it, so the layer starts where the words stop rather than at a fraction of a
-   box whose size has nothing to do with them. Two consequences, both wanted:
-   at 1440 the screen occupies the right quarter of the panel, over the picture
-   and nothing else; and at 375 the first stop is already past the panel's
-   whole width, so the mask is transparent everywhere and a phone gets no
-   screen at all, which is the right answer on a viewport where the copy IS the
-   full width.
-
-   `var(--ground)` IS THE OPAQUE END OF THE MASK, not a colour choice. A mask
-   gradient reads transparency and ignores hue, and this stylesheet may carry no
-   colour literal, so the token that is simply opaque does the job that `black`
-   would do in a file that were allowed to say it.
-
-   IT SITS AT z-index 0, between the backdrop at -1 and the copy at 1, because
-   the screen belongs to the picture and not to the page: `isolation: isolate`
-   on .hero above keeps all three inside this section's own stacking context.
-   `pointer-events: none` because it is a texture and nothing else. */
 .hero::before {
   content: '';
   position: absolute;
-  z-index: 0;
-  inset: 0;
+  inset: -20% -10% auto;
+  height: 90%;
+  background: radial-gradient(60% 60% at 50% 40%, var(--accent-wash), transparent 70%);
   pointer-events: none;
-  background-image: radial-gradient(var(--halftone-ink) 1.2px, transparent 1.4px);
-  background-size: var(--halftone-pitch) var(--halftone-pitch);
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    transparent calc(var(--measure) + var(--gutter) + var(--s5)),
-    var(--ground) calc(var(--measure) + var(--gutter) + var(--s8))
-  );
+}
+
+/* --------------------------------------------------------------------------
+   THE WATERMARK.
+
+   It is the ledger R at nearly the full height of the section, against the right
+   gutter.
+
+   IT WAS CROPPED BY THE FRAME AND THAT WAS WRONG. The first version bled it off
+   the right edge, on the reasoning that a mark leaving the frame reads as a
+   ground the frame was cut out of while one sitting fully inside it reads as a
+   logo in a corner. That reasoning is sound for a mark with a recognisable
+   silhouette and this one does not have that at this size: the ledger R is a
+   single stroke path whose right-hand side carries the whole letterform, so
+   cutting it off leaves a tall rectangle with a notch. It read as a stray
+   interface panel in the top right of the hero, which is worse than the empty
+   space it was added to fill. So it is fully in frame, and made large enough
+   that being in frame is not the same as being in a corner.
+
+   IT IS --accent-deep AT LOW OPACITY AND tokens.css CALLS THAT AN ILLUSTRATION
+   FILL. 4.21:1 on --ground, below every text floor this site holds. Correct
+   here for the same reason it is correct in a drawing: this carries no
+   information. It is `aria-hidden` in the component, the header states the name
+   in text, and the headline is --ink at 16.82:1 over it.
+
+   IT IS HIDDEN BELOW 60rem. On a phone the headline occupies the full width and
+   an outlined R behind the words is a contrast problem rather than a ground.
+   -------------------------------------------------------------------------- */
+.watermark {
+  position: absolute;
+  top: 50%;
+  right: var(--gutter);
+  height: 76%;
+  width: auto;
+  transform: translate3d(0, -46%, 0);
+  color: var(--accent-deep);
+  opacity: 0.14;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@media (max-width: 60rem) {
+  .watermark {
+    display: none;
+  }
 }
 
 .inner {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: var(--wrap);
+  margin-inline: auto;
 }
 
-/* --- copy ----------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   THE HEADLINE.
 
-.eyebrow {
-  margin-bottom: var(--s3);
-  font-family: var(--mono);
-  font-size: var(--step-eyebrow);
-  letter-spacing: var(--track-eyebrow);
-  text-transform: uppercase;
-  color: var(--accent);
-  animation: riseIn var(--dur-hero) var(--ease-enter) both;
-}
+   --leading-hero is 0.92, which is tighter than the line-height any body text
+   on this site is allowed, and it is correct here for the reason it is wrong
+   there: at this size the descender of one line and the cap height of the next
+   are far enough apart in absolute pixels that the block reads as one mass
+   rather than as two crowded rows. --track-hero pulls the tracking in to match,
+   because a display face at 100px with default tracking reads as loose.
+   -------------------------------------------------------------------------- */
 
-/* CAPPED, THE SAME WAY FOUR OTHER HEROES ON THIS SITE CAP IT. --step-display
-   tops out at 6rem, which set this headline over three lines and 299px tall at
-   1440. `min(var(--step-display), Nrem)` is the idiom faq-hero, risks-hero,
-   status-hero and who-hero already use; the cap here is 3.4rem because that is
-   the exact maximum `apps/site`'s own `h1` rule carries, so the two builds now
-   crest at the same size rather than at two sizes neither of which was chosen.
-   The scale is still --step-display, so a change to the token still lands here.
-   The measure widens with the cap: 48rem at 3.4rem holds the same line count
-   44rem held at 6rem, and it is what keeps the headline to two lines at 1440. */
 .headline {
-  max-width: 48rem;
-  margin-bottom: var(--s4);
-  font-size: min(var(--step-display), 3.1rem);
-  animation: riseIn var(--dur-hero) var(--ease-enter) 0.12s both;
+  margin: 0;
+  max-width: 15ch;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-hero);
+  line-height: var(--leading-hero);
+  letter-spacing: var(--track-hero);
+  color: var(--ink);
+  text-wrap: balance;
 }
 
-/* 1.45 rather than the --leading-body 1.6 the rest of the site sets. Three
-   paragraphs of eleven lines between them pay for that difference twice over,
-   and 1.45 at --step-body is still above the 1.4 where a multi-line paragraph
-   starts to knit together. Set here, never on the token: --leading-body governs
-   body copy on all nine pages and this is one block on one of them. */
+.accentLine {
+  color: var(--accent);
+}
+
 .lede {
-  max-width: var(--measure);
-  margin-bottom: var(--s3);
-  line-height: 1.45;
+  margin: var(--s5) 0 0;
+  max-width: 34rem;
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
   color: var(--muted);
-  animation: riseIn var(--dur-hero) var(--ease-enter) 0.24s both;
 }
 
-/* --muted, not --faint. It is 14px of standing qualifier sitting directly over
-   the field, and --faint is the body-text floor on flat --ground with nothing
-   left over for a luminous point cloud behind it — see the instrumented pair in
-   the header. */
-
-.note {
-  max-width: var(--measure);
-  padding-left: var(--s4);
-  border-left: 1px solid var(--line-strong);
-  font-size: var(--step-small);
-  line-height: 1.55;
-  color: var(--muted);
-  animation: riseIn var(--dur-hero) var(--ease-enter) 0.36s both;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
 }
 
-/* THE THREE ACTION BUTTONS ARE NOT HERE ANY MORE. They moved to index-doors
-   with the fact strip on 2026-09-05, round 8, and their rules went with them:
-   a rule for a class this section no longer renders is a rule the built-class
-   guard cannot see is dead. Their labels and destinations are unchanged. */
-
-/* --- the backdrop caption --------------------------------------------------
-   Rendered text, describing the picture it sits in front of rather than the
-   headline it does not. It is capped at --measure and set to the right, so its
-   rag lands on the same edge .lede and .note end at.
-
-   IT IS NEVER HIDDEN, at any width. It was hidden below 52rem while the hero
-   drew a WebGL field, because under that breakpoint no canvas was mounted for
-   anybody and there was nothing for the sentence to disclaim. The backdrop
-   replacing that field is present at every width, so the sentence is too. */
-
-.caption {
-  max-width: var(--measure);
-  margin-top: var(--s3);
-  font-size: var(--step-small);
-  line-height: 1.55;
-  text-align: right;
-  color: var(--muted);
-  animation: riseIn var(--dur-hero) var(--ease-enter) 0.6s both;
+/* The one filled button on the page body, and the same pairing the header's CTA
+   uses: --accent-ink on --accent is 7.65:1. The hover goes to --teal-bright
+   rather than lightening the violet, because a violet that lightens under the
+   cursor reads as a disabled state rather than as a response. */
+.door,
+.quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.875rem;
+  padding-inline: var(--s5);
+  border-radius: var(--radius-pill);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
 }
 
-/* THE THREE-FACT STRIP IS NOT HERE ANY MORE. Its rules moved to
-   IndexDoors.module.css with FactStrip.tsx on 2026-09-05, round 8, so the two
-   doors could stand inside the first viewport. Nothing is left behind: a rule
-   for a class this section no longer renders is a rule the built-class guard
-   cannot see is dead. */
+.door {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent);
+}
 
-/* --- keyframes ------------------------------------------------------------- */
+.door:hover,
+.door:focus-visible {
+  background: var(--teal-bright);
+  border-color: var(--teal-bright);
+}
 
-@keyframes riseIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0);
+.quiet {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: transparent;
+}
+
+.quiet:hover,
+.quiet:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   THE ADDRESS CHIPS.
+
+   They sit low and quiet, under the buttons, in mono. That order is the page's
+   argument in miniature: the headline is the claim, the buttons are the doors,
+   and the two addresses are where a reader goes to check that any of it is
+   true. Putting them above the buttons would make the hero a block explorer;
+   leaving them off the hero entirely is what the retired status page did.
+   -------------------------------------------------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+@media (max-width: 40rem) {
+  .actions {
+    gap: var(--s2);
   }
 
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
+  .door,
+  .quiet {
+    flex: 1 1 auto;
+    padding-inline: var(--s4);
   }
 }
-
-/* --- reduced motion --------------------------------------------------------
-   Read the note at the top of this file before removing any line of this
-   block. The delay is the part the global rule cannot reach. */
 
 @media (prefers-reduced-motion: reduce) {
-  .eyebrow,
-  .headline,
-  .lede,
-  .note,
-  .caption {
-    animation: none;
+  .door,
+  .quiet {
+    transition: none;
   }
 }

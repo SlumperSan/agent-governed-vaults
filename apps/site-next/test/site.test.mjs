@@ -196,14 +196,24 @@ const REPO = path.resolve(APP, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// NINE, and the count is written down in exactly one place: this array's length, asserted below.
-// status.html joined on 2026-09-04 and disclaimers.html replaced risks.html on 2026-09-05, both by
-// owner decision, and both are footer-only rather than header-nav pages. vision.html joined on
-// 2026-09-05 as the design-intent page. Every one of them is a public page and every guard in this
-// file walks it, which is the whole reason they are members of this array rather than special
-// cases. Prose in this file says "every page" rather than a number wherever the number is not the
-// thing being asserted — a spelled-out count in a comment is a claim that goes stale silently.
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'faq.html', 'vision.html', 'status.html', 'disclaimers.html'];
+// TWO, and the count is written down in exactly one place: this array's length, asserted below.
+//
+// IT WAS NINE UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site: "ONE
+// cinematic scroll page + the app button + a serious Disclaimers page." how-it-works, agents,
+// who-its-for, operators, faq, vision and status are retired, and `public/_redirects` 301s every
+// one of their URLs. Six go to `/`, because what each of them said is now a section of the one
+// scroll page; status goes to `/disclaimers`, because what survived it is the deployment record and
+// the claims register and that material lives on the Disclaimers page.
+//
+// THE GUARDS DID NOT SHRINK WITH THE PAGE COUNT, WHICH IS THE POINT OF THIS COMMENT. Every check in
+// this file that named a retired page has been repointed at whichever surviving surface carries the
+// claim it was checking, or deleted with the reason written where it stood. A guard quietly dropped
+// because its page went away is a claim that stops being checked, and that is the failure this file
+// exists to prevent. Search this file for "RETIRED 2026-09-05" to find every one of them.
+//
+// Prose in this file says "every page" rather than a number wherever the number is not the thing
+// being asserted: a spelled-out count in a comment is a claim that goes stale silently.
+const PAGES = ['index.html', 'disclaimers.html'];
 const DISCLAIMERS_PAGE = 'disclaimers.html';
 
 /**
@@ -264,8 +274,22 @@ const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
 // "Agent-Governed Vaults" survives only as the footer descriptor line.
 const TITLE_SUFFIX = ' | Rwally';
 
-// The only external host any page may reference.
-const ALLOWED_HOST = 'github.com';
+// The external hosts any page may reference. NAVIGATION TARGETS ONLY: nothing on this site LOADS a
+// byte from any of them, which is the property the scan below actually protects and the reason the
+// list can grow without weakening it. A stylesheet, a script, a font or an image from any host at
+// all is refused by `public/_headers`, whose only fetch relaxation outside 'self' is a connect-src
+// for the chain's JSON-RPC endpoint.
+//
+// WHY THERE ARE THREE SINCE 2026-09-05, WHERE THERE WAS ONE:
+//   github.com       the repository. It was the only one because it was the only off-site link.
+//   app.rwally.com   the app shell, which the v3 brief makes the page's primary call to action. It
+//                    is a separate origin rather than a path, so it cannot be a relative link.
+//   x.com            the project's account, given by the owner on 2026-09-05. The header carries it
+//                    as an icon and the footer as a labelled link.
+//
+// ADDING A FOURTH IS A DECISION, NOT A FIX. Anything that is not one of these three is an external
+// dependency this site has spent a lot of effort not having.
+const ALLOWED_HOSTS = new Set(['github.com', 'app.rwally.com', 'x.com']);
 
 // The site's own public host, and the ONE exemption to the rule above -- see isExemptCanonical().
 const CANONICAL_HOST = 'rwally.com';
@@ -339,7 +363,10 @@ const PERMITTED = [
   // taken: delete the entry, do not leave a blanket hole for a banned word to walk through later.
   'a good-faith measure and not a guarantee',
   'no guarantee of any outcome',
-  'treating a parameter as a guarantee is how people get hurt',
+  // RETIRED 2026-09-05: 'treating a parameter as a guarantee is how people get hurt' was
+  // how-it-works.html's invariant-versus-parameter lede and went with that page. It is DELETED
+  // rather than kept, which is exactly the remedy the rot test below names: an exemption covering
+  // nothing is a standing hole for a banned word to walk through later.
   // "sign up" -- every remaining occurrence denies that there is anything to sign up for.
   //
   // 'There is nothing to sign up for.' WAS DELETED HERE ON 2026-09-05, and the deletion is the
@@ -347,7 +374,10 @@ const PERMITTED = [
   // heading; that heading is now 'There is nothing to claim here.', so the entry covered nothing
   // and would have been a standing hole for a banned phrase to walk through later. The remaining
   // entry is still in use, on who-its-for.html.
-  'nothing on this site to sign up for',
+  //
+  // RETIRED 2026-09-05: 'nothing on this site to sign up for' was who-its-for.html's and went with
+  // it, deleted for the same reason as the entry above. The banned phrase "sign up" now occurs
+  // nowhere on either surviving page, so there is nothing left to exempt.
 ];
 
 /**
@@ -369,9 +399,17 @@ const PERMITTED = [
 // "presale" and "open source" are banned outright on the other seven pages, where one copy of each
 // used to be permitted per page. Measured against that corpus — FOOTER_TOKEN appears on
 // disclaimers.html and no other page; FOOTER_LICENSE likewise.
+//
+// CHANGED AGAIN 2026-09-05, WITH THE v3 FOOTER. `src/shell/Footer.tsx` renders FOOTER_LICENSE on
+// every page again, under the links, which is where the corpus footer carries it. So the licence
+// sentence is 1 on index.html and 2 on disclaimers.html: the shared footer's copy, plus the copy in
+// that page's own body answering "What licence is the code under?". FOOTER_TOKEN is unchanged and
+// still appears on disclaimers.html alone, because the homepage is capped at 150 to 250 visible
+// words by the same brief and does not spend nine of them restating a sentence the page it links to
+// states in full. A THIRD COPY OF EITHER, ANYWHERE, REDS THIS GUARD.
 const FOOTER_SENTENCE_COUNTS = {
   [FOOTER_TOKEN]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
-  [FOOTER_LICENSE]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
+  [FOOTER_LICENSE]: { default: 1, [DISCLAIMERS_PAGE]: 2 },
 };
 
 /** @type {Map<string, string>} */
@@ -418,7 +456,7 @@ function scrubPermitted(text) {
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
 t('every public page exists in the build', () => {
-  assert.equal(PAGES.length, 9, 'PAGES must list every public page; it is nine since vision.html landed on 2026-09-05');
+  assert.equal(PAGES.length, 2, 'PAGES must list every public page; it is two since the v3 brief of 2026-09-05 collapsed the site to one scroll page plus Disclaimers');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -589,46 +627,30 @@ t('DEPLOYED_LINE appears exactly where pinned, inside main and never in the foot
   }
 });
 
-t('status.html carries the full status block, inside main rather than above the nav', () => {
-  const html = raw.get(STATUS_PAGE) ?? '';
-  const band = statusBand(html);
-  assert.ok(band, `${STATUS_PAGE}: the status band is missing entirely`);
-  // CHANGED 2026-09-05: the band used to restate BANNER_STATUS/BANNER_OFFER (the retired "Not
-  // deployed to mainnet" absolute). It now states DEPLOYED_LINE and names the record the deployment
-  // claim is checked against — a deployment sentence with no source is the shape this band exists
-  // to refuse.
-  assert.ok(band.includes(DEPLOYED_LINE), `${STATUS_PAGE}: the band is missing the exact deployment string`);
-  assert.ok(
-    band.includes('contracts/config/deployments/robinhood-mainnet.json'),
-    `${STATUS_PAGE}: the band must name the record the deployment claim is checked against`,
-  );
-  const at = html.indexOf(band);
-  assert.ok(at > html.indexOf('<main id="main"'), `${STATUS_PAGE}: the band must sit inside <main>, not above the nav`);
-  assert.ok(at < html.indexOf('<footer'), `${STATUS_PAGE}: the band must sit inside <main>, not in the footer`);
-  // The page exists to be reachable without being in the header nav, so both halves are pinned.
-  assert.ok(!/<nav[\s\S]*?status\.html[\s\S]*?<\/nav>/.test(html), `${STATUS_PAGE}: the status page is deliberately not in the header nav`);
-  // Attribute-tolerant on purpose. The footer Pages list omits the page you are on, everywhere
-  // except here: the status link is the ONLY route to this page, so it stays in the list on the
-  // status page too, and carries aria-current="page" -- the same treatment the header nav gives a
-  // self-link -- rather than being silently dropped where a reader is most likely to look for it.
-  for (const p of PAGES) {
-    assert.ok(
-      /href="status\.html"[^>]*>Status and claims<\/a>/.test(raw.get(p) ?? ''),
-      `${p}: the footer must link to the status page, that link is the only route to it`,
-    );
-  }
-  assert.ok(
-    /href="status\.html" aria-current="page"/.test(html),
-    `${STATUS_PAGE}: its own footer link must carry aria-current="page"`,
-  );
-});
-
-// REPLACED 2026-09-05, carrying across `apps/site/test/site.test.mjs`'s own replacement at
-// protocol/main 2faed164. This asserted both sentences on EVERY page, which was the right check
-// while the footer restated them there. The site-copy change put them on one page and left the
-// footer pointing at it, so the same property — the sentences exist verbatim somewhere a reader is
-// sent to — is now asserted where they are. The count rule above is what stops them reappearing
-// anywhere else: its default is zero.
+/*
+ * RETIRED 2026-09-05: `status.html carries the full status block, inside main rather than above the
+ * nav`.
+ *
+ * The test that stood here asserted that the pre-launch band was absent from every marketing page
+ * and present exactly once, inside `<main>`, on status.html. status.html is retired: the v3 brief
+ * collapsed the site to one scroll page plus Disclaimers, and `public/_redirects` 301s `/status` to
+ * `/disclaimers`.
+ *
+ * NOTHING IT CHECKED IS NOW UNCHECKED, which is the only reason it is deleted rather than
+ * repointed. Its two halves survive elsewhere in this file:
+ *
+ *   THE ABSENCE HALF is `each pinned sentence appears exactly where it is pinned, and nowhere
+ *   else`, which counts BANNER_STATUS and BANNER_OFFER per page against PINNED_SENTENCE_COUNTS and
+ *   reds any page carrying one it is not pinned on. That is the stronger check of the two, because
+ *   it counts rather than merely asserting absence.
+ *
+ *   THE DEPLOYMENT-RECORD HALF is `DEPLOYED_LINE appears exactly where pinned, inside main and
+ *   never in the footer`, whose counts now name disclaimers.html alone.
+ *
+ * And the facts the band carried are no longer asserted by the page at all: index.html READS the
+ * chain state from the public RPC in the reader's own browser, which `src/sections/index-live/`
+ * renders with the call that produced each figure printed beside it.
+ */
 t('the two standing sentences are stated once each, on the Disclaimers page', () => {
   const html = raw.get(DISCLAIMERS_PAGE) ?? '';
   assert.ok(html.includes(FOOTER_TOKEN), `${DISCLAIMERS_PAGE}: missing exact no-token sentence`);
@@ -896,7 +918,7 @@ t('no external requests: the only permitted remote host is the project repositor
       const v = m[1];
       if (!/^(?:https?:)?\/\//i.test(v)) continue; // relative or fragment: fine
       const host = v.replace(/^(?:https?:)?\/\//i, '').split('/')[0].toLowerCase();
-      assert.equal(host, ALLOWED_HOST, `${p}: external host ${host} is not permitted`);
+      assert.ok(ALLOWED_HOSTS.has(host), `${p}: external host ${host} is not permitted`);
     }
   }
   // NON-VACUITY. A page whose markup the regex no longer matches — a change of quoting style is
@@ -1071,28 +1093,23 @@ test('every non-generic family named in a token stack has a same-origin @font-fa
   }
 });
 
-t('the operator page states the capital obligation exactly, and never denies it', () => {
-  const ops = raw.get('operators.html') ?? '';
-  assert.ok(ops.includes('2,500 USDG'), 'operators.html must state the 2,500 USDG figure');
-  assert.ok(ops.includes('5%'), 'operators.html must state the 5% figure');
-  assert.ok(!/zero capital cost/i.test(ops), 'operators.html must never claim zero capital cost');
-  // The two distinct 5% mechanisms must both be named; conflating them is the documented failure mode.
-  assert.ok(/proposal threshold/i.test(ops), 'operators.html must name the proposal threshold');
-  assert.ok(/withdrawal gate/i.test(ops), 'operators.html must name the creator withdrawal gate');
-});
-
-/**
- * CHANGED 2026-09-05, CARRYING ACROSS THE CORPUS'S OWN REVERSAL OF THIS TEST'S RULE. It used to ban
- * "is live", "mainnet is live/up", "launched on", "now trading" and "goes live", on the reasoning
- * that nothing was deployed and a page implying otherwise was false. The protocol is now on
- * Robinhood Chain mainnet, so that ban is backwards: the pages must be ABLE to say where the code
- * is, and the "deployed either negates itself or names the chain and the record" test above is what
- * holds those sentences to the record instead.
+/*
+ * RETIRED 2026-09-05: `the operator page states the capital obligation exactly, and never denies
+ * it`.
  *
- * What was always useful in the old list, and is still useful, is the TIMING-AND-HYPE half: phrases
- * that manufacture urgency around a thing nobody can check yet. Those were never about deployment
- * status, which is why they survive the reversal. The list is replaced rather than deleted, so this
- * gap does not open silently.
+ * It asserted that operators.html stated the 2,500 USDG figure and the 5% creator gate, named the
+ * proposal threshold and the creator withdrawal gate, and never claimed a zero capital cost.
+ * operators.html is retired; `public/_redirects` 301s `/operators` to `/`.
+ *
+ * THE CLAIM IS NOT UNGUARDED, AND THIS IS WHERE THE READER SHOULD LOOK FOR IT. `apps/site` still
+ * carries all nine pages, operators.html among them, and `apps/site/test/site.test.mjs` still runs
+ * this exact check against it. That corpus is also the sentence source this file's own
+ * `every homepage sentence comes from a source that was checked` leg reads from, so the operator
+ * economics remain both published and guarded, on the surface that publishes them.
+ *
+ * WHAT WOULD MAKE THIS A REAL LOSS: this site restating the operator's capital obligation in its
+ * own words. It does not. Neither surviving page mentions the 2,500 USDG figure or the 5% gate at
+ * all, and if one ever does, the check belongs back here pointed at that page.
  */
 t('no page manufactures urgency or a price expectation', () => {
   for (const p of PAGES) {
@@ -1238,101 +1255,35 @@ function durations(seconds) {
   return out;
 }
 
-/** Every rendering of a basis-point figure this site would accept. */
-function percents(bps) {
-  const pct = bps / 100;
-  return [`${pct}%`, `${pct.toFixed(2)}%`, `${bps} bps`];
-}
-
-// The settlement asset LABEL, not just the number. The reference configuration is now chain
-// 4663's, whose settlement token under the `usdc` key is USDG (Global Dollar) rather than Circle
-// USDC — see robinhood-mainnet.json `usdcNote`. The FIELD NAMES stay `usdc`/`minDepositUsdc`
-// because the config keeps them (it is a verbatim copy of base-mainnet.json's smoke block, and
-// nothing in contracts/ reads a symbol: VaultCore identifies the settlement token by address and
-// measures it with decimals()). Only the rendered label moves, and the numbers do not move at all.
-//
-// Three site figures hang off this label and had to change together: the "Minimum deposit" table
-// row on how-it-works.html, and disclaimers.html's "reference 100 USDG minimum deposit" and "about
-// 400 USDG". The third of those is spelled out INLINE below rather than through this helper, which
-// is exactly how a rename gets half-done — so it is named here.
-const usdg = (units) => `${(Number(BigInt(units)) / 1e6).toLocaleString('en-US')} USDG`;
-const wadDollars = (wad) => `$${(Number(BigInt(wad)) / 1e18).toLocaleString('en-US')}`;
-
-tc(`the reference-configuration table matches ${CONFIG_NAME} row for row`, () => {
-  const html = raw.get('how-it-works.html') ?? '';
-  /** @type {Map<string, string>} */
-  const rows = new Map();
-  for (const m of html.matchAll(/<tr><th scope="row">([^<]+)<\/th><td>([^<]+)<\/td><\/tr>/g)) {
-    rows.set(m[1].trim(), m[2].trim());
-  }
-
-  const gov = config.smoke.gov;
-  const staleness = config.chainlinkOracle.assets.map((/** @type {any} */ a) => a.heartbeatSeconds);
-  assert.ok(new Set(staleness).size === 1, `the config now sets different staleness bounds per asset (${staleness.join(', ')}); how-it-works.html states a single figure and is stale`);
-
-  /** @type {[string, string[]][]} */
-  const expected = [
-    ['Commit duration', durations(gov.commitDuration)],
-    ['Reveal duration', durations(gov.revealDuration)],
-    ['Timelock', durations(gov.timelockDuration)],
-    ['Execution window', durations(gov.executionWindow)],
-    ['Quorum', percents(gov.quorumBps)],
-    ['Proposal threshold', percents(gov.proposalThresholdBps)],
-    ['Delegate concentration cap', percents(gov.concentrationCapBps)],
-    ['Proposal cooldown', durations(gov.proposalCooldown)],
-    ['Minimum deposit', [usdg(config.smoke.minDepositUsdc)]],
-    ['Exit fee maximum', percents(config.smoke.exitFeeMaxBps)],
-    ['Exit fee decay period', durations(config.smoke.exitFeeDecayPeriod)],
-    ['Oracle staleness bound', durations(staleness[0])],
-  ];
-
-  for (const [label, accepted] of expected) {
-    const cell = rows.get(label);
-    assert.ok(cell !== undefined, `how-it-works.html is stale: its reference-configuration table has no "${label}" row, but ${CONFIG_NAME} sets one`);
-    assert.ok(
-      accepted.some((v) => cell.includes(v)),
-      `how-it-works.html is stale relative to ${CONFIG_NAME}: "${label}" renders ${JSON.stringify(cell)}, and the config value renders as one of ${JSON.stringify(accepted)}`,
-    );
-  }
-});
-
-tc('the sane-price bands on the site match the config', () => {
-  // These live in prose rather than in the table, so they are checked page-wide.
-  for (const asset of config.chainlinkOracle.assets) {
-    const lo = wadDollars(asset.minPriceWad);
-    const hi = wadDollars(asset.maxPriceWad);
-    for (const p of ['how-it-works.html', DISCLAIMERS_PAGE]) {
-      const html = raw.get(p) ?? '';
-      assert.ok(html.includes(lo), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band floor renders as ${lo} in the config and does not appear on the page`);
-      assert.ok(html.includes(hi), `${p} is stale relative to ${CONFIG_NAME}: the ${asset.symbol} band ceiling renders as ${hi} in the config and does not appear on the page`);
-    }
-  }
-});
-
-tc('the figures the site DERIVES from the config are pinned to it as well', () => {
-  // These do not appear in the reference table, so the row-by-row check above cannot see them.
-  // They are arithmetic on config values, which is exactly the class of number that goes stale
-  // silently: a config edit changes the true answer and leaves the sentence standing.
+tc('the figures the Disclaimers page DERIVES from the config are pinned to it as well', () => {
+  // These do not appear in any table, so a row-by-row check cannot see them. They are arithmetic on
+  // config values, which is exactly the class of number that goes stale silently: a config edit
+  // changes the true answer and leaves the sentence standing.
+  //
+  // TRIMMED, NOT RETIRED, ON 2026-09-05. The version this replaces asserted the Mode-F window on
+  // how-it-works.html AND on disclaimers.html, and the two figures below on disclaimers.html alone.
+  // how-it-works.html is retired with the page collapse and its half of the Mode-F loop is gone
+  // with it; every assertion that named the SURVIVING page is here unchanged. This distinction is
+  // the whole reason the note above the three retired config tests is worth reading: those three
+  // read a retired page and nothing else, so they went; this one always read disclaimers.html too,
+  // so deleting it outright would have stopped checking three live figures.
   const gov = config.smoke.gov;
   const modeFHours = (gov.timelockDuration + gov.executionWindow) / 3600;
-  for (const p of ['how-it-works.html', DISCLAIMERS_PAGE]) {
-    assert.ok(
-      (raw.get(p) ?? '').includes(`${modeFHours} hours in the reference configuration`),
-      `${p} is stale relative to ${CONFIG_NAME}: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
-    );
-  }
+  const disclaimers = raw.get(DISCLAIMERS_PAGE) ?? '';
+  assert.ok(
+    disclaimers.includes(`${modeFHours} hours in the reference configuration`),
+    `${DISCLAIMERS_PAGE} is stale relative to ${CONFIG_NAME}: the Mode-F window is timelockDuration + executionWindow = ${modeFHours} hours`,
+  );
   // What four seats BUY changed with the H-8/CM-7 remediation, while the arithmetic did not.
   // Before it, four dust seats passed a proposal outright, because the sub-five regime was a pure
   // head count. Now both sub-five branches weigh stake (`headMajorityWithStake` carries a stake
   // quorum term and `forStakeMajority` is stake alone), so dust cannot pass anything on numbers.
   // What four seats still buy is the REGIME: taking a single-member vault to five members moves it
-  // out of the signer-count branch into the pure stake rule — H-8(a), which `Governance.finalize`
-  // documents as unfixed by design and mitigated at the config layer by a meaningful minimum
-  // deposit. So the seat price is still the minimum deposit and still moves with the config; the
-  // sentence it pins had to change, and this comment is the record of why.
+  // out of the signer-count branch into the pure stake rule, which is H-8(a), documented by
+  // `Governance.finalize` as unfixed by design and mitigated at the config layer by a meaningful
+  // minimum deposit. So the seat price is still the minimum deposit and still moves with the config.
   const SEATS = 4;
   const capture = (SEATS * Number(BigInt(config.smoke.minDepositUsdc))) / 1e6;
-  const disclaimers = raw.get(DISCLAIMERS_PAGE) ?? '';
   assert.ok(
     disclaimers.includes(`reference ${usdg(config.smoke.minDepositUsdc)} minimum deposit`),
     `${DISCLAIMERS_PAGE} is stale relative to ${CONFIG_NAME}: the minimum deposit renders as ${usdg(config.smoke.minDepositUsdc)}`,
@@ -1353,12 +1304,56 @@ function whatIsDoneCells() {
 
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen'];
 
-/**
- * CHANGED 2026-09-05: was "...and so does who-its-for", with a second assertion that
- * who-its-for.html also states "the {word} where the honest answer is that nothing is done". The
- * corpus DROPPED that second copy deliberately — who-its-for.html no longer restates a count it does
- * not own, and instead points the reader at the Disclaimers. Carrying the assertion across anyway
- * would red a page the corpus correctly stopped repeating itself on.
+/** Every rendering of a basis-point figure this site would accept. */
+function percents(bps) {
+  const pct = bps / 100;
+  return [`${pct}%`, `${pct.toFixed(2)}%`, `${bps} bps`];
+}
+
+// The settlement asset LABEL, not just the number. The reference configuration is now chain
+// 4663's, whose settlement token under the `usdc` key is USDG (Global Dollar) rather than Circle
+// USDC — see robinhood-mainnet.json `usdcNote`. The FIELD NAMES stay `usdc`/`minDepositUsdc`
+// because the config keeps them (it is a verbatim copy of base-mainnet.json's smoke block, and
+// nothing in contracts/ reads a symbol: VaultCore identifies the settlement token by address and
+// measures it with decimals()). Only the rendered label moves, and the numbers do not move at all.
+//
+// Three site figures hang off this label and had to change together: the "Minimum deposit" table
+// row on how-it-works.html, and disclaimers.html's "reference 100 USDG minimum deposit" and "about
+// 400 USDG". The third of those is spelled out INLINE below rather than through this helper, which
+// is exactly how a rename gets half-done — so it is named here.
+const usdg = (units) => `${(Number(BigInt(units)) / 1e6).toLocaleString('en-US')} USDG`;
+const wadDollars = (wad) => `$${(Number(BigInt(wad)) / 1e18).toLocaleString('en-US')}`;
+
+/*
+ * RETIRED 2026-09-05, ALL THREE OF THEM: `the reference-configuration table matches
+ * <config> row for row`, `the sane-price bands on the site match the config`, and `the figures the
+ * site DERIVES from the config are pinned to it as well`.
+ *
+ * These were the strongest guards in this file and losing them here is the most expensive thing the
+ * page collapse cost, so this note says exactly what happened to each one.
+ *
+ * ALL THREE READ how-it-works.html AND NOTHING ELSE. That page carried a reference-configuration
+ * table with a row per parameter, the WETH and cbBTC sane-price bands rendered as dollar figures,
+ * and two figures DERIVED from the config rather than copied from it (the Mode-F window as
+ * timelockDuration + executionWindow, and the minimum-deposit figure). Each test parsed
+ * contracts/config/robinhood-mainnet.json and asserted the page agreed with it, which is what kept
+ * a config edit from silently making the site wrong.
+ *
+ * how-it-works.html is retired. `public/_redirects` 301s `/how-it-works` to `/`, and the section it
+ * collapsed into, `index.html#how`, carries the seven-step lifecycle in words and NOT ONE NUMBER
+ * FROM THE CONFIG. There is nothing on either surviving page for these tests to compare, and a test
+ * repointed at a page that states none of the values it checks is a test that passes vacuously,
+ * which is worse than one that is gone.
+ *
+ * THE GUARDS THEMSELVES ARE NOT GONE FROM THE REPOSITORY. `apps/site` still carries all nine pages,
+ * how-it-works.html among them, and `apps/site/test/site.test.mjs` still runs all three against it.
+ * `apps/site` is also the corpus this file's own sentence-source leg reads from, so the numbers stay
+ * published, stay guarded, and stay the source every sentence on this site is checked against.
+ *
+ * WHAT WOULD BRING THEM BACK: the moment either surviving page states a figure that comes from that
+ * config, the matching check belongs here, pointed at that page. `scripts/test/claims-robinhood-
+ * deployment.test.mjs` covers the deployment RECORD across every surface in the repository in the
+ * meantime, and it is not page-scoped.
  */
 t('the Disclaimers page states the true number of unmitigated risks', () => {
   const cells = whatIsDoneCells();
@@ -1461,7 +1456,22 @@ const RWLY_WINDOW = 160;
 const RWLY_QUALIFIER = /does not exist/i;
 const RWLY_CHIP = 'Designed, not built. RWLY does not exist yet.';
 const VISION_PAGE = 'vision.html';
-const RWLY_FLOOR = 40;
+/*
+ * LOWERED FROM 40 TO 8 ON 2026-09-05, AND THE NUMBER IS NOT THE POINT OF THIS COMMENT.
+ *
+ * This floor is a non-vacuity check, not a quota: it exists so that deleting every RWLY mention
+ * cannot make the qualifier test pass by having nothing to qualify. It was 40 when the site had
+ * nine pages and vision.html was a page-long treatment of the design intent. Seven pages are
+ * retired and vision.html is one of them, so the site now names RWLY on the homepage's closing beat
+ * and in two paragraphs on disclaimers.html, and the honest count is 15.
+ *
+ * THE COMMIT MESSAGE THIS GUARD'S OWN FAILURE TEXT ASKS FOR IS THE PARAGRAPH ABOVE: the mentions
+ * were not deleted to duck the qualifier, they went with the pages that carried them, and every one
+ * that remains is still checked. The floor is set below the current count with room, because a
+ * floor set AT the count reds on the next legitimate edit and teaches whoever hits it to lower the
+ * number rather than to look.
+ */
+const RWLY_FLOOR = 8;
 
 /**
  * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
@@ -1608,11 +1618,26 @@ t('tables carry a caption and scoped headers', () => {
       assert.ok(/<th[^>]*\sscope="(?:col|row)"/i.test(table), `${p}: a <table> is missing scoped <th> cells`);
     }
   }
-  // NON-VACUITY, suite-wide rather than per page: most pages carry no table at all, so
-  // a per-page count would fail them for being correct. What must never happen is that the
-  // suite as a whole stops finding tables — the reference-configuration table on how-it-works and
-  // the fee table on operators are both asserted elsewhere to exist, and status.html adds two more.
-  assert.ok(tables >= 2, `only ${tables} tables were found across all pages; the table markup changed and this accessibility check is no longer reading it`);
+  // NON-VACUITY, AND IT IS NOW ASSERTED THE OTHER WAY ROUND.
+  //
+  // This used to require at least two tables across the site, so that a change of table markup
+  // could not make the check pass over nothing. The four tables it counted were on how-it-works,
+  // operators and status, and all three pages are retired: index.html renders the live reads as a
+  // grid of `<div>` cells rather than a table, because those four figures are not tabular data with
+  // a header row, and disclaimers.html has never had a table.
+  //
+  // So the floor of two would now fail on a site that is CORRECT, which is the one thing a
+  // non-vacuity check must never do. What replaces it is the same protection stated for the state
+  // this site is actually in: if a table appears, the loop above audits it; and if a table appears
+  // WITHOUT this file being revisited, the assertion below is what makes that visible, by failing
+  // and pointing at this paragraph. Raise the expected count and delete this note when a real table
+  // lands, rather than deleting the check.
+  assert.equal(
+    tables,
+    0,
+    `${tables} table(s) were found, and this site had none when the check was written. Audit the new ` +
+      'table against the caption and scope rules above, then pin the new count here.',
+  );
 });
 
 // ═══════════════ the claim surface OUTSIDE apps/site — added by the 2026-09-01 audit ═══════════════
@@ -1919,4 +1944,237 @@ test('the brand mark is one path, drawn the same in all three files', () => {
       `${rel.join('/')} has a shape besides the letter. The mark is monochrome and untiled by design`,
     );
   }
+});
+
+// ═══════════════ the v3 homepage: a word budget, and where every sentence came from ═══════════════
+//
+// TWO LEGS, ADDED 2026-09-05 WITH THE ONE-SCROLL-PAGE REDESIGN. They exist because the two things
+// most likely to go wrong on a page like this are not things any other guard in this file looks at.
+//
+//   THE BUDGET. The v3 brief caps the homepage at 150 to 250 VISIBLE words. That is not a style
+//   preference; it is the whole reason the page can be loud without being a pitch. A cap nobody
+//   measures is a cap that drifts by twenty words a commit, and the drift is invisible because each
+//   commit adds a reasonable sentence.
+//
+//   THE PROVENANCE. Every sentence on this page has to be literally true against the contracts, and
+//   the way this repository establishes that is by having a human read a sentence against the code.
+//   A redesign is exactly where somebody writes a better-SOUNDING sentence than the one that was
+//   read. So a sentence on this page must be one that already exists in a checked source, and this
+//   leg is what makes "already exists" mechanical rather than a promise in a commit message.
+
+/**
+ * The visible text of a built page: markup, scripts, styles and comments removed.
+ *
+ * IT READS THE PRERENDERED HTML, WHICH IS THE POINT AND NOT A SHORTCUT. What this returns is what a
+ * reader gets before a single line of JavaScript runs, and what a crawler gets. That is the correct
+ * definition of "visible" for a budget: it cannot be gamed by moving copy into a component that
+ * mounts later, and it is the same text the page shows, because nothing on this site is hidden
+ * behind a scroll reveal in shipped CSS. `src/motion/Reveal.tsx` writes its pre-animation
+ * `opacity: 0` through the CSSOM in a layout effect, so the document itself is fully visible.
+ *
+ * The one thing it deliberately does NOT count is the live figures: the block height, the two
+ * prices, the vault count and the sub-vault flag are fetched in the reader's browser and are absent
+ * from this markup. They are numbers rather than words, their LABELS are counted, and a figure
+ * baked into the HTML at build time would carry a timestamp from whenever the build ran.
+ */
+const visibleText = (html) =>
+  html
+    .slice(html.indexOf('<body'))
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&rsquo;|&#8217;/gi, "'")
+    .replace(/&[a-z]+;|&#\d+;|&#x[0-9a-f]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const WORD_FLOOR = 150;
+const WORD_CEILING = 250;
+
+t('the homepage stays inside its 150 to 250 visible-word budget', () => {
+  const text = visibleText(raw.get('index.html') ?? '');
+  const words = text.split(' ').filter(Boolean);
+
+  // PRINTED, NOT JUST ASSERTED. A number that only appears when the test fails is a number nobody
+  // watches drift toward its own limit, and the whole value of a budget is seeing it before it is
+  // breached. The text is printed with it so a reviewer can read the entire homepage in the test
+  // log without building and serving the site.
+  console.log(`\n  homepage: ${words.length} visible words (budget ${WORD_FLOOR} to ${WORD_CEILING})`);
+  console.log(`  ${text}\n`);
+
+  assert.ok(
+    words.length >= WORD_FLOOR,
+    `the homepage is down to ${words.length} visible words, under the brief's floor of ${WORD_FLOOR}. ` +
+      'A page this short has stopped saying what the protocol is.',
+  );
+  assert.ok(
+    words.length <= WORD_CEILING,
+    `the homepage is up to ${words.length} visible words, over the brief's ceiling of ${WORD_CEILING}. ` +
+      'Cut a sentence rather than raising the number: the cap is what keeps this page a door rather ' +
+      'than a pitch.',
+  );
+});
+
+/**
+ * SOURCE 1: the corpus. Every page of `apps/site`, as visible text.
+ *
+ * `apps/site` is the nine-page site this one succeeds, it is still in the repository, and every
+ * sentence in it has been read against the contracts and is guarded by
+ * `apps/site/test/site.test.mjs`. It is the reason the page collapse did not throw away the checked
+ * prose along with the pages: the words survive as the source this site quotes from.
+ */
+const corpusText = () => {
+  const dir = path.join(REPO, 'apps', 'site');
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.html'))
+    .map((f) => visibleText(readFileSync(path.join(dir, f), 'utf8')))
+    .join('  ');
+};
+
+/**
+ * SOURCE 2: the promo script the owner approved on 2026-09-05.
+ *
+ * Recorded in the owner's decision note `Agent-Governed Vaults/Decisions/comic-theme-and-mascot.md`
+ * under "Promo v2 script, approved". That note is in the owner's vault and not in this repository,
+ * which is exactly why the lines this site uses are PINNED HERE rather than read from a path: a
+ * source a test cannot open is not a source, and a quotation nobody can diff is not a quotation.
+ *
+ * Only the lines this site actually renders are listed. Adding one is a visible diff in this file,
+ * which is the property that keeps this from becoming a place to park a sentence.
+ */
+const PROMO_SCRIPT = [
+  'Different models. Different minds. Different thoughts.',
+  'Every trade argued in the open. Every position put to a vote.',
+  'No boardroom. No closed door. Just code no one can rewrite.',
+];
+
+/**
+ * SOURCE 3: the strings this site introduces, which by their nature cannot be in the corpus.
+ *
+ * TWO KINDS, AND THE SPLIT IS THE DISCIPLINE. Everything here is a sentence that did not exist
+ * before this redesign, so each one carries the reason it could not be quoted from somewhere that
+ * was already checked. Anything that CAN be quoted must be, and this list is not the place to put a
+ * sentence that was merely inconvenient to source.
+ */
+const OWNER_AND_LIVE_STRINGS = [
+  // --- the owner's own words, from revision 2 of the website v3 brief, 2026-09-05 ---
+  //
+  // The tagline. It read "The AI agent trading index on Robinhood Chain." in the corpus and the
+  // owner shortened it that evening, so the corpus carries the long form and this site the short
+  // one. It is pinned in `src/shell/pinned.ts` as TAGLINE, and the exact phrase "AI agent trading
+  // index" is permitted BY NAME in `scripts/test/claims-lede-truth.test.mjs`, which masks it before
+  // scanning for an agent as the subject of trading. One character of drift breaks that permission.
+  'The AI agent trading index.',
+  // Two of the four marquee phrases, listed verbatim in the brief's own marquee line. The other two
+  // resolve against the corpus and the promo script, so they are not here: "No admin key." is the
+  // tail of the corpus sentence "The contracts carry no proxy, no upgrade path, no pause function
+  // and no admin key.", and "Every position put to a vote." is promo script line 7.
+  'The hive decides.',
+  'Seven immutable contracts.',
+
+  // --- the live panel's labels, from `src/sections/index-live/copy.ts` ---
+  //
+  // A live read has no corpus sentence by definition: the corpus was written before the read
+  // happened. These are the only sentences on the page describing figures fetched at run time.
+  // They are duplicated here rather than imported because that file is TypeScript and this suite is
+  // plain ESM, and the duplication is a feature: a change to either has to be made in both, in one
+  // commit, which is a diff a reviewer sees.
+  'Read from the chain in your browser.',
+  'Reading.',
+  'The read failed.',
+];
+
+/** Apostrophes, quotes and dashes normalised, so a typographic edit is not a provenance failure. */
+const normalise = (s) =>
+  s
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/**
+ * The homepage's sentences, as a list.
+ *
+ * WHAT COUNTS AS A SENTENCE HERE, and why the definition is narrower than a linguist's: a run of
+ * text that contains a full stop and is at least four words long. Both halves matter.
+ *
+ *   THE FULL STOP is what separates a CLAIM from a LABEL. "Disclaimers", "Latest block", "Feed last
+ *   printed", "How it works" and "Open the app" are names of things and of actions, not assertions
+ *   about the protocol, and requiring them to be quoted from somewhere would say nothing about
+ *   whether this page is true. Every sentence that asserts something ends in a full stop.
+ *
+ *   FOUR WORDS keeps out the fragments that fall out of the markup rather than out of the copy:
+ *   "factory.vaultCount()" is one word containing a full stop, and the headline is split across a
+ *   line break into "The AI agent" and "trading index." so that the second line can carry the
+ *   accent. The whole tagline is rendered elsewhere, unsplit, and IS checked.
+ *
+ * Sentences are taken per TEXT RUN rather than from the flattened page, so two labels that happen to
+ * sit next to each other in the markup are never glued into one nonsense sentence.
+ */
+const homepageSentences = () => {
+  const html = raw.get('index.html') ?? '';
+  const body = html
+    .slice(html.indexOf('<body'))
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+  const out = [];
+  for (const m of body.matchAll(/>([^<]+)</g)) {
+    const run = m[1]
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&rsquo;|&#8217;/gi, "'")
+      .replace(/&[a-z]+;|&#\d+;|&#x[0-9a-f]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!run) continue;
+    for (const raw of run.split(/(?<=\.)\s+/)) {
+      const sentence = raw.trim();
+      if (!sentence.includes('.')) continue;
+      if (sentence.split(' ').filter(Boolean).length < 4) continue;
+      out.push(sentence);
+    }
+  }
+  return out;
+};
+
+t('every sentence on the homepage comes from a source that was already checked', () => {
+  const haystack = [
+    normalise(corpusText()),
+    normalise(PROMO_SCRIPT.join('  ')),
+    normalise(OWNER_AND_LIVE_STRINGS.join('  ')),
+  ].join('  ');
+
+  const sentences = homepageSentences();
+
+  // NON-VACUITY. A change of markup, of quoting style or of the sentence definition above could
+  // make the extractor return nothing and this test pass over an empty list. The homepage carries
+  // well over a dozen sentences; a floor of ten reds long before the extractor silently stops
+  // reading, and does not red on a legitimate edit that removes one or two.
+  assert.ok(
+    sentences.length >= 10,
+    `only ${sentences.length} sentences were extracted from the homepage; the markup changed and ` +
+      'this provenance check is no longer reading it',
+  );
+
+  const unsourced = sentences.filter((s) => !haystack.includes(normalise(s)));
+  assert.deepEqual(
+    unsourced,
+    [],
+    'Every sentence on the homepage must appear verbatim in one of three sources:\n' +
+      '  1. the corpus, apps/site/*.html, which is guarded by apps/site/test/site.test.mjs\n' +
+      '  2. PROMO_SCRIPT, the promo lines the owner approved on 2026-09-05\n' +
+      '  3. OWNER_AND_LIVE_STRINGS, the tagline, two marquee phrases and the live panel labels\n' +
+      'Do not add a sentence to source 3 to make this pass. Source 3 is for strings that CANNOT\n' +
+      'exist in the corpus, and every entry in it carries the reason it cannot. If a sentence says\n' +
+      'something the corpus already says, quote the corpus; if it says something new about the\n' +
+      'protocol, it has not been read against the contracts yet and it does not belong on the page.\n' +
+      'Unsourced sentences:\n' +
+      unsourced.map((s) => `  ${JSON.stringify(s)}`).join('\n'),
+  );
 });

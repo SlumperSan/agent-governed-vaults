@@ -679,17 +679,20 @@ const SITE_NEXT = 'apps/site-next';
  * name deliberately does not repeat it as a word: a page added to `PAGE_IDS` and not added here is
  * a page this test silently stops covering, and a number in the name is a second place to edit.
  */
-const PRERENDERED = [
-  'index.html',
-  'how-it-works.html',
-  'agents.html',
-  'who-its-for.html',
-  'operators.html',
-  'faq.html',
-  'vision.html',
-  'status.html',
-  'disclaimers.html',
-].map((page) => `${SITE_NEXT}/dist/${page}`);
+//
+// IT WAS NINE PAGES UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site to
+// "ONE cinematic scroll page + the app button + a serious Disclaimers page", and how-it-works,
+// agents, who-its-for, operators, faq, vision and status were retired. `apps/site-next/public/
+// _redirects` 301s every one of their URLs, and `PAGE_IDS` in `apps/site-next/src/shell/pinned.ts`
+// is the two entries below.
+//
+// SHRINKING THIS LIST DOES NOT SHRINK WHAT IS WALKED, which is the thing to understand before
+// editing it. `publicSurfaces()` enumerates the filesystem; it walks whatever `.md`, `.html`,
+// `.txt` and `.json` files exist. This list is not the walk, it is the ASSERTION that the walk
+// reached the pages the redesign actually publishes. Its only failure mode is being longer than
+// reality, which reds honestly, or shorter, which is the silent one. The two names below come from
+// `PAGE_IDS`, so the way to keep it in step is to keep reading them from there.
+const PRERENDERED = ['index.html', 'disclaimers.html'].map((page) => `${SITE_NEXT}/dist/${page}`);
 
 test('every prerendered redesign page is inside the walk', () => {
   // A checkout with no redesign owes nothing. `dist` alone is not the condition to test on: it is

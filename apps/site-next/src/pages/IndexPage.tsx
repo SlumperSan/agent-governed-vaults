@@ -1,43 +1,55 @@
 /**
- * index.html — the long-scroll cinematic page, in document order.
+ * index.html: one cinematic scroll page, in document order.
  *
- * Composition only. The banner, masthead, <main id="main"> and footer come from
- * PageShell; the page's single <h1> comes from IndexHero. Nothing is added here
- * that is not a section, and no section is wrapped in an element of its own —
- * each renders its own landmark and its own vertical rhythm.
+ * SIX SECTIONS WHERE THERE WERE EIGHT, AND SEVEN OTHER PAGES BESIDE THEM. The
+ * v3 brief of 2026-09-05 collapsed the site to "ONE cinematic scroll page + the
+ * app button + a serious Disclaimers page." Revision 2 of that brief, the same
+ * evening, named artificialinu.com as the reference and mapped the scroll
+ * section by section. The order below is that mapping.
+ *
+ *   IndexHero     the film-title card: the headline, two true sentences, the
+ *                 two doors, and the two addresses a reader can check.
+ *   IndexMarquee  the seam. Four claims in solid accent, moving.
+ *   IndexLive     the page's signature. Five figures read from chain 4663 in
+ *                 the reader's own browser, each stamped with the call that
+ *                 produced it and the instant it was true.
+ *   IndexHive     the narrative beat, and the mascot as a character.
+ *   IndexHow      the lifecycle: seven steps named, three of them numbered.
+ *   IndexNext     what is designed and not built, and the way to Disclaimers.
+ *
+ * WHAT WENT, AND WHERE IT WENT. The first v3 pass composed `IndexHero`,
+ * `LegendBeat`, `HiveBeat`, `IndexRecord` and `IndexNext`, which was the brief's
+ * pre-revision structure: two trailer clips as section breaks and a record band
+ * carrying the address book. `index-beats` and `index-record` are deleted with
+ * their stylesheets and their video assets. Nothing in them is lost: the two
+ * trailer beats' argument is the hive section's, the record band's addresses are
+ * the hero's two copy chips, and its deployment facts are now READ FROM THE
+ * CHAIN by `IndexLive` rather than written down. That last substitution is the
+ * whole point of the redesign and not a side effect of it.
+ *
+ * `IndexDoors`, `IndexPromise`, `IndexWhy`, `IndexWhat`, `IndexImmutability` and
+ * `IndexStatus` went in the earlier pass and have not come back. Everything that
+ * was a risk, a limit or a caveat was consolidated onto disclaimers.html by the
+ * copy decision of 2026-09-05, which this change does not touch.
+ *
+ * COMPOSITION ONLY. The masthead, `<main id="main">` and the footer come from
+ * PageShell; the page's single `<h1>` comes from IndexHero.
  */
 import IndexHero from '../sections/index-hero/IndexHero';
-import IndexDoors from '../sections/index-doors/IndexDoors';
-import IndexPromise from '../sections/index-promise/IndexPromise';
-import IndexWhy from '../sections/index-why/IndexWhy';
-import IndexWhat from '../sections/index-what/IndexWhat';
-import IndexImmutability from '../sections/index-immutability/IndexImmutability';
-import IndexStatus from '../sections/index-status/IndexStatus';
+import IndexMarquee from '../sections/index-marquee/IndexMarquee';
+import IndexLive from '../sections/index-live/IndexLive';
+import IndexHive from '../sections/index-hive/IndexHive';
+import IndexHow from '../sections/index-how/IndexHow';
 import IndexNext from '../sections/index-next/IndexNext';
 
-// ORDER MATCHES apps/site/index.html, copy deck v2 (2026-09-05): the hero,
-// then the two doors, then the design-intent promise, then the rest unchanged.
-//
-// `IndexLosses` WAS REMOVED HERE ON 2026-09-05, and its section directory was
-// deleted with it. It rendered "Before you read anything else" / "Three ways
-// this loses your money", which `apps/site/index.html` no longer carries: the
-// owner's 2026-09-05 decision moves every risk, warning and caveat onto
-// disclaimers.html, where those three mechanisms now render as the row headed
-// `Three ways this loses your money`. The other two caveat blocks the same
-// decision retired went at the same time, from index-why and
-// index-immutability; both of those sections record it in their own files.
-// The Disclaimers page is still reachable from this page in three places: the
-// hero lede, index-promise's button, and the footer.
 export default function IndexPage() {
   return (
     <>
       <IndexHero />
-      <IndexDoors />
-      <IndexPromise />
-      <IndexWhy />
-      <IndexWhat />
-      <IndexImmutability />
-      <IndexStatus />
+      <IndexMarquee />
+      <IndexLive />
+      <IndexHive />
+      <IndexHow />
       <IndexNext />
     </>
   );

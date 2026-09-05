@@ -125,16 +125,38 @@
   line-gap-override: 0%;
 }
 
-/* Anton - the display face. One weight, 400, and 400 is already black: the
-   family ships a single cut and there is no lighter or heavier one to fetch.
-   Nothing on this site synthesises a bolder version of it, which is what
-   `font-synthesis-weight: none` in index.css is for. */
+/* Space Grotesk 700 - the display face, and the wordmark.
+   ---------------------------------------------------------------------------
+   IT REPLACES ANTON, which replaced Newsreader the day before. Both of those
+   were the loudest possible answer to a question about tone: Newsreader is a
+   reading serif and Anton is a condensed poster face, and the site wore each of
+   them as its whole personality. The v3 brief of 2026-09-05 rules both out by
+   name and asks for the third thing: "a clean geometric wordmark ... set
+   'Rwally' in a bold geometric sans, self-hosted; NOT the comic lettering, NOT
+   Anton with ink rings, NOT Newsreader serif."
+
+   WHY THIS GEOMETRIC SANS AND NOT A NEUTRAL ONE. Space Grotesk is drawn from a
+   monospace (Space Mono), so it keeps the squared terminals, the flat-sided
+   bowls and the low-contrast strokes that a ledger face wants, and it has real
+   idiosyncrasy in the a, g and R at display size, and the R is the letter this
+   brand's mark IS. A neutral grotesque set at 700 would read as the default
+   every dark product page already uses; this one reads as a decision, and it
+   sits beside IBM Plex Sans without either face pretending to be the other.
+
+   ONE WEIGHT, 700. The display role on this site is headline and wordmark and
+   nothing else, and a second cut is a second round trip for an emphasis the
+   type scale already provides. `font-synthesis-weight: none` in index.css stops
+   the browser inventing one.
+
+   The `src` is a path into node_modules, rewritten by the build; the same path
+   is preloaded from the head of both entry HTMLs, and site.test.mjs asserts the
+   preloaded file exists in the output. Do not hand-edit either into a hash. */
 @font-face {
-  font-family: 'Anton';
+  font-family: 'Space Grotesk';
   font-style: normal;
   font-display: swap;
-  font-weight: 400;
-  src: url('@fontsource/anton/files/anton-latin-400-normal.woff2') format('woff2');
+  font-weight: 700;
+  src: url('@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }

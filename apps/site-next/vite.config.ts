@@ -66,14 +66,7 @@ export default defineConfig(({ isSsrBuild }) => ({
         rollupOptions: {
           input: {
             index: entry('index.html'),
-            'how-it-works': entry('how-it-works.html'),
-            agents: entry('agents.html'),
-            'who-its-for': entry('who-its-for.html'),
-            operators: entry('operators.html'),
             disclaimers: entry('disclaimers.html'),
-            faq: entry('faq.html'),
-            vision: entry('vision.html'),
-            status: entry('status.html'),
           },
         },
       },

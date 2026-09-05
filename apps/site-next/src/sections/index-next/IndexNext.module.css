@@ -1,152 +1,97 @@
 /* ===========================================================================
-   index-next — the closing section of index.html
-   ---------------------------------------------------------------------------
-   Scoped to src/sections/index-next/ and imported only by IndexNext.tsx.
+   THE RWLY BEAT.
 
-   NO RAW COLOUR LITERAL ANYWHERE BELOW. Every colour is var(--token) from
-   src/tokens.css, which is what keeps the palette a one-file change and what a
-   grep over the built stylesheet checks.
+   CENTRED, NARROW, AND SET ON THE DEEPEST GROUND ON THE PAGE. Every section
+   above it is either full-bleed or a two-column grid at --wrap; this one is a
+   single column at --measure with air either side. That change of shape is the
+   signal that the argument has finished and the page is telling you where to go
+   next, and it does the work a heading rule would otherwise have to do.
 
-   NO NEW TOKEN, EITHER. Spacing, type sizes, radii, curves and durations are
-   all read from the scale. A local value here is a value nobody re-measures.
-
-   A NOTE ON WORDING IN THIS FILE. The claims suite scans stylesheets as prose,
-   so a class name, a custom property or a comment is exposed exactly as a
-   paragraph is. Two ordinary CSS constructs match banned words on their
-   boundaries — the environment variable for a device inset area, and the
-   overflow keyword of the same name that can follow justify-content — and
-   neither appears below. Nothing here is named for an outcome, a funnel step
-   or a discretionary manager.
-
-   WHY IT MOVES SO LITTLE. The section's whole job is to say that there is
-   nothing to convert on, and a closing block that performs would be the design
-   arguing with the copy. The only movement is the opacity transition
-   IndexNext.tsx adds through <Reveal>, and the only state change here is a
-   luminance shift on hover and focus. Nothing changes size, ever: a control
-   that grows under the pointer moves the three beside it.
+   THE SHORT ACCENT RULE ABOVE THE HEADING is the last of the ledger marks the
+   rest of the site uses. It is 3rem of hairline, not a full-width divider: a
+   divider separates two things, and there is nothing after this but the footer.
    =========================================================================== */
 
-/* The section carries the page's closing rhythm: a long approach, and then a
-   short run into the footer, whose own top margin supplies the rest of the
-   gap. No top rule — the section above closes itself, and two hairlines a few
-   pixels apart read as a mistake rather than as punctuation. */
-/* THE HOST OF A BACKDROP OWES TWO DECLARATIONS. `position: relative` gives the
-   absolutely positioned picture something to sit in; `isolation: isolate` makes
-   this element a stacking context, so the backdrop's `z-index: -1` puts it
-   behind this section's own content and CANNOT reach past it to sit behind the
-   page. See src/assets/backdrop.module.css. */
-.section {
-  position: relative;
-  isolation: isolate;
-  padding-block: var(--s9) var(--s6);
+.next {
+  padding-block: var(--s9);
+  padding-inline: var(--gutter);
+  background: var(--ground);
+  border-block-start: 1px solid var(--line);
 }
 
-.eyebrow {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: var(--step-eyebrow);
-  letter-spacing: var(--track-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
+.inner {
+  max-width: var(--measure);
+  margin-inline: auto;
+  text-align: center;
 }
 
-/* The last display line on the page. It takes the h2 step from the global
-   sheet; only the space above it belongs to this section. */
+.rule {
+  display: block;
+  width: 3rem;
+  height: 2px;
+  margin: 0 auto var(--s5);
+  background: var(--accent);
+}
+
 .heading {
-  margin-top: var(--s3);
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-h2);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display);
   color: var(--ink);
+  text-wrap: balance;
 }
 
-/* The sentence pair under the heading. Subordinated to it in colour, not in
-   size: it enumerates what the site does not have, and a reader who skips it
-   has skipped the substance of the heading. */
 .body {
-  margin-top: var(--s4);
+  margin: var(--s5) 0 0;
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
   color: var(--muted);
+  text-wrap: pretty;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s3);
-  margin-top: var(--s6);
-}
-
-/* Four ways out, three of them further into the disclosures. They are links
-   and they look like links that have been given a target area — not like a
-   submission control, which is the one thing this page has none of. */
 .action {
+  margin: var(--s6) 0 0;
+}
+
+/* An outlined pill rather than the filled door. There is exactly one filled,
+   accent-backed action per view on this site, and on this screen it is the one
+   in the fixed header. A second one here would put two primary buttons in the
+   same viewport, both violet, one of which leads to a page of warnings. */
+.gate {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 2.875rem;
   padding-inline: var(--s5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9375rem;
   color: var(--ink);
-  font-size: var(--step-small);
-  font-weight: 500;
-  line-height: 1.2;
   text-decoration: none;
   transition:
-    color var(--dur-fast) var(--ease-enter),
     border-color var(--dur-fast) var(--ease-enter),
-    background-color var(--dur-fast) var(--ease-enter);
+    color var(--dur-fast) var(--ease-enter);
 }
 
-/* Luminance and hue on the accent, never geometry. Focus is left to the global
-   :focus-visible ring, which is never removed and never narrowed. */
-.action:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
+.gate:hover,
+.gate:focus-visible {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-/* One emphasised link out of four. It is the mechanism page, deliberately:
-   the reader who has come this far is owed the code's behaviour next, not a
-   destination that asks them for something. */
-.actionPrimary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
-  transition:
-    filter var(--dur-fast) var(--ease-enter),
-    border-color var(--dur-fast) var(--ease-enter);
-}
-
-/* Brightening the filled control raises its contrast against the dark ink it
-   carries, so the hover state is more readable than the resting one rather
-   than less. */
-.actionPrimary:hover {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
-  filter: brightness(1.12);
-}
-
-/* THE FOUR LABELS DO NOT FIT ON ONE LINE BELOW ABOUT 60rem, and left to wrap
-   on their own they break three-and-one — a row of three followed by an orphan
-   that reads as an afterthought rather than as the fourth of four. So the row
-   becomes an explicit two-by-two below that width, and one per line below the
-   narrowest column, where even two would set too tight.
-
-   The measured widths this is set against, at 768: 221 / 179 / 200 / 173 plus
-   three gaps, against a reading column of 704. */
-@media (max-width: 60rem) {
-  .actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s2);
-  }
-
-  .action {
-    justify-content: center;
-    padding-inline: var(--s4);
+@media (max-width: 40rem) {
+  .next {
+    padding-block: var(--s8);
   }
 }
 
-@media (max-width: 30rem) {
-  .actions {
-    grid-template-columns: 1fr;
+@media (prefers-reduced-motion: reduce) {
+  .gate {
+    transition: none;
   }
 }

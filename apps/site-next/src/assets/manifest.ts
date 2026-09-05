@@ -2,56 +2,49 @@
  * EVERY PICTURE ON THIS SITE, DECLARED IN ONE PLACE.
  *
  * WHY A MANIFEST RATHER THAN A PATH IN EACH SECTION. The visual language moved
- * twice on 2026-09-05. The site carried an abstract photographic set; the owner
- * then chose an illustrated "Comic" direction with a designed mascot, and the
- * brand pass delivered the finished set the same day. Both swaps were an edit to
- * this file and to `public/media/`, and to nothing else. No section imports a
- * filename, no stylesheet names one, and every consumer goes through
- * `Backdrop`.
+ * four times on 2026-09-05: an abstract photographic set, then the owner's
+ * illustrated "Comic" direction with a designed mascot, then the v3 brief, which
+ * kept the imagery and threw away the pages it sat on, then revision 2 of that
+ * brief, which named artificialinu.com as the reference. Every one of those was
+ * an edit to this file and to `public/media/`, and to nothing else. No section
+ * imports a filename and no stylesheet names one.
  *
- * SO THE SLOT IDS ARE THE CONTRACT, not the filenames. `howItWorks`,
- * `immutability`, `lifecycle`, `agents` and `next` are places on pages; the
- * files they point at are this week's answer to them.
+ * WHAT REVISION 2 CHANGED HERE: THERE IS NO MOVING SLOT ANY MORE.
  *
- * THE index HERO IS NOT A SLOT HERE. It carries the clip, through
- * `MotionBackdrop`, which reads `LOOP` below rather than `STILLS`.
+ * The previous pass had three video files: the hero's ambient loop and two
+ * trailer clips used as section breaks. All three are gone, with the
+ * `MotionBackdrop` component that played them and the `index-beats` section that
+ * carried two of them. The reference's hero is a near-black ground with a
+ * drifting point field and nothing else moving behind the type, and the owner
+ * named it as "90% what im looking for", so the star field in
+ * `src/assets/Particles.tsx` is what is behind the headline now.
  *
- * PROVENANCE. Everything below comes from `C:\Users\Micha\desktop\Rwally Brand\`,
- * the final brand set of 2026-09-05 — `assets/hero/hero-a-21x9.png`, the four
- * `assets/sections/*-16x9.png`, `assets/motion/loop-16x9-seamless.mp4` and its
- * poster, and `assets/og/og-card-1200x630.png`, which is `public/og-card.png`
- * verbatim at 1,200x630 and 785,079 B. The abstract set that stood here earlier
- * in the day, and the logo panel before it, are gone from the desktop and are
- * referenced nowhere in this repository.
+ * THE CONSEQUENCE REACHES THE CONTENT SECURITY POLICY, and that is the honest
+ * measure of the change rather than a side note. `media-src` existed in
+ * `public/_headers` for exactly one reason, which was `/media/loop-1280.mp4`.
+ * This origin now serves no video at all, so the directive falls back to
+ * `default-src 'none'` and the site cannot load a media element even if one were
+ * added by accident.
  *
- * THESE IMAGES CARRY NO TEXT, so they add no claim to any page they sit behind.
- * That is checked rather than assumed: every frame below was opened and looked
- * at on 2026-09-05. None carries lettering, a number, a logo, a ticker or a
- * chart. ANY REPLACEMENT SET OWES THE SAME CHECK: an image with words in it is
- * published copy that no claims guard reads.
+ * SO ONE PICTURE REMAINS, AND IT IS USED TWICE. `mascot` is the character in the
+ * hive section, where it is an `<img>` with alt text describing what is drawn,
+ * and the full-bleed parallax ground in the footer, where it is decoration with
+ * an empty alt. Same file, two crops, one download.
  *
- * DECORATIVE, ALWAYS. Every slot renders with `alt=""` inside an `aria-hidden`
- * wrapper. None of them carries information, and an image that carried
- * information would need copy under it instead — copy is what this site's
- * guards can read.
+ * PROVENANCE. `mascot` comes from `Rwally Brand/`, the final brand set of
+ * 2026-09-05, by way of the Higgsfield website prototype's Agents plate
+ * (`Rwally Higgsfield/website/assets/operator-mascot-16x9.png`, 2752x1536).
  *
- * HOW THE FILES WERE MADE. Each source PNG was resized with `ffmpeg` (8.1.2,
+ * IT CARRIES NO TEXT, so it adds no claim to any section it sits in. That is
+ * checked rather than assumed: the frame was opened and looked at on 2026-09-05
+ * and carries no lettering, number, logo, ticker or chart. ANY REPLACEMENT OWES
+ * THE SAME CHECK, because an image with words in it is published copy that no
+ * claims guard reads.
+ *
+ * HOW THE FILE WAS MADE. The source PNG was resized with `ffmpeg` (8.1.2,
  * lanczos) and encoded to WebP at quality 74, compression level 6, at 1280 and
- * 1920 CSS pixels wide; the clip was scaled to 1280 and re-encoded H.264 at
- * CRF 30, audio dropped, `+faststart`. Measured sizes, 2026-09-05:
- *
- *   immutability 125,124 / 237,362 B   (from 1920x1080)
- *   propose       91,978 / 170,316 B   (from 1920x1080)
- *   deposit       84,850 / 155,780 B   (from 1920x1080, currently unused)
- *   hero-b        56,866 / 102,158 B   (from 3360x1440)
- *   mascot       122,438 / 256,150 B   (from 2752x1536 less a 1.2% crop)
- *   next         100,108 / 184,152 B   (from 1920x1080)
- *   loop-poster   38,056 B at 1280     (from 1920x1080)
- *   loop         301,702 B at 1280x720, 7.54 s   (from 3,244,318 B)
- *
- * ONE FILE HAS NO WEBP AND THAT IS THE POINT: `loop-1280.mp4` is the only thing
- * on this site the CSP's `media-src 'self'` permits, and it is fetched only by a
- * reader who has not asked for reduced motion. See `Backdrop.tsx`.
+ * 1920 CSS pixels wide. Measured sizes, 2026-09-05: 122,438 B at 1280 and
+ * 256,150 B at 1920, from 2752x1536 less a 1.2% crop.
  */
 
 /** A still slot: two widths of the same picture, and its intrinsic box. */
@@ -65,13 +58,6 @@ export type Still = {
   readonly height: number;
 };
 
-/** The one moving slot: a clip, and the still a reduced-motion reader gets instead. */
-export type Motion = Still & {
-  readonly video: string;
-  readonly videoWidth: number;
-  readonly videoHeight: number;
-};
-
 const media = (name: string, w: number, h: number): Still => ({
   src: `/media/${name}-1280.webp`,
   srcSet: `/media/${name}-1280.webp 1280w, /media/${name}-1920.webp 1920w`,
@@ -80,52 +66,21 @@ const media = (name: string, w: number, h: number): Still => ({
 });
 
 /**
- * The still slots. Dimensions are the 1920-wide file's, as ffmpeg computed them
- * from each source's own aspect ratio: 1920x822 for the 21:9 hero and 1920x1080
- * for the four 16:9 section plates.
+ * The still slots. One: the mascot plate.
+ *
+ * The Rwally agent under a violet shaft, hooded, bone-white featureless mask
+ * with one ledger rule at eye level, floor-length coat, small in the frame and
+ * not gesturing. The left two thirds are flat black, which is what lets the same
+ * plate serve as a character on the right of a two-column section and as a
+ * ground a footer's type can sit on.
+ *
+ * A 1.2% edge is cropped off every side before encoding, because the frame
+ * carries a bone-white panel border that `object-fit: cover` would draw as a
+ * bright hairline along the top and bottom of the section.
  */
 export const STILLS = {
-  /** index.html, behind "Four things the contracts, as written, cannot do." */
-  immutability: media('immutability', 1920, 1080),
-  /** how-it-works.html, behind the propose/commit/reveal/execute rail. */
-  lifecycle: media('propose', 1920, 1080),
-  /**
-   * how-it-works.html, behind the hero. The brand set's second 21:9 frame; the
-   * hero on index.html uses the first. Two pages open on the same shape and a
-   * different picture, which is the point of shipping two.
-   */
-  howItWorks: media('hero-b', 1920, 822),
-  /**
-   * agents.html, behind the hero — and the one plate the mascot stands in.
-   *
-   * It is the Higgsfield website prototype's own Agents plate
-   * (`Rwally Higgsfield/website/assets/operator-mascot-16x9.png`, 2752x1536),
-   * used the way that prototype used it: the Rwally agent under a violet shaft,
-   * hooded, bone-white featureless mask with one ledger rule at eye level,
-   * floor-length coat, small in the frame and not gesturing. The left two
-   * thirds are flat black, which is where the copy sits.
-   *
-   * A 1.2% edge is cropped off every side before encoding, because the frame
-   * carries a bone-white panel border that `object-fit: cover` would draw as a
-   * bright hairline along the top and bottom of the section.
-   */
-  agents: media('mascot', 1920, 1072),
-  /** index.html, behind the closing section. */
-  next: media('next', 1920, 1080),
+  /** index.html: the hive section's character, and the footer's ground. */
+  mascot: media('mascot', 1920, 1072),
 } as const;
-
-/**
- * The one moving slot. `poster` is the clip's own poster frame, so the first
- * paint and the first frame are the same picture and nothing jumps on play.
- */
-export const LOOP: Motion = {
-  src: '/media/loop-poster-1280.webp',
-  srcSet: '/media/loop-poster-1280.webp 1280w',
-  width: 1280,
-  height: 720,
-  video: '/media/loop-1280.mp4',
-  videoWidth: 1280,
-  videoHeight: 720,
-};
 
 export type StillId = keyof typeof STILLS;

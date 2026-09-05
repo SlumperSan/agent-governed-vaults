@@ -139,44 +139,37 @@ html.lenis body {
 
 /* --- headings and prose --------------------------------------------------- */
 
-/* THE DISPLAY HEADING IS INKED, AND THAT IS THE WHOLE POINT OF THIS RULE.
+/* THE DISPLAY HEADING IS TYPE, NOT ARTWORK.
    ---------------------------------------------------------------------------
-   Anton is one weight and it is already black, so `font-weight: 400` below is
-   the face's only cut and not a light one; `font-synthesis-weight: none` on
-   body is what stops a browser drawing a faux-bold second version of it.
+   WHAT THIS REVERSES. The comic round of 2026-09-05 drew every h1, h2 and h3
+   with a five-shadow ink treatment: four --ground offsets ringing the letter at
+   --ink-outline, and one --accent-deep offset falling behind it at --ink-drop.
+   The v3 brief rules it out by name, the wordmark is to be "NOT Anton with ink
+   rings", and the reasoning generalises past the wordmark: a keyline plus a
+   flat colour drop is a drawn letter, and this page's chrome is not drawn. The
+   imagery carries the comic; the type carries the argument.
 
-   The tracking is POSITIVE here where it was negative. --track-display is
-   -0.02em, drawn for a serif at display size that sets loose. Anton sets tight
-   by construction: it is a condensed poster face whose sidebearings are
-   already minimal, and -0.02em closes the counters until the word is a block.
-   0.012em opens it back to where the letters read as letters. The token is
-   left alone rather than changed, and grepping src/ for it on 2026-09-05 finds
-   its own declaration and this paragraph and nothing else: it is now an unread
-   token rather than a wrong one, which is a thing to delete on a round that is
-   editing tokens.css for its own reasons and not a thing to fold into a
-   re-theme.
+   `--ink-outline`, `--ink-drop` and `--accent-deep` are therefore read by
+   nothing in this stylesheet any more. They are left declared in tokens.css
+   rather than deleted in the same commit that stops using them: that file owns
+   its own inventory, and a token removal is a change to the interface between
+   the design system and every section.
 
-   THE INK OUTLINE IS FIVE SHADOWS AND EVERY ONE OF THEM IS DOING A JOB. Four
-   offsets of --ground ring the letter at --ink-outline, which is what a comic
-   letter's black keyline is on a page whose ground is the ink; and one offset
-   of --accent-deep at --ink-drop falls behind it, which is the flat colour
-   block the reference drops behind display type. No blur on any of the five:
-   a blurred shadow is a glow, and this brand's own token set says light here
-   is a rim and not a glow. text-shadow changes no layout box, so none of this
-   can move a line or widen the document. */
+   THE TRACKING IS NEGATIVE AGAIN. It was pushed to +0.012em for Anton, whose
+   sidebearings are minimal by construction; Space Grotesk at 700 sets loose at
+   display size, so --track-display's -0.02em is the value it was drawn for and
+   the token is read here rather than overridden.
+
+   700, NOT 400. Anton shipped one cut and 400 was already black. Space Grotesk
+   ships a range and fonts.css bundles the bold; asking for 400 would fetch
+   nothing and let `font-synthesis-weight: none` render the fallback's regular. */
 h1,
 h2 {
   font-family: var(--display);
-  font-weight: 400;
-  letter-spacing: 0.012em;
+  font-weight: 700;
+  letter-spacing: var(--track-display);
   line-height: var(--leading-display);
   text-wrap: balance;
-  text-shadow:
-    var(--ink-outline) 0 0 var(--ground),
-    calc(-1 * var(--ink-outline)) 0 0 var(--ground),
-    0 var(--ink-outline) 0 var(--ground),
-    0 calc(-1 * var(--ink-outline)) 0 var(--ground),
-    var(--ink-drop) var(--ink-drop) 0 var(--accent-deep);
 }
 
 h1 {
@@ -187,24 +180,15 @@ h2 {
   font-size: var(--step-h2);
 }
 
-/* THE THIRD LEVEL TAKES THE DISPLAY FACE TOO, AND ONLY THE RING. It is the
-   card title: the door headings, the risk titles, the step names. Leaving it
-   in the sans at 600 put a hard break between an inked h2 and the cards under
-   it, which is where a page stops looking drawn and starts looking typeset
-   again. The violet drop is NOT repeated here: at --step-h3 it is 5px against
-   a 24px letter, which reads as a printing misregistration rather than as a
-   deliberate block, and there are up to fifteen of these on one page. */
+/* The third level is the card title: a risk heading, a row label above a
+   figure. Same face, one step down, and tracked slightly looser than the
+   headline because at 24px the display face no longer needs closing up. */
 h3 {
   font-family: var(--display);
   font-size: var(--step-h3);
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: 0.014em;
-  text-shadow:
-    var(--ink-outline) 0 0 var(--ground),
-    calc(-1 * var(--ink-outline)) 0 0 var(--ground),
-    0 var(--ink-outline) 0 var(--ground),
-    0 calc(-1 * var(--ink-outline)) 0 var(--ground);
+  letter-spacing: -0.01em;
 }
 
 p {
@@ -321,10 +305,25 @@ hr {
    It is legal text, not chrome: it does not collapse, does not scroll away and
    carries no dismiss control. */
 
+/* THE BAND OPENS THE PRODUCT BEAT RATHER THAN CUTTING THE PAGE.
+   ---------------------------------------------------------------------------
+   It was `--surface` with a bottom hairline, which is right for a strip that
+   sits above a nav on a page of panels and wrong for the first thing after a
+   full-bleed film frame: a pale bar across a cinematic scroll reads as browser
+   chrome, or as a cookie notice.
+
+   So it takes the ground it sits on and is bounded by two hairlines, and the
+   only colour in it is the tag: `.banner-tag` in the accent, in the mono, small
+   and tracked out. A coloured rule down its leading edge was tried and taken
+   off again, because there is nothing for it to align to: `.wrap`'s box edge is
+   a gutter outside the text at 1440 and flush to the screen at 375, so the same
+   declaration draws a margin mark on one width and a screen-edge band on the
+   other. */
 .banner {
   position: relative;
   z-index: var(--z-banner);
-  background: var(--surface);
+  background: var(--ground);
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 
@@ -332,7 +331,7 @@ hr {
   display: flex;
   align-items: baseline;
   gap: var(--s4);
-  padding-block: var(--s3);
+  padding-block: var(--s4);
 }
 
 .banner-tag {
@@ -341,7 +340,13 @@ hr {
   font-size: var(--step-eyebrow);
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
-  color: var(--warn);
+
+  /* --accent, NOT --warn. The tag read amber while the band was the pre-launch
+     disclosure and amber was the right register for it. The band says "The
+     record" now and states a fact about a deployment; a caution colour on a
+     neutral statement is a status this site is not reporting. --accent is the
+     colour this palette gives data and links, which is what the band carries. */
+  color: var(--accent);
 }
 
 .banner p {
@@ -363,157 +368,73 @@ hr {
   }
 }
 
-/* --- masthead ------------------------------------------------------------- */
+/* --- the v3 chrome, and what moved out of this file -----------------------
+   THE MASTHEAD AND FOOTER RULES ARE GONE FROM HERE. About 170 lines of
+   `.masthead`, `.brand*`, `.site-footer` and `.footer-*` were deleted on
+   2026-09-05 with revision 2 of the website brief, and they did not move to
+   another global block: they are now `src/shell/masthead.module.css` and
+   `src/shell/footer.module.css`, one stylesheet per component, next to the
+   component that owns it.
 
-/* Flat --ground, not a translucent pane over a blur. The masthead is in flow
-   and scrolls away with the page: nothing on this site is position: sticky or
-   position: fixed, and grepping src/ for `sticky` and for `position: fixed` on
-   2026-09-04 found `sticky` in comments in four files and in no declaration,
-   and `position: fixed` nowhere at all. So there is never page content
-   behind this element to show through or to blur, and a translucent background
-   with a backdrop-filter — which is what stood here until that date — bought a
-   compositing layer for a difference that never renders. */
-/* THE RULE UNDER THE MASTHEAD IS THE PAGE'S TOP INK, at --panel-rule and in
-   the same bone the panel keylines are drawn in. A 1px --line hairline under a
-   page of 3px frames reads as an unfinished edge. */
-.masthead {
-  position: relative;
-  z-index: var(--z-masthead);
-  border-bottom: var(--panel-rule) solid var(--panel-line);
-  background: var(--ground);
+   WHY THEY WERE GLOBAL, AND WHY THAT REASON EXPIRED. They were here because
+   both surfaces are shared by every page and a class drawn twice diverges on
+   the next edit. That is still true and it is still the rule; what changed is
+   that each of them is now rendered by exactly ONE component, so the component's
+   own module IS the one place. The shared-component argument still holds for
+   `.door`, `.gate`, `.quiet`, `.small` and `.ledger` below, which appear on both
+   pages from different sections, and those stay.
+
+   The masthead is `position: fixed` now, which is the first fixed element this
+   site has ever had. The comment that used to stand here said, correctly at the
+   time, that nothing on this site was sticky or fixed and that a translucent
+   masthead over a blur therefore bought a compositing layer for a difference
+   that never rendered. The reference the owner chose has a floating pill header
+   over a scrolling page, so there IS content behind it now and the blur does
+   render. Two measurements follow from that and both live in tokens.css:
+   --masthead-inset, how far it floats from the top, and --masthead-clear, how
+   much room the first section leaves for it. Nothing below the header may
+   measure the header.
+   -------------------------------------------------------------------------- */
+
+/* EVERY ANCHOR TARGET CLEARS THE FIXED HEADER. Without this, following the nav's
+   "How it works" entry scrolls the section's heading to y=0, which is underneath
+   the pill, and the reader lands on a heading they cannot see. It is set on the
+   elements that are actually anchor targets rather than on every section,
+   because `scroll-margin-top` on a section that is never linked is a rule that
+   silently changes nothing and has to be reasoned about anyway. */
+:target,
+main#main > section[id] {
+  scroll-margin-top: var(--masthead-clear);
 }
 
-/* --s3, not --s4. The lockup went from 48px to 64px in the rule below and the
-   masthead is the first thing between the top of the window and the two doors
-   that have to stand inside it at 1440x900. Four pixels off each side of the
-   bar buys eight of the sixteen the taller artwork costs, and 12px against a
-   64px lockup is still more clear space than the brand set asks for. */
-.masthead .wrap {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s3) var(--s5);
-  padding-block: var(--s3);
-}
+/* THE VISUALLY HIDDEN CLASS. Text that is in the accessibility tree and not on
+   the screen.
 
-/* --- the brand lockup -----------------------------------------------------
-   The mark and the site name on one baseline. Both take their colour from this
-   element, so the hover below moves the whole thing at once — which is the
-   reason the mark is inline SVG rather than an <img>: an image cannot inherit
-   currentColor. See src/brand/Mark.tsx. */
-/* THE SANS, NOT THE DISPLAY FACE, AND THE CHANGE IS DELIBERATE. This read
-   `var(--display)` while the display face was a serif at 17px, which a serif
-   sets happily. The display face is now Anton: a condensed poster letter whose
-   whole design is to be large, and which at 17px is a solid dark block rather
-   than a word. The name beside the mark is small interface type, so it takes
-   the interface face. Same decision, same reason, at .footer-descriptor. */
-.brand {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.5em;
-  font-family: var(--sans);
-  font-size: 1.0625rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  text-decoration: none;
-}
+   THE `clip-path` PLUS 1px BOX FORM, not `display: none` and not
+   `visibility: hidden`, both of which remove the element from the accessibility
+   tree as well as from the page, which is the opposite of what this is for. Not
+   `text-indent: -9999px` either: that leaves the element in the layout at a
+   position that can make a container scroll sideways.
 
-/* THE LOCKUP, AT THE HEIGHT THE OWNER SET. 48px on desktop; below 52rem it is
-   replaced by the mark and the name in text, because the traced wordmark stops
-   reading at the size a phone masthead can give it. Both forms are in the
-   markup at every width and this pair of rules chooses — see Masthead.tsx for
-   why it cannot be a render branch. `width: auto` resolves through the SVG's
-   intrinsic aspect ratio, so the box is the artwork rather than the column. */
-/* 66px, RAISED FROM 48px, AND THE NUMBER COMES FROM THE ARTWORK RATHER THAN
-   FROM TASTE. The lockup is the full-colour comic drawing now, and the brand
-   set records a measured minimum for it: 240px wide, below which "the comic
-   mark's speed lines collapse into noise". Its viewBox is 1124.5 by 303.5, so
-   width follows height at 3.705:1. 48px gave 178px, well inside the range that
-   file calls noise; 64px gives 237px, which lands three pixels short of the
-   floor; 66px gives 244px and clears it. That is the whole derivation, and it
-   is why the height is an odd-looking number instead of a round one. Below
-   52rem the lockup is still replaced by the mark and the name in text, for the
-   same reason: no masthead a phone can give it reaches 240px. */
-.brand-lockup {
-  display: block;
-  width: auto;
-  height: 66px;
-}
-
-.brand-compact {
-  display: none;
-  align-items: center;
-  gap: 0.5em;
-}
-
-@media (max-width: 51.999rem) {
-  .brand-lockup {
-    display: none;
-  }
-
-  .brand-compact {
-    display: inline-flex;
-  }
-}
-
-/* Sized in em against the name beside it, so the pair stays in proportion if
-   the brand's font-size is ever changed. 1.06em against a cap height of about
-   0.7em makes the mark stand a little above the caps rather than sit inside
-   the line, which is how the brand set's own lockup sets it. `align-self:
-   center` rather than a baseline: the mark's box has no baseline of its own to
-   align, and letting it fall to the box's bottom edge would drop it below the
-   name. */
-.brand-mark {
-  flex: none;
-  width: auto;
-  height: 1.06em;
-  align-self: center;
-}
-
-.brand-name {
+   IT IS USED SPARINGLY AND NEVER TO HIDE A CLAIM. Two places on this site: the
+   status message an address chip announces when a copy succeeds, and the
+   sentence that tells a screen-reader user that the header's price is a feed's
+   last print rather than a quote from now. Both are things a sighted reader gets
+   from a visible change that has no text. Nothing that a sighted reader can read
+   is hidden here, and nothing hidden here is a claim that is not also made in
+   visible text somewhere on the page. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
+  border: 0;
 }
 
-.brand:hover {
-  color: var(--accent);
-}
-
-.masthead nav ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2) var(--s5);
-  margin: 0;
-}
-
-.masthead nav a {
-  display: inline-block;
-  padding-block: var(--s1);
-  font-size: var(--step-small);
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.masthead nav a:hover {
-  color: var(--ink);
-}
-
-.masthead nav a[aria-current='page'] {
-  color: var(--ink);
-  box-shadow: inset 0 -1px 0 0 var(--accent);
-}
-
-@media (max-width: 52rem) {
-  .masthead .wrap {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .masthead nav ul {
-    gap: var(--s2) var(--s4);
-  }
-}
 
 /* --- main ----------------------------------------------------------------- */
 
@@ -566,151 +487,35 @@ main {
    closes it on its border rather than collapsing it. The opening rule is left
    alone deliberately: the section after the band still opens on a full seam,
    which is the spacing every other page already has. */
-/* THE SEAM IS NOW A GUTTER, AND EVERY SECTION IS A PANEL.
+/* SECTIONS ARE FULL-BLEED AGAIN, AND NOTHING HERE FRAMES THEM.
    ---------------------------------------------------------------------------
-   THE CHANGE, stated plainly because it inverts the block above rather than
-   extending it. The seam used to be PADDING on the two edges where two
-   sections meet, so the gap between them was interior space belonging to each.
-   It is now MARGIN, so the gap is a gutter that belongs to neither, and the
-   space that used to be the gap is the frame around a panel.
+   WHAT THIS REVERSES. The comic round of 2026-09-05 made `main#main > *` a
+   drawn panel: a 3px bone keyline, a hard 10px offset block in the illustration
+   violet alternating with the teal, a --panel fill, and the page inset so the
+   ink ran down both margins. The v3 brief of the same day keeps the comic
+   IMAGERY and rules out the comic CHROME in as many words ("interface elements
+   sleek dark modern, not ink-outlined"), and the page it asks for is a cinematic
+   scroll whose first two beats are full-bleed video. A panel that stops at
+   --wrap and carries a violet drop cannot be full-bleed, so the frame is not
+   restyled here, it is removed, and each section owns its own ground.
 
-   That is the comic page's own structure. A comic page is panels with ink
-   between them; a run of full-bleed bands with generous air between them is a
-   magazine spread, which is what this site was. The panel below is the frame,
-   var(--seam) is the ink between two frames, and --ground showing through that
-   ink is what reads as the heavy black outline of the reference look. Drawing
-   a black keyline on a near-black page would draw nothing at all.
+   THE HALFTONE WENT WITH IT, from this element at least. It was painted on
+   `main` so it showed in the gutters between frames; with no gutters it would
+   have shown behind every section instead, which is the one placement its own
+   note ruled out on contrast grounds. It survives as an opt-in: `.halftone`
+   below, which one section uses.
 
-   THE GUTTER IS SMALLER THAN THE SEAM WAS, and it has to be: 1.75rem to 3rem
-   was right for air between bands and is far too wide for ink between frames,
-   which in print is a few millimetres. It is also the reason this change does
-   not push the page down. The seam it replaces was interior padding on both
-   sides of every join, and the sections keep their own padding-block, so the
-   net vertical change at each join is the gutter minus what the seam added.
+   THE SEAM IS ZERO, AND THAT IS THE STRUCTURE. On a cinematic scroll each beat
+   fills the viewport or close to it and the cut between two beats is the edge of
+   the frame, not a gap. Sections that want air bring their own `padding-block`;
+   nothing is added between them from here.
 
-   MARGINS COLLAPSE AND THAT IS WANTED HERE. Two adjacent siblings' facing
-   margins collapse to the larger of the two rather than summing, so a single
-   `margin-block-start` on every element after the first gives exactly one
-   gutter per join. The old rule needed a second declaration and a
-   `:not(:last-child):not(.banner)` to keep padding off the closing edge;
-   margin needs neither, because the last panel simply has no sibling after it
-   and .site-footer brings its own margin-top.
-
-   WHY `main#main` AND NOT `main`. Unchanged from the rule this replaces. A
-   section root is a CSS-module class, specificity (0,1,0), and `main > *` is
-   (0,0,2), so the section would win and this would silently do nothing. The id
-   raises it to (1,0,1) with no `!important`, and the id is a stable thing to
-   depend on: `<main id="main">` is asserted by name in the document-skeleton
-   guard and is the skip link's target.
-
-   `* + *` rather than `section + section` because four pages open with a
-   `<div>` hero rather than a `<section>`; the gutter is a position in the
-   flow, not a tag name.
-
-   ONE SECTION STILL OVERRIDES ITS OWN PADDING AT HIGHER SPECIFICITY, and it is
-   left alone: IndexHero writes `main:global(#main) > .hero.hero.hero` to close
-   the fold, which is (1,3,1) and beats everything here. It sets padding, this
-   sets margin, and the two do not meet. */
+   `main#main` RATHER THAN `main`, unchanged from the rules this replaces: a
+   section root is a CSS-module class at (0,1,0) and would otherwise win. */
 main#main {
-  /* The page edge. Panels inset from the viewport by this much at every width,
-     so the outermost ink runs down both sides of the page rather than the
-     panel's own keyline sitting on the screen edge. */
-  padding-inline: clamp(0.5rem, 0.25rem + 0.7vw, 1.25rem);
-
-  /* THE HALFTONE, AND IT IS ON THE INK RATHER THAN ON THE PANELS.
-     ------------------------------------------------------------------------
-     A dot screen drawn as one repeating radial-gradient: no request, no
-     raster, and it scales with the element instead of tiling a fixed image.
-
-     IT SITS UNDER THE PANELS AND NEVER UNDER A WORD, and that placement is a
-     contrast decision rather than a compositional one. Every panel paints an
-     opaque --panel over this layer, so the only places it shows are the ink
-     between two frames and the margins either side of the column, and both are
-     empty by construction. Screening the dots across the panels instead would
-     lighten the local background under every paragraph by the dot's own
-     transparency,
-     and --faint on --panel is 4.57:1, which has 0.07 of headroom over the 4.5
-     floor and would lose it. The texture is worth having; it is not worth
-     paying for it in the one ratio on this page that is close. */
-  background-color: var(--ground);
-  background-image: radial-gradient(var(--halftone-page) 1.1px, transparent 1.2px);
-  background-size: var(--halftone-pitch) var(--halftone-pitch);
+  display: block;
 }
 
-main#main > * {
-  position: relative;
-
-  /* The panel is the width of the reading column, not of the viewport. A
-     full-bleed frame at 1440 is a band, and a band is the thing this rule is
-     replacing. The .wrap inside it keeps its own padding-inline, which becomes
-     the panel's interior padding. */
-  width: 100%;
-  max-width: var(--wrap);
-  margin-inline: auto;
-
-  border: var(--panel-rule) solid var(--panel-line);
-  background: var(--panel);
-
-  /* THE OFFSET BLOCK. Hard, unblurred, one direction, in the illustration
-     violet: the flat drop a comic panel casts on the page. box-shadow is
-     painted outside the border box and takes part in no layout, so it can
-     neither widen the document nor move the panel below it. */
-  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--accent-deep);
-}
-
-/* THE SECOND HUE ALTERNATES DOWN THE PAGE. The brand set gives --teal one job,
-   "the second state in any pair", and a page of identical violet drops is a
-   pattern rather than a rhythm. Every second panel takes the teal instead,
-   which is a fill and not a status: the four status tokens are untouched. */
-main#main > *:nth-child(even) {
-  box-shadow: var(--panel-offset) var(--panel-offset) 0 0 var(--teal);
-  background: var(--panel-2);
-}
-
-main#main > * + * {
-  margin-block-start: var(--seam);
-}
-
-/* --- footer --------------------------------------------------------------- */
-
-/* THE PAGE CLOSES ON THE SAME INK IT OPENS ON. The masthead's bottom rule and
-   this one are the two edges of the comic page, and both are drawn at
-   --panel-rule in the keyline bone. A 1px hairline here, under a column of 3px
-   frames, read as the page trailing off rather than ending. */
-.site-footer {
-  margin-top: var(--s9);
-  border-top: var(--panel-rule) solid var(--panel-line);
-  background: var(--surface);
-  padding-block: var(--s7) var(--s6);
-}
-
-.footer-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: var(--s6);
-  margin-bottom: var(--s6);
-}
-
-.footer-grid h2 {
-  font-family: var(--sans);
-  font-size: var(--step-eyebrow);
-  font-weight: 600;
-  letter-spacing: var(--track-eyebrow);
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-bottom: var(--s3);
-}
-
-.footer-grid ul {
-  display: grid;
-  gap: var(--s2);
-  margin-bottom: var(--s4);
-}
-
-.footer-grid a {
-  font-size: var(--step-small);
-  text-decoration: none;
-}
 
 .small {
   font-size: var(--step-small);
@@ -722,47 +527,183 @@ main#main > * + * {
   margin-top: var(--s3);
 }
 
-/* The two pinned standing-fact sentences. They read as fact, not as a badge:
-   no chip, no icon, no colour that implies approval. */
-.footer-pins {
+/* THE TWO STANDING FACTS ON THE DISCLAIMERS PAGE. They read as fact, not as a
+   badge: no chip, no icon, no colour that implies approval. --ink rather than
+   the --muted the paragraphs around them use, because "No token. No points. No
+   airdrop. No presale." and the licence sentence are the two lines on that page
+   a reader is most likely to have come looking for.
+
+   IT WAS CALLED `.footer-pins` UNTIL 2026-09-05, and the rename is the whole
+   reason this comment is longer than the rule. The class was defined in the
+   footer block of this stylesheet and used, confusingly, on a page body: the
+   footer had once carried these two sentences and the name outlived the
+   arrangement. The v3 footer moved into `src/shell/footer.module.css` with the
+   rest of the masthead and footer rules, which deleted this rule along with them
+   and left two paragraphs on disclaimers.html styled by nothing. The guard
+   `every class in a built page is defined in a stylesheet that page links`
+   caught it. It comes back here under a name that describes where it is used. */
+.standing-fact {
   color: var(--ink);
 }
 
-/* The mark and the descriptor, closing the page above the legal paragraph's
-   rule. They sit on one baseline row rather than stacked: the descriptor is a
-   gloss on the mark, and a gloss under a logo reads as a caption for it. */
-.footer-brand {
-  display: flex;
+
+/* ─── the two shared interactive components ────────────────────────────────
+   Both live here rather than in a section module because both appear on more
+   than one surface, and a button drawn twice is a button that diverges on the
+   next edit. `site.test.mjs` reads every class in the built markup back against
+   the sheets the page links, so a shared class defined in one section's module
+   would fail on the other section that used it. */
+
+/* THE DOOR. The one filled action on this site, in the hero and again in the
+   footer, and the only element that carries the accent as a FILL rather than as
+   a line. `--accent-ink` on `--accent` is the pairing tokens.css measures at
+   7.65:1.
+
+   THE HOVER IS A LIFT AND A GLOW, and both are one composited property each:
+   `transform` and `box-shadow`. The lift is 2px, which is small enough to read
+   as pressure rather than as the button jumping; the glow is the accent at low
+   opacity, spread rather than offset, so it reads as the button being lit from
+   behind rather than as a drop shadow under it. Neither changes the layout box,
+   so nothing around it moves.
+
+   `--glow-accent` is a token because this stylesheet may carry no colour
+   literal, which is what keeps a re-theme a one-file change. */
+.door {
+  display: inline-flex;
   align-items: center;
-  gap: var(--s4);
-  margin-block: var(--s6) var(--s5);
-}
+  gap: var(--s2);
 
-.footer-descriptor {
-  margin: 0;
+  /* 44px is the touch-target floor and this clears it: measured against a
+     168px title card above it, a 44px button reads as a form control rather
+     than as the door the page is for. */
+  min-height: 3.25rem;
+  padding: var(--s3) var(--s6);
+
+  background: var(--accent);
+  color: var(--accent-ink);
   font-family: var(--sans);
-  font-size: var(--step-small);
-  letter-spacing: -0.01em;
+  font-size: var(--step-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+
+  transition:
+    transform var(--dur-fast) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+.door:hover,
+.door:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--accent), 0 10px 32px -6px var(--glow-accent);
+}
+
+.door:active {
+  transform: translateY(0);
+}
+
+/* THE GATE. The same geometry as .door, drawn rather than filled.
+   ---------------------------------------------------------------------------
+   It exists so the page has exactly ONE filled accent control. The closing
+   beat's link to the Disclaimers has to be as findable as the app door, because
+   a protocol site that hides the page saying what can go wrong is a protocol
+   site making a choice about that; but two filled violet buttons say the two
+   clicks are equivalent, and they are not. Same size, same lift, same glow,
+   drawn instead of filled: as prominent, subordinate in weight.
+
+   --accent on --ground is 7.83:1, so the label clears the body floor as text
+   and the border clears the 3:1 a non-text control has to meet several times
+   over. */
+.gate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 3.25rem;
+  padding: var(--s3) var(--s6);
+
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: var(--step-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+
+  transition:
+    transform var(--dur-fast) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+.gate:hover,
+.gate:focus-visible {
+  transform: translateY(-2px);
+  background-color: var(--accent-wash);
+  box-shadow: 0 10px 32px -10px var(--glow-accent);
+}
+
+.gate:active {
+  transform: translateY(0);
+}
+
+/* THE QUIET LINK. The hero's second action and the only other thing in it: a
+   text link with a rule under it that draws itself in from the left on hover.
+   `background-size` on a one-pixel gradient rather than `text-decoration`,
+   which is not animatable, or a border, which would change the box. */
+.quiet {
+  display: inline-block;
+  padding-block: var(--s2);
   color: var(--muted);
-}
-
-/* The mark closing the page, above the legal paragraph's rule. `width: auto`
-   with a set height resolves through the viewBox's intrinsic aspect ratio, so
-   the box is the drawing rather than the column — an SVG stretched to the
-   column width would centre the letter across the whole footer. */
-.footer-mark {
-  display: block;
-  width: auto;
-  height: 1.75rem;
-  color: var(--faint);
-}
-
-.footer-legal {
-  max-width: 58rem;
-  padding-top: var(--s5);
   font-size: var(--step-small);
-  line-height: 1.6;
-  color: var(--faint);
+  text-decoration: none;
+
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0 1px;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    background-size var(--dur-mid) var(--ease-enter);
+}
+
+.quiet:hover,
+.quiet:focus-visible {
+  color: var(--ink);
+  background-size: 100% 1px;
+}
+
+/* THE LEDGER RULE. The one structural device this page repeats, and it is drawn
+   from the brand mark rather than chosen: the ledger R carries a single
+   horizontal rule at eye level, and this is that rule at page scale. It opens
+   the product beat and the closing beat and appears nowhere else, so it reads
+   as a ruling rather than as a divider pattern.
+
+   It is a `<span>` with no text, so it is decorative and stays out of the
+   accessibility tree; the gradient fades it out at both ends so it does not
+   collide with the section edge. The Reveal machinery scales it in from the
+   left, which is the direction a rule is drawn in. */
+.ledger {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background-image: linear-gradient(90deg, var(--accent), var(--line) 62%, transparent);
+  transform-origin: left center;
+}
+
+/* THE HALFTONE, AS AN OPT-IN RATHER THAN AS THE PAGE'S GROUND.
+   ---------------------------------------------------------------------------
+   It was painted on `main` while every section was a drawn panel, so it showed
+   only in the gutters between frames and never under a word. There are no
+   gutters now, so painting it on `main` would put it behind every paragraph on
+   the site, which is the one placement its own contrast note ruled out.
+
+   It survives here as a class one surface asks for, over artwork and never over
+   copy. --halftone-page keeps the full 0.34 that note computed, because the
+   surface that uses it masks it off the copy column entirely. */
+.halftone {
+  background-image: radial-gradient(var(--halftone-page) 1.1px, transparent 1.2px);
+  background-size: var(--halftone-pitch) var(--halftone-pitch);
 }
 
 /* --- reduced motion -------------------------------------------------------

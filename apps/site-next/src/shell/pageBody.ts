@@ -7,16 +7,15 @@
  * whatever page component is in it, or `null` if Integrate has not landed that
  * page yet. Nobody has to edit a file they do not own for a page to appear.
  *
- * WHY A GLOB PER ENTRY RATHER THAN ONE GLOB FOR ALL EIGHT. The client entries
- * glob their own page only. An eager glob over `*Page.tsx` in a client entry
- * would pull all eight pages into every bundle, and the per-page chunks are
- * what keep a section's cost on the page that uses it: GSAP and ScrollTrigger
- * reach one section — `src/sections/hiw-lifecycle/StepRail.tsx`, on
- * how-it-works — and the WebGL hero reaches only the index page. Both are
- * visible in `dist/assets`, where `gsap-*.js` and `ScrollTrigger-*.js` are
- * named by `how-it-works-*.js` alone and `HeroCanvas-*.js` by `index-*.js`
- * alone. One glob would put both on all eight. The server entry may glob all
- * eight, because the SSR bundle is never shipped to a reader.
+ * WHY A GLOB PER ENTRY RATHER THAN ONE GLOB FOR BOTH. The client entries glob
+ * their own page only, so a section's cost stays on the page that uses it. That
+ * mattered more when there were nine pages and one of them carried GSAP and
+ * ScrollTrigger; it still matters with two, because index.html pulls the
+ * three-clip backdrop and the reveal machinery and disclaimers.html pulls
+ * neither. One glob would put both on both, and the difference is visible in
+ * `dist/assets`, where the backdrop chunk is named by `index-*.js` alone. The
+ * server entry may glob every page, because the SSR bundle is never shipped to
+ * a reader.
  */
 import type { ComponentType } from 'react';
 import { type PageId } from './pinned';
@@ -24,14 +23,7 @@ import { type PageId } from './pinned';
 /** The component filename Integrate owns for each page, without extension. */
 export const PAGE_COMPONENT: Record<PageId, string> = {
   'index.html': 'IndexPage',
-  'how-it-works.html': 'HowItWorksPage',
-  'agents.html': 'AgentsPage',
-  'who-its-for.html': 'WhoItsForPage',
-  'operators.html': 'OperatorsPage',
   'disclaimers.html': 'DisclaimersPage',
-  'faq.html': 'FaqPage',
-  'vision.html': 'VisionPage',
-  'status.html': 'StatusPage',
 };
 
 /**

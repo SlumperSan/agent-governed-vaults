@@ -1,120 +1,122 @@
 /**
- * The footer. Three columns, then the legal paragraph.
+ * The footer: a full-bleed mascot, the four doors, and the legal line.
  *
- * It carries four pinned sentences and one of them is COUNTED rather than
- * merely required: `No token. No points. No airdrop. No presale.` and
- * `Source-available under BUSL-1.1 — not open source.` may appear exactly once
- * per page, except on faq.html where the two answers that quote them make it
- * twice. So this component renders each exactly once and nothing else on the
- * site may render either again — not a hero fact strip, not a badge, not a
- * meta description.
+ * WHAT CHANGED AND WHY THE OLD REASONING NO LONGER APPLIES.
  *
- * The Pages column omits the current page and NOTHING ELSE, with one named
- * exception below. The masthead already marks the current page with
- * aria-current, so repeating it in the footer says nothing; every other page is
- * listed, Overview included. That is what apps/site does —
- * `apps/site/risks.html` and `apps/site/faq.html` both carry
- * `<li><a href="index.html">Overview</a></li>` in the footer's Pages list and
- * `apps/site/index.html` is the only one that does not — and a reader who has
- * scrolled to the bottom of a deep page is exactly the reader who wants the
- * way back to the overview.
+ *   THE X LINK IS HERE NOW. This file used to argue, correctly, that nothing was
+ *   better than an `href="#"` placeholder because a link that lies about having
+ *   a destination is worse than no link. The premise was that the handle was
+ *   unknown. The owner gave it on 2026-09-05, so the argument is satisfied
+ *   rather than overruled: there is a destination, so there is a link.
  *
- * THE EXCEPTIONS ARE status.html AND disclaimers.html, and it is the whole reason this column now
- * carries eight entries where the masthead carries seven. The owner's decision
- * of 2026-09-04 — "Claims should not be a header page, it should be a link in
- * the footer" — makes this link the ONLY route to the status page, so dropping
- * it on the status page itself would remove the link exactly where a reader is
- * most likely to look for it. It stays, and carries `aria-current="page"`
- * instead. `site.test.mjs` asserts both halves: the link on all eight pages,
- * and `aria-current="page"` on the status page's own copy of it.
+ *   IT IS A PICTURE NOW, NOT A ROW. The v3 brief's revision 2 names the
+ *   reference's "full bleed parallax mascot footer" and asks that the footer be
+ *   the same across rwally.com and app.rwally.com. So the mascot fills the band,
+ *   a gradient lifts the type off it, and the links sit on top.
+ *
+ * THE ART IS DECORATION HERE AND CONTENT IN THE HIVE SECTION, WHICH IS WHY IT IS
+ * A BACKGROUND IN ONE PLACE AND AN `<img>` IN THE OTHER. The same file, twice, at
+ * two crops. In the hive section it is the subject and carries alt text
+ * describing what is drawn. Here it is the ground the type sits on: a reader
+ * who cannot see it loses nothing, because every word over it is text. Giving it
+ * alt text in both places would make a screen reader read the same description
+ * twice for one drawing.
+ *
+ * THE SCRIM IS NOT OPTIONAL AND IT IS NOT TASTE. The drawing has a bright violet
+ * shaft through it, and --ink over that shaft is a contrast failure at exactly
+ * the place the eye lands. The gradient in the stylesheet takes the band to
+ * --scrim-deep behind the type and lets the picture through at the top, which is
+ * what makes the 7:1 hold over every pixel a word sits on rather than over the
+ * average of the image.
+ *
+ * BOTH PAGES ARE LISTED ON BOTH PAGES. With a header nav of four entries, two of
+ * which leave the site, this list is still the complete map of the two documents
+ * here, so neither is dropped on itself; the current one carries
+ * `aria-current="page"`.
+ *
+ * THE LICENCE SENTENCE IS COUNTED. `Source-available under BUSL-1.1, not open
+ * source.` is the only permitted use of the words "open source" anywhere on this
+ * site, and `test/site.test.mjs` pins how many times it may appear per page.
+ * Rendering it here puts one copy on both pages.
  */
-import type { JSX } from 'react';
+import { useRef, type JSX } from 'react';
+import { STILLS } from '../assets/manifest';
 import { Mark } from '../brand/Mark';
+import { useParallax } from '../motion/useParallax';
 import {
-  BRAND,
-  DISCLAIMERS_PAGE_LABEL,
-  FOOTER_DISCLAIMERS_BODY,
-  FOOTER_DISCLAIMERS_HEADING,
+  APP_NAV,
+  BRAND_NAME,
+  FOOTER_LICENCE,
   FOOTER_PAGES,
-  FOOTER_REPO_AUTHORITY,
-  FOOTER_REPO_PUBLIC,
   REPO_URL,
+  TAGLINE,
+  X_URL,
   type PageId,
 } from './pinned';
 import { Pinned } from './PinnedText';
+import styles from './footer.module.css';
 
 export function Footer({ page }: { page: PageId }): JSX.Element {
+  const art = STILLS.mascot;
+  const band = useRef<HTMLDivElement>(null);
+  const picture = useRef<HTMLImageElement>(null);
+  useParallax(band, picture);
+
   return (
-    <footer className="site-footer">
-      <div className="wrap">
-        <div className="footer-grid">
-          <div>
-            <h2>Pages</h2>
-            <ul>
-              {FOOTER_PAGES.filter(
-                (item) => item.id !== page || item.id === 'status.html' || item.id === 'disclaimers.html',
-              ).map((item) => (
-                <li key={item.id}>
-                  <a href={item.id} aria-current={item.id === page ? 'page' : undefined}>
-                    {item.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+    <footer className={styles.footer}>
+      {/* The band. `aria-hidden` on the whole picture layer, with the scrim
+          drawn over it by the stylesheet rather than by a second element. */}
+      <div className={styles.band} aria-hidden="true" ref={band}>
+        <img
+          className={styles.art}
+          ref={picture}
+          src={art.src}
+          srcSet={art.srcSet}
+          sizes="100vw"
+          width={art.width}
+          height={art.height}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
 
-          <div>
-            <h2>Source</h2>
-            <ul>
-              <li>
-                <a href={REPO_URL}>Contracts, docs and issues</a>
-              </li>
-            </ul>
-            <Pinned as="p" className="small" html={FOOTER_REPO_AUTHORITY} />
-            <Pinned as="p" className="small" html={FOOTER_REPO_PUBLIC} />
-          </div>
+      <div className={styles.inner}>
+        <a className={styles.brand} href="index.html" aria-label={BRAND_NAME}>
+          <Mark className={styles.mark} />
+          <span className={styles.lockup}>
+            <span className={styles.name} aria-hidden="true">
+              {BRAND_NAME}
+            </span>
+            <span className={styles.tagline} aria-hidden="true">
+              {TAGLINE}
+            </span>
+          </span>
+        </a>
 
-          {/*
-            THE THIRD COLUMN POINTS AT THE DISCLAIMERS PAGE, it does not restate
-            it. Until 2026-09-05 this column was headed "Standing facts" and
-            repeated the no-token and licence sentences on every page; the
-            site-copy change consolidated every warning and legal sentence onto
-            disclaimers.html, and the corpus footer now carries this gloss and a
-            link instead. See the note on FOOTER_DISCLAIMERS_HEADING in
-            pinned.ts for the measured counts that establish that.
-          */}
-          <div>
-            <h2>{FOOTER_DISCLAIMERS_HEADING}</h2>
-            <p className="small">{FOOTER_DISCLAIMERS_BODY}</p>
-          </div>
-        </div>
+        <nav className={styles.nav} aria-label="Site">
+          <a className={styles.door} href={APP_NAV.href} rel="noopener">
+            {APP_NAV.label}
+          </a>
+          <a className={styles.link} href={X_URL} rel="noopener">
+            X
+          </a>
+          <a className={styles.link} href={REPO_URL} rel="noopener">
+            GitHub
+          </a>
+          {FOOTER_PAGES.map((item) => (
+            <a
+              className={styles.link}
+              key={item.id}
+              href={item.id}
+              aria-current={item.id === page ? 'page' : undefined}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
 
-        {/*
-          The mark closes the page. It is aria-hidden and carries no title: it
-          names nothing the footer has not already said in words, and a titled
-          image here would announce a brand name in the middle of the legal
-          paragraph's own reading order.
-        */}
-        <div className="footer-brand">
-          <Mark className="footer-mark" />
-          {/*
-            THE DESCRIPTOR LINE, AND ITS ONLY PLACE ON THE SITE. Owner decision,
-            2026-09-05: the site is called Rwally, and "Agent-Governed Vaults"
-            survives as the descriptor rather than as the name. It is not a
-            heading and it is not a claim, it is the gloss under the mark that
-            says what Rwally is, and it renders exactly once per page.
-          */}
-          <p className="footer-descriptor">{BRAND}</p>
-        </div>
-        {/*
-          The closing line. One sentence with the page name as its only link,
-          exactly as the corpus writes it: `Read the <a>Disclaimers</a>.` The
-          anchor text is the page's own label, so the link makes sense read out
-          of context, which is what a screen reader's link list does to it.
-        */}
-        <p className="small footer-legal">
-          Read the <a href="disclaimers.html">{DISCLAIMERS_PAGE_LABEL}</a>.
-        </p>
+        <Pinned as="p" className={styles.legal} html={FOOTER_LICENCE} />
       </div>
     </footer>
   );

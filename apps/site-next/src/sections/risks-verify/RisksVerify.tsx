@@ -87,15 +87,35 @@ import { REPO_URL } from '../../shell/pinned';
 import s from './RisksVerify.module.css';
 
 /**
- * The closing actions row. Added 2026-09-05 — the corpus's disclaimers.html
- * closes this section with three buttons, verbatim: "The address ledger"
- * (primary, to status.html — the page that actually publishes addresses),
- * "The mechanism" (how-it-works.html) and "Read the code yourself" (the
- * repository).
+ * The closing actions row. Added 2026-09-05: the corpus's disclaimers.html closes
+ * this section with three buttons, verbatim, "The address ledger" (primary, to
+ * status.html, the page that actually publishes addresses), "The mechanism"
+ * (how-it-works.html) and "Read the code yourself" (the repository).
+ *
+ * TWO OF THE THREE DESTINATIONS MOVED THE SAME EVENING, and the labels did not.
+ * The v3 brief collapsed the site to one scroll page plus this one, so
+ * status.html and how-it-works.html no longer exist here and
+ * `public/_redirects` 301s both. What each button was FOR still exists, on the
+ * homepage, so each is repointed at the anchor that now carries it rather than
+ * dropped:
+ *
+ *   THE ADDRESS LEDGER now goes to `index.html#live`, which is a better
+ *   destination than the one it replaces rather than a worse one. status.html
+ *   PUBLISHED addresses; the live panel READS the factory's own answers from
+ *   chain 4663 in the reader's browser, with the call that produced each figure
+ *   printed beside it, and the hero above it carries the factory and USDG
+ *   addresses as copy chips.
+ *
+ *   THE MECHANISM now goes to `index.html#how`, the section the how-it-works
+ *   page collapsed into. It names the full seven-step lifecycle and the three
+ *   steps a member takes.
+ *
+ * The labels are unchanged because they were corpus-verbatim and still describe
+ * what a reader gets when they click.
  */
 const ACTIONS: ReadonlyArray<{ href: string; label: string; primary?: boolean }> = [
-  { href: 'status.html', label: 'The address ledger', primary: true },
-  { href: 'how-it-works.html', label: 'The mechanism' },
+  { href: 'index.html#live', label: 'The address ledger', primary: true },
+  { href: 'index.html#how', label: 'The mechanism' },
   { href: REPO_URL, label: 'Read the code yourself' },
 ];
 

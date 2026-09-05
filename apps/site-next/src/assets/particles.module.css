@@ -1,0 +1,88 @@
+/* ===========================================================================
+   THE STAR FIELD.
+
+   ONE KEYFRAME RULE FOR FORTY POINTS. Every point's difference is carried in a
+   custom property set on the element itself: where it is, how big, how far it
+   rises, how long that takes and how far into the cycle it starts. The animation
+   below reads those properties, so adding a point costs no CSS.
+
+   THE NEGATIVE DELAY IS DELIBERATE. Each point starts with `--delay` somewhere
+   in [-30s, 0), which drops it into the middle of its own cycle at first paint
+   rather than starting the whole field together. Without it, forty points rise
+   in lockstep on load and the field reads as a curtain.
+   =========================================================================== */
+
+.field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* EVERY PER-POINT PROPERTY IS DECLARED HERE FIRST, WITH A DEFAULT, AND THEN
+   OVERRIDDEN PER ELEMENT BY THE COMPONENT.
+
+   The declarations are not decoration and they are not a style choice. A
+   `var(--y)` that resolves to nothing makes the whole `top` declaration invalid
+   at computed-value time, which drops it silently: the point falls back to
+   `static` flow and forty of them stack in the corner, with nothing in the
+   console. `test/site.test.mjs` has a guard for exactly this ("every custom
+   property any stylesheet reads is defined"), and it caught this file on the
+   first build, because the values come from JavaScript and JavaScript is not
+   somewhere that guard can look.
+
+   Declaring them here makes the guard true AND makes the failure mode benign:
+   if the component's inline properties never arrive, forty points sit in the
+   middle of the section at one pixel each and drift, which is a duller field
+   rather than a broken one. */
+.point {
+  --x: 50%;
+  --y: 50%;
+  --size: 1.5px;
+  --drift: 22s;
+  --delay: 0s;
+  --rise: 32px;
+  --tone: var(--particle-dim);
+
+  position: absolute;
+  top: var(--y);
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: var(--tone);
+  animation: particle-drift var(--drift) var(--ease-enter) var(--delay) infinite;
+  will-change: transform, opacity;
+}
+
+/* Transform and opacity only. Animating `top` would put every frame through
+   layout for forty elements, which is the difference between a field that
+   composites on the GPU and one that drops the page to fifteen frames a second
+   on a laptop. */
+@keyframes particle-drift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  18% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, calc(var(--rise) * -1), 0);
+  }
+}
+
+/* REMOVED, NOT SLOWED. A drift at a quarter speed is still a drift, and a
+   reader who has asked the operating system for reduced motion has asked for
+   the absence of it rather than for less of it. The field carries no
+   information, so there is nothing to preserve in a static version of it. */
+@media (prefers-reduced-motion: reduce) {
+  .field {
+    display: none;
+  }
+}

@@ -49,17 +49,25 @@
 #   nothing is inlined by the bundler; this is headroom for the canvas, not a
 #   general licence.
 #
-# media-src 'self'
-#   ONE FILE, AND IT IS THE ONLY REASON THIS DIRECTIVE EXISTS:
-#   /media/loop-1280.mp4, the background clip behind one section of the
-#   index page. It is muted, autoplaying, looping and playsinline, it carries no
-#   audio track at all, and it is added to the page after hydration and only for
-#   a reader who has not asked for reduced motion — see
-#   src/assets/Backdrop.tsx, which renders the poster in the server markup and
-#   the <video> element nowhere else. NOT `data:` and NOT `blob:`: a media
-#   element that can be fed a blob URL is a media element that can be fed bytes
-#   this origin never served, which is exactly the property the rest of this
-#   file spends its length establishing.
+# media-src IS ABSENT, AND ITS ABSENCE IS THE ENTRY.
+#   It read `media-src 'self'` until 2026-09-05, for exactly one file:
+#   /media/loop-1280.mp4, the ambient clip behind the hero. Revision 2 of the
+#   website brief replaced that clip with a drifting point field drawn in the
+#   DOM, and the two trailer clips that had been section breaks went with the
+#   sections. This origin now serves no video and no audio at all: `public/media`
+#   holds two WebP files and nothing else.
+#
+#   SO THE DIRECTIVE IS DELETED RATHER THAN LEFT PERMITTING NOTHING, and it falls
+#   back to `default-src 'none'`. A directive that allows a class of resource the
+#   site does not use is a standing permission for the next person to add one
+#   without a policy change and therefore without a review. A <video> or <audio>
+#   element on this site is now refused by the browser, which is the correct
+#   answer for a site that has none.
+#
+#   TO PUT ONE BACK: add `media-src 'self'` here, in the same commit as the
+#   element. NOT `data:` and NOT `blob:`: a media element that can be fed a blob
+#   URL is one that can be fed bytes this origin never served, which is exactly
+#   the property the rest of this file spends its length establishing.
 #
 # font-src 'self'
 #   The three bundled woff2 faces. NOT `data:`: an inlined face would defeat
@@ -68,9 +76,20 @@
 #   fonts.googleapis.com and no fonts.gstatic.com, and one request to either is
 #   a rejection.
 #
-# connect-src 'self'
-#   There is no API call on this site. This is the floor for any future fetch,
-#   and it keeps a beacon or an analytics call from being added quietly.
+# connect-src 'self' https://rpc.mainnet.chain.robinhood.com
+#   The homepage reads protocol state directly from the Robinhood Chain public
+#   RPC in the reader's own browser, so a claim on the page is checkable by the
+#   reader instead of taken on the server's word. Exactly ONE external origin is
+#   permitted, and it is that chain's public JSON-RPC endpoint: nothing else is
+#   added. The requests it makes are POSTs carrying eth_call and
+#   eth_blockNumber, and the endpoint's own CORS preflight allows exactly one
+#   request header, content-type, so no other header and no credential can be
+#   sent along with them even if a future change tried to add one. This is
+#   still the floor for any future fetch: an analytics call or a beacon to any
+#   other host is refused by the browser, not merely discouraged by convention.
+#   apps/app/src/_headers permits this same one origin for the same reason, so
+#   the two surfaces share one network posture rather than two policies that
+#   could drift apart.
 #
 # worker-src 'self'
 #   WebGL itself needs no worker, but a same-origin worker is permitted so the
@@ -100,8 +119,8 @@
 #   engines, and a reader of this file should not have to derive its absence.
 #
 # X-Content-Type-Options: nosniff
-#   This origin serves .html, .css, .js, .woff2, .txt, .xml, .svg, .ico, .png,
-#   .webp and .mp4. Sniffing is the mechanism by which a file served as one type
+#   This origin serves .html, .css, .js, .woff2, .txt, .xml, .svg, .ico, .png
+#   and .webp. `.mp4` left the list on 2026-09-05 with the last video file. Sniffing is the mechanism by which a file served as one type
 #   is interpreted as another; nosniff makes the declared Content-Type binding.
 #   The last two joined the list on 2026-09-05 with the section backdrops.
 #
@@ -113,7 +132,7 @@
 #   nothing.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://rpc.mainnet.chain.robinhood.com; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
 

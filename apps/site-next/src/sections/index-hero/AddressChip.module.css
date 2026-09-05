@@ -1,0 +1,96 @@
+/* ===========================================================================
+   THE ADDRESS CHIP.
+
+   THE CORNER IS SQUARE, AND EVERYTHING AROUND IT IS ROUND. That is not an
+   inconsistency, it is the two geometries tokens.css defines and the reason it
+   defines two. Chrome is pill-shaped: the header, the nav capsule, the price
+   chip, the buttons. A chip carrying an on-chain address is not chrome, it is a
+   ledger row, and a ledger row has a hard edge. The button inside it is a
+   control, so the button is a pill. The one place the two meet is here, on
+   purpose, and it is what stops the row of chips from reading as another set of
+   buttons the reader is supposed to press.
+   =========================================================================== */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0.4375rem 0.4375rem 0.4375rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: border-color var(--dur-fast) var(--ease-enter);
+}
+
+.chip:hover,
+.chip:focus-within {
+  border-color: var(--line-strong);
+}
+
+.label {
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  font-size: 0.6875rem;
+}
+
+/* --muted is 8.62:1 on --ground and 8.23:1 on --surface, so the address clears
+   the 7:1 this site holds body text to. An address is the one string on the page
+   a reader may transcribe character by character; it does not get the UI floor. */
+.address {
+  color: var(--muted);
+  user-select: all;
+}
+
+/* 32px tall, which is under the 44px touch minimum, so the hit area is pushed
+   out past the visual pill rather than the pill being drawn oversized. The chip
+   would look like a button if the button inside it were button-sized. */
+.button {
+  position: relative;
+  flex: none;
+  padding: 0.375rem 0.6875rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
+}
+
+.button::after {
+  content: '';
+  position: absolute;
+  inset: -0.375rem -0.25rem;
+}
+
+.button:hover,
+.button:focus-visible {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+@media (max-width: 26rem) {
+  /* The chips go full width rather than wrapping mid-address. An address broken
+     across two lines is one a reader cannot check at a glance, which is the only
+     thing it is here to be. */
+  .chip {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip,
+  .button {
+    transition: none;
+  }
+}

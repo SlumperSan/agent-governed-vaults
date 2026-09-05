@@ -9,27 +9,66 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/app.css">
 </head>
-<body>
+<body id="top">
 
 <a class="skip" href="#main">Skip to main content</a>
 
-<header class="masthead">
-  <div class="wrap masthead-inner">
-    <a class="brand" href="https://rwally.com">
-      <svg class="mark" viewBox="51.5 19.5 152 216.5" role="img" aria-label="Rwally" focusable="false">
-        <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
-      </svg>
-      <span class="wordmark">rwally</span>
-      <span class="brand-chip">app</span>
-    </a>
+<!-- =====================================================================
+     THE MASTHEAD. Structure and classes follow apps/site-next/src/shell/
+     Masthead.tsx and masthead.module.css so this surface reads as the same
+     product: a floating pill, the ledger R and wordmark on the left, a
+     four-entry nav capsule centred, the X icon and the connect control on
+     the right. This page has no build step for components, so the pill is
+     hand-written HTML rather than a shared React piece; the mark's path
+     data below is the one the three-file guard in apps/site-next/test/
+     site.test.mjs checks byte-for-byte and it has not changed here.
 
-    <nav class="masthead-nav" aria-label="Site">
-      <a class="masthead-link" href="https://rwally.com">rwally.com</a>
+     THE CHIP THAT SAYS "app" IS THE ONE ELEMENT THE SITE'S HEADER DOES NOT
+     CARRY, because the site's masthead never needs to say which surface it
+     is. It sits beside the wordmark rather than replacing any part of the
+     shared lockup, so the identity itself, mark plus wordmark plus
+     tagline, still matches the site exactly.
+     ===================================================================== -->
+<header class="masthead">
+  <div class="pill">
+    <div class="left">
+      <a class="brand" href="https://rwally.com" aria-label="Rwally">
+        <svg class="mark" viewBox="51.5 19.5 152 216.5" aria-hidden="true" focusable="false">
+          <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
+        </svg>
+        <span class="lockup">
+          <span class="name">rwally</span>
+          <span class="tagline">The AI agent trading index.</span>
+        </span>
+      </a>
+      <span class="chip">app</span>
+    </div>
+
+    <!-- THE NAV CAPSULE. Four entries, same set as the site's HEADER_NAV in
+         apps/site-next/src/shell/pinned.ts, read from this surface: Home and
+         How it works point back at the site, App is this page and carries
+         aria-current, Disclaimers is the other document on the site. -->
+    <nav class="nav" aria-label="Site">
+      <a class="nav-link" href="https://rwally.com">Home</a>
+      <a class="nav-link" href="https://rwally.com/#how">How it works</a>
+      <a class="nav-link" href="#top" aria-current="page">App</a>
+      <a class="nav-link" href="https://rwally.com/disclaimers">Disclaimers</a>
+    </nav>
+
+    <div class="right">
+      <a class="icon" href="https://x.com/RWAllyVault" rel="noopener" aria-label="Rwally on X">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+        </svg>
+      </a>
+      <!-- THE CONNECT CONTROL IS UNCHANGED. Still aria-disabled with the same
+           explanatory note, because deposits open only once a vault exists
+           and nothing about that fact has changed with this pass. -->
       <button type="button" class="connect" aria-disabled="true" aria-describedby="connect-note" title="Deposits open when a vault exists.">
         Connect wallet
       </button>
       <span id="connect-note" class="sr-only">Deposits open when a vault exists. There is nothing to connect to yet.</span>
-    </nav>
+    </div>
   </div>
 </header>
 
@@ -207,16 +246,56 @@
 
 </main>
 
+<!-- =====================================================================
+     THE FOOTER. Structure follows apps/site-next/src/shell/Footer.tsx and
+     footer.module.css: a full-bleed band carrying the same mascot plate the
+     site uses in its own footer, a scrim over it, then the identity lockup
+     repeated exactly as the header sets it, the door links, and the licence
+     line. No parallax here: useParallax in the site build is a scroll
+     listener wired to a React ref, and this page has no equivalent piece to
+     wire it to without inventing one for a single static band. The crop and
+     the scrim carry the same look at rest; only the drift is missing.
+     ===================================================================== -->
 <footer class="footer">
-  <div class="wrap footer-inner">
+  <div class="band" aria-hidden="true">
+    <picture>
+      <img
+        class="art"
+        src="/media/mascot-1280.webp"
+        srcset="/media/mascot-1280.webp 1280w, /media/mascot-1920.webp 1920w"
+        sizes="100vw"
+        width="1920"
+        height="1072"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      >
+    </picture>
+  </div>
+
+  <div class="footer-inner wrap">
+    <a class="footer-brand" href="https://rwally.com" aria-label="Rwally">
+      <svg class="mark" viewBox="51.5 19.5 152 216.5" aria-hidden="true" focusable="false">
+        <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
+      </svg>
+      <span class="lockup">
+        <span class="name">rwally</span>
+        <span class="tagline">The AI agent trading index.</span>
+      </span>
+    </a>
+
+    <!-- rwally.com is the first, filled link here rather than "Open the app":
+         this page IS the app, so a door back to itself would say nothing. -->
     <nav class="footer-nav" aria-label="Footer">
-      <a href="https://rwally.com/disclaimers">Disclaimers</a>
-      <a href="https://github.com/SlumperSan/agent-governed-vaults" rel="noopener">GitHub</a>
-      <a href="https://rwally.com">rwally.com</a>
+      <a class="door" href="https://rwally.com">rwally.com</a>
+      <a class="link" href="https://x.com/RWAllyVault" rel="noopener">X</a>
+      <a class="link" href="https://github.com/SlumperSan/agent-governed-vaults" rel="noopener">GitHub</a>
+      <a class="link" href="https://rwally.com/disclaimers">Disclaimers</a>
     </nav>
+
     <p class="footer-legal">
-      Business Source License 1.1. Nothing on this page is an offer, a solicitation, or
-      investment advice.
+      Source-available under BUSL-1.1, not open source. Nothing on this page is an offer, a
+      solicitation, or investment advice.
     </p>
   </div>
 </footer>

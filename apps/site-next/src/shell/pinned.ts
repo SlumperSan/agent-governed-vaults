@@ -265,86 +265,143 @@ export const HIGH_WATER_MARK_RESET =
  * form, so the suffix costs a redirect nobody sees and dropping it reds eight
  * checks.
  *
- * TWO LISTS, NOT ONE. `NAV` is the header nav and carries six pages;
- * `FOOTER_PAGES` is the footer's Pages column and carries eight. status.html
- * and disclaimers.html are the difference, and both are deliberate — the owner
- * asked for a footer link rather than a header entry in each case, and
- * site.test.mjs asserts both halves: that every page's footer links to them,
- * and that no <nav> does.
+ * TWO LISTS, NOT ONE, AND ONE OF THEM IS NOW EMPTY. `NAV` is the header nav and
+ * carries nothing; `FOOTER_PAGES` is the footer's Pages column and carries both
+ * documents this site has. The v3 brief of 2026-09-05 collapsed the nine-page
+ * site into one scroll page plus the Disclaimers, so a header nav would list the
+ * page you are already on and one other. `site.test.mjs` asserts the half that
+ * still matters: every page links to every page.
  * ------------------------------------------------------------------------ */
 
-export const PAGE_IDS = [
-  'index.html',
-  'how-it-works.html',
-  'agents.html',
-  'who-its-for.html',
-  'operators.html',
-  'faq.html',
-  'vision.html',
-  'status.html',
-  'disclaimers.html',
-] as const;
+export const PAGE_IDS = ['index.html', 'disclaimers.html'] as const;
 
 export type PageId = (typeof PAGE_IDS)[number];
 
 /**
- * Label and href for each page the HEADER nav carries, in nav order.
+ * THE HEADER NAV IS EMPTY, AND THE HEADER'S OWN NAV IS `HEADER_NAV` BELOW.
  *
- * status.html and disclaimers.html are deliberately absent — see the note above.
- * Add a page here and it appears in the masthead of every page.
+ * `NAV` is the list of PAGE ids the footer composes `FOOTER_PAGES` from, and it
+ * is empty because this site has exactly two pages and both are listed
+ * explicitly there. It is kept rather than deleted so `FOOTER_PAGES` still
+ * composes from one place.
+ *
+ * The masthead was ALSO empty from the first v3 pass on 2026-09-05, on the
+ * reasoning that a nav of two entries, one of which is the page you are on, is
+ * chrome that says nothing. Revision 2 of the brief, the same evening, replaced
+ * that reasoning rather than refined it: the owner named artificialinu.com as
+ * the reference and asked that "header, footer, tab icon all are the same"
+ * across rwally.com and app.rwally.com. The reference's header is a floating
+ * pill carrying a centred four-entry nav, and two of those four entries are not
+ * pages of this site at all. So the nav came back with a different shape, and
+ * the shape is why it is a separate constant: see `HEADER_NAV`.
  */
-export const NAV: ReadonlyArray<{ id: PageId; label: string }> = [
-  { id: 'index.html', label: 'Overview' },
-  { id: 'how-it-works.html', label: 'How it works' },
-  { id: 'vision.html', label: 'Vision' },
-  { id: 'agents.html', label: 'Agents' },
-  { id: 'who-its-for.html', label: 'Who it is for' },
-  { id: 'operators.html', label: 'Operators' },
-  { id: 'faq.html', label: 'Questions' },
+export const NAV: ReadonlyArray<{ id: PageId; label: string }> = [];
+
+/**
+ * THE HEADER'S CENTRED NAV. Four entries, and they are deliberately NOT
+ * `PageId`s.
+ *
+ * A `PageId` is a document this build prerenders and the internal-link guards
+ * walk. Only two of these four are that. The other two are a same-page anchor
+ * and an off-site absolute URL, and typing all four as `PageId` is how an
+ * anchor ends up in `sitemap.xml` and an off-site host ends up being walked as
+ * a local file. So the type here is an href string and nothing more, and each
+ * entry says which kind it is.
+ *
+ *   Home           the top of this page. `#top`, not `index.html`, because from
+ *                  the homepage a link to index.html is a full navigation that
+ *                  throws away scroll position to arrive where you already are.
+ *   How it works   the `#how` section of this page. The seven retired pages
+ *                  collapsed into one scroll, so the thing that used to be a
+ *                  page is now a section, and the nav entry is the anchor.
+ *   App            app.rwally.com. Off-site.
+ *   Disclaimers    the other document. A real page.
+ *
+ * `external` is what the component uses to decide `rel="noopener"`, and
+ * `page` is what it uses to decide `aria-current="page"`. Both are read from
+ * the data rather than inferred from the href, because inferring "does this
+ * string start with http" is the kind of check that is right until somebody
+ * adds a protocol-relative URL.
+ */
+export const HEADER_NAV: ReadonlyArray<{
+  readonly label: string;
+  readonly href: string;
+  readonly external?: true;
+  readonly page?: PageId;
+}> = [
+  { label: 'Home', href: '#top', page: 'index.html' },
+  { label: 'How it works', href: '#how' },
+  { label: 'App', href: 'https://app.rwally.com', external: true },
+  { label: 'Disclaimers', href: 'disclaimers.html', page: 'disclaimers.html' },
 ];
 
 /**
- * THE APP SLOT, AND WHY IT IS DECLARED BEFORE IT EXISTS.
+ * THE TAGLINE, set under the wordmark in the header and again in the footer.
  *
- * Owner decision, 2026-09-05: the masthead gets an "App" entry pointing at
- * app.rwally.com, and it stays hidden until that host answers. Declaring it here
- * with `href: null` rather than leaving it out is the difference between a slot
- * with a rule and an edit somebody has to remember: `Masthead` renders nothing
- * while the href is null, and turning it on is one value in this file.
+ * It is "The AI agent trading index." and it stops there. It read "The AI agent
+ * trading index on Robinhood Chain." until revision 2 of the v3 brief, where
+ * the owner shortened it: the chain belongs in the facts, which the live reads
+ * and the hive section both state with the chain id beside them, not in the
+ * positioning line.
  *
- * IT IS NOT A CSS TOGGLE. A hidden nav item still reaches a screen reader, still
- * reaches a crawler, and still reaches the "every page links to every page"
- * guard — so a `display: none` version of this would publish a link to a host
- * that 404s. Nothing is rendered at all.
- *
- * WHEN app.rwally.com EXISTS: set `href` to it. It is an off-site absolute URL,
- * so it is deliberately NOT a `PageId` — nothing prerenders it, nothing walks
- * it, and the internal-link guards do not apply to it.
+ * THIS EXACT PHRASE IS PERMITTED BY NAME IN A GUARD, WHICH IS WHY IT IS PINNED
+ * HERE RATHER THAN TYPED INTO TWO COMPONENTS. `scripts/test/claims-lede-truth
+ * .test.mjs` bans an agent as the subject of pooling, governing, managing or
+ * trading, participles included, and masks `AI agent trading index` character
+ * for character before it scans. The phrase names WHAT THE INDEX IS ABOUT, not
+ * who executes; `Governance.propose` gates on stake, and `Governance.sol`
+ * contains zero occurrences of "operator". One character of drift here and the
+ * mask stops matching, so both surfaces read the string from this constant.
  */
-export const APP_NAV: { readonly label: string; readonly href: string | null } = {
-  label: 'App',
-  href: null,
+export const TAGLINE = 'The AI agent trading index.';
+
+/**
+ * The project's X account, given by the owner on 2026-09-05.
+ *
+ * It was absent from this file until then, and the footer rendered no X link at
+ * all rather than an `href="#"`, because a link that lies about having a
+ * destination is worse than no link. The handle exists now, so the header
+ * carries it as an icon button and the footer carries it as a labelled link.
+ * NAVIGATION ONLY: nothing on this site loads a byte from x.com, and
+ * `site.test.mjs` permits the host on that basis alone.
+ */
+export const X_URL = 'https://x.com/RWAllyVault';
+
+/**
+ * THE APP DOOR. It was declared here with `href: null` while app.rwally.com did
+ * not answer; the v3 brief of 2026-09-05 records that it does, so the value is
+ * filled in and the slot is a link.
+ *
+ * It is an off-site absolute URL, so it is deliberately NOT a `PageId`: nothing
+ * prerenders it, nothing walks it, and the internal-link guards do not apply to
+ * it. `site.test.mjs` permits this host by name in its external-host rule, in
+ * the navigation half only: nothing on this site LOADS a byte from it.
+ *
+ * The label is the whole button, so it is written as an instruction rather than
+ * as a noun. "App" names a thing; "Open the app" says what the click does, which
+ * is the rule the rest of this site's CTA labels already follow.
+ */
+export const APP_NAV: { readonly label: string; readonly href: string } = {
+  label: 'Open the app',
+  href: 'https://app.rwally.com',
 };
 
 /** The label the footer gives the disclaimers page. Not a header-nav label. */
 export const DISCLAIMERS_PAGE_LABEL = 'Disclaimers';
 
-/** The label the footer gives the status page. Not a header-nav label. */
-export const STATUS_PAGE_LABEL = 'Status and claims';
+/** The label the footer gives the one scroll page. Not a header-nav label. */
+export const OVERVIEW_PAGE_LABEL = 'Overview';
 
 /**
- * Label and href for each page the FOOTER's Pages column carries, in order.
- *
- * All eight: the six the header nav carries, plus status.html and
- * disclaimers.html. These two links are the ONLY route to those pages, which is
- * why `Footer` keeps status.html in the list even on the status page itself —
- * where it carries `aria-current="page"`, the treatment the masthead gives a
- * self-link — rather than dropping it the way it drops every other current
- * page.
+ * Label and href for each page the footer carries, in order. Both of them, on
+ * both pages: with an empty header nav this list is the ONLY route between the
+ * two documents, so neither is dropped on itself. The current page carries
+ * `aria-current="page"` instead, which is the treatment the masthead used to
+ * give a self-link.
  */
 export const FOOTER_PAGES: ReadonlyArray<{ id: PageId; label: string }> = [
   ...NAV,
-  { id: 'status.html', label: STATUS_PAGE_LABEL },
+  { id: 'index.html', label: OVERVIEW_PAGE_LABEL },
   { id: 'disclaimers.html', label: DISCLAIMERS_PAGE_LABEL },
 ];
 
@@ -364,6 +421,28 @@ export const BRAND_NAME = 'Rwally';
 export const BRAND = 'Agent-Governed Vaults';
 
 export const REPO_URL = 'https://github.com/SlumperSan/agent-governed-vaults';
+
+/**
+ * The block explorer for chain 4663, as `contracts/config/deployments/
+ * robinhood-mainnet.json` records it under `explorer`. It is a NAVIGATION target
+ * and nothing else: no page loads a byte from it, and `site.test.mjs` permits
+ * the host on that basis alone.
+ *
+ * The path is the VaultFactory's, because the address book that used to publish
+ * all seven singletons went with status.html, and the factory is the one address
+ * a reader can verify every other from.
+ *
+ * THE CITATION THAT STOOD HERE POINTED AT A DELETED FILE. It named
+ * `src/sections/index-record/copy.ts` as carrying the corpus sentence that says
+ * so, and that section went with revision 2 of the v3 brief on 2026-09-05: the
+ * record band it rendered is replaced by `src/sections/index-live/`, which does
+ * not assert the addresses at all but READS the factory's own answers from chain
+ * 4663 in the reader's browser. The two addresses a reader needs are the hero's
+ * copy chips, and both come from `src/live/chain.ts`, which is also the file the
+ * live panel calls, so the page cannot show one address and check another.
+ */
+export const EXPLORER_URL =
+  'https://robinhoodchain.blockscout.com/address/0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 
 /**
  * The CTA labels already in use on the current site. Carry these verbatim

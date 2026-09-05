@@ -38,3 +38,25 @@
 # `/risks.html` redirects to `/risks` first and lands on this rule on the second hop.
 
 /risks  /disclaimers  301
+
+# THE SEVEN RULES BELOW. The nine-page site collapsed on 2026-09-05 to one scroll page plus a
+# Disclaimers page. Every one of the retired URLs is still in sitemap.xml's git history, in the
+# repository at large, and in whatever anyone has bookmarked or linked from elsewhere, so each gets
+# a 301 rather than a 302: the collapse is permanent, and none of these pages is coming back.
+#
+# ONE OF THE SEVEN SPLITS FROM THE OTHER SIX. `/status` redirects to `/disclaimers`, not to `/`,
+# because the status page carried the deployment record and the claims register, and that material
+# survived the collapse onto the Disclaimers page rather than onto the homepage. The other six,
+# how-it-works, agents, who-its-for, operators, faq and vision, were narrative pages explaining the
+# protocol, and that narrative now lives on the single scroll page at `/`, so all six redirect there.
+#
+# Pages serves the extension-less form, the same as the `/risks` rule above, so `/operators.html`
+# redirects to `/operators` first and lands on these rules on the second hop.
+
+/how-it-works   /              301
+/agents         /              301
+/who-its-for    /              301
+/operators      /              301
+/faq            /              301
+/vision         /              301
+/status         /disclaimers   301

@@ -161,7 +161,7 @@
      wrong for the other two. fonts.css sets out why an invented number there
      would be worse than none. The second entry in the --sans stack below IS
      adjusted, because that stack has exactly one stand-in to fit. */
-  --display: 'Anton', Impact, Haettenschweiler, 'Arial Narrow', sans-serif;
+  --display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
   --sans: 'IBM Plex Sans Variable', 'IBM Plex Sans fallback', system-ui, -apple-system, 'Segoe UI',
     sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
@@ -369,7 +369,114 @@
   --dur-slow: 0.8s;
   --dur-hero: 1.2s;
 
+  /* ADDED 2026-09-05 with the v3 brief, which asks for two things the comic
+     round had no use for: "buttons and the two beat panels respond to hover
+     with restrained transform and glow", and headline copy legible over moving
+     video.
+
+     --glow-accent IS A LIGHT, NOT A SHADOW, and that is why it is the accent at
+     low opacity rather than black. It is only ever used spread and unoffset, so it
+     reads as the element being lit from behind. The brand token set's rule that
+     light here is a rim and not a glow was written about ARTWORK, where a
+     blurred edge destroys a cel-shaded fill; an interface element lifting under
+     the cursor is the other case, and the brief asks for it by name.
+
+     THE TWO SCRIMS ARE CONTRAST FLOORS, NOT MOOD, AND THE FIGURES BELOW WERE
+     MEASURED OFF THE THREE CLIPS RATHER THAN ESTIMATED. A headline over video
+     has no fixed background to measure against, so the worst frame governs, and
+     the worst frame is not the brightest PIXEL: a single hot pixel is smaller
+     than a stroke. Each clip was decoded at 2 fps and area-averaged to 32x18,
+     so one sample is a 40x40 block of the 1280-wide frame, about the size of
+     the local background under a run of glyphs, and the brightest block over
+     every sampled frame is the value taken. Method and numbers, 2026-09-05:
+
+       loop-1280.mp4    brightest block #b9b3e5
+       beat-1-1280.mp4  brightest block #ada8a9
+       beat-2-1280.mp4  brightest block #faf6f0
+
+     beat-2 is why there are two values here rather than one. Its brightest
+     block is very nearly white, and --scrim over it composites to #636262 where
+     --ink is 5.08:1: over the 4.5 floor and well under the 7:1 this file holds
+     body copy to. So no word on this site sits on --scrim alone. Every headline
+     over video sits on --scrim-deep, which composites the three worst blocks to
+     #201f2a, #1e1e21 and #29282b, where --ink measures 13.60:1, 13.91:1 and
+     12.26:1 and --muted measures 6.97:1, 7.13:1 and 6.28:1.
+
+     THE CONSEQUENCE, AND IT IS A RULE THE BEAT SECTIONS FOLLOW: --muted is not
+     available over beat-2 at any of these values, so the two beat headlines are
+     --ink and carry no secondary line. The hero's quiet link is --muted over the
+     loop at 6.97:1, which clears the 4.5 floor for the interface text it is.
+
+     --scrim is what remains for the parts of a frame with no words on them,
+     which is what the beat sections ramp their gradient from. Recompute all of
+     this if a clip is replaced: a scrim is only as good as the frame under it,
+     and the arithmetic is the same eight lines the block at the top of this
+     file describes. */
+  --glow-accent: rgba(160, 148, 255, 0.45);
+  --scrim: rgba(7, 7, 11, 0.62);
+  --scrim-deep: rgba(7, 7, 11, 0.86);
+
   --z-banner: 20;
   --z-masthead: 30;
   --z-skip: 40;
+
+  /* -------------------------------------------------------------------------
+     THE V3 CHROME, added 2026-09-05 with revision 2 of the website brief.
+
+     WHY --radius IS STILL 0 AND THESE EXIST BESIDE IT. The comic pass set every
+     corner square on purpose: a drawn panel has a hard edge, and rounding it
+     turns an ink frame into a card. That is still true of PANELS, and --radius
+     is still 0 for them. It is not true of CHROME. The owner named
+     artificialinu.com as the reference and asked that the header, the footer and
+     the tab icon be the same across rwally.com and app.rwally.com, and the
+     reference's chrome is pill-shaped throughout: the header itself, the nav
+     capsule inside it, the price chip, the buttons. So the two geometries are
+     two tokens rather than one token with exceptions, and a component picks the
+     one that matches what it is. Square for panels, round for chrome.
+     ------------------------------------------------------------------------- */
+
+  /* A true pill: any half-height larger than the tallest chrome element. */
+  --radius-pill: 999px;
+
+  /* The floating header's own corner. Not a pill: the bar is wide and a wide
+     pill reads as a lozenge rather than as a bar. This is the reference's own
+     proportion, a soft rectangle whose corner is about a third of its height. */
+  --radius-bar: 1.25rem;
+
+  /* How far the floating header sits from the top of the viewport, and how much
+     room the first section has to leave for it. Two names for one measurement
+     because the header is fixed: nothing below it can ask it how tall it is. */
+  --masthead-inset: clamp(0.625rem, 0.35rem + 1.1vw, 1rem);
+  --masthead-clear: 5.5rem;
+
+  /* -------------------------------------------------------------------------
+     THE PARTICLE FIELD. A star drift behind the hero and the live panel.
+
+     THE COUNT IS A TOKEN BECAUSE IT IS A BUDGET, not a style. Each particle is
+     one absolutely positioned span animated on transform and opacity only, so
+     the cost is compositor work rather than layout, but forty of them at 60fps
+     is still forty. This is the number the section renders at every width; the
+     field is decorative, `aria-hidden`, and removed entirely under
+     prefers-reduced-motion rather than slowed down.
+     ------------------------------------------------------------------------- */
+  --particle-count: 40;
+  --particle-dim: rgba(234, 234, 243, 0.22);
+  --particle-lit: rgba(160, 148, 255, 0.55);
+
+  /* -------------------------------------------------------------------------
+     THE DISPLAY SCALE THE V3 PAGE ADDS.
+
+     --step-hero and --step-figure are both larger than --step-display, and they
+     are separate names because they are set in different faces at different
+     tracking. --step-hero is the h1: Space Grotesk 700, tight, four words that
+     have to survive 375px without hyphenating. --step-figure is the live block
+     height and the giant numerals: tabular figures, so it must never be set at
+     a size where a digit changing width would reflow the line. Both use clamp
+     with a vw middle term so the jump between 375 and 1440 is continuous rather
+     than stepped at a breakpoint.
+     ------------------------------------------------------------------------- */
+  --step-hero: clamp(2.75rem, 1.1rem + 7vw, 6.5rem);
+  --step-figure: clamp(3rem, 0.6rem + 10vw, 9rem);
+  --track-hero: -0.035em;
+  --leading-hero: 0.92;
 }

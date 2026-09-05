@@ -58,10 +58,10 @@ const TITLE = 'Everything that can go wrong, in one place.';
  * this sentence disagreed with both.
  */
 const LEDE =
-  'Every warning, limit and unresolved question on this site is on this page. The other eight pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.';
+  'Every warning, limit and unresolved question on this site is on this page. The rest of this site describes mechanism. This one describes what that mechanism costs you when it does not go your way.';
 
 /** The deployment paragraph. Opens with DEPLOYED_LINE, verbatim from pinned.ts. */
-const DEPLOYMENT_PARAGRAPH = `${DEPLOYED_LINE} The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.`;
+const DEPLOYMENT_PARAGRAPH = `${DEPLOYED_LINE} The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="index.html#live">live reads</a> on the homepage fetch the factory's own answers from the chain in your browser.`;
 
 const RWLY_PARAGRAPH =
   'The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet, so there is nothing here to buy, claim or hold.';
@@ -105,9 +105,9 @@ export default function RisksHero(): JSX.Element {
           <Pinned as="p" className={s.lede} html={LEDE} />
           <Pinned as="p" html={BANNER_OFFER} />
           <Pinned as="p" html={DEPLOYMENT_PARAGRAPH} />
-          <Pinned as="p" className="footer-pins" html={FOOTER_TOKEN} />
+          <Pinned as="p" className="standing-fact" html={FOOTER_TOKEN} />
           <Pinned as="p" html={RWLY_PARAGRAPH} />
-          <Pinned as="p" className="footer-pins" html={FOOTER_LICENCE} />
+          <Pinned as="p" className="standing-fact" html={FOOTER_LICENCE} />
           <Pinned as="p" html={JURISDICTION_PARAGRAPH} />
           <Pinned as="p" html={TOTAL_LOSS_PARAGRAPH} />
         </Reveal>
