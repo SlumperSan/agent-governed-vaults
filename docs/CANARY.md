@@ -681,11 +681,18 @@ the two is unset — set only that one and every transition reaches the one conf
 once per transition, same as before tiering existed. The webhook body also carries a `tier: 'page'|
 'log'` field, so a receiver on a single shared URL can still route without re-deriving the map.
 
-**`feed-identity` pages on HARM only.** `feed-identity` (§3(g)) is the one signal whose ALERTs are
-not all the same severity, so it routes on a predicate (`CONDITIONAL_PAGE` in `sinks.mjs`) rather
-than on its name: **PAGE** when `detail.harm` is `'decimals'` or `'denomination'`, **LOG** when it is
-`null` (the aggregator swap). The two harm cases LATCH — `ChainlinkOracle`'s cached scale and its
-USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
+**`feed-identity` pages unless the alert classified itself benign.** `feed-identity` (§3(g)) is the
+one signal whose ALERTs are not all the same severity, so it routes on a predicate
+(`CONDITIONAL_PAGE` in `sinks.mjs`) rather than on its name. The rule is a default, not an
+enumeration: **LOG** only when `detail.harm` is explicitly `null` — which the aggregator-swap leg
+sets literally — and **PAGE** otherwise, covering `'decimals'` and `'denomination'` and equally any
+harm value that is absent or unrecognised. That direction is deliberate. The tier-coverage test
+proves a signal NAME is classified; nothing proves that every `alert()` inside a signal sets the
+field its predicate reads, so a future leg that simply forgets `harm` must page rather than log
+silently. For the same reason the predicate is wrapped: if it throws, `tierOf` defaults to PAGE and
+reports the throw, because an unguarded throw escapes the sink's `emit` and `emitAll` skips the sink
+— delivering the alert to no endpoint at all. The two harm cases LATCH — `ChainlinkOracle`'s cached
+scale and its USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
 freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
 legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
 Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
