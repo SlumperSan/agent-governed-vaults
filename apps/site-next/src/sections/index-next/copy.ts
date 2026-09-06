@@ -98,4 +98,4 @@ export const HEADING = 'RWLY is live.';
  * own browser. The four facts below are the ones that do not move.
  */
 export const BODY =
-  'Launched 2026-09-05 on Pons, a third-party launchpad, it trades on a bonding curve quoted in ETH. Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path. No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent.';
+  'Launched 2026-09-05 on Pons, a third-party launchpad, on a bonding curve quoted in ETH that graduated the same day. Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path. No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent.';

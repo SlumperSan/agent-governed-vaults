@@ -1738,7 +1738,7 @@ test('probe: the RWLY window rule catches a bare mention and spares the approved
   }
   for (const ok of [
     // The homepage's own beat, as prose.
-    'RWLY is live. Launched 2026-09-05 on Pons, a third-party launchpad, it trades on a bonding curve quoted in ETH. Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path.',
+    'RWLY is live. Launched 2026-09-05 on Pons, a third-party launchpad, on a bonding curve quoted in ETH that graduated the same day. Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path.',
     // The chip, which is a label and an address and nothing else.
     'RWLY 0x2eed8ae7…b6B7FDF9 Copy',
     // The hedge, which is what a mention of the unbuilt half has to carry.
@@ -2409,7 +2409,7 @@ const OWNER_AND_LIVE_STRINGS = [
  */
 const RWLY_LAUNCH_RECORD = [
   'RWLY is live.',
-  'Launched 2026-09-05 on Pons, a third-party launchpad, it trades on a bonding curve quoted in ETH.',
+  'Launched 2026-09-05 on Pons, a third-party launchpad, on a bonding curve quoted in ETH that graduated the same day.',
   'Fixed supply 1,000,000,000, no owner, no mint function, no upgrade path.',
   'No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent.',
 ];
