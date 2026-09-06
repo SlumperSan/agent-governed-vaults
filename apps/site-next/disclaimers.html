@@ -24,15 +24,22 @@
      counts occurrences of the literal tag in the built page, and this comment survives into that page, so
      writing the tag here reads as a second heading and reds the guard. -->
 <link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2">
-<title>Disclaimers | Rwally</title>
+<title>Disclaimers | RWAlly</title>
 <meta name="description" content="Fifteen named risks, the limits of every claim on this site, the legal position, and what has and has not been checked.">
 <link rel="canonical" href="https://rwally.com/disclaimers">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Rwally">
+<meta property="og:site_name" content="RWAlly">
 <meta property="og:url" content="https://rwally.com/disclaimers">
 <meta property="og:title" content="Disclaimers">
 <meta property="og:description" content="Fifteen named risks, the limits of every claim on this site, the legal position, and what has and has not been checked.">
 <meta property="og:image" content="https://rwally.com/og-card.png">
+<!-- THIS ALT STILL SAYS Rwally, AND THAT IS DELIBERATE. The card it describes is a raster,
+     og-card.png, with the old spelling rendered into its pixels. Alt text has to describe the
+     image a reader is shown, so recasing this string without re-rendering the card would make it
+     literally false. The generator is scripts/build-og-card.mjs and it writes the corpus copy at
+     apps/site/assets/og-card.png, whose eight sibling alt attributes live on pages this change is
+     scoped out of; re-rendering is therefore its own commit. Until then this one string keeps the
+     old spelling on purpose. -->
 <meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark Rwally, and the deployment-status line Deployed on Robinhood Chain.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Disclaimers">

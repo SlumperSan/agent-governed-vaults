@@ -161,12 +161,20 @@
   text-decoration: none;
 }
 
+/* THE COMIC MARK, ONE SIZE UP FROM THE HEADER'S, exactly as this footer has
+   always drawn the identity one size larger than the bar does. 3.5rem is 56px,
+   comfortably over the 48px floor the brand set measured for the full-colour
+   mark and recorded as MIN_MARK_PX in src/brand/markAsset.ts.
+
+   HEIGHT ONLY, WIDTH AUTO, for the reason masthead.module.css gives at length:
+   the artwork is landscape where the letter it replaced was portrait, so a
+   stylesheet that pins both dimensions squashes it. */
 .mark {
-  width: 1.625rem;
-  height: 2.0625rem;
+  height: 3.5rem;
+  width: auto;
   flex: none;
-  color: var(--accent);
-  transition: color var(--dur-fast) var(--ease-enter);
+  display: block;
+  transition: filter var(--dur-fast) var(--ease-enter);
 }
 
 .lockup {
@@ -197,7 +205,7 @@
 
 .brand:hover .mark,
 .brand:focus-visible .mark {
-  color: var(--ink);
+  filter: brightness(1.15);
 }
 
 .nav {

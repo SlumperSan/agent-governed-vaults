@@ -45,13 +45,15 @@
  */
 
 /**
- * Every page's <title> ends in this. Em-dash and spacing are pinned.
+ * Every page's <title> ends in this. The separator and the spacing are pinned.
  *
- * CHANGED 2026-09-05: was ' — Agent-Governed Vaults'. The owner's decision that
- * day renamed the site to Rwally; "Agent-Governed Vaults" survives only as the
- * descriptor line in the footer (see BRAND below), not as the title suffix.
+ * CHANGED TWICE ON 2026-09-05, both times by owner decision. It was
+ * ' - Agent-Governed Vaults' set with an em-dash; the rename to Rwally made it
+ * ' | Rwally', and "Agent-Governed Vaults" survives only as the descriptor line
+ * in the footer (see BRAND below). The recasing to RWAlly followed the same day:
+ * the name is a play on RWA, so the first three letters carry it.
  */
-export const TITLE_SUFFIX = ' | Rwally';
+export const TITLE_SUFFIX = ' | RWAlly';
 
 /* ---------------------------------------------------------------------------
  * PRE-LAUNCH BANNER — one block, on status.html, inside <main>.
@@ -427,15 +429,21 @@ export const FOOTER_PAGES: ReadonlyArray<{ id: PageId; label: string }> = [
 
 /**
  * THE SITE IS CALLED RWALLY, AND THAT IS NEW. Owner decision, 2026-09-05: the
- * masthead reads "Rwally", page titles end " — Rwally", and "Agent-Governed
- * Vaults" survives only as the descriptor line — one sentence-length gloss of
- * what Rwally is, rendered once, in the footer.
+ * masthead reads "RWAlly", page titles end " | RWAlly", and "Agent-Governed
+ * Vaults" survives only as the descriptor line, one sentence-length gloss of
+ * what RWAlly is, rendered once, in the footer.
+ *
+ * THE CASING IS THE JOKE AND IS NOT A TYPO. The owner set it later the same day:
+ * "RWA is the play on words", so the first three letters are capital and the
+ * rest is not. It also puts the site's name in the same case as the token's,
+ * which was created as RWAlly on chain and had been the one surface spelling it
+ * that way. A tool that lowercases or title-cases this string is wrong twice.
  *
  * Two constants rather than one, because they are two different things: a name
  * that goes in a title and a lockup, and a description that goes under it.
  * Collapsing them is how the descriptor ends up in the tab title.
  */
-export const BRAND_NAME = 'Rwally';
+export const BRAND_NAME = 'RWAlly';
 
 /** The descriptor. One place renders it: the footer, under the mark. */
 export const BRAND = 'Agent-Governed Vaults';

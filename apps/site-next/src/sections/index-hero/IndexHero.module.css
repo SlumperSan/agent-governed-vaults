@@ -37,28 +37,35 @@
 /* --------------------------------------------------------------------------
    THE WATERMARK.
 
-   It is the ledger R at nearly the full height of the section, against the right
-   gutter.
+   It is the mark at nearly the full height of the section, against the right
+   gutter. Since 2026-09-05 that mark is the comic R rather than the ledger R,
+   by the owner's decision, and the change reaches here because everything on
+   this site that draws the mark draws the one file.
 
    IT WAS CROPPED BY THE FRAME AND THAT WAS WRONG. The first version bled it off
    the right edge, on the reasoning that a mark leaving the frame reads as a
    ground the frame was cut out of while one sitting fully inside it reads as a
-   logo in a corner. That reasoning is sound for a mark with a recognisable
-   silhouette and this one does not have that at this size: the ledger R is a
-   single stroke path whose right-hand side carries the whole letterform, so
-   cutting it off leaves a tall rectangle with a notch. It read as a stray
-   interface panel in the top right of the hero, which is worse than the empty
-   space it was added to fill. So it is fully in frame, and made large enough
-   that being in frame is not the same as being in a corner.
+   logo in a corner. That reasoning was sound for a mark with a recognisable
+   silhouette and the ledger R did not have one at this size: it was a single
+   stroke path whose right-hand side carried the whole letterform, so cutting it
+   off left a tall rectangle with a notch. It read as a stray interface panel in
+   the top right of the hero, which is worse than the empty space it was added
+   to fill. So it is fully in frame, and made large enough that being in frame is
+   not the same as being in a corner. The comic R has the silhouette the old one
+   lacked, and it stays in frame anyway: the argument for cropping was never
+   strong enough to be worth relitigating with the layout already settled.
 
-   IT IS --accent-deep AT LOW OPACITY AND tokens.css CALLS THAT AN ILLUSTRATION
-   FILL. 4.21:1 on --ground, below every text floor this site holds. Correct
-   here for the same reason it is correct in a drawing: this carries no
-   information. It is `aria-hidden` in the component, the header states the name
-   in text, and the headline is --ink at 16.82:1 over it.
+   THE OPACITY IS WHAT MAKES IT A GROUND, and it is now the only thing that does.
+   The rule set --accent-deep here and tokens.css calls that an illustration
+   fill; the comic mark is fixed-colour artwork rather than a shape to tint, so
+   the declaration would do nothing and is gone rather than left reading as if it
+   still worked. At 0.14 over --ground the artwork's own cream keyline lands
+   near the old fill's weight, the headline is --ink at 16.82:1 over it, and the
+   picture carries no information: it has empty alt text, and the header states
+   the name in text.
 
    IT IS HIDDEN BELOW 60rem. On a phone the headline occupies the full width and
-   an outlined R behind the words is a contrast problem rather than a ground.
+   an R behind the words is a contrast problem rather than a ground.
    -------------------------------------------------------------------------- */
 .watermark {
   position: absolute;
@@ -67,7 +74,6 @@
   height: 76%;
   width: auto;
   transform: translate3d(0, -46%, 0);
-  color: var(--accent-deep);
   opacity: 0.14;
   pointer-events: none;
   z-index: 0;

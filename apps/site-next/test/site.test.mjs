@@ -15,20 +15,21 @@
  *   1. It reads `../dist/*.html`, not hand-written pages. The old site was the
  *      source; here the source is React and the build output is the artefact
  *      the reader receives, so the artefact is what is tested. If `dist/` is
- *      absent, the thirty-four tests declared with `t()` and the three declared
+ *      absent, the thirty-six tests declared with `t()` and the one declared
  *      with `tc()` SKIP with a message saying to build — see `t()` below.
- *      Thirty-four of the thirty-seven read `dist/`; the other three (the
- *      status-band stylesheet check, the Mode-F reveal-phase check and the
- *      fixture-name check) do not, and skip with them because `t()` sets the
- *      skip by declaration rather than by what a body opens. `tc()` is `t()`
- *      plus one more condition: the three tests that read the reference
- *      configuration also skip, with their own message, when that file is not
- *      in the checkout — which happens on a branch cut before the target-chain
- *      decision landed it, and nowhere else. The seven declared with `test()`
- *      run either way: six read source only, and the seventh walks the source
- *      and adds `dist/` when it is there.
- *      Recount all three with `grep -c "^t(" `, `grep -c "^tc(" ` and
- *      `grep -c "^test(" `.
+ *      Most of them read `dist/`; a few (the status-band stylesheet check, the
+ *      Mode-F reveal-phase check and the fixture-name check) do not, and skip
+ *      with them anyway because `t()` sets the skip by declaration rather than
+ *      by what a body opens. `tc()` is `t()` plus one more condition: the test
+ *      that reads the reference configuration also skips, with its own message,
+ *      when that file is not in the checkout — which happens on a branch cut
+ *      before the target-chain decision landed it, and nowhere else. The nine
+ *      declared with `test()` run either way: they read source, and one of them
+ *      walks the source and adds `dist/` when it is there.
+ *      THESE THREE NUMBERS WERE STALE AND ARE RECOUNTED. They read thirty-four,
+ *      three and seven until 2026-09-05 and the checkout said thirty-six, one
+ *      and eight; the mark swap of that date takes `test()` to nine. Recount all
+ *      three with `grep -c "^t(" `, `grep -c "^tc(" ` and `grep -c "^test(" `.
  *      They are claims, and nothing else checks them.
  *
  *   2. PROSE_FILES moved: `README.md`, `src/tokens.css`, `src/index.css`. Same
@@ -88,13 +89,20 @@
  *      it had no build step between the class in the markup and the rule in the
  *      sheet — here there is one, and this is the check on it.
  *
- *  11. The brand mark is one path, drawn the same in three files. The mark is
- *      inline SVG in the document (so it inherits the link's colour), a
- *      standalone `src/brand/mark.svg`, and `public/favicon.svg`, which the
- *      browser loads as its own document and which therefore hardcodes what the
- *      other two inherit. Only the first of those shares a module with the
- *      data, so the other two can drift silently — each would still be valid
- *      SVG, just a different letter. The old site had one favicon and no mark.
+ *  11. The brand mark is one artwork, byte-identical on both surfaces, and it
+ *      is drawn at a size its halftone survives. Two checks, and they replaced a
+ *      single earlier one on 2026-09-05 when the owner swapped the monochrome
+ *      ledger R for the comic R. That earlier check compared one path string
+ *      across `src/brand/markPath.ts`, `src/brand/mark.svg` and
+ *      `public/favicon.svg`; the comic mark is five colour layers rather than
+ *      one tintable path, so there is no single path left to compare and both
+ *      of that check's other assertions (`fill="none"` present, no `<rect>`)
+ *      became false of artwork that is correct. What is guarded instead is the
+ *      property the old one was really about: the mark and the favicon are each
+ *      the same bytes on rwally.com and on app.rwally.com, so the two origins
+ *      cannot ship two logos, and neither stylesheet may draw the mark below the
+ *      48-pixel floor the brand set measured. The old site had one favicon and
+ *      no mark.
  *
  * The two DROPS are assertions the old suite made that this build cannot make.
  * Each is a decision with a reason, and each is written down here for one
@@ -167,6 +175,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+// Digests, for the brand-mark guard: the two surfaces ship the same artwork and sameness over a
+// 14 KB traced polygon set is a hash comparison rather than a string one.
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -276,9 +287,17 @@ const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 // a corpus page tomorrow: it is pinned at ZERO on every page instead, so a reappearance reds.
 const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
-// RENAMED 2026-09-05 by owner decision: the site is called Rwally, and
-// "Agent-Governed Vaults" survives only as the footer descriptor line.
-const TITLE_SUFFIX = ' | Rwally';
+// RENAMED 2026-09-05 by owner decision: the site is called RWAlly, and
+// "Agent-Governed Vaults" survives only as the footer descriptor line. The
+// capitals are the joke and not a typo: RWA is the play on words, and it is the
+// same casing the token already carried on chain.
+//
+// THE CORPUS SUITE'S OWN COPY OF THIS CONSTANT DELIBERATELY DOES NOT FOLLOW.
+// `apps/site/test/site.test.mjs` pins ` | Rwally` against `apps/site/*.html`,
+// which this pass does not own and does not edit, so flipping that one would red
+// a suite over nine pages nobody touched. Two constants, two surfaces, and they
+// are meant to differ until the corpus is retired or flipped in its own commit.
+const TITLE_SUFFIX = ' | RWAlly';
 
 // The external hosts any page may reference. NAVIGATION TARGETS ONLY: nothing on this site LOADS a
 // byte from any of them, which is the property the scan below actually protects and the reason the
@@ -2073,52 +2092,140 @@ t('every class in a built page is defined in a stylesheet that page links', () =
 });
 
 /**
- * THE MARK IS ONE DRAWING IN THREE FILES, and nothing but this stops them drifting.
+ * THE MARK IS ONE ARTWORK SHIPPED FROM TWO ORIGINS, and nothing but this stops them drifting.
  *
- * `src/brand/markPath.ts` holds the path as data; `src/brand/Mark.tsx` reads it and puts it in the
- * document, which is how it inherits `currentColor` from the link around it; `src/brand/mark.svg`
- * is the standalone artwork; and `public/favicon.svg` is a fourth copy that the browser loads as
- * its own document and which therefore hardcodes its colours. Only the first two share a module.
- * The other two are text files nobody imports, so an edit to the letter that misses one of them
- * ships a site whose favicon is a different mark from its masthead — and no other check here would
- * notice, because both would still be valid SVG.
+ * WHAT THIS GUARD USED TO ASSERT, AND WHY THE SHAPE HAD TO CHANGE RATHER THAN THE INTENT. Until
+ * 2026-09-05 it read a single path string out of `src/brand/markPath.ts` and asserted that
+ * `src/brand/mark.svg` and `public/favicon.svg` drew exactly that string: the ledger R, one
+ * monochrome stroke, inlined everywhere so it could inherit `currentColor`. The owner replaced
+ * that letter that day with the comic R from the brand set. The comic R is five traced layers
+ * carrying five fixed colours, so there is no single path to compare and nothing to tint, and both
+ * halves of the old assertion stopped being expressible: it has no `fill="none"` because every
+ * fill is a colour, and the favicon carries a `<rect>` on purpose, as the dark tile the mark sits
+ * on. Deleting the guard would have left the identity unguarded on the exact commit that changed
+ * it, so it is REPLACED, and the property it protects is unchanged: one identity, not two.
  *
- * It reads source, not `dist`, so it runs on an unbuilt checkout.
+ * TWO FAMILIES, NOT ONE, AND THEY ARE NOT INTERCHANGEABLE. Collapsing them is the tempting wrong
+ * fix and it throws artwork away.
+ *
+ *   THE MARK, `brand/mark-comic.svg`. The R alone, tight to its ink, no ground. It is what the
+ *   masthead, the footer and the hero watermark link. Two copies exist because two ORIGINS serve
+ *   it: rwally.com from `apps/site-next/public/`, app.rwally.com from `apps/app/src/`, which
+ *   `apps/app/build.mjs` copies into its own `dist/`. Neither may link the other's, because a
+ *   cross-origin image is exactly what both `_headers` files refuse.
+ *
+ *   THE FAVICON, `favicon.svg`. The same R recentred in a square and set on the ground tile, which
+ *   is what a tab icon needs and a header mark must not have. Same two origins, same reason.
+ *
+ * IT READS SOURCE, NOT `dist`, so it runs on an unbuilt checkout, and it reaches across into
+ * `apps/app` deliberately: the app has no suite of its own that could hold this, and an identity
+ * guard that only looks at one of the two surfaces it is about is half a guard.
  */
-test('the brand mark is one path, drawn the same in all three files', () => {
-  const dataFile = readFileSync(path.join(APP, 'src', 'brand', 'markPath.ts'), 'utf8');
-  const declared = dataFile.match(/export const MARK_PATH = '([^']+)';/);
-  assert.ok(declared, 'src/brand/markPath.ts no longer declares MARK_PATH as a single-quoted literal');
-  const pathData = declared[1];
-  assert.match(pathData, /^M[\d\s.A-Za-z-]+$/, `MARK_PATH is not path data: ${JSON.stringify(pathData)}`);
+const APP_SURFACE = path.join(REPO, 'apps', 'app', 'src');
 
-  for (const rel of [['src', 'brand', 'mark.svg'], ['public', 'favicon.svg']]) {
-    const file = path.join(APP, ...rel);
-    const svg = readFileSync(file, 'utf8');
-    const drawn = [...svg.matchAll(/\sd="([^"]+)"/g)].map((m) => m[1]);
+/**
+ * The floor each artwork has to clear, in bytes.
+ *
+ * NOT DECORATION. Byte-identity alone passes over two empty files, and an emptied or truncated SVG
+ * renders as nothing at all rather than as an error, which is the one failure mode a reader of the
+ * built site would not notice. Both files are traced polygon sets of about 14 KB; 8,000 is well
+ * under that and well over anything that could be a stub.
+ */
+const MARK_MIN_BYTES = 8000;
+
+test('the brand mark is one artwork, byte-identical on both surfaces', () => {
+  const families = [
+    {
+      what: 'the mark',
+      files: [
+        ['apps/site-next/public/brand/mark-comic.svg', path.join(APP, 'public', 'brand', 'mark-comic.svg')],
+        ['apps/app/src/brand/mark-comic.svg', path.join(APP_SURFACE, 'brand', 'mark-comic.svg')],
+      ],
+      fix: 'cp apps/site-next/public/brand/mark-comic.svg apps/app/src/brand/mark-comic.svg',
+    },
+    {
+      what: 'the favicon',
+      files: [
+        ['apps/site-next/public/favicon.svg', path.join(APP, 'public', 'favicon.svg')],
+        ['apps/app/src/favicon.svg', path.join(APP_SURFACE, 'favicon.svg')],
+      ],
+      fix: 'cp apps/site-next/public/favicon.svg apps/app/src/favicon.svg',
+    },
+  ];
+
+  // NON-VACUITY, per item 6 in this file's header: a loop that found nothing to compare would
+  // report a pass. Both families are counted, and so is every file in them.
+  assert.equal(families.length, 2, 'the mark and the favicon are two families; this loop lost one');
+
+  for (const family of families) {
+    assert.equal(family.files.length, 2, `${family.what}: two surfaces, two files`);
+    const digests = family.files.map(([rel, file]) => {
+      const bytes = readFileSync(file);
+      assert.ok(
+        bytes.length >= MARK_MIN_BYTES,
+        `${rel} is ${bytes.length} bytes, under the ${MARK_MIN_BYTES}-byte floor. An emptied or ` +
+          'truncated SVG renders as nothing at all rather than as an error, so size is checked ' +
+          'before sameness',
+      );
+      return [rel, crypto.createHash('sha256').update(bytes).digest('hex')];
+    });
     assert.equal(
-      drawn.length,
-      1,
-      `${rel.join('/')} draws ${drawn.length} paths. The mark is one path; a second one is either a second drawing or a leftover`,
-    );
-    assert.equal(
-      drawn[0],
-      pathData,
-      `${rel.join('/')} draws a different letter from src/brand/markPath.ts. Edit MARK_PATH and copy it, or this file and the masthead are two marks`,
+      digests[0][1],
+      digests[1][1],
+      `${family.what} differs between the two surfaces, so rwally.com and app.rwally.com ship two ` +
+        `logos: ${digests.map(([rel, d]) => `${rel} ${d.slice(0, 12)}`).join(', ')}. The site copy ` +
+        `is the source: ${family.fix}`,
     );
   }
+});
 
-  // The mark carries no fill and no tile: the panel it came from says so, and a filled copy of
-  // this path is a solid blob rather than a letter.
-  for (const rel of [['src', 'brand', 'mark.svg'], ['public', 'favicon.svg']]) {
-    const svg = readFileSync(path.join(APP, ...rel), 'utf8');
-    assert.match(svg, /fill="none"/, `${rel.join('/')} does not set fill="none" on the mark`);
-    assert.equal(
-      /<rect|<circle|<ellipse/.test(svg),
-      false,
-      `${rel.join('/')} has a shape besides the letter. The mark is monochrome and untiled by design`,
+/**
+ * THE COMIC MARK COLLAPSES AT SMALL SIZES, AND THAT IS MEASURED RATHER THAN ASSUMED.
+ *
+ * The brand set's own README records rendering the full-colour mark at 32 pixels and reading it:
+ * the speed lines inside the R turn into noise and the letter barely reads. Its measured floor is
+ * 48, and `MIN_MARK_PX` in `src/brand/markAsset.ts` is where this repository writes that number
+ * down. The owner's decision of 2026-09-05 is that the comic mark is the mark in the header and
+ * the footer, which makes the floor a constraint on two stylesheets rather than a note.
+ *
+ * IT CHECKS THE DECLARATION, NOT A RENDER. `height` in rem against the site's 16px root is what
+ * decides the drawn size, so the rule is read and converted. A change to either stylesheet that
+ * shrinks the mark back toward the size the old monochrome letter was drawn at reds here.
+ */
+test('the comic mark is drawn at a size its halftone survives', () => {
+  const asset = readFileSync(path.join(APP, 'src', 'brand', 'markAsset.ts'), 'utf8');
+  const floor = asset.match(/export const MIN_MARK_PX = (\d+);/);
+  assert.ok(floor, 'src/brand/markAsset.ts no longer declares MIN_MARK_PX as a bare integer');
+  const minPx = Number(floor[1]);
+
+  const sheets = [
+    ['src/shell/masthead.module.css', path.join(APP, 'src', 'shell', 'masthead.module.css')],
+    ['src/shell/footer.module.css', path.join(APP, 'src', 'shell', 'footer.module.css')],
+  ];
+  let checked = 0;
+  for (const [rel, file] of sheets) {
+    const css = readFileSync(file, 'utf8');
+    const rule = css.match(/^\.mark \{[^}]*\}/m);
+    assert.ok(rule, `${rel} has no .mark rule, so the mark's size is set somewhere this cannot read`);
+    const height = rule[0].match(/height:\s*([\d.]+)rem;/);
+    assert.ok(height, `${rel}: .mark sets no height in rem, so its drawn size cannot be checked`);
+    const px = Number(height[1]) * 16;
+    assert.ok(
+      px >= minPx,
+      `${rel}: .mark is ${px}px tall, under the ${minPx}px floor MIN_MARK_PX records. The brand ` +
+        'set measured the full-colour mark at 32 and the halftone inside the R collapses into ' +
+        'noise. Raise the height rather than the floor',
     );
+    // Width must NOT be pinned: the artwork is landscape, and two fixed dimensions squash it.
+    assert.match(
+      rule[0],
+      /width:\s*auto;/,
+      `${rel}: .mark pins a width. The comic mark is 385.5 by 291.5, so a width beside a height ` +
+        'distorts it. Set the height and leave width: auto',
+    );
+    checked += 1;
   }
+  assert.equal(checked, sheets.length, 'not every stylesheet that draws the mark was read');
 });
 
 // ═══════════════ the v3 homepage: a word budget, and where every sentence came from ═══════════════

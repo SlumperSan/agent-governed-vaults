@@ -78,12 +78,28 @@
   flex: none;
 }
 
+/* THE COMIC MARK, AT A HEIGHT ITS HALFTONE SURVIVES.
+   3rem is 48px, which is the floor the brand set measured for the full-colour
+   mark: below it the speed lines inside the R collapse into noise. It replaced
+   a 22 by 28 ledger R on 2026-09-05 by the owner's decision, and the pill grew
+   with it, from about 44px of content to about 64px.
+
+   HEIGHT ONLY, WIDTH AUTO. The artwork is landscape, 385.5 by 291.5, where the
+   letter it replaced was portrait. Pinning both dimensions here would squash
+   it; the img element carries those two numbers as attributes, so the browser
+   reserves the right box before the file lands and the header never reflows.
+   MIN_MARK_PX in src/brand/markAsset.ts is the same 48, and site.test.mjs
+   reads this declaration against it. */
 .mark {
-  width: 1.375rem;
-  height: 1.75rem;
+  height: 3rem;
+  width: auto;
   flex: none;
-  color: var(--accent);
-  transition: color var(--dur-fast) var(--ease-enter);
+  display: block;
+  /* The mark is fixed-colour artwork, so hover cannot move its ink the way it
+     moved the old monochrome letter's. Brightness is the equivalent that works
+     on a picture, and it is the same duration and easing the tagline uses, so
+     the whole lockup still lifts as one thing. */
+  transition: filter var(--dur-fast) var(--ease-enter);
 }
 
 .lockup {
@@ -117,7 +133,7 @@
 
 .brand:hover .mark,
 .brand:focus-visible .mark {
-  color: var(--ink);
+  filter: brightness(1.15);
 }
 
 .brand:hover .tagline,

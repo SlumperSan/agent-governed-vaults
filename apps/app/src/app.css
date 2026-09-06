@@ -227,17 +227,29 @@ a:hover { color: var(--ink); }
   text-decoration: none;
   flex: none;
 }
-.brand:hover .mark { color: var(--ink); }
+.brand:hover .mark { filter: brightness(1.15); }
 .brand:hover .tagline { color: var(--muted); }
 
+/* THE COMIC MARK, AT THE SITE'S HEADER HEIGHT. 3rem is 48px, the floor the
+   brand set measured for the full-colour mark: below it the halftone inside
+   the R collapses into noise. It replaced a 17 by 21.6 inline ledger R on
+   2026-09-05 by the owner's decision, and this surface follows the site's
+   masthead exactly, as it does for every other rule in this block.
+
+   HEIGHT ONLY, WIDTH AUTO. The artwork is landscape, 385.5 by 291.5, where the
+   letter it replaced was portrait; pinning both dimensions here would squash
+   it. The img element carries those two numbers as attributes, so the pill
+   reserves the mark's box before the file lands and does not reflow.
+
+   THE TRANSITION IS ON filter AND NOT ON color, because the mark is a picture
+   now rather than a tinted path and a color declaration on an img does
+   nothing. */
 .mark {
-  width: 1.0625rem;
-  height: 1.35rem;
+  height: 3rem;
+  width: auto;
   flex: none;
-  color: var(--accent);
   display: block;
-  transition: color 160ms ease-out;
-  overflow: visible;
+  transition: filter 160ms ease-out;
 }
 
 .lockup {
@@ -778,8 +790,10 @@ a.addr:hover { color: var(--accent); border-bottom-color: var(--accent); }
   color: var(--ink);
   text-decoration: none;
 }
-.footer-brand .mark { width: 1.25rem; height: 1.5875rem; color: var(--accent); }
-.footer-brand:hover .mark { color: var(--ink); }
+/* One size up from the masthead's 3rem, matching footer.module.css on the site.
+   Height only, width auto, for the reason the .mark rule above states. */
+.footer-brand .mark { height: 3.5rem; width: auto; }
+.footer-brand:hover .mark { filter: brightness(1.15); }
 .footer-brand .lockup { gap: 0.15rem; }
 .footer-brand .name { font-size: 1.25rem; }
 /* --muted rather than the masthead's --faint: this lockup sits over a

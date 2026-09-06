@@ -65,14 +65,15 @@ export default function IndexHero(): JSX.Element {
           At 1440 the headline column ends around two thirds across and the rest
           of the frame was empty: not cinematic negative space, just an unused
           six hundred pixels. The reference fills that half with its mascot, and
-          Rwally's mascot is spent twice already, as the character in the hive
+          RWAlly's mascot is spent twice already, as the character in the hive
           section and as the ground the footer stands on. A third copy here would
           be the same drawing three times above the fold.
-          So the space is filled with identity rather than with art. The ledger R
-          is the brand's anchor, it is one path, it costs sixty bytes, and drawn
-          at this size it is outlined rather than filled, which rhymes with the
-          outlined numerals in the how-it-works rail. It is `aria-hidden`: the
-          wordmark in the header already says the name in text. */}
+          So the space is filled with identity rather than with art. The mark is
+          the brand's anchor, and since the owner's decision of 2026-09-05 it is
+          the comic R: one linked file the browser already holds for the header,
+          so drawing it again here costs no second request. It carries empty alt
+          text, because the wordmark in the header already says the name in
+          text. */}
       <Mark className={styles.watermark} />
 
       <div className={styles.inner}>

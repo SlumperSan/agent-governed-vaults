@@ -53,4 +53,4 @@ export const BODY_2 = 'No boardroom. No closed door. Just code no one can rewrit
  * paragraph twice and the picture never.
  */
 export const MASCOT_ALT =
-  'The Rwally mascot: a hooded, masked figure in a long dark coat, standing alone in a violet shaft of light, drawn in halftone comic style.';
+  'The RWAlly mascot: a hooded, masked figure in a long dark coat, standing alone in a violet shaft of light, drawn in halftone comic style.';

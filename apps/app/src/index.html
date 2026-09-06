@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rwally app</title>
+<title>App | RWAlly</title>
 <meta name="description" content="Explore vaults on the Agent-Governed Index Vault Protocol, chain 4663. Contract addresses from the deployment record, protocol state read live from the public RPC.">
 <meta name="robots" content="index, follow">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -16,12 +16,19 @@
 <!-- =====================================================================
      THE MASTHEAD. Structure and classes follow apps/site-next/src/shell/
      Masthead.tsx and masthead.module.css so this surface reads as the same
-     product: a floating pill, the ledger R and wordmark on the left, a
+     product: a floating pill, the comic R and wordmark on the left, a
      four-entry nav capsule centred, the X icon and the connect control on
      the right. This page has no build step for components, so the pill is
-     hand-written HTML rather than a shared React piece; the mark's path
-     data below is the one the three-file guard in apps/site-next/test/
-     site.test.mjs checks byte-for-byte and it has not changed here.
+     hand-written HTML rather than a shared React piece.
+
+     THE MARK IS A LINKED FILE AND IT USED TO BE AN INLINE PATH. Until
+     2026-09-05 the ledger R was drawn here as one stroke path, inline, so it
+     could inherit the link's colour. The owner replaced it that day with the
+     comic R, which is fixed-colour artwork with nothing to inherit, so it is
+     linked instead: brand/mark-comic.svg here, byte-identical to the site's
+     own public/brand/mark-comic.svg. The guard named "the brand mark is one
+     artwork, byte-identical on both surfaces" in apps/site-next/test/
+     site.test.mjs reads both files and reds when they disagree.
 
      THE CHIP THAT SAYS "app" IS THE ONE ELEMENT THE SITE'S HEADER DOES NOT
      CARRY, because the site's masthead never needs to say which surface it
@@ -32,12 +39,10 @@
 <header class="masthead">
   <div class="pill">
     <div class="left">
-      <a class="brand" href="https://rwally.com" aria-label="Rwally">
-        <svg class="mark" viewBox="51.5 19.5 152 216.5" aria-hidden="true" focusable="false">
-          <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
-        </svg>
+      <a class="brand" href="https://rwally.com" aria-label="RWAlly">
+        <img class="mark" src="/brand/mark-comic.svg" alt="" width="385.5" height="291.5" decoding="async">
         <span class="lockup">
-          <span class="name">rwally</span>
+          <span class="name">RWAlly</span>
           <span class="tagline">The AI agent trading index.</span>
         </span>
       </a>
@@ -56,7 +61,7 @@
     </nav>
 
     <div class="right">
-      <a class="icon" href="https://x.com/RWAllyVault" rel="noopener" aria-label="Rwally on X">
+      <a class="icon" href="https://x.com/RWAllyVault" rel="noopener" aria-label="RWAlly on X">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
         </svg>
@@ -274,12 +279,10 @@
   </div>
 
   <div class="footer-inner wrap">
-    <a class="footer-brand" href="https://rwally.com" aria-label="Rwally">
-      <svg class="mark" viewBox="51.5 19.5 152 216.5" aria-hidden="true" focusable="false">
-        <path d="M76 228V44H179V122H139L179 190V228" fill="none" stroke="currentColor" stroke-width="33" stroke-linejoin="miter"></path>
-      </svg>
+    <a class="footer-brand" href="https://rwally.com" aria-label="RWAlly">
+      <img class="mark" src="/brand/mark-comic.svg" alt="" width="385.5" height="291.5" decoding="async">
       <span class="lockup">
-        <span class="name">rwally</span>
+        <span class="name">RWAlly</span>
         <span class="tagline">The AI agent trading index.</span>
       </span>
     </a>

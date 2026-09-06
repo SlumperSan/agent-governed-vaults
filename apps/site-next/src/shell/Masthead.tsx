@@ -37,16 +37,20 @@
  *   markup and appears when there is something to show, which is also why it
  *   cannot shift the layout: it is laid out in a slot that reserves its space.
  *
- * THE MARK STAYS INLINE SVG, for the reason it always was: it is one path, and
- * it has to follow the link's colour on hover, which an `<img>` cannot do. It is
- * `aria-hidden` and the link carries the name once in `aria-label`, because the
+ * THE MARK IS A LINKED FILE NOW, NOT INLINE SVG, and this paragraph used to say
+ * the opposite. Its reason was that the mark was one monochrome path and had to
+ * follow the link's colour on hover, which an `<img>` cannot do. The owner
+ * replaced that letter with the comic R on 2026-09-05; the comic R is
+ * fixed-colour artwork with nothing to inherit, so the reason went with the
+ * letter. `src/brand/markAsset.ts` carries the full argument. It renders with
+ * empty alt text and the link carries the name once in `aria-label`, because the
  * wordmark beside it already says it in text.
  *
- * THE MARK PATH IS GUARDED ACROSS THREE FILES. `src/brand/markPath.ts` here,
- * `apps/site/assets/` and `apps/app/src/index.html` all draw the same path, and
- * `test/site.test.mjs` asserts they are identical. That is what makes the tab
- * icon and the header read as one product across the two surfaces rather than
- * as two teams who both owned a logo.
+ * THE MARK IS GUARDED ACROSS BOTH SURFACES. `public/brand/mark-comic.svg` here
+ * and `apps/app/src/brand/mark-comic.svg` on app.rwally.com are the same bytes,
+ * and `test/site.test.mjs` asserts it. That is what makes the tab icon and the
+ * header read as one product across the two origins rather than as two teams who
+ * both owned a logo.
  */
 import type { JSX } from 'react';
 import { Mark } from '../brand/Mark';
@@ -123,7 +127,7 @@ export function Masthead({ page }: { page: PageId }): JSX.Element {
         </nav>
 
         <div className={styles.right}>
-          <a className={styles.icon} href={X_URL} rel="noopener" aria-label="Rwally on X">
+          <a className={styles.icon} href={X_URL} rel="noopener" aria-label="RWAlly on X">
             <XGlyph />
           </a>
           <a className={styles.cta} href={APP_NAV.href} rel="noopener">
