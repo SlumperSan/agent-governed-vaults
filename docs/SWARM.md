@@ -251,6 +251,18 @@ A task is done when **all** of these hold:
 - **No `git stash`, `git reset --hard`, or `git checkout --` on files you did not create.** Another
   agent's work may be in the tree.
 - Branch names are prefixed by intent: `fix/`, `feat/`, `test/`, `chore/`, `docs/`.
+- **Before you PUSH to an existing PR's branch, check `gh pr view <n> --json state`.** Not whether
+  its head moved — its STATE. A freshly-merged branch is indistinguishable from a live one
+  (`git rev-list --left-right --count` reads `0 behind` for both), and a push into a merged PR
+  creates no CI run and strands the commits silently. This cost a fixer three commits on
+  2026-09-01.
+- **Merging is governed by `docs/vault/auto-merge.md`, and "CI is green" is NOT the whole rule.**
+  Read it before you merge anything. In brief: green must be green *for your own head SHA*
+  (`gh pr checks` does not tell you whose commit it ran on); a standing REJECT blocks a merge; an
+  assigned-but-unposted review blocks a merge; and dependency bumps, new runtime dependencies and
+  workflow action pins are never self-merged. Four PRs merged across their own review verdicts on
+  2026-09-01, putting two HIGH findings on `protocol/main`, because the rule as written said only
+  "merge once CI is green" — following it correctly produced the failure.
 
 ## 9. Batch related changes into one PR
 
