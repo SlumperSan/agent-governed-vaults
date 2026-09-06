@@ -12,7 +12,7 @@
  * The walk is positive: it enumerates the first-party trees from the
  * filesystem and asserts the identifier on every file it finds, so a new file
  * is covered the day it lands. Only the vendored carve-outs LICENSE names are
- * exempt, by their exact paths.
+ * exempt, by their exact paths, and each still must carry SOME identifier.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -26,7 +26,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const TREES = ['contracts/src', 'contracts/script', 'contracts/test'];
 
 /** The vendored carve-outs LICENSE names, relative to the repo root. */
-const VENDORED = new Set([]);
+const VENDORED = new Set([
+  'contracts/test/retired/vendor/FullMath.sol',
+  'contracts/test/retired/vendor/TickMath.sol',
+]);
 
 function walk(dir) {
   const out = [];
