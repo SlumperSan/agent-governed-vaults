@@ -1,8 +1,8 @@
 # apps/site: public marketing site
 
-Eight static HTML pages for Rwally, the Agent-Governed Vaults protocol: `index.html`,
-`how-it-works.html`, `agents.html`, `who-its-for.html`, `operators.html`, `disclaimers.html`,
-`faq.html` and `status.html`.
+Nine static HTML pages for RWAlly, the Agent-Governed Vaults protocol: `index.html`,
+`how-it-works.html`, `vision.html`, `agents.html`, `who-its-for.html`, `operators.html`,
+`disclaimers.html`, `faq.html` and `status.html`.
 
 `risks.html` was retired on 2026-09-05 and `disclaimers.html` took its slot. The owner's
 instruction is that every negative statement on this site lives on one page, so the fifteen risks
@@ -86,11 +86,11 @@ below are what stop a claim that is not; the owner is who decides.
 ## The claims test is what stops a banned claim from shipping
 
 `test/site.test.mjs` runs in `npm run test:backend` and therefore in `npm run gate` and in CI. Prose
-has no compiler; that file is the compiler. It asserts, across all eight pages:
+has no compiler; that file is the compiler. It asserts, across all nine pages:
 
 - **Absence** of banned claim phrases: word-boundary-anchored phrases, never bare words, because a
   test that bans single words gets neutered by its first false positive and then protects nothing.
-  The same list is applied to this README and to both stylesheets, not only to the eight pages.
+  The same list is applied to this README and to both stylesheets, not only to the nine pages.
 - **Presence** of the pinned sentences at the permitted count per page, and inside `<main>` rather
   than in a footer. Since 2026-09-05 that is `Deployed on Robinhood Chain mainnet, chain id 4663.`
   once on `status.html` and once on `disclaimers.html`, the not-an-offer sentence once on
@@ -100,7 +100,7 @@ has no compiler; that file is the compiler. It asserts, across all eight pages:
   no-token sentence was retired on 2026-09-05 `airdrop` and `presale` are banned on all nine. What
   the repeated footer disclosure protected is carried by a mandatory footer link to
   `disclaimers.html` on every page, with the link text pinned. Also exactly one `<h1>`, `lang="en"`,
-  a skip link to `#main`, `<main id="main">`, a meta description, a title ending in ` | Rwally`, and
+  a skip link to `#main`, `<main id="main">`, a meta description, a title ending in ` | RWAlly`, and
   no surviving review marker anywhere under `apps/site`.
 - **Position** of the status block: absent from all seven other pages, present exactly once on
   `status.html` inside `<main>`, and `status.html` linked from every footer and from no header nav.
@@ -233,7 +233,7 @@ have legitimate uses for several words on the `BANNED` list, so that list is *no
 as examples and turned the gate red, which is the check working.)
 
 - **Mode F opens at the reveal phase, not at passage.** Five phrasings that place the trigger at
-  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the eight pages,
+  passage are banned across `README.md`, `llms.txt`, `docs/AGENT-QUICKSTART.md` and the nine pages,
   and each of those three files must positively name the reveal phase. Otherwise the ban is
   satisfiable by deleting the sentence. Ground truth: `Governance.hasPendingExecution` is true from
   `p.commitDeadline` onward (`Governance.sol:648-659`). The site-only ban on *one* phrasing had

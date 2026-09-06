@@ -292,11 +292,13 @@ const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
 // capitals are the joke and not a typo: RWA is the play on words, and it is the
 // same casing the token already carried on chain.
 //
-// THE CORPUS SUITE'S OWN COPY OF THIS CONSTANT DELIBERATELY DOES NOT FOLLOW.
-// `apps/site/test/site.test.mjs` pins ` | Rwally` against `apps/site/*.html`,
-// which this pass does not own and does not edit, so flipping that one would red
-// a suite over nine pages nobody touched. Two constants, two surfaces, and they
-// are meant to differ until the corpus is retired or flipped in its own commit.
+// THE CORPUS SUITE'S OWN COPY OF THIS CONSTANT NOW AGREES. It deliberately did
+// not, for one commit: `apps/site/test/site.test.mjs` pinned the old casing
+// against nine pages that pass did not own, and flipping it from there would
+// have reddened a suite over pages nobody had touched. The corpus was flipped in
+// its own commit on the same day, so the split is closed. Two constants and two
+// surfaces still, but they say the same thing, and a future divergence between
+// them is drift rather than a decision.
 const TITLE_SUFFIX = ' | RWAlly';
 
 // The external hosts any page may reference. NAVIGATION TARGETS ONLY: nothing on this site LOADS a

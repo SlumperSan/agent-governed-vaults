@@ -100,11 +100,18 @@ const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or finan
 // is a tightening rather than collateral, and it is the reason the retirement is one commit.
 const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
 const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
-// Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names Rwally, and
+// Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names the site, and
 // the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
 // which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the
 // site's title.
-const TITLE_SUFFIX = ' | Rwally';
+//
+// RECASED THE SAME DAY, BY THE SAME DECISION THAT RENAMED apps/site-next. The capitals are the joke
+// and not a typo: RWA is the play on words, and it is the same casing the token carries on chain,
+// where `name()` returns `RWAlly`. That suite's constant carried a note saying the two were meant to
+// differ until the corpus was flipped in its own commit, because flipping it from there would have
+// reddened nine pages nobody had touched. This is that commit, so the two now agree and the note in
+// `apps/site-next/test/site.test.mjs` says so rather than describing a split that no longer exists.
+const TITLE_SUFFIX = ' | RWAlly';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
