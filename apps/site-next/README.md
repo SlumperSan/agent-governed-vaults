@@ -54,7 +54,7 @@ src/fonts.css              three hand-written @font-face rules
 src/index.css              reset, element defaults, and the shared surfaces
 src/shell/                 status band, masthead, footer, skip link, PageShell, PinnedText, pinned.ts
 src/motion/                Reveal, LenisProvider, useScrollTimeline, useReducedMotion, easings
-src/brand/                 the mark: markPath.ts is the data, Mark.tsx draws it, mark.svg is the artwork
+src/brand/                 the mark: markAsset.ts is the contract, Mark.tsx links it, public/brand/ holds the artwork
 src/assets/                manifest.ts — every picture on the site, declared once — and Backdrop
 src/sections/<key>/        one directory per section — see that directory's README
 src/pages/*.tsx            eight composition files — see that directory's README
@@ -121,11 +121,12 @@ The network panel must show zero non-self hosts. One request to a font host is a
   poster on screen, and the contrast floor behind the hero copy is now the one bound stated once in
   `src/assets/backdrop.module.css` rather than four hundred lines of gradient arithmetic that had
   been recomputed three times.
-- **The site is called Rwally.** The masthead is the comic horizontal lockup at 48px on desktop and
-  the ledger R beside the name in text below 52rem; both are in the markup at every width and CSS
-  chooses, because branching the tree on the viewport is the hydration mismatch `App.tsx` forbids.
-  Titles end ` — Rwally`. "Agent-Governed Vaults" survives only as the descriptor line, rendered
-  once per page in the footer.
+- **The site is called RWAlly.** The masthead is the comic mark at 48px beside the name set as live
+  text in the page's own display face, at every width. Titles end ` | RWAlly`. The capitals are the
+  owner's decision of 2026-09-05 and are the play on RWA; they also match the casing the token
+  already carried on chain. "Agent-Governed Vaults" survives only as the descriptor line, rendered
+  once per page in the footer. The domain is untouched by the recasing: `rwally.com` stays lowercase
+  in every URL, in the X handle and in every address.
 - **`risks.html` is now `disclaimers.html`**, in the footer rather than the header nav, which is why
   `NAV` carries seven and `FOOTER_PAGES` carries nine. Nine pages since `vision.html` landed.
 - **The brand's secondary hue is in the theme.** `--teal` and `--teal-bright`, adopted from the
@@ -143,15 +144,22 @@ The network panel must show zero non-self hosts. One request to a font host is a
   is `null`, and `Masthead` emits no element at all rather than hiding one — a hidden link still
   reaches a screen reader, a crawler and the link guards.
 
-- **The brand mark, at the size the brand says to use it.** Owner rule, 2026-09-05: the illustrated
-  comic lockup is the logo everywhere except favicon and small-avatar sizes, where it collapses, and
-  there the ledger R is. The masthead is such a size — `.brand-mark` renders about 18 CSS pixels
-  tall — so it draws the ledger R beside the site name set as live text in the page's own display
-  face. The path is declared once in `src/brand/markPath.ts`, is byte-identical to the one in the
-  brand set's own favicon, and is copied into `src/brand/mark.svg` and `public/favicon.svg`, which
-  cannot import it; the test named `the brand mark is one path, drawn the same in all three files`
-  reds when they disagree. `public/favicon.ico` is rebuilt from that path at 16 and 32 with a
-  transparent ground.
+- **The brand mark, at the size the brand says to use it.** REWRITTEN 2026-09-05, and the entry it
+  replaced is worth stating because the rule inverted. That entry said the illustrated comic mark is
+  the logo everywhere except favicon and small-avatar sizes, where it collapses, and that the ledger
+  R holds those sizes; the masthead counted as one, at about 18 CSS pixels. The owner answered that
+  question the other way the same day: the comic R is the mark in the header, the footer and the tab
+  icon on both surfaces, and the drawn sizes moved up to meet it rather than the mark moving down.
+  It is 48px in both headers and 56px in both footers, against the 48px floor the brand set measured
+  and `src/brand/markAsset.ts` records as `MIN_MARK_PX`.
+  It is a LINKED file rather than inline SVG, because the comic mark is five fixed-colour layers
+  with nothing to inherit, where the ledger R was one path that had to take the link's colour.
+  `public/brand/mark-comic.svg` is the artwork here and `apps/app/src/brand/mark-comic.svg` is the
+  same bytes on the app origin; `public/favicon.svg` is the brand set's recentred square companion
+  and `apps/app/src/favicon.svg` is its match. The test named `the brand mark is one artwork,
+  byte-identical on both surfaces` reds when either pair disagrees, and `the comic mark is drawn at
+  a size its halftone survives` reds when a stylesheet drops below the floor. `public/favicon.ico`
+  is built from the brand set's recentred 32px comic PNG, wrapped in a single-entry ICO container.
 - **The accent that failed its floor is gone.** `--accent-dim` was `#6f62d6`, which measures 4.21:1
   on the ground: over the 3:1 non-text floor, under 4.5:1, and fenced off from text by a comment.
   The brand token set of 2026-09-05 retires it from every UI role for that reading and raises the

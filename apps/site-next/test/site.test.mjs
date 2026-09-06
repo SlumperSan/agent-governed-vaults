@@ -2198,9 +2198,13 @@ test('the comic mark is drawn at a size its halftone survives', () => {
   assert.ok(floor, 'src/brand/markAsset.ts no longer declares MIN_MARK_PX as a bare integer');
   const minPx = Number(floor[1]);
 
+  // BOTH SURFACES, for the same reason the byte-identity guard reaches across: the app has no suite
+  // that could hold this, and a floor enforced on one of two headers that are meant to be identical
+  // is a floor the other can quietly drop through.
   const sheets = [
-    ['src/shell/masthead.module.css', path.join(APP, 'src', 'shell', 'masthead.module.css')],
-    ['src/shell/footer.module.css', path.join(APP, 'src', 'shell', 'footer.module.css')],
+    ['apps/site-next/src/shell/masthead.module.css', path.join(APP, 'src', 'shell', 'masthead.module.css')],
+    ['apps/site-next/src/shell/footer.module.css', path.join(APP, 'src', 'shell', 'footer.module.css')],
+    ['apps/app/src/app.css', path.join(APP_SURFACE, 'app.css')],
   ];
   let checked = 0;
   for (const [rel, file] of sheets) {

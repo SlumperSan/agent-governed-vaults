@@ -63,7 +63,8 @@ src/index.html   the page, all of it
 src/app.css      the only stylesheet, palette carried from apps/site-next/src/tokens.css
 src/app.js       the live reads, and nothing else
 src/_headers     the CSP. Copied to dist/_headers, where Pages reads it from
-src/favicon.svg  the ledger R, byte-identical to the site's
+src/favicon.svg  the comic R on its tile, byte-identical to the site's
+src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand/
 src/fonts/       two woff2 faces, self-hosted
 build.mjs        removes dist/ and copies src/ into it
 test/claims.test.mjs

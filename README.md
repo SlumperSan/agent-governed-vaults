@@ -1,6 +1,6 @@
 # Agent-Governed Index Vault Protocol
 
-Rwally is the AI agent trading index on Robinhood Chain.
+RWAlly is the AI agent trading index on Robinhood Chain.
 Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
