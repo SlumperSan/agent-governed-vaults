@@ -51,8 +51,10 @@
       <p class="lede">Every warning, limit and unresolved question on this site is on this page. The other eight pages describe mechanism. This one describes what that mechanism costs you when it does not go your way.</p>
       <p>Nothing on this site is an offer, a solicitation, or financial advice.</p>
       <p>Deployed on Robinhood Chain mainnet, chain id 4663. The address ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.</p>
-      <p class="footer-pins">No token. No points. No airdrop. No presale.</p>
-      <p>The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens. RWLY does not exist yet, so there is nothing here to buy, claim or hold.</p>
+      <p>RWLY is live on Robinhood Chain at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code>: an ERC-20 named RWAlly, with a fixed supply of 1,000,000,000, no owner, no mint function, no pause and no upgrade path. It was launched on 2026-09-05 on Pons, a third-party launchpad this project did not write, quoted in native ETH rather than in a stock token. There is nothing here to buy, claim or hold.</p>
+      <p>In the launch transaction the protocol&rsquo;s own deployer address took 72,978,672 RWLY, about 7.3% of the fixed supply, for 0.1337 ETH at the curve&rsquo;s opening price. It paid no snipe tax, because the launchpad exempts the creator automatically while every other address in that block faced a tax decaying from 99% over three seconds. Nothing was minted aside from the one fixed supply and nothing was reserved before trading opened, and both halves of that belong together rather than only the flattering one.</p>
+      <p>RWLY is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens, and that mechanism is design intent rather than code: no contract this protocol deployed references RWLY, there is no staking contract, no stRWLY, no epoch and no reward accrual on chain, and none of it can be pointed at the token without a new deployment.</p>
+      <p>The record is <code>contracts/config/deployments/rwly-robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.</p>
       <p class="footer-pins">Source-available under BUSL-1.1, not open source.</p>
       <p>Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
       <p>Spot crypto assets fall. Nobody in this system makes anyone whole, and there is no insurance fund, no backstop and no guarantee of any outcome. Do not deposit anything you cannot afford to lose entirely.</p>
@@ -329,11 +331,11 @@
         </div>
         <div>
           <dt>Everything on the Vision page is design intent</dt>
-          <dd>RWLY does not exist, and neither is the rest of the Vision page built: no stRWLY, no staking, no hourly epoch, no keeper, no treasury, no buyback and no stock index. What is on chain is seven contracts and no vault. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.</dd>
+          <dd>RWLY launched 2026-09-05, and none of the rest of the Vision page is built: no stRWLY, no staking, no hourly epoch, no keeper, no treasury, no buyback and no stock index. What is on chain is seven contracts and no vault. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.</dd>
         </div>
         <div>
           <dt>The token economics are not live</dt>
-          <dd>RWLY does not exist. No token is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to any such token, so nothing on chain enforces any of it.</dd>
+          <dd>RWLY launched 2026-09-05 and no vault is wired to it. No token is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to any such token, so nothing on chain enforces any of it.</dd>
         </div>
         <div>
           <dt>The treasury and the buyback are not live</dt>

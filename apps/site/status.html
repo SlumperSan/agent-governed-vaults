@@ -148,7 +148,18 @@
       <p class="tight">It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.</p>
       <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters only when it is funded, and none has been.</p>
       <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
-      <p class="tight">There is no token. RWLY is designed to be the protocol&rsquo;s governance token and to accrue fees into stock; RWLY does not exist yet, and this page will carry its record when it does. The design is on the <a href="vision.html">Vision page</a>.</p>
+      <p class="tight">No vault is wired to RWLY. RWLY is designed to be the protocol&rsquo;s governance token and to accrue fees into stock, and the record of the token itself is the next section.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The token</p>
+      <h2>RWLY is live.</h2>
+      <p class="tight">Launched 2026-09-05 on Pons, a third-party launchpad this project did not write, at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code> on Robinhood Chain, chain id 4663.</p>
+      <p class="tight">An ERC-20 named RWAlly, fixed supply 1,000,000,000, no owner, no mint function, no pause and no upgrade path.</p>
+      <p class="tight">No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent. The design is on the <a href="vision.html">Vision page</a>.</p>
+      <p class="tight">The record is <code>contracts/config/deployments/rwly-robinhood-mainnet.json</code>, which carries the launch transaction, the launchpad addresses, the fee terms and what the protocol&rsquo;s own deployer address took in the launch transaction. The <a href="disclaimers.html">Disclaimers</a> state that last one in prose.</p>
     </div>
   </section>
 

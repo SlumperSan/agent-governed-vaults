@@ -94,10 +94,11 @@ has no compiler; that file is the compiler. It asserts, across all eight pages:
 - **Presence** of the pinned sentences at the permitted count per page, and inside `<main>` rather
   than in a footer. Since 2026-09-05 that is `Deployed on Robinhood Chain mainnet, chain id 4663.`
   once on `status.html` and once on `disclaimers.html`, the not-an-offer sentence once on
-  `disclaimers.html`, and the no-token and licence sentences once each on `disclaimers.html`, zero
+  `disclaimers.html`, and the licence sentence once on `disclaimers.html`, zero
   everywhere else, which is stricter than the old per-page count and not looser: with nothing
-  permitted on the other seven pages, `airdrop`, `presale` and `open source` are banned outright
-  there. What the repeated footer disclosure protected is carried by a mandatory footer link to
+  permitted on the other seven pages, `open source` is banned outright there, and since the
+  no-token sentence was retired on 2026-09-05 `airdrop` and `presale` are banned on all nine. What
+  the repeated footer disclosure protected is carried by a mandatory footer link to
   `disclaimers.html` on every page, with the link text pinned. Also exactly one `<h1>`, `lang="en"`,
   a skip link to `#main`, `<main id="main">`, a meta description, a title ending in ` | Rwally`, and
   no surviving review marker anywhere under `apps/site`.
@@ -169,25 +170,37 @@ because a page-scoped check is satisfied by a disclaimer thousands of characters
   `WETH` and `cbBTC`, with the addresses the chain configuration records. A simplification about
   what a vault holds is only honest while it is anchored.
 
-### RWLY does not exist, and every mention of it has to say so (added 2026-09-05)
+### RWLY launched 2026-09-05, and every mention of it has to be anchored (flipped the same day)
 
-The lede now names the next iteration: *"The next iteration, RWLY, is designed to accrue the
-protocol's fees into official Robinhood Stock Tokens. RWLY does not exist yet."* The owner's
-standing rule from 2026-09-04 is that this site keeps saying no token exists until one does, and a
-named future token is the easiest thing on these pages to quote out of context into a claim that
-something is buyable. So the test requires `does not exist` within **160 characters** of every
-`RWLY` anywhere under `apps/site`, and requires at least six mentions so the rule cannot be
-satisfied by deleting them.
+RWLY was created at 2026-09-05T21:51:57Z, so the rule this section used to describe reversed inside
+a day. What it required was `does not exist` within **160 characters** of every `RWLY` anywhere
+under `apps/site`. What it requires now is an anchor to a checkable launch fact within the same
+window: the address stem `0x2eed8ae7`, the words `fixed supply`, `launched 2026-09-05`, or a
+design-intent hedge (`design intent`, `designed to`, `not built`). The floor on the number of
+mentions is unchanged in purpose and re-measured in value, so the rule still cannot be satisfied by
+deleting the mentions.
+
+The reasoning behind the old rule survives the flip and is why the replacement is an anchor rather
+than nothing: a named token is the easiest thing on these pages to quote out of context into a
+claim that something is buyable. A mention that travels alone is a mention that gets quoted alone.
 
 The window is a character count rather than a sentence or a block, and both alternatives were
-tried first. The approved lede is two sentences: one names RWLY, the next says it does not exist,
-so a sentence-scoped rule reds the copy the owner directed. Block scoping does not reach the
+tried first. The approved lede is two sentences: one names RWLY as design intent, the next states
+the launch facts, so a sentence-scoped rule reds the copy the owner directed. Block scoping does not reach the
 three mentions that live inside `content="…"` meta attributes, which sit in no `<p>`, `<dd>` or
-`<li>`. 160 is measured against the copy: the widest gap on the site today is 108 characters.
+`<li>`.
 
-The pinned sentence `No token. No points. No airdrop. No presale.` is unaffected and stays
-byte-identical. It is true precisely because RWLY does not exist. Since 2026-09-05 it is stated
-once, on `disclaimers.html`, rather than in eight footers.
+`vision.html` is a whole page of design intent, `stRWLY` contains `RWLY`, and the page produces
+eighteen matches. It uses a section-scoped chip instead of the window: every `<section>` that names
+RWLY carries the exact string `Designed, not built. RWLY launched 2026-09-05.` The chip flipped
+with everything else and kept its two-sentence shape, one clause about the section and one about
+the token, so only the false clause moved.
+
+The sentence `No token. No points. No airdrop. No presale.` is **retired**, not reworded: the whole
+sentence exists to say a thing does not exist. It is pinned at zero on every page, so restoring it
+from an old copy reds. Retiring it also removed the only exemption that made `airdrop` and
+`presale` legal anywhere under `apps/site`, which is a tightening: those two words are now banned
+outright on all nine pages.
 
 ### The negation exceptions
 

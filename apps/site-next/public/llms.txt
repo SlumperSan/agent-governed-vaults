@@ -43,7 +43,9 @@
   (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 (the soak drills and the canary) have
   no current evidence on any chain, because the 5/5 soak run and the canary observation that
   accompanied it predate the current bytecode and have not been re-run, and the deployment did not
-  close them. No token, presale or airdrop exists.
+  close them. RWLY launched 2026-09-05 at 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 with a fixed supply of
+  1,000,000,000, on a third-party launchpad, and no contract in this repository references it. No
+  presale or airdrop exists and there is nothing here to claim.
 - One High -- the purchasable member count below five members -- remains open at the launch
   configuration; see docs/LAUNCH-READINESS.md.
 - Two limits apply on chain 4663 and nowhere else the docs describe. Chainlink publishes no L2

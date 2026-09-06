@@ -1,0 +1,70 @@
+{
+  "recordKind": "launchpad-token",
+  "recordNote": "RWLY on Robinhood Chain mainnet. This file sits beside robinhood-mainnet.json and records a DIFFERENT KIND OF THING, which is the most important line in it: the deployment record describes contracts this repository wrote, compiled and broadcast, while this file describes a token that a third-party launchpad (Pons v2) minted on the deployer's instruction. Nobody here wrote that code, and there is no broadcast file, because no script in this repository deployed it. Every value below was read from chain 4663 with cast 1.7.1 against https://rpc.mainnet.chain.robinhood.com on 2026-09-05. This file exists so that the addresses apps/site/status.html publishes are transcribed from a record rather than from a session.",
+  "chainId": 4663,
+  "chainName": "robinhood-mainnet",
+  "rpc": "https://rpc.mainnet.chain.robinhood.com",
+  "token": {
+    "address": "0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9",
+    "name": "RWAlly",
+    "symbol": "RWLY",
+    "decimals": 18,
+    "totalSupply": "1000000000000000000000000000",
+    "totalSupplyHuman": "1,000,000,000",
+    "runtimeCodeBytes": 3248,
+    "description": "The AI agent trading index.",
+    "descriptionNote": "The token's own on-chain description() string, quoted verbatim.",
+    "provenance": "ONCHAIN. name(), symbol(), decimals(), totalSupply() and description() read with cast call; runtimeCodeBytes from cast code."
+  },
+  "creation": {
+    "creationTx": "0x1672a086c16547fcb533478521311cb4d703c815d38d2db1650ef71c2fd1b5d9",
+    "creationBlock": 55456054,
+    "creationBlockTimestamp": 1788645117,
+    "launchedAt": "2026-09-05T21:51:57Z",
+    "launchedAtNote": "The creation block's own timestamp, read with cast block --field timestamp, not a wall clock. It equals the curve's launchedAt() exactly.",
+    "from": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "fromNote": "The same deployer address as the deployer field of robinhood-mainnet.json. The launch was made by this project."
+  },
+  "launchpad": {
+    "protocol": "Pons v2",
+    "protocolNote": "A third-party launchpad. No contract in it was written, compiled or broadcast by this repository.",
+    "factory": "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+    "curve": "0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5",
+    "quoteAsset": "0x0000000000000000000000000000000000000000",
+    "quoteAssetName": "native ETH",
+    "quoteAssetNote": "pairToken() returns the zero address and isNativeQuote() returns true, so the launch is quoted in ETH and not in a stock token. The standing gen-2 design points the other way, so any RWLY pool against a stock token is a separate build rather than a byproduct of this launch.",
+    "feeBps": 100,
+    "creatorTaxBps": 8,
+    "protocolFeeShareBps": 3000,
+    "creatorFeeRecipient": "0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c",
+    "creatorFeeRecipientNote": "A 1-of-1 multisig whose only owner is the deployer EOA above, on version 1.4.1. getThreshold() returns 1 and getOwners() returns that one address, checked against a known 2-of-3 multisig as a positive control. One key can move whatever it holds, so nothing it holds is locked by it."
+  },
+  "creatorBuy": {
+    "inSameTransactionAsLaunch": true,
+    "spentWei": "133700000000000000",
+    "spentHuman": "0.1337 ETH",
+    "tokensReceived": "72978672483828499200366853",
+    "tokensReceivedHuman": "72,978,672",
+    "shareOfTotalSupply": "7.2979%",
+    "recipient": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "snipeTaxPaid": "none",
+    "snipeTaxNote": "currentSnipeTaxBps(deployer) returns 0 in the launch block while a stranger address returns 9900 in the same block. The exemption is the launchpad's own automatic one for the creator: the transaction's exemption list argument decodes to length zero.",
+    "characterisation": "Not a pre-mine and not a reserved allocation: nothing was set aside before trading opened, and the buy executed against the same curve at the same formula price any address could have paid. It is nonetheless a 7.2979% position taken at the opening price under a zero tax rate no other address had in that block, and both halves belong together.",
+    "verification": "The tokens delivered match the curve's own constant-product expectation to zero wei, computed from launchSupply(), phantomQuote(), feeBps() and creatorTaxBps() alone."
+  },
+  "relationshipToOurDeployedContracts": {
+    "referencedByAnyDeployedContract": false,
+    "note": "No contract this repository deployed references this token, and none can be pointed at it without a new deployment: there is no setter, registry entry or configuration slot that takes it. The deployment record's seven runtimes were certified byte-for-byte against source commit b1cde122 thirteen hours before the token existed, and bytecode fixed before a thing exists cannot contain its address. Governance.propose gates on vault stake, and grep -ci rwly returns 0 in Governance.sol, FeeEngine.sol and VaultCore.sol.",
+    "stakingContract": "none",
+    "epochContract": "none",
+    "rewardAccrual": "none",
+    "designIntentNote": "stRWLY, hourly epochs, the buyback and the stock index have no on-chain existence. Every public surface must write them as design intent or in the future tense."
+  },
+  "volatileFiguresDeliberatelyOmitted": "No price, no market capitalisation, no holder count, no unsold-supply share and no pool inventory is recorded here. The curve moved roughly 45% of supply within two minutes of launch, so a figure of that kind is true at a block and false by the time it is read. The fields above are the ones that do not move.",
+  "reproduce": [
+    "cast call 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 'totalSupply()(uint256)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast call 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 'name()(string)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast tx 0x1672a086c16547fcb533478521311cb4d703c815d38d2db1650ef71c2fd1b5d9 --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast block 55456054 --field timestamp --rpc-url https://rpc.mainnet.chain.robinhood.com"
+  ]
+}
