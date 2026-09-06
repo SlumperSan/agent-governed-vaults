@@ -222,6 +222,38 @@ export function resolveCanaryConfig(env) {
  *        `applyIdentityObservations` and persists the result.
  * @returns {Promise<import('./signal.mjs').SignalResult[]>}
  */
+/**
+ * Every SIGNAL name a sweep can emit — the ACTUAL universe the alert tiering in `sinks.mjs` has to
+ * cover, declared next to the dispatch that produces it.
+ *
+ * `sinks.test.mjs` used to derive this from `readdir('src/signals/')`. A directory is a PROXY for
+ * the universe, and it leaked in both directions: `vault-config` is emitted right here from no file
+ * at all and had to be hand-added back in the test, while a file under `src/signals/<subdir>/` was
+ * invisible to a non-recursive `readdir` and so fell through to LOG with a green suite (measured on
+ * `c3c789ba`: 22 pass, 0 fail). Declaring the names where they are dispatched removes the proxy.
+ *
+ * This is a hand-written list, which is the thing that goes stale — so it is not trusted on its own.
+ * `run()` below ASSERTS its name is in here, so a dispatch site added without a declaration throws
+ * on the sweep that reaches it; and `sinks.test.mjs` cross-checks this set against the signal files
+ * on disk in both directions, so a file and a declaration that disagree is a test failure. Neither
+ * proxy is believed alone.
+ * @type {ReadonlySet<string>}
+ */
+export const EMITTABLE_SIGNALS = new Set([
+  'oracle-freshness', 'feed-identity', 'nav-backing', 'share-conservation', 'exit-liveness',
+  'module-events', 'fee-routing',
+  // Added on the rebase onto `protocol/main` @ bab5ee90. RECORDED RATHER THAN QUIETLY ADDED,
+  // because it is the first data point on this list's real failure mode: `governance-watch` (#117)
+  // landed on main roughly a day after this set was written, is dispatched through `run()` below,
+  // and was not declared here. On the rebased tree that threw on EVERY sweep before this line was
+  // added -- 24 of 286 canary tests red, `sweep.failed` in the runner log, nothing monitored. Loud,
+  // which is the design working; but the cost of a declaration is that somebody must remember it,
+  // and within 24 hours nobody did.
+  'governance-watch',
+  // Not a file: synthesised below when a whole vault's config is unreadable.
+  'vault-config',
+]);
+
 export async function collectSignals({ reader, state, vaults, cfg, window, identityPins = {} }) {
   const out = [];
   const { fromBlock, toBlock, nowSec } = window;
@@ -240,6 +272,12 @@ export async function collectSignals({ reader, state, vaults, cfg, window, ident
      * an entire pivot.
      */
     const run = async (name, fn) => {
+      // The declaration in `EMITTABLE_SIGNALS` is what `sinks.mjs` tiers against, so a dispatch site
+      // that is not declared would emit a signal nobody assigned a severity to. Fail loudly on the
+      // sweep that reaches it rather than routing it to LOG by default.
+      if (!EMITTABLE_SIGNALS.has(name)) {
+        throw new Error(`canary: signal '${name}' is dispatched but not declared in EMITTABLE_SIGNALS — add it there and give it a tier in sinks.mjs`);
+      }
       try {
         out.push(...(await fn()));
       } catch (err) {
