@@ -54,18 +54,21 @@ const REPO = path.resolve(SITE, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// Still eight. `risks.html` was RETIRED on 2026-09-05 and `disclaimers.html` took its slot: the
+// Nine now, not eight. `risks.html` was RETIRED on 2026-09-05 and `disclaimers.html` took its slot: the
 // owner's instruction is that every negative statement on this site lives on one page, so the
-// fifteen risks, the legal position and every caveat lifted out of the other seven pages are all
-// there. The page count did not change and neither did the parser -- the risk articles keep their
-// `<article class="risk" id="rN">` shape, and every leg below that used to read risks.html now
-// reads disclaimers.html.
+// fifteen risks, the legal position and every caveat lifted out of the other pages are all
+// there. The page count did not change for that move and neither did the parser -- the risk articles
+// keep their `<article class="risk" id="rN">` shape, and every leg below that used to read risks.html
+// now reads disclaimers.html.
 //
-// TWO of these eight are NOT in the header nav -- status.html since 2026-09-04 and
+// `vision.html` was ADDED on 2026-09-05 (copy deck v2, the gen-2 design intent page), which is why
+// the count moved from eight to nine here and in every "all N pages" leg below.
+//
+// TWO of these nine are NOT in the header nav -- status.html since 2026-09-04 and
 // disclaimers.html since 2026-09-05 -- and both are reached from the footer of every page. They are
 // public pages and every guard in this file walks them, which is why they are members of this array
 // rather than special cases.
-const PAGES = ['index.html', 'how-it-works.html', 'agents.html', 'who-its-for.html', 'operators.html', 'disclaimers.html', 'faq.html', 'status.html'];
+const PAGES = ['index.html', 'how-it-works.html', 'vision.html', 'agents.html', 'who-its-for.html', 'operators.html', 'disclaimers.html', 'faq.html', 'status.html'];
 
 /** The one page every negative claim lives on, and the one every footer must link to. */
 const DISCLAIMERS_PAGE = 'disclaimers.html';
@@ -83,13 +86,32 @@ const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 // code is -- is carried by DEPLOYED_LINE below plus the mandatory footer link to the Disclaimers.
 const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
-const FOOTER_TOKEN = 'No token. No points. No airdrop. No presale.';
-const FOOTER_LICENSE = 'Source-available under BUSL-1.1 — not open source.';
-// Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names Rwally, and
+// RETIRED AS A PINNED SENTENCE 2026-09-05, KEPT AS A COUNTED ABSENCE. This was FOOTER_TOKEN, and it
+// rendered once on disclaimers.html. RWLY was created at 2026-09-05T21:51:57Z, so the sentence opens
+// on a false clause and cannot be repaired by rewording: the whole sentence exists to say a thing
+// does not exist. It is not deleted from this file, because a sentence that was true yesterday is
+// exactly the sentence an editor restores from an old copy of a page tomorrow. It is pinned at ZERO
+// on every page instead, so a reappearance reds. `apps/site-next/test/site.test.mjs` retired the
+// same sentence the same way and named this suite as the separate ticket; this is that ticket.
+//
+// NOTE WHAT ELSE WENT WITH IT. This sentence was the ONLY thing making `airdrop` and `presale`
+// legal anywhere under apps/site: BANNED_OUTSIDE_FOOTER runs after scrub() removes the permitted
+// count, so with the count at zero those two words are now banned outright on all nine pages. That
+// is a tightening rather than collateral, and it is the reason the retirement is one commit.
+const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
+const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
+// Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names the site, and
 // the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
 // which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the
 // site's title.
-const TITLE_SUFFIX = ' | Rwally';
+//
+// RECASED THE SAME DAY, BY THE SAME DECISION THAT RENAMED apps/site-next. The capitals are the joke
+// and not a typo: RWA is the play on words, and it is the same casing the token carries on chain,
+// where `name()` returns `RWAlly`. That suite's constant carried a note saying the two were meant to
+// differ until the corpus was flipped in its own commit, because flipping it from there would have
+// reddened nine pages nobody had touched. This is that commit, so the two now agree and the note in
+// `apps/site-next/test/site.test.mjs` says so rather than describing a split that no longer exists.
+const TITLE_SUFFIX = ' | RWAlly';
 
 // The only external host any page may reference.
 const ALLOWED_HOST = 'github.com';
@@ -189,7 +211,8 @@ const PERMITTED = [
  * page and therefore permitted those three words on every page.
  */
 const FOOTER_SENTENCE_COUNTS = {
-  [FOOTER_TOKEN]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
+  // Zero on EVERY page, disclaimers.html included -- see the retirement note beside the constant.
+  [RETIRED_NO_TOKEN]: { default: 0 },
   [FOOTER_LICENSE]: { default: 0, [DISCLAIMERS_PAGE]: 1 },
 };
 
@@ -222,8 +245,8 @@ function scrubPermitted(text) {
 
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
-test('all eight pages exist', () => {
-  assert.equal(PAGES.length, 8, 'PAGES must list all eight public pages');
+test('all nine pages exist', () => {
+  assert.equal(PAGES.length, 9, 'PAGES must list all nine public pages');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -417,10 +440,24 @@ test('every page links to the Disclaimers, with the link text pinned', () => {
   );
 });
 
-test('the two standing sentences are stated once each, on the Disclaimers page', () => {
+// ONE STANDING SENTENCE NOW, NOT TWO. The no-token half was retired on 2026-09-05 for the reason
+// beside RETIRED_NO_TOKEN, and the half of this test that required it has become the test below,
+// which requires its ABSENCE on every page rather than its presence on one. A required sentence and
+// a banned sentence are the same assertion pointed in opposite directions, so nothing is lost.
+test('the standing licence sentence is stated once, on the Disclaimers page', () => {
   const html = raw.get(DISCLAIMERS_PAGE) ?? '';
-  assert.ok(html.includes(FOOTER_TOKEN), `${DISCLAIMERS_PAGE}: missing exact no-token sentence`);
   assert.ok(html.includes(FOOTER_LICENSE), `${DISCLAIMERS_PAGE}: missing exact licence sentence`);
+});
+
+test('the retired no-token sentence appears on no page', () => {
+  for (const p of PAGES) {
+    assert.ok(
+      !(raw.get(p) ?? '').includes(RETIRED_NO_TOKEN),
+      `${p}: carries the retired no-token sentence ${JSON.stringify(RETIRED_NO_TOKEN)}. RWLY was created ` +
+        'at 2026-09-05T21:51:57Z, so the sentence opens on a false clause. It cannot be reworded, because ' +
+        'the whole sentence exists to say a thing does not exist: state the launch facts instead',
+    );
+  }
 });
 
 // The "banner precedes the nav on every page" test was deleted on 2026-09-04 rather than adapted.
@@ -602,7 +639,7 @@ test('every internal .html link resolves to a file on disk', () => {
   }
 });
 
-test('every page links to all eight pages', () => {
+test('every page links to all nine pages', () => {
   for (const p of PAGES) {
     const html = raw.get(p) ?? '';
     for (const other of PAGES) {
@@ -1002,62 +1039,181 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
 });
 
 /**
- * RWLY DOES NOT EXIST, AND EVERY MENTION OF IT HAS TO SAY SO.
+ * RWLY EXISTS, AND EVERY MENTION OF IT HAS TO BE ANCHORED TO A CHECKABLE LAUNCH FACT.
  *
- * Owner decision, 2026-09-05: the lede now names the next iteration -- "The next iteration, RWLY,
- * is designed to accrue the protocol's fees into official Robinhood Stock Tokens." -- and the
- * standing rule from 2026-09-04 is that this site keeps saying no token exists until one does. A
- * named future token is the single easiest thing on these pages to quote out of context into a
- * claim that something is buyable, so the qualifier travels with the name rather than sitting in a
- * disclaimer further down the page.
+ * FLIPPED 2026-09-05. This guard was written the same day under the opposite rule -- that the site
+ * keeps saying no token exists until one does -- and the token was created at 2026-09-05T21:51:57Z,
+ * which is the whole reason a claims guard is written as a rule rather than as a sentence. What the
+ * old rule protected is unchanged and is why the replacement is an anchor rather than nothing: a
+ * named token is the single easiest thing on these pages to quote out of context into a claim that
+ * something is buyable, so a qualifier still travels with the name rather than sitting in a
+ * disclaimer further down the page. Only what counts as a qualifier moved: `does not exist` is kept
+ * in the alternation for the sentences that legitimately say a DIFFERENT thing does not exist, and
+ * the address stem, the supply figure and `launched 2026-09-05` are added beside it.
  *
  * WINDOW-SCOPED, not sentence-scoped, and the reason is the copy this guard has to permit. The
- * approved lede is TWO sentences: the first names RWLY and the second says it does not exist yet.
- * A sentence-scoped rule reds the exact wording the owner directed, which is a guard failing its
- * own copy. Block scoping (the shape used by the security-review check above) does not work either,
- * because three of the twelve occurrences are inside `content="…"` meta attributes, which sit in no
- * <p>, <dd> or <li> at all. A character window handles markup and prose with one rule.
+ * approved lede is TWO sentences: the first names RWLY as design intent and the second states the
+ * launch facts. A sentence-scoped rule reds the exact wording the owner directed, which is a guard
+ * failing its own copy. Block scoping (the shape used by the security-review check above) does not
+ * work either, because three of the occurrences are inside `content="…"` meta attributes, which sit
+ * in no <p>, <dd> or <li> at all. A character window handles markup and prose with one rule.
  *
- * 160 CHARACTERS, chosen against the copy rather than picked round. Measured over the site as it
- * stands, the widest gap between an "RWLY" and its nearest "does not exist" is 108 characters (the
- * lede, whose first sentence carries the whole Stock Tokens clause). 160 leaves room for a modest
+ * 160 CHARACTERS, chosen against the copy rather than picked round. It leaves room for a modest
  * rewrite and still refuses a qualifier parked a paragraph away.
  *
  * The floor is the other half. A window rule alone is satisfiable by deleting every mention, which
  * would silently drop a fact the owner put on the page; the count assertion means the only way to
  * pass is to keep the mentions and keep them qualified. Same reasoning as the open-High check.
+ *
+ * VISION.HTML BREAKS THE WINDOW RULE, AND THIS IS THE SPLIT THAT FIXES IT WITHOUT WEAKENING IT.
+ * `vision.html` (added 2026-09-05, copy deck v2) is a whole page of design intent about RWLY,
+ * stRWLY, staking and the treasury. `stRWLY` CONTAINS `RWLY`, so every `stRWLY` is itself a match,
+ * and the page produces roughly thirty of them. A 160-character window over flowing prose cannot be
+ * satisfied that many times without repeating the qualifier almost every sentence, which is
+ * unreadable rather than honest.
+ *
+ * The device the page uses instead: every `<section>` opens with one exact status chip,
+ * `Designed, not built. RWLY launched 2026-09-05.` -- SECTION-scoped rather than window-scoped,
+ * following the shape the security-review attestation check above already uses in this file (find
+ * the enclosing block, require the qualifier IN it). For `vision.html` only, this test checks that
+ * every `<section>` containing an `RWLY` match also contains that exact chip, and separately -- so a
+ * mention sitting in the hero or between sections cannot silently escape either half -- that no
+ * `RWLY` mention on the page sits outside every `<section>` at all. The 160-character window rule is
+ * UNCHANGED for the other eight pages and every non-page surface (README.md, llms.txt, the
+ * stylesheets, sitemap.xml, `_redirects`): this is a second rule for one file, not a widening of the
+ * first rule for all of them. Do not solve a future page's version of this problem by loosening
+ * `RWLY_QUALIFIER` to accept a bare "designed" — that weakens the check on all nine pages to fix one.
  */
 const RWLY_WINDOW = 160;
-const RWLY_QUALIFIER = /does not exist/i;
+const RWLY_QUALIFIER = /does not exist|design intent|designed to|not built|0x2eed8ae7|fixed supply|launched 2026-09-05/i;
+// FLIPPED 2026-09-05, KEEPING THE SHAPE. The chip has always been two sentences, one about the
+// section and one about the token, and only the second one went false: RWLY was created at
+// 2026-09-05T21:51:57Z. The first sentence is untouched, so the section-scoped rule below reads
+// exactly as it did. The chip also still CONTAINS `RWLY`, which is load-bearing arithmetic rather
+// than style: it is repeated nine times on vision.html, so a chip without it would have dropped
+// nine occurrences out of RWLY_FLOOR in a commit that was supposed to be adding facts, not removing
+// mentions. `launched 2026-09-05` is added to RWLY_QUALIFIER above so the chip anchors its own
+// mention to a checkable date rather than borrowing a qualifier from the prose beside it.
+const RWLY_CHIP = 'Designed, not built. RWLY launched 2026-09-05.';
+const VISION_PAGE = 'vision.html';
+// RE-MEASURED 2026-09-05, after the launch flip: siteFiles() finds 51 occurrences of `RWLY` across
+// apps/site (test/ and images excluded, per siteFiles() below) -- 18 of them on vision.html alone,
+// where the chip accounts for nine. It was 46 before the flip; the five it gained are the launch
+// facts the six flipped pages now state. Set a few below that measurement, not at it, so a small
+// future edit does not immediately red this floor; re-measure and move this number the next time
+// RWLY mentions are added or removed anywhere under apps/site.
+const RWLY_FLOOR = 45;
 
-test('every mention of RWLY on this site sits beside the fact that it does not exist', () => {
+/**
+ * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
+ * sections (asserted below rather than assumed silently) -- true of this page's shell, which has no
+ * section nested inside another.
+ */
+const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+
+test('every mention of RWLY sits beside its address, its fixed supply, or a design-intent qualifier', () => {
   const files = siteFiles();
   let seen = 0;
   for (const f of files) {
+    const fileText = readFileSync(path.join(SITE, f), 'utf8');
     // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
-    const text = readFileSync(path.join(SITE, f), 'utf8').replace(/\s+/g, ' ');
+    const text = fileText.replace(/\s+/g, ' ');
+    seen += (text.match(/RWLY/g) ?? []).length;
+
+    if (f === VISION_PAGE) {
+      const sections = sectionsOf(fileText);
+      assert.equal(
+        (fileText.match(/<section\b/gi) ?? []).length,
+        sections.length,
+        `${VISION_PAGE}: a <section> did not close before the next opened, or one is nested inside ` +
+          'another -- the section-scoped RWLY check assumes flat, non-overlapping sections',
+      );
+      for (const section of sections) {
+        if (!/RWLY/.test(section)) continue;
+        assert.ok(
+          section.includes(RWLY_CHIP),
+          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)} — ` +
+            JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
+        );
+      }
+      const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
+      assert.ok(
+        !/RWLY/.test(outsideSections),
+        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer) — ` +
+          'the section-scoped chip check cannot see a mention that sits in no section',
+      );
+      continue;
+    }
+
     for (const m of text.matchAll(/RWLY/g)) {
-      seen++;
       const at = m.index ?? 0;
       const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
       assert.ok(
         RWLY_QUALIFIER.test(window),
-        `${f}: names RWLY without "does not exist" within ${RWLY_WINDOW} characters. RWLY is the ` +
-          'NEXT ITERATION and is design intent only — there is no such token, no presale and nothing ' +
-          `to hold. — ${JSON.stringify(window.trim().slice(0, 200))}`,
+        `${f}: names RWLY without its address, "fixed supply", or a design-intent qualifier within ${RWLY_WINDOW} characters. ` +
+          'RWLY launched 2026-09-05; every mention must anchor to the launch facts or say which part is still design. ' +
+          `— ${JSON.stringify(window.trim().slice(0, 200))}`,
       );
     }
   }
   assert.ok(
-    seen >= 6,
-    `expected RWLY to be named on at least six surfaces, found ${seen} — if the mentions were deleted ` +
+    seen >= RWLY_FLOOR,
+    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
       'rather than qualified, say so in the commit rather than letting this guard pass by absence',
   );
-  // And the exact sentence the owner's wording turns on, verbatim, on the page that carries the lede.
-  assert.ok(
-    (raw.get('index.html') ?? '').includes('RWLY does not exist yet.'),
-    'index.html: the lede must end on the exact sentence "RWLY does not exist yet."',
-  );
+  // NO SENTENCE THAT NAMES THE TOKEN MAY ALSO SAY IT DOES NOT EXIST.
+  //
+  // ADDED AFTER THE WINDOW RULE ABOVE LET ONE THROUGH. vision.html carried "RWLY rewards are
+  // designed, and depend on a token that does not exist." It is false, and every guard was green on
+  // it: the window rule is satisfied by "designed" sitting three words away, and the retired chip
+  // string does not match because this sentence is worded differently. A proximity rule asks
+  // whether a qualifier is NEAR the name; it cannot ask whether the qualifier is TRUE. So this leg
+  // is sentence-scoped and asks the one question the window cannot.
+  //
+  // SENTENCE-SCOPED RATHER THAN PAGE-SCOPED, deliberately: `vision.html` legitimately says an
+  // all-stocks index needs oracle work that does not exist yet, which is about oracles and is still
+  // true, and a page-scoped ban would red it. The three phrases are matched only inside a sentence
+  // that also names RWLY.
+  const TOKEN_ABSENCE = /does not exist|do not exist|there is no token/i;
+  for (const p of PAGES) {
+    for (const s of sentencesOf(publishedProse(raw.get(p) ?? ''))) {
+      if (!/RWLY/.test(s)) continue;
+      const hit = s.match(TOKEN_ABSENCE);
+      assert.equal(
+        hit,
+        null,
+        `${p}: a sentence naming RWLY also says ${JSON.stringify(hit?.[0])}. RWLY was created at ` +
+          '2026-09-05T21:51:57Z. Name the thing that is actually absent -- the staking contract, the ' +
+          'epoch, the reward accrual -- rather than the token, ' +
+          JSON.stringify(s.trim().slice(0, 200)),
+      );
+    }
+  }
+
+  // WHAT EACH PAGE MUST STATE, not merely avoid getting wrong.
+  //
+  // This half used to pin the exact sentence `RWLY does not exist yet.` on index.html -- a
+  // requirement that the page carry a claim which went false at 2026-09-05T21:51:57Z. Deleting it
+  // and stopping would have left the window rule above satisfiable by a page that never names the
+  // token at all, which is how a disclosure disappears with every guard still green. So it is
+  // replaced rather than removed, by the facts that make a mention checkable: the address stem a
+  // reader pastes into an explorer, the supply figure, and on the page that carries every negative
+  // statement, the disclosure a reader cannot reconstruct without effort.
+  const mustState = {
+    'index.html': ['0x2eed8ae7', '1,000,000,000', 'launched 2026-09-05'],
+    [DISCLAIMERS_PAGE]: ['0x2eed8ae7', '1,000,000,000', '7.3% of the fixed supply', 'Pons', 'design intent'],
+    [STATUS_PAGE]: ['0x2eed8ae7', '1,000,000,000', 'Launched 2026-09-05', 'rwly-robinhood-mainnet.json'],
+  };
+  for (const [p, musts] of Object.entries(mustState)) {
+    const html = raw.get(p) ?? '';
+    for (const must of musts) {
+      assert.ok(
+        html.includes(must),
+        `${p}: must state ${JSON.stringify(must)}. A qualifier rule alone is satisfied by a page that ` +
+          'never names the token, which is how a disclosure disappears without any guard going red',
+      );
+    }
+  }
 });
 
 /**
@@ -1099,8 +1255,15 @@ test('the status band cannot be hidden by the stylesheet', () => {
  * addresses at all — a status page that quietly stopped listing them would otherwise pass this test
  * by having nothing to check.
  */
+// THREE SOURCES SINCE 2026-09-05, AND THE THIRD IS A DIFFERENT KIND OF RECORD. The status page now
+// publishes the RWLY token address, which appears in neither of the first two and never will: the
+// deployment record describes contracts this repository broadcast, and RWLY was minted by a
+// third-party launchpad. So it got its own record, `rwly-robinhood-mainnet.json`, rather than being
+// waved through -- the rule this leg enforces is that an address on the page is transcribed from a
+// record, not that it came from one particular record.
 const ADDRESS_SOURCES = [
   path.join(REPO, 'contracts', 'config', 'deployments', 'robinhood-mainnet.json'),
+  path.join(REPO, 'contracts', 'config', 'deployments', 'rwly-robinhood-mainnet.json'),
   CONFIG_PATH,
 ];
 

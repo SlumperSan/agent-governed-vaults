@@ -1,0 +1,219 @@
+/* ===========================================================================
+   THE HERO.
+
+   IT IS TALL BUT IT IS NOT 100vh, and that is deliberate. A viewport-height
+   hero on a phone is a screen the reader has to scroll before learning that
+   there is anything below it, and on a short laptop it crops the address chips
+   out of the first view. `min-height` with a `dvh` term and a cap keeps the
+   film-title proportion on a desktop and lets the content set the height on
+   anything smaller. `dvh` rather than `vh` because on mobile Safari `100vh` is
+   taller than the visible viewport while the address bar is showing.
+
+   THE RADIAL WASH IS THE ONLY GRADIENT ON THE PAGE. It sits behind the star
+   field and lifts the middle of the section a few percent off --ground, which
+   is what stops the near-black from reading as a flat void at 1440. It is drawn
+   from --accent-wash so it re-themes with everything else.
+   =========================================================================== */
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-height: min(46rem, 100dvh);
+  padding-block: calc(var(--masthead-clear) + var(--s7)) var(--s8);
+  padding-inline: var(--gutter);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: -20% -10% auto;
+  height: 90%;
+  background: radial-gradient(60% 60% at 50% 40%, var(--accent-wash), transparent 70%);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   THE WATERMARK.
+
+   It is the mark at nearly the full height of the section, against the right
+   gutter. Since 2026-09-05 that mark is the comic R rather than the ledger R,
+   by the owner's decision, and the change reaches here because everything on
+   this site that draws the mark draws the one file.
+
+   IT WAS CROPPED BY THE FRAME AND THAT WAS WRONG. The first version bled it off
+   the right edge, on the reasoning that a mark leaving the frame reads as a
+   ground the frame was cut out of while one sitting fully inside it reads as a
+   logo in a corner. That reasoning was sound for a mark with a recognisable
+   silhouette and the ledger R did not have one at this size: it was a single
+   stroke path whose right-hand side carried the whole letterform, so cutting it
+   off left a tall rectangle with a notch. It read as a stray interface panel in
+   the top right of the hero, which is worse than the empty space it was added
+   to fill. So it is fully in frame, and made large enough that being in frame is
+   not the same as being in a corner. The comic R has the silhouette the old one
+   lacked, and it stays in frame anyway: the argument for cropping was never
+   strong enough to be worth relitigating with the layout already settled.
+
+   THE OPACITY IS WHAT MAKES IT A GROUND, and it is now the only thing that does.
+   The rule set --accent-deep here and tokens.css calls that an illustration
+   fill; the comic mark is fixed-colour artwork rather than a shape to tint, so
+   the declaration would do nothing and is gone rather than left reading as if it
+   still worked. At 0.14 over --ground the artwork's own cream keyline lands
+   near the old fill's weight, the headline is --ink at 16.82:1 over it, and the
+   picture carries no information: it has empty alt text, and the header states
+   the name in text.
+
+   IT IS HIDDEN BELOW 60rem. On a phone the headline occupies the full width and
+   an R behind the words is a contrast problem rather than a ground.
+   -------------------------------------------------------------------------- */
+.watermark {
+  position: absolute;
+  top: 50%;
+  right: var(--gutter);
+  height: 76%;
+  width: auto;
+  transform: translate3d(0, -46%, 0);
+  opacity: 0.14;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@media (max-width: 60rem) {
+  .watermark {
+    display: none;
+  }
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: var(--wrap);
+  margin-inline: auto;
+}
+
+/* --------------------------------------------------------------------------
+   THE HEADLINE.
+
+   --leading-hero is 0.92, which is tighter than the line-height any body text
+   on this site is allowed, and it is correct here for the reason it is wrong
+   there: at this size the descender of one line and the cap height of the next
+   are far enough apart in absolute pixels that the block reads as one mass
+   rather than as two crowded rows. --track-hero pulls the tracking in to match,
+   because a display face at 100px with default tracking reads as loose.
+   -------------------------------------------------------------------------- */
+
+.headline {
+  margin: 0;
+  max-width: 15ch;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-hero);
+  line-height: var(--leading-hero);
+  letter-spacing: var(--track-hero);
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.accentLine {
+  color: var(--accent);
+}
+
+.lede {
+  margin: var(--s5) 0 0;
+  max-width: 34rem;
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+/* The one filled button on the page body, and the same pairing the header's CTA
+   uses: --accent-ink on --accent is 7.65:1. The hover goes to --teal-bright
+   rather than lightening the violet, because a violet that lightens under the
+   cursor reads as a disabled state rather than as a response. */
+.door,
+.quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.875rem;
+  padding-inline: var(--s5);
+  border-radius: var(--radius-pill);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
+}
+
+.door {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent);
+}
+
+.door:hover,
+.door:focus-visible {
+  background: var(--teal-bright);
+  border-color: var(--teal-bright);
+}
+
+.quiet {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: transparent;
+}
+
+.quiet:hover,
+.quiet:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   THE ADDRESS CHIPS.
+
+   They sit low and quiet, under the buttons, in mono. That order is the page's
+   argument in miniature: the headline is the claim, the buttons are the doors,
+   and the two addresses are where a reader goes to check that any of it is
+   true. Putting them above the buttons would make the hero a block explorer;
+   leaving them off the hero entirely is what the retired status page did.
+   -------------------------------------------------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+@media (max-width: 40rem) {
+  .actions {
+    gap: var(--s2);
+  }
+
+  .door,
+  .quiet {
+    flex: 1 1 auto;
+    padding-inline: var(--s4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .door,
+  .quiet {
+    transition: none;
+  }
+}

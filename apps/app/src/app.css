@@ -1,0 +1,889 @@
+/* ===========================================================================
+   app.rwally.com, v1 shell.
+
+   ONE STYLESHEET, AND IT IS EXTERNAL FOR A REASON. The Content Security Policy
+   this page ships in _headers is style-src 'self', which blocks an inline
+   <style> block and every style="..." attribute in the document. There is
+   therefore nothing to inline and nothing to move here later.
+
+   THE PALETTE IS apps/site-next/src/tokens.css, values as authored there, so
+   the app reads as the same product as the site. The contrast ratios in the
+   comments are that file's computed figures, carried across with the values
+   they describe; they are not re-estimated here.
+
+   ONE GROUND. Dark only, deliberately, the same decision the site made. A
+   second palette is a second set of ratios nobody re-measures.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   FONTS. Self-hosted, so font-src 'self' holds and the page makes no external
+   request of any kind. Two faces: the variable sans for everything, the mono
+   for addresses, selectors and figures, where a fixed advance width is what
+   keeps a column of hex from shimmering.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Plex Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url('/fonts/plex-sans-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('/fonts/plex-mono-400.woff2') format('woff2');
+}
+
+:root {
+  color-scheme: dark;
+
+  --ground: #07070b;
+  --surface: #0e0e16;
+  --surface-2: #16161f;
+  --surface-3: #1e1e2a;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --ink: #eaeaf3;      /* 16.82:1 on --ground */
+  --muted: #a8a8bd;    /*  8.62:1 on --ground */
+  --faint: #7c7c93;    /*  4.94:1 on --ground, the floor for body text */
+
+  --accent: #a094ff;   /*  7.83:1 on --ground */
+  --accent-dim: #8577e4;
+  --accent-wash: rgba(160, 148, 255, 0.1);
+  --accent-ink: #0b0a16; /* on --accent: 7.65:1, the pairing the filled chrome uses */
+
+  --teal: #3fb8ad;
+  --teal-wash: rgba(63, 184, 173, 0.09);
+
+  --good: #5fd89a;
+  --warn: #f2c14e;
+  --crit: #ff8b83;
+  --crit-wash: rgba(255, 139, 131, 0.09);
+
+  --sans: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  /* THERE IS NO --display TOKEN HERE. The site's chrome sets its wordmark and
+     its filled controls in Space Grotesk; this page bundles only the two
+     faces above and adding a third font file to chase one headline weight is
+     not worth the byte cost of a page this small. Every place the site uses
+     its display face, this stylesheet reproduces the SAME size, weight,
+     tracking and colour in --sans instead, which is why the masthead's
+     .name and the footer's .door read at the site's numbers below even
+     though the letterforms themselves are not identical. */
+
+  /* Square corners for panels, as the site's token set specifies. */
+  --radius: 0;
+
+  /* THE V3 CHROME TOKENS, carried over from apps/site-next/src/tokens.css.
+     Square for panels, round for chrome: the masthead pill, its nav capsule
+     and its buttons all read from these two radii rather than from --radius,
+     which stays 0 for the cards below. */
+  --radius-pill: 999px;
+  --radius-bar: 1.25rem;
+  --track-eyebrow: 0.14em;
+
+  /* How far the floating header sits from the top of the viewport, and how
+     much clearance <main> below has to leave for it. Two names for one
+     measurement because the header is fixed and nothing below it can ask it
+     how tall it is. */
+  --masthead-inset: clamp(0.625rem, 0.35rem + 1.1vw, 1rem);
+  --masthead-clear: 5.5rem;
+
+  --gutter: clamp(1rem, 0.6rem + 1.8vw, 2rem);
+  --maxw: 76rem;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A single background wash so the ground is not a flat void. No animation, no
+   image, no external request. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60rem 32rem at 18% -8%, var(--accent-wash), transparent 70%),
+    radial-gradient(50rem 30rem at 92% 4%, var(--teal-wash), transparent 72%);
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:hover { color: var(--ink); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 20;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  text-decoration: none;
+  transition: top 160ms ease-out;
+}
+.skip:focus { top: 0.5rem; }
+
+.mono,
+.num,
+.addr { font-family: var(--mono); font-feature-settings: 'tnum' 1; }
+
+/* ---------------------------------------------------------------------------
+   MASTHEAD. Same structure as apps/site-next/src/shell/Masthead.tsx and
+   masthead.module.css: a fixed, floating pill with the identity on the left,
+   a nav capsule centred, and the X icon plus the connect control on the
+   right. The class names below intentionally match the site's so the two
+   stylesheets read as one design decision made twice rather than two
+   different ones.
+   --------------------------------------------------------------------------- */
+.masthead {
+  position: fixed;
+  inset: var(--masthead-inset) 0 auto;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--gutter);
+  pointer-events: none;
+}
+
+/* The pill takes the pointer events back. The positioning frame above it is
+   full width and must not swallow a click on the page either side of the
+   bar. THREE-COLUMN GRID, OUTER COLUMNS EQUAL, same reason the site uses one:
+   a flex row with the nav between two auto-width groups re-centres itself
+   every time the connect control's own width changes, which it does not
+   here, but the grid also keeps the nav pinned to the middle of the bar
+   regardless, so the same rule reads the same on both surfaces. */
+.pill {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: var(--maxw);
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-bar);
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  text-decoration: none;
+  flex: none;
+}
+.brand:hover .mark { filter: brightness(1.15); }
+.brand:hover .tagline { color: var(--muted); }
+
+/* THE COMIC MARK, AT THE SITE'S HEADER HEIGHT. 3rem is 48px, the floor the
+   brand set measured for the full-colour mark: below it the halftone inside
+   the R collapses into noise. It replaced a 17 by 21.6 inline ledger R on
+   2026-09-05 by the owner's decision, and this surface follows the site's
+   masthead exactly, as it does for every other rule in this block.
+
+   HEIGHT ONLY, WIDTH AUTO. The artwork is landscape, 385.5 by 291.5, where the
+   letter it replaced was portrait; pinning both dimensions here would squash
+   it. The img element carries those two numbers as attributes, so the pill
+   reserves the mark's box before the file lands and does not reflow.
+
+   THE TRANSITION IS ON filter AND NOT ON color, because the mark is a picture
+   now rather than a tinted path and a color declaration on an img does
+   nothing. */
+.mark {
+  height: 3rem;
+  width: auto;
+  flex: none;
+  display: block;
+  transition: filter 160ms ease-out;
+}
+
+.lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1;
+}
+
+/* Space Grotesk 700 at -0.015em on the site; --sans at the same weight,
+   size and tracking here, per the display-face note in :root above. */
+.name {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.015em;
+}
+
+/* The smallest type on the page, same reasoning as the site's: it repeats a
+   sentence stated in full in the empty-state copy below, so --faint's
+   4.94:1 is the right floor for it rather than body contrast. */
+.tagline {
+  font-family: var(--mono);
+  font-size: 0.5625rem;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+  transition: color 160ms ease-out;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  padding: 0.1rem 0.35rem;
+  line-height: 1.4;
+  flex: none;
+}
+
+/* THE NAV CAPSULE. A pill inside the pill, one shade lighter, so the four
+   links read as a group. */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.nav-link {
+  display: block;
+  padding: 0.4375rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 160ms ease-out, background-color 160ms ease-out;
+}
+.nav-link:hover,
+.nav-link:focus-visible { color: var(--ink); background: var(--surface-2); }
+
+/* The current page is the accent AND a filled slot, never the accent alone,
+   for the same reason the site's does it that way: colour alone does not
+   reach a reader who cannot separate two hues. */
+.nav-link[aria-current='page'] {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4375rem;
+}
+
+/* 40px, under the 44px touch minimum on its own, so the tap target is
+   extended past the drawn circle instead of drawing the circle bigger than
+   it should be. */
+.icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  transition: color 160ms ease-out, border-color 160ms ease-out;
+}
+.icon svg { width: 0.9375rem; height: 0.9375rem; }
+.icon:hover,
+.icon:focus-visible { color: var(--accent); border-color: var(--accent); }
+
+/* The connect control is INERT AND HONEST. aria-disabled rather than disabled,
+   so it keeps its place in the tab order and a screen reader can reach the
+   reason attached by aria-describedby. A removed control explains nothing.
+   Its behaviour, its disabled state and its explanatory text are unchanged
+   from before this pass; only its position in the header and its rounding
+   move, to sit as chrome beside the X icon rather than as a bar-spanning
+   control. */
+.connect {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--faint);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  padding: 0.55rem 0.9rem;
+  min-height: 44px;
+  cursor: not-allowed;
+}
+.connect:hover { border-color: var(--accent-dim); color: var(--muted); }
+
+/* NARROW. Two rows: identity and the right-hand chrome on the first, the nav
+   capsule across the full width of the second. Same breakpoint the site uses
+   and the same reasoning: below it the three-column grid stops fitting the
+   nav between the brand and the buttons, and the nav's four labels are fixed
+   strings that must never be compressed, so the FLEXIBLE column has to be the
+   first one. */
+@media (max-width: 60rem) {
+  .pill {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .left {
+    grid-column: 1;
+    grid-row: 1;
+    padding-left: 0.375rem;
+  }
+
+  .right {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: space-between;
+  }
+}
+
+/* PHONE. The tagline comes off below 30rem, same as the site and for the
+   same reason: it repeats a sentence the page states in full elsewhere (here,
+   the protocol card's own copy), and at this width it was crowding the chip
+   and the nav rather than adding information. The nav and the connect
+   control stay reachable at every width; nothing this page links to is ever
+   hidden behind a disclosure widget. */
+@media (max-width: 30rem) {
+  .tagline { display: none; }
+
+  .nav-link { padding-inline: 0.5rem; font-size: 0.6875rem; }
+}
+
+/* ---------------------------------------------------------------------------
+   CARDS
+   --------------------------------------------------------------------------- */
+/* THE TOP FIGURE ADDS --masthead-clear TO THE OLD VALUE RATHER THAN REPLACING
+   IT. The header used to be `position: sticky` and took its own row out of
+   the document, so main needed only its own breathing room above the first
+   card. It is now `position: fixed`, floating over the page, so main has to
+   leave the header's own height clear as well or the first card starts
+   underneath the pill. */
+main { padding-block: calc(var(--masthead-clear) + clamp(1.5rem, 1rem + 2vw, 3rem)) 4rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: clamp(1.1rem, 0.8rem + 1.2vw, 1.75rem);
+  margin-bottom: 1.25rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.1rem;
+}
+
+.card-head h1,
+.card-head h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.chain-chip,
+.count-chip {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+}
+.chain-chip b { color: var(--teal); font-weight: 400; }
+.count-chip .num { color: var(--ink); }
+
+/* --- meta grid --- */
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  margin: 0 0 1.35rem;
+}
+.meta-cell { min-width: 0; }
+.meta dt {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.2rem;
+}
+.meta dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.meta dd.addr { font-size: 0.75rem; color: var(--muted); }
+
+/* --- live reads --- */
+.reads {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--teal);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.reads-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+}
+
+.reads-head h2 {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.reads-stamp {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+.reads-stamp.is-ok { color: var(--muted); }
+.reads-stamp.is-bad { color: var(--crit); }
+
+.reads-intro {
+  margin: 0.6rem 0 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.reads-list { list-style: none; margin: 0; padding: 0; max-width: 62rem; }
+
+.read {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+.read:first-child { border-top: 0; padding-top: 0; }
+
+.read-call {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.read-value {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.read-value.is-ok { color: var(--ink); }
+.read-value.is-bad { color: var(--crit); }
+
+.reads-fail {
+  margin: 0.8rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--crit-wash);
+  border: 1px solid var(--crit);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  max-width: 62ch;
+}
+
+/* --- contracts --- */
+.contracts-h {
+  margin: 0 0 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.contracts-note {
+  margin: 0 0 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+.contracts { list-style: none; margin: 0; padding: 0; }
+
+.contract {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+.contract:first-child { border-top: 0; }
+
+.contract-name { font-size: 0.875rem; font-weight: 550; }
+
+.addr {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* The rule under an address marks it as a LINK, so it goes on the anchor and
+   not on the class. On the plain RPC text it drew a line that stopped part way
+   through a wrap and read as a broken hyperlink. */
+a.addr {
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 1px;
+}
+a.addr:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------------------------------------------------------------------------
+   VAULT TABLE. Wide content scrolls inside its own container; the page body
+   never scrolls sideways.
+   --------------------------------------------------------------------------- */
+.table-scroll { overflow-x: auto; }
+
+.vault-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  text-align: right;
+  /* FIXED, because the body is empty. With auto layout the five headings
+     collapse onto their own text widths and cluster at the left edge, which
+     reads as a broken table rather than as a table awaiting rows. */
+  table-layout: fixed;
+}
+
+.vault-table .col-name { width: 30%; }
+.vault-table .col-num { width: 17.5%; }
+
+.vault-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 0.75rem 0.7rem;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.vault-table th.col-name { text-align: left; padding-left: 0; }
+.vault-table th:last-child { padding-right: 0; }
+
+.empty {
+  text-align: center;
+  padding: clamp(2rem, 1.2rem + 4vw, 4rem) 0;
+}
+
+.empty-mark {
+  width: 4rem;
+  height: 2.5rem;
+  color: var(--line-strong);
+  margin-bottom: 1.1rem;
+}
+
+.empty-lede {
+  margin: 0 auto 0.6rem;
+  max-width: 44ch;
+  font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.empty-sub {
+  margin: 0 auto 1.5rem;
+  max-width: 52ch;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.empty-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  max-width: 46rem;
+  margin: 0 auto 1.5rem;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.empty-facts dt {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.2rem;
+}
+.empty-facts dd { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+
+.empty-watch {
+  margin: 0 auto;
+  max-width: 52ch;
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+
+/* ---------------------------------------------------------------------------
+   FOOTER. Same structure as apps/site-next/src/shell/Footer.tsx and
+   footer.module.css: a full-bleed mascot band with a scrim, the identity
+   lockup repeated exactly as the masthead sets it, the door links, and the
+   licence line. No parallax: see the note above the markup in index.html for
+   why, this is a static, well-cropped band rather than the site's
+   scroll-driven one.
+   --------------------------------------------------------------------------- */
+.footer {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  min-height: 22rem;
+  border-top: 1px solid var(--line);
+  background: var(--ground);
+}
+
+.band {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.band picture,
+.art {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.art {
+  object-fit: cover;
+  object-position: 68% 68%;
+}
+
+/* THE SCRIM. Dark at the bottom, where the type sits, and lifted back to
+   --ground at the top so the plate does not begin with a visible seam
+   against the flat colour of the section above it. Same two-stop shape as
+   the site's, using this page's own --ground rather than a --scrim token
+   this page does not define. */
+.band::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--ground) 0%,
+    transparent 22%,
+    rgba(7, 7, 11, 0.62) 46%,
+    rgba(7, 7, 11, 0.86) 68%,
+    rgba(7, 7, 11, 0.86) 100%
+  );
+}
+
+.footer-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.25rem;
+  padding-block: 3rem 1.75rem;
+}
+
+/* THE IDENTITY, REPEATED EXACTLY AS THE MASTHEAD SETS IT, one size up. Same
+   mark, same wordmark, same tagline underneath: that repetition is the
+   brief's own words, "Make sure header, footer, tab icon all are the same." */
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+/* One size up from the masthead's 3rem, matching footer.module.css on the site.
+   Height only, width auto, for the reason the .mark rule above states. */
+.footer-brand .mark { height: 3.5rem; width: auto; }
+.footer-brand:hover .mark { filter: brightness(1.15); }
+.footer-brand .lockup { gap: 0.15rem; }
+.footer-brand .name { font-size: 1.25rem; }
+/* --muted rather than the masthead's --faint: this lockup sits over a
+   picture, at the end of the page, as the last statement of what the thing
+   is, so it takes the higher-contrast token the same way the site's does. */
+.footer-brand .tagline { font-size: 0.6875rem; color: var(--muted); }
+
+.footer-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+
+.door {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding-inline: 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  transition: background-color 160ms ease-out;
+}
+.door:hover,
+.door:focus-visible { background: var(--accent-dim); border-color: var(--accent-dim); }
+
+.footer-nav .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 160ms ease-out, color 160ms ease-out;
+}
+.footer-nav .link:hover,
+.footer-nav .link:focus-visible { border-color: var(--accent); color: var(--accent); }
+
+.footer-legal {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+@media (max-width: 40rem) {
+  .footer { min-height: 18rem; }
+  .art { object-position: 60% 38%; }
+  .footer-inner { padding-block: 2.25rem 1.5rem; }
+}
+
+/* ---------------------------------------------------------------------------
+   NARROW. 375 px is the target the site tests at.
+   --------------------------------------------------------------------------- */
+@media (max-width: 40rem) {
+  /* A 42-character address in mono at 0.75rem needs about 302 px, and a
+     375 px viewport leaves roughly 308 px inside the gutter and the card
+     padding. That is close enough to the edge that a slightly wider default
+     mono clips the last characters, so step the size down rather than let the
+     end of an address be the thing that goes missing. */
+  .addr { font-size: 0.6875rem; }
+  /* The same arithmetic one level deeper: the facts panel adds its own inset
+     inside the card's, and at the default 1rem a 42-character address wraps
+     with a single digit alone on the second line. Give the panel back the
+     twenty pixels. */
+  .empty-facts { padding-inline: 0.7rem; }
+  /* And one level out again. The card's own inset is the last term in the
+     same sum, and trimming it here buys the address enough room to sit on one
+     line inside the facts panel with a few pixels to spare, rather than
+     wrapping with a single digit stranded below. */
+  .card { padding: 1rem 0.85rem; }
+  .connect { padding-inline: 0.7rem; }
+  .read,
+  .contract { flex-direction: column; align-items: flex-start; gap: 0.15rem; }
+  .read-value { text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

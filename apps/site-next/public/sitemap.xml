@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The two pages of the public site, since the 2026-09-05 collapse: the homepage, a single scroll
+  page carrying the live chain reads, the hive, how it works and the RWLY design intent; and
+  /disclaimers, which carries the deployment record and the claims register. The seven pages that
+  used to sit between them, how-it-works, agents, who-its-for, operators, faq, vision and status,
+  are not listed here because they are now 301 redirects (see _redirects), and a sitemap that lists
+  a redirect is reported by Search Console as an error against the sitemap, exactly the failure
+  this file has always avoided for the extension-less form below.
+
+  The URLs are extension-less because that is what Cloudflare Pages serves as canonical: it
+  redirects /disclaimers.html to /disclaimers and /index.html to /. Listing the .html forms would
+  make every entry in this file a redirect, which is the same Search Console error described above.
+
+  No <lastmod>, <changefreq> or <priority>. Search engines ignore the latter two outright, and a
+  <lastmod> that is not updated with the page is a worse signal than none at all.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://rwally.com/</loc></url>
+  <url><loc>https://rwally.com/disclaimers</loc></url>
+</urlset>

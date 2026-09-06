@@ -104,8 +104,28 @@ jobs:
         with:
           version: v1.7.1
       - run: cd contracts && forge build
+      # apps/site-next is the redesign, and its build must precede BOTH suites below — it used to
+      # sit after `npm run test:backend`, which is the ordering this comment exists to prevent.
+      #
+      # 1. Its own wording guards (apps/site-next/test/site.test.mjs) read the BUILT pages —
+      #    prerendered HTML in dist/ — and skip themselves when dist/ is absent.
+      # 2. The repository-wide claims guards run BY `npm run test:backend`
+      #    (scripts/test/claims-lede-truth.test.mjs and scripts/test/config-doc-truth.test.mjs)
+      #    enumerate .md/.html/.txt/.json from the filesystem, and neither skips `dist`.
+      #    `apps/site-next/.gitignore` ignores `dist`, so on a fresh checkout the redesign's
+      #    prerendered pages do not exist when those guards walk, and they cover ZERO of them —
+      #    which passes, and a pass over nothing reads exactly like a pass over everything.
+      #
+      # The ordering is asserted, not trusted: the "every prerendered redesign page is
+      # inside the walk" test in scripts/test/claims-lede-truth.test.mjs fails if this step is
+      # moved back after the next one. scripts/gate.mjs mirrors this order.
+      - name: Build the redesign (apps/site-next) so the claims guards can walk dist/
+        run: npm run build --workspace apps/site-next
       - name: Backend + frontend logic tests
         run: npm run test:backend
+      # The live site under apps/site keeps its own suite inside npm run test:backend above.
+      - name: Redesign wording guards (apps/site-next) against dist/
+        run: npm test --workspace apps/site-next
       # Entrypoints and operational runners have no unit tests — they are exercised
       # by hand against a live chain. Parse them so a syntax error can't reach a
       # 6-hour smoke run or a production boot.

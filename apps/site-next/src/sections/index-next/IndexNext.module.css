@@ -1,0 +1,97 @@
+/* ===========================================================================
+   THE RWLY BEAT.
+
+   CENTRED, NARROW, AND SET ON THE DEEPEST GROUND ON THE PAGE. Every section
+   above it is either full-bleed or a two-column grid at --wrap; this one is a
+   single column at --measure with air either side. That change of shape is the
+   signal that the argument has finished and the page is telling you where to go
+   next, and it does the work a heading rule would otherwise have to do.
+
+   THE SHORT ACCENT RULE ABOVE THE HEADING is the last of the ledger marks the
+   rest of the site uses. It is 3rem of hairline, not a full-width divider: a
+   divider separates two things, and there is nothing after this but the footer.
+   =========================================================================== */
+
+.next {
+  padding-block: var(--s9);
+  padding-inline: var(--gutter);
+  background: var(--ground);
+  border-block-start: 1px solid var(--line);
+}
+
+.inner {
+  max-width: var(--measure);
+  margin-inline: auto;
+  text-align: center;
+}
+
+.rule {
+  display: block;
+  width: 3rem;
+  height: 2px;
+  margin: 0 auto var(--s5);
+  background: var(--accent);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-h2);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display);
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.body {
+  margin: var(--s5) 0 0;
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.action {
+  margin: var(--s6) 0 0;
+}
+
+/* An outlined pill rather than the filled door. There is exactly one filled,
+   accent-backed action per view on this site, and on this screen it is the one
+   in the fixed header. A second one here would put two primary buttons in the
+   same viewport, both violet, one of which leads to a page of warnings. */
+.gate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.875rem;
+  padding-inline: var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
+}
+
+.gate:hover,
+.gate:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 40rem) {
+  .next {
+    padding-block: var(--s8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate {
+    transition: none;
+  }
+}

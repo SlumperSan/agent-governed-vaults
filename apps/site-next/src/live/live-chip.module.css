@@ -1,0 +1,110 @@
+/* ===========================================================================
+   THE LIVE PRICE CHIP.
+
+   THE PRICE IS THE ONLY THING IN IT SET IN THE ACCENT. The pair label and the
+   age are --muted and --faint respectively, which puts the three tokens in a
+   deliberate order of loudness: what it costs, what it is, how old the number
+   is. All three are always rendered. See LivePriceChip.tsx for why the age is
+   not optional and not behind a breakpoint.
+
+   EVERY VALUE IN IT IS TABULAR. A price ticking between $2,471.60 and $2,472.05
+   in proportional figures changes width on every digit, which shifts the chip,
+   which shifts the header. `font-variant-numeric: tabular-nums` is what makes a
+   live number safe to put in fixed chrome at all.
+   =========================================================================== */
+
+/* The empty state before the read lands. It reserves nothing horizontally on
+   purpose: the chip appears where there was nothing rather than growing out of
+   a grey rectangle, and the slot in masthead.module.css already holds the line
+   box so the row height does not change. */
+.slot {
+  display: block;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-width: 0;
+  padding: 0.3125rem 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--dur-fast) var(--ease-enter);
+}
+
+.chip:hover,
+.chip:focus-visible {
+  border-color: var(--accent);
+}
+
+/* The pulse is the one ambient animation in the chrome. It is scale and opacity
+   only, so it composites, and it stops entirely under reduced motion rather
+   than slowing down: a slow pulse is still a pulse. */
+.dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  animation: chip-pulse 2.4s var(--ease-enter) infinite;
+}
+
+@keyframes chip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
+}
+
+.pair {
+  color: var(--muted);
+}
+
+.price {
+  color: var(--accent);
+}
+
+/* A hairline rather than a middot. A punctuation mark between a price and an
+   age reads as part of one of them; a rule reads as a boundary. */
+.sep {
+  width: 1px;
+  height: 0.6875rem;
+  flex: none;
+  background: var(--line-strong);
+}
+
+.age {
+  color: var(--faint);
+}
+
+/* Below the width where the header becomes two rows, the pair label goes and
+   the price and the age stay. The pair is the token a reader can infer from the
+   live section one screen down; the age is the token that stops the price from
+   being read as a quote from now, so it is the one that cannot go. */
+@media (max-width: 60rem) {
+  .pair {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+
+  .chip {
+    transition: none;
+  }
+}

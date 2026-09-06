@@ -24,8 +24,13 @@
  * Run:  node scripts/build-og-card.mjs
  * Then: git add apps/site/assets/og-card.png   (the PNG is committed; this script is not run in CI)
  *
- * Every alt text on the site describes this image. There are eight of them, one per page, and they
- * must be re-read whenever the strapline below changes.
+ * Every alt text under apps/site describes this image. There are nine of them, one per page, and
+ * they must be re-read whenever either constant below changes.
+ *
+ * THE ALT ON apps/site-next DESCRIBES A DIFFERENT CARD and must not be kept in step with these two
+ * strings. That surface serves its own apps/site-next/public/og-card.png, which draws the brand's
+ * comic wordmark rather than set text, and which this generator does not write. Two cards, two alt
+ * strings; keeping them identical is what made the site-next one false in the first place.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, rmSync, readdirSync } from 'node:fs';
@@ -41,8 +46,8 @@ const HEIGHT = 630;
 
 /**
  * EVERY WORD THE CARD CARRIES. Two lines: the wordmark, and the status line. Nothing else is drawn
- * — no glyph, no rule, no host line — and the eight `og:image:alt` attributes describe exactly
- * these two strings, so anything added here has to be added there in the same commit.
+ * (no glyph, no rule, no host line) and the nine `og:image:alt` attributes under apps/site describe
+ * exactly these two strings, so anything added here has to be added there in the same commit.
  *
  * The status line deliberately carries NO DATE, and no address either. The deploy date lives in one
  * place a reader can check — `contracts/config/deployments/robinhood-mainnet.json` — and every prose
@@ -58,7 +63,12 @@ const HEIGHT = 630;
  * record's read block, and a card cannot be re-rendered by the reader who needs that to still be
  * true. "Deployed" is a fact about the singletons and stays true whatever vault #1 does.
  */
-const WORDMARK = 'Rwally';
+// RECASED 2026-09-05 by the owner's rename: the site is RWAlly, and the capitals are the joke rather
+// than a typo. The card is the last surface the rename could reach, because its wordmark is drawn
+// into pixels and no claims guard can read a PNG. That is the whole reason this generator exists,
+// and it is why the rename could not simply edit the nine alt attributes and stop: the words on the
+// card and the words describing it move in one commit or they disagree.
+const WORDMARK = 'RWAlly';
 const STRAPLINE = 'Deployed on Robinhood Chain.';
 
 const CHROME_CANDIDATES = [
@@ -137,7 +147,7 @@ try {
   copyFileSync(rendered, OUT);
   console.log(`wrote ${path.relative(REPO, OUT)} — ${w}x${h}, ${png.length} bytes`);
   console.log(`words on the card: "${WORDMARK}" / "${STRAPLINE}"`);
-  console.log('re-check the eight og:image:alt attributes if either of those changed.');
+  console.log('re-check the nine apps/site og:image:alt attributes if either of those changed.');
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

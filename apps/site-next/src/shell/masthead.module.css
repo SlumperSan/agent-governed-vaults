@@ -1,0 +1,413 @@
+/* ===========================================================================
+   THE FLOATING MASTHEAD.
+
+   THE LAYOUT IS A THREE-COLUMN GRID, AND THE OUTER COLUMNS ARE 1fr EACH SO THE
+   NAV IS CENTRED ON THE VIEWPORT RATHER THAN ON WHAT IS LEFT OVER. A flex row
+   with the nav between two auto-width groups centres it between the brand and
+   the buttons, which moves every time the price chip appears or the price gains
+   a digit. Equal fractional outer columns pin it to the middle of the bar and
+   keep it there while the left column's content changes underneath.
+
+   WHY THE HEADER SCROLLS WITH THE PAGE AND IS NOT STICKY. It is `position:
+   fixed`, so it stays. The one thing it must not do is cover the section a nav
+   anchor jumps to, which is what `scroll-margin-top` on the sections is for; see
+   index.css. Nothing here reads its own height, and nothing below it may either:
+   --masthead-clear in tokens.css is the one measurement, and it is a constant.
+
+   AT 375 THE BAR BECOMES TWO ROWS RATHER THAN A HAMBURGER. Four links, one of
+   which is the page you are on, do not earn a disclosure widget: a hamburger
+   here would add a button, a panel, a focus trap and an escape key handler in
+   order to hide four words. The grid collapses to two rows, the nav capsule
+   spans the full width of the second, and every destination stays one tap away
+   at every width the site is read at.
+   =========================================================================== */
+
+.masthead {
+  position: fixed;
+  inset: var(--masthead-inset) 0 auto;
+  z-index: var(--z-masthead);
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--gutter);
+  pointer-events: none;
+}
+
+/* The pill itself takes the pointer events back. The bar above is a full-width
+   positioning frame and must not swallow clicks on the hero either side of the
+   pill, which at 1440 is most of the row. */
+.pill {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--s4);
+  width: 100%;
+  max-width: 78rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-bar);
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+/* The chip's slot. It exists so the chip can be PLACED, by this stylesheet, at
+   two different points in the grid without this file reaching across a module
+   boundary into live-chip.module.css to do it. It carries no appearance of its
+   own and reserves the chip's line box so the header does not jump when the
+   read lands. */
+.chipSlot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 1.75rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  text-decoration: none;
+  flex: none;
+}
+
+/* THE COMIC MARK, AT A HEIGHT ITS HALFTONE SURVIVES.
+   3rem is 48px, which is the floor the brand set measured for the full-colour
+   mark: below it the speed lines inside the R collapse into noise. It replaced
+   a 22 by 28 ledger R on 2026-09-05 by the owner's decision, and the pill grew
+   with it, from about 44px of content to about 64px.
+
+   HEIGHT ONLY, WIDTH AUTO. The artwork is landscape, 385.5 by 291.5, where the
+   letter it replaced was portrait. Pinning both dimensions here would squash
+   it; the img element carries those two numbers as attributes, so the browser
+   reserves the right box before the file lands and the header never reflows.
+   MIN_MARK_PX in src/brand/markAsset.ts is the same 48, and site.test.mjs
+   reads this declaration against it. */
+.mark {
+  height: 3rem;
+  width: auto;
+  flex: none;
+  display: block;
+  /* The mark is fixed-colour artwork, so hover cannot move its ink the way it
+     moved the old monochrome letter's. Brightness is the equivalent that works
+     on a picture, and it is the same duration and easing the tagline uses, so
+     the whole lockup still lifts as one thing. */
+  transition: filter var(--dur-fast) var(--ease-enter);
+}
+
+.lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1;
+}
+
+.name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.015em;
+}
+
+/* The tagline is the smallest type on the site and it is the only place that
+   size is used. It is --faint, which is 4.94:1 on --ground: below the 7:1 this
+   site holds body text to, and correctly so, because this is not body text. It
+   is a wordmark descriptor that repeats a sentence stated in full in the hero
+   two hundred pixels below it. It clears the 4.5:1 UI floor with room. */
+.tagline {
+  font-family: var(--mono);
+  font-size: 0.5625rem;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-enter);
+}
+
+.brand:hover .mark,
+.brand:focus-visible .mark {
+  filter: brightness(1.15);
+}
+
+.brand:hover .tagline,
+.brand:focus-visible .tagline {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   THE NAV CAPSULE. A pill inside the pill, one shade lighter, so the four links
+   read as a group rather than as four things floating in the middle of a bar.
+   -------------------------------------------------------------------------- */
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.navLink {
+  display: block;
+  padding: 0.4375rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+.navLink:hover,
+.navLink:focus-visible {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+/* The current page is the accent AND a filled slot, never the accent alone.
+   Colour is the weaker half of that pair for a reader who cannot separate the
+   two hues, and `aria-current="page"` carries it to anyone not looking at all. */
+.navLink[aria-current='page'] {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4375rem;
+}
+
+/* 40px, which is under the 44px touch minimum on its own, so the tap area is
+   extended past the ring rather than the ring being drawn bigger than it should
+   be. The visual circle stays 40; the thing a thumb hits is 44. */
+.icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+.icon::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+}
+
+.icon svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+.icon:hover,
+.icon:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   THE DOOR. The one filled, saturated element in the chrome, and the only place
+   the accent is used as a BACKGROUND rather than as ink.
+
+   --accent-ink on --accent is 7.65:1, which is the pairing tokens.css records
+   for `.skip` and the reason the accent is a light violet rather than a
+   saturated one: a filled button has to carry dark text at body contrast.
+   -------------------------------------------------------------------------- */
+
+.cta {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.3125rem 0.3125rem 0.3125rem 0.9375rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-enter);
+}
+
+.cta:hover,
+.cta:focus-visible {
+  background: var(--teal-bright);
+}
+
+.ctaDisc {
+  display: grid;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--ground);
+  color: var(--ink);
+}
+
+.ctaDisc svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* --------------------------------------------------------------------------
+   NARROW. Two rows: identity and door on the first, the nav capsule across the
+   second. The breakpoint is 60rem because that is where the three-column grid
+   stops fitting the nav between the brand and the buttons without the price
+   chip's digits pushing it off centre, not because it is a round number.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 60rem) {
+  /* THE FLEXIBLE COLUMN IS THE FIRST ONE, AND GETTING THAT ROUND THE WRONG WAY
+     IS WHAT BROKE THE FIRST BUILD. With `auto 1fr` the first column is sized by
+     the widest thing in it, which is the brand lockup at 217px, and the nav on
+     the second row is left with whatever remains: 84px at 375, which it
+     overflowed and drew across the price chip. With `1fr auto` the second column
+     is sized by the widest thing in IT, which is the nav, and the flexible
+     column absorbs the difference. The nav is the element that must never be
+     compressed, because its four labels are fixed strings. */
+  .pill {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+    padding-left: 0.375rem;
+  }
+
+  /* `display: contents` DISSOLVES THE IDENTITY GROUP INTO THE GRID, which is the
+     whole reason the chip sits in its own slot element rather than being a bare
+     child of the flex row. On one line with the brand the chip is the element
+     that decides how wide the left column is, and its width changes when the
+     price gains a digit, so the header re-lays-out itself while you read it. Two
+     rows, with the chip beside the nav rather than beside the wordmark, is the
+     arrangement where nothing moves. */
+  .left {
+    display: contents;
+  }
+
+  .chipSlot {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .right {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .nav {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+    gap: 0;
+  }
+
+  .navLink {
+    padding-inline: 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  /* The X icon goes, and the link does not: the footer carries it as a labelled
+     link on every page. Dropping the ICON at a width where the door has to fit
+     beside it is a layout decision; dropping the DESTINATION would not be. */
+  .icon {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   PHONE. THE PRICE CHIP AND THE TAGLINE COME OFF, AND BOTH ARE MEASURED
+   DECISIONS RATHER THAN A TIDY-UP.
+
+   The numbers, at 375: the pill's inner width is 319px. The nav's four labels at
+   0.625rem mono need about 236px, and the chip, already stripped of its pair
+   label, needs about 130. 366 into 319 does not go, and the first build shipped
+   it: the nav overflowed its grid cell and drew straight across the chip, so the
+   price read "$2,484.62Home28m". A third row would fit both and make the fixed
+   header about 145px tall, which is eighteen per cent of an iPhone viewport
+   permanently occupied by chrome. The reference solves this with a hamburger,
+   which is a button, a panel, a focus trap and an escape handler in order to
+   hide four words.
+
+   SO THE TWO THINGS THAT ARE SAID TWICE ARE THE TWO THAT GO.
+
+     THE CHIP, because the live panel one screen below is the price's real home
+     and states it larger, with the feed's own description and the exact minute
+     it printed. The chip is a shortcut to that panel, and on a phone the panel
+     is a thumb-flick away.
+
+     THE TAGLINE, because the hero states it in full as the h1 about two hundred
+     pixels underneath, and the footer states it again under the same lockup.
+     Below 30rem it was being drawn straight under the app button and clipped
+     mid-word, which is worse than absent.
+
+   THE NAV AND THE DOOR STAY AT EVERY WIDTH. Every destination this site has is
+   reachable from the header on a phone, which is the part of the brief's
+   "header, footer, tab icon all are the same" that actually matters.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 34rem) {
+  .chipSlot {
+    display: none;
+  }
+
+  .nav {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 30rem) {
+  .tagline {
+    display: none;
+  }
+
+  .cta {
+    padding-left: 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .navLink {
+    padding-inline: 0.375rem;
+    font-size: 0.625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark,
+  .tagline,
+  .navLink,
+  .icon,
+  .cta {
+    transition: none;
+  }
+}

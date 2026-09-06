@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Questions | Rwally</title>
+<title>Questions | RWAlly</title>
 <meta name="description" content="Direct answers to the hard questions: is there a token, is it running, can you rug me, when can I get out, what does the operator earn, and what licence the code is under.">
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/site.css">
@@ -11,12 +11,12 @@
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Rwally">
+<meta property="og:site_name" content="RWAlly">
 <meta property="og:url" content="https://rwally.com/faq">
 <meta property="og:title" content="Questions, answered the way they were asked">
 <meta property="og:description" content="The questions people ask when they have been burned before. Robinhood Chain mainnet, chain id 4663.">
 <meta property="og:image" content="https://rwally.com/assets/og-card.png">
-<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark Rwally, and the deployment-status line Deployed on Robinhood Chain.">
+<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark RWAlly, and the deployment-status line Deployed on Robinhood Chain.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Questions, answered the way they were asked">
 <meta name="twitter:description" content="The questions people ask when they have been burned before. Robinhood Chain mainnet, chain id 4663.">
@@ -27,11 +27,12 @@
 
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="index.html">Rwally</a>
+    <a class="brand" href="index.html">RWAlly</a>
     <nav aria-label="Primary">
       <ul>
         <li><a href="index.html">Overview</a></li>
         <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html">Vision</a></li>
         <li><a href="agents.html">Agents</a></li>
         <li><a href="who-its-for.html">Who it is for</a></li>
         <li><a href="operators.html">Operators</a></li>
@@ -56,7 +57,7 @@
 
       <article class="qa">
         <h2>Is there a token?</h2>
-        <p>No. There is nothing to buy and nothing to claim. The next iteration, RWLY, is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens &mdash; and RWLY does not exist yet.</p>
+        <p>Yes, and there is still nothing here to buy and nothing to claim. RWLY launched 2026-09-05 on Pons, a third-party launchpad this project did not write: fixed supply 1,000,000,000, no owner, no mint function, no pause and no upgrade path. RWLY is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens &mdash; and no contract this protocol deployed references it.</p>
         <p>The standing form of that answer is on the <a href="disclaimers.html">Disclaimers</a>.</p>
       </article>
 
@@ -93,12 +94,14 @@
         <h2>What does the operator earn, and what do they have to lock?</h2>
         <p>They earn 10% of realized profit, crystallized when a member redeems, never accrued on paper gains, and subject to a high-water mark kept per member and per operator that follows that operator identity across vaults. There is no management fee.</p>
         <p>The exit fee is never routed to the operator identity. But the operator is also a member, and the fee stays in the vault where it raises the value of every share. So an operator holding the 5% the creator gate requires collects at least 5% of every exit fee, exactly as any other holder of that stake would.</p>
-        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. In a vault holding 50,000 USDG that is 2,500 USDG, and 50,000 USDG is the first vault's planned capacity cap. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference configuration. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
+        <p>They lock capital. The creator withdrawal gate is 5% of the vault's share supply: a creator's redemption reverts if it would take their share below 5% while at least one non-creator member remains. The figure moves with the vault, and none has been created yet. Separately, the proposal threshold decays passively as others deposit, and losing it means losing the right to propose anything. That threshold is 5% of voting-eligible stake in the reference configuration. The full breakdown is on the <a href="operators.html">operators page</a>.</p>
       </article>
 
       <article class="qa">
-        <h2>Why is the cap 50,000 USDG?</h2>
-        <p>Because nothing can be patched and nothing can be paused, so the cap is the ceiling on how much any single unknown can reach. A planned 50,000 USDG is the largest amount this team is willing to have permanently trapped by a bug that survived review. It is not a scarcity mechanic. There is no queue, no allocation and no advantage to arriving early. A capacity cap is immutable per vault, so raising it would mean creating a different vault.</p>
+        <h2>What can the contracts on chain today actually hold?</h2>
+        <p>Two assets. The oracle prices ETH and BTC, held as WETH and cbBTC.</p>
+        <p>The factory's oracle allowlist is fixed in its constructor with no add, no remove and no owner, so that set cannot be extended on this deployment.</p>
+        <p>The all-stocks index needs its own deployment. What it is designed to be is on the <a href="vision.html">Vision page</a>.</p>
       </article>
 
       <article class="qa">
@@ -162,6 +165,7 @@
         <ul>
           <li><a href="index.html">Overview</a></li>
           <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="vision.html">Vision</a></li>
           <li><a href="agents.html">Agents</a></li>
           <li><a href="who-its-for.html">Who it is for</a></li>
           <li><a href="operators.html">Operators</a></li>

@@ -1,0 +1,324 @@
+/* ===========================================================================
+   THE FOOTER.
+
+   ONE FULL-BLEED BAND, THE PICTURE UNDER IT AND THE TYPE OVER IT.
+
+   THE PICTURE IS 128% OF THE BAND'S HEIGHT AND CENTRED BY TRANSFORM. That
+   overshoot is what the parallax spends: `useParallax` slides the image inside
+   the band by a fraction of the surplus, so no edge is ever uncovered at either
+   end of the travel. The `translate3d(-50%, ...)` the hook writes carries the
+   horizontal centring as well as the vertical shift, which is why the base
+   transform below is written the same way: the hook overwrites the whole
+   property, and a hook that only knew about Y would throw the centring away on
+   the first frame.
+
+   THE SCRIM IS TWO STOPS AND IT IS SIZED TO THE TYPE, NOT TO THE BAND. The
+   drawing has a bright violet shaft through it and --ink over that shaft fails
+   contrast at exactly the place the eye lands. The gradient runs from
+   transparent at the top, so the picture is visible where nothing sits on it, to
+   --scrim-deep over the bottom two thirds, where every word is. That is what
+   makes the 7:1 hold over each pixel a word actually sits on rather than over
+   the average brightness of the image.
+   =========================================================================== */
+
+/* THE BAND HAS A FLOOR, AND THE FLOOR IS WHAT MAKES IT A PICTURE. Sized by its
+   content alone the footer came out about 340px tall, and at that height the
+   plate is cropped so hard by `object-fit: cover` that the figure is a shoulder
+   and a coat hem at the right edge: a texture, not a mascot. 30rem is the height
+   at which the whole figure is in frame at 1440 with the type clear of him, and
+   it is also what gives the parallax enough travel to be perceptible. The
+   content is pushed to the bottom of it, so the top half of the band is picture
+   and the bottom half is the links. */
+.footer {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  min-height: 30rem;
+  border-block-start: 1px solid var(--line);
+  background: var(--ground);
+}
+
+.band {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* THE Y IS 68%, NOT 40%, AND IT IS SET BY THE FIGURE'S FEET. The plate is 1920
+   by 1072 and the character stands from roughly a third of the way down to about
+   ninety per cent. At 40% the crop cut him off at the chest and the footer had a
+   floating torso in it. 68% brings the whole figure into a band this height at
+   1440, which is the only value of this property that matters. */
+.art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 128%;
+  object-fit: cover;
+  object-position: 68% 68%;
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+}
+
+/* The scrim. Drawn by the band rather than by a third element, and sitting above
+   the picture in the band's own stacking context.
+
+   IT IS DARK AT BOTH ENDS AND CLEAR IN THE MIDDLE, which is two jobs in one
+   gradient. At the BOTTOM it takes the band to --scrim-deep so the links sit on
+   something dark. At the TOP it takes the band back to the ground, because the
+   section above the footer ends in flat --ground and the plate's own violet
+   shaft starts abruptly: without the top stop there is a visible horizontal seam
+   where the picture begins, which reads as an image that failed to load its top
+   half.
+
+   AND THERE IS A SECOND, HORIZONTAL SCRIM, WHICH EXISTS BECAUSE OF A
+   MEASUREMENT RATHER THAN A PREFERENCE.
+
+   The plate's brightest pixel is (254, 245, 255), effectively white, in the
+   violet shaft. Composited under --scrim-deep at 0.86 that ground is about
+   (42, 40, 45), and --muted on it measures 6.25:1. This site holds BODY text to
+   7:1, so the vertical scrim alone is not enough to make the claim true
+   everywhere in the band, and the tagline and the licence line are both --muted.
+
+   It happens that none of the type is anywhere near that pixel: every word in
+   this footer is in the left third and the shaft is on the right. But "it
+   happens that" is not a contrast guarantee. It is a fact about the current crop
+   that changes the first time somebody adjusts `object-position`, and it would
+   change silently. So the left third is taken to opaque --ground by a horizontal
+   gradient. The figure is at about 65% across and the gradient is clear by 62%,
+   so the picture loses nothing.
+
+   AND THE RESULT IS MEASURED RATHER THAN ARGUED, because a ratio asserted in a
+   comment is exactly the kind of claim this repository does not accept anywhere
+   else. The method, which is repeatable: render the page, scroll the footer into
+   view, take the union rectangle of the two --muted runs (the tagline and the
+   licence line), hide the text layer, photograph that rectangle, and read back
+   the BRIGHTEST pixel in it. That is the worst ground any word actually sits on,
+   with both gradients and the plate already composited by the browser.
+
+   Taken on 2026-09-05 at 1440, 785 and 375: the brightest pixel behind the type
+   is (7, 7, 11) at all three widths, which is --ground exactly. So --muted
+   measures 8.62:1 and --ink 16.82:1 under every word, the figures tokens.css
+   records for those two on --ground, and this site's 7:1 body floor is cleared
+   with room. Re-run the measurement rather than trusting these numbers if the
+   crop, the gradient stops or the plate ever change.
+
+   The two gradients are layered on one element in one declaration, the
+   horizontal one on top, so there is no third box to keep in sync. */
+.band::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to right,
+      var(--ground) 0%,
+      var(--ground) 30%,
+      transparent 62%
+    ),
+    linear-gradient(
+      to bottom,
+      var(--ground) 0%,
+      transparent 22%,
+      var(--scrim) 46%,
+      var(--scrim-deep) 68%,
+      var(--scrim-deep) 100%
+    );
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s5);
+  width: 100%;
+  max-width: calc(var(--wrap) + var(--gutter) * 2);
+  margin-inline: auto;
+  padding-block: var(--s8) var(--s6);
+  padding-inline: var(--gutter);
+}
+
+/* --------------------------------------------------------------------------
+   THE IDENTITY, REPEATED EXACTLY AS THE HEADER SETS IT.
+
+   Same mark, same wordmark, same tagline underneath, one size larger. That
+   repetition is the brief's requirement in its own words: "Make sure header,
+   footer, tab icon all are the same." It is also why the two lockups read from
+   the same constants in pinned.ts rather than being typed twice.
+   -------------------------------------------------------------------------- */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* THE COMIC MARK, ONE SIZE UP FROM THE HEADER'S, exactly as this footer has
+   always drawn the identity one size larger than the bar does. 3.5rem is 56px,
+   comfortably over the 48px floor the brand set measured for the full-colour
+   mark and recorded as MIN_MARK_PX in src/brand/markAsset.ts.
+
+   HEIGHT ONLY, WIDTH AUTO, for the reason masthead.module.css gives at length:
+   the artwork is landscape where the letter it replaced was portrait, so a
+   stylesheet that pins both dimensions squashes it. */
+.mark {
+  height: 3.5rem;
+  width: auto;
+  flex: none;
+  display: block;
+  transition: filter var(--dur-fast) var(--ease-enter);
+}
+
+.lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1;
+}
+
+.name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.015em;
+}
+
+/* --muted rather than the header's --faint. The header's tagline sits under a
+   wordmark in a bar a reader glances at; this one sits over a picture, at the
+   end of the page, where it is the last statement of what the thing is. 8.62:1
+   on --ground and it is over --scrim-deep here, which is darker still. */
+.tagline {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.brand:hover .mark,
+.brand:focus-visible .mark {
+  filter: brightness(1.15);
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.door {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding-inline: var(--s5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-enter);
+}
+
+.door:hover,
+.door:focus-visible {
+  background: var(--teal-bright);
+  border-color: var(--teal-bright);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding-inline: var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter);
+}
+
+.link:hover,
+.link:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The current page is filled as well as tinted, so it is not signalled by hue
+   alone, and `aria-current="page"` carries it to a reader not looking. */
+.link[aria-current='page'] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.legal {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+@media (max-width: 52rem) {
+  .inner {
+    padding-block: var(--s9) var(--s6);
+    gap: var(--s4);
+  }
+
+  /* THE HORIZONTAL SCRIM IS REPLACED RATHER THAN KEPT, because the assumption it
+     rests on stops being true here. At 1440 every word in this footer is in the
+     left third, so a gradient that takes the left third to opaque ground covers
+     all of it. On a phone the links wrap to two rows and the licence line runs
+     the full width, so there is no left third to protect: the type is
+     everywhere. So the band goes back to one vertical gradient and that gradient
+     reaches OPAQUE --ground by 56%, which puts the picture in the top half and
+     every word on flat ground underneath it. The figure is still whole, and
+     --muted is 8.62:1 under every word by construction rather than by where the
+     artwork happens to be dark. */
+  .band::after {
+    background: linear-gradient(
+      to bottom,
+      var(--ground) 0%,
+      transparent 18%,
+      var(--scrim) 40%,
+      var(--ground) 56%,
+      var(--ground) 100%
+    );
+  }
+
+  /* The band is short enough on a phone that the picture's own composition, a
+     lone figure at 68% across, would put him half off the right edge. Pulling
+     the crop toward the middle keeps the figure in frame at every width. */
+  .art {
+    object-position: 60% 38%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art {
+    will-change: auto;
+  }
+
+  .mark,
+  .door,
+  .link {
+    transition: none;
+  }
+}

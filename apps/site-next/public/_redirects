@@ -1,0 +1,62 @@
+# Cloudflare Pages redirects for the public site.
+#
+# THIS FILE DEFINES ONE RULE. It exists so the next person looks here,
+# reads why, and does not spend an afternoon rediscovering it.
+#
+# THE www -> APEX REDIRECT CANNOT BE EXPRESSED HERE. Pages matches the source column on PATH ONLY.
+# Cloudflare's own `_redirects` documentation lists "Domain-level redirects" as unsupported and
+# gives `workers.example.com/* workers.example.com/blog/:splat 301` as an example of a line that
+# does not work. Invalid lines are ignored rather than reported, so a hostname rule written here
+# would look correct in review, deploy without error, and silently do nothing -- which is worse
+# than not writing it. That much is still true of THIS file.
+#
+# THE HOSTNAME RULE NOW LIVES IN `functions/_middleware.js`, which can read `Host` because it is a
+# Function rather than a static rule table. It redirects every non-canonical hostname — including
+# `www.rwally.com` AND the `*.rwally.pages.dev` hostnames — to `rwally.com` with a 301. That is not
+# only a www->apex tidy-up: the sanctions geofence is a WAF rule on the `rwally.com` ZONE, and the
+# pages.dev hostnames are not in that zone, so before the middleware they were an unfiltered path
+# to the same content. Read that file before changing anything here. A zone-level Bulk Redirect in
+# the dashboard remains a valid alternative for the www leg, but it would not cover pages.dev.
+#
+# NO CANONICALIZATION RULE IS NEEDED EITHER. Pages already redirects HTML pages to their
+# extension-less counterparts: `/faq.html` to `/faq`, and `/index.html` to `/`. Those are the
+# canonical URLs, and they are what sitemap.xml lists. Restating that behaviour as a rule here
+# would add a line to maintain that changes nothing.
+#
+# IF A RULE IS EVER ADDED: one per line, `from  to  status`, source is a path, and the file is
+# capped at 2,000 static and 100 dynamic redirects. Put the reason for the rule in a comment above
+# it -- a redirect nobody can explain is a redirect nobody can safely delete.
+
+# THE ONE RULE. `/risks` was a page of this site from launch until 2026-09-05, when the owner
+# consolidated every warning, limit and unresolved question onto a single page and `risks.html` was
+# retired into `disclaimers.html`. The old URL is in `sitemap.xml` history, in the repository, and in
+# whatever anyone has bookmarked or linked, and the page it pointed at is the one a reader most needs
+# to reach. A 301 rather than a 302 because the move is permanent: the page is not coming back.
+#
+# This is a PATH rule, which is the kind `_redirects` actually supports, so unlike the hostname rule
+# above it works here. Pages serves the extension-less form, so `/risks` is the URL to match;
+# `/risks.html` redirects to `/risks` first and lands on this rule on the second hop.
+
+/risks  /disclaimers  301
+
+# THE SEVEN RULES BELOW. The nine-page site collapsed on 2026-09-05 to one scroll page plus a
+# Disclaimers page. Every one of the retired URLs is still in sitemap.xml's git history, in the
+# repository at large, and in whatever anyone has bookmarked or linked from elsewhere, so each gets
+# a 301 rather than a 302: the collapse is permanent, and none of these pages is coming back.
+#
+# ONE OF THE SEVEN SPLITS FROM THE OTHER SIX. `/status` redirects to `/disclaimers`, not to `/`,
+# because the status page carried the deployment record and the claims register, and that material
+# survived the collapse onto the Disclaimers page rather than onto the homepage. The other six,
+# how-it-works, agents, who-its-for, operators, faq and vision, were narrative pages explaining the
+# protocol, and that narrative now lives on the single scroll page at `/`, so all six redirect there.
+#
+# Pages serves the extension-less form, the same as the `/risks` rule above, so `/operators.html`
+# redirects to `/operators` first and lands on these rules on the second hop.
+
+/how-it-works   /              301
+/agents         /              301
+/who-its-for    /              301
+/operators      /              301
+/faq            /              301
+/vision         /              301
+/status         /disclaimers   301

@@ -1,0 +1,180 @@
+/* ===========================================================================
+   risks-verify — five repository references at the foot of risks.html
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour, length and duration below is a token
+   from src/tokens.css; there is no literal here to re-measure for contrast.
+
+   NOTHING IN THIS FILE MOVES. The section's motion line is "None." There is no
+   transition, no transform and no keyframe rule below — not even a hover
+   affordance, because these terms are file paths and not controls, and the
+   passage says so in its own words: paths rather than links, so they stay
+   valid as the repository moves. A hover state would offer a click this
+   section deliberately does not have.
+
+   WHY THE TERM SITS ABOVE ITS BODY RATHER THAN BESIDE IT. Every other
+   definition list on this build uses a fixed label column, because every other
+   label is one or two short words. These labels are monospaced paths, the
+   longest of them two paths joined by a conjunction, and at the mono step that
+   is roughly forty characters. In a label column they wrap to four ragged
+   lines against a body that wraps to three, and the reader loses the pairing
+   the list exists to state. Stacked, each path gets the full column, stays on
+   one line down to tablet width, and the body hangs beneath it at the reading
+   measure.
+
+   WORDING IN THIS FILE. The claims suite reads stylesheets as prose. Comments
+   here describe layout mechanics and nothing else.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+}
+
+/* Mono, uppercase, wide-tracked — the same eyebrow every other section uses,
+   at the dark palette's secondary ink. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s5);
+  max-width: 20ch;
+  color: var(--ink);
+}
+
+.lede {
+  margin: 0 0 var(--s6);
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+/* One hairline-ruled list. The top rule closes the list against the paragraph
+   above it, and each entry carries the rule below it, so the block reads as a
+   single ledger rather than as five separate items. */
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: block;
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The path line. Held at the outer column rather than at --measure: a path is
+   read left to right in one pass and must not be broken by the prose bound. */
+.term {
+  margin: 0 0 var(--s2);
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--muted); /* carries the section-mark suffix; ratio in src/tokens.css */
+}
+
+/* The path itself, one step brighter than the location suffix beside it, so
+   the name and the place within it read as two things. The global `code` rule
+   supplies the family and the tabular figures; this only sets the colour and
+   allows a long path to break inside a narrow column instead of pushing the
+   row wider than the page. */
+.term code {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--ink);
+}
+
+/* The page's own self-reference, closing the section. Small and quiet — see the note in
+   RisksVerify.tsx on why it renders here rather than in the footer. */
+.selfRef {
+  margin-top: var(--s5);
+  font-size: var(--step-small);
+  color: var(--faint);
+}
+
+/* Below the tablet threshold the rhythm tightens; nothing else changes,
+   because the stacked shape is already the narrow shape. */
+@media (max-width: 46rem) {
+  .row {
+    padding-block: var(--s4);
+  }
+
+  .term {
+    font-size: 0.875rem;
+  }
+}
+
+/* --- the closing actions ---------------------------------------------------
+   Added 2026-09-05: the corpus's disclaimers.html closes this section with
+   three buttons where risks.html had none. Same treatment as every other
+   closing actions row on the site (see risks-review-status, which carried
+   this pattern before its own actions moved here). */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.875rem;
+  padding-inline: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+.action:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.actionPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition:
+    filter var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+.actionPrimary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.12);
+}
+
+@media (max-width: 42rem) {
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+  }
+
+  .action {
+    justify-content: center;
+    padding-inline: var(--s4);
+  }
+}

@@ -290,6 +290,64 @@ h1 {
 
 .hero--plain h1 { max-width: 22ch; }
 
+/* THE HOME PAGE HERO SHARES THE FIRST VIEWPORT WITH THE TWO DOORS.
+   ---------------------------------------------------------------------------
+   Owner decision, 2026-09-05, round 8: on index.html the masthead, the lede and
+   both door cards must stand inside the first viewport at 1440x900, and the
+   first card must be one short scroll away at 375x812. Measured before this
+   rule, the cards ran 893px to 1157px down a 900px viewport, and the first card
+   opened 1.267 viewports down at 375x812.
+
+   Nothing was deleted to close that. The rhythm below is tightened and the
+   hero's three action buttons moved down the page into the door section, under
+   the two cards, with their labels and destinations unchanged.
+
+   SCOPED TO index.html, NOT TO EVERY HERO. `.hero` on its own is also
+   agents.html's, and `.hero--plain` is the other seven pages'; neither has a
+   fold to clear, and tightening a page that does not need it is a change with
+   no reason a reader can see. So the whole of it hangs off one extra class on
+   one page, including the five rules that reach past the hero into the section
+   after it: its opening seam, and the four that tighten the card grid inside
+   it. Those five reach that section through the adjacent-sibling combinator
+   rather than through a second class on it, so index.html carries one hook
+   rather than two, and none of them can land anywhere the hero they are named
+   for does not. */
+
+.hero--fold {
+  padding: clamp(28px, 3.4vw, 48px) 0 clamp(16px, 1.6vw, 22px);
+}
+
+.hero--fold .eyebrow { margin-bottom: 8px; }
+
+.hero--fold h1 { margin-bottom: 18px; }
+
+/* 1.45 rather than 1.5. Three lede paragraphs of eleven lines between them pay
+   for the difference twice over, and 1.45 is still above the 1.4 where a
+   multi-line paragraph starts to knit together. Scoped to this hero: `.lede`
+   sets running copy on all nine pages. */
+.hero--fold .lede { line-height: 1.45; }
+
+/* `.lede` sets `margin: 0` and nothing separates two of them, so the hero's
+   three paragraphs already ran together as one block before this round; the
+   tighter leading above makes that read worse rather than causing it. 12px is
+   the same gap the redesign's hero carries between the same three sentences
+   (var(--s3)), so the two builds now break them the same way. */
+.hero--fold .lede + .lede { margin-top: 12px; }
+
+/* The seam into the two doors, and the card grid that opens them. `section`
+   pays clamp(44px, 5.5vw, 76px) at the top and `.grid` adds 28px above the
+   first card; between them they put 104px at 1440 between the lede and the
+   thing the fold exists to show. */
+.hero--fold + section { padding-top: clamp(16px, 1.6vw, 22px); }
+
+.hero--fold + section .grid { margin-top: 0; }
+
+.hero--fold + section .grid > * { padding: 20px 22px; }
+
+.hero--fold + section .grid h2 { margin-bottom: 14px; }
+
+.hero--fold + section .grid .actions { margin-top: 16px; }
+
 section {
   padding: clamp(44px, 5.5vw, 76px) 0;
   border-bottom: 1px solid var(--line-soft);
