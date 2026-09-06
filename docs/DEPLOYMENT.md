@@ -121,18 +121,37 @@ exercised on chain 4663, no execution adapter is deployed there (§3 — adapter
 **No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
 configures an x402 surface, and nothing recorded depends on one.
 
-**None of the seven contracts is source-verified on the explorer, and §9 cannot currently do it.**
-`https://robinhoodchain.blockscout.com/api` sits behind a Cloudflare managed bot challenge: a plain
-request returns HTTP 403 with a `Just a moment…` interstitial and `Enable JavaScript and cookies to
-continue`, never JSON. `forge verify-contract --verifier blockscout --verifier-url
-https://robinhoodchain.blockscout.com/api --chain 4663` therefore fails before it submits anything,
-at the ABI lookup — `Failed to deserialize response: expected value at line 1 column 1`, then `Error:
-Failed to obtain contract ABI for 0x79279FBa…`. This is the explorer refusing an automated client,
-not a defect in the source or the constructor arguments, and the challenge must not be worked
-around. Retry from a browser session, or when the operator supplies an API key or an allow-listed
-endpoint. **Explorer verification is a convenience and is not what establishes these contracts'
-identity** — `bytecodeCurrency` in the record does that, by byte-for-byte comparison against the
-`b1cde122` artifacts, and it depends on no explorer.
+**All seven contracts are source-verified, on Sourcify and on the explorer.** Sourcify returns
+`"creationMatch": "exact_match"` and `"runtimeMatch": "exact_match"` for every one of the seven at
+`https://sourcify.dev/server/v2/contract/4663/<address>`, and the explorer reports each of them
+`"is_verified": true` with `"is_partially_verified": false` at
+`https://robinhoodchain.blockscout.com/api/v2/smart-contracts/<address>`. Both endpoints were read
+again on 2026-09-05 for this paragraph, contract by contract, rather than carried over. The source
+that matched is the tree at `sourceCommit` `b1cde122`, compiled with `0.8.26+commit.8a97fa7a`, which
+is the same commit `bytecodeCurrency` in the record pins.
+
+Three things a later reader should know before trusting or retrying this:
+
+- **The verified source carries `SPDX-License-Identifier: BUSL-1.1` in all 27 of its files**, across
+  all seven contracts, because that is the header the code was compiled and broadcast with at
+  `b1cde122`. The repository relicensed to MIT afterwards, on 2026-09-05, in #223. The two are not
+  in conflict and neither is stale: an explorer shows the source a deployment was built from, and
+  that source cannot change after the fact. The explorer's own `license_type` field reads `none`,
+  which is a field nobody set rather than a claim about the licence.
+- **The explorer's `/api/v2/smart-contracts/` endpoint answers HTTP 500 intermittently**, on
+  contracts that are demonstrably verified. `VaultDeployer` needed several attempts, and while it
+  was still failing, `/api/v2/search` and `/api/v2/addresses/` both reported that same address
+  verified. **A 500 from that endpoint is a server error, not an answer that a contract is
+  unverified.** Retry it, or read one of the other two.
+- **This supersedes an earlier automated attempt that was refused**, which returned HTTP 403 behind a
+  bot challenge and never reached submission. That obstacle is kept here for the historical record
+  only. How verification was ultimately accepted is not something these read-backs establish, and
+  nothing should be inferred about the mechanism.
+
+**Explorer verification is a convenience and is still not what establishes these contracts'
+identity.** `bytecodeCurrency` in the record does that, by byte-for-byte comparison against the
+`b1cde122` artifacts, and it depends on no explorer. What verification adds is that a reader who
+does not build the tree can now read the source beside the bytecode.
 
 This changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md), whose board is the Base mainnet
 launch.

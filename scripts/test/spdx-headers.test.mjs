@@ -46,8 +46,21 @@ test('every first-party .sol file declares SPDX-License-Identifier: MIT', () => 
   for (const tree of TREES) {
     for (const p of walk(path.join(ROOT, tree))) {
       const rel = path.relative(ROOT, p).replace(/\\/g, '/');
-      if (VENDORED.has(rel)) continue;
       const head = readFileSync(p, 'utf8').slice(0, 200);
+      // The vendored carve-outs keep their upstream licence, so MIT is not required of them. What
+      // IS required is that they declare something: a vendored file carrying no identifier at all
+      // is the same unlabelled-licence problem this test exists to catch. `continue`ing before any
+      // assertion ran made the docstring's "still must carry SOME identifier" a comment rather
+      // than a check, which a mutation proved. `seen` is deliberately not incremented here, so the
+      // >= 80 floor keeps counting only the first-party files actually held to MIT.
+      if (VENDORED.has(rel)) {
+        assert.ok(
+          /SPDX-License-Identifier:\s*\S/.test(head),
+          `${rel}: vendored carve-out, so MIT is not required of it, but it must still declare an ` +
+            'SPDX-License-Identifier naming the licence it does carry',
+        );
+        continue;
+      }
       assert.ok(
         head.includes('SPDX-License-Identifier: MIT'),
         `${rel}: first line must declare the MIT identifier; LICENSE says the header governs the file, ` +
