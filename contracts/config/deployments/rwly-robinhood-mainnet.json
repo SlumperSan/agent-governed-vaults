@@ -39,6 +39,30 @@
     "creatorFeeRecipient": "0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c",
     "creatorFeeRecipientNote": "A 1-of-1 multisig whose only owner is the deployer EOA above, on version 1.4.1. getThreshold() returns 1 and getOwners() returns that one address, checked against a known 2-of-3 multisig as a positive control. One key can move whatever it holds, so nothing it holds is locked by it."
   },
+  "graduation": {
+    "graduated": true,
+    "graduatedNote": "THE CURVE HAS GRADUATED. This section was added on 2026-09-06, and it is recorded as a TRANSACTION rather than as a getter reading: graduated() returning true is a fact about a block, while the transaction below is a fact about the chain's history and stays true however the getter later behaves. It is written down because the first draft of the prose that cites this file said the launch had NOT graduated, which was carried over from a session note rather than read, and was false by 55 minutes.",
+    "graduationTx": "0x43d4caf89f31999ab76ef454772e5e2c09617312c244e1f140511db1818a7e7c",
+    "graduationBlock": 55488695,
+    "graduationBlockTimestamp": 1788648411,
+    "graduatedAt": "2026-09-05T22:46:51Z",
+    "graduatedAtNote": "The graduation block's own timestamp, read with eth_getBlockByNumber. 3,294 seconds, which is 54 minutes and 54 seconds, after the creation block's timestamp above.",
+    "thresholdWei": "4200000000000000000",
+    "thresholdHuman": "4.2 ETH",
+    "thresholdNote": "graduationThreshold() read from the curve. The figure was previously written into prose on one surface without a record behind it; this is that figure read from the contract.",
+    "quoteRaisedWei": "4200000000000000078",
+    "quoteRaisedHuman": "4.2 ETH",
+    "quoteRaisedNote": "The second word of the graduation event's payload. It exceeds the threshold by 78 wei, which is what a threshold crossed by a trade rather than by a target looks like.",
+    "tokensSentToLaunchpadFactory": "285714285714285714285714285",
+    "tokensSentToLaunchpadFactoryHuman": "285,714,285",
+    "tokensSentToLaunchpadFactoryShareOfSupply": "28.5714%",
+    "recipient": "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+    "recipientNote": "The launchpad factory address recorded above. The graduation transaction transfers the tokens to it and the event's first word names it. WHERE THE FACTORY ROUTED THEM NEXT WAS NOT READ, so no surface citing this file may say what became of that position, how it is held, or whether it can be withdrawn.",
+    "curveAfterwards": "The curve holds 0 wei and 0 RWLY, and emitted no log after the graduation block. quoteReserve() returns 1680000000000000000, which equals phantomQuote() exactly: the virtual reserve the curve was seeded with, and not a balance.",
+    "buybackEnabled": false,
+    "buybackEnabledNote": "buybackEnabled() returns false on this curve. The hourly buyback described on the Vision page is design intent and is not this flag.",
+    "provenance": "ONCHAIN, read 2026-09-06 against https://rpc.mainnet.chain.robinhood.com. The transaction, its block and its logs came from eth_getTransactionReceipt and eth_getBlockByNumber; graduated(), graduationThreshold(), quoteReserve() and buybackEnabled() were called at the head block, and their selectors were first confirmed to be PUSH4 immediates in the curve's own runtime so that a getter which does not exist could not answer zero and be read as false. The node serves no state older than roughly 1,024 blocks, so the graduation was located from the curve's event log rather than by bisecting graduated() over history."
+  },
   "creatorBuy": {
     "inSameTransactionAsLaunch": true,
     "spentWei": "133700000000000000",
@@ -50,7 +74,8 @@
     "snipeTaxPaid": "none",
     "snipeTaxNote": "currentSnipeTaxBps(deployer) returns 0 in the launch block while a stranger address returns 9900 in the same block. The exemption is the launchpad's own automatic one for the creator: the transaction's exemption list argument decodes to length zero.",
     "characterisation": "Not a pre-mine and not a reserved allocation: nothing was set aside before trading opened, and the buy executed against the same curve at the same formula price any address could have paid. It is nonetheless a 7.2979% position taken at the opening price under a zero tax rate no other address had in that block, and both halves belong together.",
-    "verification": "The tokens delivered match the curve's own constant-product expectation to zero wei, computed from launchSupply(), phantomQuote(), feeBps() and creatorTaxBps() alone."
+    "verification": "The tokens delivered match the curve's own constant-product expectation to zero wei, computed from launchSupply(), phantomQuote(), feeBps() and creatorTaxBps() alone.",
+    "scope": "EVERY FIELD IN THIS SECTION DESCRIBES THE LAUNCH TRANSACTION AND NOTHING AFTER IT. What later became of this position is deliberately not recorded here and has not been decided by the owner, so no surface citing this file may say that these tokens are still held, are unmoved, or are anywhere in particular. A surface that wants to say something about where the position is now needs a record entry that does not exist yet."
   },
   "relationshipToOurDeployedContracts": {
     "referencedByAnyDeployedContract": false,
@@ -65,6 +90,13 @@
     "cast call 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 'totalSupply()(uint256)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
     "cast call 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9 'name()(string)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
     "cast tx 0x1672a086c16547fcb533478521311cb4d703c815d38d2db1650ef71c2fd1b5d9 --rpc-url https://rpc.mainnet.chain.robinhood.com",
-    "cast block 55456054 --field timestamp --rpc-url https://rpc.mainnet.chain.robinhood.com"
+    "cast block 55456054 --field timestamp --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast call 0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5 'graduated()(bool)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast call 0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5 'graduationThreshold()(uint256)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast call 0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5 'buybackEnabled()(bool)' --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast tx 0x43d4caf89f31999ab76ef454772e5e2c09617312c244e1f140511db1818a7e7c --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast receipt 0x43d4caf89f31999ab76ef454772e5e2c09617312c244e1f140511db1818a7e7c --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast block 55488695 --field timestamp --rpc-url https://rpc.mainnet.chain.robinhood.com",
+    "cast balance 0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5 --rpc-url https://rpc.mainnet.chain.robinhood.com"
   ]
 }

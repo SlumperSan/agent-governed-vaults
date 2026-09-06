@@ -158,8 +158,13 @@
       <h2>RWLY is live.</h2>
       <p class="tight">Launched 2026-09-05 on Pons, a third-party launchpad this project did not write, at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code> on Robinhood Chain, chain id 4663.</p>
       <p class="tight">An ERC-20 named RWAlly, fixed supply 1,000,000,000, no owner, no mint function, no pause and no upgrade path.</p>
+      <p class="tight">It was created in transaction <code>0x1672a086c16547fcb533478521311cb4d703c815d38d2db1650ef71c2fd1b5d9</code>, in block 55456054, whose own timestamp is the launch time above.</p>
+      <p class="tight">Trading opened on a bonding curve at <code>0x0032fEc43109AD0F24bbaae9A92562DC96ba2BB5</code>, quoted in native ETH and not in a stock token: the curve&rsquo;s <code>pairToken()</code> returns the zero address and its <code>isNativeQuote()</code> returns true.</p>
+      <p class="tight">That curve has graduated, and this page says so rather than leaving the reader to assume it is still running. Its threshold was 4.2 ETH and it raised 4.2 ETH, exceeding the threshold by 78 wei.</p>
+      <p class="tight">Graduation was transaction <code>0x43d4caf89f31999ab76ef454772e5e2c09617312c244e1f140511db1818a7e7c</code>, in block 55488695, timestamped 2026-09-05T22:46:51Z, which is 54 minutes and 54 seconds after the launch. It moved the raised ETH and 285,714,285 RWLY, 28.5714% of the fixed supply, to the launchpad&rsquo;s own factory at <code>0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e</code>. The curve has held nothing and emitted nothing since.</p>
+      <p class="tight">What that factory did with those tokens next was not read, so this page does not say. A figure this page does not carry is a figure nobody checked, and that is the honest version.</p>
       <p class="tight">No contract this protocol deployed references it, and the staking, the epochs and the fee accrual into stock tokens are design intent. The design is on the <a href="vision.html">Vision page</a>.</p>
-      <p class="tight">The record is <code>contracts/config/deployments/rwly-robinhood-mainnet.json</code>, which carries the launch transaction, the launchpad addresses, the fee terms and what the protocol&rsquo;s own deployer address took in the launch transaction. The <a href="disclaimers.html">Disclaimers</a> state that last one in prose.</p>
+      <p class="tight">The record is <code>contracts/config/deployments/rwly-robinhood-mainnet.json</code>, which carries the launch transaction, the graduation transaction, the launchpad addresses, the fee terms and what the protocol&rsquo;s own deployer address took in the launch transaction. Every figure in this section is transcribed from it, and the <a href="disclaimers.html">Disclaimers</a> state that last one in prose.</p>
     </div>
   </section>
 
@@ -169,6 +174,7 @@
       <h2>How to check every line above.</h2>
       <ul>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/robinhood-mainnet.json">The deployment record</a>: every address above, plus the note recording how each was read back on-chain.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/rwly-robinhood-mainnet.json">The token record</a>: every figure in the token section above, including the launch and the graduation transactions, each with the command that reads it back off chain.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/robinhood-mainnet.json">The chain configuration</a>: every parameter this site quotes for chain 4663, each annotated with how it was read.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences here and reads the contract configuration to catch a page that has gone stale against it.</li>
         <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a>.</li>
