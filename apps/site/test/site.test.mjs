@@ -1161,6 +1161,35 @@ test('every mention of RWLY sits beside its address, its fixed supply, or a desi
     `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
       'rather than qualified, say so in the commit rather than letting this guard pass by absence',
   );
+  // NO SENTENCE THAT NAMES THE TOKEN MAY ALSO SAY IT DOES NOT EXIST.
+  //
+  // ADDED AFTER THE WINDOW RULE ABOVE LET ONE THROUGH. vision.html carried "RWLY rewards are
+  // designed, and depend on a token that does not exist." It is false, and every guard was green on
+  // it: the window rule is satisfied by "designed" sitting three words away, and the retired chip
+  // string does not match because this sentence is worded differently. A proximity rule asks
+  // whether a qualifier is NEAR the name; it cannot ask whether the qualifier is TRUE. So this leg
+  // is sentence-scoped and asks the one question the window cannot.
+  //
+  // SENTENCE-SCOPED RATHER THAN PAGE-SCOPED, deliberately: `vision.html` legitimately says an
+  // all-stocks index needs oracle work that does not exist yet, which is about oracles and is still
+  // true, and a page-scoped ban would red it. The three phrases are matched only inside a sentence
+  // that also names RWLY.
+  const TOKEN_ABSENCE = /does not exist|do not exist|there is no token/i;
+  for (const p of PAGES) {
+    for (const s of sentencesOf(publishedProse(raw.get(p) ?? ''))) {
+      if (!/RWLY/.test(s)) continue;
+      const hit = s.match(TOKEN_ABSENCE);
+      assert.equal(
+        hit,
+        null,
+        `${p}: a sentence naming RWLY also says ${JSON.stringify(hit?.[0])}. RWLY was created at ` +
+          '2026-09-05T21:51:57Z. Name the thing that is actually absent -- the staking contract, the ' +
+          'epoch, the reward accrual -- rather than the token, ' +
+          JSON.stringify(s.trim().slice(0, 200)),
+      );
+    }
+  }
+
   // WHAT EACH PAGE MUST STATE, not merely avoid getting wrong.
   //
   // This half used to pin the exact sentence `RWLY does not exist yet.` on index.html -- a
