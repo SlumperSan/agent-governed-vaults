@@ -286,7 +286,7 @@ const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
 // file, because a sentence that was true yesterday is exactly the sentence an editor restores from
 // a corpus page tomorrow: it is pinned at ZERO on every page instead, so a reappearance reds.
 const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
-const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
+const FOOTER_LICENSE = 'Open source under the MIT licence.';
 // RENAMED 2026-09-05 by owner decision: the site is called RWAlly, and
 // "Agent-Governed Vaults" survives only as the footer descriptor line. The
 // capitals are the joke and not a typo: RWA is the play on words, and it is the

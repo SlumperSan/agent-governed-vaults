@@ -9,7 +9,8 @@ info:
     `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. The server
     holds no keys and moves no funds. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
   license:
-    name: BUSL-1.1
+    name: MIT
+    identifier: MIT
 servers:
   - url: https://api.example.xyz
     description: Placeholder — set to the deployed API origin.

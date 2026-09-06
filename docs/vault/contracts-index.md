@@ -1,7 +1,7 @@
 # Contracts Index
 
 The on-chain surface of the agent-governed-vaults protocol: a Solidity 0.8.26 package under
-`contracts/src/`, BUSL-1.1 licensed. This note is the hub of the **Contracts cluster**: start
+`contracts/src/`, MIT licensed (BUSL-1.1 until 2026-09-05; see LICENSE-HISTORY.md). This note is the hub of the **Contracts cluster**: start
 here and follow the `[[wikilinks]]` into each module.
 
 ## Why it matters

@@ -43,7 +43,8 @@ paragraph will say so when it is true.
   checked against, and it is byte-identical on all eight pages.
 - Both **footer** sentences, at exactly the permitted count per page:
   `No token. No points. No airdrop. No presale.` and
-  `Source-available under BUSL-1.1 — not open source.` (that em-dash is pinned; leave it).
+  `Open source under the MIT licence.` (the repository was relicensed from BUSL-1.1 to MIT on
+  2026-09-05; the sentence that replaced the source-available one carries no dash).
 - `open source`, `airdrop`, `presale` may appear **only** inside those footer sentences.
 - The security-review attestation paragraph: byte-identical across every page that carries it.
 - The launch-status paragraph naming the open High: byte-identical across pages.

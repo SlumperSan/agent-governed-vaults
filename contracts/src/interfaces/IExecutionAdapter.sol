@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
 /// @notice Venue-agnostic execution (commitment C-2). Concrete adapters in Sprint 4, starting

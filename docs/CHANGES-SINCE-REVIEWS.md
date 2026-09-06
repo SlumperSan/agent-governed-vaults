@@ -153,7 +153,7 @@ Read this section as the provenance record for the least-reviewed part of the su
   one to three each (§2). These have their test suites and nothing else. They are the least
   scrutinized Solidity in the repository, and they feed the contract that prices everything.
 - **The vendored math is third-party code under two different licenses**, neither of which is
-  this repository's BUSL-1.1. They are kept in separate files under their own SPDX headers, and
+  this repository's own (BUSL-1.1 when this was written; MIT since 2026-09-05). They are kept in separate files under their own SPDX headers, and
   only the `tick → sqrtPrice` direction of `TickMath` was taken. The 20 magic constants were
   verified against an independent 120-decimal-digit reference over 685 ticks (max relative
   deviation 2.3e-10) rather than trusted from memory, and the resulting values are pinned as

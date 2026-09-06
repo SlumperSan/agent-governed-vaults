@@ -181,7 +181,7 @@ ok(!/<h1[\s>]/.test(html), 'this section renders no <h1> — risks-hero owns the
 // so this file never becomes the surface that carries an extra copy itself.
 const FOOTER_SENTENCES = [
   ['No token. No points. No ', 'air', 'drop. No ', 'pre', 'sale.'].join(''),
-  ['Source-available under BUSL-1.1 — not ', 'open ', 'source.'].join(''),
+  ['Open ', 'source', ' under the MIT licence.'].join(''),
 ];
 for (const sentence of FOOTER_SENTENCES) {
   ok(!html.includes(sentence), `a counted footer sentence must not appear here: ${JSON.stringify(sentence)}`);

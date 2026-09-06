@@ -1,7 +1,7 @@
 {
   "name": "index-vault-protocol",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "MIT",
   "workspaces": [
     "packages/*",
     "apps/*"

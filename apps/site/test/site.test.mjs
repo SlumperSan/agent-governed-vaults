@@ -99,7 +99,7 @@ const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or finan
 // count, so with the count at zero those two words are now banned outright on all nine pages. That
 // is a tightening rather than collateral, and it is the reason the retirement is one commit.
 const RETIRED_NO_TOKEN = 'No token. No points. No airdrop. No presale.';
-const FOOTER_LICENSE = 'Source-available under BUSL-1.1, not open source.';
+const FOOTER_LICENSE = 'Open source under the MIT licence.';
 // Owner decision 2026-09-05: the domain is rwally.com, the positioning sentence names the site, and
 // the masthead follows. "Agent-Governed Vaults" survives as the descriptor and the repository name,
 // which is why it still appears in prose and in og:site_name-adjacent copy -- it is no longer the

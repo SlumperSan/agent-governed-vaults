@@ -55,7 +55,7 @@
       <p>In the launch transaction the protocol&rsquo;s own deployer address took 72,978,672 RWLY, about 7.3% of the fixed supply, for 0.1337 ETH at the curve&rsquo;s opening price. It paid no snipe tax, because the launchpad exempts the creator automatically while every other address in that block faced a tax decaying from 99% over three seconds. Nothing was minted aside from the one fixed supply and nothing was reserved before trading opened, and both halves of that belong together rather than only the flattering one.</p>
       <p>RWLY is designed to accrue the protocol&rsquo;s fees into official Robinhood Stock Tokens, and that mechanism is design intent rather than code: no contract this protocol deployed references RWLY, there is no staking contract, no stRWLY, no epoch and no reward accrual on chain, and none of it can be pointed at the token without a new deployment.</p>
       <p>The record is <code>contracts/config/deployments/rwly-robinhood-mainnet.json</code>, and the <a href="status.html">status page</a> reads it out.</p>
-      <p class="footer-pins">Source-available under BUSL-1.1, not open source.</p>
+      <p class="footer-pins">Open source under the MIT licence.</p>
       <p>Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.</p>
       <p>Spot crypto assets fall. Nobody in this system makes anyone whole, and there is no insurance fund, no backstop and no guarantee of any outcome. Do not deposit anything you cannot afford to lose entirely.</p>
     </div>
@@ -213,7 +213,7 @@
         <span class="severity">Open &mdash; owner decision</span>
         <h2>13. An open licensing question</h2>
         <dl class="rows">
-          <div><dt>What it is</dt><dd>Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository.</dd></div>
+          <div><dt>What it is</dt><dd>Vendored third-party mathematics is under GPL-2.0-or-later and MIT terms in a repository whose own licence is MIT. The MIT half now matches the repository; the GPL-2.0-or-later half does not.</dd></div>
           <div><dt>Worst case</dt><dd>The combination is judged incompatible, and the licensing of part of the tree has to change.</dd></div>
           <div><dt>What is done</dt><dd>It is recorded as an open owner decision rather than quietly left alone. It is disclosed here because you should know about it before you build on the repository, not after.</dd></div>
         </dl>
@@ -327,7 +327,7 @@
         </div>
         <div>
           <dt>The vendored-mathematics licensing question</dt>
-          <dd>Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.</dd>
+          <dd>Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms in a repository whose own licence is MIT. The MIT half now matches the repository; the GPL-2.0-or-later half does not. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.</dd>
         </div>
         <div>
           <dt>Everything on the Vision page is design intent</dt>

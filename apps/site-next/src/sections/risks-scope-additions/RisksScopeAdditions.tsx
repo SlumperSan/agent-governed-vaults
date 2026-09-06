@@ -241,7 +241,7 @@ const ROWS: ReadonlyArray<{ key: string; term: string; body: string }> = [
     key: 'the-vendored-mathematics-licensing-question',
     term: 'The vendored-mathematics licensing question',
     body:
-      'Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms inside a BUSL-1.1 repository. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.',
+      'Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms in a repository whose own licence is MIT. The MIT half now matches the repository; the GPL-2.0-or-later half does not. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.',
   },
   /* --- copy deck v2, 2026-09-05: four rows about the Vision page ---------- */
   {

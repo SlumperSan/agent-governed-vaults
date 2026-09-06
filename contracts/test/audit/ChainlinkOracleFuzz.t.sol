@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
 // Fuzz/robustness for ChainlinkOracle — the C-6 pivot's oracle. Proves the two properties a vault's
