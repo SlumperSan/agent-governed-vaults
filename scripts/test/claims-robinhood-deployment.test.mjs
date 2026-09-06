@@ -660,7 +660,7 @@ test('probe: the deploy-time-scope guard is live', () => {
  *
  * `apps/site/assets/og-card.png` is a 1200x630 PNG whose strapline is rendered into pixels. No
  * claims guard can read pixels, so this pins the STALE file by digest: the card must be regenerated
- * before the copy that describes it ships, or the eight `og:image:alt` attributes describe an image
+ * before the copy that describes it ships, or the nine `og:image:alt` attributes describe an image
  * that says something else. This is the whole mechanism available, and it is enough to stop the
  * stale card landing.
  *
@@ -671,12 +671,12 @@ test('probe: the deploy-time-scope guard is live', () => {
  * It is a SET, and it only ever grows. Each retirement adds a row and removes none, because
  * dropping the old digest to make room for the new one would quietly reopen the failure the old one
  * was catching: a revert, a bad merge or a stale checkout can put any previous card back, and the
- * card that says "Not deployed." is the one whose return would republish a false claim. Two rows so
- * far, and the reason each was retired is recorded next to it — a bare list of hashes is unreadable
+ * card that says "Not deployed." is the one whose return would republish a false claim. Three rows
+ * so far, and the reason each was retired is recorded next to it — a bare list of hashes is unreadable
  * within a week.
  *
  * The generator is `scripts/build-og-card.mjs`, whose `WORDMARK` and `STRAPLINE` constants are the
- * source of the words; run it, then re-read the eight alt attributes.
+ * source of the words; run it, then re-read the nine alt attributes.
  */
 const RETIRED_OG_CARDS = [
   {
@@ -690,6 +690,13 @@ const RETIRED_OG_CARDS = [
       + ' host line. Not false — retired on the owner\'s direction of 2026-09-05 for a dark card'
       + ' carrying the wordmark and the status line and nothing else',
   },
+  {
+    sha256: '6bf0ad5a291bebdb60e42591989645cbb0e567bb86840db7ea34943f7e83789b',
+    why: 'the dark card whose wordmark read "Rwally". Not false either, and retired for the same'
+      + ' kind of reason as the row above it: the owner renamed the site to RWAlly on 2026-09-05,'
+      + ' the nine alt attributes now name the new casing, and an alt that does not match the'
+      + ' pixels is the exact failure this pin exists to catch',
+  },
 ];
 
 test('the Open Graph card is not one of the retired cards', () => {
@@ -700,7 +707,7 @@ test('the Open Graph card is not one of the retired cards', () => {
     hit,
     undefined,
     `apps/site/assets/og-card.png is a retired card: ${hit?.why}. Every page's og:image:alt` +
-      ' describes the current one — a dark card carrying "Rwally" and "Deployed on Robinhood' +
+      ' describes the current one — a dark card carrying "RWAlly" and "Deployed on Robinhood' +
       ' Chain." — and the alt text must describe the image a reader sees. Regenerate it with' +
       ' `node scripts/build-og-card.mjs` (it renders at 1200x630 and verifies the IHDR before' +
       ' overwriting), then APPEND the digest of the card you retired to RETIRED_OG_CARDS in this' +
