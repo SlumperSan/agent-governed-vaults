@@ -1096,13 +1096,14 @@ const RWLY_QUALIFIER = /does not exist|design intent|designed to|not built|0x2ee
 // mention to a checkable date rather than borrowing a qualifier from the prose beside it.
 const RWLY_CHIP = 'Designed, not built. RWLY launched 2026-09-05.';
 const VISION_PAGE = 'vision.html';
-// RE-MEASURED 2026-09-05, after the launch flip: siteFiles() finds 51 occurrences of `RWLY` across
-// apps/site (test/ and images excluded, per siteFiles() below) -- 18 of them on vision.html alone,
-// where the chip accounts for nine. It was 46 before the flip; the five it gained are the launch
-// facts the six flipped pages now state. Set a few below that measurement, not at it, so a small
-// future edit does not immediately red this floor; re-measure and move this number the next time
-// RWLY mentions are added or removed anywhere under apps/site.
-const RWLY_FLOOR = 45;
+// RE-MEASURED 2026-09-06, after the token record landed on status.html: siteFiles() finds 61
+// occurrences of `RWLY` across apps/site (test/ and images excluded, per siteFiles() below) -- 18
+// of them on vision.html alone, where the chip accounts for nine. It was 51 after the launch flip
+// the day before and 46 before it. The ten it gained are the graduation record on status.html and
+// the README section describing the rules that record is checked by. Set a few below that
+// measurement, not at it, so a small future edit does not immediately red this floor; re-measure
+// and move this number the next time RWLY mentions are added or removed anywhere under apps/site.
+const RWLY_FLOOR = 55;
 
 /**
  * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
@@ -1110,6 +1111,75 @@ const RWLY_FLOOR = 45;
  * section nested inside another.
  */
 const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
+
+/**
+ * The windows around every `RWLY` in a piece of text that carry none of the qualifiers.
+ *
+ * EXTRACTED FROM THE LOOP BELOW SO THE PROBE CAN PROVE IT BITES. The logic is unchanged; only its
+ * location moved. It was inlined, which meant the only evidence the window rule worked was that it
+ * was green -- and a window check has two failure modes that both report green: measuring the wrong
+ * distance, and an alternation so wide that everything matches it. This repository has been caught
+ * by the green-because-it-measured-nothing shape more than once (the soak's freeze-safety leg read
+ * a variable nobody set; the `.pre-launch` selector survived a rename into a stylesheet check that
+ * matched no blocks and asserted nothing), and the sibling suite in `apps/site-next` extracted its
+ * copy of this function for exactly this reason. The probe below is the point of the extraction.
+ *
+ * Takes text as given rather than stripping tags, which is what the caller has always passed: the
+ * three qualified mentions on `index.html` sit inside `content="…"` meta attributes, so this file's
+ * window is deliberately measured over markup. `apps/site-next` strips tags first because its build
+ * emits hashed CSS-module class names that would eat the window; this build's markup is hand-
+ * written and does not.
+ */
+const rwlyUnqualified = (text) => {
+  const flat = text.replace(/\s+/g, ' ');
+  /** @type {string[]} */
+  const out = [];
+  for (const m of flat.matchAll(/RWLY/g)) {
+    const at = m.index ?? 0;
+    const window = flat.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
+    if (!RWLY_QUALIFIER.test(window)) out.push(window.trim().slice(0, 200));
+  }
+  return out;
+};
+
+/**
+ * Purchase INVITATIONS, banned anywhere on a page whether or not RWLY is in the same sentence.
+ *
+ * ADDED 2026-09-06, PORTED FROM `apps/site-next`, AND IT IS THE HOLE THAT MATTERS MOST NOW. Until
+ * 2026-09-05T21:51:57Z there was no token to invite anyone to buy, and this suite's whole defence
+ * was a sentence saying so. The sentence is retired because it went false; nothing replaced the
+ * defence it provided. A named token that trades is the single easiest thing on these pages for a
+ * well-meaning editor to attach a call to action to, and this site has no venue link and no funnel
+ * by design, so every one of these phrases would be new.
+ *
+ * BANNED, not merely qualified. Unlike the window rule above there is no legitimate form: none of
+ * these phrases has a use in copy that must not solicit.
+ */
+const PURCHASE_INVITE = [
+  // NEGATIVE LOOKAHEAD ON `back`, AND IT WAS THE PROBE THAT FOUND IT. `apps/site-next` carries this
+  // list as a bare /\bbuy\s+RWLY\b/i, which is correct for that build's copy and wrong for this
+  // one: `vision.html` says "10% is designed to buy RWLY back, hourly, as a TWAP", which describes
+  // the designed buyback and invites nobody. Porting the sibling's regex unchanged reddened a page
+  // whose copy is fine. The narrower form still catches every second-person shape, because "buy
+  // RWLY back" is the only phrase in English where those two words are not an instruction.
+  /\bbuy\s+RWLY\b(?!\s+back\b)/i,
+  /\bbuy\s+the\s+token\b/i,
+  /\bhow\s+to\s+buy\b/i,
+  /\bwhere\s+to\s+buy\b/i,
+  /\byou\s+can\s+buy\b/i,
+  /\bbuy\s+now\b/i,
+  /\bavailable\s+to\s+(?:buy|purchase)\b/i,
+];
+
+/**
+ * Second-person purchase verbs, banned only in a sentence that also names RWLY.
+ *
+ * SENTENCE-SCOPED RATHER THAN PAGE-SCOPED, and the distinction is load-bearing: `how-it-works.html`
+ * legitimately describes a vault buying stock, and `vision.html` describes fees buying RWLY back as
+ * design intent. Neither addresses the reader. What this bans is the shape that turns a record into
+ * an offer: a sentence that names the token and tells the reader what they might do with it.
+ */
+const PURCHASE_VERB = /\byou\s+(?:can|could|may|might|should)\s+(?:buy|purchase|acquire|swap|trade|hold|stake)\b|\byour\s+RWLY\b/i;
 
 test('every mention of RWLY sits beside its address, its fixed supply, or a design-intent qualifier', () => {
   const files = siteFiles();
@@ -1145,16 +1215,12 @@ test('every mention of RWLY sits beside its address, its fixed supply, or a desi
       continue;
     }
 
-    for (const m of text.matchAll(/RWLY/g)) {
-      const at = m.index ?? 0;
-      const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
-      assert.ok(
-        RWLY_QUALIFIER.test(window),
-        `${f}: names RWLY without its address, "fixed supply", or a design-intent qualifier within ${RWLY_WINDOW} characters. ` +
-          'RWLY launched 2026-09-05; every mention must anchor to the launch facts or say which part is still design. ' +
-          `— ${JSON.stringify(window.trim().slice(0, 200))}`,
-      );
-    }
+    assert.deepEqual(
+      rwlyUnqualified(text),
+      [],
+      `${f}: names RWLY without its address, "fixed supply", or a design-intent qualifier within ${RWLY_WINDOW} characters. ` +
+        'RWLY launched 2026-09-05; every mention must anchor to the launch facts or say which part is still design.',
+    );
   }
   assert.ok(
     seen >= RWLY_FLOOR,
@@ -1190,6 +1256,36 @@ test('every mention of RWLY sits beside its address, its fixed supply, or a desi
     }
   }
 
+  // AND NO PAGE MAY INVITE A PURCHASE, which is the defence the retired sentence used to provide.
+  //
+  // `No token. No points. No airdrop. No presale.` was doing two jobs, and only one of them was
+  // replaced when it went false. It said the token did not exist, which is the half every commit
+  // since has been busy correcting; it also made a call to action self-evidently absurd, which is
+  // the half nothing replaced. RWLY now exists and trades, so that half has to be a rule.
+  for (const p of PAGES) {
+    const fileText = raw.get(p) ?? '';
+    for (const re of PURCHASE_INVITE) {
+      const hit = fileText.match(re);
+      assert.equal(
+        hit,
+        null,
+        `${p}: ${JSON.stringify(hit?.[0])} invites a purchase. This site has no venue link and no funnel, ` +
+          'and the sentence that used to make that obvious was retired when the token launched',
+      );
+    }
+    for (const s of sentencesOf(publishedProse(fileText))) {
+      if (!/RWLY/.test(s)) continue;
+      const hit = s.match(PURCHASE_VERB);
+      assert.equal(
+        hit,
+        null,
+        `${p}: a sentence naming RWLY also says ${JSON.stringify(hit?.[0])}. Describe what a transaction ` +
+          'did, in the past tense, against a named address; never what a reader might do, ' +
+          JSON.stringify(s.trim().slice(0, 200)),
+      );
+    }
+  }
+
   // WHAT EACH PAGE MUST STATE, not merely avoid getting wrong.
   //
   // This half used to pin the exact sentence `RWLY does not exist yet.` on index.html -- a
@@ -1213,6 +1309,161 @@ test('every mention of RWLY sits beside its address, its fixed supply, or a desi
           'never names the token, which is how a disclosure disappears without any guard going red',
       );
     }
+  }
+});
+
+/**
+ * PROBE: the window rule bites, and it spares the forms this site actually publishes.
+ *
+ * WITHOUT THIS THE LEG ABOVE IS UNFALSIFIED, and this file has the scar tissue to know it. The
+ * `.pre-launch` stylesheet check below survived a class rename in the sibling build by matching
+ * nothing, iterating an empty array and reporting a pass; the soak's freeze-safety leg read a
+ * variable nobody set and its empty `.map()` was indistinguishable from an all-clear. A character
+ * window is the same shape of risk twice over: it can measure the wrong distance, and its qualifier
+ * alternation can grow wide enough to match anything. Neither shows up as a failure.
+ *
+ * The `bad` cases are the ones an editor actually writes. The last of them is the trap this file
+ * warns about in prose: a qualifier that IS on the page but is a paragraph away.
+ */
+test('probe: the RWLY window rule catches a bare mention and spares the approved forms', () => {
+  const PAD = 'x'.repeat(RWLY_WINDOW + 40);
+  for (const bad of [
+    'RWLY is live.',
+    'Hold RWLY.',
+    `RWLY trades today. ${PAD} It has a fixed supply of 1,000,000,000.`,
+    `The staking is design intent. ${PAD} RWLY is a token.`,
+    `RWLY is a token. ${PAD} 0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9`,
+  ]) {
+    assert.notDeepEqual(rwlyUnqualified(bad), [], `the window rule no longer catches: ${JSON.stringify(bad.slice(0, 60))}`);
+  }
+  for (const ok of [
+    // The status page's own beat.
+    'RWLY is live. Launched 2026-09-05 on Pons, a third-party launchpad this project did not write.',
+    // An address chip, which is a label and an address and nothing else. The STEM, not the full
+    // string: a chip is all a narrow column can render, and a rule written against the full address
+    // reds correct copy.
+    'RWLY 0x2eed8ae7…b6B7FDF9',
+    // The hedge every mention of the unbuilt half has to carry.
+    'RWLY is designed to accrue fees into stock tokens, and that mechanism is design intent.',
+    // The vision page's chip, which is why `launched 2026-09-05` is in the alternation: it has to
+    // anchor its own mention rather than borrow one from the prose beside it.
+    RWLY_CHIP,
+  ]) {
+    assert.deepEqual(rwlyUnqualified(ok), [], `the window rule reds approved copy: ${JSON.stringify(ok.slice(0, 60))}`);
+  }
+
+  // AND THE PURCHASE BANS BITE. Same reasoning: a regex list that matches nothing reads exactly
+  // like a regex list that matches nothing because the copy is clean.
+  assert.ok(PURCHASE_INVITE.some((re) => re.test('Here is how to buy RWLY.')));
+  assert.ok(PURCHASE_INVITE.some((re) => re.test('It is available to purchase now.')));
+  assert.ok(!PURCHASE_INVITE.some((re) => re.test('The deployer address bought 72,978,672 RWLY in the launch transaction.')));
+  // The buyback sentence on vision.html, which the ported regex reddened until the lookahead went
+  // in. Both halves are asserted so a future widening of the pattern cannot quietly take it out.
+  assert.ok(!PURCHASE_INVITE.some((re) => re.test('10% is designed to buy RWLY back, hourly, as a TWAP.')));
+  assert.ok(PURCHASE_INVITE.some((re) => re.test('Buy RWLY on the curve.')));
+  assert.ok(PURCHASE_VERB.test('You can buy RWLY on a bonding curve.'));
+  assert.ok(PURCHASE_VERB.test('Stake your RWLY to vote.'));
+  assert.ok(!PURCHASE_VERB.test('10% is designed to buy RWLY back, hourly, as a TWAP.'));
+});
+
+/**
+ * STATUS.HTML TRANSCRIBES THE TOKEN RECORD, RATHER THAN RESTATING IT FROM MEMORY.
+ *
+ * WHY THIS IS THE LEG THAT MATTERED MOST ON 2026-09-06. Until this test, `rwly-robinhood-mainnet
+ * .json` was bound by nothing: `claims-robinhood-deployment.test.mjs` binds the seven deployed
+ * contracts to `robinhood-mainnet.json` and stops there, so every RWLY address, hash and figure on
+ * this site was a free-floating string that agreed with the record only because one author had both
+ * files open. That is the failure the record guard's own header names: rewriting a false claim into
+ * a second set of unsourced assertions is easier than rewriting it into a sourced one.
+ *
+ * It is not hypothetical here. The prose that this leg now checks was first drafted saying the
+ * launch had NOT graduated, carried across from a session note; `graduated()` returns true and the
+ * graduation transaction is 55 minutes after the launch. A record the page is checked against is
+ * the difference between catching that and shipping it.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO: read the chain. A test that calls an RPC is a test that fails
+ * when a third-party endpoint is down, and CI would learn to ignore it. The record is the artefact
+ * that gets reviewed; this asserts the page and the record agree, and the record's own `reproduce`
+ * array carries the commands that check the record against the chain.
+ */
+test('status.html transcribes the RWLY record, figure for figure', () => {
+  const RECORD_PATH = path.join(REPO, 'contracts/config/deployments/rwly-robinhood-mainnet.json');
+  assert.ok(existsSync(RECORD_PATH), `the token record is missing: ${RECORD_PATH}`);
+  const record = JSON.parse(readFileSync(RECORD_PATH, 'utf8'));
+  const html = raw.get(STATUS_PAGE) ?? '';
+
+  // Every pair is [what the record holds, how the page is allowed to render it]. The second
+  // element exists because a page renders `1,000,000,000` where a record holds a wei string; where
+  // the two are identical it is the same value twice, which is the case that needs no translation.
+  /** @type {Array<[string, string, string]>} */
+  const transcribed = [
+    ['token.address', record.token.address, record.token.address],
+    ['token.totalSupplyHuman', record.token.totalSupplyHuman, record.token.totalSupplyHuman],
+    ['chainId', String(record.chainId), String(record.chainId)],
+    ['creation.creationTx', record.creation.creationTx, record.creation.creationTx],
+    ['creation.creationBlock', String(record.creation.creationBlock), String(record.creation.creationBlock)],
+    ['launchpad.curve', record.launchpad.curve, record.launchpad.curve],
+    ['graduation.graduationTx', record.graduation.graduationTx, record.graduation.graduationTx],
+    ['graduation.graduationBlock', String(record.graduation.graduationBlock), String(record.graduation.graduationBlock)],
+    ['graduation.graduatedAt', record.graduation.graduatedAt, record.graduation.graduatedAt],
+    ['graduation.thresholdHuman', record.graduation.thresholdHuman, record.graduation.thresholdHuman],
+    ['graduation.recipient', record.graduation.recipient, record.graduation.recipient],
+    [
+      'graduation.tokensSentToLaunchpadFactoryHuman',
+      record.graduation.tokensSentToLaunchpadFactoryHuman,
+      record.graduation.tokensSentToLaunchpadFactoryHuman,
+    ],
+    [
+      'graduation.tokensSentToLaunchpadFactoryShareOfSupply',
+      record.graduation.tokensSentToLaunchpadFactoryShareOfSupply,
+      record.graduation.tokensSentToLaunchpadFactoryShareOfSupply,
+    ],
+  ];
+  assert.ok(transcribed.length >= 13, 'the transcription table shrank; a value stopped being checked');
+  for (const [field, , onPage] of transcribed) {
+    assert.ok(
+      html.includes(onPage),
+      `${STATUS_PAGE}: the record's ${field} is ${JSON.stringify(onPage)} and the page does not carry it. ` +
+        'Every figure in the token section is transcribed from the record, not restated from a session',
+    );
+  }
+
+  // THE STATE FLAG IS SYMMETRIC, in the shape claims-robinhood-deployment.test.mjs uses for the
+  // first vault: the record says which way round it is, and the page must say the same way round.
+  // A one-directional assertion is how copy survives the event it denies.
+  if (record.graduation.graduated === true) {
+    assert.ok(
+      /has graduated/.test(html),
+      `${STATUS_PAGE}: the record says the curve graduated (tx ${record.graduation.graduationTx}) and the ` +
+        'page does not say so',
+    );
+    assert.ok(
+      !/not graduated|has not yet graduated/i.test(html),
+      `${STATUS_PAGE}: the record says the curve graduated and the page still says it has not`,
+    );
+  } else {
+    assert.ok(
+      /not graduated/i.test(html),
+      `${STATUS_PAGE}: the record says the curve has not graduated and the page does not say so`,
+    );
+  }
+
+  // WHAT THE RECORD REFUSES TO SAY, THE PAGE MAY NOT SAY EITHER. The record does not follow the
+  // creator position past the launch transaction, and it says so in `creatorBuy.scope`; a sibling
+  // surface asserted those tokens were unmoved and was wrong. No page gets to hold a fact the
+  // record does not.
+  assert.ok(
+    typeof record.creatorBuy.scope === 'string' && /not recorded here/i.test(record.creatorBuy.scope),
+    'the record no longer scopes creatorBuy to the launch transaction; this leg checks a boundary that moved',
+  );
+  for (const p of PAGES) {
+    const hit = (raw.get(p) ?? '').match(/(?:have|has) not moved|still holds? (?:those|these) tokens|remain(?:s)? unmoved/i);
+    assert.equal(
+      hit,
+      null,
+      `${p}: says ${JSON.stringify(hit?.[0])} about a token position. The record follows the creator ` +
+        'position only as far as the launch transaction, so no page may claim where it is now',
+    );
   }
 });
 

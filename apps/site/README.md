@@ -202,6 +202,38 @@ from an old copy reds. Retiring it also removed the only exemption that made `ai
 `presale` legal anywhere under `apps/site`, which is a tightening: those two words are now banned
 outright on all nine pages.
 
+That sentence was doing a **second** job nothing replaced when it went false. It said the token did
+not exist, and it also made a call to action self-evidently absurd. RWLY launched 2026-09-05 and
+trades on a curve, so the second half is a rule rather than an implication: `PURCHASE_INVITE` bans seven invitation
+phrases on every page, and `PURCHASE_VERB` bans a second-person purchase verb in any sentence that
+names RWLY. `buy RWLY` carries a negative lookahead on `back`, because `vision.html` describes fees
+buying RWLY back as design intent and that sentence invites nobody.
+
+The window rule is a **pure function with a probe** (`rwlyUnqualified`, and the `probe:` test beside
+it) rather than a loop inlined in the leg. A character window fails green in two ways, by measuring
+the wrong distance and by an alternation wide enough to match anything, and neither shows up as a
+red. The probe pins five shapes that must be caught and four that must be spared.
+
+### `status.html` transcribes the token record
+
+Every RWLY figure in the token section of `status.html`, starting with the address stem
+`0x2eed8ae7`, is transcribed from `contracts/config/deployments/rwly-robinhood-mainnet.json`, and a test asserts it field by field:
+the address, the supply, the chain id, the creation transaction and block, the curve, and the
+graduation transaction, block, timestamp, threshold, recipient and token count. The graduation flag
+is checked **symmetrically**, meaning the record says which way round it is and the page must say the
+same way round, because a one-directional assertion is how copy survives the event it denies.
+
+This exists because the record was bound by nothing until 2026-09-06:
+`scripts/test/claims-robinhood-deployment.test.mjs` binds the seven deployed contracts to
+`robinhood-mainnet.json` and stops there, so every RWLY figure on this site, the address
+`0x2eed8ae7` included, agreed with the record only because one author had both files open. The first draft of the graduation prose said the curve
+had **not** graduated, carried over from a session note; `graduated()` returns true and the
+graduation transaction is 55 minutes after the launch.
+
+The record follows the creator position only as far as the launch transaction and says so in
+`creatorBuy.scope`. No page may claim where that position is now, and a test bans the phrasings
+that would (`have not moved`, `still holds those tokens`, `remains unmoved`).
+
 ### The negation exceptions
 
 A few banned words have exactly one legitimate use here, and it is always inside a negation: the
