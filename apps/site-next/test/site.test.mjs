@@ -1451,6 +1451,45 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
   assert.ok(/never (?:run|executed) against a real/i.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must say the sequencer path has never executed against a real feed`);
 });
 
+/**
+ * No page invites a purchase, whatever the thing being purchased is.
+ *
+ * RESTORED 2026-09-09, the same day it was mistakenly retired. The purchase-vocabulary ban went out
+ * with the RWLY leg on the reasoning that each of its patterns named a token. Four did not: `Buy
+ * now.`, `You can buy a share.`, `Here is how to buy in.` and `It is available to purchase.` name
+ * nothing at all, and an independent review shipped every one of them green through the built
+ * Disclaimers page after the retirement. The homepage is separately covered by the sentence
+ * provenance leg; this page was covered by that ban and by nothing else.
+ *
+ * The ban is written about the ACT rather than about a token, so it keeps working when a token
+ * exists again: this project does not sell anything from its own pages, on any chain, in any
+ * iteration. The urgency leg next to it bans the timing shapes (`coming soon` and its family) and
+ * is deliberately separate: a page can invite a purchase without promising a date, and did.
+ */
+test('no built page invites the reader to buy or to acquire anything', () => {
+  const INVITATIONS = [
+    /\bbuy (?:now|in|it|one|a |your |some |more)/i,
+    /\bhow to (?:buy|purchase|acquire|get in)/i,
+    /\bwhere to (?:buy|purchase|acquire)/i,
+    /\bavailable (?:to|for) purchase/i,
+    /\b(?:purchase|acquire) (?:a |your |the )?(?:share|stake|position|allocation|token)/i,
+    /\byou can (?:buy|purchase|acquire)/i,
+    /\bget (?:yours|in early)/i,
+    /\bmint (?:now|yours)/i,
+  ];
+  assert.ok(BUILT, 'the build must exist: an absence rule over nothing passes by vacancy');
+  assert.ok(raw.size >= 2, `expected at least two built pages, found ${raw.size}`);
+  for (const [name, html] of raw) {
+    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    for (const pattern of INVITATIONS)
+      assert.ok(
+        !pattern.test(text),
+        `${name}: invites a purchase (${pattern}). This project sells nothing from its own pages. ` +
+          'The sentence was restored on 2026-09-09 after a review proved the retired ban left this page uncovered.',
+      );
+  }
+});
+
 /*
  * THE RWLY LEG AND ITS PROBE WERE RETIRED HERE ON 2026-09-09, AND THE REPLACEMENT IS AN ABSENCE
  * RULE RATHER THAN A DELETION.
