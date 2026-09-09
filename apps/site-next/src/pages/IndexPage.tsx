@@ -1,7 +1,7 @@
 /**
  * index.html: one cinematic scroll page, in document order.
  *
- * SIX SECTIONS WHERE THERE WERE EIGHT, AND SEVEN OTHER PAGES BESIDE THEM. The
+ * FIVE SECTIONS WHERE THERE WERE EIGHT, AND SEVEN OTHER PAGES BESIDE THEM. The
  * v3 brief of 2026-09-05 collapsed the site to "ONE cinematic scroll page + the
  * app button + a serious Disclaimers page." Revision 2 of that brief, the same
  * evening, named artificialinu.com as the reference and mapped the scroll
@@ -15,10 +15,16 @@
  *                 produced it and the instant it was true.
  *   IndexHive     the narrative beat, and the mascot as a character.
  *   IndexHow      the lifecycle: seven steps named, three of them numbered.
- *   IndexNext     what is designed and not built, and the way to Disclaimers.
  *
- * WHAT WENT, AND WHERE IT WENT. The first v3 pass composed `IndexHero`,
- * `LegendBeat`, `HiveBeat`, `IndexRecord` and `IndexNext`, which was the brief's
+ * `IndexNext` WENT ON 2026-09-09. It was the closing beat, and every sentence in
+ * it was about a token launch the owner retired that day as a test. A beat whose
+ * only subject is retired is not reworded, it is removed, and the way to
+ * Disclaimers it carried is the footer's, which every page already has.
+ * `scripts/test/claims-token-absence.test.mjs` is what keeps it from coming back
+ * by accident.
+ *
+ * WHAT WENT BEFORE THAT, AND WHERE IT WENT. The first v3 pass composed
+ * `IndexHero`, `LegendBeat`, `HiveBeat`, `IndexRecord` and `IndexNext`, the brief's
  * pre-revision structure: two trailer clips as section breaks and a record band
  * carrying the address book. `index-beats` and `index-record` are deleted with
  * their stylesheets and their video assets. Nothing in them is lost: the two
@@ -40,7 +46,6 @@ import IndexMarquee from '../sections/index-marquee/IndexMarquee';
 import IndexLive from '../sections/index-live/IndexLive';
 import IndexHive from '../sections/index-hive/IndexHive';
 import IndexHow from '../sections/index-how/IndexHow';
-import IndexNext from '../sections/index-next/IndexNext';
 
 export default function IndexPage() {
   return (
@@ -50,7 +55,6 @@ export default function IndexPage() {
       <IndexLive />
       <IndexHive />
       <IndexHow />
-      <IndexNext />
     </>
   );
 }

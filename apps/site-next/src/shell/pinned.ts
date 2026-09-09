@@ -149,11 +149,16 @@ export const FOOTER_DISCLAIMERS_BODY =
  * sentence opens on a clause that is false and cannot be repaired by
  * rewording: the whole sentence exists to say a thing does not exist.
  *
- * WHAT REPLACED IT is not another pinned sentence. `risks-hero` carries a
- * four-paragraph token block instead, page-local rather than pinned, because
- * nothing else on the site quotes it and a constant nobody shares is a
- * constant that only invites a second copy. The homepage says the same thing
- * in 49 words in `sections/index-next/copy.ts`.
+ * WHAT REPLACED IT was not another pinned sentence: `risks-hero` carried a
+ * four-paragraph token block, page-local rather than pinned, and the homepage
+ * carried a 49-word closing beat in `sections/index-next`.
+ *
+ * BOTH OF THOSE ARE GONE TOO, AS OF 2026-09-09. The owner retired that launch
+ * that day, calling it a test, and ordered every token sentence off every
+ * public surface until a real relaunch. `sections/index-next` was deleted, the
+ * token block came out of `risks-hero`, and no pinned constant replaced either:
+ * there is nothing left to pin. `scripts/test/claims-token-absence.test.mjs`
+ * walks the built pages and reds if any of it returns.
  *
  * TWO CONSEQUENCES FOR WHOEVER EDITS THE COPY NEXT. The per-page count in
  * `test/site.test.mjs` is zero on every page, so a reappearance reds rather

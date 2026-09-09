@@ -34,11 +34,15 @@
  * a page cannot show one address in a chip and check a different one against the
  * chain forty lines further down.
  *
- * THE THIRD CHIP IS RWLY, ADDED 2026-09-05 WITH THE LAUNCH. The first two are
- * singletons out of the deployment record; RWLY is not in that record and the
- * note on the constant in `chain.ts` says why. It is a chip rather than a
- * sentence because an address is the one thing on this page a reader can check
- * without believing a word of it.
+ * THERE ARE TWO CHIPS, AND THERE WAS BRIEFLY A THIRD. A token chip was added on
+ * 2026-09-05 with a launch the owner retired on 2026-09-09 as a test, and it
+ * came off with the rest of that copy. The two that remain are singletons out of
+ * the deployment record, which is the property that made them publishable in the
+ * first place: an address is the one thing on this page a reader can check
+ * without believing a word of it, and the deployment record is what a reader
+ * checks it against. A chip for an address with no record behind it does not
+ * meet that bar, and `scripts/test/claims-token-absence.test.mjs` now enforces
+ * the absence.
  */
 
 /** The lede under the headline. Corpus: apps/site/index.html, the h1. */
@@ -63,7 +67,6 @@ export const HOW_ANCHOR = '#how';
 export const CHIP_LABELS = {
   factory: 'Factory',
   usdg: 'USDG',
-  rwly: 'RWLY',
 } as const;
 
 /**

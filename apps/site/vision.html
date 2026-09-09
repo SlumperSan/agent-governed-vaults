@@ -55,7 +55,7 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>An agent can create a vault.</h2>
       <p class="lede">That part is true today: vault creation is permissionless, and the contracts screen nobody.</p>
       <p>Each vault is one index &mdash; one basket, one set of rules, frozen when it is funded.</p>
@@ -65,7 +65,7 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>Every stock a feed can price.</h2>
       <p class="lede">Vault 1 is designed to accumulate the stock tokens on Robinhood Chain that a Chainlink feed prices &mdash; the whole set, gradually, as the feeds appear.</p>
       <p>Only feed-priced tokens. A stock token with no Chainlink feed has no oracle-shaped price, and this protocol will not reach for a weaker source.</p>
@@ -75,9 +75,9 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>The index buys itself.</h2>
-      <p class="lede">RWLY is designed to pair with stock tokens on the chain&rsquo;s Uniswap, and the treasury is designed to be the liquidity provider.</p>
+      <p class="lede">The treasury is designed to be the liquidity provider for stock tokens on the chain&rsquo;s Uniswap.</p>
       <p>The fees those pools generate are designed to flow to the treasury and buy stock into vault 1.</p>
       <p>SPY first. Then down the list, highest on-chain trading fees to lowest, as the fees allow.</p>
       <p>Protocol-owned liquidity, on the chain&rsquo;s Uniswap.</p>
@@ -86,18 +86,7 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
-      <h2>One staked token, one vote.</h2>
-      <p class="lede">RWLY is designed to be the governance token.</p>
-      <p>Every vote is designed to require staking: RWLY in, stRWLY out, and stRWLY is what votes.</p>
-      <p>Agents and humans on the same terms &mdash; one staked token, one vote, no separate class.</p>
-      <p>The contracts deployed on Robinhood Chain weigh votes by vault shares, stake-weighted at five or more members and by a signer-count-plus-stake rule below five, through commit and reveal. Nothing on chain reads a token.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>An epoch every hour.</h2>
       <p class="lede">One vote per hour, so a person can keep pace with an agent.</p>
       <p>When the epoch closes, anyone can execute it. A permissionless keeper call, open to anyone; RWAlly runs one too.</p>
@@ -107,26 +96,7 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
-      <h2>Staked does not mean stuck.</h2>
-      <p class="lede">stRWLY is designed to swap back to RWLY at any time on a bonded curve, and to unstake free after a cooldown for anyone willing to wait.</p>
-      <p>Two doors out, priced differently: immediate at a curve price, or slow at none.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
-      <h2>Ten percent buys the token. Ninety buys the index.</h2>
-      <p class="lede">Pool fees are designed to collect in the treasury.</p>
-      <p>10% is designed to buy RWLY back, hourly, as a TWAP rather than in one order, delayed an hour so settlement is confirmed first.</p>
-      <p>90% is designed to go into vault 1 as stock.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>RWAlly runs a hive, in public.</h2>
       <p class="lede">Three to five agents, on different models, reasoning published.</p>
       <p>It is a participant, not a referee. It proposes and votes on the same terms as anyone else, and it can be outvoted.</p>
@@ -135,7 +105,7 @@
 
   <section>
     <div class="wrap">
-      <span class="severity">Designed, not built. RWLY launched 2026-09-05.</span>
+      <span class="severity">Designed, not built.</span>
       <h2>Stake and you are in.</h2>
       <p class="lede">Permissionless, as the contracts already are: they gate on amount and screen nobody.</p>
       <dl class="rows">
@@ -156,10 +126,6 @@
         <div>
           <dt>Live today</dt>
           <dd>The 10% performance fee is live in the contracts today.</dd>
-        </div>
-        <div>
-          <dt>Designed</dt>
-          <dd>RWLY rewards are designed, and no contract this protocol deployed references the token.</dd>
         </div>
         <div>
           <dt>Designed</dt>

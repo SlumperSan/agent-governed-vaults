@@ -40,17 +40,16 @@
  * `apps/site/disclaimers.html` (grep any `<dt>` below), the reviewed source of
  * truth.
  *
- * THREE ROWS NOW DIVERGE FROM THAT SOURCE, DELIBERATELY, AND THIS IS THE
- * RECORD. `vision-is-design-intent`, `token-economics-not-live` and
- * `treasury-buyback-not-live` were carried across saying that RWLY does not
- * exist and that no fee mechanism does either. RWLY was created at
- * 2026-09-05T21:51:57Z and the launchpad's curve charges a creator tax that
- * reaches a multisig this project controls, so all three said something false
- * the moment that block was mined. They are corrected here rather than left
- * matching a corpus that has not been through its own flip yet; each carries a
- * note at the row saying what changed. When `apps/site` is flipped, the
- * byte-for-byte rule reasserts itself and these three should be re-checked
- * against it rather than assumed still equal.
+ * THE ROW SET DIVERGED FROM THAT SOURCE ON 2026-09-05 AND CONVERGED AGAIN ON
+ * 2026-09-09, AND THIS IS THE RECORD. Three rows were corrected on 2026-09-05
+ * because a token launch that evening made what they said false. On 2026-09-09
+ * the owner retired that launch as a test and ordered every token sentence off
+ * every public surface, so two of those three -- the rows whose subject WAS the
+ * token -- were removed here and from the corpus in the same change, and the
+ * third had the clause naming the launch taken out of it on both surfaces. The
+ * byte-for-byte rule therefore holds again: this row set and
+ * `apps/site/disclaimers.html` say the same thing, and a future edit to either
+ * belongs in both.
  *
  * WHY EVERY BODY GOES THROUGH <Pinned>. `renderToString` escapes text children,
  * so `the factory's oracle allowlist` would reach the built page as
@@ -243,41 +242,42 @@ const ROWS: ReadonlyArray<{ key: string; term: string; body: string }> = [
     body:
       'Vendored third-party mathematics in the tree is under GPL-2.0-or-later and MIT terms in a repository whose own licence is MIT. The MIT half now matches the repository; the GPL-2.0-or-later half does not. That is an open licensing question the owner has recorded as open, and it is disclosed here rather than left for you to find. It also stands as <a href="#r13">risk 13</a>.',
   },
-  /* --- copy deck v2, 2026-09-05: four rows about the Vision page ---------- */
-  {
-    key: 'vision-is-design-intent',
-    term: 'Everything around the token is design intent',
-    // REWRITTEN 2026-09-05, TWICE OVER. The term used to read "Everything on the Vision page is
-    // design intent" and vision.html was retired before this build shipped, so it named a page
-    // no reader can reach. The body used to open "RWLY does not exist", which the launch that
-    // evening made false.
-    //
-    // THE WORD ORDER IS STILL LOAD-BEARING, for the same reason it was before: this build's
-    // markup carries a hashed CSS-module class on most elements, so a qualifier that sits
-    // comfortably close in apps/site's hand-written HTML can fall outside the site-next claims
-    // suite's window here. The qualifier is no longer "does not exist" but the address, the
-    // fixed supply and the phrase "design intent", and all three are pulled to the FRONT of the
-    // body so that both this row's "RWLY" and its "stRWLY" carry one inside the window.
-    body:
-      'RWLY exists, at <code>0x2eed8ae78AE1aa6824e1C378F46d5C51b6B7FDF9</code> and with a fixed supply of 1,000,000,000, and nothing else in that design does: no stRWLY, no staking, no hourly epoch, no keeper, no treasury contract, no buyback and no stock index, all of it design intent rather than code. What is on chain is seven contracts, no vault, and a token none of those seven references. Design intent is not a commitment, a schedule, or a promise that any of it ships in that shape or at all.',
-  },
-  {
-    key: 'token-economics-not-live',
-    term: 'The token economics are not live',
-    body:
-      'RWLY exists and its economics are design intent: nothing is staked, nothing votes by token, and no fee reaches any holder. Governance, FeeEngine and VaultCore contain no reference to it, so nothing on chain enforces any of it.',
-  },
+  /* --- copy deck v2, 2026-09-05: the rows that came from the Vision page -----
+   *
+   * TWO OF THE FOUR WERE REMOVED ON 2026-09-09. `vision-is-design-intent` and
+   * `token-economics-not-live` were both rows whose SUBJECT was the token
+   * launched on 2026-09-05: what it was, at which address, with which supply,
+   * and which parts of the design around it were intent rather than code. The
+   * owner retired that launch on 2026-09-09 as a test and ordered every token
+   * sentence off every public surface until a real relaunch, so a caveat about
+   * the token goes with the token rather than being reworded into a caveat
+   * about nothing.
+   *
+   * THE TWO THAT REMAIN ARE ABOUT THE PROTOCOL, which is the line this removal
+   * was drawn on: `treasury-buyback-not-live` is about a treasury contract and
+   * a buyback that do not exist, and `stock-index-needs-different-oracle` is
+   * about the deployed oracle's staleness ceiling against equity feeds. Neither
+   * needs a token to be true, and neither was touched except where a clause
+   * named the launch.
+   * ------------------------------------------------------------------------ */
   {
     key: 'treasury-buyback-not-live',
     term: 'The treasury and the buyback are not live',
-    // CORRECTED 2026-09-05. The old body said "There is no treasury, no protocol-owned liquidity
-    // and no buyback" and then described one live fee stream. There are two, and the second one
-    // is new: the launchpad's own curve charges a creator tax that accrues to a multisig this
-    // project controls. A blanket "no fee mechanism exists" is now falsifiable in one
-    // transaction, so the row separates the fee stream that exists from the treasury contract
-    // that does not, rather than collapsing them into a single reassuring negative.
+    // CORRECTED 2026-09-05, THEN AGAIN 2026-09-09, AND THE SECOND EDIT IS THE DELICATE ONE.
+    //
+    // The 2026-09-05 correction split one reassuring negative into two halves, because the old
+    // body said "There is no treasury, no protocol-owned liquidity and no buyback" and then
+    // described a single live fee stream, and by that evening a second one existed.
+    //
+    // On 2026-09-09 the clause naming that second stream came out with the rest of the token
+    // copy. THE SENTENCE THAT REPLACES IT DOES NOT SAY THE PERFORMANCE FEE IS THE ONLY FEE
+    // STREAM, and that restraint is the whole point: a blanket "the only fee mechanism is X" is
+    // falsifiable in one transaction, which is the exact failure the 2026-09-05 correction was
+    // written to fix. The row states what does not exist (the treasury contract, the
+    // protocol-owned liquidity, the buyback) and names the performance fee as A live stream
+    // rather than as THE live stream.
     body:
-      'There is no treasury contract, no protocol-owned liquidity and no buyback; each of those is design intent. Two live fee streams are not that. The 10% performance fee accrues to an operator address and is claimed by that address, and the launchpad curve&rsquo;s 8 basis point creator tax accrues to a multisig this project controls. Neither of them reaches a token holder, and a fee reaching a treasury contract or a holder is designed, not built.',
+      'There is no treasury contract, no protocol-owned liquidity and no buyback; each of those is design intent. A live fee stream is not that: the 10% performance fee accrues to an operator address and is claimed by that address. It does not reach a treasury contract, and a fee reaching a treasury contract is designed, not built.',
   },
   {
     key: 'stock-index-needs-different-oracle',
