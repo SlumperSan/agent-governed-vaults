@@ -35,7 +35,7 @@ import { resolveApiConfig } from '../src/serve.mjs';
 import { HEADERS } from '../src/x402.mjs';
 import { createStubFacilitator } from '../src/facilitator.mjs';
 import { createRateLimiter } from '../src/ratelimit.mjs';
-import { x402Capability, DEFAULT_CONFIG_DIR, DEFAULT_NETWORK_DIR, loadNetworkCapabilities } from '../../../packages/chain-config/src/x402.mjs';
+import { x402Capability, DEFAULT_CONFIG_DIR, DEFAULT_NETWORK_DIR, loadNetworkCapabilities, loadChainCapabilities } from '../../../packages/chain-config/src/x402.mjs';
 import { applyAll } from '../../../packages/indexer/src/projections.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -357,9 +357,11 @@ test('a malformed network file is skipped, and does not take the lookup down wit
   try {
     writeFileSync(path.join(dir, 'broken.json'), '{ this is not json');
     writeFileSync(path.join(dir, 'fine.json'), JSON.stringify({ network: 'fine', x402: { enabled: false } }));
-    const loaded = loadNetworkCapabilities({ dir });
-    assert.equal(loaded.size, 1, 'the broken file is skipped, the good one still loads');
+    const { networks, unreadable } = loadNetworkCapabilities({ dir });
+    assert.ok(networks.has('fine'), 'the good file still loads');
     assert.equal(x402Capability('fine', { networkDir: dir }).enabled, false);
+    assert.equal(networks.size, 1, 'the unreadable file is not an entry at all');
+    assert.deepEqual(unreadable, ['broken.json']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -367,7 +369,9 @@ test('a file with no `network` key is not indexed, so a stray json cannot claim 
   const dir = mkdtempSync(path.join(tmpdir(), 'x402-net-noname-'));
   try {
     writeFileSync(path.join(dir, 'stray.json'), JSON.stringify({ chainId: 8453, chainName: 'base', x402: { enabled: false } }));
-    assert.equal(loadNetworkCapabilities({ dir }).size, 0);
+    const { networks, unreadable } = loadNetworkCapabilities({ dir });
+    assert.equal(networks.size, 0);
+    assert.deepEqual(unreadable, [], 'a file that PARSES but declares no network is skipped, not reported as unreadable');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -387,11 +391,180 @@ test('the EVM path is untouched: numeric keys still resolve out of contracts/con
 test('every shipped network file declares the block out loud, and names a scheme', () => {
   // The same non-vacuity discipline the chain configs are held to: a directory that has gone empty
   // would make every assertion above pass by walking nothing.
-  const shipped = loadNetworkCapabilities({ dir: DEFAULT_NETWORK_DIR });
+  const shipped = loadNetworkCapabilities({ dir: DEFAULT_NETWORK_DIR }).networks;
   assert.ok(shipped.size >= 2, `expected at least two shipped network configs, found ${shipped.size}`);
   for (const [name, entry] of shipped) {
     assert.ok(entry.x402, `${entry.file}: declares no x402 block — say it out loud rather than relying on the default`);
     assert.ok(entry.scheme, `${entry.file}: declares no scheme, so a caller cannot pick a facilitator`);
     assert.equal(name, name.toLowerCase(), 'the index key is lower-cased');
   }
+});
+
+/*
+ * ── THE NETWORK NAME, END TO END ────────────────────────────────────────────────────────────────
+ *
+ * The capability landed before anything could reach it: `resolveApiConfig` threw on a non-integer
+ * CHAIN_ID, so the only caller that could get to the network path was a direct call. A review
+ * pointed that out, along with the packaging half — `config/networks` was not in the image — and
+ * both are closed here. These cases pin the wiring rather than the resolver.
+ */
+
+test('NETWORK resolves the capability by name, and CHAIN_ID stays the numeric door', () => {
+  const base = { PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO };
+  assert.equal(resolveApiConfig({ ...base, NETWORK: 'solana-mainnet' }).network, 'solana-mainnet');
+  assert.equal(resolveApiConfig({ ...base, NETWORK: 'solana-mainnet' }).chainId, null);
+  assert.equal(resolveApiConfig({ ...base, CHAIN_ID: '4663' }).chainId, 4663);
+  assert.equal(resolveApiConfig({ ...base, CHAIN_ID: '4663' }).network, null);
+  assert.equal(resolveApiConfig(base).network, null, 'neither set is still the old behaviour');
+  assert.equal(resolveApiConfig({ ...base, NETWORK: '   ' }).network, null, 'whitespace is not a network');
+  assert.equal(resolveApiConfig({ ...base, NETWORK: '  solana-devnet  ' }).network, 'solana-devnet', 'trimmed');
+});
+
+test('setting BOTH is refused at boot rather than resolved by precedence', () => {
+  // Whichever way a precedence rule fell, half the readers of serve.mjs would assume the other, and
+  // the thing being decided is whether a payment gate is on. Failing with both names printed is the
+  // cheapest possible version of that argument.
+  assert.throws(
+    () => resolveApiConfig({ PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO, NETWORK: 'solana-mainnet', CHAIN_ID: '4663' }),
+    /set NETWORK or CHAIN_ID, not both/,
+  );
+});
+
+test('a numeric NETWORK is refused, so it cannot silently mean CHAIN_ID', () => {
+  for (const bad of ['4663', '8453', '0', '1e3'])
+    assert.throws(
+      () => resolveApiConfig({ PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO, NETWORK: bad }),
+      /NETWORK must be a network NAME/,
+      `NETWORK='${bad}' must be refused`,
+    );
+});
+
+test('two files declaring one network: the first wins and the collision is named', () => {
+  // This was the loader's one fail-OPEN direction. Last-wins meant an explicit `enabled: false`
+  // could be undone by adding a file that sorted later, silently.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-dup-'));
+  try {
+    writeFileSync(path.join(dir, 'a-off.json'), JSON.stringify({ network: 'dup', x402: { enabled: false } }));
+    writeFileSync(path.join(dir, 'z-on.json'), JSON.stringify({ network: 'dup', x402: { enabled: true } }));
+    const cap = x402Capability('dup', { networkDir: dir });
+    assert.equal(cap.enabled, false, 'the explicit disable must survive a duplicate that re-enables');
+    assert.match(cap.source, /a-off\.json/);
+    assert.match(cap.source, /CONFIGURATION ERROR/);
+    assert.match(cap.source, /z-on\.json.*ignored/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a duplicate that differs only by case collides visibly, not invisibly', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-dupcase-'));
+  try {
+    writeFileSync(path.join(dir, 'a.json'), JSON.stringify({ network: 'dup', x402: { enabled: false } }));
+    writeFileSync(path.join(dir, 'b.json'), JSON.stringify({ network: 'DUP', x402: { enabled: true } }));
+    const cap = x402Capability('dup', { networkDir: dir });
+    assert.equal(cap.enabled, false);
+    assert.match(cap.source, /CONFIGURATION ERROR/, 'the case-only collision must be reported, not swallowed');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('no shipped network is shadowed, so the message above is not routine', () => {
+  const shippedLoad = loadNetworkCapabilities({ dir: DEFAULT_NETWORK_DIR });
+  assert.deepEqual(shippedLoad.unreadable, [], 'a shipped config that does not parse is a release blocker, not a note');
+  for (const [, entry] of shippedLoad.networks)
+    assert.equal(entry.shadowed, undefined, `${entry.file}: a shipped config is shadowed by another`);
+});
+
+/*
+ * ── THE FIVE THINGS THE REVIEW OF #236 FOUND ───────────────────────────────────────────────────
+ */
+
+test('the CHAIN-ID loader is keep-first too, so the fail-open is not asymmetric', () => {
+  // #236 closed last-wins on the network path and left it open on the chain path — which is the
+  // path chain 4663 uses, and 4663's `enabled: false` is a live owner decision. A review
+  // demonstrated it with two configs for one chain id.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-chaindup-'));
+  try {
+    writeFileSync(path.join(dir, 'a-off.json'), JSON.stringify({ chainId: 99991, chainName: 'off', x402: { enabled: false } }));
+    writeFileSync(path.join(dir, 'z-on.json'), JSON.stringify({ chainId: 99991, chainName: 'on', x402: { enabled: true } }));
+    const cap = x402Capability(99991, { dir });
+    assert.equal(cap.enabled, false, 'adding a later file must not be able to turn a gate back on');
+    assert.match(cap.source, /a-off\.json/);
+    assert.equal(loadChainCapabilities({ dir }).get(99991).shadowed.join(','), 'z-on.json');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('an unreadable file is reported on a miss, not silently skipped', () => {
+  // "The collision is named" had a hole: a malformed file that declares an already-declared network
+  // shadowed nothing and reported nothing, so the operator who wrote it got no signal at all.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-unreadable-'));
+  try {
+    writeFileSync(path.join(dir, 'broken.json'), '{ not json');
+    const cap = x402Capability('solana-mainnet', { networkDir: dir });
+    assert.equal(cap.enabled, true, 'still the safe default');
+    assert.match(cap.source, /broken\.json could not be parsed/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('unreadable files are a PROPERTY, not an entry — they cannot be looked up or counted', () => {
+  // The first draft filed them under a reserved key inside the Map. A review took that apart: the
+  // guard meant to stop the key being looked up was dead code (lookups are trimmed, the key was
+  // not, so the comparison could never be true), and the entry counted toward the shipped-configs
+  // non-vacuity floor — so that floor could be met by one real config and one broken one.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-unreadable-shape-'));
+  try {
+    writeFileSync(path.join(dir, 'broken.json'), '{ not json');
+    writeFileSync(path.join(dir, 'real.json'), JSON.stringify({ network: 'real', scheme: 'exact-svm', x402: { enabled: true } }));
+    const { networks, unreadable } = loadNetworkCapabilities({ dir });
+    assert.equal(networks.size, 1, 'one real config, and the broken one is not an entry');
+    assert.deepEqual([...networks.keys()], ['real']);
+    assert.deepEqual(unreadable, ['broken.json']);
+    // The shape a review asked for: two named fields, so nothing can be dropped by a Map copy and
+    // nothing has to be cast to be described.
+    assert.deepEqual(Object.keys(loadNetworkCapabilities({ dir })).sort(), ['networks', 'unreadable']);
+    // And nothing about it is reachable as a network name, by construction rather than by a guard.
+    for (const spelling of ['broken.json', 'unreadable', 'unreadable/files', ' unreadable/files '])
+      assert.match(x402Capability(spelling, { networkDir: dir }).source, /no network config for/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a chain-id collision is NAMED in source, not merely recorded', () => {
+  // The commit message claimed both loaders name their collisions. Only the network branch did:
+  // `shadowed` was set on the chain entry and nothing read it, so a configuration error on the very
+  // path chain 4663 uses was invisible in the boot log.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-chaincollide-'));
+  try {
+    writeFileSync(path.join(dir, 'a-off.json'), JSON.stringify({ chainId: 99992, chainName: 'off', x402: { enabled: false } }));
+    writeFileSync(path.join(dir, 'z-on.json'), JSON.stringify({ chainId: 99992, chainName: 'on', x402: { enabled: true } }));
+    const cap = x402Capability(99992, { dir });
+    assert.equal(cap.enabled, false);
+    assert.match(cap.source, /CONFIGURATION ERROR/);
+    assert.match(cap.source, /z-on\.json/);
+    assert.match(cap.source, /declare the same chain id/, 'and it says chain id, not network');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('keep-first means the FIRST file wins — not that a disable wins', () => {
+  // The first draft of this rule claimed "an explicit false cannot be overwritten". It can be
+  // discarded, by an earlier file's silence or by an earlier true. What keep-first actually buys is
+  // that ADDING a file can no longer take a gate off. Both directions are pinned here so the
+  // comment and the code cannot drift apart again.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-keepfirst-'));
+  try {
+    writeFileSync(path.join(dir, 'a-on.json'), JSON.stringify({ network: 'd', x402: { enabled: true } }));
+    writeFileSync(path.join(dir, 'z-off.json'), JSON.stringify({ network: 'd', x402: { enabled: false } }));
+    const cap = x402Capability('d', { networkDir: dir });
+    assert.equal(cap.enabled, true, 'a later `false` is discarded exactly as a later `true` would be');
+    assert.match(cap.source, /the FIRST file wins, whatever it says/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a network config with no chainName still counts as a config that matched', () => {
+  // `chainName` is optional, and the boot log used `chainName == null` as its "nothing matched"
+  // sentinel — so this config fired a warning that no config had matched, on the same log line
+  // whose `why` quoted the file that did.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-noname-'));
+  try {
+    writeFileSync(path.join(dir, 'anon.json'), JSON.stringify({ network: 'anon', x402: { enabled: true } }));
+    const cap = x402Capability('anon', { networkDir: dir });
+    assert.equal(cap.chainName, null, 'the display name really is absent');
+    assert.match(cap.source, /sets x402\.enabled = true/, 'and `source` is what says a file was read');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

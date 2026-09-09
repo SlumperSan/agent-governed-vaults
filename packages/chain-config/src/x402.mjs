@@ -85,10 +85,13 @@ export const DEFAULT_NETWORK_DIR = path.resolve(
  * a boot path, and one bad file must not take the process down.
  *
  * @param {{dir?:string}} [opts]
- * @returns {Map<number, {chainName:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>}
+ * @returns {Map<number, {chainName:string|null, x402:{enabled:boolean, note?:string}|null, file:string, shadowed?:string[]}>}
  */
 export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
-  /** @type {Map<number, {chainName:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>} */
+  // `shadowed` is declared here and not on the entry literal below, because it is set LATER — by
+  // the keep-first branch, on an entry that already exists. Leaving it off made `@ts-check` report
+  // it as a property that does not exist, on the two lines that write it.
+  /** @type {Map<number, {chainName:string|null, x402:{enabled:boolean, note?:string}|null, file:string, shadowed?:string[]}>} */
   const byChainId = new Map();
   /** @type {string[]} */
   let files;
@@ -105,6 +108,16 @@ export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
       continue;
     }
     if (!json || typeof json !== 'object' || !Number.isInteger(json.chainId)) continue;
+    // FIRST FILE WINS HERE TOO. The network loader below was given this rule on 2026-09-09 and this
+    // one was left last-wins, which made the fail-open asymmetric: the path Solana uses was closed
+    // and the path chain 4663 uses -- the one where an explicit `enabled: false` is a live owner
+    // decision -- stayed open. A review demonstrated it with two configs for one chain id. Same rule,
+    // same reason, both directories.
+    const priorChain = byChainId.get(json.chainId);
+    if (priorChain) {
+      priorChain.shadowed = [...(priorChain.shadowed ?? []), file];
+      continue;
+    }
     const declared = json.x402 && typeof json.x402 === 'object' ? json.x402 : null;
     byChainId.set(json.chainId, {
       chainName: typeof json.chainName === 'string' ? json.chainName : null,
@@ -125,29 +138,71 @@ export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
  * `NETWORK=Solana-Mainnet` in a `.env` is the same network as `solana-mainnet` and a capability
  * lookup that says otherwise switches a payment gate off by capitalisation.
  *
+ * IT RETURNS TWO THINGS, AND THE SECOND ONE TOOK THREE ATTEMPTS TO PUT IN THE RIGHT PLACE. The
+ * files that did not parse are a real answer -- an operator who wrote a config that does not load
+ * needs to be told -- but they are not networks, and every attempt to keep them inside the Map went
+ * wrong in a different way:
+ *
+ *   1. A RESERVED KEY inside the Map. The guard meant to stop that key being looked up as a network
+ *      was DEAD CODE (lookups are `.trim()`ed and the key was not, so the comparison could never be
+ *      true), the entry counted toward the shipped-configs non-vacuity floor -- which could then be
+ *      met by one real config and one broken one -- and it made the return type false.
+ *   2. A PROPERTY hung on the returned Map. Better: not an entry, so not iterable, not lookupable,
+ *      not countable. But `new Map(m)` and `structuredClone(m)` drop it SILENTLY, and the `@ts-check`
+ *      annotation on this file could not describe it without a cast.
+ *   3. This. Two named fields. Nothing to drop, nothing to iterate past, nothing to cast.
+ *
  * @param {{dir?:string}} [opts]
- * @returns {Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>}
+ * @returns {{networks: Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string, shadowed?:string[]}>, unreadable: string[]}}
  */
 export function loadNetworkCapabilities({ dir = DEFAULT_NETWORK_DIR } = {}) {
-  /** @type {Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>} */
+  /** @type {Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string, shadowed?:string[]}>} */
   const byName = new Map();
   /** @type {string[]} */
   let files;
+  /** @type {string[]} */
+  const unreadable = [];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
   } catch {
-    return byName;
+    return { networks: byName, unreadable: [] };
   }
   for (const file of files) {
     let json;
     try {
       json = JSON.parse(readFileSync(path.join(dir, file), 'utf8'));
     } catch {
+      // UNREADABLE, AND THAT IS ITSELF WORTH SAYING. Skipping silently was fine while the only
+      // consequence was one absent network; once "the collision is named" became a guarantee, a
+      // malformed file that declares an already-declared network could shadow nothing and report
+      // nothing. It cannot be attributed to a network -- its contents did not parse -- so it is
+      // recorded against the directory and surfaced on every lookup that misses.
+      unreadable.push(file);
       continue;
     }
     if (!json || typeof json !== 'object' || typeof json.network !== 'string' || !json.network.trim()) continue;
+    const key = json.network.trim().toLowerCase();
+    // FIRST FILE WINS, AND THE COLLISION IS NAMED IN `source`. Last-wins was the loader's one
+    // fail-OPEN direction: two files declaring the same network resolved to whichever sorted later,
+    // so an explicit disable could be undone by adding a file, silently, and a `Dup`/`dup` pair
+    // collided invisibly because the key is lower-cased.
+    //
+    // BE PRECISE ABOUT WHAT KEEP-FIRST BUYS, because the first draft of this comment overclaimed and
+    // a review caught it: it does NOT mean an explicit `false` always wins. It means the FIRST file
+    // wins. A `false` in the second file is discarded exactly as a `true` would be. What keep-first
+    // actually buys is determinism plus one direction of safety — adding a file can no longer take a
+    // gate OFF, because a later file can no longer win at all. Every outcome still leaves metering on
+    // unless some file that won literally says `false`.
+    //
+    // It is a configuration error either way, so it is recorded and surfaced rather than swallowed:
+    // the boot log prints `source`, and `source` names the file used and the files dropped.
+    const prior = byName.get(key);
+    if (prior) {
+      prior.shadowed = [...(prior.shadowed ?? []), file];
+      continue;
+    }
     const declared = json.x402 && typeof json.x402 === 'object' ? json.x402 : null;
-    byName.set(json.network.trim().toLowerCase(), {
+    byName.set(key, {
       network: json.network.trim(),
       chainName: typeof json.chainName === 'string' ? json.chainName : null,
       scheme: typeof json.scheme === 'string' ? json.scheme : null,
@@ -155,7 +210,7 @@ export function loadNetworkCapabilities({ dir = DEFAULT_NETWORK_DIR } = {}) {
       file,
     });
   }
-  return byName;
+  return { networks: byName, unreadable };
 }
 
 /**
@@ -188,32 +243,52 @@ export function x402Capability(key, { dir = DEFAULT_CONFIG_DIR, networkDir = DEF
   if (key === null || key === undefined || (typeof key === 'string' && key.trim() === ''))
     return { chainId: null, network: null, chainName: null, enabled: true, source: 'no chain id or network configured — x402 metering left on (default)' };
 
+  // ONE COLLISION SUFFIX FOR BOTH BRANCHES. It was built inside the network branch only, so a
+  // duplicate on the CHAIN path was recorded and never named -- `shadowed` was set on the entry and
+  // nothing read it, which meant the boot log stayed silent about a configuration error on the very
+  // path chain 4663 uses. A review caught it against a commit message that claimed both loaders
+  // named their collisions. This makes the claim true instead of softening it.
+  // THE NOUN IS PASSED IN, NOT INFERRED. It was `entry.network ? 'network' : 'chain id'`, which is
+  // true today only because `loadChainCapabilities` happens not to copy a `network` field into its
+  // entry literal. A review pointed out that the label would silently flip the day it did. The call
+  // site knows which loader it asked, so the call site says the noun.
+  const collision = (entry, noun) => (entry.shadowed?.length
+    ? ` (CONFIGURATION ERROR: ${entry.shadowed.join(', ')} declare the same ${noun} and were ignored; the FIRST file wins, whatever it says)`
+    : '');
+
   const id = Number(key);
   if (Number.isFinite(id)) {
     const entry = loadChainCapabilities({ dir }).get(id);
     if (!entry)
       return { chainId: id, network: null, chainName: null, enabled: true, source: `no chain config for chain ${id} — x402 metering left on (default)` };
     if (!entry.x402)
-      return { chainId: id, network: null, chainName: entry.chainName, enabled: true, source: `${entry.file} declares no x402 block — metering left on (default)` };
+      return { chainId: id, network: null, chainName: entry.chainName, enabled: true, source: `${entry.file} declares no x402 block — metering left on (default)${collision(entry, 'chain id')}` };
 
     return {
       chainId: id,
       network: null,
       chainName: entry.chainName,
       enabled: entry.x402.enabled,
-      source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}`,
+      source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}${collision(entry, 'chain id')}`,
       ...(entry.x402.note ? { note: entry.x402.note } : {}),
     };
   }
 
   const name = String(key).trim();
-  const entry = loadNetworkCapabilities({ dir: networkDir }).get(name.toLowerCase());
-  if (!entry)
-    return { chainId: null, network: name, chainName: null, enabled: true, source: `no network config for ${name} — x402 metering left on (default)` };
+  const { networks, unreadable } = loadNetworkCapabilities({ dir: networkDir });
+  const entry = networks.get(name.toLowerCase());
+  if (!entry) {
+    // A MISS IS THE MOMENT TO MENTION AN UNREADABLE FILE, and the only one. If a config for this
+    // network exists but did not parse, "no network config for X" is true and useless — the
+    // operator wrote the file and would go looking for a typo in the name.
+    const note = unreadable.length ? ` (${unreadable.join(', ')} could not be parsed and were skipped)` : '';
+    return { chainId: null, network: name, chainName: null, enabled: true, source: `no network config for ${name} — x402 metering left on (default)${note}` };
+  }
+  const shadowed = collision(entry, 'network');
   if (!entry.x402)
     return {
       chainId: null, network: entry.network, chainName: entry.chainName, enabled: true,
-      source: `${entry.file} declares no x402 block — metering left on (default)`,
+      source: `${entry.file} declares no x402 block — metering left on (default)${shadowed}`,
       ...(entry.scheme ? { scheme: entry.scheme } : {}),
     };
 
@@ -222,7 +297,7 @@ export function x402Capability(key, { dir = DEFAULT_CONFIG_DIR, networkDir = DEF
     network: entry.network,
     chainName: entry.chainName,
     enabled: entry.x402.enabled,
-    source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}`,
+    source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}${shadowed}`,
     ...(entry.x402.note ? { note: entry.x402.note } : {}),
     ...(entry.scheme ? { scheme: entry.scheme } : {}),
   };

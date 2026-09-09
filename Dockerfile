@@ -38,6 +38,13 @@ COPY apps ./apps
 # lookup degrades to "x402 enabled", leaving the payment gate on for a chain that switched it off.
 COPY contracts/config ./contracts/config
 
+# The same argument, for the networks that have no EVM chain id. `config/networks/*.json` is where a
+# payment network such as Solana declares whether it meters, and the resolver reads it at boot from
+# the same process. Omit this line and the lookup degrades to "x402 enabled" for every one of them --
+# the identical failure the paragraph above describes, on the identical code path, and just as silent.
+# A review of the change that added the directory caught exactly this line missing.
+COPY config ./config
+
 # Snapshot lives on a mounted volume so indexer (writer) and API (reader) share it.
 ENV STATE_PATH=/data/indexer-state.json
 VOLUME /data
