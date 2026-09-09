@@ -25,12 +25,15 @@
 import type { JSX } from 'react';
 import { usd } from './chain';
 import { age, useLive } from './useLive';
-import type { PageId } from '../shell/pinned';
+import { siteHref, type ShellPage } from '../shell/pinned';
 import styles from './live-chip.module.css';
 
-export function LivePriceChip({ page }: { page: PageId }): JSX.Element {
+export function LivePriceChip({ page }: { page: ShellPage }): JSX.Element {
   const live = useLive();
-  const href = page === 'index.html' ? '#live' : 'index.html#live';
+  // On the homepage the live reads are a section of this same document, so the
+  // chip is an in-page anchor. Anywhere else it is a navigation, and `siteHref`
+  // makes it root-absolute on the 404 page, which Pages serves at any depth.
+  const href = page === 'index.html' ? '#live' : siteHref(page, 'index.html#live');
 
   if (live.status !== 'ok') {
     // The reserved slot. `aria-hidden` because there is nothing here to

@@ -25,12 +25,12 @@
  * one.
  */
 import type { JSX, ReactNode } from 'react';
-import type { PageId } from './pinned';
+import type { ShellPage } from './pinned';
 import { Footer } from './Footer';
 import { Masthead } from './Masthead';
 import { SkipLink } from './SkipLink';
 
-export function PageShell({ page, children }: { page: PageId; children?: ReactNode }): JSX.Element {
+export function PageShell({ page, children }: { page: ShellPage; children?: ReactNode }): JSX.Element {
   return (
     <>
       <SkipLink />

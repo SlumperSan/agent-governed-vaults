@@ -19,13 +19,13 @@
 import { StrictMode, type ComponentType } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import { App } from './shell/App';
-import type { PageId } from './shell/pinned';
+import type { ShellPage } from './shell/pinned';
 
 import './tokens.css';
 import './fonts.css';
 import './index.css';
 
-export function hydrate(page: PageId, Body: ComponentType | null): void {
+export function hydrate(page: ShellPage, Body: ComponentType | null): void {
   const container = document.getElementById('root');
   if (!container) {
     // Nothing to attach to means the entry HTML was edited out from under the
