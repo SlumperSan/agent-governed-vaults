@@ -7,11 +7,17 @@
  *     sentence behind it is `apps/site/index.html`: "Nothing executes without a
  *     member vote."
  *
- *   SEVEN IMMUTABLE CONTRACTS
- *     Seven singletons, as `contracts/config/deployments/robinhood-mainnet.json`
- *     records them, and immutable in the sense the next phrase spells out: the
- *     corpus sentence is "The contracts carry no proxy, no upgrade path, no
- *     pause function and no admin key."
+ *   NO UPGRADE PATH
+ *     A clause of the corpus sentence "The contracts carry no proxy, no upgrade
+ *     path, no pause function and no admin key.", matched the same way NO ADMIN
+ *     KEY is matched -- as a substring of it.
+ *
+ *     IT REPLACED "SEVEN IMMUTABLE CONTRACTS." ON 2026-09-09, on the owner's
+ *     instruction to stop marketing a contract count. The count was also the one
+ *     phrase on this strip sourced from the owner's brief rather than from the
+ *     corpus, so replacing it removes an entry from OWNER_AND_LIVE_STRINGS in
+ *     `test/site.test.mjs` -- every phrase on the strip now resolves against the
+ *     corpus or the promo script, and that list is one string shorter.
  *
  *   NO ADMIN KEY
  *     The tail of that same corpus sentence, verbatim.
@@ -30,7 +36,7 @@
  */
 export const PHRASES: readonly string[] = [
   'The hive decides.',
-  'Seven immutable contracts.',
+  'No upgrade path.',
   'No admin key.',
   'Every position put to a vote.',
 ];
