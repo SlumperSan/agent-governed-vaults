@@ -62,10 +62,19 @@
    boundary into live-chip.module.css to do it. It carries no appearance of its
    own and reserves the chip's line box so the header does not jump when the
    read lands. */
+/* `flex: none` IS THE FIX FOR A PRICE THAT HAD NEVER ONCE BEEN FULLY VISIBLE.
+   This slot used to carry `min-width: 0`, which permits a flex item to shrink
+   below its own content. The brand beside it is `flex: 0 0 auto` and cannot
+   shrink, so the chip absorbed the entire shortfall of the left column and the
+   number was cut off mid-figure: `$2,489.9…`. Measured on the live site across
+   the whole desktop range, the cut was 14px at the widest the pill ever gets
+   (max-width 78rem) and 158px at 960 — never zero, at any width. A truncated
+   price is worse than no price: it is a wrong number that looks like a right
+   one, and this chip's whole job is to be a number a reader can trust. */
 .chipSlot {
   display: flex;
   align-items: center;
-  min-width: 0;
+  flex: none;
   min-height: 1.75rem;
 }
 
@@ -121,7 +130,26 @@
    site holds body text to, and correctly so, because this is not body text. It
    is a wordmark descriptor that repeats a sentence stated in full in the hero
    two hundred pixels below it. It clears the 4.5:1 UI floor with room. */
+/* IT IS HIDDEN IN THE ONE-ROW LAYOUT AND SHOWN IN THE TWO-ROW ONE, which is the
+   opposite of the usual direction and is deliberate. Above 60rem the pill is a
+   single row and everything shares it, and the pill's own `max-width: 78rem`
+   caps how much room that row can ever have: the left column tops out at 428px
+   while the brand-with-tagline (253) plus the gap plus the chip (177) needs 443.
+   There is no viewport at which both fit, because the binding constraint is the
+   pill's max-width and not the window. Something had to yield, and between a
+   price and a wordmark descriptor it is not the price.
+
+   Nothing is lost from the page. The tagline is `aria-hidden` here, so no
+   screen reader ever announced it, and `Footer.tsx` renders the same TAGLINE
+   constant in full on every page. On the homepage it also repeats the hero
+   headline verbatim two hundred pixels below itself.
+
+   Below 60rem the pill becomes two rows: the brand has row 1 to itself and the
+   chip sits on row 2 beside the nav, so there is no collision and the tagline
+   comes back. The ≤30rem rule further down then takes it away again on the
+   narrowest phones, where the row is tight for a different reason. */
 .tagline {
+  display: none;
   font-family: var(--mono);
   font-size: 0.5625rem;
   letter-spacing: var(--track-eyebrow);
@@ -280,7 +308,39 @@
    chip's digits pushing it off centre, not because it is a round number.
    -------------------------------------------------------------------------- */
 
+/* --------------------------------------------------------------------------
+   THE BAND WHERE THE ONE-ROW BAR RUNS OUT OF ROOM, AND THE CHIP STEPS OUT.
+
+   Measured rather than guessed. In the one-row layout the left group needs
+   329px (brand 128 + gap 12 + chip 189) and the grid's `1fr` outer track gives
+   it 428 at a 1440 viewport, 309 at 1100. The crossover is around 72rem, and
+   below it the chip does not merely get tight — it overlaps the nav, because
+   `min-width: 0` on `.left` lets the track collapse under its own content and
+   nothing in a `1fr auto 1fr` grid pushes back.
+
+   So in this band the chip is hidden outright. That is the trade this whole
+   file now makes twice: a number that is cut off is worse than a number that is
+   absent, because a truncated price reads as a real one. Nothing is lost that
+   the reader cannot reach — the chip is a link to the live panel, and the live
+   panel is a section of the same page, further down and complete.
+
+   BELOW 60rem THE CHIP COMES BACK, because the bar is two rows there and the
+   chip has a row of its own beside the nav. The rule below re-shows it, and it
+   must come after this block to win. Below 34rem it goes again, for the
+   different reason stated there.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 72rem) {
+  .chipSlot {
+    display: none;
+  }
+}
+
 @media (max-width: 60rem) {
+  .chipSlot {
+    display: flex;
+  }
+
   /* THE FLEXIBLE COLUMN IS THE FIRST ONE, AND GETTING THAT ROUND THE WRONG WAY
      IS WHAT BROKE THE FIRST BUILD. With `auto 1fr` the first column is sized by
      the widest thing in it, which is the brand lockup at 217px, and the nav on
@@ -316,6 +376,13 @@
     grid-column: 1;
     grid-row: 2;
     justify-self: start;
+  }
+
+  /* Two rows, so the brand has row 1 to itself and the tagline costs the chip
+     nothing. See the note on `.tagline` for why it is hidden in the one-row
+     layout above this breakpoint rather than below it. */
+  .tagline {
+    display: block;
   }
 
   .right {
