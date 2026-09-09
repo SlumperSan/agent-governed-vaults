@@ -170,31 +170,44 @@ because a page-scoped check is satisfied by a disclaimer thousands of characters
   `WETH` and `cbBTC`, with the addresses the chain configuration records. A simplification about
   what a vault holds is only honest while it is anchored.
 
-### RWLY launched 2026-09-05, and every mention of it has to be anchored (flipped the same day)
+### No page names a token, and the anchoring rule that used to sit here is retired (2026-09-09)
 
-RWLY was created at 2026-09-05T21:51:57Z, so the rule this section used to describe reversed inside
-a day. What it required was `does not exist` within **160 characters** of every `RWLY` anywhere
-under `apps/site`. What it requires now is an anchor to a checkable launch fact within the same
-window: the address stem `0x2eed8ae7`, the words `fixed supply`, `launched 2026-09-05`, or a
-design-intent hedge (`design intent`, `designed to`, `not built`). The floor on the number of
-mentions is unchanged in purpose and re-measured in value, so the rule still cannot be satisfied by
-deleting the mentions.
+A token launched on 2026-09-05 and this section described the rule that governed how these pages
+were allowed to mention it: an anchor to a checkable launch fact -- the address stem, the words
+`fixed supply`, the launch date, or a design-intent hedge -- within **160 characters** of every
+mention, a section-scoped status chip on `vision.html` where the prose was too dense for a window,
+a floor on the number of mentions so the rule could not be satisfied by deleting the copy, and a
+per-page list of facts three pages had to state.
 
-The reasoning behind the old rule survives the flip and is why the replacement is an anchor rather
-than nothing: a named token is the easiest thing on these pages to quote out of context into a
-claim that something is buyable. A mention that travels alone is a mention that gets quoted alone.
+**The owner retired that launch on 2026-09-09, calling it a test, and directed that no token
+sentence appear on any public surface until a real relaunch.** Every one of those legs went with the
+copy it guarded, and the two halves are worth separating because only one of them had a choice:
 
-The window is a character count rather than a sentence or a block, and both alternatives were
-tried first. The approved lede is two sentences: one names RWLY as design intent, the next states
-the launch facts, so a sentence-scoped rule reds the copy the owner directed. Block scoping does not reach the
-three mentions that live inside `content="…"` meta attributes, which sit in no `<p>`, `<dd>` or
-`<li>`.
+- The floor and the must-state list are POSITIVE requirements to publish token facts. They cannot
+  coexist with an instruction not to publish token facts, so they could not be kept under any
+  wording.
+- The window rule and the vision-page chip were conditional on a mention existing. Kept, they would
+  have gone vacuously green over pages with nothing left to match, which this suite's own header
+  calls out as worse than no guard at all.
 
-`vision.html` is a whole page of design intent, `stRWLY` contains `RWLY`, and the page produces
-eighteen matches. It uses a section-scoped chip instead of the window: every `<section>` that names
-RWLY carries the exact string `Designed, not built. RWLY launched 2026-09-05.` The chip flipped
-with everything else and kept its two-sentence shape, one clause about the section and one about
-the token, so only the false clause moved.
+**What replaces them is `scripts/test/claims-token-absence.test.mjs`**, one negative leg over every
+published surface: the built pages of `apps/site-next`, these nine corpus pages, all three copies of
+`llms.txt`, and the app page. None of them may name the ticker, the token address, `bonding curve`,
+the launchpad, or a supply figure. It asserts a minimum file count per surface group BEFORE it
+asserts absence -- an absence check over an empty file set is green and proves nothing -- and it
+carries a probe proving the ban bites on every banned shape and spares `RWAlly`, which is the
+project's own name and not the ticker.
+
+The reasoning that produced the old rule is what produced the new one: a named token is the easiest
+thing on these pages to quote out of context into a claim that something is buyable. Removing the
+name is a stronger answer to that than chaperoning it, for as long as there is nothing to name.
+
+Two things did NOT go with it, and they are easy to retire by association:
+`scripts/test/claims-lede-truth.test.mjs` guards 7 and 8 keep their machinery, because both are
+already absence rules and an absence rule does not go false when copy is removed. And
+`contracts/config/deployments/rwly-robinhood-mainnet.json` is kept in the repository as history,
+with a `status` field recording that the launch was a test, that it is retired, and that no public
+surface cites it.
 
 The sentence `No token. No points. No airdrop. No presale.` is **retired**, not reworded: the whole
 sentence exists to say a thing does not exist. It is pinned at zero on every page, so restoring it

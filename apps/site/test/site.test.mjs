@@ -1038,183 +1038,41 @@ test('the sequencer guard is not presented as a proven mitigation', () => {
   assert.ok(/never (?:run|executed) against a real/i.test(r5), `${DISCLAIMERS_PAGE}: risk 5 must say the sequencer path has never executed against a real feed`);
 });
 
-/**
- * RWLY EXISTS, AND EVERY MENTION OF IT HAS TO BE ANCHORED TO A CHECKABLE LAUNCH FACT.
+/*
+ * THE RWLY LEG WAS RETIRED HERE ON 2026-09-09, AND ITS REPLACEMENT IS AN ABSENCE RULE.
  *
- * FLIPPED 2026-09-05. This guard was written the same day under the opposite rule -- that the site
- * keeps saying no token exists until one does -- and the token was created at 2026-09-05T21:51:57Z,
- * which is the whole reason a claims guard is written as a rule rather than as a sentence. What the
- * old rule protected is unchanged and is why the replacement is an anchor rather than nothing: a
- * named token is the single easiest thing on these pages to quote out of context into a claim that
- * something is buyable, so a qualifier still travels with the name rather than sitting in a
- * disclaimer further down the page. Only what counts as a qualifier moved: `does not exist` is kept
- * in the alternation for the sentences that legitimately say a DIFFERENT thing does not exist, and
- * the address stem, the supply figure and `launched 2026-09-05` are added beside it.
+ * WHAT STOOD HERE. A leg written on 2026-09-05 and flipped the same evening, in three parts: a
+ * 160-character window requiring the address stem, the words `fixed supply`, or a design-intent
+ * hedge beside every `RWLY`; a section-scoped variant for vision.html requiring the exact chip
+ * `Designed, not built.` plus a launch date in every <section> naming the token; a floor of 45
+ * mentions across apps/site so the window rule could not be satisfied by deleting the copy; and a
+ * per-page list of launch facts each of three pages had to STATE, so a disclosure could not
+ * disappear with every guard still green.
  *
- * WINDOW-SCOPED, not sentence-scoped, and the reason is the copy this guard has to permit. The
- * approved lede is TWO sentences: the first names RWLY as design intent and the second states the
- * launch facts. A sentence-scoped rule reds the exact wording the owner directed, which is a guard
- * failing its own copy. Block scoping (the shape used by the security-review check above) does not
- * work either, because three of the occurrences are inside `content="…"` meta attributes, which sit
- * in no <p>, <dd> or <li> at all. A character window handles markup and prose with one rule.
+ * WHY IT COULD NOT SURVIVE THE COPY IT GUARDED. On 2026-09-09 the owner retired the 2026-09-05
+ * launch, calling it a test, and ordered every token sentence off every public surface until a real
+ * relaunch. Two of the four parts then require what the site must not do: a floor of 45 mentions
+ * and a per-page list of facts to state are POSITIVE requirements, and a positive requirement to
+ * publish a token fact cannot coexist with an order not to publish token facts. The other two are
+ * conditional on a mention existing and would have gone quietly vacuous, which is the worst of the
+ * three outcomes: green, unfalsified, and proving nothing.
  *
- * 160 CHARACTERS, chosen against the copy rather than picked round. It leaves room for a modest
- * rewrite and still refuses a qualifier parked a paragraph away.
+ * WHAT REPLACES IT, AND WHERE. `scripts/test/claims-token-absence.test.mjs`, which is a repository
+ * guard rather than a page guard because the property is now repository-wide: no built page of the
+ * redesign, none of these nine corpus pages, none of the three llms.txt copies and no built page of
+ * apps/app may name the token, its address, the launchpad, the curve or a supply figure. It carries
+ * a non-empty assertion per surface group before it asserts absence -- the failure this suite's own
+ * header warns about -- and a probe that proves the ban bites and spares the brand name.
  *
- * The floor is the other half. A window rule alone is satisfiable by deleting every mention, which
- * would silently drop a fact the owner put on the page; the count assertion means the only way to
- * pass is to keep the mentions and keep them qualified. Same reasoning as the open-High check.
+ * THE PROPERTY THE RETIRED LEG PROTECTED IS NOT LOST. It existed because a named token is the
+ * easiest thing on these pages to quote out of context into a claim that something is buyable. The
+ * absence rule protects the same property by removing the name rather than by chaperoning it, which
+ * is strictly stronger for as long as there is nothing to name.
  *
- * VISION.HTML BREAKS THE WINDOW RULE, AND THIS IS THE SPLIT THAT FIXES IT WITHOUT WEAKENING IT.
- * `vision.html` (added 2026-09-05, copy deck v2) is a whole page of design intent about RWLY,
- * stRWLY, staking and the treasury. `stRWLY` CONTAINS `RWLY`, so every `stRWLY` is itself a match,
- * and the page produces roughly thirty of them. A 160-character window over flowing prose cannot be
- * satisfied that many times without repeating the qualifier almost every sentence, which is
- * unreadable rather than honest.
- *
- * The device the page uses instead: every `<section>` opens with one exact status chip,
- * `Designed, not built. RWLY launched 2026-09-05.` -- SECTION-scoped rather than window-scoped,
- * following the shape the security-review attestation check above already uses in this file (find
- * the enclosing block, require the qualifier IN it). For `vision.html` only, this test checks that
- * every `<section>` containing an `RWLY` match also contains that exact chip, and separately -- so a
- * mention sitting in the hero or between sections cannot silently escape either half -- that no
- * `RWLY` mention on the page sits outside every `<section>` at all. The 160-character window rule is
- * UNCHANGED for the other eight pages and every non-page surface (README.md, llms.txt, the
- * stylesheets, sitemap.xml, `_redirects`): this is a second rule for one file, not a widening of the
- * first rule for all of them. Do not solve a future page's version of this problem by loosening
- * `RWLY_QUALIFIER` to accept a bare "designed" — that weakens the check on all nine pages to fix one.
+ * TWO LEGS THAT LOOK RELATED AND ARE NOT, so nobody retires them by association:
+ * `claims-lede-truth.test.mjs` guards 7 and 8 keep their machinery. Both are already absence rules,
+ * and an absence rule does not go false when copy is removed.
  */
-const RWLY_WINDOW = 160;
-const RWLY_QUALIFIER = /does not exist|design intent|designed to|not built|0x2eed8ae7|fixed supply|launched 2026-09-05/i;
-// FLIPPED 2026-09-05, KEEPING THE SHAPE. The chip has always been two sentences, one about the
-// section and one about the token, and only the second one went false: RWLY was created at
-// 2026-09-05T21:51:57Z. The first sentence is untouched, so the section-scoped rule below reads
-// exactly as it did. The chip also still CONTAINS `RWLY`, which is load-bearing arithmetic rather
-// than style: it is repeated nine times on vision.html, so a chip without it would have dropped
-// nine occurrences out of RWLY_FLOOR in a commit that was supposed to be adding facts, not removing
-// mentions. `launched 2026-09-05` is added to RWLY_QUALIFIER above so the chip anchors its own
-// mention to a checkable date rather than borrowing a qualifier from the prose beside it.
-const RWLY_CHIP = 'Designed, not built. RWLY launched 2026-09-05.';
-const VISION_PAGE = 'vision.html';
-// RE-MEASURED 2026-09-05, after the launch flip: siteFiles() finds 51 occurrences of `RWLY` across
-// apps/site (test/ and images excluded, per siteFiles() below) -- 18 of them on vision.html alone,
-// where the chip accounts for nine. It was 46 before the flip; the five it gained are the launch
-// facts the six flipped pages now state. Set a few below that measurement, not at it, so a small
-// future edit does not immediately red this floor; re-measure and move this number the next time
-// RWLY mentions are added or removed anywhere under apps/site.
-const RWLY_FLOOR = 45;
-
-/**
- * `vision.html`'s top-level `<section>` blocks, in document order. Assumes flat, non-overlapping
- * sections (asserted below rather than assumed silently) -- true of this page's shell, which has no
- * section nested inside another.
- */
-const sectionsOf = (html) => html.match(/<section\b[^>]*>[\s\S]*?<\/section>/gi) ?? [];
-
-test('every mention of RWLY sits beside its address, its fixed supply, or a design-intent qualifier', () => {
-  const files = siteFiles();
-  let seen = 0;
-  for (const f of files) {
-    const fileText = readFileSync(path.join(SITE, f), 'utf8');
-    // Flattened, so a mention and its qualifier split across a line break still count as adjacent.
-    const text = fileText.replace(/\s+/g, ' ');
-    seen += (text.match(/RWLY/g) ?? []).length;
-
-    if (f === VISION_PAGE) {
-      const sections = sectionsOf(fileText);
-      assert.equal(
-        (fileText.match(/<section\b/gi) ?? []).length,
-        sections.length,
-        `${VISION_PAGE}: a <section> did not close before the next opened, or one is nested inside ` +
-          'another -- the section-scoped RWLY check assumes flat, non-overlapping sections',
-      );
-      for (const section of sections) {
-        if (!/RWLY/.test(section)) continue;
-        assert.ok(
-          section.includes(RWLY_CHIP),
-          `${VISION_PAGE}: a <section> mentions RWLY without the exact status chip ${JSON.stringify(RWLY_CHIP)} — ` +
-            JSON.stringify(section.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)),
-        );
-      }
-      const outsideSections = sections.reduce((s, section) => s.replace(section, ''), fileText);
-      assert.ok(
-        !/RWLY/.test(outsideSections),
-        `${VISION_PAGE}: RWLY appears outside every <section> (the hero, the header or the footer) — ` +
-          'the section-scoped chip check cannot see a mention that sits in no section',
-      );
-      continue;
-    }
-
-    for (const m of text.matchAll(/RWLY/g)) {
-      const at = m.index ?? 0;
-      const window = text.slice(Math.max(0, at - RWLY_WINDOW), at + RWLY_WINDOW);
-      assert.ok(
-        RWLY_QUALIFIER.test(window),
-        `${f}: names RWLY without its address, "fixed supply", or a design-intent qualifier within ${RWLY_WINDOW} characters. ` +
-          'RWLY launched 2026-09-05; every mention must anchor to the launch facts or say which part is still design. ' +
-          `— ${JSON.stringify(window.trim().slice(0, 200))}`,
-      );
-    }
-  }
-  assert.ok(
-    seen >= RWLY_FLOOR,
-    `expected RWLY to be named on at least ${RWLY_FLOOR} surfaces, found ${seen} — if the mentions were deleted ` +
-      'rather than qualified, say so in the commit rather than letting this guard pass by absence',
-  );
-  // NO SENTENCE THAT NAMES THE TOKEN MAY ALSO SAY IT DOES NOT EXIST.
-  //
-  // ADDED AFTER THE WINDOW RULE ABOVE LET ONE THROUGH. vision.html carried "RWLY rewards are
-  // designed, and depend on a token that does not exist." It is false, and every guard was green on
-  // it: the window rule is satisfied by "designed" sitting three words away, and the retired chip
-  // string does not match because this sentence is worded differently. A proximity rule asks
-  // whether a qualifier is NEAR the name; it cannot ask whether the qualifier is TRUE. So this leg
-  // is sentence-scoped and asks the one question the window cannot.
-  //
-  // SENTENCE-SCOPED RATHER THAN PAGE-SCOPED, deliberately: `vision.html` legitimately says an
-  // all-stocks index needs oracle work that does not exist yet, which is about oracles and is still
-  // true, and a page-scoped ban would red it. The three phrases are matched only inside a sentence
-  // that also names RWLY.
-  const TOKEN_ABSENCE = /does not exist|do not exist|there is no token/i;
-  for (const p of PAGES) {
-    for (const s of sentencesOf(publishedProse(raw.get(p) ?? ''))) {
-      if (!/RWLY/.test(s)) continue;
-      const hit = s.match(TOKEN_ABSENCE);
-      assert.equal(
-        hit,
-        null,
-        `${p}: a sentence naming RWLY also says ${JSON.stringify(hit?.[0])}. RWLY was created at ` +
-          '2026-09-05T21:51:57Z. Name the thing that is actually absent -- the staking contract, the ' +
-          'epoch, the reward accrual -- rather than the token, ' +
-          JSON.stringify(s.trim().slice(0, 200)),
-      );
-    }
-  }
-
-  // WHAT EACH PAGE MUST STATE, not merely avoid getting wrong.
-  //
-  // This half used to pin the exact sentence `RWLY does not exist yet.` on index.html -- a
-  // requirement that the page carry a claim which went false at 2026-09-05T21:51:57Z. Deleting it
-  // and stopping would have left the window rule above satisfiable by a page that never names the
-  // token at all, which is how a disclosure disappears with every guard still green. So it is
-  // replaced rather than removed, by the facts that make a mention checkable: the address stem a
-  // reader pastes into an explorer, the supply figure, and on the page that carries every negative
-  // statement, the disclosure a reader cannot reconstruct without effort.
-  const mustState = {
-    'index.html': ['0x2eed8ae7', '1,000,000,000', 'launched 2026-09-05'],
-    [DISCLAIMERS_PAGE]: ['0x2eed8ae7', '1,000,000,000', '7.3% of the fixed supply', 'Pons', 'design intent'],
-    [STATUS_PAGE]: ['0x2eed8ae7', '1,000,000,000', 'Launched 2026-09-05', 'rwly-robinhood-mainnet.json'],
-  };
-  for (const [p, musts] of Object.entries(mustState)) {
-    const html = raw.get(p) ?? '';
-    for (const must of musts) {
-      assert.ok(
-        html.includes(must),
-        `${p}: must state ${JSON.stringify(must)}. A qualifier rule alone is satisfied by a page that ` +
-          'never names the token, which is how a disclosure disappears without any guard going red',
-      );
-    }
-  }
-});
 
 /**
  * The `.pre-launch` rules now style ONE block on ONE page -- the status band on status.html -- and
@@ -1255,15 +1113,16 @@ test('the status band cannot be hidden by the stylesheet', () => {
  * addresses at all — a status page that quietly stopped listing them would otherwise pass this test
  * by having nothing to check.
  */
-// THREE SOURCES SINCE 2026-09-05, AND THE THIRD IS A DIFFERENT KIND OF RECORD. The status page now
-// publishes the RWLY token address, which appears in neither of the first two and never will: the
-// deployment record describes contracts this repository broadcast, and RWLY was minted by a
-// third-party launchpad. So it got its own record, `rwly-robinhood-mainnet.json`, rather than being
-// waved through -- the rule this leg enforces is that an address on the page is transcribed from a
-// record, not that it came from one particular record.
+// BACK TO TWO SOURCES ON 2026-09-09. A third was added on 2026-09-05 -- the launchpad token's own
+// record, `rwly-robinhood-mainnet.json` -- because the status page had begun publishing an address
+// that appears in neither of the other two and never will: the deployment record describes
+// contracts this repository broadcast, and that token was minted by a third party. The status page
+// no longer publishes it, so the third source has nothing left to justify, and a source list is not
+// a place to leave an entry that permits an address the page must not carry. The record itself is
+// kept in the repository as history; permitting it HERE would be permitting its republication.
+// The rule this leg enforces is unchanged: an address on the page is transcribed from a record.
 const ADDRESS_SOURCES = [
   path.join(REPO, 'contracts', 'config', 'deployments', 'robinhood-mainnet.json'),
-  path.join(REPO, 'contracts', 'config', 'deployments', 'rwly-robinhood-mainnet.json'),
   CONFIG_PATH,
 ];
 

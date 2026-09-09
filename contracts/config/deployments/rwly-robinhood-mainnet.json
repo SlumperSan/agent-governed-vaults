@@ -1,5 +1,14 @@
 {
   "recordKind": "launchpad-token",
+  "status": {
+    "state": "retired",
+    "retiredOn": "2026-09-09",
+    "retiredBy": "owner",
+    "summary": "RETIRED. The owner ended this launch on 2026-09-09, calling it a test, and directed that another launch be prepared. This file is kept as history and is NOT deleted: it is the record of a set of transactions that happened on chain 4663 on 2026-09-05, every field below was read back from that chain rather than transcribed from a session, and destroying the evidence of a launch is not how a launch is retired.",
+    "publicSurfaces": "NO PUBLIC SURFACE CITES THIS RECORD. Every sentence naming the token, its address, the launchpad, the curve or a supply figure was removed on 2026-09-09 from the built pages of apps/site-next, the nine corpus pages of apps/site, all three copies of llms.txt and the README. scripts/test/claims-token-absence.test.mjs walks those surfaces and fails if any of it returns, so a future edit cannot reintroduce a claim from this file quietly.",
+    "readbackFields": "UNCHANGED. Nothing below this field was edited. A readback is a measurement of what a chain returned at a moment, and a measurement does not become wrong because the thing it measured was retired. Correcting one to match a later decision would destroy the only property that makes this file worth keeping.",
+    "relaunch": "A further launch is prepared only, per the owner decision of 2026-09-09: checklist, record shape, copy and pool plan staged, nothing live without the owner. A relaunch gets its own record; it does not edit this one."
+  },
   "recordNote": "RWLY on Robinhood Chain mainnet. This file sits beside robinhood-mainnet.json and records a DIFFERENT KIND OF THING, which is the most important line in it: the deployment record describes contracts this repository wrote, compiled and broadcast, while this file describes a token that a third-party launchpad (Pons v2) minted on the deployer's instruction. Nobody here wrote that code, and there is no broadcast file, because no script in this repository deployed it. Every value below was read from chain 4663 with cast 1.7.1 against https://rpc.mainnet.chain.robinhood.com on 2026-09-05. This file exists so that the addresses apps/site/status.html publishes are transcribed from a record rather than from a session.",
   "chainId": 4663,
   "chainName": "robinhood-mainnet",

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   The two pages of the public site, since the 2026-09-05 collapse: the homepage, a single scroll
-  page carrying the live chain reads, the hive, how it works and the RWLY design intent; and
+  page carrying the live chain reads, the hive and how it works; and
   /disclaimers, which carries the deployment record and the claims register. The seven pages that
   used to sit between them, how-it-works, agents, who-its-for, operators, faq, vision and status,
   are not listed here because they are now 301 redirects (see _redirects), and a sitemap that lists
