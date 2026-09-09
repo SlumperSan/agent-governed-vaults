@@ -13,6 +13,12 @@
  * Optional env:
  *   STATE_PATH (./data/indexer-state.json)  PORT (8402)  RELOAD_MS (5000)
  *   PRICE_AMOUNT (10000 = $0.01)  PRICE_NETWORK (base)
+ *   NETWORK    the payment network this API serves, when it has no EVM chain id -- `solana-mainnet`
+ *              and its siblings in `config/networks/*.json`. Same single effect as CHAIN_ID and
+ *              the same default: an unknown network, or one whose file declares no `x402` block,
+ *              leaves metering ON. Set NETWORK or CHAIN_ID, never both: they answer the same
+ *              question from two different directories, and a process that has been told both has
+ *              been told something contradictory about a payment gate. It refuses to start.
  *   CHAIN_ID   the chain this API serves. Its ONLY effect is to resolve the x402 capability from
  *              `contracts/config/*.json` (see packages/chain-config/src/x402.mjs): a config whose
  *              `x402.enabled` is false — chain 4663 — makes this server answer the metered routes
@@ -73,10 +79,23 @@ export function resolveApiConfig(env) {
     throw new Error(`api: CHAIN_ID must be an integer chain id, got '${env.CHAIN_ID}'`);
   const chainId = env.CHAIN_ID != null && env.CHAIN_ID !== '' ? Number(env.CHAIN_ID) : null;
 
+  // NETWORK is the same question asked of a chain that has no chain id to ask it with. Both set is
+  // refused rather than resolved by precedence: whichever way a precedence rule fell, half the
+  // readers of this file would assume the other, and the thing being decided is whether a payment
+  // gate is on. A boot that fails with both names printed is the cheapest possible version of that
+  // argument. A numeric NETWORK is refused for the same reason -- it would resolve out of
+  // contracts/config and make NETWORK silently mean CHAIN_ID.
+  const network = env.NETWORK != null && env.NETWORK.trim() !== '' ? env.NETWORK.trim() : null;
+  if (network != null && chainId != null)
+    throw new Error(`api: set NETWORK or CHAIN_ID, not both — got NETWORK='${network}' and CHAIN_ID='${env.CHAIN_ID}'. They resolve the same x402 capability from different directories.`);
+  if (network != null && Number.isFinite(Number(network)))
+    throw new Error(`api: NETWORK must be a network NAME, not a number, got '${network}'. A numeric value belongs in CHAIN_ID.`);
+
   const statePath = env.STATE_PATH || './data/indexer-state.json';
   return {
     statePath,
     chainId,
+    network,
     port: num('PORT', 8402),
     reloadMs: num('RELOAD_MS', 5000),
     cors: flag('CORS'),
@@ -126,7 +145,7 @@ export function facilitatorFromConfig(cfg, { fetchImpl } = {}) {
 export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('api'), now = () => Date.now(), x402 } = {}) {
   // The chain's x402 capability, read from contracts/config once at boot. Injectable so a test can
   // supply one without a config directory; absent CHAIN_ID resolves to enabled, as it always was.
-  const cap = x402 ?? x402Capability(cfg.chainId);
+  const cap = x402 ?? x402Capability(cfg.network ?? cfg.chainId);
   const state = await loadSnapshot(cfg.statePath);
   const fac = facilitator ?? facilitatorFromConfig(cfg);
   const metrics = createMetrics();
@@ -185,17 +204,36 @@ if (isMain) {
   buildApiServer(cfg, { log }).then(async ({ api, state, reload, metrics, heartbeat, x402 }) => {
     if (!x402.enabled) {
       log.warn('x402.disabled', {
-        chainId: x402.chainId, chain: x402.chainName, why: x402.source,
+        chainId: x402.chainId, network: x402.network, chain: x402.chainName, why: x402.source,
         msg: 'metered routes are served WITHOUT a payment gate on this chain; the per-IP rate limiter covers every route instead.',
       });
-    } else if (cfg.chainId != null && x402.chainName == null) {
+      // THE SENTINEL IS `source`, NOT `chainName`. It was `x402.chainName == null`, and `chainName`
+      // is OPTIONAL in the network schema -- so a config that matched, parsed and set the capability
+      // but happened to omit its display name fired this warn saying no config had matched, while
+      // its own `why:` field on the same line quoted the file that did. The two phrases matched here
+      // are produced only when an entry was actually read from a file.
+    } else if ((cfg.chainId ?? cfg.network) != null && !/sets x402\.enabled|declares no x402 block/.test(x402.source)) {
       // A CHAIN_ID was set and no config matched it. Metering stays on, which is the safe default,
       // but on a chain that means to switch it OFF this is the shape of the failure: the config
       // directory did not ship (see .dockerignore / the Dockerfile COPY). Say so loudly rather
       // than letting a packaging mistake look like a deliberate "still metered".
       log.warn('x402.capability_unresolved', {
-        chainId: cfg.chainId, why: x402.source,
-        msg: 'no chain config matched CHAIN_ID, so x402 metering is left ON by default. If this chain is meant to have it off, contracts/config did not reach this runtime.',
+        chainId: cfg.chainId, network: cfg.network, why: x402.source,
+        msg: 'no config matched CHAIN_ID/NETWORK, so x402 metering is left ON by default. If this chain or network is meant to have it off, contracts/config or config/networks did not reach this runtime.',
+      });
+    }
+    // PRICE_NETWORK AND NETWORK ARE ONE WORD APART AND MEAN DIFFERENT THINGS. `NETWORK` decides
+    // whether this server meters at all; `PRICE_NETWORK` is the string the 402 challenge quotes to
+    // the client, and the facilitator-server validates the envelope against it. Nothing compared
+    // them, so `NETWORK=solana-mainnet` with the shipped `PRICE_NETWORK=base-sepolia` served a
+    // Solana-configured API issuing challenges that quoted an EVM network and an EVM USDC address.
+    // The gate is correctly ON either way, so this is a warning and not a refusal -- and the same
+    // divergence was always reachable through CHAIN_ID, so refusing would break a deployment that
+    // has been running.
+    if (cfg.network != null && cfg.price.network !== cfg.network) {
+      log.warn('x402.network_mismatch', {
+        network: cfg.network, priceNetwork: cfg.price.network,
+        msg: 'NETWORK and PRICE_NETWORK disagree: the capability was resolved for one network and the 402 challenge quotes another. Clients will be asked to pay on the network PRICE_NETWORK names.',
       });
     }
     if (cfg.facilitatorKind === 'stub') {
@@ -220,7 +258,7 @@ if (isMain) {
     api.server.listen(cfg.port, () => {
       log.info('listening', {
         port: cfg.port, snapshot: cfg.statePath, lastBlock: state.lastBlock, reloadMs: cfg.reloadMs,
-        chainId: x402.chainId, x402: x402.enabled ? 'metered' : 'off',
+        chainId: x402.chainId, network: x402.network, x402: x402.enabled ? 'metered' : 'off',
         facilitator: cfg.facilitatorKind, cors: cfg.cors, trustProxy: cfg.trustProxy,
         rateLimit: cfg.rateLimit.enabled ? `${cfg.rateLimit.refillPerSec}/s burst ${cfg.rateLimit.capacity}` : 'off',
       });
