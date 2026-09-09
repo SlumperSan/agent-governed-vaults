@@ -24,10 +24,18 @@
  *                 headline names: an index, and the condition under which it
  *                 moves.
  *
- *   FACT          `apps/site/index.html`, the immutability lede, first sentence.
- *                 Seven is the count of deployed singletons and 4663 is the
- *                 chain, both as `contracts/config/deployments/
- *                 robinhood-mainnet.json` records them.
+ *   FACT          `apps/site/index.html`, the immutability lede. It USED to be
+ *                 "Seven contracts are on Robinhood Chain, chain id 4663.",
+ *                 and the owner asked on 2026-09-09 for the site to stop
+ *                 marketing a contract count and to stop reading as though one
+ *                 chain were the whole story. Both halves of that sentence were
+ *                 the problem: a count is a number a reader cannot check and
+ *                 does not care about, and naming one chain in the HERO makes
+ *                 the positioning depend on a deployment. What replaces it is
+ *                 the property, which is true of the contracts on every chain
+ *                 they run on and is the reason the count was ever interesting.
+ *                 The chain still appears on this page -- in the live panel,
+ *                 which names the chain it actually reads.
  *
  * THE THREE ADDRESS CHIPS ARE NOT COPY AND ARE NOT HERE. They are read from
  * `src/live/chain.ts`, which is the same file the live panel reads them from, so
@@ -49,7 +57,7 @@
 export const LEDE = 'An index that only moves when the hive agrees.';
 
 /** Corpus: apps/site/index.html, "Immutability" lede. */
-export const FACT = 'Seven contracts are on Robinhood Chain, chain id 4663.';
+export const FACT = 'No proxy, no upgrade path, no pause function, no admin key.';
 
 /**
  * The two buttons. Both labels are corpus CTA labels carried in `pinned.ts`:
