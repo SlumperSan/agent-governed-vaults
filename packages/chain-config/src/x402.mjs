@@ -48,12 +48,35 @@ export const DEFAULT_CONFIG_DIR = path.resolve(
 );
 
 /**
+ * `config/networks` — the same question for a network that has no EVM chain id.
+ *
+ * WHY A SECOND DIRECTORY RATHER THAN A FILE IN `contracts/config`. That directory is the vault
+ * DEPLOYMENT configuration: oracle parameters, governance defaults, asset lists, read by Solidity
+ * through `vm.readFile` and by `DeployTestnet.s.sol`. Solana has no vault deployment and never
+ * will from this repository — the contracts are Solidity. Putting `solana-mainnet.json` there
+ * would also walk straight into `scripts/test/config-doc-truth.test.mjs`, which enumerates every
+ * `*-mainnet.json` under `contracts/config` and asserts a `govDefencesNote` on each. A payment
+ * network has no governance defences, so that file would red the suite the day it landed, and the
+ * fix would be an exemption — a list of "not really a chain config" entries inside a guard whose
+ * whole value is that it enumerates rather than lists.
+ *
+ * So: EVM chains keep answering by chain id out of the deployment configs, unchanged and with no
+ * gas-snapshot risk, and non-EVM payment networks answer by NAME out of their own directory.
+ */
+export const DEFAULT_NETWORK_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..', '..', '..', 'config', 'networks',
+);
+
+/**
  * @typedef {Object} X402Capability
  * @property {number|null} chainId    the chain the answer is about (null = no chain id supplied)
+ * @property {string|null} network    the network NAME the answer is about, for non-EVM networks
  * @property {string|null} chainName  the config's `chainName`, when a config matched
  * @property {boolean} enabled        may this chain meter reads over x402?
  * @property {string} source          how the answer was reached — for the boot log and for tests
  * @property {string} [note]          the config's own `x402.note`, verbatim
+ * @property {string} [scheme]        the settlement scheme this network uses, e.g. `exact-svm`
  */
 
 /**
@@ -95,28 +118,112 @@ export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
 }
 
 /**
- * Resolve the x402 capability for a chain id.
+ * Read every `*.json` directly under `dir` and index the ones that declare a string `network`.
  *
- * @param {number|string|null|undefined} chainId
+ * Same shape and same failure posture as `loadChainCapabilities`: a malformed file is skipped, not
+ * thrown on, and a partial `x402` block does not disable. Names are indexed lower-cased, because
+ * `NETWORK=Solana-Mainnet` in a `.env` is the same network as `solana-mainnet` and a capability
+ * lookup that says otherwise switches a payment gate off by capitalisation.
+ *
  * @param {{dir?:string}} [opts]
+ * @returns {Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>}
+ */
+export function loadNetworkCapabilities({ dir = DEFAULT_NETWORK_DIR } = {}) {
+  /** @type {Map<string, {network:string, chainName:string|null, scheme:string|null, x402:{enabled:boolean, note?:string}|null, file:string}>} */
+  const byName = new Map();
+  /** @type {string[]} */
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+  } catch {
+    return byName;
+  }
+  for (const file of files) {
+    let json;
+    try {
+      json = JSON.parse(readFileSync(path.join(dir, file), 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!json || typeof json !== 'object' || typeof json.network !== 'string' || !json.network.trim()) continue;
+    const declared = json.x402 && typeof json.x402 === 'object' ? json.x402 : null;
+    byName.set(json.network.trim().toLowerCase(), {
+      network: json.network.trim(),
+      chainName: typeof json.chainName === 'string' ? json.chainName : null,
+      scheme: typeof json.scheme === 'string' ? json.scheme : null,
+      x402: declared ? { enabled: declared.enabled !== false, ...(typeof declared.note === 'string' ? { note: declared.note } : {}) } : null,
+      file,
+    });
+  }
+  return byName;
+}
+
+/**
+ * Resolve the x402 capability for a chain id OR a network name.
+ *
+ * ## Why this takes two kinds of key
+ *
+ * It used to take a chain id and do `Number(key)`, rejecting anything non-finite. That was right
+ * while every target was EVM. Solana has no chain id, and the consequence was not a clean failure:
+ * `x402Capability('solana-mainnet')` produced `NaN`, fell into the "no chain id configured" branch
+ * and returned `enabled: true` with no config consulted. Fail-CLOSED, so nothing came off a payment
+ * gate by accident — but Solana metering was **unconfigurable**, and no file anywhere could have
+ * turned it off. A capability that cannot be configured is not a capability.
+ *
+ * So a numeric key still resolves by chain id out of `contracts/config`, and a non-numeric key
+ * resolves by name out of `config/networks`. Nothing about the EVM path changed, including its
+ * defaults and its `source` strings, which several tests match on.
+ *
+ * ## The default is still ENABLED, on both paths
+ *
+ * An absent block, an unknown key, a missing directory: all of them mean enabled. x402 is a payment
+ * gate, and a gate must not come off because a lookup could not read its source. Disabling stays
+ * opt-in, per network, and visible in a config diff.
+ *
+ * @param {number|string|null|undefined} key  an EVM chain id, or a network name such as `solana-mainnet`
+ * @param {{dir?:string, networkDir?:string}} [opts]
  * @returns {X402Capability}
  */
-export function x402Capability(chainId, { dir = DEFAULT_CONFIG_DIR } = {}) {
-  const id = chainId === null || chainId === undefined || chainId === '' ? null : Number(chainId);
-  if (id === null || !Number.isFinite(id))
-    return { chainId: null, chainName: null, enabled: true, source: 'no chain id configured — x402 metering left on (default)' };
+export function x402Capability(key, { dir = DEFAULT_CONFIG_DIR, networkDir = DEFAULT_NETWORK_DIR } = {}) {
+  if (key === null || key === undefined || (typeof key === 'string' && key.trim() === ''))
+    return { chainId: null, network: null, chainName: null, enabled: true, source: 'no chain id or network configured — x402 metering left on (default)' };
 
-  const entry = loadChainCapabilities({ dir }).get(id);
+  const id = Number(key);
+  if (Number.isFinite(id)) {
+    const entry = loadChainCapabilities({ dir }).get(id);
+    if (!entry)
+      return { chainId: id, network: null, chainName: null, enabled: true, source: `no chain config for chain ${id} — x402 metering left on (default)` };
+    if (!entry.x402)
+      return { chainId: id, network: null, chainName: entry.chainName, enabled: true, source: `${entry.file} declares no x402 block — metering left on (default)` };
+
+    return {
+      chainId: id,
+      network: null,
+      chainName: entry.chainName,
+      enabled: entry.x402.enabled,
+      source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}`,
+      ...(entry.x402.note ? { note: entry.x402.note } : {}),
+    };
+  }
+
+  const name = String(key).trim();
+  const entry = loadNetworkCapabilities({ dir: networkDir }).get(name.toLowerCase());
   if (!entry)
-    return { chainId: id, chainName: null, enabled: true, source: `no chain config for chain ${id} — x402 metering left on (default)` };
+    return { chainId: null, network: name, chainName: null, enabled: true, source: `no network config for ${name} — x402 metering left on (default)` };
   if (!entry.x402)
-    return { chainId: id, chainName: entry.chainName, enabled: true, source: `${entry.file} declares no x402 block — metering left on (default)` };
+    return {
+      chainId: null, network: entry.network, chainName: entry.chainName, enabled: true,
+      source: `${entry.file} declares no x402 block — metering left on (default)`,
+      ...(entry.scheme ? { scheme: entry.scheme } : {}),
+    };
 
   return {
-    chainId: id,
+    chainId: null,
+    network: entry.network,
     chainName: entry.chainName,
     enabled: entry.x402.enabled,
     source: `${entry.file} sets x402.enabled = ${entry.x402.enabled}`,
     ...(entry.x402.note ? { note: entry.x402.note } : {}),
+    ...(entry.scheme ? { scheme: entry.scheme } : {}),
   };
 }
