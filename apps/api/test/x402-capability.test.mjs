@@ -26,7 +26,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApi, FREE_ROUTES, METERED_ROUTES } from '../src/server.mjs';
@@ -154,6 +155,39 @@ test('with the Base mainnet capability the metered routes gate on payment and se
   assert.equal(JSON.parse(paid.body).vaults.length, 1);
   assert.ok(paid.headers[HEADERS.RESPONSE], 'a paid read still echoes PAYMENT-RESPONSE');
   assert.equal(settled, 1, 'the paid retry actually exercised the facilitator, not just a 200');
+});
+
+test('a config that declares no x402 block still resolves to enabled, read from a real directory', () => {
+  // Every shipped config now declares a block, so this branch of the resolver
+  // (x402.mjs, the `!entry.x402` case) is reachable by no fixture in the repository.
+  // It is the branch the fail-closed argument rests on, so it gets a config directory
+  // of its own rather than an assertion about what would happen.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-absent-'));
+  try {
+    writeFileSync(
+      path.join(dir, 'no-block.json'),
+      JSON.stringify({ chainId: 999001, chainName: 'chain that declares no x402 block' }),
+    );
+    const cap = x402Capability(999001, { dir });
+    assert.equal(cap.enabled, true, 'an absent block must mean enabled, or a payment gate comes off by omission');
+    assert.match(cap.source, /declares no x402 block/);
+    assert.equal(cap.chainName, 'chain that declares no x402 block', 'the entry was read, not defaulted past');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a config that declares the block false is the only way metering comes off', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-false-'));
+  try {
+    writeFileSync(
+      path.join(dir, 'off.json'),
+      JSON.stringify({ chainId: 999002, chainName: 'off', x402: { enabled: false } }),
+    );
+    assert.equal(x402Capability(999002, { dir }).enabled, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('Base mainnet also leaves the metered routes out of the rate limiter, same as Base Sepolia', async () => {

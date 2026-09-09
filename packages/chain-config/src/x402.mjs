@@ -14,9 +14,11 @@
  *     "x402": { "enabled": false, "note": "…" }
  *
  * **An absent block means ENABLED.** That is deliberate and load-bearing: every existing caller
- * that never passes a chain id, every existing test, and `contracts/config/base-mainnet.json`
- * (which declares nothing) all keep behaving exactly as they did. Disabling is opt-in, per chain,
- * and visible in the config diff.
+ * that never passes a chain id and every existing test keeps behaving exactly as it did.
+ * Disabling is opt-in, per chain, and visible in the config diff. Since 2026-09-09 all three
+ * shipped configs declare the block out loud, so the absent-block path is exercised by a
+ * synthetic config directory in `apps/api/test/x402-capability.test.mjs` rather than by any
+ * file that ships.
  *
  * ## Parked, not deleted
  *
