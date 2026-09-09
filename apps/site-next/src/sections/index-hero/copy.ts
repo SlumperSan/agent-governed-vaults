@@ -14,7 +14,10 @@
  *   HEADLINE      the owner's positioning phrase, revision 2 of the v3 brief,
  *                 shortened from "The AI agent trading index on Robinhood Chain"
  *                 because the chain belongs in the facts rather than the
- *                 tagline. Pinned once in `shell/pinned.ts` as `TAGLINE`, and
+ *                 tagline. THE CORPUS FOLLOWED ON 2026-09-09: the long form was
+ *                 the last place the positioning line still named a chain, and
+ *                 it went with the rest of the de-chaining, so the two are the
+ *                 same sentence again. Pinned once in `shell/pinned.ts` as `TAGLINE`, and
  *                 read from there rather than retyped, because the phrase is
  *                 permitted BY NAME in `claims-lede-truth.test.mjs` and one
  *                 character of drift stops the permission matching.

@@ -314,7 +314,7 @@ test('probe: the token ban catches every banned shape and spares the brand', () 
   }
 
   for (const ok of [
-    'RWAlly is the AI agent trading index on Robinhood Chain.',
+    'RWAlly is the AI agent trading index.',
     'The contracts carry no proxy, no upgrade path, no pause function and no admin key.',
     'Seven immutable contracts are on chain id 4663, and the response is deterministic.',
     'The vault holds a corresponding position in each constituent.',

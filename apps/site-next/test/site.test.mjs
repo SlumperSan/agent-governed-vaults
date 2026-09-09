@@ -2336,8 +2336,8 @@ const OWNER_AND_LIVE_STRINGS = [
   // --- the owner's own words, from revision 2 of the website v3 brief, 2026-09-05 ---
   //
   // The tagline. It read "The AI agent trading index on Robinhood Chain." in the corpus and the
-  // owner shortened it that evening, so the corpus carries the long form and this site the short
-  // one. It is pinned in `src/shell/pinned.ts` as TAGLINE, and the exact phrase "AI agent trading
+  // owner shortened it for this site that evening; on 2026-09-09 the corpus followed, so both now
+  // carry the short form and this entry is no longer bridging a difference between them. It is pinned in `src/shell/pinned.ts` as TAGLINE, and the exact phrase "AI agent trading
   // index" is permitted BY NAME in `scripts/test/claims-lede-truth.test.mjs`, which masks it before
   // scanning for an agent as the subject of trading. One character of drift breaks that permission.
   'The AI agent trading index.',

@@ -270,7 +270,15 @@ test('probe: the product-phrase exemption covers the phrase and nothing around i
     });
   };
   // The permitted phrase, in the shapes it actually ships in.
+  //
+  // THE SHORT FORM IS THE ONE THAT SHIPS NOW. On 2026-09-09 the owner asked the site to stop
+  // reading as a one-chain site, and the positioning line lost its chain: the hero, the README and
+  // the three llms.txt copies all say "RWAlly is the AI agent trading index." The long form stays
+  // listed beside it because it is still in the history and a reader who finds it there should not
+  // have to wonder whether it was ever permitted -- and because a permit list that only accepts the
+  // current wording turns every future copy edit into a guard edit made under deadline.
   for (const ok of [
+    'Rwally is the AI agent trading index.',
     'Rwally is the AI agent trading index on Robinhood Chain.',
     'An AI agent trading index, made checkable.',
   ]) {
