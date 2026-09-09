@@ -1529,10 +1529,16 @@ const INVITATIONS = [
  * literally is `Buy<now.` in all three forms and matches none of them, where the space keeps the
  * word boundary and it matches at once. Measured, both directions.
  *
- * The bound, stated rather than left to be discovered: `Buy&#60;i&#62; now.` is still missed, and a
- * fully entity-escaped page would be too. This decodes the shapes a formatter or a CMS actually
- * emits — `&nbsp;`, a numeric space, an escaped letter — not everything an adversary could write.
- * Nothing here is protecting against an adversary; it is protecting against our own toolchain.
+ * The bound, stated rather than left to be discovered: `Buy&#60;i&#62; now.` is still missed — an
+ * entity-forged tag BETWEEN the words survives, because neutralising it to a space leaves `Buy i
+ * now`. A fully entity-escaped page is NOT missed: `&#66;&#117;&#121;&#32;&#110;&#111;&#119;` and
+ * its hex form both decode and both red. That sentence read the other way round until 2026-09-09,
+ * when a review measured it and it was wrong in the direction that flatters the guard — the worse
+ * direction for a comment to be wrong in, since nobody re-checks a bound that undersells.
+ *
+ * What this decodes is the shapes a formatter or a CMS actually emits — `&nbsp;`, a numeric space,
+ * an escaped letter. Nothing here is defending against an adversary; it is defending against our
+ * own toolchain, and against the next person who reformats a meta description.
  */
 export const purchaseInvitations = (html) => {
   const decoded = html
@@ -1561,6 +1567,29 @@ const decodeRef = (code) => {
   return ch === '<' || ch === '>' ? ' ' : ch;
 };
 
+/**
+ * The half of the probe's spared corpus that claims to come from the built pages.
+ *
+ * These are the site's own NEAR-MISSES: real copy sitting one inflection from the ban's vocabulary —
+ * `bought`, `purchasable`, `Buying`, `deposit`. A corpus of invented safe strings proves nothing,
+ * because nobody writes a pattern that reds on a sentence they made up. These are the sentences that
+ * would actually get the ban loosened by whoever is trying to ship, which is how a ban stops
+ * protecting anything.
+ *
+ * THE FIRST DRAFT CLAIMED THIS PROVENANCE IN A COMMENT AND DID NOT HAVE IT. A review checked all
+ * five against the build and found 0 of 5 — they had come from the `apps/site` corpus and from prose
+ * written the same afternoon. The protection was real; the sentence describing it was not. So the
+ * claim is no longer a comment: the leg below asserts each of these appears in a page that shipped,
+ * which is the same standard this repository applies to every other claim it makes.
+ */
+const SPARED_FROM_PAGES = [
+  'Membership is bought, not granted.',
+  'What is still purchasable is the regime itself.',
+  'Buying seats up to five moves the vault out of the signer-count branch and into the pure stake rule, and a seat costs one minimum deposit.',
+  'The minimum deposit is chosen by whoever created the vault, and a low one makes capture cheap.',
+  'Deposit only what you can lose entirely.',
+];
+
 test('no built page invites the reader to buy or to acquire anything', () => {
   assert.ok(BUILT, 'the build must exist: an absence rule over nothing passes by vacancy');
   // Not `raw.size`: the map is keyed off the PAGES list and holds '' for a page that did not build,
@@ -1582,6 +1611,18 @@ test('no built page invites the reader to buy or to acquire anything', () => {
         'reviews proved the restoration sat below it.',
     );
   }
+
+  // The probe's spared corpus says it is real page copy. That is checked here rather than asserted
+  // in a comment, because the comment was wrong once already: a review found 0 of the 5 present.
+  const shipped = [...raw.values()].join('\n');
+  for (const sentence of SPARED_FROM_PAGES)
+    assert.ok(
+      shipped.includes(sentence),
+      `the probe spares "${sentence.slice(0, 60)}…" as real page copy, but no built page contains ` +
+        'it. Either the page was reworded — in which case take the new sentence, not the old one — ' +
+        'or the corpus was written from somewhere other than the build, which is what happened the ' +
+        'first time and is the reason this assertion exists.',
+    );
 });
 
 /**
@@ -1589,7 +1630,8 @@ test('no built page invites the reader to buy or to acquire anything', () => {
  *
  * The `spared` list is the half that keeps the leg honest under pressure. A ban that reds on the
  * site's own prose gets loosened by whoever is trying to ship, and a loosened ban protects nothing —
- * so the sentences below are real ones from the built pages, and they are asserted clean.
+ * so `SPARED_FROM_PAGES` holds real sentences from the built pages, asserted clean here and asserted
+ * to actually be in the build by the leg above. The rest are markup shapes with no page to come from.
  */
 test('probe: the purchase ban catches every invitation shape and spares the site copy', () => {
   const BANNED = [
@@ -1625,21 +1667,23 @@ test('probe: the purchase ban catches every invitation shape and spares the site
     'Get in early',
     'Claim your allocation.',
     'Purchase here.',
+    'Buy below.',
     'Buy <em>now</em>.',
+    // ADDED 2026-09-09 AFTER A REVIEW MUTATED WHAT THE CORPUS ABOVE LEAVES UNPINNED. Each of these
+    // is the only entry that reds when one specific piece of the matcher is removed, so the piece
+    // cannot be deleted as dead weight by somebody who ran the suite and saw green:
+    '<p>Buy</p><p>now.</p>', // only the `text` form joins these; `glued` reads "Buynow."
+    'You can purchase.', // only the `you can (?:buy|purchase|acquire)` pattern; no noun follows
+    '&#66;&#117;&#121;&#32;&#110;&#111;&#119;&#46;', // a fully entity-escaped "Buy now."
+    '&#x42;&#x75;&#x79;&#x20;&#x6E;&#x6F;&#x77;&#x2E;', // the same, hex
   ];
   for (const bad of BANNED)
     assert.notEqual(purchaseInvitations(bad).length, 0, `the ban no longer catches: ${bad}`);
 
   const SPARED = [
-    // Real sentences from the built pages. If one of these ever reds, fix the pattern, not the page.
-    'An index of the stock tokens on Robinhood Chain, decided every hour by a hive of agents and by the members who pool capital alongside them.',
-    'There is nothing here to buy and nothing to claim.',
-    'The contracts carry no proxy, no upgrade path, no pause function and no admin key.',
-    'Members pool capital and vote; the operator earns a 10% performance fee and nothing else.',
-    'The treasury buyback flag is false and no contract routes fees to it.',
+    ...SPARED_FROM_PAGES,
     // Shapes that must NOT trip: a word merely containing the ban's letters, and adjacent
     // attributes whose values only look joined once whitespace is flattened.
-    'Buy something else entirely is not a sentence this page contains, but "buying" must not red.',
     '<img alt="Buy" data-x="now" src="x.png">',
     '<img alt="Available to" data-x="buy" src="x.png">',
     '<span class="buy" id="now">Deposit</span>',
