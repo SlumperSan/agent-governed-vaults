@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * Runnable API server entrypoint. Serves the x402-metered read API over the indexer's snapshot.
- * Env-driven and NON-CUSTODIAL: it holds no key and settles nothing itself — payment verification
+ * Env-driven and, in every mode but one, NON-CUSTODIAL: it holds no key and settles nothing itself
+ * — payment verification
  * and settlement are delegated to a facilitator (a remote HTTP facilitator in production; an
  * accept-all stub for local dev). It shares state with the indexer through the snapshot file: it
  * loads the snapshot on boot and reloads it periodically, so indexer and API run as separate
@@ -24,7 +25,18 @@
  *              `x402.enabled` is false — chain 4663 — makes this server answer the metered routes
  *              without a 402 gate and bucket every route instead. Unset, or a chain with no config
  *              or no `x402` block, leaves metering ON, which is what it has always been.
- *   FACILITATOR (stub | http)   FACILITATOR_URL (required when FACILITATOR=http)
+ *   FACILITATOR (stub | http | svm)   FACILITATOR_URL (required when FACILITATOR=http)
+ *   FACILITATOR=svm REFUSES TO BOOT without SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes. The
+ *              facilitator is complete and tested; the 402 challenge and the envelope check are
+ *              still EVM-shaped, so every payment would be refused before it was reached. The
+ *              refusal comes out with the change that finishes the path.
+ *   SVM_RPC_URL, SVM_KEYPAIR, SVM_DESTINATION_TOKEN_ACCOUNT   required when FACILITATOR=svm.
+ *              The Solana path settles an SPL TransferChecked the CLIENT built, so this process
+ *              signs as fee payer and needs a funded keypair -- unlike the EVM path, which can be
+ *              keyless behind an HTTP delegate. SVM_KEYPAIR is the 64-byte secret key as a JSON
+ *              array or base58; it is never read from a file in this repository and never logged.
+ *              SVM_DESTINATION_TOKEN_ACCOUNT is stated by the operator rather than derived from
+ *              PRICE_PAYTO, so a mismatch is a rejection and never a redirect.
  *   CORS (1 to enable — needed for the browser live mode)
  *   RATE_LIMIT_BURST (60)  RATE_LIMIT_PER_SEC (5, 0 disables)  RATE_LIMIT_MAX_IPS (10000)
  *   TRUST_PROXY (1 iff a reverse proxy in front of this process sets x-forwarded-for)
@@ -38,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 import { stat } from 'node:fs/promises';
 import { createApi, DEFAULT_LIMITS } from './server.mjs';
 import { createHttpFacilitator, createStubFacilitator } from './facilitator.mjs';
+import { createSvmFacilitator, keypairFromEnv, Connection } from './facilitator-svm.mjs';
 import { createRateLimiter } from './ratelimit.mjs';
 import { createMetrics } from './metrics.mjs';
 import { loadSnapshot } from '../../../packages/indexer/src/store.mjs';
@@ -58,10 +71,39 @@ export function resolveApiConfig(env) {
   if (!isAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not an address: ${env.PRICE_PAYTO}`);
 
   const facilitator = (env.FACILITATOR || 'stub').toLowerCase();
-  if (facilitator !== 'stub' && facilitator !== 'http')
-    throw new Error(`api: FACILITATOR must be 'stub' or 'http', got '${facilitator}'`);
+  if (facilitator !== 'stub' && facilitator !== 'http' && facilitator !== 'svm')
+    throw new Error(`api: FACILITATOR must be 'stub', 'http' or 'svm', got '${facilitator}'`);
   if (facilitator === 'http' && !env.FACILITATOR_URL)
     throw new Error('api: FACILITATOR=http requires FACILITATOR_URL');
+  // Every one of these is required rather than defaulted, and that is the point: a Solana
+  // facilitator with a missing destination would verify against `undefined` and refuse every
+  // payment, which looks like a client problem for as long as it takes somebody to read this file.
+  if (facilitator === 'svm')
+    for (const k of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT'])
+      if (!env[k]) throw new Error(`api: FACILITATOR=svm requires ${k}`);
+
+  // AND THE MODE REFUSES TO START, BECAUSE THE PATH THROUGH IT IS NOT FINISHED.
+  //
+  // A review of the facilitator asked the question one level up from the paragraph above and got a
+  // worse answer: with `FACILITATOR=svm` the server BOOTS, advertises metered routes, and rejects
+  // every payment — `PRICE_ASSET` is an EVM address by the check twelve lines up, so the mint never
+  // matches; and `checkEnvelopeAgainstPrice` in x402.mjs reads `envelope.authorization`, which an
+  // SVM envelope does not have, so it fails at `asset-mismatch` before the facilitator is called at
+  // all. An operator selecting this mode would see a working server refusing every client.
+  //
+  // That is exactly the failure the comment above describes, so it gets the same answer: fail at
+  // boot, loudly, naming what is missing. The facilitator itself is complete and tested — what is
+  // missing is the challenge and envelope shape for a non-EVM network, which is the next change.
+  // Lifting this refusal is one line, and it belongs in the commit that makes the path work.
+  if (facilitator === 'svm' && env.SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED !== 'yes')
+    throw new Error(
+      'api: FACILITATOR=svm is not reachable end to end yet. The facilitator verifies and settles '
+      + 'correctly, but the 402 challenge and the envelope check are still EVM-shaped: PRICE_ASSET '
+      + 'must be an 0x address, and checkEnvelopeAgainstPrice reads envelope.authorization, which an '
+      + 'SVM envelope has no equivalent of. Every payment would be refused as asset-mismatch before '
+      + 'this facilitator saw it. Set SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes to boot anyway '
+      + 'for testing.',
+    );
 
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
   const flag = (k) => env[k] === '1' || env[k] === 'true';
@@ -107,6 +149,12 @@ export function resolveApiConfig(env) {
     },
     facilitatorKind: facilitator,
     facilitatorUrl: env.FACILITATOR_URL,
+    // The keypair is carried on the config object and NEVER logged. `resolveApiConfig` is pure and
+    // does not parse it -- `facilitatorFromConfig` does, so a bad key fails where the facilitator
+    // is built rather than where the config is read.
+    svm: facilitator === 'svm'
+      ? { rpcUrl: env.SVM_RPC_URL, keypair: env.SVM_KEYPAIR, destinationTokenAccount: env.SVM_DESTINATION_TOKEN_ACCOUNT }
+      : null,
     // RATE_LIMIT_PER_SEC=0 turns the limiter off entirely — for a private deployment where the
     // only client is your own front end and an accidental 429 is worse than an unbounded scrape.
     rateLimit: { enabled: refillPerSec > 0, capacity, refillPerSec, maxKeys: num('RATE_LIMIT_MAX_IPS', 10_000) },
@@ -122,11 +170,28 @@ export function resolveApiConfig(env) {
   };
 }
 
-/** Build the facilitator a config asks for. */
-export function facilitatorFromConfig(cfg, { fetchImpl } = {}) {
-  return cfg.facilitatorKind === 'http'
-    ? createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl })
-    : createStubFacilitator();
+/**
+ * Build the facilitator a config asks for.
+ *
+ * `svm` is a THIRD IMPLEMENTATION, not a change to the payment path. `apps/api/src/x402.mjs` takes
+ * whatever satisfies `verifyAndSettle(challenge, envelope)`, and it has taken an injected one since
+ * it was written, so adding Solana costs the gate nothing. `connection` is injectable for the same
+ * reason the EVM clients are: the whole facilitator is testable with no network and no key.
+ */
+export function facilitatorFromConfig(cfg, { fetchImpl, connection } = {}) {
+  if (cfg.facilitatorKind === 'http') return createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl });
+  if (cfg.facilitatorKind === 'svm') {
+    const parsed = keypairFromEnv(cfg.svm?.keypair);
+    // Throwing here and not at config time is deliberate: this is the first moment the key is
+    // actually needed, and the message says which env var is wrong without ever printing its value.
+    if (!parsed.ok) throw new Error(`api: SVM_KEYPAIR could not be read (${parsed.reason})`);
+    return createSvmFacilitator({
+      connection: connection ?? new Connection(cfg.svm.rpcUrl, 'confirmed'),
+      keypair: parsed.keypair,
+      destinationTokenAccount: cfg.svm.destinationTokenAccount,
+    });
+  }
+  return createStubFacilitator();
 }
 
 /**

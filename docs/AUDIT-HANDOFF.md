@@ -132,7 +132,10 @@ before relying on it.
 | `lib/` (SafeTransferLib, Checkpoints, BoundedCall) | ~150 | primitives | Medium |
 
 Out of scope for the contract audit (separate review): `packages/indexer`, `apps/api`
-(x402 metering), `apps/web`. These never custody funds; the API server holds no keys.
+(x402 metering), `apps/web`. These never custody MEMBER funds. The API server holds no keys under
+`FACILITATOR=stub` and `FACILITATOR=http`; under the opt-in `FACILITATOR=svm` it holds a Solana
+keypair that pays network fees for x402 settlement and nothing else — it cannot reach a vault,
+and no contract in this repository knows it exists.
 
 ## Deployment shape changed after this package was assembled
 

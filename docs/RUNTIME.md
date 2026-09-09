@@ -2,7 +2,11 @@
 
 This is the operator runbook for the three runtime processes that turn deployed contracts into a
 live product: the **indexer**, the **API**, and the **web** front end. Everything here is
-**non-custodial**: no process in this repo holds a private key or moves funds. Payment settlement
+**non-custodial**, with one opt-in exception: no process in this repo holds a private key or
+moves funds, except the API under `FACILITATOR=svm`. The x402 `exact` scheme on Solana has the
+facilitator sign as fee payer and submit, so that mode holds a keypair by design and pays
+network fees; it is off by default and requires three env vars to turn on. Everything below is
+about the other modes unless it says otherwise. Payment settlement
 is delegated to an external **facilitator**.
 
 **Running it is §1–§7; keeping it running is [§8 Operations](#8-operations)**. Log format, backup
@@ -386,7 +390,8 @@ Both were exercised live; see the report.
   and no key in `packages/canary`. Its `requestExit` probe is an `eth_call` with an impersonated
   `from`, which never touches a key and never changes chain state. Enforced by tests, not just
   documented.
-- The **API** holds no key. It only asks a facilitator to `verifyAndSettle`; it serves the resource
+- The **API** holds no key under `FACILITATOR=stub` and `FACILITATOR=http`. It only asks a
+  facilitator to `verifyAndSettle`; it serves the resource
   when settlement succeeds. USDC moves via EIP-3009 executed **by the facilitator**, from payer to
   `payTo`, never through the API.
 - The **web** browser signer is a dummy against a dev facilitator; real signing is the user's wallet.

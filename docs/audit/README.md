@@ -144,7 +144,9 @@ Cross-references:
 | `lib/SafeTransferLib.sol` | ~58 | Safe transfers + assembly non-reverting `tryTransfer` (H-2 fix) | Medium |
 
 Out of scope: `packages/indexer`, `apps/api` (x402 metering), `apps/web`. These never custody
-funds; the API server holds no keys; the contracts have zero x402 coupling (ARCHITECTURE §9).
+funds; the API server holds no keys under `FACILITATOR=stub` and `FACILITATOR=http`, and holds a
+Solana fee-payer keypair under the opt-in `FACILITATOR=svm` (added 2026-09-09); the contracts
+have zero x402 coupling (ARCHITECTURE §9).
 
 Also out of the production set: **`contracts/test/retired/`** — the C-6-retired bespoke oracle stack
 (`OracleAggregator.sol`, `PythSource.sol`, `UniswapV3TwapSource.sol`, `vendor/{TickMath,FullMath}.sol`).

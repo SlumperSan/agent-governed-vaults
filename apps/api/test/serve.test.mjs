@@ -38,7 +38,43 @@ test('resolveApiConfig: FACILITATOR=http demands a URL', () => {
   assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'http' }), /requires FACILITATOR_URL/);
   const ok = resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'http', FACILITATOR_URL: 'https://f.example' });
   assert.equal(ok.facilitatorKind, 'http');
-  assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'nope' }), /must be 'stub' or 'http'/);
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'nope' }), /must be 'stub', 'http' or 'svm'/);
+});
+
+test("resolveApiConfig: FACILITATOR=svm demands all three of its settings", () => {
+  // Each is required rather than defaulted. A Solana facilitator with a missing destination would
+  // verify every payment against `undefined` and refuse all of them, which looks like a client
+  // problem for as long as it takes somebody to read serve.mjs.
+  const svm = { FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111', SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' };
+  for (const missing of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT']) {
+    const env = { ...BASE_ENV, ...svm };
+    delete env[missing];
+    assert.throws(() => resolveApiConfig(env), new RegExp(`requires ${missing}`), `${missing} must be required`);
+  }
+  const cfg = resolveApiConfig({ ...BASE_ENV, ...svm });
+  assert.equal(cfg.facilitatorKind, 'svm');
+  assert.equal(cfg.svm.destinationTokenAccount, 'Dest111');
+  assert.equal(resolveApiConfig(BASE_ENV).svm, null, 'the svm block is absent unless asked for');
+});
+
+test('FACILITATOR=svm refuses to boot into a mode that cannot settle', () => {
+  // The facilitator verifies and settles correctly, but the 402 challenge and the envelope check are
+  // still EVM-shaped, so an operator selecting this mode would get a server that boots, advertises
+  // metered routes, and refuses every payment as `asset-mismatch` before the facilitator is reached.
+  // A review found that one level up from the missing-destination case this file already guards.
+  const svm = { FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111' };
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, ...svm }), /not reachable end to end yet/);
+  const ack = resolveApiConfig({ ...BASE_ENV, ...svm, SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' });
+  assert.equal(ack.facilitatorKind, 'svm', 'the acknowledgement is what testing uses, and it is explicit');
+});
+
+test('facilitatorFromConfig refuses an unreadable SVM keypair, and names the variable not the value', () => {
+  const env = { ...BASE_ENV, FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1,2,3]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111', SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' };
+  assert.throws(() => facilitatorFromConfig(resolveApiConfig(env)), (err) => {
+    assert.match(err.message, /SVM_KEYPAIR could not be read/);
+    assert.ok(!err.message.includes('1,2,3'), 'the key material must never reach an error message');
+    return true;
+  });
 });
 
 test('facilitatorFromConfig builds stub vs http', () => {

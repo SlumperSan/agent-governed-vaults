@@ -14,6 +14,12 @@
  * Settlement is USDC via EIP-3009 executed by the facilitator, never by this server — the
  * server holds no keys and never moves funds (matches the protocol's non-custodial posture).
  *
+ * THAT SENTENCE IS ABOUT THIS FILE AND STAYS TRUE OF IT: the gate holds nothing and calls an
+ * injected `verifyAndSettle`. It is no longer true of every FACILITATOR the process can be
+ * configured with. Since 2026-09-09 there is ONE exception and it is opt-in: `FACILITATOR=svm`. The x402 `exact` scheme on Solana has the facilitator sign as fee payer, so that mode holds a keypair by design — see
+ * `facilitator-svm.mjs`. The gate is unchanged either way; what changed is that one of the things
+ * it can be handed is custodial, and a blanket claim about "the server" now needs the qualifier.
+ *
  * The facilitator is injected (`verifyAndSettle`) so this module is unit-testable with no chain
  * and no network: production wiring passes an HTTP facilitator client; tests pass a stub.
  */

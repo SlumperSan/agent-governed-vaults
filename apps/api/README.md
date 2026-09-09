@@ -4,7 +4,10 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
 
 - `src/x402.mjs`: payment gate: 402 challenge (`PAYMENT-REQUIRED`), client authorization via
   `PAYMENT-SIGNATURE` (base64 EIP-3009 `transferWithAuthorization` envelope), settlement through
-  an injected facilitator, `PAYMENT-RESPONSE` receipt echo. Server holds no keys, moves no funds.
+  an injected facilitator, `PAYMENT-RESPONSE` receipt echo. Server holds no keys and moves no
+  funds under `FACILITATOR=stub` and `FACILITATOR=http`. **`FACILITATOR=svm` is the exception**:
+  x402 `exact` on Solana has the facilitator sign as fee payer, so that mode holds a keypair and
+  pays network fees. It is opt-in and off by default.
 - `src/server.mjs`: Node-http routes: `/health`, `/.well-known/x402` and `/metrics` (free);
   `/vaults`, `/vaults/:addr`, `/vaults/:addr/members/:m` and `/operators/leaderboard` (paid).
   Also the request caps (method, URL length, body size) applied before any handler work.

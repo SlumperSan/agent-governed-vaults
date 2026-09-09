@@ -1,5 +1,6 @@
 # Single image for all three runtime processes (indexer + API + canary). Pick which to run via
-# the compose service command or a `docker run` override. All three are non-custodial: no keys,
+# the compose service command or a `docker run` override. The indexer and the canary are
+# non-custodial without qualification -- no keys,
 # no fund movement. The canary is additionally read-only against the chain — it never sends.
 #
 #   docker build -t vault-runtime .

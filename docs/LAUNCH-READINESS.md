@@ -246,7 +246,7 @@ re-run against the corrected contracts (see §6). Note this also removes residua
 | Deployer EOA | operations | Deploys and wires the singletons; **no post-wiring authority**; no owner functions exist to hold | Its own gas; any vault memberships it retains | Retire it after launch: fund operations from fresh keys, keep no balance on it |
 | Operator identity (per-vault, registry attestation at `createVault`) | vault creator | Leaderboard identity; creator stake gate (5% while members remain); proposes/votes with its shares like any member | Same as any member of equal weight, **cannot** pause, upgrade, reprice, or move others' funds | **Unrotatable, by design.** Attestation is immutable per vault; a compromised operator identity means winding down that vault via exits and launching a new one |
 | Facilitator settler | operations | Broadcasts `transferWithAuthorization`; pays gas | Its own gas, plus broadcasting *held* authorizations; each names recipient and amount, and the fail-closed re-check refuses anything not matching a posted challenge. Member principal unreachable | Generate a new keystore, fund, restart; the facilitator is stateless |
-| API host | n/a | **Keyless by design** | Availability only | n/a |
+| API host | n/a | **Keyless by design** in the modes launch uses (`stub`, `http`); the opt-in `FACILITATOR=svm` holds a Solana fee-payer keypair | Availability only | n/a |
 | Indexer / canary | n/a | Keyless, read-only | Display-layer only; the canary reads the chain directly | n/a |
 
 ## 4. Residual-risk register: what can go wrong, worst case, why we ship anyway
