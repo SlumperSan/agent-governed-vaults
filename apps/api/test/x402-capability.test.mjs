@@ -2,24 +2,32 @@
 /**
  * x402 as a per-chain capability: the config side and the served side.
  *
- * Two things are pinned here, and they are deliberately not the same thing.
+ * Three things are pinned here, and they are deliberately not the same thing.
  *
  *  1. **The 4663 config disables it.** Read from `contracts/config/robinhood-mainnet.json` through
  *     the resolver, not from a chain id hard-coded in this file — the point of the change is that
  *     there is ONE source of truth and it is the config.
- *  2. **Base Sepolia's BEHAVIOUR is unchanged.** Not "the JSON still says true" — that would be a
- *     test of the fixture, not of the server. The assertion is that the API resolved for 84532
- *     still answers an unpaid metered read with 402 and a PAYMENT-REQUIRED challenge, still
- *     settles the paid retry, and still leaves the metered routes out of the rate limiter, exactly
- *     as `api.test.mjs` and `ratelimit.test.mjs` describe today.
+ *  2. **Base's BEHAVIOUR is unchanged, on both Base configs.** Not "the JSON still says true" —
+ *     that would be a test of the fixture, not of the server. The assertion is that the API
+ *     resolved for 84532 (Base Sepolia) and for 8453 (Base mainnet, re-enabled explicitly per the
+ *     owner's 2026-09-09 decision) still answers an unpaid metered read with 402 and a
+ *     PAYMENT-REQUIRED challenge, still settles the paid retry through the facilitator, and still
+ *     leaves the metered routes out of the rate limiter, exactly as `api.test.mjs` and
+ *     `ratelimit.test.mjs` describe today.
+ *  3. **Base declaring itself explicitly changes nothing about the default.** `base-mainnet.json`
+ *     used to declare no `x402` block at all and rely on absent-means-enabled; it now says
+ *     `enabled: true` out loud, matching `base-sepolia.json` and `robinhood-mainnet.json` field for
+ *     field. The resolver's default for a chain with no block, or no config, or an unreadable
+ *     config directory, is untouched — still enabled.
  *
- * The default matters as much as either: `createApi` with no `x402` at all must meter. Every
- * existing caller passes nothing, and a capability lookup that cannot answer must never be the
- * reason a payment gate comes off.
+ * The default matters as much as any of the above: `createApi` with no `x402` at all must meter.
+ * Every existing caller passes nothing, and a capability lookup that cannot answer must never be
+ * the reason a payment gate comes off.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApi, FREE_ROUTES, METERED_ROUTES } from '../src/server.mjs';
@@ -38,6 +46,7 @@ const PRICE = { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base' };
 
 const ROBINHOOD = 4663;
 const BASE_SEPOLIA = 84532;
+const BASE_MAINNET = 8453;
 
 const envelope = (nonce) =>
   Buffer.from(JSON.stringify({
@@ -73,14 +82,25 @@ test('chain 4663 disables x402, and the answer comes from its own config file', 
   assert.ok(raw.x402.note.length > 0, 'a switched-off capability has to say why');
 });
 
-test('Base Sepolia keeps the capability, and base-mainnet is untouched by declaring nothing', () => {
+test('Base Sepolia and Base mainnet both declare the capability explicitly, per the 2026-09-09 re-enable', () => {
   const sepolia = x402Capability(BASE_SEPOLIA);
   assert.equal(sepolia.enabled, true);
   assert.equal(sepolia.chainName, 'base-sepolia');
+  assert.match(sepolia.source, /base-sepolia\.json sets x402\.enabled = true/);
 
-  const mainnet = x402Capability(8453);
-  assert.equal(mainnet.enabled, true, 'a config with no x402 block means enabled');
-  assert.match(mainnet.source, /declares no x402 block/);
+  const mainnet = x402Capability(BASE_MAINNET);
+  assert.equal(mainnet.enabled, true);
+  assert.equal(mainnet.chainName, 'base-mainnet');
+  assert.match(mainnet.source, /base-mainnet\.json sets x402\.enabled = true/, 'explicit now, not the absent-block default');
+
+  // Both files, read directly: the capability is declared, not inferred, and each says why.
+  for (const [file, chainId] of [['base-sepolia.json', BASE_SEPOLIA], ['base-mainnet.json', BASE_MAINNET]]) {
+    const raw = JSON.parse(readFileSync(path.join(DEFAULT_CONFIG_DIR, file), 'utf8'));
+    assert.equal(raw.chainId, chainId);
+    assert.equal(raw.x402.enabled, true);
+    assert.equal(typeof raw.x402.note, 'string');
+    assert.ok(raw.x402.note.length > 0, 'an enabled capability on Base still says why, matching Robinhood field for field');
+  }
 });
 
 test('an unknown chain, no chain id, or an unreadable config dir all resolve to ENABLED', () => {
@@ -114,6 +134,69 @@ test('with the Base Sepolia capability the metered routes still gate on payment'
   assert.equal(paid.status, 200);
   assert.equal(JSON.parse(paid.body).vaults.length, 1);
   assert.ok(paid.headers[HEADERS.RESPONSE], 'a paid read still echoes PAYMENT-RESPONSE');
+});
+
+test('with the Base mainnet capability the metered routes gate on payment and settle through the facilitator', async () => {
+  let settled = 0;
+  const api = seededApi({
+    x402: x402Capability(BASE_MAINNET),
+    facilitator: { async verifyAndSettle() { settled += 1; return { ok: true, receiptId: 'rcpt-mainnet' }; } },
+  });
+
+  const unpaid = await api.handle('GET', '/vaults', {});
+  assert.equal(unpaid.status, 402);
+  const challenge = JSON.parse(unpaid.headers[HEADERS.REQUIRED]);
+  assert.equal(challenge.x402Version, 2);
+  assert.equal(challenge.asset, USDC);
+  assert.equal(challenge.amount, '10000');
+
+  const paid = await api.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope('0xmain1') });
+  assert.equal(paid.status, 200);
+  assert.equal(JSON.parse(paid.body).vaults.length, 1);
+  assert.ok(paid.headers[HEADERS.RESPONSE], 'a paid read still echoes PAYMENT-RESPONSE');
+  assert.equal(settled, 1, 'the paid retry actually exercised the facilitator, not just a 200');
+});
+
+test('a config that declares no x402 block still resolves to enabled, read from a real directory', () => {
+  // Every shipped config now declares a block, so this branch of the resolver
+  // (x402.mjs, the `!entry.x402` case) is reachable by no fixture in the repository.
+  // It is the branch the fail-closed argument rests on, so it gets a config directory
+  // of its own rather than an assertion about what would happen.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-absent-'));
+  try {
+    writeFileSync(
+      path.join(dir, 'no-block.json'),
+      JSON.stringify({ chainId: 999001, chainName: 'chain that declares no x402 block' }),
+    );
+    const cap = x402Capability(999001, { dir });
+    assert.equal(cap.enabled, true, 'an absent block must mean enabled, or a payment gate comes off by omission');
+    assert.match(cap.source, /declares no x402 block/);
+    assert.equal(cap.chainName, 'chain that declares no x402 block', 'the entry was read, not defaulted past');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a config that declares the block false is the only way metering comes off', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-false-'));
+  try {
+    writeFileSync(
+      path.join(dir, 'off.json'),
+      JSON.stringify({ chainId: 999002, chainName: 'off', x402: { enabled: false } }),
+    );
+    assert.equal(x402Capability(999002, { dir }).enabled, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Base mainnet also leaves the metered routes out of the rate limiter, same as Base Sepolia', async () => {
+  const api = seededApi({
+    x402: x402Capability(BASE_MAINNET),
+    rateLimit: createRateLimiter({ capacity: 1, refillPerSec: 1, now: () => 0 }),
+  });
+  for (let i = 0; i < 5; i += 1)
+    assert.equal((await api.handle('GET', '/vaults', {}, { ip: 'x' })).status, 402, 'x402 is their limiter');
 });
 
 test('with no capability supplied at all the API meters, exactly as every existing caller expects', async () => {
