@@ -1485,18 +1485,83 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
  * retired ban too; the ones cheap to state are folded in below, and this leg does not pretend to be
  * a complete lexicon of wanting something. It is a floor that no longer sits below where it stood.
  */
-test('no built page invites the reader to buy or to acquire anything', () => {
-  const INVITATIONS = [
-    /\bbuy (?:now|in\b|it|one|a |the |your |some\b|more|today|shares?|tokens?)/i,
-    /\bhow to (?:buy|purchase|acquire|get in)/i,
-    /\bwhere to (?:buy|purchase|acquire)/i,
-    /\bavailable (?:to (?:buy|purchase)|for (?:purchase|sale))/i,
-    /\b(?:purchase|acquire) (?:a |your |the )?(?:share|stake|position|allocation|token)/i,
-    /\byou can (?:buy|purchase|acquire)/i,
-    /\bget (?:yours|in early)/i,
-    /\bmint (?:now|yours)/i,
-    /\b(?:claim|grab) (?:yours|your (?:share|stake|allocation|position|token))/i,
+const INVITATIONS = [
+  /\bbuy (?:now|in\b|it|one|a |the |your |some\b|more|today|shares?|tokens?)/i,
+  /\bhow to (?:buy|purchase|acquire|get in)/i,
+  /\bwhere to (?:buy|purchase|acquire)/i,
+  /\bavailable (?:to (?:buy|purchase)|for (?:purchase|sale))/i,
+  /\b(?:purchase|acquire) (?:a |your |the )?(?:share|stake|position|allocation|token)/i,
+  /\byou can (?:buy|purchase|acquire)/i,
+  /\bget (?:yours|in early)/i,
+  /\bmint (?:now|yours)/i,
+  /\b(?:claim|grab) (?:yours|your (?:share|stake|allocation|position|token))/i,
+  /\b(?:buy|purchase) (?:here|below)\b/i,
+];
+
+/**
+ * Every purchase invitation in one built page, as `{form, pattern, match}`.
+ *
+ * EXTRACTED AS A PURE FUNCTION ON 2026-09-09 SO THE PROBE BELOW CAN PROVE IT BITES, and the reason
+ * is this leg's own history rather than a preference for tidy code. It has been found defective by
+ * independent review twice in one day — once for having been retired with no successor, once for
+ * sitting below the ban it replaced — and both times the defect was invisible to reading and
+ * immediate under injection. A leg asserted only against the real built pages is unfalsified in its
+ * second failure mode: pages that contain no invitation are green whether the matcher works or has
+ * quietly stopped matching anything at all. The floors close the first failure mode (reading
+ * nothing); the probe closes this one. `scripts/test/claims-token-absence.test.mjs` is built the
+ * same way and for the same reason.
+ *
+ * THREE FORMS OF THE DOCUMENT ARE SCANNED, each catching what the others cannot:
+ *
+ *   raw    — tags and attribute values intact. Attribute copy is published copy: a meta
+ *            description is what a search result and a social card render, and `alt` and
+ *            `aria-label` are what a screen reader speaks. Stripping deletes all of it.
+ *   text   — tags replaced by a space, so `Buy <em>now</em>` reads as the one phrase it is.
+ *   glued  — tags removed with no space, so an inline tag INSIDE a word cannot split it:
+ *            `Buy <b>s</b>ome.` is `Buy some.` to every reader and was two tokens to the matcher.
+ *
+ * ENTITIES ARE DECODED FIRST. `Buy&nbsp;now.` and `Buy&#32;now.` render as invitations and slipped
+ * every pattern, because the gaps are spelled as a literal space and an entity is not one.
+ *
+ * A NUMERIC REFERENCE THAT DECODES TO `<` OR `>` BECOMES A SPACE, not the character. Decoding it
+ * into a live angle bracket makes the three forms disagree about where tags are, and an unterminated
+ * `<` is the worse half of that: `<[^>]*>` needs a closing bracket, so `Buy&#60;now.` decoded
+ * literally is `Buy<now.` in all three forms and matches none of them, where the space keeps the
+ * word boundary and it matches at once. Measured, both directions.
+ *
+ * The bound, stated rather than left to be discovered: `Buy&#60;i&#62; now.` is still missed, and a
+ * fully entity-escaped page would be too. This decodes the shapes a formatter or a CMS actually
+ * emits — `&nbsp;`, a numeric space, an escaped letter — not everything an adversary could write.
+ * Nothing here is protecting against an adversary; it is protecting against our own toolchain.
+ */
+export const purchaseInvitations = (html) => {
+  const decoded = html
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#(\d+);/g, (_, d) => decodeRef(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => decodeRef(parseInt(h, 16)));
+  const flat = decoded.replace(/\s+/g, ' ');
+  const forms = [
+    ['raw', flat],
+    ['text', flat.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')],
+    ['glued', flat.replace(/<[^>]*>/g, '')],
   ];
+  const out = [];
+  for (const pattern of INVITATIONS)
+    for (const [form, body] of forms) {
+      const m = body.match(pattern);
+      if (m) out.push({ form, pattern, match: m[0] });
+    }
+  return out;
+};
+
+/** A decoded character reference, with the two that could forge a tag neutralised to a space. */
+const decodeRef = (code) => {
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return ' ';
+  const ch = String.fromCodePoint(code);
+  return ch === '<' || ch === '>' ? ' ' : ch;
+};
+
+test('no built page invites the reader to buy or to acquire anything', () => {
   assert.ok(BUILT, 'the build must exist: an absence rule over nothing passes by vacancy');
   // Not `raw.size`: the map is keyed off the PAGES list and holds '' for a page that did not build,
   // so its size is a constant and asserting on it asserts nothing. Bytes are what cannot be faked.
@@ -1506,30 +1571,81 @@ test('no built page invites the reader to buy or to acquire anything', () => {
     `expected at least two built pages with real content, found ${nonEmpty.length} of ${raw.size}`,
   );
   for (const [name, html] of raw) {
-    // Raw first, then stripped. Raw carries the attribute copy — meta descriptions, og:/twitter:
-    // cards, aria-labels, alt text — which stripping deletes; stripped joins text that inline tags
-    // split. A phrase in either is a phrase a reader can meet.
-    //
-    // BOTH FORMS ARE WHITESPACE-FLATTENED FIRST, and the raw one is why this line exists. The
-    // patterns above spell their gaps as a literal single space, so before flattening, an attribute
-    // holding `content="Buy  now."` or a value wrapped across two source lines slipped every one of
-    // them — the retired ban this leg replaced used `\s+` and caught those. A prettier, a formatter,
-    // or a long meta description that an editor soft-wraps all produce exactly that shape, so the
-    // gap was a matter of when rather than whether. The sibling guard added the same day,
-    // `scripts/test/claims-token-absence.test.mjs`, opens with the identical `replace(/\s+/g, ' ')`
-    // and carries a probe for a term split across a newline; this is that treatment, applied here.
-    const flat = html.replace(/\s+/g, ' ');
-    const text = flat.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-    for (const pattern of INVITATIONS)
-      for (const [form, body] of [['raw', flat], ['text', text]])
-        assert.ok(
-          !pattern.test(body),
-          `${name}: invites a purchase in the ${form} document (${pattern}). This project sells ` +
-            'nothing from its own pages. Restored 2026-09-09 after a review proved the retired ban ' +
-            'left this page uncovered, and widened the same day after a second review proved the ' +
-            'restoration sat below it.',
-        );
+    const hits = purchaseInvitations(html);
+    assert.deepEqual(
+      hits,
+      [],
+      `${name}: invites a purchase — ` +
+        hits.map((h) => `"${h.match}" in the ${h.form} document (${h.pattern})`).join('; ') +
+        '. This project sells nothing from its own pages. Restored 2026-09-09 after a review proved ' +
+        'the retired ban left this page uncovered, and widened twice the same day after two further ' +
+        'reviews proved the restoration sat below it.',
+    );
   }
+});
+
+/**
+ * PROBE: the ban bites on every shape it names, and spares the copy the site actually carries.
+ *
+ * The `spared` list is the half that keeps the leg honest under pressure. A ban that reds on the
+ * site's own prose gets loosened by whoever is trying to ship, and a loosened ban protects nothing —
+ * so the sentences below are real ones from the built pages, and they are asserted clean.
+ */
+test('probe: the purchase ban catches every invitation shape and spares the site copy', () => {
+  const BANNED = [
+    // The four an independent review shipped green after the ban was first retired.
+    'Buy now.',
+    'You can buy a share.',
+    'Here is how to buy in.',
+    'It is available to purchase.',
+    // The three a second review proved the restoration had lost.
+    '<meta name="description" content="Buy now.">',
+    'It is available to buy.',
+    'Buy the token.',
+    // The whitespace shapes a third review proved the flattening had to cover.
+    '<meta name="description" content="Buy  now.">',
+    '<meta name="description" content="Buy\n  now.">',
+    '<a aria-label="How  to buy">Open</a>',
+    'Buy some.',
+    // Entity and inline-tag escapes, closed here.
+    '<p>Buy&nbsp;now.</p>',
+    '<p>Buy&#32;now.</p>',
+    '<p>&#66;uy now.</p>',
+    '<p>Buy&#60;now.</p>',
+    '<p>Buy&#x3C;now.</p>',
+    '<p>Buy <b>s</b>ome.</p>',
+    // Attribute positions a marketing page really carries.
+    '<meta property="og:description" content="You can buy a stake">',
+    '<img alt="Buy your share" src="x.png">',
+    '<button title="Mint yours">Go</button>',
+    // Ordinary invitations, tags or no tags.
+    'Where to buy',
+    'Available for sale',
+    'Purchase a share',
+    'Get in early',
+    'Claim your allocation.',
+    'Purchase here.',
+    'Buy <em>now</em>.',
+  ];
+  for (const bad of BANNED)
+    assert.notEqual(purchaseInvitations(bad).length, 0, `the ban no longer catches: ${bad}`);
+
+  const SPARED = [
+    // Real sentences from the built pages. If one of these ever reds, fix the pattern, not the page.
+    'An index of the stock tokens on Robinhood Chain, decided every hour by a hive of agents and by the members who pool capital alongside them.',
+    'There is nothing here to buy and nothing to claim.',
+    'The contracts carry no proxy, no upgrade path, no pause function and no admin key.',
+    'Members pool capital and vote; the operator earns a 10% performance fee and nothing else.',
+    'The treasury buyback flag is false and no contract routes fees to it.',
+    // Shapes that must NOT trip: a word merely containing the ban's letters, and adjacent
+    // attributes whose values only look joined once whitespace is flattened.
+    'Buy something else entirely is not a sentence this page contains, but "buying" must not red.',
+    '<img alt="Buy" data-x="now" src="x.png">',
+    '<img alt="Available to" data-x="buy" src="x.png">',
+    '<span class="buy" id="now">Deposit</span>',
+  ];
+  for (const ok of SPARED)
+    assert.deepEqual(purchaseInvitations(ok), [], `the ban reds approved copy: ${ok}`);
 });
 
 /*
