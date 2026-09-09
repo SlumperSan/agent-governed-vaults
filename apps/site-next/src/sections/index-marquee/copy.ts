@@ -8,9 +8,14 @@
  *     member vote."
  *
  *   NO UPGRADE PATH
- *     A clause of the corpus sentence "The contracts carry no proxy, no upgrade
- *     path, no pause function and no admin key.", matched the same way NO ADMIN
- *     KEY is matched -- as a substring of it.
+ *     `apps/site/faq.html`: "...no proxy and no upgrade path."
+ *
+ *     THE FIRST DRAFT CITED THE WRONG SENTENCE. It said this phrase was a
+ *     substring of "The contracts carry no proxy, no upgrade path, no pause
+ *     function and no admin key." the way NO ADMIN KEY is. It is not -- that
+ *     sentence has a COMMA after "path", not a period, so "No upgrade path."
+ *     does not occur in it. NO ADMIN KEY genuinely does occur in it, which is
+ *     exactly what made the wrong claim read as obviously true.
  *
  *     IT REPLACED "SEVEN IMMUTABLE CONTRACTS." ON 2026-09-09, on the owner's
  *     instruction to stop marketing a contract count. The count was also the one

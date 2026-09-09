@@ -1683,8 +1683,8 @@ test('probe: the purchase ban catches every invitation shape and spares the site
   const SPARED = [
     ...SPARED_FROM_PAGES,
     // RESTORED 2026-09-09. This string was dropped when the five real page sentences replaced the
-    // invented ones, and a review then proved it had been the SOLE pinner of the `some` word
-    // boundary in the first pattern: widening `some` to `some` newly reds exactly this entry and
+    // invented ones, and a review then proved it had been the SOLE pinner of the `some\b` word
+    // boundary in the first pattern: widening `some\b` to `some` newly reds exactly this entry and
     // nothing else. Dropping it left the boundary deletable by anyone who ran the suite and saw
     // green -- which is the specific failure the probe exists to prevent, reintroduced by the commit
     // that was fixing it.
@@ -2347,11 +2347,17 @@ const OWNER_AND_LIVE_STRINGS = [
   // and no admin key.", and "Every position put to a vote." is promo script line 7.
   'The hive decides.',
   // 'Seven immutable contracts.' WAS HERE AND CAME OUT ON 2026-09-09, on the owner's instruction to
-  // stop marketing a contract count. It was the only marquee phrase that needed this list at all;
-  // its replacement, 'No upgrade path.', resolves against the corpus sentence "The contracts carry
-  // no proxy, no upgrade path, no pause function and no admin key." exactly as 'No admin key.' does.
-  // Removing a permitted source string is a tightening -- there is now one fewer sentence that may
-  // appear on the page without the corpus behind it.
+  // stop marketing a contract count. It was the only marquee phrase that needed this list at all,
+  // so removing it is a tightening: one fewer sentence may appear on the page with no corpus behind
+  // it.
+  //
+  // ITS REPLACEMENT, 'No upgrade path.', RESOLVES AGAINST `apps/site/faq.html`, and the first draft
+  // of this comment named the wrong sentence. It claimed the phrase was a substring of "The
+  // contracts carry no proxy, no upgrade path, no pause function and no admin key." the way
+  // 'No admin key.' is. It is not: that sentence has a COMMA after "path", not a period, so
+  // 'No upgrade path.' does not occur in it at all. 'No admin key.' genuinely does, which is what
+  // made the wrong claim read as obviously true. Found by grep, not by eye, and the same grep is
+  // the only way to check the next one.
 
   // --- the live panel's labels, from `src/sections/index-live/copy.ts` ---
   //
