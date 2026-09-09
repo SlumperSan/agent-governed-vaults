@@ -35,7 +35,7 @@ import { resolveApiConfig } from '../src/serve.mjs';
 import { HEADERS } from '../src/x402.mjs';
 import { createStubFacilitator } from '../src/facilitator.mjs';
 import { createRateLimiter } from '../src/ratelimit.mjs';
-import { x402Capability, DEFAULT_CONFIG_DIR } from '../../../packages/chain-config/src/x402.mjs';
+import { x402Capability, DEFAULT_CONFIG_DIR, DEFAULT_NETWORK_DIR, loadNetworkCapabilities } from '../../../packages/chain-config/src/x402.mjs';
 import { applyAll } from '../../../packages/indexer/src/projections.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -280,4 +280,118 @@ test('on 4663 an unknown route still 404s, and a non-GET is still refused', asyn
   const api = seededApi({ x402: x402Capability(ROBINHOOD) });
   assert.equal((await api.handle('GET', '/nope', {})).status, 404);
   assert.equal((await api.handle('POST', '/vaults', {})).status, 405);
+});
+
+/*
+ * ── NETWORKS WITH NO EVM CHAIN ID ───────────────────────────────────────────────────────────────
+ *
+ * ADDED 2026-09-09, when the owner asked for x402 on Solana. The resolver took a chain id and did
+ * `Number(key)`, rejecting anything non-finite, which was right while every target was EVM.
+ *
+ * THE BUG THAT PRODUCED IS THE FIRST THING PINNED BELOW, because it is the kind that reads as
+ * working: `x402Capability('solana-mainnet')` gave `NaN`, fell into the "no chain id configured"
+ * branch, and returned `enabled: true` having consulted no config at all. Fail-CLOSED, so no
+ * payment gate came off by accident — but Solana metering was UNCONFIGURABLE, and no file anywhere
+ * could have turned it off. That is not a capability, it is a constant wearing one's clothes.
+ */
+
+test('a Solana network resolves by NAME, out of its own directory', () => {
+  const cap = x402Capability('solana-mainnet');
+  assert.equal(cap.enabled, true);
+  assert.equal(cap.network, 'solana-mainnet', 'the network name is echoed, so a boot log says which network answered');
+  assert.equal(cap.chainId, null, 'Solana has no EVM chain id and must not be given a fake one');
+  assert.equal(cap.scheme, 'exact-svm', 'the scheme is carried so a caller picks a facilitator without a second lookup');
+  assert.match(cap.source, /solana-mainnet\.json sets x402\.enabled = true/);
+});
+
+test('the network name is matched case-insensitively', () => {
+  // `NETWORK=Solana-Mainnet` in a .env is the same network. A lookup that disagreed would take a
+  // payment gate off by capitalisation, which is the least debuggable way to lose one.
+  for (const spelling of ['solana-mainnet', 'Solana-Mainnet', 'SOLANA-MAINNET', '  solana-mainnet  ']) {
+    const cap = x402Capability(spelling);
+    assert.equal(cap.network, 'solana-mainnet', `${JSON.stringify(spelling)} must resolve to the same network`);
+    assert.equal(cap.enabled, true);
+  }
+});
+
+test('a network name that no file declares still means ENABLED, and says so', () => {
+  const cap = x402Capability('a-network-nobody-configured');
+  assert.equal(cap.enabled, true, 'an unknown network must not switch a payment gate off');
+  assert.equal(cap.network, 'a-network-nobody-configured');
+  assert.match(cap.source, /no network config for a-network-nobody-configured/);
+});
+
+test('a network config CAN turn metering off — which is the whole point of the change', () => {
+  // Before this existed there was no file that could produce this result for a non-EVM network.
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-net-off-'));
+  try {
+    writeFileSync(path.join(dir, 'off.json'), JSON.stringify({
+      network: 'somewhere-metering-is-off', chainName: 'test', scheme: 'exact-svm', x402: { enabled: false, note: 'because a test says so' },
+    }));
+    const cap = x402Capability('somewhere-metering-is-off', { networkDir: dir });
+    assert.equal(cap.enabled, false);
+    assert.equal(cap.note, 'because a test says so');
+    assert.match(cap.source, /off\.json sets x402\.enabled = false/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a network file with no x402 block resolves to enabled, read from a real directory', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-net-absent-'));
+  try {
+    writeFileSync(path.join(dir, 'bare.json'), JSON.stringify({ network: 'bare-network', chainName: 'bare' }));
+    const cap = x402Capability('bare-network', { networkDir: dir });
+    assert.equal(cap.enabled, true, 'an absent block must mean enabled here for the same reason it does on the chain-id path');
+    assert.equal(cap.chainName, 'bare', 'the entry was read, not defaulted past');
+    assert.match(cap.source, /declares no x402 block/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a missing network directory degrades to enabled rather than throwing on a boot path', () => {
+  const cap = x402Capability('solana-mainnet', { networkDir: path.join(tmpdir(), 'no-such-dir-' + process.pid) });
+  assert.equal(cap.enabled, true);
+  assert.match(cap.source, /no network config for solana-mainnet/);
+});
+
+test('a malformed network file is skipped, and does not take the lookup down with it', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-net-bad-'));
+  try {
+    writeFileSync(path.join(dir, 'broken.json'), '{ this is not json');
+    writeFileSync(path.join(dir, 'fine.json'), JSON.stringify({ network: 'fine', x402: { enabled: false } }));
+    const loaded = loadNetworkCapabilities({ dir });
+    assert.equal(loaded.size, 1, 'the broken file is skipped, the good one still loads');
+    assert.equal(x402Capability('fine', { networkDir: dir }).enabled, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a file with no `network` key is not indexed, so a stray json cannot claim a name', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'x402-net-noname-'));
+  try {
+    writeFileSync(path.join(dir, 'stray.json'), JSON.stringify({ chainId: 8453, chainName: 'base', x402: { enabled: false } }));
+    assert.equal(loadNetworkCapabilities({ dir }).size, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the EVM path is untouched: numeric keys still resolve out of contracts/config', () => {
+  // The regression that matters. Every chain-id caller predates this change and none of them may
+  // move, including the `source` strings other tests in this file match on.
+  const rh = x402Capability(ROBINHOOD);
+  assert.equal(rh.enabled, false, '4663 stays off');
+  assert.equal(rh.chainId, 4663);
+  assert.equal(rh.network, null, 'an EVM chain answers with a chain id, not a network name');
+  assert.equal(x402Capability(BASE_SEPOLIA).enabled, true);
+  assert.equal(x402Capability('4663').enabled, false, 'a numeric STRING is still a chain id, not a network name');
+  assert.equal(x402Capability(null).enabled, true);
+  assert.equal(x402Capability('').enabled, true);
+});
+
+test('every shipped network file declares the block out loud, and names a scheme', () => {
+  // The same non-vacuity discipline the chain configs are held to: a directory that has gone empty
+  // would make every assertion above pass by walking nothing.
+  const shipped = loadNetworkCapabilities({ dir: DEFAULT_NETWORK_DIR });
+  assert.ok(shipped.size >= 2, `expected at least two shipped network configs, found ${shipped.size}`);
+  for (const [name, entry] of shipped) {
+    assert.ok(entry.x402, `${entry.file}: declares no x402 block — say it out loud rather than relying on the default`);
+    assert.ok(entry.scheme, `${entry.file}: declares no scheme, so a caller cannot pick a facilitator`);
+    assert.equal(name, name.toLowerCase(), 'the index key is lower-cased');
+  }
 });
