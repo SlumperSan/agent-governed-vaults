@@ -136,15 +136,23 @@ export const tokenHits = (text) => {
   return out;
 };
 
-/** Every file under `dir` whose extension is in `exts`, recursively, enumerated from disk. */
-const filesUnder = (dir, exts) => {
+/**
+ * Every file under `dir` whose extension is in `exts`, recursively, enumerated from disk.
+ *
+ * `names` covers the extensionless files a static host still serves — `_headers` and `_redirects`
+ * are read by Cloudflare Pages and shipped verbatim, so a token string in either is published even
+ * though no page renders it. An extension set alone cannot reach them: `path.extname('_headers')`
+ * is the empty string, and putting `''` in the set would sweep in every extensionless file in the
+ * tree instead of the two that are actually served.
+ */
+const filesUnder = (dir, exts, names = new Set()) => {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
   const out = [];
   (function walk(d) {
     for (const entry of readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (exts.has(path.extname(entry.name))) out.push(full);
+      else if (exts.has(path.extname(entry.name)) || names.has(entry.name)) out.push(full);
     }
   })(dir);
   return out.sort();
@@ -195,7 +203,17 @@ const groups = () => {
       // `.xml` IS IN THIS SET BECAUSE THE SITEMAP CARRIED A TOKEN REFERENCE and was cleaned in the
       // same change. A guard that protects the pages but not the sitemap leaves the one file whose
       // regression nobody would notice by reading the site.
-      files: filesUnder(SITE_NEXT_DIST, new Set(['.html', '.txt', '.xml'])),
+      //
+      // `.js` AND THE TWO EXTENSIONLESS EDGE FILES were added on 2026-09-09, after a review pointed
+      // out that the bundle is where the token address actually lived: it was a constant in
+      // `apps/site-next/src/live/chain.ts`, which Vite compiles into `dist/assets/*.js`. Deleting
+      // the constant is what fixed it; walking the bundle is what stops it coming back through a
+      // component nobody re-reads. `_headers` and `_redirects` ship verbatim to Cloudflare Pages.
+      files: filesUnder(
+        SITE_NEXT_DIST,
+        new Set(['.html', '.txt', '.xml', '.js']),
+        new Set(['_headers', '_redirects']),
+      ),
       floor: 3,
       fix: 'run `npm run build --workspace apps/site-next` first; CI and `npm run gate` both build it before this suite',
     },
@@ -217,6 +235,10 @@ const groups = () => {
     {
       name: 'apps/app (app.rwally.com, src plus dist when a build has left one)',
       files: [...filesUnder(APP_SRC, new Set(['.html'])), ...filesUnder(APP_DIST, new Set(['.html']))],
+      // ONE, AND SATISFIED BY `src` ALONE ON PURPOSE. `dist` here is optional — this group reads it
+      // when a build has left one and does not run the build (see the note above), so a floor of 2
+      // would red a clean checkout for having no stale output. The floor's job is to catch `src`
+      // going empty, and `apps/app/src/index.html` is the single page the app ships.
       floor: 1,
       fix: 'apps/app/src carries no HTML page at all',
     },

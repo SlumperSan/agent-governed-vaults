@@ -1465,28 +1465,60 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
  * exists again: this project does not sell anything from its own pages, on any chain, in any
  * iteration. The urgency leg next to it bans the timing shapes (`coming soon` and its family) and
  * is deliberately separate: a page can invite a purchase without promising a date, and did.
+ *
+ * WIDENED THE SAME DAY, after a second review demonstrated three regressions against the ban it
+ * replaced, each by injection rather than by reading:
+ *
+ *   1. IT READ THE STRIPPED TEXT ONLY. The retired ban matched the whole built document; the
+ *      restoration stripped tags first, which deletes every attribute value — so
+ *      `<meta name="description" content="Buy now.">` and `<a aria-label="You can buy a share">`
+ *      passed. A meta description is the single most published sentence on a page: it is what a
+ *      search result and a social card render. Both forms are scanned now, and the raw form is
+ *      scanned FIRST so an attribute hit is reported as one. Stripping still earns its keep for the
+ *      other direction — `Buy <em>now</em>` is one phrase to a reader and two to a matcher.
+ *   2. `available to buy` had no successor: only `available for purchase` survived.
+ *   3. `buy the token` had no successor, and the alternation had no `the ` — which made the
+ *      commit message's own claim that the leg survives a relaunch false at the moment it was
+ *      written. `Buy the token.` shipped green.
+ *
+ * Shapes still outside the list (`Buy shares.`, `Purchase here.`, `Grab yours.`) were outside the
+ * retired ban too; the ones cheap to state are folded in below, and this leg does not pretend to be
+ * a complete lexicon of wanting something. It is a floor that no longer sits below where it stood.
  */
 test('no built page invites the reader to buy or to acquire anything', () => {
   const INVITATIONS = [
-    /\bbuy (?:now|in|it|one|a |your |some |more)/i,
+    /\bbuy (?:now|in\b|it|one|a |the |your |some |more|today|shares?|tokens?)/i,
     /\bhow to (?:buy|purchase|acquire|get in)/i,
     /\bwhere to (?:buy|purchase|acquire)/i,
-    /\bavailable (?:to|for) purchase/i,
+    /\bavailable (?:to (?:buy|purchase)|for (?:purchase|sale))/i,
     /\b(?:purchase|acquire) (?:a |your |the )?(?:share|stake|position|allocation|token)/i,
     /\byou can (?:buy|purchase|acquire)/i,
     /\bget (?:yours|in early)/i,
     /\bmint (?:now|yours)/i,
+    /\b(?:claim|grab) (?:yours|your (?:share|stake|allocation|position|token))/i,
   ];
   assert.ok(BUILT, 'the build must exist: an absence rule over nothing passes by vacancy');
-  assert.ok(raw.size >= 2, `expected at least two built pages, found ${raw.size}`);
+  // Not `raw.size`: the map is keyed off the PAGES list and holds '' for a page that did not build,
+  // so its size is a constant and asserting on it asserts nothing. Bytes are what cannot be faked.
+  const nonEmpty = [...raw.values()].filter((h) => h.length > 1000);
+  assert.ok(
+    nonEmpty.length >= 2,
+    `expected at least two built pages with real content, found ${nonEmpty.length} of ${raw.size}`,
+  );
   for (const [name, html] of raw) {
+    // Raw first, then stripped. Raw carries the attribute copy — meta descriptions, og:/twitter:
+    // cards, aria-labels, alt text — which stripping deletes; stripped joins text that inline tags
+    // split. A phrase in either is a phrase a reader can meet.
     const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
     for (const pattern of INVITATIONS)
-      assert.ok(
-        !pattern.test(text),
-        `${name}: invites a purchase (${pattern}). This project sells nothing from its own pages. ` +
-          'The sentence was restored on 2026-09-09 after a review proved the retired ban left this page uncovered.',
-      );
+      for (const [form, body] of [['raw', html], ['text', text]])
+        assert.ok(
+          !pattern.test(body),
+          `${name}: invites a purchase in the ${form} document (${pattern}). This project sells ` +
+            'nothing from its own pages. Restored 2026-09-09 after a review proved the retired ban ' +
+            'left this page uncovered, and widened the same day after a second review proved the ' +
+            'restoration sat below it.',
+        );
   }
 });
 
