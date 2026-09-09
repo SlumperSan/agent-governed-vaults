@@ -234,6 +234,9 @@ export function createSvmFacilitator({ connection, keypair, destinationTokenAcco
   const feePayer = keypair.publicKey.toBase58();
   return {
     scheme: 'exact-svm',
+    // PUBLISHED, because the 402 challenge has to name it and nothing else knows it. It is a public
+    // key: publishing it is what lets a client build a transaction this facilitator will accept.
+    feePayer,
     async verifyAndSettle(challenge, envelope) {
       const verdict = verifySvmPayment(challenge, envelope, { destinationTokenAccount, feePayer });
       if (!verdict.ok) return { ok: false, reason: verdict.reason };

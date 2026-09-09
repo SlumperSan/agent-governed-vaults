@@ -64,11 +64,19 @@ import { x402Capability } from '../../../packages/chain-config/src/x402.mjs';
  * @param {Record<string,string|undefined>} env
  */
 export function resolveApiConfig(env) {
+  // THE ADDRESS SHAPE FOLLOWS THE FACILITATOR, because on Solana `PRICE_ASSET` is a mint and
+  // `PRICE_PAYTO` is a token account, and neither is twenty hex bytes. Checking the EVM shape
+  // unconditionally is what made `FACILITATOR=svm` boot into a server that refused every payment as
+  // `wrong-mint`: the price could not name a Solana mint, so it never matched one.
   const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a ?? '');
+  const isBase58 = (a) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a ?? '');
   const missing = ['PRICE_ASSET', 'PRICE_PAYTO'].filter((k) => !env[k]);
   if (missing.length) throw new Error(`api: missing required env: ${missing.join(', ')}`);
-  if (!isAddr(env.PRICE_ASSET)) throw new Error(`api: PRICE_ASSET is not an address: ${env.PRICE_ASSET}`);
-  if (!isAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not an address: ${env.PRICE_PAYTO}`);
+  const svmMode = (env.FACILITATOR || 'stub').toLowerCase() === 'svm';
+  const okAddr = svmMode ? isBase58 : isAddr;
+  const shape = svmMode ? 'a base58 Solana address' : 'an 0x address';
+  if (!okAddr(env.PRICE_ASSET)) throw new Error(`api: PRICE_ASSET is not ${shape}: ${env.PRICE_ASSET}`);
+  if (!okAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not ${shape}: ${env.PRICE_PAYTO}`);
 
   const facilitator = (env.FACILITATOR || 'stub').toLowerCase();
   if (facilitator !== 'stub' && facilitator !== 'http' && facilitator !== 'svm')
@@ -82,28 +90,17 @@ export function resolveApiConfig(env) {
     for (const k of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT'])
       if (!env[k]) throw new Error(`api: FACILITATOR=svm requires ${k}`);
 
-  // AND THE MODE REFUSES TO START, BECAUSE THE PATH THROUGH IT IS NOT FINISHED.
+  // THE BOOT REFUSAL THAT STOOD HERE IS GONE, BECAUSE THE PATH IT DESCRIBED IS FINISHED. It said
+  // the mode would boot and refuse every payment, and it was right: PRICE_ASSET could not name a
+  // Solana mint, and `checkEnvelopeAgainstPrice` read an EIP-3009 authorization that an SVM envelope
+  // does not have. Both are fixed -- above, and in x402.mjs -- and the path is proven end to end on
+  // devnet with a real signature.
   //
-  // A review of the facilitator asked the question one level up from the paragraph above and got a
-  // worse answer: with `FACILITATOR=svm` the server BOOTS, advertises metered routes, and rejects
-  // every payment — `PRICE_ASSET` is an EVM address by the check twelve lines up, so the mint never
-  // matches; and `checkEnvelopeAgainstPrice` in x402.mjs reads `envelope.authorization`, which an
-  // SVM envelope does not have, so it fails at `asset-mismatch` before the facilitator is called at
-  // all. An operator selecting this mode would see a working server refusing every client.
-  //
-  // That is exactly the failure the comment above describes, so it gets the same answer: fail at
-  // boot, loudly, naming what is missing. The facilitator itself is complete and tested — what is
-  // missing is the challenge and envelope shape for a non-EVM network, which is the next change.
-  // Lifting this refusal is one line, and it belongs in the commit that makes the path work.
-  if (facilitator === 'svm' && env.SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED !== 'yes')
-    throw new Error(
-      'api: FACILITATOR=svm is not reachable end to end yet. The facilitator verifies and settles '
-      + 'correctly, but the 402 challenge and the envelope check are still EVM-shaped: PRICE_ASSET '
-      + 'must be an 0x address, and checkEnvelopeAgainstPrice reads envelope.authorization, which an '
-      + 'SVM envelope has no equivalent of. Every payment would be refused as asset-mismatch before '
-      + 'this facilitator saw it. Set SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes to boot anyway '
-      + 'for testing.',
-    );
+  // SVM_DECIMALS joins the required three for the same reason they are required: `TransferChecked`
+  // takes the mint's decimals as an argument and the token program rejects a wrong value, so a
+  // challenge that omits them sends every client off to build a transaction that cannot succeed.
+  if (facilitator === 'svm' && !env.SVM_DECIMALS)
+    throw new Error('api: FACILITATOR=svm requires SVM_DECIMALS, the mint decimals that TransferChecked takes');
 
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
   const flag = (k) => env[k] === '1' || env[k] === 'true';
@@ -146,6 +143,11 @@ export function resolveApiConfig(env) {
       amount: env.PRICE_AMOUNT || '10000',
       payTo: env.PRICE_PAYTO,
       network: env.PRICE_NETWORK || 'base',
+      // Present only in SVM mode, and `buildChallenge` keys off its PRESENCE rather than off a
+      // scheme string, so an EVM challenge is byte-identical to what it has always been. `feePayer`
+      // is null here because this function is pure by contract and the keypair lives in the
+      // facilitator; `buildApiServer` fills it in once the facilitator exists.
+      ...(svmMode ? { svm: { feePayer: null, decimals: Number(env.SVM_DECIMALS) } } : {}),
     },
     facilitatorKind: facilitator,
     facilitatorUrl: env.FACILITATOR_URL,
@@ -213,6 +215,11 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   const cap = x402 ?? x402Capability(cfg.network ?? cfg.chainId);
   const state = await loadSnapshot(cfg.statePath);
   const fac = facilitator ?? facilitatorFromConfig(cfg);
+  // THE CHALLENGE CANNOT NAME THE FEE PAYER UNTIL THE FACILITATOR EXISTS, and the client cannot
+  // build a transaction without it -- the facilitator refuses one that names anybody else. This is
+  // the join between a pure config and a keypair-holding facilitator, and it is one line because
+  // the facilitator publishes its own public key rather than the config guessing at it.
+  if (cfg.price?.svm && fac.feePayer) cfg.price.svm.feePayer = fac.feePayer;
   const metrics = createMetrics();
   const rateLimit = cfg.rateLimit?.enabled
     ? createRateLimiter({ capacity: cfg.rateLimit.capacity, refillPerSec: cfg.rateLimit.refillPerSec, maxKeys: cfg.rateLimit.maxKeys, now })

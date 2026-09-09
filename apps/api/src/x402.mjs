@@ -59,8 +59,8 @@ const HEADER_RESPONSE = 'payment-response';
  */
 export function buildChallenge(price, opts) {
   const nonce = opts.nonce ?? `0x${randomBytes(32).toString('hex')}`;
-  return {
-    scheme: 'exact', // EIP-3009 exact-amount authorization
+  const base = {
+    scheme: price.svm ? 'exact-svm' : 'exact', // EIP-3009 authorization, or an SPL TransferChecked
     x402Version: 2,
     asset: price.asset,
     amount: price.amount,
@@ -69,6 +69,20 @@ export function buildChallenge(price, opts) {
     nonce,
     expiresAt: opts.nowMs + (opts.ttlMs ?? 5 * 60_000),
   };
+  // AN SVM CLIENT BUILDS THE TRANSACTION, SO IT NEEDS TWO THINGS AN EVM CLIENT NEVER ASKS FOR.
+  //
+  //   feePayer — the facilitator co-signs as fee payer and REFUSES a transaction that names anybody
+  //              else (`wrong-fee-payer`). The client cannot guess it; nothing else in the protocol
+  //              publishes it. Omit it and every payment is rejected for a reason the client has no
+  //              way to fix.
+  //   decimals — `TransferChecked` takes the mint's decimals as an argument and the token program
+  //              rejects a wrong one. The client would otherwise have to fetch the mint, which is a
+  //              round trip to learn something the server already knows.
+  //
+  // The nonce stays in both shapes even though the SVM path does not use it: it costs nothing, and a
+  // challenge that changes shape more than it must is a challenge clients special-case more than
+  // they must. The replay bound on Solana is the blockhash, not the nonce — see svm-exact.mjs.
+  return price.svm ? { ...base, feePayer: price.svm.feePayer, decimals: price.svm.decimals } : base;
 }
 
 /**
@@ -100,6 +114,19 @@ export function decodeSignatureHeader(header) {
  * @returns {{ok:true}|{ok:false, reason:string}}
  */
 export function checkEnvelopeAgainstPrice(price, env, nowMs) {
+  // AN SVM ENVELOPE CARRIES A TRANSACTION, NOT AN AUTHORIZATION, so every field below is absent and
+  // the first comparison rejects it as `asset-mismatch` — a reason that would send a client looking
+  // at its mint. There is nothing useful to check here for that scheme: the facilitator decodes the
+  // transaction and checks the mint, the destination, the amount, the fee payer and every other
+  // instruction in it, which is strictly more than this function could. So this defers rather than
+  // guessing, and the network check below still applies because it is scheme-independent.
+  if (env.scheme === 'exact-svm') {
+    if ((env.network ?? '').toLowerCase() !== price.network.toLowerCase())
+      return { ok: false, reason: 'network-mismatch' };
+    if (typeof env.transaction !== 'string' || env.transaction === '')
+      return { ok: false, reason: 'no-transaction' };
+    return { ok: true };
+  }
   const auth = env.authorization ?? {};
   if ((auth.asset ?? '').toLowerCase() !== price.asset.toLowerCase())
     return { ok: false, reason: 'asset-mismatch' };

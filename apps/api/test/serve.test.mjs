@@ -20,6 +20,10 @@ import { readHeartbeatFile } from '../../../packages/oplog/src/heartbeat.mjs';
 const USDC = '0x' + 'c'.repeat(40);
 const PAYTO = '0x' + '9'.repeat(40);
 const BASE_ENV = { PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO };
+// A real devnet mint address, used only for its SHAPE — 32 bytes of base58, which is what the
+// SVM checks accept and the EVM checks reject.
+const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SVM_PRICE = { PRICE_ASSET: MINT, PRICE_PAYTO: MINT };
 
 test('resolveApiConfig defaults + price assembly', () => {
   const cfg = resolveApiConfig(BASE_ENV);
@@ -31,7 +35,7 @@ test('resolveApiConfig defaults + price assembly', () => {
 
 test('resolveApiConfig requires PRICE_ASSET + PRICE_PAYTO and validates them', () => {
   assert.throws(() => resolveApiConfig({}), /PRICE_ASSET.*PRICE_PAYTO/);
-  assert.throws(() => resolveApiConfig({ ...BASE_ENV, PRICE_ASSET: '0xzz' }), /PRICE_ASSET is not an address/);
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, PRICE_ASSET: '0xzz' }), /PRICE_ASSET is not an 0x address/);
 });
 
 test('resolveApiConfig: FACILITATOR=http demands a URL', () => {
@@ -45,31 +49,38 @@ test("resolveApiConfig: FACILITATOR=svm demands all three of its settings", () =
   // Each is required rather than defaulted. A Solana facilitator with a missing destination would
   // verify every payment against `undefined` and refuse all of them, which looks like a client
   // problem for as long as it takes somebody to read serve.mjs.
-  const svm = { FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111', SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' };
-  for (const missing of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT']) {
+  const svm = { ...SVM_PRICE, FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: MINT, SVM_DECIMALS: '6' };
+  for (const missing of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT', 'SVM_DECIMALS']) {
     const env = { ...BASE_ENV, ...svm };
     delete env[missing];
     assert.throws(() => resolveApiConfig(env), new RegExp(`requires ${missing}`), `${missing} must be required`);
   }
   const cfg = resolveApiConfig({ ...BASE_ENV, ...svm });
   assert.equal(cfg.facilitatorKind, 'svm');
-  assert.equal(cfg.svm.destinationTokenAccount, 'Dest111');
+  assert.equal(cfg.svm.destinationTokenAccount, MINT);
+  assert.equal(cfg.price.svm.decimals, 6, 'the decimals reach the price, and from there the challenge');
   assert.equal(resolveApiConfig(BASE_ENV).svm, null, 'the svm block is absent unless asked for');
 });
 
-test('FACILITATOR=svm refuses to boot into a mode that cannot settle', () => {
-  // The facilitator verifies and settles correctly, but the 402 challenge and the envelope check are
-  // still EVM-shaped, so an operator selecting this mode would get a server that boots, advertises
-  // metered routes, and refuses every payment as `asset-mismatch` before the facilitator is reached.
-  // A review found that one level up from the missing-destination case this file already guards.
-  const svm = { FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111' };
-  assert.throws(() => resolveApiConfig({ ...BASE_ENV, ...svm }), /not reachable end to end yet/);
-  const ack = resolveApiConfig({ ...BASE_ENV, ...svm, SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' });
-  assert.equal(ack.facilitatorKind, 'svm', 'the acknowledgement is what testing uses, and it is explicit');
+test('FACILITATOR=svm takes Solana-shaped addresses, and EVM mode still refuses them', () => {
+  // THIS TEST USED TO ASSERT A BOOT REFUSAL. The mode could not settle: PRICE_ASSET was checked
+  // against the EVM shape unconditionally, so the price could never name a Solana mint and every
+  // payment died as `wrong-mint`. Rather than keep a guard that said "this does not work", the shape
+  // now follows the facilitator, and what is pinned is that each mode takes its own kind of address
+  // and refuses the other's.
+  const svm = { FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1]', SVM_DESTINATION_TOKEN_ACCOUNT: MINT, SVM_DECIMALS: '6' };
+  const cfg = resolveApiConfig({ ...SVM_PRICE, ...svm });
+  assert.equal(cfg.facilitatorKind, 'svm');
+  assert.equal(cfg.price.asset, MINT);
+  assert.equal(cfg.price.svm.feePayer, null, 'the config is pure; buildApiServer fills this from the facilitator');
+
+  // An 0x address is not a Solana address, and a base58 mint is not an EVM one. Both directions.
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, ...svm }), /PRICE_ASSET is not a base58 Solana address/);
+  assert.throws(() => resolveApiConfig({ ...SVM_PRICE }), /PRICE_ASSET is not an 0x address/);
 });
 
 test('facilitatorFromConfig refuses an unreadable SVM keypair, and names the variable not the value', () => {
-  const env = { ...BASE_ENV, FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1,2,3]', SVM_DESTINATION_TOKEN_ACCOUNT: 'Dest111', SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED: 'yes' };
+  const env = { ...SVM_PRICE, FACILITATOR: 'svm', SVM_RPC_URL: 'https://api.devnet.solana.com', SVM_KEYPAIR: '[1,2,3]', SVM_DESTINATION_TOKEN_ACCOUNT: MINT, SVM_DECIMALS: '6' };
   assert.throws(() => facilitatorFromConfig(resolveApiConfig(env)), (err) => {
     assert.match(err.message, /SVM_KEYPAIR could not be read/);
     assert.ok(!err.message.includes('1,2,3'), 'the key material must never reach an error message');
