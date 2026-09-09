@@ -1487,7 +1487,7 @@ t('the sequencer guard is not presented as a proven mitigation', () => {
  */
 test('no built page invites the reader to buy or to acquire anything', () => {
   const INVITATIONS = [
-    /\bbuy (?:now|in\b|it|one|a |the |your |some |more|today|shares?|tokens?)/i,
+    /\bbuy (?:now|in\b|it|one|a |the |your |some\b|more|today|shares?|tokens?)/i,
     /\bhow to (?:buy|purchase|acquire|get in)/i,
     /\bwhere to (?:buy|purchase|acquire)/i,
     /\bavailable (?:to (?:buy|purchase)|for (?:purchase|sale))/i,
@@ -1509,9 +1509,19 @@ test('no built page invites the reader to buy or to acquire anything', () => {
     // Raw first, then stripped. Raw carries the attribute copy — meta descriptions, og:/twitter:
     // cards, aria-labels, alt text — which stripping deletes; stripped joins text that inline tags
     // split. A phrase in either is a phrase a reader can meet.
-    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    //
+    // BOTH FORMS ARE WHITESPACE-FLATTENED FIRST, and the raw one is why this line exists. The
+    // patterns above spell their gaps as a literal single space, so before flattening, an attribute
+    // holding `content="Buy  now."` or a value wrapped across two source lines slipped every one of
+    // them — the retired ban this leg replaced used `\s+` and caught those. A prettier, a formatter,
+    // or a long meta description that an editor soft-wraps all produce exactly that shape, so the
+    // gap was a matter of when rather than whether. The sibling guard added the same day,
+    // `scripts/test/claims-token-absence.test.mjs`, opens with the identical `replace(/\s+/g, ' ')`
+    // and carries a probe for a term split across a newline; this is that treatment, applied here.
+    const flat = html.replace(/\s+/g, ' ');
+    const text = flat.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
     for (const pattern of INVITATIONS)
-      for (const [form, body] of [['raw', html], ['text', text]])
+      for (const [form, body] of [['raw', flat], ['text', text]])
         assert.ok(
           !pattern.test(body),
           `${name}: invites a purchase in the ${form} document (${pattern}). This project sells ` +
