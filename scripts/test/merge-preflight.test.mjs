@@ -18,8 +18,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer,
-  LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN,
+  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, runsForHead,
+  LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -416,5 +416,169 @@ test('MERGE-POLICY.md embeds merge-policy.json verbatim', () => {
     m[1].replace(/\r\n/g, '\n').trimEnd(),
     raw.replace(/\r\n/g, '\n').trimEnd(),
     'the doc humans read has drifted from the rules the program enforces — regenerate it',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The gate must not evaluate its own runs
+// ---------------------------------------------------------------------------------------------
+//
+// `merge-preflight.mjs` lists runs with `--branch <headRefName>` and no `--workflow` filter, so the
+// preflight's OWN runs come back inside the set it is about to judge. One root cause, three
+// symptoms, and the third is permissive:
+//
+//   1. SELF-BLOCK. A `pull_request`-triggered run is on the PR head and `in_progress` while it
+//      evaluates, so it lands in `pending` and pushes a blocker against itself.
+//   2. MISCOUNTING. A *completed* preflight run lands in `succeeded`, because `conclusion` is the
+//      RUN's conclusion -- a run that succeeded at posting a `failure` commit status has
+//      `conclusion: 'success'`. The gate commits inside itself the artifact-substitution error that
+//      four sessions committed reading it.
+//   3. A HEAD WITH NO CI PASSES `ci-matches-head`. One completed preflight run makes
+//      `mine.length === 0` false and `succeeded.length === 1` true, which defeats the
+//      `succeeded===0 && failed===0 && pending===0` catch-all. LATENT today only because `ci.yml`
+//      has a bare `pull_request:` trigger with no `paths:` filter, so CI and the preflight always
+//      appear together -- one routine "skip CI for docs-only changes" arms it.
+//
+// Every fixture here reuses the shape of the stale-CI test above: roster + ACCEPT token, no
+// `headCommittedDate`, no `behindBy`, so `ci-matches-head` is the only rule that can fire and the
+// assertions isolate it.
+
+/** Roster + ACCEPT, so nothing but `ci-matches-head` can block. */
+const cleared = [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->\n<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->' }];
+const onHead = { number: 1, state: 'OPEN', headRefOid: 'newhead0', headRefName: 'b' };
+
+test('symptom 1 — the gate own in-progress run does not block the head it is judging', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      ...greenOn('newhead0'),
+      // The preflight looking at itself: same head, still running, because it IS the run asking.
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, true, 'a green CI on this head is green; the gate own run is not evidence about the head');
+});
+
+test('symptom 1 — a real CI run still in progress DOES block, so the exclusion is not a blanket mute', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: 'CI' },
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.equal(d.blockers.length, 1, 'exactly one blocker: CI. The gate must not also report itself.');
+  assert.match(d.blockers[0].detail, /run CI on head/);
+  assert.doesNotMatch(d.blockers[0].detail, /merge-preflight/);
+});
+
+test('symptom 2 — a COMPLETED preflight run is not a green: its conclusion is the run, not the status it posted', () => {
+  // This run concluded `success`. What it posted may have been `merge-preflight = failure`; the run
+  // succeeded at posting it. Counting it as CI green is reading the wrong artifact.
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME }],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false, 'the only run on this head is the gate own run — that is not CI');
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /no workflow run exists for head/);
+});
+
+test('symptom 2 — the preflight is excluded from the tally even when a genuine red is present', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'failure', name: 'CI' },
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.equal(d.blockers.length, 1, 'one red, one blocker — the gate own success must not offset it');
+  assert.match(d.blockers[0].detail, /run CI on head newhead0 concluded failure/);
+});
+
+test('symptom 3 (LATENT) — a head whose CI was SKIPPED must not be greened by the preflight own run', () => {
+  // The world one `paths-ignore: ['docs/**']` away: a docs-only PR skips CI, the preflight still
+  // runs. Pre-fix the completed preflight run sits in `succeeded`, defeating the catch-all that
+  // exists for exactly this case, and `ci-matches-head` — the rule NAMED for matching CI to the
+  // head — reports clear on a head that has no CI.
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'skipped', name: 'CI' },
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false, 'a skipped CI plus the gate own run is not a green head');
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /none conclusive/);
+});
+
+test('symptom 3 (LATENT) — a head with NO CI at all blocks, and the message says the gate runs are excluded', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    // Both of the preflight's own triggers can land on the PR branch; neither is CI.
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false);
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  // `gh run list` plainly shows two runs on this head, so the message must say why it counted none —
+  // or the next reader spends a night deciding the gate is lying to them.
+  assert.match(d.blockers[0].detail, /no workflow run exists for head/);
+  assert.match(d.blockers[0].detail, new RegExp(`own '${SELF_WORKFLOW_NAME}' runs are excluded`));
+});
+
+test('the exclusion is exact-match, so it cannot silently swallow another workflow', () => {
+  // A future `merge-preflight-lint` is a real workflow whose result is real evidence. A
+  // `startsWith`/`includes` filter would eat it and nobody would notice.
+  const neighbour = `${SELF_WORKFLOW_NAME}-lint`;
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      ...greenOn('newhead0'),
+      { headSha: 'newhead0', status: 'completed', conclusion: 'failure', name: neighbour },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, new RegExp(`run ${neighbour} on head`));
+});
+
+test('runsForHead excludes the gate own runs at the unit level, on either head-SHA casing', () => {
+  const runs = [
+    { headSha: 'NEWHEAD0', status: 'completed', conclusion: 'success', name: 'CI' },
+    { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    { headSha: 'oldhead0', status: 'completed', conclusion: 'success', name: 'CI' },
+  ];
+  assert.deepEqual(runsForHead(runs, 'newhead0').map((r) => r.name), ['CI']);
+});
+
+test('SELF_WORKFLOW_NAME is pinned to the workflow file, so a rename fails loudly instead of silently un-filtering', () => {
+  // The whole safety argument for filtering on a DISPLAY STRING is this test. Without it, editing
+  // `name:` in the yml re-arms all three symptoms and nothing anywhere goes red.
+  const yml = readFileSync(path.join(ROOT, '.github', 'workflows', 'merge-preflight.yml'), 'utf8');
+  const m = yml.match(/^name:\s*(\S.*?)\s*$/m);
+  assert.ok(m, '.github/workflows/merge-preflight.yml must declare a top-level `name:`');
+  assert.equal(
+    m[1],
+    SELF_WORKFLOW_NAME,
+    'the workflow was renamed without updating SELF_WORKFLOW_NAME — the gate is evaluating its own runs again',
   );
 });
