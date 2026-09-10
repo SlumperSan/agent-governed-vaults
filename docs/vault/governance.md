@@ -89,18 +89,23 @@ front-running:
   doubles the share of members a round can lose to being asleep. What that costs, per the three
   branches of `finalize` **in the order it tests them**:
 
-  | branch | quorum test | who feeds it |
-  |---|---|---|
-  | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | live reveals only — **full consensus**, so window length matters most here |
-  | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; defaults never count (VO-2 / K-3) |
-  | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight` — reveals, **plus** any applied standing defaults |
+  | # | branch | quorum test | who feeds it |
+  |---|---|---|---|
+  | 1 | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | live reveals only — **full consensus**, so window length matters most here |
+  | 2 | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight` — reveals, **plus** any applied standing defaults |
+  | 3 | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; defaults never count (VO-2 / K-3) |
 
-  Only the third row can carry a round without live participation, and only under conditions worth
-  naming rather than waving at: standing defaults are **`Rebalance`-only** (VO-4, enforced by
+  (Rows 2 and 3 were the other way round in a previous draft, under this same bolded claim about
+  order. The conditions are mutually exclusive so no outcome changed, but the sentence was false and
+  the rows are numbered now so a future transposition is visible.)
+
+  Only the **sub-five row** can carry a round without live participation, and only under conditions
+  worth naming rather than waving at: standing defaults are **`Rebalance`-only** (VO-4, enforced by
   `require(p.ptype == ProposalType.Rebalance)`), `standingDefaultOf` is empty until a member
   affirmatively sets one, and the default must pre-date the proposal. With no defaults set, both
-  branches of that row are fed by reveals alone and the round is exactly as window-sensitive as any
-  other. So the case where phase length barely matters is: *a Rebalance, in a sub-five vault, where
+  branches of that row are fed by reveals alone — delegated reveals included, which `revealDelegated`
+  gates on the delegate having actually revealed — and the round is exactly as window-sensitive as
+  any other. So the case where phase length barely matters is: *a Rebalance, in a sub-five vault, where
   pre-existing FOR defaults already carry a majority* — narrow, not the regime's general behaviour.
 
   **And the commit phase EATS the default's life, which cuts the other way.**
@@ -122,9 +127,17 @@ front-running:
 - **A lost round does NOT cost `proposalCooldown` before a retry**, though a draft of this section
   claimed it did. `finalize` sets a failed round `Defeated`, which `_isSettled` counts as settled, so
   `activeProposalOf` no longer blocks — and `lastProposalAt` is keyed **per proposer**
-  (`mapping(vault => proposer => uint64)`), so **any other member holding at least
-  `proposalThresholdBps` of stake can `propose` in the next block** (`propose` gates on
-  `own * BPS >= proposalThresholdBps * total`: 500 bps on base-mainnet, 100 on base-sepolia).
+  (`mapping(vault => proposer => uint64)`), so **a member who is not inside their own cooldown, and
+  who clears `proposalThresholdBps`, can `propose` in the next block.**
+
+  Both qualifiers are load-bearing and a draft of this bullet carried neither. `propose` gates on
+  `own * BPS >= proposalThresholdBps * total` (500 bps on base-mainnet, 100 on base-sepolia) AND on
+  `block.timestamp >= lastAt + cfg.proposalCooldown`. Per-proposer does not mean only-one-proposer
+  has-one: everyone does, and serialization makes rounds alternate, so on base-mainnet a two-member
+  vault can run out of eligible proposers. A proposes at t=0 and it settles at 7200; B proposes at
+  7200 and it settles at 14400; A is then 14400 s into a 21600 s cooldown and `propose` reverts
+  `Cooldown()` for another 7200 s. The bullet's point survives — a *defeat* costs no cooldown of its
+  own — but "any other member" was falsified by the shipped mainnet config in one transaction.
   The contract states this plainly where the cooldown is validated: "lastProposalAt is keyed
   PER-PROPOSER, so a second address sidesteps the cooldown entirely. M-7 stays open." Even for the
   *same* proposer the clock runs from `propose`, not from the defeat, so a 2 h round has already
