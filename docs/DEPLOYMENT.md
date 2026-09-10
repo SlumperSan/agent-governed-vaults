@@ -79,8 +79,14 @@ uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-appro
 cannot drift from the code.
 
 Two further questions in it were the owner's, and the owner answered both on 2026-09-05: vault #1
-takes the file's 100-unit `minDepositUsdc` (100 USDG, superseding the 0.01 figure an earlier vault-1
-note recorded), and the creator Safe holds 100 USDG for the first deposit. Supplying a config is
+was to take the file's 100-unit `minDepositUsdc` (100 USDG, superseding the 0.01 figure an earlier
+vault-1 note recorded), and the creator Safe was to hold 100 USDG for the first deposit. **THE
+CHAIN DID NEITHER, and it is the chain that settles this.** Vault #1's `minDepositUsdc()` reads
+10,000 — 0.01 USDG at six decimals, the earlier vault-1 figure and not the config's — read
+2026-09-10 at block 59,209,966, and its `createVault` calldata carried the same 10,000. The
+creating account was the deployer EOA, not the Safe. The config file is unchanged and nothing here
+changes it: it records what was intended, and the field it describes became immutable the moment
+`createVault` ran. Supplying a config is
 not a substitute for the rest of this runbook.
 
 ### The chain-4663 deployment, and where it is recorded (2026-09-05)
@@ -111,12 +117,23 @@ number here; two things it carries are worth knowing before you open it:
 - **`factory.allowSubVaults()` reads false**, so this deployment is root-vaults-only — the opposite
   of the Base Sepolia record's `true`, and deliberately so in both places.
 
-**Vault #1 does not exist yet.** `factory.vaultCount()` reads 0. Creating it is the Safe
-`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do and nobody else's, for the reason §4 gives:
-`VaultCore.creator` is immutable and `createVault` takes the creator from `msg.sender`, so an EOA
-that creates it cannot hand it back. Until then no deposit, rebalance, fee accrual or exit has been
-exercised on chain 4663, no execution adapter is deployed there (§3 — adapters are per-vault, and
-`Deploy.s.sol` deploys none), and `scripts/test/claims-robinhood-deployment.test.mjs` stays red.
+**Vault #1 exists, and the EOA created it.** This paragraph said it did not exist and that
+creating it was the Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do and nobody else's.
+`factory.vaultCount()` now reads 1 and `allVaults(0)` is `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in
+block 58,991,819 by transaction `0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`,
+sent from the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`. The reason §4 gives is
+what makes this permanent rather than correctable: `VaultCore.creator` is immutable and
+`createVault` takes the creator from `msg.sender`, so an EOA that creates it cannot hand it back —
+and one did. Read 2026-09-10 at block 59,209,966 the vault holds `idleUsdc()` 20,000,000 (20 USDG)
+with `totalShares()` and `navWad()` both 2e19, `capacityCapUsdc()` 50,000,000,000 and
+`holderCount()` 1, so a deposit HAS been exercised on chain 4663. This runbook does not state
+whether a rebalance has: a governance round on that vault was in flight when these figures were
+read, and its outcome belongs to whoever records it from the chain afterwards. No fee accrual and
+no exit are claimed. An execution adapter is NOT deployed by `Deploy.s.sol` (§3 — adapters are
+per-vault), but one does exist on 4663 and vault #1's constructor-fixed allowlist admits it:
+`0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, provenance not established here.
+`scripts/test/claims-robinhood-deployment.test.mjs` goes green on the record that carries all of
+this, which is what it was built to wait for.
 
 **No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
 configures an x402 surface, and nothing recorded depends on one.
@@ -288,10 +305,11 @@ gift. Two have since closed and two remain:
   and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
   (§0 above, "The chain-4663 deployment, and where it is recorded"), and no contract from this
   repository exists on any other mainnet.
-- **The funding and one immutable launch parameter are decided but not yet executed,** both
-  recorded in §0 above: the creator Safe (`creator` `0xC73B…AD4c`) holds 100 USDG for the first
-  deposit, and vault #1 takes the config's 100-unit `minDepositUsdc` (the owner's decision of
-  2026-09-05). The field is immutable once `createVault` has run, and vault #1 has not been created.
+- **Both have now been executed, and neither went the way this bullet recorded.** It said the
+  creator Safe (`creator` `0xC73B…AD4c`) held 100 USDG for the first deposit and that vault #1
+  would take the config's 100-unit `minDepositUsdc` (the owner's decision of 2026-09-05). Vault #1
+  was created by the deployer EOA instead, and its `minDepositUsdc()` reads 10,000 (0.01 USDG). The
+  field is immutable once `createVault` has run, and `createVault` has run. See §0.
 - **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
   `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
   ran both scripts, and the record was written from on-chain readback afterwards.
@@ -488,8 +506,8 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
-> holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
-> no vault has been created on it yet and so nothing there holds anyone's money. Confirm
+> holding members' money — and there is now a mainnet deployment to apply it to WITH a funded vault
+> on it, `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, so that clause bites for real. Confirm
 > `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
 > the value read back at deployment is in that chain's address book under
 > `verifiedWiring["factory.allowSubVaults()"]`.
@@ -644,9 +662,10 @@ remediated and re-reviewed on that same tree; (c) a staged-value guardrail perio
 **NOT** completed — gates 3 and 6 have no current evidence on any chain: the five drills and the
 canary alongside them ran on Base Sepolia on 2026-08-24/25 and passed 5/5
 ([SOAK-REPORT.md](SOAK-REPORT.md)), but against bytecode that has since changed, and they have not
-been re-run; (d) no vault has been created on chain 4663, so no `capacityCapUsdc` has been fixed
-there yet — the cap vault #1 is created with will be immutable and readable on-chain from the
-moment the creator Safe creates it. The deployment proceeded on the owner's decision of
+been re-run; (d) vault #1 HAS now been created on chain 4663 — this clause used to say none had —
+so its `capacityCapUsdc` is fixed and readable: `capacityCapUsdc()` returns 50,000,000,000, that
+is 50,000 USDG, read 2026-09-10 at block 59,209,966. It was created by the deployer EOA rather
+than by the creator Safe, and that identity is immutable. The deployment proceeded on the owner's decision of
 2026-09-04 with (c) outstanding.
 
 ## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)

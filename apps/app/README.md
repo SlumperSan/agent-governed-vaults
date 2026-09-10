@@ -15,7 +15,7 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 | `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
 | `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
 | The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. There are none |
+| Every vault row | An `eth_call` per vault from the browser. There is one vault, `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` |
 
 **The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
 what the getter is called.** The getter keeps the name `usdc` because that is the name in the
@@ -25,9 +25,9 @@ trusting a variable name over a chain read.
 
 ## Three decisions that are easy to undo by accident
 
-**1. The empty state is static markup, not a rendered value.** The sentence "No vaults have been
-created yet. `vaultCount()` reads 0 on chain 4663." lives in `index.html` and is never written by
-`app.js`. A claim produced by a fetch disappears exactly when the fetch fails, which is the moment a
+**1. The state sentence is static markup, not a rendered value.** The sentence "One vault exists on chain 4663: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4. It holds real funds." lives in `index.html` and is never written by `app.js`. It previously read "No vaults have
+been created yet. `vaultCount()` reads 0 on chain 4663." and was replaced when vault #1 was
+created; the pinning rule is unchanged, only the fact it pins. A claim produced by a fetch disappears exactly when the fetch fails, which is the moment a
 reader most needs to be told what is true. The LIVE READS panel **corroborates** that sentence with
 a number read seconds ago; it does not produce it. `test/claims.test.mjs` asserts the sentence is in
 the built HTML, so moving it into the script reds the guard.

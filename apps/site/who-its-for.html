@@ -81,9 +81,9 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">The cap</p>
-      <h2>Nothing is capped, because nothing is created.</h2>
-      <p class="tight">The contracts are on chain and the factory is open. <code>factory.vaultCount()</code> returns 0.</p>
-      <p class="tight">A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. There is no protocol-wide cap and no vault to carry one.</p>
+      <h2>One vault is capped, at 50,000 USDG.</h2>
+      <p class="tight">The contracts are on chain and the factory is open. <code>factory.vaultCount()</code> returns 1. This page said it returned 0 and that nothing had been created; that was true until block 58,991,819.</p>
+      <p class="tight">A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. There is still no protocol-wide cap. Vault #1 carries its own: <code>capacityCapUsdc()</code> returns 50,000,000,000, which is 50,000 USDG, and it holds 20 USDG against it, both read 2026-09-10.</p>
       <div class="note note--flat">
         <span class="label">What that means in practice</span>
         <p>There is no allocation to claim, no queue to join, no priority to earn, and nothing on this site to sign up for. If a vault is full, it is full; the answer is a different vault, later, not a place in line.</p>

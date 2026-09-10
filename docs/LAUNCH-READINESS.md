@@ -106,18 +106,32 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json):
 `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG at 6 decimals.
 
-**No vault has been created on it yet.** `smokeVault` is null in that record and
-`verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block 54,991,182 rather
-than inferred from the absence of a broadcast. Vault #1 is the creator Safe
-`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create (Safe v1.4.1, threshold 1, single owner =
-the deployer, a 1-of-1, not a multisig, and not by itself shared custody), because
-`VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and attested
-operator and no later transaction can correct it. No member funds are at stake on that chain.
+**Vault #1 exists on that chain and holds member funds — and this section said the opposite until
+2026-09-10.** It was sourced to `smokeVault` being null and `verifiedWiring["factory.vaultCount()"]`
+being 0 at block 54,991,182. Both were true at that block. Vault #1 is
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in block 58,991,819 by transaction
+`0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`, and read 2026-09-10 at block
+59,209,966 it holds `idleUsdc()` 20,000,000 — 20 USDG at 6 decimals — with `totalShares()` and
+`navWad()` both 2e19 against a `capacityCapUsdc()` of 50,000,000,000 and a `holderCount()` of 1.
 
-**What it proves:** the contracts deploy and wire on that chain. It does not prove that a vault can
-be created there, because none has been; that a Safe rather than an EOA must be the creator is what
-`operatorPayoutNote` in the Base Sepolia record requires of a production vault, and it is a
-constraint on the transaction that has not happened yet rather than evidence from one that has.
+**The creator is the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, not the Safe
+`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`** (Safe v1.4.1, threshold 1, single owner = the
+deployer, a 1-of-1, not a multisig, and not by itself shared custody). `VaultFactory.createVault`
+fixes `msg.sender` as the vault's immutable creator and attested operator and no later transaction
+can correct it, so this is settled permanently and not pending. `OperatorRegistry.operatorIdOf` on
+that Safe returns 0 at the same block: it is not a registered operator on this chain at all.
+
+**What it proves:** the contracts deploy, wire, and now create and fund a vault on that chain — the
+first two of those were all this section could claim before. **What it does not prove** is anything
+the gate table below withholds; creating and funding a vault is not a soak, a canary, or a
+lifecycle run, and none of those has been performed there. The constraint that a Safe rather than
+an EOA should hold a production vault's operator payout identity was not met, and it is no longer a
+constraint on a future transaction — it is a property of a vault that exists. The enumerated
+consequences, verified against `VaultCore.sol`, `VaultFactory.sol`, `OperatorRegistry.sol` and
+`FeeEngine.sol`, are in the address book's `creatorIdentityNote`. A second claim in that record was
+overtaken at the same time: it said no execution adapter existed on 4663, and one does, with vault
+#1 bound to it by a constructor-fixed allowlist — see `adapterNoteOvertaken`. That adapter's
+provenance is not established by any read this repository has run, and it is an open item.
 
 **Which of the gates below were NOT run on that chain, stated so the board stays literally true:**
 

@@ -68,9 +68,15 @@ const read = (rel) => readFileSync(path.join(DIST, rel), 'utf8');
 
 const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 
-// The empty state, exactly as it must read. Whitespace is collapsed on both
-// sides so a hard wrap in the markup does not break the match.
-const EMPTY_STATE = 'No vaults have been created yet. vaultCount() reads 0 on chain 4663.';
+// The standing state sentence, exactly as it must read. Whitespace is collapsed
+// on both sides so a hard wrap in the markup does not break the match.
+//
+// It used to be an EMPTY state — "No vaults have been created yet. vaultCount()
+// reads 0 on chain 4663." — and that sentence became false when vault #1 was
+// created in block 58,991,819. The design reason for pinning it has not changed:
+// it must be STATIC MARKUP, so that it is still on the page when the RPC is
+// unreachable. What changed is which fact is the true one to pin.
+const EMPTY_STATE = 'One vault exists on chain 4663: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4. It holds real funds.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -89,11 +95,11 @@ const BANNED = [
   { name: 'em-dash', re: /—/, why: 'The owner does not want em-dashes in copy. Use a comma, a colon, or two sentences.' },
 ];
 
-test('the built page carries the empty-state sentence verbatim', () => {
+test('the built page carries the state sentence verbatim', () => {
   const html = flat(read('index.html'));
   assert.ok(
     html.includes(EMPTY_STATE),
-    'The empty state is the one sentence this page exists to say, and it must be STATIC MARKUP.\n' +
+    'This is the one sentence the page exists to say, and it must be STATIC MARKUP.\n' +
       'If it is written by app.js from the fetch result then it vanishes whenever the RPC is\n' +
       'unreachable, which is precisely when a reader most needs to be told what is true.\n' +
       `Expected to find: "${EMPTY_STATE}"`,
@@ -104,7 +110,8 @@ test('the built page names the factory address', () => {
   const html = read('index.html');
   assert.ok(
     html.includes(FACTORY),
-    'The empty state claims vaultCount() reads 0. A reader who wants to check that needs the\n' +
+    'The state sentence names a vault on 4663. A reader who wants to check the count for\n' +
+      'themselves needs the factory address to call vaultCount() on, on the same page,\n' +
       'address to call it on, on the same page, without leaving to find it.\n' +
       `Expected to find: ${FACTORY}`,
   );

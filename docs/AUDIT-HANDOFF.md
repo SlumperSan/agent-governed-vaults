@@ -97,8 +97,14 @@ adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft 
 
 **No Base mainnet deployment exists.** A Robinhood Chain mainnet deployment (chain 4663) does, made
 on 2026-09-05 and recorded at `contracts/config/deployments/robinhood-mainnet.json`. It was not
-audited as a deployment, and it holds no member funds: no vault has been created on it yet, so
-`smokeVault` is null in that record and `verifiedWiring["factory.vaultCount()"]` is 0. What is live
+audited as a deployment, and **it now holds member funds.** This paragraph said it held none,
+sourced to `smokeVault` being null and `verifiedWiring["factory.vaultCount()"]` being 0 at block
+54,991,182; both were true at that block. Vault #1 is `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in block
+58,991,819, holding 20 USDG (`idleUsdc()` 20,000,000, 6 decimals) read 2026-09-10 at block
+59,209,966. A reviewer should treat that vault as in scope: its creator and attested operator is
+the deployer EOA and not the intended Safe, immutably, and its constructor-fixed adapter allowlist
+admits `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, a contract whose provenance this repository
+has not established. See the record's `creatorIdentityNote` and `adapterNoteOvertaken`. What is live
 there is the seven contracts and their wiring, and a reviewer should read the record's
 `bytecodeCurrency` block, which establishes byte-for-byte that all seven are what `sourceCommit`
 `b1cde122` builds. The audit surface is the source at the tag

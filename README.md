@@ -43,12 +43,27 @@ of 2026-09-04, and on no other mainnet.** The address book is
 `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. That file is written from what
 the chain returned and is the authority for every address in it; nothing in this README is.
 
-**The singletons are deployed and wired, and no vault has been created on it yet.** `smokeVault` is
-null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at
-block 54,991,182. So there is nothing to deposit into there and no member funds are at stake. Vault
-#1 is the creator Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create: `createVault` fixes
-`msg.sender` as the vault's immutable creator and attested operator, and no later transaction can
-correct that. Two
+**Vault #1 exists on that chain and it holds real funds.** This section used to say no vault had
+been created there, sourced to a `factory.vaultCount()` of 0 read at block 54,991,182. That read
+was true at that block and is now superseded. Vault #1 is
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in block 58,991,819 by transaction
+`0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`. Read 2026-09-10 at block
+59,209,966, each figure named by the call that produced it: `factory.vaultCount()` 1,
+`totalShares()` and `navWad()` both 2e19, `idleUsdc()` 20,000,000 — 20 USDG at 6 decimals — against
+a `capacityCapUsdc()` of 50,000,000,000 (50,000 USDG), `minDepositUsdc()` 10,000 (0.01 USDG), and
+`holderCount()` 1. The full state, and the reads behind it, are in the address book under
+`smokeVault`.
+
+**Its creator is the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, not the Safe
+`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c` the record called for, and that is permanent.**
+`createVault` fixes `msg.sender` as the vault's immutable creator and attested operator, and no
+later transaction can correct it. What the identity carries is the fee stream — this vault's
+performance fee is claimable by that EOA alone, since `FeeEngine` credits
+`claimableFees[registry.operatorAddressOf(opId)]`. Inside `VaultCore` it carries no entry point:
+the only sender-gated functions there require `msg.sender == address(governance)`, and the creator
+appears otherwise only as a restriction on itself, the 5% minimum-stake gate. The address book's
+`creatorIdentityNote` enumerates this against the source, line by line, including what the exposure
+is if that key is lost. Two
 limits apply there and are stated wherever the chain is named: Chainlink publishes no L2 Sequencer
 Uptime Feed for 4663 and has said it will not add one, so `oracle.sequencerUptimeFeed` is the zero
 address and the gate returns early rather than reverting; and the feeds publish on an 86,400 s

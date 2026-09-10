@@ -96,10 +96,11 @@ the comments, and the owner is who decides a claim.
   squarely in the sub-five regime the word misdescribes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed. Robinhood Chain
   mainnet (4663): the seven contracts are, since 2026-09-05, with gates 3 and 6 unrun there or
-  anywhere; no vault has been created on it yet, so "deployed" there does not mean anyone can
-  deposit and does not mean member funds are at stake. `smokeVault` null and
-  `verifiedWiring["factory.vaultCount()"]` 0 in that chain+s record are the two fields that say so,
-  and both are chain reads. Base Sepolia
+  anywhere; vault #1 exists there and holds member funds, so "deployed" there now
+  DOES mean member funds are at stake. `smokeVault.address` `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` and
+  `smokeVault.state` in that chain+s record are the fields that say so, and both are chain reads.
+  The older wording, which claimed no vault had been created and no funds were at stake, was
+  sourced to a `vaultCount()` of 0 that was true only at block 54,991,182. Base Sepolia
   (84532): yes, a testnet trial with no value at stake. No other chain: no. Settlement is USDG (6 dp)
   on 4663, and x402 metered reads still run on Base Sepolia only, with no facilitator for 4663, so
   a sentence about settlement and a sentence about metered reads are about different chains.

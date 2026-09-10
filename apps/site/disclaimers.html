@@ -221,7 +221,7 @@
         <dl class="rows">
           <div><dt>What it is</dt><dd>New contracts, a new governance mechanism and a new operator model, none of it battle-tested by time or volume.</dd></div>
           <div><dt>Worst case</dt><dd>Something nobody on this page thought of.</dd></div>
-          <div><dt>What is done</dt><dd>A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound in place today. Do not deposit what you cannot afford to lose entirely.</dd></div>
+          <div><dt>What is done</dt><dd>A capacity cap is a per-vault parameter. One vault exists and it carries one: <code>capacityCapUsdc()</code> returns 50,000,000,000, that is 50,000 USDG, read 2026-09-10. That bounds one vault and is not a protocol-wide bound. Do not deposit what you cannot afford to lose entirely.</dd></div>
         </dl>
       </article>
 
@@ -339,7 +339,7 @@
       <div class="grid">
         <div>
           <h4>DAO treasuries and larger allocators</h4>
-          <p>A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no cap sized for a treasury to check against, and no vault this site can point to as able to absorb one.</p>
+          <p>A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. One vault exists and its cap is 50,000 USDG (<code>capacityCapUsdc()</code> returns 50,000,000,000, read 2026-09-10), which is not a cap sized for a treasury, and it is the only vault this site can point to.</p>
         </div>
         <div>
           <h4>Anyone who wants set-and-forget</h4>

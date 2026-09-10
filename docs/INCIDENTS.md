@@ -46,15 +46,28 @@ reader can run. Never state a recovery time you cannot evidence.
 > `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp), address book
 > [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json).
 >
-> **What that does and does not put in scope.** No vault has been created on it yet: `smokeVault`
-> is null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain
-> 4663 at block 54,991,182, so no member funds are at stake there and every incident below that
-> begins with a deposit, a proposal or an exit is still hypothetical on that chain. What is already
-> live there is the deployment itself: the factory, the registries, the fee engine, governance and
+> **What that does and does not put in scope.** THIS BANNER SAID EVERY DEPOSIT-, PROPOSAL- AND
+> EXIT-SHAPED INCIDENT BELOW WAS STILL HYPOTHETICAL ON 4663. That is no longer true, and this is
+> the rewrite it said would be needed. Vault #1 exists at
+> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in block 58,991,819 by transaction
+> `0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`. Read 2026-09-10 at block
+> 59,209,966 it holds 20 USDG (`idleUsdc()` 20,000,000 at 6 decimals) with `totalShares()` 2e19 and
+> `holderCount()` 1, and its deposit path has been exercised on chain: `DepositPending` then
+> `DepositActivated`, both receipts status 1. **So member funds ARE at stake on 4663 and the
+> deposit- and exit-shaped sections below apply there today, against a small live balance.** What
+> was already in scope stays in scope: the factory, the registries, the fee engine, governance and
 > the oracle are on-chain and immutable, so §§ about a wrong or unwired singleton, a bad oracle
-> configuration or an unusable address book apply from today. Vault #1 is the creator Safe
-> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create, and this banner is what has to be
-> rewritten on the day it does.
+> configuration or an unusable address book still apply.
+>
+> **Two things an on-call reader must know before touching that vault.** Its creator and attested
+> operator is the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35` and not the Safe
+> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`; that is immutable, so an incident involving that key
+> cannot be resolved by rebinding the vault to the Safe, and the address book's
+> `creatorIdentityNote` states exactly what the key does and does not reach. And vault #1's
+> constructor-fixed adapter allowlist admits `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, an
+> execution surface whose provenance this repository has not established — see
+> `adapterNoteOvertaken`. Neither can be changed by any transaction, so both are containment
+> parameters rather than remediation options.
 >
 > Two of that chain's properties change what an on-call reader should expect once a vault exists:
 > there is no Chainlink L2 sequencer uptime feed for 4663, so

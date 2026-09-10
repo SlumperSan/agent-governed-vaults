@@ -62,6 +62,11 @@ const HEIGHT = 630;
  * WHAT IT DOES NOT SAY, deliberately: nothing about a vault. `factory.vaultCount()` was 0 at the
  * record's read block, and a card cannot be re-rendered by the reader who needs that to still be
  * true. "Deployed" is a fact about the singletons and stays true whatever vault #1 does.
+ *
+ * That decision has since paid for itself: vault #1 was created in block 58,991,819 and
+ * `factory.vaultCount()` reads 1 now, so a card that had named the count would be shipping a false
+ * number in a PNG no guard can read. This comment keeps the past tense on purpose — it describes
+ * the state at the record's read block, not the state today.
  */
 // RECASED 2026-09-05 by the owner's rename: the site is RWAlly, and the capitals are the joke rather
 // than a typo. The card is the last surface the rename could reach, because its wordmark is drawn

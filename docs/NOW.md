@@ -26,10 +26,21 @@ work it describes.
   not put to it. Record:
   [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json)
   `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp).
-  **No vault has been created on it yet:** `smokeVault` is null in that record and
-  `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block 54,991,182.
-  Vault #1 is the creator Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create, and until
-  it does there is nothing to deposit into there. Gates 3 (soak) and 6
+  **VAULT #1 EXISTS AND HOLDS REAL MONEY, as of 2026-09-10.** This entry said the opposite until
+  now, sourced to a `factory.vaultCount()` of 0 read at block 54,991,182 — true at that block,
+  false since block 58,991,819. Vault #1 is `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created
+  by transaction `0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`. Read
+  2026-09-10 at block 59,209,966: `factory.vaultCount()` 1, `totalShares()` and `navWad()` both
+  2e19, `idleUsdc()` 20,000,000 (20 USDG), `capacityCapUsdc()` 50,000,000,000 (50,000 USDG),
+  `minDepositUsdc()` 10,000 (0.01 USDG), `holderCount()` 1.
+  **Its creator is the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, not the Safe
+  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`,** and `createVault` fixes that identity forever.
+  The concrete consequence is the fee stream: this vault's performance fee is claimable by that EOA
+  and by nobody else. See the address book's `creatorIdentityNote` for the enumerated version and
+  `adapterNoteOvertaken` for a second thing that record now gets wrong — an execution adapter
+  exists on 4663 and vault #1 is bound to it, which the record had said was impossible.
+  A governance round on this vault was in flight when these rows were read; its outcome is
+  deliberately not stated here. Gates 3 (soak) and 6
   (canary) have not been run on that chain, and have no current evidence on any chain. The 5/5
   soak and the canary observation alongside it predate the current bytecode and have not been
   re-run; gate 5's oracle verification covers Base feeds and not that chain's. Two chain facts that belong with every claim about it: Chainlink

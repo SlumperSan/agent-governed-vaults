@@ -4,7 +4,7 @@
  *
  * This is FIXTURE DATA, not live protocol state. (`contracts/config/deployments/` holds
  * `base-sepolia.json`, a testnet trial, and `robinhood-mainnet.json`, a Robinhood Chain mainnet
- * deployment of 2026-09-05 whose singletons are wired and on which no vault has been created yet.
+ * deployment of 2026-09-05 whose singletons are wired and on which one real vault now exists.
  * Nothing here is read from either.) But no
  * deployment retires this file. The scenario below needs three vaults holding a specific joint state at
  * the same moment — an unattested `operatorId 0`, an operator whose realized net has gone

@@ -3,7 +3,9 @@
 What is true right now. The **Base mainnet** launch verdict is **NO-GO** (but no longer for
 security reasons). Since 2026-09-05 the protocol is deployed on **Robinhood Chain
 mainnet (chain 4663)**, on the owner's decision of 2026-09-04 and without that board's soak and
-canary gates. No vault has been created on it yet, so nothing there holds member money.
+canary gates. **Vault #1 now exists there and holds member money** —
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, 20 USDG, read 2026-09-10. This note said the
+opposite until then.
 
 > **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
 > [docs/NOW.md](../NOW.md); the argued go/no-go board is
@@ -77,10 +79,17 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 - **Deployed on Robinhood Chain mainnet (chain 4663) on 2026-09-05**: record
   at `contracts/config/deployments/robinhood-mainnet.json`, `VaultFactory`
   `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp). The singletons are
-  deployed and wired; **no vault has been created on it yet**: `smokeVault` is null in that
-  record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block
-  54,991,182, so no member funds are at stake there. Vault #1 is the creator Safe
-  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create.
+  deployed and wired, and **vault #1 exists and holds member funds**:
+  `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created in block 58,991,819 by transaction
+  `0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f`. Read 2026-09-10 at block
+  59,209,966: `factory.vaultCount()` 1, `idleUsdc()` 20,000,000 (20 USDG), `totalShares()` and
+  `navWad()` both 2e19, `capacityCapUsdc()` 50,000,000,000, `holderCount()` 1. This bullet said
+  no vault had been created there, sourced to a `vaultCount()` of 0 at block 54,991,182 — true at
+  that block, superseded since block 58,991,819.
+  **Its creator is the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, not the Safe
+  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, and that is immutable.** See the address book's
+  `creatorIdentityNote`, and `adapterNoteOvertaken` for the execution adapter that record said did
+  not exist on this chain.
   **No Base mainnet deployment exists.** This line previously read
   "testnet only; nothing has ever been broadcast to mainnet", which one transaction falsified.
 - **Deployed on Base Sepolia** (a testnet trial, no real value at stake).

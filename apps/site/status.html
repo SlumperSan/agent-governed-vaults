@@ -84,7 +84,8 @@
             <tr><th scope="row">Governance</th><td><code>0x790A308f1ac06FeD4C79884BAD25d0C721C5B125</code></td></tr>
             <tr><th scope="row">VaultDeployer</th><td><code>0xc36198FD2c7C62738159ED1FF965679105FAF05a</code></td></tr>
             <tr><th scope="row">VaultFactory</th><td><code>0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</code></td></tr>
-            <tr><th scope="row">Vaults created</th><td>none &mdash; <code>factory.vaultCount()</code> returns 0</td></tr>
+            <tr><th scope="row">Vaults created</th><td>one &mdash; <code>factory.vaultCount()</code> returns 1</td></tr>
+            <tr><th scope="row">Vault #1</th><td><code>0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4</code></td></tr>
             <tr><th scope="row">Oracle deploy block</th><td>54,989,143</td></tr>
             <tr><th scope="row">Singletons deploy block</th><td>54,989,195, all six singleton receipts plus three wire calls in that one block</td></tr>
           </tbody>
@@ -142,12 +143,16 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">The first vault</p>
-      <h2>No vault has been created yet.</h2>
-      <p class="tight">The singletons are on chain and the factory is open, and <code>factory.vaultCount()</code> returns 0. Until a vault exists there is nothing to deposit into and no address to check, which is why the row above says so rather than leaving a gap.</p>
+      <h2>Vault #1 exists, and it holds real funds.</h2>
+      <p class="tight">This page said no vault had been created, sourced to a <code>factory.vaultCount()</code> of 0. That read was true at block 54,991,182 and stopped being true at block 58,991,819. Vault #1 is <code>0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4</code>, created by transaction <code>0x6f895c3ab23338e36836ca90ca70c00b471b6328a57b94f3074abf7083d8024f</code>.</p>
+      <p class="tight">Read 2026-09-10 at block 59,209,966, each figure named by the call that produced it: <code>factory.vaultCount()</code> 1, <code>idleUsdc()</code> 20,000,000 &mdash; that is 20 USDG at six decimals &mdash; <code>totalShares()</code> and <code>navWad()</code> both 20,000,000,000,000,000,000, <code>capacityCapUsdc()</code> 50,000,000,000 (50,000 USDG), <code>minDepositUsdc()</code> 10,000 (0.01 USDG), <code>holderCount()</code> 1.</p>
+      <p class="tight"><strong>Twenty USDG against a fifty-thousand cap is a very small position, and this page does not present it as more than that.</strong> Whether it was meant as a smoke test is not something the chain records, so nothing here claims it. What the chain does record is that the vault is live, funded, and has one holder.</p>
+      <p class="tight"><strong>Its creator is the deployer EOA <code>0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35</code>, not <code>0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c</code>, the multisig address the deployment record called for, and no transaction can change that.</strong> <code>createVault</code> fixes <code>msg.sender</code> as the vault&rsquo;s immutable creator and attested operator. The practical consequence is that this vault&rsquo;s performance fee is claimable by that EOA and by nobody else. Inside the vault the creator identity carries no entry point of its own: the only sender-gated functions in <code>VaultCore</code> require the caller to be governance.</p>
+      <p class="tight">The deployment record&rsquo;s <code>creatorIdentityNote</code> sets that out against the contract source line by line, including what is and is not exposed if that key is lost.</p>
       <p class="tight"><code>contracts/config/robinhood-mainnet.json</code> is the chain&rsquo;s configuration, not a plan for a vault.</p>
       <p class="tight">It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.</p>
-      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters only when it is funded, and none has been.</p>
-      <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
+      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters when it is funded, and vault #1&rsquo;s are frozen.</p>
+      <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction. Vault #1&rsquo;s allowlist admits <code>0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E</code>; this site does not vouch for what that contract is, because no read behind this page establishes it.</p>
     </div>
   </section>
 

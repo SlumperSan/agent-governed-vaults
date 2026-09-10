@@ -1024,9 +1024,21 @@ test('the corrections from the 2026-08-29 review have not been undone', () => {
     assert.ok(!/rebalance has passed but has not yet executed/i.test(html), `${p}: Mode F opens at reveal start, not when a proposal passes`);
     // A4: the pre-audit findings are not all closed.
     assert.ok(!/all of which are now resolved/i.test(html), `${p}: one High remains open at the launch configuration and a sub-vault class is dormant, not fixed`);
-    // C8: the cap is a planned parameter of a vault that does not exist.
+    // C8: the 50,000 figure must never appear as a bare number.
+    //
+    // It used to have to be labelled "planned", because the cap was a parameter of a vault that
+    // did not exist. Vault #1 was created in block 58,991,819 and `capacityCapUsdc()` returns
+    // 50,000,000,000 on it, so "planned" is now the WRONG label for that vault's cap and requiring
+    // it would force a page to write a falsehood. The leg is not dropped — a bare 50,000 is still
+    // the thing C8 was raised about. It is re-pointed at the question the review was actually
+    // asking: where does this number come from? A page must answer either "it is planned" (still
+    // true of a vault that does not exist, such as the index vault) or by naming the on-chain call
+    // that returns it. Anything else is an unsourced figure.
     if (html.includes('50,000')) {
-      assert.ok(/\bplanned\b/i.test(html), `${p}: states the 50,000 figure without labelling it planned and undeployed`);
+      assert.ok(
+        /\bplanned\b/i.test(html) || /capacityCapUsdc\(\)/.test(html),
+        `${p}: states the 50,000 figure without sourcing it — label it planned (for a vault that does not exist) or cite capacityCapUsdc()`,
+      );
     }
   }
 });

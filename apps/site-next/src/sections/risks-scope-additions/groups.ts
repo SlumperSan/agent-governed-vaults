@@ -109,7 +109,7 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    summarised. Every clause in it is a scope limit on the clause before it. */
 
 export const CARD_1_BODY =
-  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no cap sized for a treasury to check against, and no vault this site can point to as able to absorb one.';
+  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. One vault exists and its cap is 50,000 USDG (capacityCapUsdc() returns 50,000,000,000, read 2026-09-10), which is not a cap sized for a treasury, and it is the only vault this site can point to.';
 
 export const CARD_2_BODY =
   'There is no autopilot. Skipping votes does not park your position neutrally: it moves quorum and wastes your commit; it hands the outcome to whoever did turn up.';

@@ -342,8 +342,9 @@ transaction this agent constructs had ever been mined. **All three are false.** 
 the protocol has been deployed to Base Sepolia and, since 2026-09-05, to Robinhood Chain
 mainnet (chain 4663), which makes the warning below sharper rather than softer: this agent can now
 be pointed at a chain whose USDG is real money, and at a factory that will create a real vault for
-whoever calls it. No vault has been created on it yet, so there is nothing there to join today,
-but the guard below is about the key, not about the vault, and a key configured against 4663 signs
+whoever calls it. A vault DOES exist there now — `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, holding real
+USDG — so the "nothing there to join" caveat this sentence used to carry no longer applies,
+and the guard below is about the key, not about the vault, and a key configured against 4663 signs
 whatever it is asked to sign. Note the one guard that already exists and its exact
 limit: `--demo-wallet` is refused off a known testnet (`TESTNET_CHAIN_IDS` in
 `packages/reference-agent/src/run.mjs` is `{84532, 11155111, 31337, 1337}`, and 4663 is not in it),
