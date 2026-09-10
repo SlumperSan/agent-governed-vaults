@@ -371,7 +371,7 @@ const MODE_TOKEN = /FACILITATOR\s*=\s*[`'"]?(?:svm|stub|http)\b|\bSVM_?KEYPAIR\b
  * suppressing on the match rather than on the reported hit is what stops two patterns reporting one
  * wrapped sentence twice. The cost was measured, not assumed: removing the suppression entirely
  * changes no hit on the tree — only a synthetic goes red — so no claim is hidden by it today. The
- * one entry it currently reaches past is `apps/web/index.html:1556`, whose match runs into 1557.
+ * one entry it currently reaches past is `apps/web/index.html:1583`, whose match runs into 1584.
  */
 const EXEMPT = new Map([
   ['docs/X402-LIVE-REPORT.md:41', 'RECORD: a FACILITATOR=http run; the API was keyless in it'],
@@ -390,7 +390,7 @@ const EXEMPT = new Map([
   // drift. When it does, the fix is to re-pin the line, not to drop the CLAIM_SPAN join: the join
   // is what makes the claim visible at all, and a wrapped claim about the API is exactly the miss
   // this file exists for.
-  ['apps/web/index.html:1556', 'CLAUSE: subject is the browser demo, which holds no key; the API is named in the preceding clause of the same sentence'],
+  ['apps/web/index.html:1583', 'CLAUSE: subject is the browser demo, which holds no key; the API is named in the preceding clause of the same sentence'],
 ]);
 
 /**
