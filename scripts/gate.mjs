@@ -126,12 +126,33 @@ const STEPS = [
     why: 'Must precede `backend` AND `site-test`: without dist/ the claims guards walk zero redesign pages.',
   },
   {
+    id: 'app-test',
+    title: 'npm run test:app',
+    cmd: WIN ? 'npm.cmd' : 'npm',
+    args: ['run', 'test:app'],
+    cwd: REPO,
+    // IT IS ITS OWN STEP RATHER THAN A GLOB IN `test:backend`, AND THE REASON IS A MEASURED RACE,
+    // not a preference. `apps/app/test/claims.test.mjs` runs `apps/app/build.mjs` at module load,
+    // which is `rm -rf dist` followed by `cp -r src dist`. The repository-wide walks in
+    // `backend` -- claims-lede-truth, config-doc-truth, claims-token-absence -- enumerate files
+    // first and read them after, and deliberately do not skip `dist`. Put this file in the same
+    // `node --test` batch and the build deletes a path an unrelated guard has already listed but
+    // not yet opened: an ENOENT thrown inside whatever test happened to be running. Measured at
+    // 1 failure in 25 batched runs, which is exactly the rate that gets dismissed as flakiness.
+    // `scripts/test/claims-token-absence.test.mjs` carries the same finding at its APP group and
+    // dropped its own build for it.
+    //
+    // ORDERED BEFORE `backend` so the walks that follow read a dist that matches src. Behind it,
+    // they would read whatever a previous run left.
+    why: 'Runs on its own: it builds apps/app/dist, which would race the repository walks in `backend`.',
+  },
+  {
     id: 'backend',
     title: 'npm run test:backend',
     cmd: WIN ? 'npm.cmd' : 'npm',
     args: ['run', 'test:backend'],
     cwd: REPO,
-    why: 'Backend + frontend logic suite. Needs `build` and `site-build` first (see both above).',
+    why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
     id: 'site-test',
