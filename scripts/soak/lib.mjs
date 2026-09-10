@@ -552,7 +552,7 @@ export const TOPIC = {
  * @param {string} factory   the deployment's VaultFactory address
  * @param {number} fromBlock earliest block to scan (the deployment block is the right value)
  */
-export function assertLogsServed(factory, fromBlock, { chunk = 50_000, maxChunks = 20 } = {}) {
+export function assertLogsServed(factory, fromBlock, { chunk = 10_000, maxChunks = 100 } = {}) {
   const count = callU(factory, 'vaultCount()(uint256)');
   if (count === 0n) {
     log('assertLogsServed: the factory has created no vaults, so there is no positive control — skipped');
@@ -566,6 +566,18 @@ export function assertLogsServed(factory, fromBlock, { chunk = 50_000, maxChunks
   // Scanned in bounded windows rather than one open range: providers cap `eth_getLogs` spans, and a
   // refused range would look like a pruned one, which is the exact confusion this function exists to
   // remove. Stops at the first window that contains the control.
+  //
+  // THE WINDOW IS 10,000 BECAUSE THAT IS THE CAP BOTH RECOMMENDED PROVIDERS ENFORCE, measured
+  // 2026-09-10 with a raw `eth_getLogs` over 46,307,100-46,357,100:
+  //
+  //     sepolia.base.org       -> {"code":-32614,"message":"eth_getLogs is limited to a 10,000 range"}
+  //     base-sepolia.drpc.org  -> {"code":35,"message":"ranges over 10000 blocks are not supported on free plan"}
+  //
+  // It was 50,000, and it worked -- but only because `cast logs` silently paginates a span the
+  // endpoint would refuse. This function's whole job is to tell "the endpoint will not serve it"
+  // apart from "the chain does not have it", so resting its own default on an undocumented
+  // pagination behaviour in a different tool is the wrong shape for it. `maxChunks` goes 20 -> 100
+  // so the reachable span is unchanged at 1,000,000 blocks.
   let scanned = 0;
   for (let from = fromBlock; from <= head && scanned < maxChunks; from += chunk, scanned += 1) {
     const to = Math.min(from + chunk - 1, head);
