@@ -79,9 +79,10 @@
  *       24-hour execution window)"
  *     contracts/config/robinhood-mainnet.json  smoke.gov.executionWindow = 86400
  *     The zero timelock is a parameter of the REFERENCE CONFIGURATION, not of
- *     any particular deployed vault — no vault has been created yet (see
- *     status.html), which is why the sentence names the configuration rather
- *     than a vault.
+ *     any particular deployed vault. Vault #1 exists and its own timelock is
+ *     whatever it was created with, so the sentence names the configuration
+ *     rather than a vault deliberately: the two are not the same thing, and
+ *     status.html carries the vault's own figures.
  *
  *   r7  "25% of voting-eligible stake" quorum floor, and the reference minimum
  *     contracts/config/robinhood-mainnet.json  smoke.gov.quorumBps = 2500
@@ -104,9 +105,9 @@
  *   r14  REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the
  *     safe vault yet. I want the pivot to the all-stocks index." The cell
  *     used to name a planned 50,000 USDG capacity cap; that figure described
- *     a vault that will not be created, so the cell states the honest,
- *     figure-free version instead — a capacity cap is a per-vault parameter
- *     and no vault exists. Its opening word is load-bearing: it must not
+ *     a vault that did not exist when the cell was written. Vault #1 now does,
+ *     so the cell states its actual cap read from the chain. Its opening word
+ *     remains load-bearing: it must not
  *     start with "Nothing", or the risks-hero "Seven of these have no
  *     mitigation" count (derived from cells that DO start with "Nothing")
  *     goes to eight.
@@ -313,7 +314,7 @@ export const ENTRIES: readonly RiskEntry[] = [
     rows: [
       { dt: "What it is", dd: "New contracts, a new governance mechanism and a new operator model, none of it battle-tested by time or volume." },
       { dt: "Worst case", dd: "Something nobody on this page thought of." },
-      { dt: "What is done", dd: "A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound in place today. Do not deposit what you cannot afford to lose entirely." },
+      { dt: "What is done", dd: "Vault #1's capacity cap is 50,000 USDG, read from capacityCapUsdc() on chain 4663. The blast radius is bounded by that cap and by nothing stronger. Do not deposit what you cannot afford to lose entirely." },
     ],
   },
   {

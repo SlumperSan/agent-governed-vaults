@@ -158,7 +158,19 @@ const SKIP_DIRS = new Set([
 
 // Wider than claims-lede-truth's PUBLIC_EXT on purpose: a placeholder left in a source comment is
 // as unshipped as one left in a heading, and nothing else walks these extensions.
-const WALK_EXT = new Set(['.md', '.html', '.txt', '.json', '.mjs', '.js', '.sol', '.yaml', '.yml']);
+//
+// `.ts` and `.tsx` were added on 2026-09-10, after this guard passed clean over a tree in which
+// `apps/site-next/src/sections/risks-register/entries.tsx:316` shipped the sentence "a capacity cap
+// is a per-vault parameter and no vault exists" to readers while `factory.vaultCount()` returned 1.
+// That is RENDERED copy, not a comment - `RisksRegister.tsx` imports `ENTRIES` and lays it out - and
+// it was the byte-identical twin of a sentence corrected in `apps/site/disclaimers.html` in the same
+// change. The whole of `apps/site-next` is a public surface written in TypeScript, and NO claims
+// guard in this repository walked a single file of it: not this one, and not
+// `claims-lede-truth.test.mjs`, whose PUBLIC_EXT is `.md`/`.html`/`.txt`/`.json`. A React site is
+// not less published than a hand-written page, and the extension was the only thing hiding it.
+const WALK_EXT = new Set([
+  '.md', '.html', '.txt', '.json', '.mjs', '.js', '.sol', '.yaml', '.yml', '.ts', '.tsx',
+]);
 
 /** Every file this guard sweeps, enumerated from the filesystem — never from a list. */
 const walk = () => {

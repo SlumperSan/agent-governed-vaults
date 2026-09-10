@@ -39,8 +39,9 @@ work it describes.
   and by nobody else. See the address book's `creatorIdentityNote` for the enumerated version and
   `adapterNoteOvertaken` for a second thing that record now gets wrong — an execution adapter
   exists on 4663 and vault #1 is bound to it, which the record had said was impossible.
-  A governance round on this vault was in flight when these rows were read; its outcome is
-  deliberately not stated here. Gates 3 (soak) and 6
+  A governance round on this vault has since SETTLED: `Governance.proposals(1)` reads status 4,
+  Executed. It was a no-op rebalance with an empty order list, so NAV and idle are unchanged
+  across it, and no swap was attempted. Gates 3 (soak) and 6
   (canary) have not been run on that chain, and have no current evidence on any chain. The 5/5
   soak and the canary observation alongside it predate the current bytecode and have not been
   re-run; gate 5's oracle verification covers Base feeds and not that chain's. Two chain facts that belong with every claim about it: Chainlink

@@ -127,8 +127,9 @@ what makes this permanent rather than correctable: `VaultCore.creator` is immuta
 and one did. Read 2026-09-10 at block 59,209,966 the vault holds `idleUsdc()` 20,000,000 (20 USDG)
 with `totalShares()` and `navWad()` both 2e19, `capacityCapUsdc()` 50,000,000,000 and
 `holderCount()` 1, so a deposit HAS been exercised on chain 4663. This runbook does not state
-whether a rebalance has: a governance round on that vault was in flight when these figures were
-read, and its outcome belongs to whoever records it from the chain afterwards. No fee accrual and
+whether a strategy has: the one governance round that has run was a rebalance with an EMPTY
+order list, executed (status 4) with NAV and idle unchanged, so the machinery has been exercised
+and the strategy has not. No fee accrual and
 no exit are claimed. An execution adapter is NOT deployed by `Deploy.s.sol` (§3 — adapters are
 per-vault), but one does exist on 4663 and vault #1's constructor-fixed allowlist admits it:
 `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, provenance not established here.

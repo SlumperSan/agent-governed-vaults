@@ -51,7 +51,7 @@
  * BANNER_STATUS in src/shell/pinned.ts), and every identifier the prose
  * attributes to a document is present in that document:
  *
- *   docs/LAUNCH-READINESS.md §4      "## 4. Residual-risk register — what can
+ *   docs/LAUNCH-READINESS.md §4      "## 4. Residual-risk register: what can
  *                                    go wrong, worst case, why we ship anyway"
  *                                    (LAUNCH-READINESS.md:266).
  *   docs/THREAT-MODEL.md             K-4, CM-2, CM-4, CM-7, EE-9, EE-10, EX-2

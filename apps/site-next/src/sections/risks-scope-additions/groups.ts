@@ -13,7 +13,7 @@
  * page carries every risk, warning and caveat. Four headings that open "Anyone
  * who cannot..." are caveats by that rule, so they belong on the page that
  * holds them, and who-its-for keeps the factual half: what the design assumes,
- * what the deal is, and that nothing is capped because nothing is created.
+ * what the deal is, and what vault #1's capacity cap actually bounds.
  *
  * NO POINTER SENTENCE WAS ADDED TO who-its-for TO REPLACE THEM. It already
  * closes on `who-decide` ("Read the Disclaimers in full, then decide." with

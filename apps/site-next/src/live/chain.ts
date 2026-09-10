@@ -6,8 +6,8 @@
  * fetched by the reader's own browser from the chain's public JSON-RPC endpoint
  * while the page is open, which means a reader who doubts them can open the
  * network panel and watch the request go out. That is the difference between
- * "the factory has created no vault" as a sentence and as an observation, and it
- * is the whole reason the section exists.
+ * "vault #1 holds 20 USDG" as a sentence and as an observation, and it is the
+ * whole reason the section exists.
  *
  * THIS FILE IS A PORT, NOT AN INVENTION. `apps/app/src/app.js` has been doing
  * exactly this against the same endpoint since 2026-09-05 and the request shape
