@@ -47,6 +47,12 @@ const ENTRYPOINTS = [
   'packages/indexer/src/index-runner.mjs',
   'packages/canary/src/canary-runner.mjs',
   'packages/oplog/src/ops-check.mjs',
+  // Added 2026-09-10. It sizes a real mainnet trade by hand against a live chain and nothing
+  // executes it in CI, which is precisely the category this list exists for. It was landed once
+  // without being added here, and `npm run gate` passed over it without parsing a single line --
+  // this list errors on listed-but-missing and is silent about missing-from-list, so a green gate
+  // was not evidence about the file at all.
+  'scripts/build-rebalance-order.mjs',
 ];
 
 /**
