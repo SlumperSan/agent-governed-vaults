@@ -17,8 +17,15 @@
  * test:app` at the repository root, which `.github/workflows/ci.yml` and
  * `scripts/gate.mjs` each invoke as a step of their own, ordered immediately
  * before `npm run test:backend`. `scripts/test/test-wiring-truth.test.mjs`
- * fails if either of them stops invoking it, and fails if any `*.test.mjs` in
- * the repository stops being covered by a wired script.
+ * fails if any `*.test.mjs` in the repository stops being covered by a wired
+ * script, and fails if either pipeline stops invoking this one -- where
+ * "invoking" is read narrowly and on purpose: it searches the value of ci.yml's
+ * `run:` keys with comments removed, and gate.mjs's `args:` array literals with
+ * comments removed. Deleting a step and leaving its `name:`, its `title:` or
+ * the paragraph explaining it behind is therefore caught. What that guard
+ * cannot establish is that the step it found is reachable -- an `if:`, a
+ * `--quick` skip or a job outside the required set would all still satisfy it.
+ * Only a green CI run and a green `npm run gate` show this file executing.
  *
  * IT IS DELIBERATELY NOT A GLOB INSIDE `test:backend`, and the reason is a
  * measured race. The `execFileSync` below is `rm -rf dist` followed by

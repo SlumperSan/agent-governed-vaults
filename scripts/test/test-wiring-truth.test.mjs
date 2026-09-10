@@ -18,10 +18,21 @@
  *      wired npm scripts actually run, and assert the first set is a subset of the second.
  *   2. INVOCATION. Assert every wired script is invoked by BOTH `.github/workflows/ci.yml` and
  *      `scripts/gate.mjs`. A script that exists but nothing calls is the same defect one level up.
- *      It matches the INVOCATION and not the script's name: searching gate.mjs for the string
- *      `test:app` is satisfied by the step's own `title`, and by the comment explaining why the
- *      step exists, so the step could be deleted and the prose alone would read as wired. See
- *      `invokedIn` below.
+ *      IT MATCHES ONLY WHAT EACH FILE EXECUTES, never the prose around it, because both files
+ *      are heavily commented and every one of those comments names the scripts it is explaining.
+ *      In ci.yml the corpus is the value of each `run:` key and nothing else, with YAML and shell
+ *      comments removed; in gate.mjs it is the source with line and block comments removed, and
+ *      the match is anchored to the `args:` array literal rather than floating over the step.
+ *      Without both halves a deleted step whose `name:`, `title:` or explanatory comment survived
+ *      would still read as wired -- which is precisely the state ci.yml was in when this file
+ *      first landed. See `invokedIn` and `executableText` below.
+ *
+ * WHAT LEG 2 STILL CANNOT PROVE, stated because the first version of this header claimed a
+ * property the code did not have. It is a text match over two files. It does not prove either
+ * pipeline ran, nor that the step it found is reachable: an `if:` condition, `continue-on-error`,
+ * a job outside the required set, a `quickSkip` dropped by `npm run gate -- --quick`, or an
+ * `args:` literal sitting in a STEPS entry no filter selects would all satisfy it. `scripts/
+ * gate.mjs` proves its own half the only way that can be proven, by running.
  *
  * THE COVERED SET IS DERIVED, NEVER RESTATED. It is read out of the `scripts` block of
  * package.json and of each workspace package.json. Hardcoding the nine directories here would
@@ -82,6 +93,124 @@ const discoverTestFiles = () => {
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * Cut a line at the comment that opens on it, quote-aware.
+ *
+ * `#` opens a comment in YAML and in POSIX shell under the same condition -- it has to open a
+ * word, so it is either the first character or preceded by whitespace -- and in neither language
+ * does it open one inside a quoted scalar or a quoted shell word. That single rule serves both
+ * halves of `ciRunCommands` below.
+ */
+const stripHashComment = (line) => {
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+  }
+  return line;
+};
+
+/** `|`, `>`, `|-`, `>+2`: a block scalar header, so the value is on the lines below it. */
+const BLOCK_SCALAR = /^[|>][+-]?\d*$/;
+
+/**
+ * THE SHELL THE WORKFLOW ACTUALLY RUNS: the value of every `run:` key, and nothing else.
+ *
+ * THIS IS THE HOLE THIS FILE SHIPPED WITH, and it is recorded here rather than in a commit
+ * message because the next person to widen leg 2 needs it. Leg 2 matched `npm run <name>` against
+ * the whole text of ci.yml, and ci.yml explains itself at length: `npm run test:backend` occurs
+ * there four times, three of them inside comments. Deleting the real step stops all 79 of the 81
+ * test files that script runs -- THIS FILE AMONG THEM, since it lives under `scripts/test/` --
+ * leaving CI with the one file under `test:app` and the one under `apps/site-next`. All three
+ * legs stayed green, and `npm run gate` stayed green with them, because leg 2 requires BOTH
+ * files and gate.mjs's own step was untouched. The header claimed that could not happen. Reading
+ * only `run:` values closes it, and closes the neighbouring case of a `name:` that quotes the
+ * script it is naming.
+ */
+const ciRunCommands = (yaml) => {
+  const lines = yaml.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s*(?:-\s+)?run:(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    const value = m[1].trim();
+    if (value !== '' && !BLOCK_SCALAR.test(value)) {
+      out.push(stripHashComment(value));
+      continue;
+    }
+    // A block scalar (`run: |`) and a plain scalar wrapped onto the next line (`run:`, then the
+    // command indented under it) both continue below, over every line indented deeper than the
+    // key. The one bare `run:` GitHub Actions defines for itself is `defaults.run`, whose
+    // children are `shell:` and `working-directory:` and cannot hold an npm invocation -- so
+    // reading those two lines costs nothing, while SKIPPING a bare `run:` would make a legal
+    // reflow of a real step read as a deleted one.
+    const keyIndent = lines[i].search(/\S/);
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].trim() === '') continue;
+      if (lines[j].search(/\S/) <= keyIndent) break;
+      out.push(stripHashComment(lines[j]));
+    }
+  }
+  return out.join('\n');
+};
+
+/**
+ * `scripts/gate.mjs` with its comments removed, so an `args:` vector quoted inside one cannot
+ * stand in for the step it describes. That is not hypothetical either: it is how the ci.yml hole
+ * above was found, by writing exactly such a comment and watching this file stay green.
+ *
+ * LINE-ORIENTED ON PURPOSE. A scanner run over the whole file has to tell a regex literal from a
+ * division to know whether a quote inside it opens a string, and gate.mjs contains
+ * `/[&|<>^()"%!]/`. Get that wrong once and the rest of the file is swallowed as a string, and
+ * this guard goes red for a reason that has nothing to do with wiring. Per line, the worst case
+ * is one line left uncut, and every `args:` vector in gate.mjs is written on one line.
+ */
+const stripJsComments = (src) => {
+  const out = [];
+  let inBlock = false;
+  for (const raw of src.split(/\r?\n/)) {
+    let kept = '';
+    let quote = null;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (inBlock) {
+        if (c === '*' && raw[i + 1] === '/') {
+          inBlock = false;
+          i++;
+        }
+        continue;
+      }
+      if (quote) {
+        kept += c;
+        if (c === '\\') kept += raw[++i] ?? '';
+        else if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') quote = c;
+      else if (c === '/' && raw[i + 1] === '/') break;
+      else if (c === '/' && raw[i + 1] === '*') {
+        inBlock = true;
+        i++;
+        continue;
+      }
+      kept += c;
+    }
+    out.push(kept);
+  }
+  return out.join('\n');
+};
+
+/** What each pipeline file EXECUTES, which is the only text leg 2 is allowed to look at. */
+const executableText = () => ({
+  'scripts/gate.mjs': stripJsComments(readFileSync(path.join(REPO, 'scripts', 'gate.mjs'), 'utf8')),
+  '.github/workflows/ci.yml': ciRunCommands(readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'), 'utf8')),
+});
+
+/**
  * The npm scripts that run `node --test`, each with the directory its paths are relative to and
  * the shape its invocation takes in each pipeline.
  *
@@ -95,12 +224,18 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * runner that happens to use the test runner". If you want one, do not give it a root `test:*`
  * script; call the file directly, as `scripts/smoke-test.mjs` and the soak drills do.
  *
- * `invokedIn` IS A SHAPE, NOT A NAME, and that distinction is the whole value of leg 2. A
- * `.includes('test:app')` over gate.mjs is satisfied by the step's own `title`, and by the comment
- * that explains why the step exists -- so deleting the step and leaving the prose behind would read
- * as wired. Matching the argument vector (`'run', 'test:app'`) and the shell line
- * (`npm run test:app`) means the thing being matched is the invocation itself. It is still a text
- * match over a file and cannot prove execution; `scripts/gate.mjs` proves that by running.
+ * `invokedIn` IS A SHAPE MATCHED AGAINST A NARROWED CORPUS, and it needs both halves to be worth
+ * anything. The shape: the argument vector under its `args:` key (`args: ['run', 'test:app']`),
+ * and the shell line (`npm run test:app`), rather than the script's name, which the `title:`, the
+ * `name:` and the surrounding prose all repeat. The corpus: `executableText()` above, which is
+ * gate.mjs without its comments and ONLY the `run:` values of ci.yml. Either half alone is
+ * defeated by a comment -- the shape by quoting an `args:` line inside one, the corpus by a
+ * `title:` string that happens to contain the invocation.
+ *
+ * WHAT IT STILL DOES NOT ESTABLISH: that anything ran. It is a text match. A step behind an `if:`,
+ * a job outside the required set, `continue-on-error: true`, or a STEPS entry that `--quick` or
+ * `--only` filters out all satisfy it. `scripts/gate.mjs` establishes its own half by running,
+ * which is why a green gate and a green CI are the merge bar and this file is only the tripwire.
  */
 const wiredScripts = () => {
   const out = [];
@@ -115,7 +250,9 @@ const wiredScripts = () => {
         base: REPO,
         invokedAs: `npm run ${name}`,
         invokedIn: {
-          'scripts/gate.mjs': new RegExp(`'run'\\s*,\\s*'${esc(name)}'`),
+          // `args:` anchors the match to the vector the step is BUILT from. Without it a `why:`
+          // or a `title:` string carrying the same two tokens would answer for the step.
+          'scripts/gate.mjs': new RegExp(`args:\\s*\\[\\s*'run'\\s*,\\s*'${esc(name)}'\\s*\\]`),
           '.github/workflows/ci.yml': new RegExp(`npm[ \\t]+run[ \\t]+${esc(name)}(?![\\w:.-])`),
         },
       });
@@ -143,8 +280,9 @@ const wiredScripts = () => {
         invokedAs: `npm test --workspace ${ws}`,
         invokedIn: {
           // The `'test',` prefix matters: without it a `build --workspace apps/site-next` step
-          // would satisfy this, and the test step could be deleted with nothing going red.
-          'scripts/gate.mjs': new RegExp(`'test'\\s*,\\s*'--workspace'\\s*,\\s*'${esc(ws)}'`),
+          // would satisfy this, and the test step could be deleted with nothing going red. Both
+          // steps exist here, so this is the pair the mutation table has to discriminate.
+          'scripts/gate.mjs': new RegExp(`args:\\s*\\[\\s*'test'\\s*,\\s*'--workspace'\\s*,\\s*'${esc(ws)}'\\s*\\]`),
           '.github/workflows/ci.yml': new RegExp(`npm[ \\t]+test[ \\t]+--workspace[ \\t]+${esc(ws)}(?![\\w/.-])`),
         },
       });
@@ -175,7 +313,26 @@ const expand = (script, files) => {
   return matched;
 };
 
-const FILE_FLOOR = 70; // 79 today. A floor, not a count: adding tests must not red this file.
+/**
+ * 81 test files today. Deliberately loose, and deliberately NOT sold as more than it is.
+ *
+ * WHAT A COUNT FLOOR PROVES: that the walk did not collapse -- that `discoverTestFiles` returned
+ * a real set rather than the empty one that would make the subset check above pass over nothing.
+ * That is the failure this repository actually shipped twice, and it is the only thing this
+ * number is here for.
+ *
+ * WHAT IT DOES NOT PROVE, at 70 or at any number a deletion would not trip: that no directory
+ * went missing. A `SKIP_DIRS` entry that swallowed one package's tests would take 81 to 75 and
+ * this assertion would not notice. The check that DOES notice is `dead` below -- a swallowed
+ * directory that a wired script still globs makes that glob match zero files, and that is
+ * reported. The residual gap is a directory that is both swallowed and unwired, which is
+ * invisible to every leg here; nothing short of comparing against `git ls-files` would see it.
+ *
+ * The floor is loose on purpose: tightening it to 79 or 80 would turn every legitimate test
+ * deletion into an unrelated red in an unrelated PR, and buy no property the paragraph above
+ * does not already say it lacks.
+ */
+const FILE_FLOOR = 70;
 
 test('every test file in the repository is run by a wired npm script', () => {
   const files = discoverTestFiles();
@@ -200,10 +357,7 @@ test('every test file in the repository is run by a wired npm script', () => {
 });
 
 test('every wired script is invoked by both scripts/gate.mjs and .github/workflows/ci.yml', () => {
-  const text = {
-    'scripts/gate.mjs': readFileSync(path.join(REPO, 'scripts', 'gate.mjs'), 'utf8'),
-    '.github/workflows/ci.yml': readFileSync(path.join(REPO, '.github', 'workflows', 'ci.yml'), 'utf8'),
-  };
+  const text = executableText();
 
   const missing = [];
   for (const s of wiredScripts()) {
@@ -217,8 +371,13 @@ test('every wired script is invoked by both scripts/gate.mjs and .github/workflo
     [],
     'A script that runs tests but that no pipeline calls is the same defect as an unwired test file,\n' +
       'one level up. gate.mjs states its own contract: it must mirror ci.yml, not a subset of it.\n\n' +
-      'What is matched is the INVOCATION and not the script name, so a step deleted while its title\n' +
-      'or its explanatory comment stays behind is caught rather than read as still wired.\n\n' +
+      'WHAT WAS SEARCHED, so a false red here is diagnosable: not the two files, but what they\n' +
+      'execute. For ci.yml that is the value of every `run:` key with YAML and shell comments cut;\n' +
+      'for gate.mjs it is the source with comments cut, and the match is anchored to `args:`. A step\n' +
+      "deleted while its `name:`, its `title:` or its explanatory comment survives is therefore\n" +
+      'reported here rather than read as still wired. If you believe the step IS present, check that\n' +
+      'it sits under a `run:` (ci.yml) or in an `args:` array literal (gate.mjs) -- prose naming the\n' +
+      'script deliberately does not count.\n\n' +
       `${missing.join('\n')}`,
   );
 });
@@ -230,8 +389,10 @@ test('the enumeration and the globs are non-empty, so neither check above is vac
   assert.ok(
     files.length >= FILE_FLOOR,
     `Walked ${files.length} test files, expected at least ${FILE_FLOOR}. A subset check over an empty\n` +
-      'set passes and proves nothing. Either the walk broke, or SKIP_DIRS grew an entry that swallows\n' +
-      'real test directories.',
+      'set passes and proves nothing, so this asserts the walk still returns a real set -- and that is\n' +
+      'ALL it asserts. It is a collapse detector, not a census: with 81 files today it cannot tell you\n' +
+      'that one directory stopped being walked. Reaching this line means the walk broke outright, or\n' +
+      'SKIP_DIRS grew an entry that swallows most of the repository.',
   );
 
   assert.ok(scripts.length >= 3, `Found ${scripts.length} wired script(s), expected at least 3 (test:app, test:backend, apps/site-next#test).`);
