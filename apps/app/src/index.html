@@ -254,9 +254,11 @@
       </dl>
       <p class="empty-watch">
         No row will appear here. The factory already reports a vault and this table still
-        lists none, because nothing on this page fetches per-vault data: the count above is a
-        live read, the table below it is static markup with no body. Follow the factory link
-        to enumerate vaults on the explorer.
+        lists none, because nothing on this page fetches per-vault data. Be precise about which
+        number is which: the <code>vaultCount()</code> row in the LIVE READS panel, in the card
+        above this one, is the live read; the chip beside this heading and this table are both
+        static markup that <code>app.js</code> never touches. Follow the factory link to
+        enumerate vaults on the explorer.
       </p>
     </div>
   </section>

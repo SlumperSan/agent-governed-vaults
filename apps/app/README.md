@@ -1,8 +1,10 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: a table of vaults with no
-rows, above a protocol card whose three most load-bearing facts are re-read from chain 4663 in the
-reader's own browser every time the page loads.
+The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose
+three most load-bearing facts are re-read from chain 4663 in the reader's own browser every time
+the page loads, above a table of vaults with no rows. That order is the page's order -
+`section.card.protocol` then `section.card.vaults` - and this sentence had them reversed until
+2026-09-10, which is what an end-to-end read of a file catches and a grep for a phrase does not.
 
 It is deployed to the Cloudflare Pages project `rwally-app`, production branch `protocol/main`.
 
