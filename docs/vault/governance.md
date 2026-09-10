@@ -67,9 +67,14 @@ included — carries zero weight.
 
 **`commitDuration` and `revealDuration` are already at the contract minimum, so "shorten the
 governance windows" is not a configuration change.** `_validateConfig` requires each to be
-`>= 1 hours` (`contracts/src/Governance.sol:242-243`), and both shipped configs set both to 3600
-with `timelockDuration` 0 — `smoke.gov` in `contracts/config/base-mainnet.json` and
-`contracts/config/base-sepolia.json`. So the fastest round this contract can run is
+`>= 1 hours` (`contracts/src/Governance.sol:242-243`), and **all three** shipped configs set both to 3600
+with `timelockDuration` 0 — `smoke.gov` in `contracts/config/base-mainnet.json`,
+`contracts/config/base-sepolia.json` **and `contracts/config/robinhood-mainnet.json`**, the last of
+which an earlier draft omitted while saying "both". That omission mattered more than a miscount:
+**chain 4663 is the deployment that actually exists**, its `smoke.gov` is identical to
+base-mainnet's including `proposalThresholdBps` 500 and `proposalCooldown` 21600, and every
+warning below scoped "on base-mainnet" therefore applies to it verbatim. No contract from this
+repository is deployed on Base mainnet at all. So the fastest round this contract can run is
 **1 h commit + 1 h reveal + 0 timelock = 2 h from `propose` to the earliest `execute`**, and that is
 what is deployed. Going lower needs a contract change, not a config edit, and `Governance.sol` is a
 **singleton shared by every vault** — so that change is not scoped to one vault either.
