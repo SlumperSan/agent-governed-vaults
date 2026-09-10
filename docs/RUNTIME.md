@@ -31,7 +31,7 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
    Base RPC ──logs──▶  indexer  ──snapshot file──▶  API  ──HTTP/x402──▶  web
  (viem getLogs)     (index-runner.mjs)  (JSON)   (serve.mjs)          (index.html?api=)
        │                                   │             │
-       │                          (reads)  │    verifyAndSettle │ (no key here)
+       │                          (reads)  │    verifyAndSettle │ (no key here: stub/http)
        │                                   ▼             ▼
        └──eth_call / eth_getLogs──▶      canary    facilitator (external)
               (read-only)         (canary-runner.mjs)  verifies EIP-712 sig + settles
@@ -41,8 +41,9 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 - The **indexer** reads real logs from a Base RPC via viem, folds them into projection state, and
   writes an atomic **snapshot file** on an interval. It resumes from that snapshot on restart.
 - The **API** loads the snapshot and reloads it on an interval (separate process, shared file). It
-  serves read routes gated by the x402 payment scheme. It holds **no key**: it asks a facilitator
-  to verify+settle each payment.
+  serves read routes gated by the x402 payment scheme. Under `FACILITATOR=stub` and
+  `FACILITATOR=http` it holds **no key** and asks a facilitator to verify+settle each payment; the
+  opt-in `FACILITATOR=svm` is the exception and holds one itself (6.6).
 - The **facilitator** is where settlement (and the only key) lives. In production this is a
   **remote HTTP facilitator** you point the API at. You may also run your own settler: this repo
   ships one (`apps/api/src/facilitator-server.mjs`), proven live on Base Sepolia (§6).

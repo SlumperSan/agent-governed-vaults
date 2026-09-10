@@ -248,7 +248,15 @@ function unqualifiedClaims(patterns, { files = textFiles(), read = readText } = 
     if (text == null) continue;
     // Cheap reject: a file with no subject anywhere cannot produce a window with one.
     if (!SUBJECT.test(text)) continue;
-    const lines = text.split(/\r?\n/);
+    // EMPHASIS IS STRIPPED BEFORE MATCHING, and this is the third thing that hid a false claim
+    // from a sweep. `holds **no key**` does not match /holds no key/, and bolding exactly these
+    // words is this repository's dominant style — `**no key**`, `**Keyless by design**`,
+    // `**non-custodial**`, and this very branch's `**no client for the indexed chain by design**`.
+    // A guard for a claim family has to read the family as a reader sees it, not as the plainest
+    // author happened to type it. Measured over the tree: stripping these three characters turns
+    // up exactly one true finding and zero new false positives.
+    const lines = text.split(/\r?\n/).map((l) => l.replace(/[*_`]/g, ''));
+    const raw = text.split(/\r?\n/);
     for (let i = 0; i < lines.length; i += 1) {
       if (!patterns.some((p) => p.test(lines[i]))) continue;
       const window = lines
@@ -259,7 +267,7 @@ function unqualifiedClaims(patterns, { files = textFiles(), read = readText } = 
       if (MODE_TOKEN.test(window)) continue;
       const key = `${file}:${i + 1}`;
       if (EXEMPT.has(key)) continue;
-      hits.push({ file, line: i + 1, quote: lines[i].trim() });
+      hits.push({ file, line: i + 1, quote: raw[i].trim() });
     }
   }
   return hits;
