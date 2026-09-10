@@ -48,8 +48,9 @@ work it describes.
   publishes no L2 sequencer uptime feed for 4663 and has said it will not add one, so the sequencer
   check does not execute there; and its feeds publish on an 86,400 s heartbeat, exactly
   `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), so a price up to a day old is
-  accepted. Both bear on what a vault there would be worth; neither is exercised while there is no
-  vault. See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0.
+  accepted. Both bear on what vault #1 is worth, and vault #1 exists and holds funds, so both are
+  live rather than hypothetical: a sequencer outage on 4663 fails OPEN, and a stale price is
+  accepted for a day, against real money. See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0.
 - **The smoke lifecycle is DONE on Base Sepolia and its evidence is committed** (2026-09-03).
   The stack was redeployed 2026-09-02 at `sourceCommit 8a0e1155` and the full ten-phase lifecycle
   ran against it and passed: vault `0xb940d71b…3c98`, exact 5,000,000-unit USDC round trip,

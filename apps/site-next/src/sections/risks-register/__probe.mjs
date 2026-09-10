@@ -165,9 +165,14 @@ for (const re of [
 ]) {
   ok(!re.test(html), `a banned shape is present: ${re}`);
 }
+// "planned" was RETIRED as the label for this figure once vault #1 existed on chain 4663: the cap
+// is a chain read now, not a plan. `apps/site/test/site.test.mjs` and its site-next twin enforce
+// the replacement pairing, and this probe used to enforce the opposite. It is not wired into any
+// npm script, so it never went red — an unwired probe asserting a retired rule is worse than no
+// probe, because a reader takes it for a live control.
 ok(
-  !html.includes('50,000') || /\bplanned\b/.test(html),
-  'the 50,000 figure must be labelled planned in the same markup',
+  !html.includes('50,000') || /capacityCapUsdc\(\)/.test(html),
+  'the 50,000 figure must carry capacityCapUsdc() in the same markup, not the word "planned"',
 );
 
 /* ── 8. the exactly-one-h1 rule, and the pinned footer sentences ──────────── */
