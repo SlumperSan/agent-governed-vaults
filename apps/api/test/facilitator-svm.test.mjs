@@ -138,6 +138,20 @@ test('EXTRA signers are refused, because the facilitator pays 5000 lamports for 
   assert.equal(v.reason, 'expected-two-signers-got:3');
 });
 
+test('a price naming no network is refused, not waved through', () => {
+  // The guard read `if (price.network && …)`, so a price with no network bound nothing while its
+  // comment said it bound the network unconditionally. No production path reaches it —
+  // `resolveApiConfig` always defaults `network` — but this function's contract is that it endorses
+  // nothing it did not check, and "unreachable today" was not what the comment claimed.
+  const v = verifySvmPayment(
+    { price: { asset: MINT.toBase58(), amount: AMOUNT.toString(), payTo: DEST.toBase58() } },
+    { x402Version: 2, network: 'solana-devnet', transaction: buildTx() },
+    CFG,
+  );
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'price-names-no-network');
+});
+
 test('the facilitator binds the network itself, not only through the caller', () => {
   const v = verifySvmPayment(
     CHALLENGE,

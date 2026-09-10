@@ -174,6 +174,41 @@ test('the SVM replay key is the transaction, because there is no nonce to read',
   assert.match(second.body.error, /replayed-nonce/);
 });
 
+test('a client cannot pick its own replay key by attaching an invented nonce', async () => {
+  // THE ATTACK, AS DEMONSTRATED IN REVIEW. The key was
+  // `env.authorization?.nonce ?? (scheme === 'exact-svm' ? env.transaction : undefined)`, and
+  // `env.authorization` is client-supplied while the SVM branch of the price check never reads it.
+  // So identical transaction bytes with a fresh invented `authorization.nonce` each time presented
+  // the same payment over and over: five attempts, five 200s. One line below the comment explaining
+  // that a client-supplied field must not select which server check runs.
+  const seen = new Set();
+  const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'sig' }; } };
+  const statuses = [];
+  for (let i = 0; i < 5; i += 1) {
+    const env = {
+      x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB',
+      authorization: { nonce: `0xinvented${i}` },
+    };
+    const r = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
+    statuses.push(r.status);
+  }
+  assert.deepEqual(statuses, [200, 402, 402, 402, 402],
+    `identical transaction bytes must settle once however the envelope is dressed, got ${statuses.join(',')}`);
+  assert.equal(seen.size, 1, 'the set must hold ONE key for one payment, not one per invented nonce');
+});
+
+test('the EVM replay key is still the authorization nonce, not the price', async () => {
+  // The other direction: the fix selects on `price.svm`, so an EVM price must be unaffected — a
+  // `transaction` field on an EVM envelope must not become anybody's key.
+  const seen = new Set();
+  const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'r' }; } };
+  const mk = (nonce) => b64({ x402Version: 2, network: 'base', signature: `0x${'1'.repeat(130)}`, transaction: 'AQAB', authorization: { asset: USDC, to: PAYTO, value: '10000', nonce } });
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 200);
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 402);
+  // Same identical `transaction` string, a different authorization: a DIFFERENT payment on this path.
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xbbb') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 200);
+});
+
 test('an EVM price still produces a byte-identical challenge', () => {
   const c = buildChallenge(price, { nowMs: 1000 });
   assert.equal(c.scheme, 'exact');

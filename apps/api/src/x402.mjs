@@ -217,7 +217,16 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces }) {
   // so two envelopes with identical bytes ARE the same payment. Solana refuses a duplicate signature
   // within the blockhash's ~2-minute life on its own, which is the real protection; this is the
   // local half, and an inert local half is worse than an absent one because it looks present.
-  const nonce = env.authorization?.nonce ?? (env.scheme === 'exact-svm' ? env.transaction : undefined);
+  //
+  // THE KEY IS CHOSEN FROM `price`, NOT FROM THE ENVELOPE, and this line got that wrong once
+  // already. It read `env.authorization?.nonce ?? (env.scheme === 'exact-svm' ? env.transaction :
+  // undefined)`, and `env.authorization` is client-supplied while the SVM branch of
+  // `checkEnvelopeAgainstPrice` never looks at it — so a client could attach a fresh invented
+  // `authorization.nonce` to identical transaction bytes and present the same payment as many times
+  // as it liked. Demonstrated: five presentations, five 200s. That is the SAME defect as the
+  // `env.scheme` branch fixed above, one line beneath the comment explaining why it was a defect.
+  // A client-supplied field must never select which server check runs, nor what it runs on.
+  const nonce = price.svm ? env.transaction : env.authorization?.nonce;
   if (seenNonces && nonce) {
     if (seenNonces.has(nonce)) {
       const challenge = buildChallenge(price, { nowMs });

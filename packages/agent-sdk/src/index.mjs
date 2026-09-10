@@ -151,7 +151,12 @@ export class ProtocolError extends Error {
 }
 
 export { authorizeFromChallenge, buildTypedData, buildEnvelope } from './eip3009.mjs';
-// The SVM half. Kept in its own module because it pulls @solana/web3.js and @solana/spl-token,
-// which an EVM-only consumer should not have to load; re-exported here because a module nothing
-// exports is a module nothing can use.
+// The SVM half. It lives in its own module because it pulls @solana/web3.js and @solana/spl-token,
+// and it is re-exported here because a module nothing exports is a module nothing can use.
+//
+// NOTE WHAT THIS RE-EXPORT COSTS, since an earlier version of this comment claimed the opposite: it
+// is STATIC, so importing anything from this index loads both Solana packages, EVM-only consumer
+// included. The separate module buys navigability, not lazy loading. Making that true would mean a
+// dynamic import behind an async factory, which changes this package's shape for every caller —
+// a trade worth making deliberately if it is ever made, and not worth describing as already made.
 export { buildSvmEnvelope, createSvmPayer } from './svm-exact.mjs';

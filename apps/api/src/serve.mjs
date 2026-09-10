@@ -26,10 +26,17 @@
  *              without a 402 gate and bucket every route instead. Unset, or a chain with no config
  *              or no `x402` block, leaves metering ON, which is what it has always been.
  *   FACILITATOR (stub | http | svm)   FACILITATOR_URL (required when FACILITATOR=http)
- *   FACILITATOR=svm REFUSES TO BOOT without SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes. The
- *              facilitator is complete and tested; the 402 challenge and the envelope check are
- *              still EVM-shaped, so every payment would be refused before it was reached. The
- *              refusal comes out with the change that finishes the path.
+ *   FACILITATOR=svm HOLDS A PRIVATE KEY AND PAYS NETWORK FEES, which no other mode does. This
+ *              block described a boot interlock, `SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes`,
+ *              that was removed when the path was finished -- and the sentence describing it was
+ *              not, so the operator documentation for the one key-holding mode promised a safety
+ *              gate that existed in no code path, and asserted the 402 challenge was "still
+ *              EVM-shaped" after it had stopped being. There is NO interlock. The mode is opt-in by
+ *              being off unless you set it, and that is the whole of the protection.
+ *
+ *              Verify it end to end before you trust it with a funded key:
+ *              `SVM_LIVE=1 node scripts/live-x402-svm-run.mjs` (devnet-only, refuses any other
+ *              genesis) asserts on SPL balance deltas read back from chain. docs/RUNTIME.md 6.6.
  *   SVM_RPC_URL, SVM_KEYPAIR, SVM_DESTINATION_TOKEN_ACCOUNT   required when FACILITATOR=svm.
  *              The Solana path settles an SPL TransferChecked the CLIENT built, so this process
  *              signs as fee payer and needs a funded keypair -- unlike the EVM path, which can be

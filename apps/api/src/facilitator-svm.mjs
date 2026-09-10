@@ -165,10 +165,17 @@ export function verifySvmPayment(challenge, envelope, cfg) {
   }
   if (want <= 0n) return { ok: false, reason: 'nonpositive-price' };
 
-  // The network is bound HERE as well as in `checkEnvelopeAgainstPrice`, deliberately. This function
+  // The network is bound HERE as well as in `checkEnvelopeAgainstPrice`, deliberately: this function
   // is exported and reachable on its own, and a facilitator that signs whatever it is handed should
   // not depend on a caller having checked first.
-  if (price.network && (envelope.network ?? '').toLowerCase() !== String(price.network).toLowerCase())
+  //
+  // A PRICE THAT NAMES NO NETWORK IS REFUSED rather than waved through. The guard was
+  // `if (price.network && …)` and its comment called it unconditional, which is the pattern this
+  // file has now been rejected over three times. `resolveApiConfig` always defaults `network`, so no
+  // production path reached the hole — but "unreachable today" is not what the comment claimed, and
+  // this function's whole contract is that it endorses nothing it did not check.
+  if (!price.network) return { ok: false, reason: 'price-names-no-network' };
+  if ((envelope.network ?? '').toLowerCase() !== String(price.network).toLowerCase())
     return { ok: false, reason: `wrong-network:${envelope.network ?? 'none'}` };
 
   const decoded = decodeTransaction(envelope.transaction ?? '');
