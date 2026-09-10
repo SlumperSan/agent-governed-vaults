@@ -226,7 +226,7 @@ async function main() {
   });
   step('facilitator-up', { detail: fac.url });
 
-  // ── 5. bring up the API, keyless, pointed at the facilitator over HTTP ──
+  // ── 5. bring up the API under FACILITATOR=http, keyless, pointed at the facilitator ──
   await seed(cfg.statePath);
   const apiCfg = resolveApiConfig({
     PRICE_ASSET: cfg.usdcAddress, PRICE_PAYTO: payTo, PRICE_AMOUNT: cfg.price.toString(),

@@ -4,7 +4,10 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
 
 - `src/x402.mjs`: payment gate: 402 challenge (`PAYMENT-REQUIRED`), client authorization via
   `PAYMENT-SIGNATURE` (base64 EIP-3009 `transferWithAuthorization` envelope), settlement through
-  an injected facilitator, `PAYMENT-RESPONSE` receipt echo. Server holds no keys, moves no funds.
+  an injected facilitator, `PAYMENT-RESPONSE` receipt echo. Server holds no keys and moves no
+  funds under `FACILITATOR=stub` and `FACILITATOR=http`. **`FACILITATOR=svm` is the exception**:
+  x402 `exact` on Solana has the facilitator sign as fee payer, so that mode holds a keypair and
+  pays network fees. It is opt-in and off by default.
 - `src/server.mjs`: Node-http routes: `/health`, `/.well-known/x402` and `/metrics` (free);
   `/vaults`, `/vaults/:addr`, `/vaults/:addr/members/:m` and `/operators/leaderboard` (paid).
   Also the request caps (method, URL length, body size) applied before any handler work.
@@ -18,8 +21,10 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
   Nothing is removed: unset `CHAIN_ID`, a chain with no config, or a config with no `x402` block
   all meter as they always have, and so does everything above.
 - `src/metrics.mjs`: the plain-text counters behind `/metrics`, including
-  `vault_indexer_snapshot_age_seconds`, which is the indexer-lag signal. The API holds no RPC
-  client by design, so it reports snapshot age rather than a blocks-behind figure it cannot know.
+  `vault_indexer_snapshot_age_seconds`, which is the indexer-lag signal. The API holds no client
+  for the indexed chain by design, so it reports snapshot age rather than a blocks-behind figure it
+  cannot know. (`FACILITATOR=svm` does construct a Solana `Connection` — a node on a different
+  chain, which can no more answer "how far behind is the indexer" than no node at all.)
 
 Settlement is USDC on Base via EIP-3009 executed by the facilitator (never this server), per the
 x402 V2 scheme (see docs/RESEARCH-SPRINT1.md).

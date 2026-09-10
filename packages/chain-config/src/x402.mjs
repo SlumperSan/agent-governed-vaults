@@ -133,7 +133,7 @@ export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
 /**
  * Read every `*.json` directly under `dir` and index the ones that declare a string `network`.
  *
- * Same shape and same failure posture as `loadChainCapabilities`: a malformed file is skipped, not
+ * SAME FAILURE POSTURE as `loadChainCapabilities`, and deliberately NOT the same shape: a malformed file is skipped, not
  * thrown on, and a partial `x402` block does not disable. Names are indexed lower-cased, because
  * `NETWORK=Solana-Mainnet` in a `.env` is the same network as `solana-mainnet` and a capability
  * lookup that says otherwise switches a payment gate off by capitalisation.
@@ -252,6 +252,7 @@ export function x402Capability(key, { dir = DEFAULT_CONFIG_DIR, networkDir = DEF
   // true today only because `loadChainCapabilities` happens not to copy a `network` field into its
   // entry literal. A review pointed out that the label would silently flip the day it did. The call
   // site knows which loader it asked, so the call site says the noun.
+  /** @type {(entry:{shadowed?:string[]}, noun:string) => string} */
   const collision = (entry, noun) => (entry.shadowed?.length
     ? ` (CONFIGURATION ERROR: ${entry.shadowed.join(', ')} declare the same ${noun} and were ignored; the FIRST file wins, whatever it says)`
     : '');

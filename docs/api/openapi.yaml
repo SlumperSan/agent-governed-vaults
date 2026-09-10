@@ -6,8 +6,10 @@ info:
     Read API over the indexed state of the agent-governed index-vault protocol. Read routes are
     metered with x402 (V2): an unpaid request returns 402 with a `PAYMENT-REQUIRED` challenge;
     the client re-requests with a `PAYMENT-SIGNATURE` header carrying an EIP-3009
-    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. The server
-    holds no keys and moves no funds. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
+    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. In the
+    launch modes (`FACILITATOR=stub`, `FACILITATOR=http`) the server holds no keys and moves no
+    funds; the opt-in `FACILITATOR=svm` mode holds a Solana fee-payer keypair and pays network
+    fees. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
   license:
     name: MIT
     identifier: MIT
@@ -81,8 +83,10 @@ paths:
       summary: >
         Operational counters (free, rate-limited). Prometheus text exposition format, readable
         with plain curl. `vault_indexer_snapshot_age_seconds` is the indexer-lag signal: the API
-        holds no RPC client by design, so it reports how long ago the snapshot was written rather
-        than claiming a blocks-behind figure it cannot know. See docs/RUNTIME.md section 8.
+        holds no client for the indexed chain by design (the opt-in `FACILITATOR=svm` mode's Solana
+        `Connection` is a node on a different chain and answers nothing about this one), so it
+        reports how long ago the snapshot was written rather than claiming a blocks-behind figure it
+        cannot know. See docs/RUNTIME.md section 8.
       operationId: metrics
       responses:
         '200':

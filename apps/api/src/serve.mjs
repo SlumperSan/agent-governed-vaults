@@ -1,7 +1,9 @@
 // @ts-check
 /**
  * Runnable API server entrypoint. Serves the x402-metered read API over the indexer's snapshot.
- * Env-driven and NON-CUSTODIAL: it holds no key and settles nothing itself — payment verification
+ * Env-driven and, under `FACILITATOR=stub` and `FACILITATOR=http`, NON-CUSTODIAL: it holds no key
+ * and settles nothing itself. `FACILITATOR=svm` is the one mode that does hold one — see the
+ * `svm` branch below and docs/RUNTIME.md 6.6. Payment verification
  * and settlement are delegated to a facilitator (a remote HTTP facilitator in production; an
  * accept-all stub for local dev). It shares state with the indexer through the snapshot file: it
  * loads the snapshot on boot and reloads it periodically, so indexer and API run as separate
@@ -24,7 +26,27 @@
  *              `x402.enabled` is false — chain 4663 — makes this server answer the metered routes
  *              without a 402 gate and bucket every route instead. Unset, or a chain with no config
  *              or no `x402` block, leaves metering ON, which is what it has always been.
- *   FACILITATOR (stub | http)   FACILITATOR_URL (required when FACILITATOR=http)
+ *   FACILITATOR (stub | http | svm)   FACILITATOR_URL (required when FACILITATOR=http)
+ *   FACILITATOR=svm HOLDS A PRIVATE KEY AND PAYS NETWORK FEES, which no other mode does. This
+ *              block described a boot interlock, `SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes`,
+ *              that was removed when the path was finished -- and the sentence describing it was
+ *              not, so the operator documentation for the one key-holding mode promised a safety
+ *              gate that existed in no code path, and asserted the 402 challenge was "still
+ *              EVM-shaped" after it had stopped being. There is NO interlock. The mode is opt-in by
+ *              being off unless you set it, and that is the whole of the protection.
+ *
+ *              Verify it end to end before you trust it with a funded key:
+ *              `SVM_LIVE=1 node scripts/live-x402-svm-run.mjs` (devnet-only, refuses any other
+ *              genesis) asserts on SPL balance deltas read back from chain. docs/RUNTIME.md 6.6.
+ *   SVM_RPC_URL, SVM_KEYPAIR, SVM_DESTINATION_TOKEN_ACCOUNT, SVM_DECIMALS   ALL FOUR are required
+ *              when FACILITATOR=svm; `SVM_REQUIRED` below is the one list they come from, and this
+ *              line said three until a review counted them against the code.
+ *              The Solana path settles an SPL TransferChecked the CLIENT built, so this process
+ *              signs as fee payer and needs a funded keypair -- unlike the EVM path, which can be
+ *              keyless behind an HTTP delegate. SVM_KEYPAIR is the 64-byte secret key as a JSON
+ *              array or base58; it is never read from a file in this repository and never logged.
+ *              SVM_DESTINATION_TOKEN_ACCOUNT is stated by the operator rather than derived from
+ *              PRICE_PAYTO, so a mismatch is a rejection and never a redirect.
  *   CORS (1 to enable — needed for the browser live mode)
  *   RATE_LIMIT_BURST (60)  RATE_LIMIT_PER_SEC (5, 0 disables)  RATE_LIMIT_MAX_IPS (10000)
  *   TRUST_PROXY (1 iff a reverse proxy in front of this process sets x-forwarded-for)
@@ -38,6 +60,7 @@ import { fileURLToPath } from 'node:url';
 import { stat } from 'node:fs/promises';
 import { createApi, DEFAULT_LIMITS } from './server.mjs';
 import { createHttpFacilitator, createStubFacilitator } from './facilitator.mjs';
+import { createSvmFacilitator, keypairFromEnv, Connection } from './facilitator-svm.mjs';
 import { createRateLimiter } from './ratelimit.mjs';
 import { createMetrics } from './metrics.mjs';
 import { loadSnapshot } from '../../../packages/indexer/src/store.mjs';
@@ -50,19 +73,55 @@ import { x402Capability } from '../../../packages/chain-config/src/x402.mjs';
  * Parse + validate the API config from a raw env object. Pure and testable.
  * @param {Record<string,string|undefined>} env
  */
+/**
+ * THE FOUR ENV VARS `FACILITATOR=svm` REQUIRES. One definition, because the env documentation at the
+ * top of this file, `docs/RUNTIME.md`'s lede and its 6.6 table all describe it, and a review caught
+ * two of those three saying "three" while the code required four.
+ */
+export const SVM_REQUIRED = ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT', 'SVM_DECIMALS'];
+const SVM_REQUIRED_WHY = {
+  SVM_DECIMALS: ', the mint decimals that TransferChecked takes',
+};
+
 export function resolveApiConfig(env) {
+  // THE ADDRESS SHAPE FOLLOWS THE FACILITATOR, because on Solana `PRICE_ASSET` is a mint and
+  // `PRICE_PAYTO` is a token account, and neither is twenty hex bytes. Checking the EVM shape
+  // unconditionally is what made `FACILITATOR=svm` boot into a server that refused every payment as
+  // `wrong-mint`: the price could not name a Solana mint, so it never matched one.
   const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a ?? '');
+  const isBase58 = (a) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a ?? '');
   const missing = ['PRICE_ASSET', 'PRICE_PAYTO'].filter((k) => !env[k]);
   if (missing.length) throw new Error(`api: missing required env: ${missing.join(', ')}`);
-  if (!isAddr(env.PRICE_ASSET)) throw new Error(`api: PRICE_ASSET is not an address: ${env.PRICE_ASSET}`);
-  if (!isAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not an address: ${env.PRICE_PAYTO}`);
+  const svmMode = (env.FACILITATOR || 'stub').toLowerCase() === 'svm';
+  const okAddr = svmMode ? isBase58 : isAddr;
+  const shape = svmMode ? 'a base58 Solana address' : 'an 0x address';
+  if (!okAddr(env.PRICE_ASSET)) throw new Error(`api: PRICE_ASSET is not ${shape}: ${env.PRICE_ASSET}`);
+  if (!okAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not ${shape}: ${env.PRICE_PAYTO}`);
 
   const facilitator = (env.FACILITATOR || 'stub').toLowerCase();
-  if (facilitator !== 'stub' && facilitator !== 'http')
-    throw new Error(`api: FACILITATOR must be 'stub' or 'http', got '${facilitator}'`);
+  if (facilitator !== 'stub' && facilitator !== 'http' && facilitator !== 'svm')
+    throw new Error(`api: FACILITATOR must be 'stub', 'http' or 'svm', got '${facilitator}'`);
   if (facilitator === 'http' && !env.FACILITATOR_URL)
     throw new Error('api: FACILITATOR=http requires FACILITATOR_URL');
+  // Every one of these is required rather than defaulted, and that is the point: a Solana
+  // facilitator with a missing destination would verify against `undefined` and refuse every
+  // payment, which looks like a client problem for as long as it takes somebody to read this file.
+  //
+  // SVM_DECIMALS IS IN THIS LIST AND NOT IN A SEPARATE CHECK BELOW IT, which is where it used to
+  // live. Two places to look up one answer is how the count went wrong: the env doc block at the
+  // top of this file and `docs/RUNTIME.md` were both written from this loop and both said THREE,
+  // while the code required four. `SVM_REQUIRED` is now the single definition, and the doc block
+  // names it.
+  if (facilitator === 'svm')
+    for (const k of SVM_REQUIRED)
+      if (!env[k]) throw new Error(`api: FACILITATOR=svm requires ${k}${SVM_REQUIRED_WHY[k] ?? ''}`);
 
+  // THE BOOT REFUSAL THAT STOOD HERE IS GONE, BECAUSE THE PATH IT DESCRIBED IS FINISHED. It said
+  // the mode would boot and refuse every payment, and it was right: PRICE_ASSET could not name a
+  // Solana mint, and `checkEnvelopeAgainstPrice` read an EIP-3009 authorization that an SVM envelope
+  // does not have. Both are fixed -- above, and in x402.mjs -- and the path is proven end to end on
+  // devnet with a real signature.
+  //
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
   const flag = (k) => env[k] === '1' || env[k] === 'true';
 
@@ -104,9 +163,20 @@ export function resolveApiConfig(env) {
       amount: env.PRICE_AMOUNT || '10000',
       payTo: env.PRICE_PAYTO,
       network: env.PRICE_NETWORK || 'base',
+      // Present only in SVM mode, and `buildChallenge` keys off its PRESENCE rather than off a
+      // scheme string, so an EVM challenge is byte-identical to what it has always been. `feePayer`
+      // is null here because this function is pure by contract and the keypair lives in the
+      // facilitator; `buildApiServer` fills it in once the facilitator exists.
+      ...(svmMode ? { svm: { feePayer: null, decimals: Number(env.SVM_DECIMALS) } } : {}),
     },
     facilitatorKind: facilitator,
     facilitatorUrl: env.FACILITATOR_URL,
+    // The keypair is carried on the config object and NEVER logged. `resolveApiConfig` is pure and
+    // does not parse it -- `facilitatorFromConfig` does, so a bad key fails where the facilitator
+    // is built rather than where the config is read.
+    svm: facilitator === 'svm'
+      ? { rpcUrl: env.SVM_RPC_URL, keypair: env.SVM_KEYPAIR, destinationTokenAccount: env.SVM_DESTINATION_TOKEN_ACCOUNT }
+      : null,
     // RATE_LIMIT_PER_SEC=0 turns the limiter off entirely — for a private deployment where the
     // only client is your own front end and an accidental 429 is worse than an unbounded scrape.
     rateLimit: { enabled: refillPerSec > 0, capacity, refillPerSec, maxKeys: num('RATE_LIMIT_MAX_IPS', 10_000) },
@@ -122,11 +192,28 @@ export function resolveApiConfig(env) {
   };
 }
 
-/** Build the facilitator a config asks for. */
-export function facilitatorFromConfig(cfg, { fetchImpl } = {}) {
-  return cfg.facilitatorKind === 'http'
-    ? createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl })
-    : createStubFacilitator();
+/**
+ * Build the facilitator a config asks for.
+ *
+ * `svm` is a THIRD IMPLEMENTATION, not a change to the payment path. `apps/api/src/x402.mjs` takes
+ * whatever satisfies `verifyAndSettle(challenge, envelope)`, and it has taken an injected one since
+ * it was written, so adding Solana costs the gate nothing. `connection` is injectable for the same
+ * reason the EVM clients are: the whole facilitator is testable with no network and no key.
+ */
+export function facilitatorFromConfig(cfg, { fetchImpl, connection } = {}) {
+  if (cfg.facilitatorKind === 'http') return createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl });
+  if (cfg.facilitatorKind === 'svm') {
+    const parsed = keypairFromEnv(cfg.svm?.keypair);
+    // Throwing here and not at config time is deliberate: this is the first moment the key is
+    // actually needed, and the message says which env var is wrong without ever printing its value.
+    if (!parsed.ok) throw new Error(`api: SVM_KEYPAIR could not be read (${parsed.reason})`);
+    return createSvmFacilitator({
+      connection: connection ?? new Connection(cfg.svm.rpcUrl, 'confirmed'),
+      keypair: parsed.keypair,
+      destinationTokenAccount: cfg.svm.destinationTokenAccount,
+    });
+  }
+  return createStubFacilitator();
 }
 
 /**
@@ -148,6 +235,11 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   const cap = x402 ?? x402Capability(cfg.network ?? cfg.chainId);
   const state = await loadSnapshot(cfg.statePath);
   const fac = facilitator ?? facilitatorFromConfig(cfg);
+  // THE CHALLENGE CANNOT NAME THE FEE PAYER UNTIL THE FACILITATOR EXISTS, and the client cannot
+  // build a transaction without it -- the facilitator refuses one that names anybody else. This is
+  // the join between a pure config and a keypair-holding facilitator, and it is one line because
+  // the facilitator publishes its own public key rather than the config guessing at it.
+  if (cfg.price?.svm && fac.feePayer) cfg.price.svm.feePayer = fac.feePayer;
   const metrics = createMetrics();
   const rateLimit = cfg.rateLimit?.enabled
     ? createRateLimiter({ capacity: cfg.rateLimit.capacity, refillPerSec: cfg.rateLimit.refillPerSec, maxKeys: cfg.rateLimit.maxKeys, now })

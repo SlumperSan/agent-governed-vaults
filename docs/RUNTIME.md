@@ -2,7 +2,12 @@
 
 This is the operator runbook for the three runtime processes that turn deployed contracts into a
 live product: the **indexer**, the **API**, and the **web** front end. Everything here is
-**non-custodial**: no process in this repo holds a private key or moves funds. Payment settlement
+**non-custodial**, with one opt-in exception: no process in this repo holds a private key or
+moves funds, except the API under `FACILITATOR=svm`. The x402 `exact` scheme on Solana has the
+facilitator sign as fee payer and submit, so that mode holds a keypair by design and pays
+network fees; it is off by default and requires four env vars to turn on (`SVM_RPC_URL`,
+`SVM_KEYPAIR`, `SVM_DESTINATION_TOKEN_ACCOUNT`, `SVM_DECIMALS` — see 6.6). Everything below is
+about the other modes unless it says otherwise. Payment settlement
 is delegated to an external **facilitator**.
 
 **Running it is §1–§7; keeping it running is [§8 Operations](#8-operations)**. Log format, backup
@@ -26,7 +31,7 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
    Base RPC ──logs──▶  indexer  ──snapshot file──▶  API  ──HTTP/x402──▶  web
  (viem getLogs)     (index-runner.mjs)  (JSON)   (serve.mjs)          (index.html?api=)
        │                                   │             │
-       │                          (reads)  │    verifyAndSettle │ (no key here)
+       │                          (reads)  │    verifyAndSettle │ (no key here: stub/http)
        │                                   ▼             ▼
        └──eth_call / eth_getLogs──▶      canary    facilitator (external)
               (read-only)         (canary-runner.mjs)  verifies EIP-712 sig + settles
@@ -36,8 +41,9 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 - The **indexer** reads real logs from a Base RPC via viem, folds them into projection state, and
   writes an atomic **snapshot file** on an interval. It resumes from that snapshot on restart.
 - The **API** loads the snapshot and reloads it on an interval (separate process, shared file). It
-  serves read routes gated by the x402 payment scheme. It holds **no key**: it asks a facilitator
-  to verify+settle each payment.
+  serves read routes gated by the x402 payment scheme. Under `FACILITATOR=stub` and
+  `FACILITATOR=http` it holds **no key** and asks a facilitator to verify+settle each payment; the
+  opt-in `FACILITATOR=svm` is the exception and holds one itself (6.6).
 - The **facilitator** is where settlement (and the only key) lives. In production this is a
   **remote HTTP facilitator** you point the API at. You may also run your own settler: this repo
   ships one (`apps/api/src/facilitator-server.mjs`), proven live on Base Sepolia (§6).
@@ -122,7 +128,8 @@ Open `http://localhost:8080/index.html?api=http://localhost:8402`. You'll see a 
 and the indexed vaults/operators. Drop the `?api=` param and it falls back to the embedded demo.
 
 > Live mode reads are metered over x402. In the browser the SDK signs with a **dev signer** (a dummy
-> signature the stub facilitator accepts): the browser never holds a real key. Against a real
+> signature the `FACILITATOR=stub` facilitator accepts): the browser never holds a real key.
+> Against a real
 > settling facilitator that dummy signature is rejected, which is correct: the browser demo is not
 > meant to move funds. NAV/share, basket weights, and proposal phases are chain-read enrichment the
 > API does not expose yet, so live mode shows those as placeholders (the banner says so).
@@ -378,6 +385,48 @@ Both were exercised live; see the report.
 
 ---
 
+### 6.6 Solana (`FACILITATOR=svm`) — and how to check it yourself
+
+The asymmetry, because it is the reason §7's "the API holds no key" carries an exception. On the EVM
+path the client signs an EIP-3009 AUTHORIZATION and the server builds the transaction. On Solana the
+client builds and partially signs the WHOLE TRANSACTION, and the facilitator co-signs as **fee payer**
+and submits — so the facilitator holds a key, pays lamports, and endorses anything it does not check.
+There is nothing to delegate over HTTP: the key lives in the API process. The mode is opt-in and off
+by default.
+
+| Variable | Meaning |
+|---|---|
+| `FACILITATOR=svm` | selects it |
+| `PRICE_NETWORK` | **set it.** Not one of the four required vars, and omitting it is the easy mistake: `buildChallenge` copies `price.network`, which `resolveApiConfig` reads from `PRICE_NETWORK` and defaults to `base` — so a Solana-configured API advertises an EVM network in its 402. Nothing breaks — the client echoes the challenge and the cluster comes from `SVM_RPC_URL` — but the challenge is mislabelled. `solana-devnet` / `solana-mainnet`. |
+| `NETWORK` | a **different** lever, one word apart: it resolves the x402 capability out of `config/networks/` (`NETWORK` and `CHAIN_ID` are mutually exclusive). It does not touch the challenge. Both Solana files declare `x402.enabled: true`, which is also the default for a network with no config, so setting it changes nothing about metering today — but set it to the same network as `PRICE_NETWORK` or the API logs `x402.network_mismatch` at boot. |
+| `SVM_RPC_URL` | the cluster |
+| `SVM_KEYPAIR` | the fee payer's 64-byte secret, as a JSON array or base58 |
+| `SVM_DESTINATION_TOKEN_ACCOUNT` | where payments land |
+| `SVM_DECIMALS` | the mint's decimals, which the challenge must carry |
+| `PRICE_ASSET` / `PRICE_PAYTO` | base58 in this mode, not `0x` |
+
+A malformed `SVM_KEYPAIR` is reported as a SHAPE (`keypair-unparseable:json-array`,
+`keypair-unparseable:base58`, `keypair-wrong-length:<n>`) and never by echoing the parser's message,
+which used to put real key bytes into the boot log through `JSON.parse`'s error window.
+
+**Run the whole path against devnet:**
+
+```
+SVM_LIVE=1 SVM_KEYPAIR_PATH=~/.svm-devnet.json node scripts/live-x402-svm-run.mjs
+```
+
+It creates its own mint, payer and token accounts, so it depends on no faucet and no address anybody
+has to keep current; it refuses to start without `SVM_LIVE=1` or if the RPC's genesis hash is not
+devnet's; and **it asserts on SPL token balance deltas read back from chain**, not on the receipt. A
+stub can fake a receipt; it cannot fake a balance. It also replays one envelope twice and requires a
+`replayed-nonce` refusal.
+
+That shape is deliberate. The first devnet run of this scheme called `verifyAndSettle` directly and
+its output was quoted as proof the payment path worked — while `decodeSignatureHeader` was in fact
+rejecting the envelope the shipped client builds, so no request could reach the facilitator through
+`gate()` at all. A claim that cannot be re-run from the repository is not evidence, which is why the
+runner is checked in rather than the log.
+
 ## 7. Non-custodial guarantees
 
 - The **indexer** is read-only: `getLogs` and `getBlockNumber` only. It never signs or sends.
@@ -386,12 +435,17 @@ Both were exercised live; see the report.
   and no key in `packages/canary`. Its `requestExit` probe is an `eth_call` with an impersonated
   `from`, which never touches a key and never changes chain state. Enforced by tests, not just
   documented.
-- The **API** holds no key. It only asks a facilitator to `verifyAndSettle`; it serves the resource
+- The **API** holds no key under `FACILITATOR=stub` and `FACILITATOR=http`. It only asks a
+  facilitator to `verifyAndSettle`; it serves the resource
   when settlement succeeds. USDC moves via EIP-3009 executed **by the facilitator**, from payer to
   `payTo`, never through the API.
 - The **web** browser signer is a dummy against a dev facilitator; real signing is the user's wallet.
-- The only key in the whole stack is the settlement key inside the facilitator (yours in §6, or the
-  third party's), which is a **relayer** paying gas: it never takes custody of vault funds.
+- Keys in this stack live in three places, and this is the whole list: the EVM settlement key inside
+  the facilitator you run in §6; the same key held by a third-party facilitator under
+  `FACILITATOR=http`; and, under the opt-in `FACILITATOR=svm`, the Solana fee-payer keypair loaded
+  from `SVM_KEYPAIR` **inside the API process** (§6.6). All three are **relayers** paying network
+  fees: none of them takes custody of vault funds, and no contract in this repository knows the
+  third one exists.
 
 ---
 
@@ -845,8 +899,10 @@ series look identical in a graph, and only one of them is good news.
 > bucket on `curl` and get a 429 from the endpoint you most need. Give the burst room
 > (`RATE_LIMIT_BURST`), or set `RATE_LIMIT_PER_SEC=0` on a deployment whose only clients are yours.
 
-**On indexer lag.** The API has **no RPC client by design** (it serves the snapshot and nothing
-else) so it cannot know the chain head and must not claim a blocks-behind figure. It reports how
+**On indexer lag.** The API has **no client for the indexed chain by design** (it serves the
+snapshot and nothing else; the `FACILITATOR=svm` Solana `Connection` of §6.6 is a node on a
+different chain and answers nothing about this one) so it cannot know the chain head and must not
+claim a blocks-behind figure. It reports how
 long ago the snapshot was written, which is the number that actually tells you the indexer stopped,
 and the metric is named for exactly that. Alert on it:
 

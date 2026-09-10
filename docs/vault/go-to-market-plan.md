@@ -33,7 +33,7 @@ Raise capacity by **deploying a second vault (≥250k)** only after **≥30 inci
 
 ## Keys & roles at launch
 
-Deployer EOA has **no post-wiring authority** (no owner functions exist); operator identity is a per-vault leaderboard identity with member-equal weight (cannot pause/upgrade/reprice/move funds); facilitator settler is stateless and only broadcasts `transferWithAuthorization`; API host and canary are keyless/read-only. Immutability means there is no admin key to compromise — and no admin key to fix a bug with.
+Deployer EOA has **no post-wiring authority** (no owner functions exist); operator identity is a per-vault leaderboard identity with member-equal weight (cannot pause/upgrade/reprice/move funds); facilitator settler is stateless and only broadcasts `transferWithAuthorization`; the canary is keyless/read-only, and so is the API host in the modes launch uses (`FACILITATOR=stub`, `FACILITATOR=http`) — the opt-in `FACILITATOR=svm` mode holds a Solana fee-payer keypair and is off by default. Immutability means there is no admin key to compromise — and no admin key to fix a bug with.
 
 ## Gate to GO
 
