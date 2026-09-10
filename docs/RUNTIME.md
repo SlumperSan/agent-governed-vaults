@@ -395,6 +395,7 @@ by default.
 | Variable | Meaning |
 |---|---|
 | `FACILITATOR=svm` | selects it |
+| `NETWORK` | **set it.** Not one of the four required vars, and omitting it is the easy mistake: `resolveApiConfig` defaults `price.network` to `base`, so a Solana-configured API advertises an EVM network in its 402. Nothing breaks — the client echoes the challenge and the cluster comes from `SVM_RPC_URL` — but the challenge is mislabelled. `solana-devnet` / `solana-mainnet`. |
 | `SVM_RPC_URL` | the cluster |
 | `SVM_KEYPAIR` | the fee payer's 64-byte secret, as a JSON array or base58 |
 | `SVM_DESTINATION_TOKEN_ACCOUNT` | where payments land |

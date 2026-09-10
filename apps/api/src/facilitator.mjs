@@ -3,15 +3,23 @@
  * x402 facilitators for the metered API — the component behind x402.mjs's injected
  * `verifyAndSettle(challenge, envelope)` seam.
  *
- * Three implementations, one interface:
+ * FOUR implementations, one interface. This list said THREE until the Solana facilitator shipped,
+ * which is the failure mode a file whose job is enumeration can least afford:
  *   - createStubFacilitator     accept/deny with no chain — tests and local dev.
  *   - createHttpFacilitator     delegate verify+settle to a REMOTE facilitator over HTTP. This is
- *                               the API server's production default: the server stays non-custodial
- *                               (holds no key, moves no funds) and a separate facilitator settles.
+ *                               the API server's production default, and IN THIS MODE the server
+ *                               stays non-custodial — holds no key, moves no funds — because a
+ *                               separate facilitator settles.
  *   - createSettlingFacilitator run-your-own settler: recover the EIP-712 payer, then settle via
  *                               USDC.transferWithAuthorization with an OPERATOR-SUPPLIED account.
  *                               It needs viem + a funded key the operator injects at runtime; this
  *                               module never embeds, reads, or logs a key.
+ *   - createSvmFacilitator      x402 `exact` on SOLANA, and the one that breaks the pattern above:
+ *                               the client builds and partially signs the whole SPL transaction and
+ *                               this process co-signs as FEE PAYER, so there is nothing to delegate
+ *                               over HTTP. The key lives in the API process and pays lamports.
+ *                               Opt-in via FACILITATOR=svm, off by default. It lives in its own
+ *                               module (`facilitator-svm.mjs`) because it pulls the Solana SDKs.
  *
  * Design contract (per x402.mjs): verifyAndSettle's first arg is `{ price }`, NOT the full
  * challenge — it carries no chainId. So chainId and the USDC name/version/address come from

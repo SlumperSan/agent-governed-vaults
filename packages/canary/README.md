@@ -13,7 +13,14 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 
 ## Non-custodial, and read-only on top of that
 
-The indexer and API are non-custodial (no keys). The canary is that **plus** read-only against the
+The indexer is non-custodial and holds no keys, and so is the API in the modes launch uses
+(`FACILITATOR=stub`, `FACILITATOR=http`). **The opt-in `FACILITATOR=svm` mode is the exception** and
+this sentence did not carry it: x402 `exact` on Solana has the facilitator co-sign as fee payer, so
+that mode loads a keypair from `SVM_KEYPAIR` and pays lamports. It stays non-custodial in the sense
+that matters — the key holds the operator's own gas money, never member funds — but "no keys" is
+simply not true of it. See `docs/RUNTIME.md` 6.6.
+
+None of that touches the canary, which is the subject of this file: it is that **plus** read-only against the
 chain: it builds a viem *public* client and issues only `eth_blockNumber`, `eth_getBlockByNumber`,
 `eth_call`, and `eth_getLogs`. There is no wallet client, no account, no `PRIVATE_KEY` read, and no
 ABI fragment for a state-changing function anywhere in this package. `requestExit` appears solely to
