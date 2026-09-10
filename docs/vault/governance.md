@@ -63,6 +63,45 @@ included — carries zero weight.
 - **Payload type is never inferred from shape** — `execute` decodes strictly per the stored
   `ProposalType`; `keccak256(payload) == actionHash` binds voters to the exact orders.
 
+## Phase durations — the floor is the shipped value
+
+**`commitDuration` and `revealDuration` are already at the contract minimum, so "shorten the
+governance windows" is not a configuration change.** `_validateConfig` requires each to be
+`>= 1 hours` (`contracts/src/Governance.sol:242-243`), and both shipped configs set both to 3600
+with `timelockDuration` 0 — `smoke.gov` in `contracts/config/base-mainnet.json` and
+`contracts/config/base-sepolia.json`. So the fastest round this contract can run is
+**1 h commit + 1 h reveal + 0 timelock = 2 h from `propose` to the earliest `execute`**, and that is
+what is deployed. Going lower needs a contract change, not a config edit, and `Governance.sol` is a
+**singleton shared by every vault** — so that change is not scoped to one vault either.
+
+**The consequence for an hourly cadence.** A design that wants one governance decision per hour
+cannot get it from this contract: two hours is the floor. An hourly epoch has to either apply a rule
+this contract already passed — the vote sets policy, the epoch executes it, and no vote runs per
+epoch — or run on a different contract. Recorded here because the arithmetic is the whole answer,
+and it is cheaper to read than to rediscover.
+
+**What a shorter window would actually trade away**, stated so the cost is not assumed to be
+front-running:
+
+- **Participation, which is the real cost.** Quorum is measured on *revealed* stake —
+  `revealedWeight` is the numerator and standing defaults never count toward it (VO-2 / K-3). A
+  member who is not online inside the commit window is silent, and a member who commits but misses
+  the reveal window is silent *and* has burned their commitment. Halving the phases roughly doubles
+  the share of members a round can lose to being asleep. One active proposal per vault
+  (`activeProposalOf`) means a round lost to quorum also costs `proposalCooldown` before anything
+  can be retried.
+- **The withheld-reveal grief gets cheaper to time.** Commits close before reveals open, so an early
+  revealer leaks the tally direction to voters who are already committed. Their only remaining move
+  is to withhold their own reveal and starve quorum. That is available at any window length; a
+  shorter reveal phase compresses the window in which it has to be decided.
+- **Mode-F exposure shrinks, which is a benefit, not a cost.** `hasPendingExecution` turns true at
+  **reveal start** (VO-8 / K-1), so every exit from that moment until the proposal settles is
+  forward-priced. A shorter reveal phase shortens that period. See [[two-mode-exits]].
+- **It does not buy back the one leak that matters.** The orders themselves are public in
+  `execute`'s calldata whatever the phases are — `keccak256(payload) == actionHash` binds voters to
+  the exact orders but does not hide them from the mempool. Phase durations are not the lever on
+  that, and shortening them does not move it either way.
+
 ## Security findings that live here
 
 - [[c2-unbounded-governance]] — the phase-duration **hard caps** (`COMMIT_HARD_CAP`,
