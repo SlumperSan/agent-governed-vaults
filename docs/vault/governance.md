@@ -83,24 +83,37 @@ and it is cheaper to read than to rediscover.
 **What a shorter window would actually trade away**, stated so the cost is not assumed to be
 front-running:
 
-- **Participation — the real cost, and only at five or more members.** A member who is not online
-  inside the commit window is silent, and one who commits but misses the reveal window is silent
-  *and* has burned the commitment. Halving the phases roughly doubles the share of members a round
-  can lose to being asleep.
+- **Participation is the cost, and how much depends on the proposal TYPE before it depends on the
+  member count.** A member who is not online inside the commit window is silent, and one who commits
+  but misses the reveal window is silent *and* has burned the commitment. Halving the phases roughly
+  doubles the share of members a round can lose to being asleep. What that costs, per the three
+  branches of `finalize` **in the order it tests them**:
 
-  **Whether that costs anything depends on which quorum regime the vault is in, and the two answer
-  differently.** At five or more members, `revealedWeight` is the numerator and standing defaults
-  never count toward it (VO-2 / K-3) — so being asleep is fatal to the round and a shorter window is
-  a real risk. Below five (`SIGNER_REGIME_BELOW`), `quorumOk` is
-  `headMajorityWithStake || forStakeMajority`, and both branches read **`forWeight`**, which
-  *includes applied standing defaults*. The contract says so itself in an Audit Council note beside
-  the branch: that regime "can pass a Rebalance on a >50% pre-declared-default majority with zero
-  live reveals". A default may be set up to `DEFAULT_TTL` (72 h) before the proposal exists, so in a
-  small vault the window length is close to irrelevant to whether the round carries. **Vault #1
-  launches small**, so this is the regime the first live rounds run under, not a corner case.
+  | branch | quorum test | who feeds it |
+  |---|---|---|
+  | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | live reveals only — **full consensus**, so window length matters most here |
+  | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; defaults never count (VO-2 / K-3) |
+  | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight` — reveals, **plus** any applied standing defaults |
 
-  (An earlier draft of this bullet stated the `revealedWeight` rule as a universal. It is not one,
-  and stating it that way inverted the bullet's own conclusion for exactly the vaults that exist.)
+  Only the third row can carry a round without live participation, and only under conditions worth
+  naming rather than waving at: standing defaults are **`Rebalance`-only** (VO-4, enforced by
+  `require(p.ptype == ProposalType.Rebalance)`), `standingDefaultOf` is empty until a member
+  affirmatively sets one, and the default must pre-date the proposal. With no defaults set, both
+  branches of that row are fed by reveals alone and the round is exactly as window-sensitive as any
+  other. So the case where phase length barely matters is: *a Rebalance, in a sub-five vault, where
+  pre-existing FOR defaults already carry a majority* — narrow, not the regime's general behaviour.
+
+  **And the commit phase EATS the default's life, which cuts the other way.**
+  `applyStandingDefault` is reveal-phase-only and measures the 72 h TTL at apply time against
+  `setAt`, so the usable pre-proposal age is `DEFAULT_TTL - commitDuration`, not the full
+  `DEFAULT_TTL` — see the T-1 note in **Invariants** above, which this section previously
+  contradicted. A *shorter* commit phase therefore leaves a default MORE life, not less.
+
+  (Two earlier drafts of this bullet were rejected. The first stated the `revealedWeight` rule as a
+  universal, which is false below five members. The second corrected that and overshot, selling a
+  narrow Rebalance-with-defaults case as the whole sub-five regime and citing the 72 h TTL as though
+  the commit phase did not consume it. The mechanism is genuinely three-way; a two-way summary of it
+  has now been wrong twice in both directions.)
 - **The withheld-reveal grief gets cheaper to time.** Commits close before reveals open, so an early
   revealer leaks the tally direction to voters who are already committed. Their only remaining move
   is to withhold their own reveal and starve quorum. That is available at any window length; a
@@ -109,14 +122,17 @@ front-running:
 - **A lost round does NOT cost `proposalCooldown` before a retry**, though a draft of this section
   claimed it did. `finalize` sets a failed round `Defeated`, which `_isSettled` counts as settled, so
   `activeProposalOf` no longer blocks — and `lastProposalAt` is keyed **per proposer**
-  (`mapping(vault => proposer => uint64)`), so **any other member can `propose` in the next block**.
+  (`mapping(vault => proposer => uint64)`), so **any other member holding at least
+  `proposalThresholdBps` of stake can `propose` in the next block** (`propose` gates on
+  `own * BPS >= proposalThresholdBps * total`: 500 bps on base-mainnet, 100 on base-sepolia).
   The contract states this plainly where the cooldown is validated: "lastProposalAt is keyed
   PER-PROPOSER, so a second address sidesteps the cooldown entirely. M-7 stays open." Even for the
   *same* proposer the clock runs from `propose`, not from the defeat, so a 2 h round has already
   spent 7200 s of it: `base-sepolia`'s cooldown of 3600 s is **fully elapsed** by `revealDeadline`
-  (residual 0), and `base-mainnet`'s 21600 s leaves 14400 s, not 21600. Shortening the phases would
-  *raise* that residual, which is the opposite of a cost — and it is a cost nobody pays anyway while
-  M-7 is open.
+  (residual 0), and `base-mainnet`'s 21600 s leaves 14400 s, not 21600. Shortening the phases can
+  only *raise* that residual, never lower it — on base-mainnet it rises, on base-sepolia it stays at
+  zero because the cooldown is already shorter than the round. Either way that is the opposite of a
+  cost, and it is a cost nobody pays anyway while M-7 is open.
 - **Mode-F exposure shrinks, which is a benefit, not a cost.** `hasPendingExecution` turns true at
   **reveal start** (VO-8 / K-1), so every exit from that moment until the proposal settles is
   forward-priced. A shorter reveal phase shortens that period. See [[two-mode-exits]].
