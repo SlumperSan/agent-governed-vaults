@@ -15,7 +15,7 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 | `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
 | `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
 | The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | An `eth_call` per vault from the browser. There is one vault, `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` |
+| Every vault row | Nothing. `app.js` makes no per-vault call and writes no rows; the table has no `<tbody>` at all |
 
 **The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
 what the getter is called.** The getter keeps the name `usdc` because that is the name in the

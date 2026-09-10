@@ -181,6 +181,13 @@ const DENIAL_CORPUS = {
     'The first vault has not yet been created on chain 4663.',
     'there is not yet a vault, so the figure is a plan',
     'vaultCount() returns 0 on chain 4663',
+    // Exercises the subject-AFTER-verb pattern. Without an example here that pattern shipped
+    // unexercised, which is the rule this corpus exists to enforce, broken by the commit that
+    // wrote the rule. An unexercised pattern is the inert-leg shape `SOAK_VAULTS` already cost us.
+    'has not been created: the first vault on that chain is still the Safe\'s to make',
+    // Exercises pattern 0, which was also unexercised: NO_VAULT_PHRASE's own wording, so the
+    // exact-string leg and the pattern leg are pinned to the same sentence rather than drifting.
+    'no vault has been created on chain 4663 yet',
     // NOTE: 'zero vaults exist today' is NOT here. See the dropped pattern above -- it is a
     // known, written-down gap rather than a silent one.
   ],
@@ -704,6 +711,25 @@ test('denial shapes: every cited example is caught, and every true sentence is n
     'These sentences are TRUE and presently in the tree, but a pattern reds them. Narrow the\n'
       + 'pattern; a guard that reds true sentences is one someone will switch off:\n  '
       + falsePositives.join('\n  '),
+  );
+});
+
+test('denial shapes: every pattern is exercised by at least one corpus example', () => {
+  // The docstring above says "Add a pattern by adding its example to the corpus first." Saying it
+  // was not enough: the commit that WROTE that rule added a pattern with no example, and a second
+  // pattern had been unexercised since the set was created. An unexercised pattern is the inert
+  // leg this repository already has scar tissue for -- `SOAK_VAULTS` read but never set, where an
+  // empty `.map()` and an all-clear read identically. A rule a test does not enforce is a comment.
+  const unexercised = NO_VAULT_SHAPES
+    .map((re, i) => ({ i, re, hit: DENIAL_CORPUS.denies.some((s) => re.test(s.toLowerCase())) }))
+    .filter((p) => !p.hit)
+    .map((p) => `  [${p.i}] ${p.re}`);
+  assert.deepEqual(
+    unexercised,
+    [],
+    'These patterns match no corpus example, so nothing proves they still work — or ever did:\n'
+      + unexercised.join('\n')
+      + '\nAdd the sentence each was written from to DENIAL_CORPUS.denies.',
   );
 });
 

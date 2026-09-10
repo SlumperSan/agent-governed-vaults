@@ -72,7 +72,7 @@
       <button type="button" class="connect" aria-disabled="true" aria-describedby="connect-note" title="Deposits open when a vault exists.">
         Connect wallet
       </button>
-      <span id="connect-note" class="sr-only">Deposits open when a vault exists. There is nothing to connect to yet.</span>
+      <span id="connect-note" class="sr-only">Vault #1 exists on chain 4663 and holds funds. This page does not take deposits; it is a read-only status page.</span>
     </div>
   </div>
 </header>
@@ -189,19 +189,22 @@
 
   <!-- ===================================================================
        VAULTS
-       Zero rows today. The empty state is static markup on purpose: the
-       sentence has to be true whether or not the RPC answers, and the
-       LIVE READS panel above corroborates it rather than producing it.
+       Zero rows, and that is a property of this PAGE, not of the chain:
+       vault #1 exists. `app.js` reads vaultCount(), allowSubVaults(),
+       usdc() and symbol() into the LIVE READS panel and writes nothing
+       here -- there is no <tbody> for it to write into. Everything in
+       this section is static markup, which is why every sentence in it
+       has to be true whether or not the RPC answers.
        =================================================================== -->
   <section class="card vaults" aria-labelledby="vaults-h">
     <div class="card-head">
       <h2 id="vaults-h">Vaults</h2>
-      <span class="count-chip"><span class="num">0</span> listed</span>
+      <span class="count-chip"><span class="num">0</span> listed here; <span class="num">1</span> on chain</span>
     </div>
 
     <div class="table-scroll">
       <table class="vault-table">
-        <caption class="sr-only">Vaults on chain 4663. One vault exists, 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4; the table is filled from a live vaultCount() read and is empty only if that read fails.</caption>
+        <caption class="sr-only">Vaults on chain 4663. One vault exists, 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4, but this table lists none: it is a heading with no rows, and nothing on this page fetches per-vault data. The LIVE READS panel above is where the chain is actually read.</caption>
         <thead>
           <tr>
             <th scope="col" class="col-name">Name</th>
