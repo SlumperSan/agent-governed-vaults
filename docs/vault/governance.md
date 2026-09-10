@@ -83,17 +83,40 @@ and it is cheaper to read than to rediscover.
 **What a shorter window would actually trade away**, stated so the cost is not assumed to be
 front-running:
 
-- **Participation, which is the real cost.** Quorum is measured on *revealed* stake —
-  `revealedWeight` is the numerator and standing defaults never count toward it (VO-2 / K-3). A
-  member who is not online inside the commit window is silent, and a member who commits but misses
-  the reveal window is silent *and* has burned their commitment. Halving the phases roughly doubles
-  the share of members a round can lose to being asleep. One active proposal per vault
-  (`activeProposalOf`) means a round lost to quorum also costs `proposalCooldown` before anything
-  can be retried.
+- **Participation — the real cost, and only at five or more members.** A member who is not online
+  inside the commit window is silent, and one who commits but misses the reveal window is silent
+  *and* has burned the commitment. Halving the phases roughly doubles the share of members a round
+  can lose to being asleep.
+
+  **Whether that costs anything depends on which quorum regime the vault is in, and the two answer
+  differently.** At five or more members, `revealedWeight` is the numerator and standing defaults
+  never count toward it (VO-2 / K-3) — so being asleep is fatal to the round and a shorter window is
+  a real risk. Below five (`SIGNER_REGIME_BELOW`), `quorumOk` is
+  `headMajorityWithStake || forStakeMajority`, and both branches read **`forWeight`**, which
+  *includes applied standing defaults*. The contract says so itself in an Audit Council note beside
+  the branch: that regime "can pass a Rebalance on a >50% pre-declared-default majority with zero
+  live reveals". A default may be set up to `DEFAULT_TTL` (72 h) before the proposal exists, so in a
+  small vault the window length is close to irrelevant to whether the round carries. **Vault #1
+  launches small**, so this is the regime the first live rounds run under, not a corner case.
+
+  (An earlier draft of this bullet stated the `revealedWeight` rule as a universal. It is not one,
+  and stating it that way inverted the bullet's own conclusion for exactly the vaults that exist.)
 - **The withheld-reveal grief gets cheaper to time.** Commits close before reveals open, so an early
   revealer leaks the tally direction to voters who are already committed. Their only remaining move
   is to withhold their own reveal and starve quorum. That is available at any window length; a
   shorter reveal phase compresses the window in which it has to be decided.
+
+- **A lost round does NOT cost `proposalCooldown` before a retry**, though a draft of this section
+  claimed it did. `finalize` sets a failed round `Defeated`, which `_isSettled` counts as settled, so
+  `activeProposalOf` no longer blocks — and `lastProposalAt` is keyed **per proposer**
+  (`mapping(vault => proposer => uint64)`), so **any other member can `propose` in the next block**.
+  The contract states this plainly where the cooldown is validated: "lastProposalAt is keyed
+  PER-PROPOSER, so a second address sidesteps the cooldown entirely. M-7 stays open." Even for the
+  *same* proposer the clock runs from `propose`, not from the defeat, so a 2 h round has already
+  spent 7200 s of it: `base-sepolia`'s cooldown of 3600 s is **fully elapsed** by `revealDeadline`
+  (residual 0), and `base-mainnet`'s 21600 s leaves 14400 s, not 21600. Shortening the phases would
+  *raise* that residual, which is the opposite of a cost — and it is a cost nobody pays anyway while
+  M-7 is open.
 - **Mode-F exposure shrinks, which is a benefit, not a cost.** `hasPendingExecution` turns true at
   **reveal start** (VO-8 / K-1), so every exit from that moment until the proposal settles is
   forward-priced. A shorter reveal phase shortens that period. See [[two-mode-exits]].
