@@ -83,8 +83,10 @@ paths:
       summary: >
         Operational counters (free, rate-limited). Prometheus text exposition format, readable
         with plain curl. `vault_indexer_snapshot_age_seconds` is the indexer-lag signal: the API
-        holds no RPC client by design, so it reports how long ago the snapshot was written rather
-        than claiming a blocks-behind figure it cannot know. See docs/RUNTIME.md section 8.
+        holds no client for the indexed chain by design (the opt-in `FACILITATOR=svm` mode's Solana
+        `Connection` is a node on a different chain and answers nothing about this one), so it
+        reports how long ago the snapshot was written rather than claiming a blocks-behind figure it
+        cannot know. See docs/RUNTIME.md section 8.
       operationId: metrics
       responses:
         '200':

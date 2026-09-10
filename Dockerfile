@@ -2,6 +2,9 @@
 # the compose service command or a `docker run` override. The indexer and the canary are
 # non-custodial without qualification -- no keys,
 # no fund movement. The canary is additionally read-only against the chain — it never sends.
+# The API is the one that has a qualification: no key under `FACILITATOR=stub` and
+# `FACILITATOR=http`, and a Solana fee-payer keypair read from `SVM_KEYPAIR` under the opt-in
+# `FACILITATOR=svm`. Pass that env var only into the api container, and only when you mean to.
 #
 #   docker build -t vault-runtime .
 #   docker run --env-file .env vault-runtime node packages/indexer/src/index-runner.mjs

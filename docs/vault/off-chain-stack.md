@@ -34,9 +34,9 @@ vault, and where the [[x402-metering]] paid reads get their data.
 
 - **api**: the metered read server; see [[x402-metering]] for the route split, the x402 payment
   gate (`src/x402.mjs`), the facilitator (`facilitator.mjs` / `facilitator-server.mjs`), rate
-  limiting (`ratelimit.mjs`), and metrics (`metrics.mjs`). Holds no keys and no RPC client under
-  `FACILITATOR=stub` and `FACILITATOR=http`, which are the launch modes. The opt-in
-  `FACILITATOR=svm` breaks BOTH halves of that sentence: it loads a Solana keypair from
+  limiting (`ratelimit.mjs`), and metrics (`metrics.mjs`). Holds no keys and no client for the
+  indexed chain under `FACILITATOR=stub` and `FACILITATOR=http`, which are the launch modes. The
+  opt-in `FACILITATOR=svm` breaks BOTH halves of that sentence: it loads a Solana keypair from
   `SVM_KEYPAIR` and constructs a `Connection`, because the Solana `exact` scheme has the
   facilitator co-sign as fee payer and there is no way to do that without a key and a node.
 - **web**: frontend: `api-client.mjs` (talks to the API), `fees.mjs` (fee display, including the

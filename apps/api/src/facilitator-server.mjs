@@ -4,7 +4,8 @@
  * The remote settling facilitator, as an HTTP service.
  *
  * This is the piece that was missing between the two halves the repo already had:
- * `createHttpFacilitator` (API side — POSTs a challenge + envelope to a URL, stays keyless) and
+ * `createHttpFacilitator` (API side under `FACILITATOR=http` — POSTs a challenge + envelope to a
+ * URL, stays keyless) and
  * `createSettlingFacilitator` (chain side — recovers the payer and broadcasts
  * `transferWithAuthorization`). Nothing spoke the wire protocol between them. This does.
  *

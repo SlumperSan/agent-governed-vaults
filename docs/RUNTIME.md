@@ -127,7 +127,8 @@ Open `http://localhost:8080/index.html?api=http://localhost:8402`. You'll see a 
 and the indexed vaults/operators. Drop the `?api=` param and it falls back to the embedded demo.
 
 > Live mode reads are metered over x402. In the browser the SDK signs with a **dev signer** (a dummy
-> signature the stub facilitator accepts): the browser never holds a real key. Against a real
+> signature the `FACILITATOR=stub` facilitator accepts): the browser never holds a real key.
+> Against a real
 > settling facilitator that dummy signature is rejected, which is correct: the browser demo is not
 > meant to move funds. NAV/share, basket weights, and proposal phases are chain-read enrichment the
 > API does not expose yet, so live mode shows those as placeholders (the banner says so).
@@ -395,7 +396,8 @@ by default.
 | Variable | Meaning |
 |---|---|
 | `FACILITATOR=svm` | selects it |
-| `NETWORK` | **set it.** Not one of the four required vars, and omitting it is the easy mistake: `resolveApiConfig` defaults `price.network` to `base`, so a Solana-configured API advertises an EVM network in its 402. Nothing breaks — the client echoes the challenge and the cluster comes from `SVM_RPC_URL` — but the challenge is mislabelled. `solana-devnet` / `solana-mainnet`. |
+| `PRICE_NETWORK` | **set it.** Not one of the four required vars, and omitting it is the easy mistake: `buildChallenge` copies `price.network`, which `resolveApiConfig` reads from `PRICE_NETWORK` and defaults to `base` — so a Solana-configured API advertises an EVM network in its 402. Nothing breaks — the client echoes the challenge and the cluster comes from `SVM_RPC_URL` — but the challenge is mislabelled. `solana-devnet` / `solana-mainnet`. |
+| `NETWORK` | a **different** lever, one word apart: it resolves the x402 capability out of `config/networks/` (`NETWORK` and `CHAIN_ID` are mutually exclusive). It does not touch the challenge. Both Solana files declare `x402.enabled: true`, which is also the default for a network with no config, so setting it changes nothing about metering today — but set it to the same network as `PRICE_NETWORK` or the API logs `x402.network_mismatch` at boot. |
 | `SVM_RPC_URL` | the cluster |
 | `SVM_KEYPAIR` | the fee payer's 64-byte secret, as a JSON array or base58 |
 | `SVM_DESTINATION_TOKEN_ACCOUNT` | where payments land |
@@ -437,8 +439,12 @@ runner is checked in rather than the log.
   when settlement succeeds. USDC moves via EIP-3009 executed **by the facilitator**, from payer to
   `payTo`, never through the API.
 - The **web** browser signer is a dummy against a dev facilitator; real signing is the user's wallet.
-- The only key in the whole stack is the settlement key inside the facilitator (yours in §6, or the
-  third party's), which is a **relayer** paying gas: it never takes custody of vault funds.
+- Keys in this stack live in three places, and this is the whole list: the EVM settlement key inside
+  the facilitator you run in §6; the same key held by a third-party facilitator under
+  `FACILITATOR=http`; and, under the opt-in `FACILITATOR=svm`, the Solana fee-payer keypair loaded
+  from `SVM_KEYPAIR` **inside the API process** (§6.6). All three are **relayers** paying network
+  fees: none of them takes custody of vault funds, and no contract in this repository knows the
+  third one exists.
 
 ---
 
@@ -892,8 +898,10 @@ series look identical in a graph, and only one of them is good news.
 > bucket on `curl` and get a 429 from the endpoint you most need. Give the burst room
 > (`RATE_LIMIT_BURST`), or set `RATE_LIMIT_PER_SEC=0` on a deployment whose only clients are yours.
 
-**On indexer lag.** The API has **no RPC client by design** (it serves the snapshot and nothing
-else) so it cannot know the chain head and must not claim a blocks-behind figure. It reports how
+**On indexer lag.** The API has **no client for the indexed chain by design** (it serves the
+snapshot and nothing else; the `FACILITATOR=svm` Solana `Connection` of §6.6 is a node on a
+different chain and answers nothing about this one) so it cannot know the chain head and must not
+claim a blocks-behind figure. It reports how
 long ago the snapshot was written, which is the number that actually tells you the indexer stopped,
 and the metric is named for exactly that. Alert on it:
 

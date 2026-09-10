@@ -7,9 +7,9 @@
  * which is the failure mode a file whose job is enumeration can least afford:
  *   - createStubFacilitator     accept/deny with no chain — tests and local dev.
  *   - createHttpFacilitator     delegate verify+settle to a REMOTE facilitator over HTTP. This is
- *                               the API server's production default, and IN THIS MODE the server
- *                               stays non-custodial — holds no key, moves no funds — because a
- *                               separate facilitator settles.
+ *                               the API server's production default, and under `FACILITATOR=http`
+ *                               the server stays non-custodial — holds no key, moves no funds —
+ *                               because a separate facilitator settles.
  *   - createSettlingFacilitator run-your-own settler: recover the EIP-712 payer, then settle via
  *                               USDC.transferWithAuthorization with an OPERATOR-SUPPLIED account.
  *                               It needs viem + a funded key the operator injects at runtime; this
@@ -139,8 +139,9 @@ export function createStubFacilitator({ accept = true, receiptPrefix = 'stub' } 
 }
 
 /**
- * Production default: delegate verify+settle to a REMOTE facilitator over HTTP. The API server
- * holds no key; this posts the challenge+envelope and returns the remote verdict. Non-custodial.
+ * Production default: delegate verify+settle to a REMOTE facilitator over HTTP. Under
+ * `FACILITATOR=http` the API server holds no key; this posts the challenge+envelope and returns
+ * the remote verdict. Non-custodial.
  * @param {{url:string, fetchImpl?:typeof fetch, timeoutMs?:number}} cfg
  */
 export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = 10_000 }) {

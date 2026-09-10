@@ -1,8 +1,9 @@
 // @ts-check
 /**
  * Runnable API server entrypoint. Serves the x402-metered read API over the indexer's snapshot.
- * Env-driven and, in every mode but one, NON-CUSTODIAL: it holds no key and settles nothing itself
- * — payment verification
+ * Env-driven and, under `FACILITATOR=stub` and `FACILITATOR=http`, NON-CUSTODIAL: it holds no key
+ * and settles nothing itself. `FACILITATOR=svm` is the one mode that does hold one — see the
+ * `svm` branch below and docs/RUNTIME.md 6.6. Payment verification
  * and settlement are delegated to a facilitator (a remote HTTP facilitator in production; an
  * accept-all stub for local dev). It shares state with the indexer through the snapshot file: it
  * loads the snapshot on boot and reloads it periodically, so indexer and API run as separate

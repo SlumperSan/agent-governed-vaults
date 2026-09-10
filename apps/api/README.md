@@ -21,8 +21,10 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
   Nothing is removed: unset `CHAIN_ID`, a chain with no config, or a config with no `x402` block
   all meter as they always have, and so does everything above.
 - `src/metrics.mjs`: the plain-text counters behind `/metrics`, including
-  `vault_indexer_snapshot_age_seconds`, which is the indexer-lag signal. The API holds no RPC
-  client by design, so it reports snapshot age rather than a blocks-behind figure it cannot know.
+  `vault_indexer_snapshot_age_seconds`, which is the indexer-lag signal. The API holds no client
+  for the indexed chain by design, so it reports snapshot age rather than a blocks-behind figure it
+  cannot know. (`FACILITATOR=svm` does construct a Solana `Connection` — a node on a different
+  chain, which can no more answer "how far behind is the indexer" than no node at all.)
 
 Settlement is USDC on Base via EIP-3009 executed by the facilitator (never this server), per the
 x402 V2 scheme (see docs/RESEARCH-SPRINT1.md).

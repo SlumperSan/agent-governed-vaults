@@ -62,8 +62,10 @@ it, and zero contract coupling is exactly why it can be one.
 ## Observability
 
 `src/metrics.mjs` exposes plain-text counters, including
-`vault_indexer_snapshot_age_seconds`, the indexer-lag signal. The API holds **no RPC client** by
-design, so it reports snapshot age rather than a blocks-behind figure it cannot know. It reads the
+`vault_indexer_snapshot_age_seconds`, the indexer-lag signal. The API holds **no client for the
+indexed chain** by design, so it reports snapshot age rather than a blocks-behind figure it cannot
+know. (`FACILITATOR=svm` constructs a Solana `Connection`; that is a node on a different chain and
+answers nothing about this one.) It reads the
 [[off-chain-stack]] indexer's projections directly.
 
 ## Links
