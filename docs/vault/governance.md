@@ -145,7 +145,18 @@ front-running:
   (residual 0), and `base-mainnet`'s 21600 s leaves 14400 s, not 21600. Shortening the phases can
   only *raise* that residual, never lower it — on base-mainnet it rises, on base-sepolia it stays at
   zero because the cooldown is already shorter than the round. Either way that is the opposite of a
-  cost, and it is a cost nobody pays anyway while M-7 is open.
+  cost.
+
+  **It is a cost that CAN be paid, though, and a draft of this bullet said it was not.** The clause
+  read "a cost nobody pays anyway while M-7 is open", and the counterexample eleven lines above
+  refutes it: on base-mainnet a two-member vault has a 7200 s window in which *no* address can
+  propose, because A is 14400 s into 21600 s and B is 7200 s into it. M-7's "second address" is not a
+  free relabelling either — **shares are non-transferable (EE-7)**, so a new proposer must acquire
+  eligible stake by depositing, clearing `minDepositUsdc` and then `proposalThresholdBps` of the
+  supply, which is capital and dilutes the depositor. The contract says as much in the half of its
+  own comment the paragraph above quotes only the end of: the cooldown floor "raises the cost of M-7
+  serial-proposal cycling, but STATED HONESTLY it does not rate-limit it". A cost that is *raised* is
+  a cost somebody pays.
 - **Mode-F exposure shrinks, which is a benefit, not a cost.** `hasPendingExecution` turns true at
   **reveal start** (VO-8 / K-1), so every exit from that moment until the proposal settles is
   forward-priced. A shorter reveal phase shortens that period. See [[two-mode-exits]].
