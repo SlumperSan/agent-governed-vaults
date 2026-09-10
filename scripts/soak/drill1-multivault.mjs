@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime, pollUntil,
-  openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast,
+  openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast, assertLogsServed,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment, wiringExpectations } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
@@ -59,6 +59,9 @@ const TOKENS_B = tokensFor(B.basket);
 function preflight() {
   log(`rpc=${RPC}  factory=${dep.factory}`);
   assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
+  // The chain-id check proves WHICH chain answers. This proves the answers are COMPLETE:
+  // a pruning endpoint reports the right chain and then hides its history.
+  assertLogsServed(dep.factory, dep.startBlock);
 
   // Re-prove the address book against the chain. A committed JSON file can drift from a
   // redeploy; spending a signature against a stale book is the expensive way to find out.
@@ -254,44 +257,64 @@ async function stepVerifyDynamicDiscovery() {
 /**
  * SF-4: the operator leaderboard must aggregate across every vault, no cherry-picking.
  *
- * THE EXPECTED SET COMES FROM THE FACTORY, NOT FROM `soak-vaults.json`, and that is the whole change
- * here. This step used to assert that `/vaults` listed the pinned smoke vault, and on 2026-09-09 it
- * failed with `/vaults dropped the smoke vault` — correctly. Read from chain that day:
+ * THE EXPECTED SET COMES FROM THE FACTORY, NOT FROM `soak-vaults.json`. `allVaults` is a public
+ * array on the factory, so the set of vaults an indexer could possibly know is readable at run
+ * time; comparing against it catches a vault the indexer DROPPED and a vault it INVENTED, where the
+ * pinned pair could only ever catch the first, and only for two specific addresses.
  *
- *   - factory 0xc1cb7824…9743 has emitted exactly TWO `VaultCreated` events since block 46,307,000,
- *     and neither is the pinned vault;
- *   - no log anywhere between blocks 46,000,000 and 46,610,832 names 0xb940d71b… in an indexed topic;
- *   - the vault nonetheless exists — 20,650 bytes, and its `governance()` is this deployment's
- *     singleton — so it is real, it is simply not something this factory announced.
+ * A CORRECTION LIVES HERE, because the wrong version of it was committed and is worth more than the
+ * right one. This comment previously said the pinned smoke vault "was never announced by the
+ * factory", that "no log names it in an indexed topic", and that an indexer therefore "CANNOT know
+ * that vault" — presented as chain readings. All of it was false. The reads were taken on the soak's
+ * then-default RPC, `base-sepolia-rpc.publicnode.com`, which prunes logs: it returns `[]` where
+ * `sepolia.base.org` and `base-sepolia.drpc.org` both return the `VaultCreated` event naming that
+ * vault at block 46,307,218, exactly as `soak-vaults.json` always said. `vaultCount()` is 7 and
+ * `allVaults[0]` IS the pinned vault, on all three providers. An empty log response was read as an
+ * empty chain. `assertLogsServed()` in `lib.mjs` now makes that failure loud.
  *
- * An indexer configured with this deployment's factory therefore CANNOT know that vault, and `/vaults`
- * omitting it is the API being right. The assertion was about a fixture, not about the protocol.
+ * So the change here is NOT a fix for the 2026-09-09 `/vaults dropped the smoke vault` failure —
+ * that failure has an indexer-side cause which is still open, and this step will still raise it,
+ * as `missing`. It is a fixture-durability change, on its own merits.
  *
- * `allVaults` is a public array on the factory, so the set of vaults an indexer could possibly know
- * is readable at run time. Comparing against that is strictly stronger than a hardcoded pair — it
- * catches a vault the indexer dropped AND a vault it invented — and it cannot go stale, which is the
- * property the pinned list did not have.
+ * ORDER MATTERS AND IS DELIBERATE. The factory is read BEFORE `/vaults` and again AFTER it:
+ * `missing` is judged against the earlier read (only vaults that already existed when we asked the
+ * API can be expected in its answer) and `invented` against the later one (anything the API lists
+ * must be a vault the factory has created by now). Drill 2 creates vaults concurrently by design,
+ * so a single read on either side of the API call turns an ordinary race into a red.
  */
+function allVaultsOnChain() {
+  const n = Number(callU(dep.factory, 'vaultCount()(uint256)'));
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    out.push(call(dep.factory, 'allVaults(uint256)(address)', String(i))[0].trim().toLowerCase());
+  }
+  return out;
+}
+
 async function stepVerifyLeaderboard() {
+  // Read the chain FIRST: a vault created after this point cannot be held against the API.
+  const before = allVaultsOnChain();
+  assert(before.length > 0, 'the factory reports no vaults at all — the deployment or the RPC is wrong');
+
   const vaults = await apiGet('/vaults');
   const lb = await apiGet('/operators/leaderboard');
   assert(vaults.status === 200 && lb.status === 200, `API read failed: ${vaults.status}/${lb.status}`);
 
-  const onChainCount = Number(callU(dep.factory, 'vaultCount()(uint256)'));
-  const onChain = [];
-  for (let i = 0; i < onChainCount; i += 1) {
-    onChain.push(String(call(dep.factory, 'allVaults(uint256)(address)', String(i))).trim().toLowerCase());
-  }
-  assert(onChain.length > 0, 'the factory reports no vaults at all — the deployment or the RPC is wrong');
+  // ...and AFTER: a vault the API lists must be one the factory has created by now.
+  const after = allVaultsOnChain();
 
   const listed = (vaults.body.vaults ?? []).map((v) => v.vault.toLowerCase());
   assert(listed.includes(state.vaultB.toLowerCase()), `/vaults does not list vault B: ${listed.join(', ')}`);
 
-  const missing = onChain.filter((v) => !listed.includes(v));
+  const missing = before.filter((v) => !listed.includes(v));
   assert(missing.length === 0,
-    `/vaults is missing ${missing.length} vault(s) the factory created: ${missing.join(', ')}. `
-    + `The factory reports ${onChain.length}, the API lists ${listed.length}.`);
-  const invented = listed.filter((v) => !onChain.includes(v));
+    `/vaults is missing ${missing.length} vault(s) the factory had already created when it was `
+    + `asked: ${missing.join(', ')}. The factory reported ${before.length}, the API listed `
+    + `${listed.length}. This is an INDEXER-SIDE failure — the vault is on chain and announced — so `
+    + `check the indexer's start block, its state file and whether the daemon is running and caught `
+    + `up, before suspecting the fixture. (An earlier attempt to explain this shape by blaming the `
+    + `fixture was wrong; see the comment above.)`);
+  const invented = listed.filter((v) => !after.includes(v));
   assert(invented.length === 0,
     `/vaults lists ${invented.length} vault(s) this factory never created: ${invented.join(', ')}`);
 
@@ -304,14 +327,20 @@ async function stepVerifyLeaderboard() {
   // property SF-4 is actually about is that the leaderboard counts EVERY vault attributed to an
   // operator, which an equality states and a lower bound does not. It also holds at one vault, so
   // the drill no longer depends on how many other vaults happen to exist when it runs.
+  //
+  // Stated honestly, this leg is a CONSISTENCY check and not a chain-anchored one: `row.vaultCount`
+  // and `attributed` are both projections of the same indexer state, so an indexer that is wrong
+  // the same way twice passes it. `>= 2` was anchored to something external and this is not; what
+  // makes the trade worth it is that the assertions above — which ARE anchored, to `allVaults` —
+  // run first and would have to pass before this one is even reached.
   const attributed = (vaults.body.vaults ?? []).filter((v) => Number(v.operatorId) === opId).length;
   assert(Number(row.vaultCount) === attributed,
     `SF-4 aggregation failed: operator ${opId} shows vaultCount ${row.vaultCount}, but /vaults `
     + `attributes ${attributed} vault(s) to it. The leaderboard is not counting what the vault list shows.`);
 
-  log(`SF-4 verified: operator ${opId} aggregates ${row.vaultCount} vault(s); the factory reports ${onChain.length} and /vaults lists all of them`);
+  log(`SF-4 verified: operator ${opId} aggregates ${row.vaultCount} vault(s); the factory reported ${before.length} before the read and ${after.length} after, and /vaults lists all of them`);
   state.steps.verifyLeaderboard = {
-    done: true, vaultCount: row.vaultCount, listed, onChain, row,
+    done: true, vaultCount: row.vaultCount, listed, onChainBefore: before, onChainAfter: after, row,
     caveat: 'API ran FACILITATOR=stub — the 402 gate was exercised, on-chain settlement was NOT',
   };
   save();

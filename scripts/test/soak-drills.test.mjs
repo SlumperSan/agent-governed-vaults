@@ -1009,6 +1009,97 @@ test('tryCall WIRES the classifier — a failed cast carries kind, not just ok:f
     'tryCall must classify the failure — without `kind` drill 3\'s revert assertion is unguarded');
 });
 
+// ───────── assertLogsServed: a pruning RPC must be loud, not silent ─────────
+
+// A stand-in for `cast`, answering only the four subcommands the probe uses. `SERVE_LOGS` decides
+// whether `cast logs` returns the VaultCreated announcing allVaults[0] or an empty string — which
+// is exactly the difference between a full-history provider and a pruning one, and exactly the
+// difference that carries no error, no warning and no other tell.
+//
+// It is loaded with `--require`, and `CAST` is set to node itself, so `cast <args>` becomes
+// `node <args>` with this preloaded: it reads argv, prints, and exits before node can complain
+// that `logs` is not a script. That works identically on Windows, which has no shebang.
+const FAKE_CAST_SRC = `
+const a = process.argv.slice(1);
+// NODE resolves argv[1] to an absolute path before the preload sees it, so the subcommand
+// arrives as C:\\...\\call rather than 'call'. Take the basename.
+const sub = String(a[0] || '').replace(/\\\\/g, '/').split('/').pop();
+// The preload lands in EVERY node process that inherits NODE_OPTIONS, the driver that spawns
+// the fake cast included. A driver invoked with -e has no argv[1], so anything that does not
+// look like a cast subcommand is passed straight through. Without this the preload exits the
+// driver before it can run the probe at all.
+if (a.length && !sub.startsWith('-')) {
+const VAULT = '0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98';
+const TOPIC0 = '0x4dda9a6d0ba03769e9813c47681795a7210f951e6ef31e64772e13b9ea0f1406';
+let out = '';
+if (sub === 'keccak') out = TOPIC0;
+else if (sub === 'block-number') out = '46610832';
+else if (sub === 'call' && String(a[2]).startsWith('vaultCount')) out = '1';
+else if (sub === 'call' && String(a[2]).startsWith('allVaults')) out = VAULT;
+else if (sub === 'logs') {
+  // A pruning endpoint returns an empty result and exit 0. That is the whole hazard.
+  out = process.env.SERVE_LOGS === '1'
+    ? '- address: 0xC1cb782471e506c71ae91feB91AdCEFc34A99743\\n  topics: [\\n\\t' + TOPIC0
+      + '\\n\\t0x000000000000000000000000' + VAULT.slice(2) + '\\n  ]'
+    : '';
+} else { process.exit(3); }
+if (out) process.stdout.write(out + '\\n');
+process.exit(0);
+}
+`;
+
+function runLogsProbe(serveLogs) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soak-logsprobe-'));
+  const stub = path.join(dir, 'fake-cast.cjs');
+  fs.writeFileSync(stub, FAKE_CAST_SRC);
+  const src = `
+    const { assertLogsServed } = await import(${JSON.stringify(new URL('../soak/lib.mjs', import.meta.url).href)});
+    assertLogsServed('0xc1cb782471e506c71ae91feb91adcefc34a99743', 46307173, { chunk: 50000, maxChunks: 2 });
+    console.log('PROBE_RETURNED');
+  `;
+  try {
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CAST: process.execPath,
+        NODE_OPTIONS: `--require ${JSON.stringify(stub)}`,
+        SERVE_LOGS: serveLogs ? '1' : '0',
+        SOAK_RPC: 'http://stub.invalid',
+      },
+    });
+    return { exit: 0, out, err: '' };
+  } catch (e) {
+    return { exit: e.status ?? 1, out: String(e.stdout ?? ''), err: String(e.stderr ?? '') };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('assertLogsServed PASSES when the endpoint serves the positive control', () => {
+  const r = runLogsProbe(true);
+  assert.equal(r.exit, 0, `the probe must not fail a serving endpoint: ${r.err}`);
+  assert.match(r.out, /PROBE_RETURNED/);
+  assert.match(r.out, /serves historical logs/);
+});
+
+test('assertLogsServed FAILS when the endpoint returns no logs for a range that provably has one', () => {
+  // THIS IS THE TEST FOR THE 2026-09-09 MISTAKE. The soak's then-default RPC returned nothing for a
+  // range containing the VaultCreated that announced the pinned smoke vault, and the emptiness was
+  // read as "the factory never announced it" — a conclusion written into this repository as a chain
+  // reading and shipped in a pull request. Nothing in the run could have caught it, because an empty
+  // log response is exactly what a range with no events returns. The probe is the positive control
+  // that tells the two apart; this test is what stops it going inert the way the freeze-safety leg
+  // did.
+  const r = runLogsProbe(false);
+  assert.notEqual(r.exit, 0, 'a pruning endpoint MUST fail the run, not be trusted');
+  assert.doesNotMatch(r.out, /PROBE_RETURNED/, 'the probe must not return on a pruning endpoint');
+  const said = r.out + r.err;
+  assert.match(said, /SERVED NO LOG FOR A RANGE THAT PROVABLY CONTAINS ONE/);
+  assert.match(said, /allVaults\[0\] is 0xb940d71b/, 'the message must name the control it looked for');
+  assert.match(said, /sepolia\.base\.org/, 'the message must name an endpoint that does serve it');
+});
+
 // ───────── votableNow: a pid is not a votable round (drill 5) ─────────
 
 test('votableNow rejects a settled proposal that activeProposalOf still names', () => {

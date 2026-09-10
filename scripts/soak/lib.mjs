@@ -38,7 +38,23 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 // exports SOAK_RPC empty would otherwise leave this at '' while drill 5's viem client fell through
 // to the default — the drill's cast reads and its writes on two endpoints, which no chain-id check
 // can see, since drill 5 reads the id through the viem side's url.
-export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia-rpc.publicnode.com';
+// THE DEFAULT IS NOT publicnode, DELIBERATELY, AND THIS IS THE REASON. It was
+// `https://base-sepolia-rpc.publicnode.com` until 2026-09-09, and that endpoint PRUNES LOGS AND
+// RECEIPTS. It answers `eth_call`, `eth_blockNumber` and `eth_getBlockByNumber` correctly — so it
+// looks entirely healthy — while `eth_getLogs` over an old range returns `[]` and
+// `eth_getTransactionReceipt` returns `null` for transactions that certainly landed. Measured that
+// day on factory 0xc1cb7824…9743 over blocks 46,307,100–46,307,300:
+//
+//     sepolia.base.org        -> 1 log  (VaultCreated, topics[1] = 0xb940d71b…)
+//     base-sepolia.drpc.org   -> 1 log  (the same one)
+//     publicnode              -> 0 logs
+//
+// while `vaultCount()` returned 7 and `allVaults[0]` returned that vault on ALL THREE. State reads
+// agree; log reads do not. An absent log on a pruning endpoint is indistinguishable from an event
+// that never happened, and it cost a full round of wrong conclusions written into this repo as
+// fact — see the smokeVault note in `soak-vaults.json`. `assertLogsServed()` below exists so it
+// cannot happen silently again.
+export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 
 /**
@@ -515,4 +531,63 @@ export const TOPIC = {
   DepositPending: () => keccakOf('DepositPending(address,uint256,uint64)'),
   DepositActivated: () => keccakOf('DepositActivated(address,uint256,uint256)'),
 };
+
+/**
+ * Refuse to run against an RPC that cannot serve historical logs.
+ *
+ * A pruning endpoint does not error and does not warn — it returns an empty array, which is exactly
+ * what a range containing no events returns. Every conclusion of the form "the chain has no record
+ * of X" is therefore unsound on an endpoint nobody checked, and on 2026-09-09 one such conclusion
+ * was written into this repository as fact and had to be retracted (see the `smokeVault` note in
+ * `soak-vaults.json`, and the `RPC` comment above for the measurements).
+ *
+ * The probe is a POSITIVE CONTROL: ask for a range that is KNOWN to contain at least one log from
+ * a contract this deployment owns, and require at least one back. It cannot prove the endpoint
+ * serves every range, but it turns the silent failure into a loud one, which is the whole gap.
+ *
+ * The known-good range is derived, not hardcoded: `allVaults(0)` is the factory's first vault, and
+ * a factory that has created a vault has necessarily emitted the event announcing it. `fromBlock`
+ * is the earliest block the caller is willing to scan.
+ *
+ * @param {string} factory   the deployment's VaultFactory address
+ * @param {number} fromBlock earliest block to scan (the deployment block is the right value)
+ */
+export function assertLogsServed(factory, fromBlock, { chunk = 50_000, maxChunks = 20 } = {}) {
+  const count = callU(factory, 'vaultCount()(uint256)');
+  if (count === 0n) {
+    log('assertLogsServed: the factory has created no vaults, so there is no positive control — skipped');
+    return;
+  }
+  const first = call(factory, 'allVaults(uint256)(address)', '0')[0].trim().toLowerCase();
+  const needle = first.slice(2);
+  const head = Number(cast(['block-number', '--rpc-url', RPC]));
+  const topic = TOPIC.VaultCreated();
+
+  // Scanned in bounded windows rather than one open range: providers cap `eth_getLogs` spans, and a
+  // refused range would look like a pruned one, which is the exact confusion this function exists to
+  // remove. Stops at the first window that contains the control.
+  let scanned = 0;
+  for (let from = fromBlock; from <= head && scanned < maxChunks; from += chunk, scanned += 1) {
+    const to = Math.min(from + chunk - 1, head);
+    const out = cast([
+      'logs', '--rpc-url', RPC,
+      '--from-block', String(from), '--to-block', String(to),
+      topic, '--address', factory,
+    ]);
+    if (out.toLowerCase().includes(needle)) {
+      log(`assertLogsServed: ${RPC} serves historical logs (positive control ${first} found in `
+        + `blocks ${from}-${to})`);
+      return;
+    }
+  }
+
+  fail(`RPC ${RPC} SERVED NO LOG FOR A RANGE THAT PROVABLY CONTAINS ONE. The factory's own `
+    + `allVaults[0] is ${first}, so the VaultCreated announcing it exists at or after block `
+    + `${fromBlock} — and ${scanned} window(s) of ${chunk} blocks from there returned nothing that `
+    + `names it. This endpoint is pruning history, or refusing these ranges. Either way every `
+    + `"the chain has no record of X" conclusion drawn against it is worthless — that mistake was `
+    + `made on 2026-09-09 and written into this repository as fact. Set SOAK_RPC to a full-history `
+    + `provider (https://sepolia.base.org and https://base-sepolia.drpc.org both served this event; `
+    + `https://base-sepolia-rpc.publicnode.com did not) and re-run.`);
+}
 
