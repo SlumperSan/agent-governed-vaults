@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { Keypair, PublicKey, VersionedTransaction } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { buildSvmEnvelope, createSvmPayer } from '../src/svm-exact.mjs';
+import { createProtocolClient } from '../src/index.mjs';
 
 const payer = Keypair.generate();
 const facilitator = Keypair.generate();
@@ -133,4 +134,46 @@ test('the destination is the challenge\'s payTo, never a derived address', async
   const keys = tx.message.compiledInstructions[0].accountKeyIndexes.map((i) => tx.message.staticAccountKeys[i].toBase58());
   assert.ok(keys.includes(DEST), 'the payTo from the challenge is in the instruction accounts');
   assert.ok(keys.includes(new PublicKey(MINT).toBase58()), 'and so is the mint');
+});
+
+
+// ── the injection point that did not exist ──────────────────────────────────────────────────────
+
+test('createProtocolClient takes a payer, and a payer-scheme 402 goes through it', async () => {
+  // `svm-exact.mjs` documented `createProtocolClient({ payer })` as the injection point. There was
+  // no `payer` parameter, and this module was not exported from the package index either — so a
+  // caller outside the package could not reach `createSvmPayer` at all, and one inside it had
+  // nowhere to pass the result. A documented path with no way to walk it.
+  const challenge = { scheme: 'exact-svm', x402Version: 2, network: 'solana-devnet', amount: '10000' };
+  let asked = null;
+  const payer = {
+    scheme: 'exact-svm',
+    async buildEnvelope({ challenge: c }) { asked = c; return { x402Version: 2, scheme: 'exact-svm', network: c.network, transaction: 'AQAB' }; },
+  };
+
+  let sentHeader = null;
+  const fetchImpl = async (_url, init) => {
+    if (!init?.headers) {
+      return { status: 402, headers: { get: (k) => (k === 'payment-required' ? JSON.stringify(challenge) : null) }, json: async () => ({}) };
+    }
+    sentHeader = init.headers['payment-signature'];
+    return { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ vaults: [] }) };
+  };
+
+  const client = createProtocolClient({ baseUrl: 'http://x', wallet: { address: '0x' + '1'.repeat(40), sign: async () => { throw new Error('the EVM signer must not be reached'); } }, domain: {}, fetchImpl, payer });
+  const r = await client.listVaults();
+  assert.deepEqual(r.data, { vaults: [] });
+  assert.equal(asked?.scheme, 'exact-svm', 'the payer must receive the challenge');
+  const sent = JSON.parse(Buffer.from(sentHeader, 'base64').toString('utf8'));
+  assert.equal(sent.transaction, 'AQAB');
+  assert.equal(sent.scheme, 'exact-svm');
+});
+
+test('a scheme the client has no payer for is an error, not a silent EVM signature', async () => {
+  // Without this the client signs an EIP-3009 authorization for a Solana challenge, the server
+  // rejects it, and the client retries the 402 forever with no statement of what is wrong.
+  const challenge = { scheme: 'exact-svm', x402Version: 2, network: 'solana-devnet' };
+  const fetchImpl = async () => ({ status: 402, headers: { get: (k) => (k === 'payment-required' ? JSON.stringify(challenge) : null) }, json: async () => ({}) });
+  const client = createProtocolClient({ baseUrl: 'http://x', wallet: { address: '0x' + '1'.repeat(40), sign: async () => '0x00' }, domain: {}, fetchImpl });
+  await assert.rejects(() => client.listVaults(), /has no payer for it/);
 });

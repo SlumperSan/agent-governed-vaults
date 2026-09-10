@@ -6,8 +6,10 @@ info:
     Read API over the indexed state of the agent-governed index-vault protocol. Read routes are
     metered with x402 (V2): an unpaid request returns 402 with a `PAYMENT-REQUIRED` challenge;
     the client re-requests with a `PAYMENT-SIGNATURE` header carrying an EIP-3009
-    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. The server
-    holds no keys and moves no funds. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
+    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. In the
+    launch modes (`FACILITATOR=stub`, `FACILITATOR=http`) the server holds no keys and moves no
+    funds; the opt-in `FACILITATOR=svm` mode holds a Solana fee-payer keypair and pays network
+    fees. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
   license:
     name: MIT
     identifier: MIT

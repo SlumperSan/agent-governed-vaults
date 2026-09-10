@@ -96,7 +96,20 @@ export function decodeSignatureHeader(header) {
     const env = JSON.parse(json);
     if (!env || typeof env !== 'object') return null;
     if (env.x402Version !== 2) return null;
-    if (typeof env.signature !== 'string' || typeof env.authorization !== 'object') return null;
+    // TWO ENVELOPE SHAPES, AND THIS FUNCTION KNOWS NOTHING ABOUT THE PRICE, so it can only reject
+    // what is neither. It required `{signature, authorization}` unconditionally until a review built
+    // an envelope with the shipped `buildSvmEnvelope` and watched `gate()` 402 it forever: the SVM
+    // envelope carries `{scheme, network, transaction}` and has no signature field at all, because
+    // the signatures live inside the serialised transaction. The whole SVM path was unreachable
+    // through the only production entry point, while the commit that removed the boot refusal said
+    // the path was finished.
+    //
+    // Accepting both shapes here is safe because it decides nothing: `checkEnvelopeAgainstPrice`
+    // selects the scheme from `price`, which the server owns, and refuses the shape that does not
+    // match it. Decoding is not authorisation.
+    const evmShape = typeof env.signature === 'string' && typeof env.authorization === 'object';
+    const svmShape = env.scheme === 'exact-svm' && typeof env.transaction === 'string';
+    if (!evmShape && !svmShape) return null;
     return env;
   } catch {
     return null;
@@ -120,13 +133,26 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
   // transaction and checks the mint, the destination, the amount, the fee payer and every other
   // instruction in it, which is strictly more than this function could. So this defers rather than
   // guessing, and the network check below still applies because it is scheme-independent.
-  if (env.scheme === 'exact-svm') {
+  //
+  // THE BRANCH IS TAKEN FROM `price`, WHICH THE SERVER OWNS, AND NEVER FROM `env.scheme`, WHICH THE
+  // CLIENT WRITES. It read `env.scheme === 'exact-svm'` until a review demonstrated the consequence:
+  // against an EVM price, an envelope that simply asserted `scheme: 'exact-svm'` and carried any
+  // non-empty `transaction` string returned `{ok:true}` — skipping asset, recipient, amount and
+  // expiry, and skipping the replay guard too, since that reads `env.authorization.nonce` and a
+  // spoofed envelope has none. A client-supplied string must never select which of the server's
+  // checks run. `price.svm` is set only by the operator's own configuration, so when it is absent
+  // this function does exactly what it did before this scheme existed.
+  if (price.svm) {
     if ((env.network ?? '').toLowerCase() !== price.network.toLowerCase())
       return { ok: false, reason: 'network-mismatch' };
+    if (env.scheme !== 'exact-svm') return { ok: false, reason: 'scheme-mismatch' };
     if (typeof env.transaction !== 'string' || env.transaction === '')
       return { ok: false, reason: 'no-transaction' };
     return { ok: true };
   }
+  // Symmetrically: an SVM envelope presented against an EVM price is refused by name rather than
+  // falling through to `asset-mismatch`, which would describe the wrong problem.
+  if (env.scheme === 'exact-svm') return { ok: false, reason: 'scheme-mismatch' };
   const auth = env.authorization ?? {};
   if ((auth.asset ?? '').toLowerCase() !== price.asset.toLowerCase())
     return { ok: false, reason: 'asset-mismatch' };
@@ -186,7 +212,12 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces }) {
     };
   }
 
-  const nonce = env.authorization?.nonce;
+  // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
+  // transaction bytes are the right key: they carry the payer's signature over a specific blockhash,
+  // so two envelopes with identical bytes ARE the same payment. Solana refuses a duplicate signature
+  // within the blockhash's ~2-minute life on its own, which is the real protection; this is the
+  // local half, and an inert local half is worse than an absent one because it looks present.
+  const nonce = env.authorization?.nonce ?? (env.scheme === 'exact-svm' ? env.transaction : undefined);
   if (seenNonces && nonce) {
     if (seenNonces.has(nonce)) {
       const challenge = buildChallenge(price, { nowMs });

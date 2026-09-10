@@ -31,17 +31,28 @@ const AMOUNT = 10_000n; // $0.01 at 6dp, the same price the EVM path uses
 const CFG = { destinationTokenAccount: DEST.toBase58(), feePayer: feePayerKp.publicKey.toBase58() };
 const CHALLENGE = { price: { asset: MINT.toBase58(), amount: AMOUNT.toString(), payTo: DEST.toBase58(), network: 'solana-devnet' } };
 
-/** A legacy transaction carrying exactly one TransferChecked, unsigned by the fee payer. */
-function buildTx({ amount = AMOUNT, mint = MINT, dest = DEST, source = SOURCE, authority = payer.publicKey, extra = [], feePayer = feePayerKp.publicKey } = {}) {
+/**
+ * A legacy transaction carrying exactly one TransferChecked, SIGNED BY THE PAYER and unsigned by
+ * the fee payer -- which is the state a real envelope is in when it arrives.
+ *
+ * `sign: false` builds the version that reaches the wire with the authority's slot still empty. It
+ * exists because every fixture in this file used to be that, unsigned, and every one of them
+ * verified: the transfer authority's signature was never checked at all. See the test named for it.
+ */
+function buildTx({ amount = AMOUNT, mint = MINT, dest = DEST, source = SOURCE, authority = payer.publicKey, extra = [], feePayer = feePayerKp.publicKey, sign = true, signers = [payer] } = {}) {
   const tx = new Transaction();
   tx.add(createTransferCheckedInstruction(source, mint, dest, authority, amount, DECIMALS, [], TOKEN_PROGRAM_ID));
   for (const ix of extra) tx.add(ix);
   tx.feePayer = feePayer;
   tx.recentBlockhash = '11111111111111111111111111111111';
+  // A case that deliberately makes the payer a non-signer cannot sign with it; that is the
+  // condition under test, not a broken fixture.
+  if (sign) for (const s of signers) { try { tx.partialSign(s); } catch { /* not a required signer here */ } }
   return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64');
 }
 
-const verify = (b64, challenge = CHALLENGE, cfg = CFG) => verifySvmPayment(challenge, { x402Version: 2, transaction: b64 }, cfg);
+const verify = (b64, challenge = CHALLENGE, cfg = CFG) =>
+  verifySvmPayment(challenge, { x402Version: 2, network: challenge.price.network, transaction: b64 }, cfg);
 
 // ── the one that must pass ──────────────────────────────────────────────────────────────────────
 
@@ -59,10 +70,82 @@ test('a versioned transaction verifies too, because refusing one would refuse a 
     recentBlockhash: '11111111111111111111111111111111',
     instructions: [createTransferCheckedInstruction(SOURCE, MINT, DEST, payer.publicKey, AMOUNT, DECIMALS, [], TOKEN_PROGRAM_ID)],
   }).compileToV0Message();
-  const b64 = Buffer.from(new VersionedTransaction(message).serialize()).toString('base64');
+  const vtx = new VersionedTransaction(message);
+  vtx.sign([payer]);
+  const b64 = Buffer.from(vtx.serialize()).toString('base64');
   const v = verify(b64);
   assert.equal(v.ok, true, `expected ok, got ${v.ok === false ? v.reason : ''}`);
   assert.equal(v.amount, AMOUNT);
+});
+
+// ── the authority's signature: checked at last ──────────────────────────────────────────────────
+
+test('a transfer THE PAYER NEVER SIGNED is refused, instead of being co-signed and broadcast', () => {
+  // THE HOLE THIS CLOSES. Everything the verifier read said the right thing -- right mint, right
+  // destination, right amount, right fee payer, one instruction and nothing else -- and none of it
+  // said the payer had agreed to any of it. `{ok:true}` came back, after which the facilitator adds
+  // its own signature and sends. The RPC's sig-verify does reject it at preflight, so no lamports
+  // move; what the client gets is `settlement-error:`, which in this repository means "we could not
+  // tell whether you paid". We could tell exactly: the envelope is unsigned.
+  const v = verify(buildTx({ sign: false }));
+  assert.equal(v.ok, false, 'an unsigned transfer must not verify');
+  assert.equal(v.reason, 'transfer-authority-did-not-sign');
+});
+
+test('the authority must be a SIGNER account, not merely named as the owner', () => {
+  // A TransferChecked whose authority slot names an account that is not in the signer prefix at
+  // all. Distinct from the case above: there is no empty slot to find, because there is no slot.
+  const stranger = Keypair.generate();
+  const tx = new Transaction();
+  tx.add(new TransactionInstruction({
+    programId: TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: SOURCE, isSigner: false, isWritable: true },
+      { pubkey: MINT, isSigner: false, isWritable: false },
+      { pubkey: DEST, isSigner: false, isWritable: true },
+      { pubkey: stranger.publicKey, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.concat([Buffer.from([12]), (() => { const b = Buffer.alloc(9); b.writeBigUInt64LE(AMOUNT, 0); b.writeUInt8(DECIMALS, 8); return b; })()]),
+  }));
+  tx.feePayer = feePayerKp.publicKey;
+  tx.recentBlockhash = '11111111111111111111111111111111';
+  const v = verify(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'));
+  assert.equal(v.ok, false);
+  assert.ok(
+    v.reason === 'transfer-authority-is-not-a-signer' || v.reason === 'expected-two-signers-got:1',
+    `expected a signer-related refusal, got "${v.reason}"`,
+  );
+});
+
+test('EXTRA signers are refused, because the facilitator pays 5000 lamports for each one', () => {
+  // Solana charges per signature and the fee payer here is this server. A client that pads the
+  // signer list is spending somebody else's money; before the count was pinned, a transaction
+  // requiring ten signatures verified. Two -- fee payer and authority -- is the exact number this
+  // scheme needs, so the fee is a constant rather than something the client picks.
+  // The extra signer hangs off a compute-unit LIMIT, which the allow-list already permits because
+  // it costs the fee payer nothing. That isolates the variable: the only thing wrong with this
+  // transaction is that it asks this server to buy a third signature.
+  const extra = Keypair.generate();
+  const v = verify(buildTx({
+    extra: [new TransactionInstruction({
+      programId: ComputeBudgetProgram.programId,
+      keys: [{ pubkey: extra.publicKey, isSigner: true, isWritable: false }],
+      data: ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }).data,
+    })],
+    signers: [payer, extra],
+  }));
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'expected-two-signers-got:3');
+});
+
+test('the facilitator binds the network itself, not only through the caller', () => {
+  const v = verifySvmPayment(
+    CHALLENGE,
+    { x402Version: 2, network: 'solana-mainnet', transaction: buildTx() },
+    CFG,
+  );
+  assert.equal(v.ok, false);
+  assert.equal(v.reason, 'wrong-network:solana-mainnet');
 });
 
 // ── the ones that must not ──────────────────────────────────────────────────────────────────────
@@ -139,7 +222,7 @@ test('a transaction naming somebody else as fee payer is refused at VERIFY time'
 test('settlement never reaches the chain for a foreign fee payer, and says why', async () => {
   const connection = stubConnection();
   const fac = createSvmFacilitator({ connection, keypair: feePayerKp, destinationTokenAccount: DEST.toBase58() });
-  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, transaction: buildTx({ feePayer: Keypair.generate().publicKey }) });
+  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, network: 'solana-devnet', transaction: buildTx({ feePayer: Keypair.generate().publicKey }) });
   assert.equal(r.ok, false);
   assert.match(r.reason, /^wrong-fee-payer:/, 'a verification reason, not a settlement-error');
   assert.equal(connection.sent.length, 0);
@@ -216,7 +299,7 @@ const stubConnection = (over = {}) => ({
 test('settlement signs, submits, and returns the signature as the receipt', async () => {
   const connection = stubConnection();
   const fac = createSvmFacilitator({ connection, keypair: feePayerKp, destinationTokenAccount: DEST.toBase58() });
-  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, transaction: buildTx() });
+  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, network: 'solana-devnet', transaction: buildTx() });
   assert.equal(r.ok, true, `expected ok, got ${r.reason}`);
   assert.equal(r.receiptId, 'sig_1');
   assert.equal(connection.sent.length, 1, 'exactly one submission');
@@ -227,7 +310,7 @@ test('a rejected payment is NEVER submitted', async () => {
   // The whole point: verification gates the network call, not the other way round.
   const connection = stubConnection();
   const fac = createSvmFacilitator({ connection, keypair: feePayerKp, destinationTokenAccount: DEST.toBase58() });
-  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, transaction: buildTx({ amount: 1n }) });
+  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, network: 'solana-devnet', transaction: buildTx({ amount: 1n }) });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'wrong-amount');
   assert.equal(connection.sent.length, 0, 'a refused payment must not reach the chain');
@@ -236,7 +319,7 @@ test('a rejected payment is NEVER submitted', async () => {
 test('an on-chain failure is reported as a failure, not as a receipt', async () => {
   const connection = stubConnection({ confirmation: { value: { err: { InstructionError: [0, 'Custom'] } } } });
   const fac = createSvmFacilitator({ connection, keypair: feePayerKp, destinationTokenAccount: DEST.toBase58() });
-  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, transaction: buildTx() });
+  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, network: 'solana-devnet', transaction: buildTx() });
   assert.equal(r.ok, false);
   assert.match(r.reason, /^settlement-failed:/);
 });
@@ -245,7 +328,7 @@ test('a transport failure says it could not tell, not that the payment was bad',
   // #173/#179/#183 in this repository are all the same lesson: a failed call is not a verdict.
   const connection = stubConnection({ async sendRawTransaction() { throw new Error('429 rate limited'); } });
   const fac = createSvmFacilitator({ connection, keypair: feePayerKp, destinationTokenAccount: DEST.toBase58() });
-  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, transaction: buildTx() });
+  const r = await fac.verifyAndSettle(CHALLENGE, { x402Version: 2, network: 'solana-devnet', transaction: buildTx() });
   assert.equal(r.ok, false);
   assert.match(r.reason, /^settlement-error:/);
   assert.match(r.reason, /429/, 'the operator reading this at 3am needs the transport error in it');

@@ -13,10 +13,15 @@
  *
  * ## Why this is a separate process
  *
- * It is the only component in the system that holds a key. The API server and the indexer stay
- * keyless and non-custodial (docs/RUNTIME.md §7); putting the settler behind an HTTP boundary is
- * what makes that true rather than aspirational. Run it isolated, on a host you control, and
- * expose it only to your API.
+ * It is the only component that holds a key in the modes launch uses. Under `FACILITATOR=stub` and
+ * `FACILITATOR=http` the API server and the indexer stay keyless and non-custodial
+ * (docs/RUNTIME.md §7); putting the settler behind an HTTP boundary is what makes that true rather
+ * than aspirational. Run it isolated, on a host you control, and expose it only to your API.
+ *
+ * The opt-in `FACILITATOR=svm` mode is the exception, and this paragraph asserted the universal
+ * until the mode that falsifies it shipped: x402 `exact` on Solana requires the facilitator to sign
+ * as FEE PAYER, so there is nothing to delegate over HTTP — the key lives in the API process and it
+ * pays lamports. That mode is off by default. See `facilitator-svm.mjs`.
  *
  * ## What it refuses to do
  *

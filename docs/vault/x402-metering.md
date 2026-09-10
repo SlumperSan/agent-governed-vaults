@@ -15,7 +15,11 @@ were ever wanted, they compose *externally* (an agent pays itself into a wallet,
 and the vault treats that like any other deposit. PX-2 is **DEFERRED(S7)** / **ACCEPTED**: any
 x402 failure is contained to the API; agents apply their own spend limits.
 
-## x402 V2 flow (server holds no keys, moves no funds)
+## x402 V2 flow (server holds no keys, moves no funds — in the launch modes)
+
+> The parenthetical is true of `FACILITATOR=stub` and `FACILITATOR=http`, and false of the opt-in
+> `FACILITATOR=svm`, which holds a Solana fee-payer keypair and pays lamports. See
+> [[off-chain-stack]] and `apps/api/src/facilitator-svm.mjs`.
 
 `src/x402.mjs` implements the payment gate:
 

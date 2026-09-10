@@ -116,9 +116,14 @@ export function decodeTransaction(b64) {
  *
  * `staticAccountKeys` is the right list even for a v0 message: an instruction whose accounts come
  * from an address-lookup table would index PAST it, and `keys[i]` is then `undefined`. That is not
- * a gap -- an undefined program id matches nothing on the allow-list, so such a transaction is
- * REFUSED by `unexpected-program:undefined` rather than silently mis-read. A payment that needs a
- * lookup table is a payment this facilitator does not accept, and it says so.
+ * a gap -- an undefined key matches nothing, so such a transaction is REFUSED rather than silently
+ * mis-read. A payment that needs a lookup table is a payment this facilitator does not accept.
+ *
+ * WHICH reason it is refused with depends on where the undefined key lands, and this comment used to
+ * assert one of them: it said `unexpected-program:undefined`. Measured, a lookup-table transfer is
+ * refused as `transfer-undecodable`, because the token program id itself is usually static and it is
+ * the ACCOUNTS that index past the list. Both are refusals; only one was true, and naming the wrong
+ * one in a security comment is how a future reader concludes the wrong branch is covered.
  *
  * @param {{tx:any}} decoded
  * @returns {{programId:string, accounts:string[], data:Uint8Array}[]}
@@ -159,6 +164,12 @@ export function verifySvmPayment(challenge, envelope, cfg) {
     return { ok: false, reason: 'bad-price-amount' };
   }
   if (want <= 0n) return { ok: false, reason: 'nonpositive-price' };
+
+  // The network is bound HERE as well as in `checkEnvelopeAgainstPrice`, deliberately. This function
+  // is exported and reachable on its own, and a facilitator that signs whatever it is handed should
+  // not depend on a caller having checked first.
+  if (price.network && (envelope.network ?? '').toLowerCase() !== String(price.network).toLowerCase())
+    return { ok: false, reason: `wrong-network:${envelope.network ?? 'none'}` };
 
   const decoded = decodeTransaction(envelope.transaction ?? '');
   if (!decoded.ok) return decoded;
@@ -217,6 +228,35 @@ export function verifySvmPayment(challenge, envelope, cfg) {
   // The payer must not be the thing being paid, and must not be this server.
   if (source === dest) return { ok: false, reason: 'source-is-destination' };
   if (authority === cfg.feePayer) return { ok: false, reason: 'authority-is-fee-payer' };
+
+  // THE AUTHORITY MUST ACTUALLY HAVE SIGNED, AND THIS IS WHERE THAT IS ESTABLISHED. Everything
+  // above reads what the transaction SAYS; none of it reads who signed it. A review built a
+  // TransferChecked the payer never signed and this function returned `{ok:true}` — after which the
+  // facilitator adds its own signature and broadcasts. The RPC's sig-verify does reject it at
+  // preflight, so no lamports move; the damage is the reason string. The client is told
+  // `settlement-error:`, and in this repository that means "we could not tell whether you paid" —
+  // the exact confusion `wrong-fee-payer` was added a few lines above to end, reappearing one
+  // function down. #173, #179, #183.
+  //
+  // Solana's message header says accounts [0, numRequiredSignatures) are the signers, in order, and
+  // `tx.signatures[i]` is that account's signature. An unsigned slot is 64 zero bytes.
+  //
+  // EXACTLY TWO SIGNATURES, not "at least two". The facilitator pays 5000 lamports PER SIGNATURE, so
+  // a client padding the account list with extra signers is spending this server's money; a review
+  // drove `numRequiredSignatures` to 10 and the verdict was still `{ok:true}`. This scheme needs the
+  // fee payer and the transfer authority and nobody else, and `authority !== feePayer` is enforced
+  // above, so two is the exact count — which makes the fee this facilitator can be charged a
+  // constant rather than something a client chooses.
+  const header = decoded.tx.message.header;
+  const required = Number(header?.numRequiredSignatures ?? 0);
+  if (required !== 2) return { ok: false, reason: `expected-two-signers-got:${required}` };
+  const keys = decoded.tx.message.staticAccountKeys.map((/** @type {any} */ k) => k.toBase58());
+  const authorityIndex = keys.indexOf(decodedTransfer.keys.owner.pubkey.toBase58());
+  if (authorityIndex < 0 || authorityIndex >= required)
+    return { ok: false, reason: 'transfer-authority-is-not-a-signer' };
+  const authoritySig = decoded.tx.signatures?.[authorityIndex];
+  if (!authoritySig || authoritySig.every((/** @type {number} */ b) => b === 0))
+    return { ok: false, reason: 'transfer-authority-did-not-sign' };
 
   return { ok: true, amount, source, authority };
 }
