@@ -251,26 +251,67 @@ async function stepVerifyDynamicDiscovery() {
   }
 }
 
-/** SF-4: the operator leaderboard must aggregate across BOTH vaults, no cherry-picking. */
+/**
+ * SF-4: the operator leaderboard must aggregate across every vault, no cherry-picking.
+ *
+ * THE EXPECTED SET COMES FROM THE FACTORY, NOT FROM `soak-vaults.json`, and that is the whole change
+ * here. This step used to assert that `/vaults` listed the pinned smoke vault, and on 2026-09-09 it
+ * failed with `/vaults dropped the smoke vault` — correctly. Read from chain that day:
+ *
+ *   - factory 0xc1cb7824…9743 has emitted exactly TWO `VaultCreated` events since block 46,307,000,
+ *     and neither is the pinned vault;
+ *   - no log anywhere between blocks 46,000,000 and 46,610,832 names 0xb940d71b… in an indexed topic;
+ *   - the vault nonetheless exists — 20,650 bytes, and its `governance()` is this deployment's
+ *     singleton — so it is real, it is simply not something this factory announced.
+ *
+ * An indexer configured with this deployment's factory therefore CANNOT know that vault, and `/vaults`
+ * omitting it is the API being right. The assertion was about a fixture, not about the protocol.
+ *
+ * `allVaults` is a public array on the factory, so the set of vaults an indexer could possibly know
+ * is readable at run time. Comparing against that is strictly stronger than a hardcoded pair — it
+ * catches a vault the indexer dropped AND a vault it invented — and it cannot go stale, which is the
+ * property the pinned list did not have.
+ */
 async function stepVerifyLeaderboard() {
   const vaults = await apiGet('/vaults');
   const lb = await apiGet('/operators/leaderboard');
   assert(vaults.status === 200 && lb.status === 200, `API read failed: ${vaults.status}/${lb.status}`);
 
+  const onChainCount = Number(callU(dep.factory, 'vaultCount()(uint256)'));
+  const onChain = [];
+  for (let i = 0; i < onChainCount; i += 1) {
+    onChain.push(String(call(dep.factory, 'allVaults(uint256)(address)', String(i))).trim().toLowerCase());
+  }
+  assert(onChain.length > 0, 'the factory reports no vaults at all — the deployment or the RPC is wrong');
+
   const listed = (vaults.body.vaults ?? []).map((v) => v.vault.toLowerCase());
   assert(listed.includes(state.vaultB.toLowerCase()), `/vaults does not list vault B: ${listed.join(', ')}`);
-  assert(listed.includes(soak.smokeVault.address.toLowerCase()), '/vaults dropped the smoke vault');
+
+  const missing = onChain.filter((v) => !listed.includes(v));
+  assert(missing.length === 0,
+    `/vaults is missing ${missing.length} vault(s) the factory created: ${missing.join(', ')}. `
+    + `The factory reports ${onChain.length}, the API lists ${listed.length}.`);
+  const invented = listed.filter((v) => !onChain.includes(v));
+  assert(invented.length === 0,
+    `/vaults lists ${invented.length} vault(s) this factory never created: ${invented.join(', ')}`);
 
   const rows = lb.body.leaderboard ?? [];
   const opId = Number(state.steps.createVaultB.operatorId);
   const row = rows.find((r) => Number(r.operatorId) === opId);
   assert(row, `operator ${opId} missing from the leaderboard`);
-  assert(Number(row.vaultCount) >= 2,
-    `SF-4 aggregation failed: operator ${opId} shows vaultCount ${row.vaultCount}, expected >= 2 (smoke vault + vault B)`);
 
-  log(`SF-4 verified: operator ${opId} aggregates ${row.vaultCount} vaults; /vaults lists ${listed.length}`);
+  // EQUALITY, NOT `>= 2`. The old bar was two because the fixture promised a pre-existing vault; the
+  // property SF-4 is actually about is that the leaderboard counts EVERY vault attributed to an
+  // operator, which an equality states and a lower bound does not. It also holds at one vault, so
+  // the drill no longer depends on how many other vaults happen to exist when it runs.
+  const attributed = (vaults.body.vaults ?? []).filter((v) => Number(v.operatorId) === opId).length;
+  assert(Number(row.vaultCount) === attributed,
+    `SF-4 aggregation failed: operator ${opId} shows vaultCount ${row.vaultCount}, but /vaults `
+    + `attributes ${attributed} vault(s) to it. The leaderboard is not counting what the vault list shows.`);
+
+  log(`SF-4 verified: operator ${opId} aggregates ${row.vaultCount} vault(s); the factory reports ${onChain.length} and /vaults lists all of them`);
   state.steps.verifyLeaderboard = {
-    done: true, vaultCount: row.vaultCount, listed, row,
+    done: true, vaultCount: row.vaultCount, listed, onChain, row,
     caveat: 'API ran FACILITATOR=stub — the 402 gate was exercised, on-chain settlement was NOT',
   };
   save();
