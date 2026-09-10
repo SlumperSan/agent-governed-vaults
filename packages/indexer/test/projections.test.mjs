@@ -347,3 +347,33 @@ test('a registered parent vault holds shares in its child and votes with none of
   assert.ok(pos.votingEligibleNote, 'and the reason must be the parent carve-out, not a queued exit');
   assert.match(pos.votingEligibleNote, /parent/i);
 });
+
+/**
+ * The same over-report reachable without a snapshot at all: an ExitQueued whose `shares` argument
+ * is missing. `abis.mjs` decodes `shares` from a non-indexed field of a two-field event, so a
+ * well-formed log always carries it and this is unreachable in production — but it is the identical
+ * class to the resumed-snapshot gap, and the old `?? 0n` default failed the same way: the size book
+ * would record "nothing locked" for a member the queued set says IS locked. The entry is left out
+ * instead, which puts the member in the honest "locked, amount unknown" state.
+ */
+test('an ExitQueued with no amount records the lock as unknown, never as zero', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A }), // no `shares`
+  ]);
+  assert.equal(queuedExitBacklog(s, V), 1, 'the member is queued either way');
+  assert.equal(s.queuedExitShares.get(V)?.has(A) ?? false, false, 'and no size was invented for them');
+
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.shares, 2_000n);
+  assert.equal(pos.queuedExitShares, null, 'unknown, not 0n');
+  assert.equal(pos.votingEligibleShares, null, 'so no eligible number is served');
+  assert.notEqual(pos.votingEligibleNote, null);
+  assert.match(pos.votingEligibleNote, /does not know/);
+
+  // And the discriminator still resolves at settlement, exactly as it does with a known size.
+  apply(s, ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 2_000n }));
+  assert.equal(s.vaults.get(V).modeFSettledCount, 1, 'an unknown size is still a Mode-F settlement');
+  assert.equal(memberPosition(s, V, A).votingEligibleNote, null, 'and the lock is gone from the report');
+});

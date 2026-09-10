@@ -298,7 +298,19 @@ export function apply(state, e) {
       // The SIZE of the entry, not only its existence: `requestExit(shares)` accepts any amount up
       // to the balance, so a queued exit subtracts from voting-eligible stake rather than zeroing
       // it, and `memberPosition` cannot state the withheld weight without this.
-      queuedExitShareBook(state, e.vault).set(a.member, big(a.shares ?? 0n));
+      //
+      // An ABSENT amount is recorded as absent, not as 0n. `abis.mjs` decodes `shares` from a
+      // non-indexed, non-optional event field, so this branch is unreachable from a well-formed
+      // log — but `0n` is the wrong failure direction whatever produces it: the size book would
+      // then say "nothing is locked" about a member `queuedExits` says IS locked, and
+      // `memberPosition` would report the member's whole position as voting-eligible when
+      // `VaultCore.votingEligibleShares` returns strictly less. Leaving the entry out instead puts
+      // the member in the one state that is honest, "locked, amount unknown", which is the same
+      // state a snapshot predating this book resumes into and which `memberPosition` reports as
+      // null with a note rather than as a number.
+      if (a.shares !== undefined && a.shares !== null) {
+        queuedExitShareBook(state, e.vault).set(a.member, big(a.shares));
+      }
       break;
     case 'ExitSettled': {
       const v = ensureVault(state, e.vault);
@@ -510,22 +522,46 @@ export function queuedExitBacklog(state, vault) {
  * applies, the amount it withholds, and how it resolves; it is `null` when nothing is withheld,
  * so a consumer can treat its presence as the whole signal.
  *
+ * There is a THIRD state, and it is a state of this projection rather than of the chain: the fold
+ * can know that a member is locked without knowing by how much. `queuedExits` (who) and
+ * `queuedExitShares` (how much) are separate structures, and `store.mjs` keeps `VERSION = 1` so a
+ * snapshot written before the second existed LOADS rather than being rejected — `buildIndexer`
+ * calls `loadSnapshot` on every restart, so that is the ordinary upgrade path and not an edge
+ * case. Across such a resume `queuedExits` still names the member and the size book does not, and
+ * the honest report is `null`: unknown, not zero. Defaulting the amount to `0n` would make
+ * `votingEligibleShares` equal `shares` — the member's WHOLE position reported as votable, with a
+ * `null` note affirming nothing is withheld, for a member whose on-chain eligible weight is
+ * strictly less. Clamping to `0n` instead would be wrong in the other direction and would falsify
+ * the paragraph below: the member may have queued one share of two thousand, so a zero here would
+ * no longer establish that a vote carries nothing. `null` is the only value that claims what is
+ * actually known, and it never over-reports; the note always says so, and names the chain read
+ * that answers exactly.
+ *
  * What this is NOT: the weight a vote would actually carry. `Governance._boundedWeight`
  * (Governance.sol:352-356) takes `min(pastVotingEligibleShares(member, createdAt - 1),
  * votingEligibleShares(member))` and `commitVote` requires that minimum to be non-zero
  * (Governance.sol:365). The snapshot term is a chain read of a checkpoint this fold does not keep,
  * so a non-zero value here is the LIVE term only and promises nothing about the snapshot term. A
- * zero is the stronger statement: zero is the smaller term whatever the snapshot holds.
+ * zero is the stronger statement: zero is the smaller term whatever the snapshot holds. A `null`
+ * is neither statement — it is the absence of one, which is why it may never be read as a number.
  */
 export function memberPosition(state, vault, member) {
   const shares = shareBook(state, vault).get(member) ?? 0n;
   const v = state.vaults.get(vault);
   const totalShares = v ? v.totalShares : 0n;
-  const queued = state.queuedExitShares.get(vault)?.get(member) ?? 0n;
+  // "Locked, amount unknown" is a state the fold can be in and must not round off: `queuedExits`
+  // names the member and the size book has no entry for them. The two structures are written and
+  // cleared together in `apply`, so within a single run this cannot happen; it is reached by
+  // resuming a snapshot written before the size book existed, which `store.mjs` still loads.
+  const sizeBook = state.queuedExitShares.get(vault);
+  const lockedAmountUnknown = (state.queuedExits.get(vault)?.has(member) ?? false) && !sizeBook?.has(member);
+  const queued = lockedAmountUnknown ? null : sizeBook?.get(member) ?? 0n;
 
   const parent = v?.parent ?? null;
   const isParent = parent !== null && String(parent).toLowerCase() === String(member).toLowerCase();
-  const eligible = isParent ? 0n : shares > queued ? shares - queued : 0n;
+  // The parent branch is unconditional on chain — `if (member == parentVault()) return 0` runs
+  // before the subtraction — so it stays exact even when the withheld amount is unknown.
+  const eligible = isParent ? 0n : lockedAmountUnknown ? null : shares > queued ? shares - queued : 0n;
 
   const notes = [];
   if (isParent) {
@@ -534,7 +570,20 @@ export function memberPosition(state, vault, member) {
       'non-voting member: VaultCore.votingEligibleShares returns 0 for the parent whatever it holds.',
     );
   }
-  if (queued > 0n) {
+  if (lockedAmountUnknown) {
+    notes.push(
+      `This position of ${shares} shares carries an outstanding queued Mode-F exit whose size ` +
+      'this projection does not know, so queuedExitShares and votingEligibleShares are null ' +
+      'rather than numbers that would over-report the weight that votes. Some part of the ' +
+      'holding is locked and excluded from voting-eligible stake: VaultCore.votingEligibleShares ' +
+      'returns sharesOf(member) minus queuedExitShares(member), and a queued exit is for a ' +
+      'non-zero amount, so the votable weight is strictly less than the holding shown here. Read ' +
+      'votingEligibleShares(member) on the vault for the exact figure. The lock ends when the ' +
+      'exit settles, which is a separate settleQueuedExit(member) call that anyone can make once ' +
+      'the vault has no pending execution.',
+    );
+  }
+  if (queued !== null && queued > 0n) {
     notes.push(
       `${queued} of ${shares} shares are locked by a queued Mode-F exit and are excluded from ` +
       'voting-eligible stake. Locked shares stay outstanding and still gain and lose with the ' +

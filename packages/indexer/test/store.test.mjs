@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { applyAll, apply, vaultView, leaderboard, queuedExitBacklog, modeFExitRateBps, memberPosition } from '../src/projections.mjs';
+import { applyAll, apply, vaultView, leaderboard, queuedExitBacklog, modeFExitRateBps, memberPosition, emptyState } from '../src/projections.mjs';
 import { serializeState, deserializeState, saveSnapshot, loadSnapshot, resumeCursor } from '../src/store.mjs';
 import { createIndexerDaemon } from '../src/daemon.mjs';
 
@@ -215,5 +215,69 @@ test('queuedExitShares round-trips through JSON, and an older snapshot without i
   delete json.queuedExitShares;
   const s2 = deserializeState(json);
   assert.equal(queuedExitBacklog(s2, V), 1, 'who is queued survives even when how much does not');
-  assert.equal(memberPosition(s2, V, A).queuedExitShares, 0n);
+
+  // "How much does not" is a MISSING number, not a zero, and the two are different claims to a
+  // member. `queuedExitShares: 0n` here would read as "nothing is locked" for a member the same
+  // state knows is locked, and `votingEligibleShares` would then be `shares` — the whole position
+  // reported as votable when the contract returns strictly less. Both come back null instead.
+  const unknown = memberPosition(s2, V, A);
+  assert.equal(unknown.queuedExitShares, null, 'an unknown locked amount is null, never 0');
+  assert.equal(unknown.votingEligibleShares, null, 'and the eligible weight it feeds is null too');
+  assert.match(unknown.votingEligibleNote ?? '', /queued Mode-F exit/,
+    'and the note says so — null there is the schema\'s "nothing is withheld"');
+});
+
+/**
+ * The same absence, reached the way an operator actually reaches it: NOT by deleting a key from a
+ * snapshot this build wrote, but by loading a file this build never wrote. `store.mjs` keeps
+ * `VERSION = 1`, so a snapshot from before the size book was folded LOADS rather than being
+ * rejected, and `buildIndexer` calls `loadSnapshot` on every restart — so this is the default
+ * upgrade path, not an edge case, and it runs on the paid /vaults/{addr}/members/{addr} route.
+ *
+ * The fixture is written out literally rather than derived from `serializeState`, because deriving
+ * it from today's serializer is exactly the assumption under test. It is pinned against the current
+ * key set below so it cannot quietly stop resembling a real snapshot.
+ */
+test('a snapshot written by pre-size-book code never tells a locked member their whole stake votes', () => {
+  // Byte-for-byte what `serializeState` emitted before `queuedExitShares` existed: version 1, the
+  // membership set present, the size book absent entirely.
+  const preUpgrade = {
+    version: 1,
+    lastBlock: 3,
+    lastLogIndex: 0,
+    vaults: [[V, {
+      vault: V, creator: A, usdc: A, operatorId: 0, totalShares: '10000', idleUsdc: '0',
+      memberCount: 2, pendingCount: 0, capacityCapUsdc: '0', parent: null, depth: 0,
+      exitQueuedCount: 1, exitSettledCount: 0, modeFSettledCount: 0,
+    }]],
+    operators: [],
+    shares: [[V, [[A, '2000'], [B, '8000']]]],
+    proposals: [],
+    activeProposal: [],
+    eventStats: [],
+    adapters: [],
+    queuedExits: [[V, [A]]],
+  };
+  // A file that no longer resembles what this build writes would stop testing the upgrade path and
+  // start testing a museum piece. Today's keys, minus the one the old writer did not have.
+  const writtenToday = Object.keys(serializeState(emptyState())).filter((k) => k !== 'queuedExitShares');
+  assert.deepEqual(Object.keys(preUpgrade).sort(), writtenToday.sort(),
+    'the pre-upgrade fixture is one field behind the current serializer, no more and no less — a ' +
+    'field added since needs its own absent-means-unknown decision here');
+
+  const resumed = deserializeState(preUpgrade);
+  const pos = memberPosition(resumed, V, A);
+
+  assert.equal(pos.shares, 2_000n, 'the holding is known: it comes from the shares book');
+  assert.equal(pos.shareOfVaultBps, 2000);
+  assert.equal(queuedExitBacklog(resumed, V), 1, 'and the state still knows this member is queued');
+
+  // The blocker: before this fix these read 0n and 2000n with a null note, i.e. "your whole
+  // position votes and nothing is withheld", on a member for whom VaultCore.votingEligibleShares
+  // returns strictly less. Never over-report; say unknown instead.
+  assert.equal(pos.queuedExitShares, null);
+  assert.equal(pos.votingEligibleShares, null);
+  assert.notEqual(pos.votingEligibleNote, null, 'a null note means nothing is withheld — it is not');
+  assert.match(pos.votingEligibleNote, /queued Mode-F exit/);
+  assert.match(pos.votingEligibleNote, /settleQueuedExit/, 'and how the lock ends');
 });
