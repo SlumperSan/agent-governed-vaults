@@ -23,7 +23,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { applyAll, vaultView } from '../../../packages/indexer/src/projections.mjs';
+import { applyAll, vaultView, memberPosition } from '../../../packages/indexer/src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -139,5 +139,38 @@ test('the OpenAPI VaultView schema declares nothing the route does not return', 
   const state = applyAll([ev('VaultCreated', 1, 0, { creator: A, usdc: A, capacityCapUsdc: 0n })]);
   const returned = new Set(Object.keys(vaultView(state, V)));
   const phantom = (await vaultViewSchemaKeys()).filter((k) => !returned.has(k));
+  assert.deepEqual(phantom, [], `declared in openapi.yaml but never returned: ${phantom.join(', ')}`);
+});
+
+/**
+ * `GET /vaults/{addr}/members/{addr}` is the same asymmetry as the vault route — its body is
+ * whatever `memberPosition` returns — and it was WORSE off: the path was served by server.mjs and
+ * did not appear in openapi.yaml at all, so no schema existed for a field to drift from. The same
+ * derived check therefore applies here, in both directions.
+ */
+async function memberPositionSchemaKeys() {
+  const lines = await schemaLines();
+  return propertyKeysAt(lines, schemaStart(lines, 'MemberPosition'), 4);
+}
+
+test('every field GET /vaults/{addr}/members/{addr} returns is declared in the OpenAPI MemberPosition schema', async () => {
+  // A member with a queued Mode-F exit, so the fields that only appear on a locked position are
+  // exercised rather than skipped.
+  const state = applyAll([
+    ev('VaultCreated', 1, 0, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('DepositActivated', 2, 0, { member: A, sharesMinted: 100n }),
+    ev('ExitQueued', 3, 0, { member: A, shares: 50n }),
+  ]);
+  const returned = Object.keys(memberPosition(state, V, A));
+  const declared = new Set(await memberPositionSchemaKeys());
+  const undocumented = returned.filter((k) => !declared.has(k));
+  assert.deepEqual(undocumented, [],
+    `served by the paid /vaults/{addr}/members/{addr} route but not declared in docs/api/openapi.yaml: ${undocumented.join(', ')}`);
+});
+
+test('the OpenAPI MemberPosition schema declares nothing the route does not return', async () => {
+  const state = applyAll([ev('VaultCreated', 1, 0, { creator: A, usdc: A, capacityCapUsdc: 0n })]);
+  const returned = new Set(Object.keys(memberPosition(state, V, A)));
+  const phantom = (await memberPositionSchemaKeys()).filter((k) => !returned.has(k));
   assert.deepEqual(phantom, [], `declared in openapi.yaml but never returned: ${phantom.join(', ')}`);
 });
