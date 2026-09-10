@@ -118,6 +118,32 @@ paths:
               schema: { $ref: '#/components/schemas/VaultView' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '404': { description: Unknown vault }
+  /vaults/{address}/members/{member}:
+    get:
+      summary: One member's position in one vault, and the weight of it that can vote (metered)
+      operationId: getMemberPosition
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+        - name: member
+          in: path
+          required: true
+          schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+      responses:
+        '200':
+          description: >-
+            Member position. A member with no shares in the vault is not an error: the route
+            returns zeros rather than a 404.
+          headers:
+            payment-response:
+              schema: { type: string }
+              description: JSON receipt of the settled x402 payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberPosition' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
   /operators/leaderboard:
     get:
       summary: Operator leaderboard — all attested vaults, no cherry-picking (metered)
@@ -247,6 +273,51 @@ components:
             againstWeight: { type: string }
             revealedWeight: { type: string }
             revealedVoters: { type: integer }
+    MemberPosition:
+      type: object
+      description: >-
+        A member's holding in one vault, and separately the part of it that carries a vote. The two
+        are different numbers and the difference is silent on-chain, which is what this schema
+        exists to make legible: a member can hold a fifth of a vault and have a voting-eligible
+        weight of zero.
+      properties:
+        vault: { type: string }
+        member: { type: string }
+        shares:
+          type: string
+          description: >-
+            WAD, decimal string. Shares held, INCLUDING any locked by a queued exit: shares burn at
+            settlement, never at request.
+        shareOfVaultBps:
+          type: integer
+          description: >-
+            shares as a fraction of totalShares, in basis points. A holding fraction, NOT a voting
+            fraction — it is denominated in total supply, which includes locked and non-voting
+            stake.
+        queuedExitShares:
+          type: string
+          description: >-
+            decimal string — shares locked by an outstanding queued Mode-F exit, 0 when there is
+            none. Mode-F queues an exit instead of settling it when the vault has a pending
+            execution; the shares stay outstanding and still gain and lose with the vault, and are
+            excluded from voting-eligible stake until the exit settles. Settlement is a separate
+            settleQueuedExit(member) call that anyone can make once no execution is pending, and a
+            queued exit cannot be cancelled.
+        votingEligibleShares:
+          type: string
+          description: >-
+            decimal string — the live voting weight, mirroring VaultCore.votingEligibleShares:
+            zero when the member is the vault's registered parent vault (a non-voting member), and
+            otherwise shares minus queuedExitShares. This is the LIVE term only. Governance bounds a
+            vote by min(snapshot weight at proposal creation, this), so a non-zero value here does
+            not on its own establish that a vote would carry weight; a zero does establish that it
+            would not.
+        votingEligibleNote:
+          type: [string, 'null']
+          description: >-
+            null when nothing is withheld. Otherwise a human-readable sentence naming what is
+            withheld, why, and how it resolves — so a zero voting weight beside a material holding
+            is explained rather than merely reported.
     LeaderboardRow:
       type: object
       properties:

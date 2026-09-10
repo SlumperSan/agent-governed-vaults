@@ -46,6 +46,8 @@ export function serializeState(state) {
     eventStats: mapEntries(state.eventStats),
     adapters: [...state.adapters],
     queuedExits: mapEntries(state.queuedExits, (members) => [...members]),
+    // Same nested shape as `shares`, bigints as strings: vault -> [[member, "amount"], ...].
+    queuedExitShares: mapEntries(state.queuedExitShares, (book) => mapEntries(book, (b) => b.toString())),
   };
 }
 
@@ -110,6 +112,12 @@ export function deserializeState(obj) {
   for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
   for (const a of obj.adapters ?? []) s.adapters.add(a);
   for (const [k, members] of obj.queuedExits ?? []) s.queuedExits.set(k, new Set(members));
+  // Absent on a snapshot written before the queued-exit SIZES were folded. `queuedExits` above
+  // still restores WHICH members are queued, so the Mode-F discriminator and the backlog survive
+  // such a resume intact; only the per-member amount is unknown until that member's next event.
+  for (const [k, book] of obj.queuedExitShares ?? []) {
+    s.queuedExitShares.set(k, new Map(book.map(([m, b]) => [m, BigInt(b)])));
+  }
   return s;
 }
 

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { applyAll, apply, vaultView, leaderboard, queuedExitBacklog, modeFExitRateBps } from '../src/projections.mjs';
+import { applyAll, apply, vaultView, leaderboard, queuedExitBacklog, modeFExitRateBps, memberPosition } from '../src/projections.mjs';
 import { serializeState, deserializeState, saveSnapshot, loadSnapshot, resumeCursor } from '../src/store.mjs';
 import { createIndexerDaemon } from '../src/daemon.mjs';
 
@@ -184,4 +184,36 @@ test('queuedExits survives a serialize -> deserialize -> settle cycle', () => {
   assert.equal(s1.vaults.get(V).modeFSettledCount, 1, 'a second settle for the same member is Mode-I');
   assert.equal(s1.vaults.get(V).exitSettledCount, 2);
   assert.equal(modeFExitRateBps(s1, V), 5000);
+});
+
+/**
+ * The SIZE of each queue entry is durable state too, and it fails differently from the membership
+ * set above. `queuedExits` losing an entry misclassifies a settlement; `queuedExitShares` losing
+ * one restores a member whose voting weight the projection then over-reports by the whole locked
+ * amount -- which is the exact silence this field was added to end. A bigint that reached disk as
+ * `{}` or as a number would be lost or rounded, so this goes through JSON, not just through the
+ * two functions.
+ */
+test('queuedExitShares round-trips through JSON, and an older snapshot without it still loads', () => {
+  const s0 = applyAll([
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('DepositActivated', 2, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 2, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 3, 0, V, { member: A, shares: 2_000n }),
+  ]);
+  const json = JSON.parse(JSON.stringify(serializeState(s0)));
+  assert.deepEqual(json.queuedExitShares, [[V, [[A, '2000']]]], 'bigints reach disk as decimal strings');
+
+  const s1 = deserializeState(json);
+  const pos = memberPosition(s1, V, A);
+  assert.equal(pos.shares, 2_000n);
+  assert.equal(pos.queuedExitShares, 2_000n, 'the locked amount survived the restart');
+  assert.equal(pos.votingEligibleShares, 0n);
+
+  // A snapshot written before this field existed: absent, not empty. It must still load, and the
+  // membership set must still carry the Mode-F discriminator across the resume.
+  delete json.queuedExitShares;
+  const s2 = deserializeState(json);
+  assert.equal(queuedExitBacklog(s2, V), 1, 'who is queued survives even when how much does not');
+  assert.equal(memberPosition(s2, V, A).queuedExitShares, 0n);
 });

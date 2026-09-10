@@ -122,6 +122,13 @@ export function emptyState() {
     /** @type {Set<string>} */ adapters: new Set(), // execution-adapter addresses, learned from RebalanceExecuted
     /** @type {Map<string, Set<string>>} */
     queuedExits: new Map(), // vault -> members with an OUTSTANDING queued Mode-F exit (see `apply`)
+    /** @type {Map<string, Map<string, bigint>>} */
+    // vault -> member -> the SIZE of that outstanding queue entry. Deliberately a second structure
+    // rather than a `Map<member,bigint>` replacing the Set above: `queuedExits` is serialized as a
+    // flat array of members (store.mjs) and store.test.mjs pins that on-disk shape, so widening it
+    // would turn an observability fix into a snapshot-format migration. The two are written and
+    // cleared in the same two `apply` cases, and store.test.mjs pins both round-trips.
+    queuedExitShares: new Map(),
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -176,6 +183,16 @@ function queuedExitSet(state, vault) {
     state.queuedExits.set(vault, q);
   }
   return q;
+}
+
+/** Member -> outstanding queued-exit size for `vault` (created on demand). */
+function queuedExitShareBook(state, vault) {
+  let b = state.queuedExitShares.get(vault);
+  if (!b) {
+    b = new Map();
+    state.queuedExitShares.set(vault, b);
+  }
+  return b;
 }
 
 function shareBook(state, vault) {
@@ -275,9 +292,13 @@ export function apply(state, e) {
     case 'ExitQueued':
       // VaultCore.requestExit allows ONE queued exit per member at a time
       // (`queuedExitShares[msg.sender] == 0`, ExitAlreadyQueued) and a queued exit is
-      // irrevocable, so this set holds at most one entry per member and never needs a size.
+      // irrevocable, so this set holds at most one entry per member and needs no per-member count.
       ensureVault(state, e.vault).exitQueuedCount += 1;
       queuedExitSet(state, e.vault).add(a.member);
+      // The SIZE of the entry, not only its existence: `requestExit(shares)` accepts any amount up
+      // to the balance, so a queued exit subtracts from voting-eligible stake rather than zeroing
+      // it, and `memberPosition` cannot state the withheld weight without this.
+      queuedExitShareBook(state, e.vault).set(a.member, big(a.shares ?? 0n));
       break;
     case 'ExitSettled': {
       const v = ensureVault(state, e.vault);
@@ -287,6 +308,7 @@ export function apply(state, e) {
       // path that clears `queuedExitShares` — so the next ExitSettled for a queued member is
       // necessarily the settlement of that queued exit, and every other ExitSettled is Mode I.
       if (queuedExitSet(state, e.vault).delete(a.member)) v.modeFSettledCount += 1;
+      queuedExitShareBook(state, e.vault).delete(a.member); // the lock ends with the settlement
       creditShares(state, e.vault, a.member, -big(a.sharesBurned));
       break;
     }
@@ -468,16 +490,68 @@ export function queuedExitBacklog(state, vault) {
   return state.queuedExits.get(vault)?.size ?? 0;
 }
 
-/** A member's share position in a vault (0 if none). */
+/**
+ * A member's share position in a vault (0 if none), INCLUDING the weight it can actually vote.
+ *
+ * `shares` and `votingEligibleShares` are different quantities and the difference is silent
+ * on-chain. The Base Sepolia soak found a member holding roughly a fifth of a vault whose
+ * `votingEligibleShares` read 0, with nothing off-chain saying so — this projection carried no
+ * eligibility field at all, so the number a member sees and the number that carries a vote could
+ * disagree by their whole position and nothing here reconciled them.
+ *
+ * `votingEligibleShares` mirrors `VaultCore.votingEligibleShares` (VaultCore.sol:1025-1028) term
+ * for term, INCLUDING the branch that is not about exits at all:
+ *
+ *     if (member == parentVault()) return 0;
+ *     return sharesOf[member] - queuedExitShares[member];
+ *
+ * So there are TWO ways a material position votes with nothing, and a field carrying only the
+ * queued-exit lock would report the second one wrongly. `votingEligibleNote` names whichever
+ * applies, the amount it withholds, and how it resolves; it is `null` when nothing is withheld,
+ * so a consumer can treat its presence as the whole signal.
+ *
+ * What this is NOT: the weight a vote would actually carry. `Governance._boundedWeight`
+ * (Governance.sol:352-356) takes `min(pastVotingEligibleShares(member, createdAt - 1),
+ * votingEligibleShares(member))` and `commitVote` requires that minimum to be non-zero
+ * (Governance.sol:365). The snapshot term is a chain read of a checkpoint this fold does not keep,
+ * so a non-zero value here is the LIVE term only and promises nothing about the snapshot term. A
+ * zero is the stronger statement: zero is the smaller term whatever the snapshot holds.
+ */
 export function memberPosition(state, vault, member) {
   const shares = shareBook(state, vault).get(member) ?? 0n;
   const v = state.vaults.get(vault);
   const totalShares = v ? v.totalShares : 0n;
+  const queued = state.queuedExitShares.get(vault)?.get(member) ?? 0n;
+
+  const parent = v?.parent ?? null;
+  const isParent = parent !== null && String(parent).toLowerCase() === String(member).toLowerCase();
+  const eligible = isParent ? 0n : shares > queued ? shares - queued : 0n;
+
+  const notes = [];
+  if (isParent) {
+    notes.push(
+      `This position belongs to ${parent}, the vault's registered parent vault, which is a ` +
+      'non-voting member: VaultCore.votingEligibleShares returns 0 for the parent whatever it holds.',
+    );
+  }
+  if (queued > 0n) {
+    notes.push(
+      `${queued} of ${shares} shares are locked by a queued Mode-F exit and are excluded from ` +
+      'voting-eligible stake. Locked shares stay outstanding and still gain and lose with the ' +
+      'vault, and a queued exit cannot be cancelled: the lock ends when the exit settles, which is ' +
+      'a separate settleQueuedExit(member) call that anyone can make once the vault has no pending ' +
+      'execution.',
+    );
+  }
+
   return {
     vault,
     member,
     shares,
     // fraction in basis points (integer) — NAV-denominated value is chain-read enrichment.
     shareOfVaultBps: totalShares > 0n ? Number((shares * 10000n) / totalShares) : 0,
+    queuedExitShares: queued,
+    votingEligibleShares: eligible,
+    votingEligibleNote: notes.length ? notes.join(' ') : null,
   };
 }
