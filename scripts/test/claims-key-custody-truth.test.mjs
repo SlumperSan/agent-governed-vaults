@@ -377,7 +377,7 @@ const EXEMPT = new Map([
   ['docs/X402-LIVE-REPORT.md:41', 'RECORD: a FACILITATOR=http run; the API was keyless in it'],
   ['docs/X402-LIVE-REPORT.md:305', 'RECORD: same run — the keyless-API/key-holding-facilitator split as measured'],
   ['docs/audit/TEST-CROSS-REFERENCE.md:125', 'WINDOW: subject is the canary and the reference agent, both genuinely keyless; `apps/api` is two lines later in a different sentence about audit scope'],
-  ['docs/LAUNCH-READINESS.md:278', 'WINDOW: subject is scripts/verify-chainlink-oracle.mjs, which is read-only and keyless; the API is two table ROWS above, at line 276'],
+  ['docs/LAUNCH-READINESS.md:292', 'WINDOW: subject is scripts/verify-chainlink-oracle.mjs, which is read-only and keyless; the API is two table ROWS above, at line 290'],
   // CLAUSE, not WINDOW, and the difference is worth the extra line. The two entries above are the
   // documented cost of the ±WINDOW heuristic: a NEIGHBOURING sentence names the API. This one is
   // different geometry — the API is named in the SAME sentence, in the clause before the `;`, and

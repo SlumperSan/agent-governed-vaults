@@ -66,7 +66,7 @@
  *
  *   "a second, larger vault of at least 250,000 USDG after at least 30
  *    incident-free days"
- *     docs/LAUNCH-READINESS.md:128  "Raise by deploying a second vault (>=250k)
+ *     docs/LAUNCH-READINESS.md:180  "Raise by deploying a second vault (>=250k)
  *       only after >=30 incident-free days with the canary clean."
  *       That line is a recorded plan, which is why the copy says so in the same
  *       breath: a different deployment on a later date, and a plan rather than
