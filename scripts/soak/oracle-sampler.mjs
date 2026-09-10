@@ -63,7 +63,9 @@ import { fileURLToPath } from 'node:url';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://base-sepolia-rpc.publicnode.com';
+// Same default as `lib.mjs`: publicnode prunes logs, and a sampler on a different endpoint
+// from the drills it feeds is a second opinion nobody asked for.
+const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series.jsonl');
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
