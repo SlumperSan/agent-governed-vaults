@@ -16,10 +16,22 @@
  * executable across `[executableAt, executableAt + executionWindow]`. On this vault that window is
  * 86,400 s. A deadline that clears the commit+reveal floor but expires inside the window leaves a
  * proposal that is still `Passed` and still executable while `executeSwap` reverts `Expired()` —
- * the round is burned, the `actionHash` is frozen, and there is no re-execution path. So the
- * default TTL here covers the whole window, and every duration is read from `Governance.configOf`
- * rather than assumed. An earlier version hardcoded 7,200 s and ignored `timelockDuration`
- * entirely; that number is correct on this vault today and a `RuleChange` can move it.
+ * the round is burned, the `actionHash` is frozen, and there is no re-execution path.
+ *
+ * AND THE WINDOW IS NOT AT A FIXED OFFSET FROM `createdAt`. `Governance.finalize` stamps
+ * `executableAt = block.timestamp + timelockDuration` when FINALIZE IS MINED, and finalize is
+ * permissionless and gated only on `block.timestamp >= revealDeadline`, so nothing obliges anyone
+ * to call it promptly. `createdAt + commit + reveal + timelock` is therefore a LOWER BOUND on
+ * `executableAt`, and this script does not claim otherwise: it sizes the default TTL to cover the
+ * window measured from that bound with an hour of propose margin, and says at the end that a late
+ * finalize slides the real window out from under the deadline. An earlier version printed "covers
+ * the whole 86400s window" as a flat assertion, true only if finalize landed at exactly
+ * `revealDeadline`.
+ *
+ * Every duration is read from `Governance.configOf`, and the Governance address from
+ * `vault.governance()` rather than hardcoded. An earlier version hardcoded both the 7,200 s floor
+ * and the contract; a wrong contract returns an all-zero config, which silently disarms every
+ * timing check here while the script still exits 0 with a full payload.
  *
  * WHAT IT CANNOT DO. It cannot make the committed floor safe. `minAmountOut` is fixed now and the
  * fill happens later; a move against you either reverts or fills at a floor the market has left.
@@ -27,7 +39,13 @@
  * owner decision.
  *
  * Usage:
- *   node scripts/build-rebalance-order.mjs --vault 0x… --amount-in 5000000 [--fee 100] [--ttl N]
+ *   node scripts/build-rebalance-order.mjs --vault 0x… --amount-in 5000000
+ *     [--fee 100] [--ttl N] [--token-out 0x…] [--adapter 0x…] [--accept-partial-window]
+ *
+ * `--token-out` and `--adapter` default to WETH and the deployed adapter on chain 4663.
+ * `--accept-partial-window` allows a deadline that expires inside the execution window; read
+ * the refusal text before reaching for it, because it trades one real risk for another.
+ * `GOVERNANCE` in the environment overrides the address read from `vault.governance()`.
  *
  * `--amount-in` is in the vault's `usdc()` base units (USDG has 6 decimals, so 5000000 = 5 USDG).
  */
@@ -35,7 +53,6 @@
 import { execFileSync } from 'node:child_process';
 
 const RPC = process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
-const GOVERNANCE = process.env.GOVERNANCE || '0x790A308f1ac06FeD4C79884BAD25d0C721C5B125';
 const BPS = 10000n;
 
 // SwapRouter02's exactInputSingle: the 7-field params struct, WITHOUT the `deadline` member the
@@ -132,26 +149,51 @@ async function main() {
   }
 
   // ---- governance timing, read live ----------------------------------------------------------
-  // Every one of these is a `RuleChange` away from moving, and the failure they cause happens
-  // AFTER a multi-hour round rather than at propose time, so none of them is hardcoded.
+  // The DURATIONS were already read live. The CONTRACT they are read from used to be a hardcoded
+  // constant, which is the same defect one level up: `VaultCore.governance` is `immutable` and the
+  // vault will name it for one call, so ask the vault. If the constant had ever been wrong -- a
+  // second deployment, a different vault -- `configOf` on an unrelated Governance returns an
+  // all-zero struct, both timing guards below compare against 0 and pass, and the script exits 0
+  // with a full payload for an order that `propose()` would reject outright on `vaultRegistered`.
+  const governance = process.env.GOVERNANCE || call(vault, 'governance()(address)');
+
   const cfgRaw = cast(
-    'call', GOVERNANCE,
-    'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16)', vault,
-  ).split('\n').map((l) => big(l));
+    'call', governance,
+    'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)', vault,
+  ).split('\n').filter((l) => l.trim() !== '').map((l) => big(l));
+  if (cfgRaw.length < 4) {
+    fail(`configOf returned ${cfgRaw.length} values, expected 8. Reading ${governance} for ${vault}.`);
+  }
   const [commitDur, revealDur, timelockDur, execWindow] = cfgRaw;
+
+  // `_validateConfig` requires commitDuration >= 1 hours, revealDuration >= 1 hours and
+  // executionWindow >= 1 hours, so a registered vault CANNOT have a zero here. A zero is not a
+  // fast vault, it is an unregistered one -- the wrong Governance, or the wrong vault.
+  if (commitDur === 0n || revealDur === 0n || execWindow === 0n) {
+    fail(
+      `configOf(${vault}) on ${governance} returns commit=${commitDur} reveal=${revealDur} `
+        + `executionWindow=${execWindow}. Governance._validateConfig forbids a zero in any of `
+        + 'them, so this vault is not registered with this Governance and propose() would revert '
+        + 'on vaultRegistered. Every timing check below would silently compare against zero.',
+    );
+  }
 
   const roundFloor = commitDur + revealDur + timelockDur;
   const windowEnd = roundFloor + execWindow;
 
+  console.log(`governance        ${governance}`);
   console.log(`commitDuration    ${commitDur}`);
   console.log(`revealDuration    ${revealDur}`);
   console.log(`timelockDuration  ${timelockDur}`);
   console.log(`executionWindow   ${execWindow}`);
-  console.log(`=> executable from createdAt+${roundFloor} to createdAt+${windowEnd}\n`);
+  console.log(
+    `=> earliest execution createdAt+${roundFloor}; window at least ${execWindow}s from there\n`,
+  );
 
-  // Default: cover the WHOLE window, plus margin for the gap between running this and proposing.
+  // Default: cover the whole window, plus margin for the gap between running this and proposing.
   const PROPOSE_MARGIN = 3600n;
   const ttl = BigInt(arg('ttl', String(windowEnd + PROPOSE_MARGIN)));
+  const acceptShort = process.argv.includes('--accept-partial-window');
 
   // ---- CHECKED BEFORE ANYTHING IS EMITTED ----------------------------------------------------
   // An earlier version printed the payload and `actionHash` and THEN refused, so a reader
@@ -163,13 +205,21 @@ async function main() {
         + 'would revert Expired() on an order governance had already passed.',
     );
   }
-  if (ttl < windowEnd) {
+  // `>=` and not `>`: at exactly `windowEnd` the deadline covers the window only if propose is
+  // broadcast in the same second as this run, which is the very gap PROPOSE_MARGIN exists for.
+  if (ttl < windowEnd + PROPOSE_MARGIN && !acceptShort) {
     fail(
-      `--ttl ${ttl}s reaches the execution window but expires inside it. The window is `
-        + `[createdAt+${roundFloor}, createdAt+${windowEnd}] and this deadline covers only `
-        + `${ttl - roundFloor}s of ${execWindow}s. Miss that slot and the proposal stays Passed `
-        + 'and executable while executeSwap reverts Expired(): the round is burned with no '
-        + `re-execution path, because actionHash is frozen. Use at least ${windowEnd + PROPOSE_MARGIN}.`,
+      `--ttl ${ttl}s does not cover the execution window with margin. Earliest execution is `
+        + `createdAt+${roundFloor}s and the window runs at least ${execWindow}s from there, so a `
+        + `deadline needs ${windowEnd + PROPOSE_MARGIN}s to cover it with ${PROPOSE_MARGIN}s of `
+        + 'propose latency. Expiring inside the window leaves a proposal that is still Passed and '
+        + 'still executable while executeSwap reverts Expired(): the round is burned with no '
+        + 'retry, because actionHash is frozen.\n\n'
+        + '    If you want a SHORTER deadline on purpose, pass --accept-partial-window. That is a\n'
+        + '    real trade and not merely a nag: a longer deadline widens the interval over which\n'
+        + '    the frozen minAmountOut can be left behind by the market, which is this script\'s\n'
+        + '    other primary hazard. Shorter is defensible when one holder drives the whole round\n'
+        + '    and can execute promptly.',
     );
   }
 
@@ -247,13 +297,11 @@ async function main() {
   console.log(`liquidity ${liquidity}`);
   console.log(`usdc side ${poolIn}`);
 
-  // Basis points, not percent: integer percent truncates a 5 USDG order against a multi-million
-  // pool straight to "0%", which reads as "measured and negligible" when nothing was measured.
-  // This is a DEPTH RATIO, not a quote — a real quote needs the Quoter, which is a state-mutating
-  // staticcall and is not deployed on every chain.
-  // Parts per million, and printed as a fraction when even that truncates. Integer PERCENT sent a
+  // Parts per million, and a plain 1-in-N ratio when even that truncates. Integer PERCENT sent a
   // 5 USDG order against a multi-million-unit pool straight to "0%", which reads as "measured and
-  // negligible" when nothing had been measured at all.
+  // negligible" when nothing had been measured at all; basis points did the same one decimal
+  // place further down. This is a DEPTH RATIO, not a quote — a real quote needs the Quoter, which
+  // is a state-mutating staticcall and is not deployed on every chain.
   const ppmOfPool = poolIn === 0n ? 1000000n : (amountIn * 1000000n) / poolIn;
   const ratio = poolIn === 0n ? 0n : poolIn / amountIn;
   console.log(
@@ -302,7 +350,11 @@ async function main() {
     'abi-decode', '--input',
     'f(address,(address,address,uint256,uint256,uint256,bytes)[])', payload,
   );
-  const rtNums = (rt.match(/\b\d{4,}\b/g) || []).map((n) => BigInt(n));
+  // `\d+`, not `\d{4,}`. The four-digit floor was a false NEGATIVE: `--amount-in 100` produces a
+  // correct payload that this check then rejected. It failed safe, but a verifier that reds on
+  // good input is one people learn to bypass. Hex bodies are stripped first so the digits inside
+  // `0x…` cannot accidentally satisfy a value.
+  const rtNums = (rt.replace(/0x[0-9a-fA-F]+/g, ' ').match(/\b\d+\b/g) || []).map((n) => BigInt(n));
   for (const [label, want] of [['amountIn', amountIn], ['minAmountOut', minAmountOut], ['deadline', deadline]]) {
     if (!rtNums.includes(want)) {
       fail(`payload did not round-trip: ${label} ${want} is absent from the decode:\n${rt}`);
@@ -317,7 +369,7 @@ async function main() {
   console.log(`tokenOut      ${tokenOut}`);
   console.log(`amountIn      ${amountIn}`);
   console.log(`minAmountOut  ${minAmountOut}   <-- FROZEN NOW, FILLED HOURS LATER`);
-  console.log(`deadline      ${deadline}  (ttl ${ttl}s, covers the whole ${execWindow}s window)`);
+  console.log(`deadline      ${deadline}  (ttl ${ttl}s)`);
   console.log(`recipient     ${adapter}   <-- the ADAPTER, which measures its own balance delta`);
   console.log(`\nactionHash    ${actionHash}`);
   console.log(`\npayload\n${payload}\n`);
@@ -335,8 +387,18 @@ async function main() {
     + 'and that there is no flag for it here on purpose: changing it means changing the payload,\n'
     + 'and the payload is what the actionHash binds.\n'
     + '\n'
-    + 'The deadline is anchored to the block timestamp AT THIS RUN, not at propose time, so every\n'
-    + `second between running this and broadcasting propose eats into the ${PROPOSE_MARGIN}s margin.`,
+    + 'THE DEADLINE DOES NOT COVER A FIXED WINDOW, and an earlier version of this script asserted\n'
+    + 'that it did. `Governance.finalize` sets `executableAt = block.timestamp + timelockDuration`\n'
+    + 'at the moment finalize is MINED, not at createdAt, and finalize is permissionless and only\n'
+    + 'gated on `block.timestamp >= revealDeadline` -- nothing obliges anyone to call it promptly.\n'
+    + `So createdAt+${roundFloor} is a LOWER BOUND on executableAt, and the real window slides\n`
+    + 'later by however long finalize is delayed while this deadline does not move. Finalize an\n'
+    + 'hour late and you lose an hour of coverage off the end.\n'
+    + '\n'
+    + 'Two anchors, both under your control, and the only two things that make the coverage real:\n'
+    + '  1. broadcast propose promptly after this run -- the deadline is anchored to the block\n'
+    + `     timestamp AT THIS RUN, so every second until propose eats the ${PROPOSE_MARGIN}s margin;\n`
+    + '  2. call finalize as soon as the reveal deadline passes, not whenever convenient.',
   );
   console.log('\nThis script has broadcast nothing and holds no key. SWARM §10: the owner signs.');
 }
