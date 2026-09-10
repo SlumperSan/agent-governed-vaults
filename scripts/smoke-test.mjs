@@ -20,7 +20,8 @@
  * none is supplied via --password-file, cast prompts on YOUR terminal (stdin is inherited).
  *
  * Environment:
- *   BASE_SEPOLIA_RPC   RPC url            (default: https://base-sepolia-rpc.publicnode.com)
+ *   BASE_SEPOLIA_RPC   RPC url            (default: https://sepolia.base.org -- publicnode
+ *                                          prunes logs and receipts, see .env.example)
  *   SMOKE_SIGNER_ARGS  cast signer flags  (required; e.g. "--account deployer --password-file .pw")
  *   DEPLOY_JSON        forge broadcast output
  *                      (default: contracts/broadcast/DeployTestnet.s.sol/84532/run-latest.json)
@@ -38,7 +39,9 @@ import { PROPOSAL_SIG, decodeProposal } from './lib/proposal-decode.mjs';
 import { classifyProposal } from './proposal-recovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+// NOT publicnode: it prunes logs and receipts, and this script decodes phase results FROM
+// RECEIPTS. See the note in `.env.example` for the measurement.
+const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 const DEPLOY_JSON = process.env.DEPLOY_JSON
   ?? path.join(ROOT, 'contracts', 'broadcast', 'DeployTestnet.s.sol', '84532', 'run-latest.json');

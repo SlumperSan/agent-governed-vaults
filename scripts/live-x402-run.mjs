@@ -50,7 +50,9 @@ import { createProtocolClient } from '../packages/agent-sdk/src/index.mjs';
 import { seed } from '../packages/reference-agent/fixtures/seed-snapshot.mjs';
 
 const TESTNET_CHAIN_IDS = new Set([84532, 11155111, 31337, 1337]);
-const DEFAULT_RPC = 'https://base-sepolia-rpc.publicnode.com';
+// NOT publicnode: it prunes logs and receipts, and this runner reads receipts for its own fee
+// accounting. See the note in `.env.example` for the measurement.
+const DEFAULT_RPC = 'https://sepolia.base.org';
 const BASE_SEPOLIA_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
 /** Hard ceilings. This script exists to move a few cents; anything larger is a mistake. */

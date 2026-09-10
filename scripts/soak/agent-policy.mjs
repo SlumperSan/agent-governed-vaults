@@ -26,7 +26,9 @@ export const TESTNET_CHAIN_IDS = new Set([84532, 11155111, 31337, 1337]);
  * @param {Record<string, string|undefined>} env
  * @returns {{keystore:string, password:string, apiBaseUrl:string, rpcUrl:string}}
  */
-export function resolveAgentRunConfig(env, { defaultRpc = 'https://base-sepolia-rpc.publicnode.com' } = {}) {
+// The default matches `lib.mjs`'s deliberately -- publicnode prunes logs, and the two names
+// resolve with the same `||` precedence, so a split default is a split view of the chain.
+export function resolveAgentRunConfig(env, { defaultRpc = 'https://sepolia.base.org' } = {}) {
   const problems = [];
   if (env[EXECUTE_ENV_VAR] !== 'yes') problems.push(`${EXECUTE_ENV_VAR} is not set to "yes"`);
   if (!env.SOAK_AGENT_KEYSTORE) problems.push('SOAK_AGENT_KEYSTORE (path to the throwaway keystore) is not set');
