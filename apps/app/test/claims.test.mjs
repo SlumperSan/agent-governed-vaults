@@ -13,17 +13,27 @@
  * guard's own header relies on, and it is stated here so nobody moves these
  * strings into a `.json` fixture and discovers the consequence in CI.
  *
+ * HOW THIS FILE RUNS, because for its first weeks it did not. It is `npm run
+ * test:app` at the repository root, which `.github/workflows/ci.yml` and
+ * `scripts/gate.mjs` each invoke as a step of their own, ordered immediately
+ * before `npm run test:backend`. `scripts/test/test-wiring-truth.test.mjs`
+ * fails if either of them stops invoking it, and fails if any `*.test.mjs` in
+ * the repository stops being covered by a wired script.
+ *
+ * IT IS DELIBERATELY NOT A GLOB INSIDE `test:backend`, and the reason is a
+ * measured race. The `execFileSync` below is `rm -rf dist` followed by
+ * `cp -r src dist`. The repository-wide walks that `test:backend` runs
+ * enumerate files first and read them after, and they deliberately do not skip
+ * `dist`. Batched into one `node --test` invocation with them, this build
+ * deletes a path an unrelated guard has already listed and not yet opened, and
+ * that guard throws ENOENT: 1 failure in 25 batched runs, which is the rate
+ * that gets dismissed as flakiness rather than diagnosed.
+ * `scripts/test/claims-token-absence.test.mjs` carries the same finding at its
+ * `apps/app` group, and dropped its own build because of it.
+ *
  * WHAT THIS FILE DOES NOT COVER, said plainly rather than left to be inferred:
  *
- *   1. IT IS NOT WIRED INTO `npm run test:backend`. That script enumerates
- *      `apps/web/test/*`, `apps/site/test/*` and `scripts/test/*` by name and
- *      does not glob `apps/app/test/*`. Wiring it in means editing the root
- *      package.json, which is outside this change's paths. Until someone does,
- *      run it directly:
- *
- *          node --test --test-reporter=tap apps/app/test/claims.test.mjs
- *
- *   2. IT IS A SHAPE CHECK, NOT A TRUTH CHECK. It can tell that a banned string
+ *   1. IT IS A SHAPE CHECK, NOT A TRUTH CHECK. It can tell that a banned string
  *      is absent and that a required sentence is present. It cannot tell that a
  *      new sentence is true. The repository guard has the same limit and says
  *      so; no guard here is a proof of absence.
