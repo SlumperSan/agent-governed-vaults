@@ -92,7 +92,7 @@ the comments, and the owner is who decides a claim.
   factory"; best of all, write the instruction: read `VaultFactory.allowSubVaults()` on the factory
   you integrate against.
 - **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. The first
-  vault on Robinhood Chain has not been created yet and is planned to launch small, so it sits
+  vault on Robinhood Chain exists and has exactly one holder, so it sits
   squarely in the sub-five regime the word misdescribes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed. Robinhood Chain
   mainnet (4663): the seven contracts are, since 2026-09-05, with gates 3 and 6 unrun there or

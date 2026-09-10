@@ -110,6 +110,25 @@ const VAULT_COUNT_KEY = 'factory.vaultCount()';
 const NO_VAULT_PHRASE = 'no vault has been created';
 
 /**
+ * Every way the tree has actually asserted "there is no vault", for the FORBIDDING half only.
+ * Sourced from real instances: `entries.tsx:316` ("no vault exists"), `faq.html:97` ("none has
+ * been created yet"), `index.html:112` ("the factory has created no vault"), `groups.ts:16`
+ * ("nothing is capped because nothing is created"), `__gen.mjs:156` ("a vault that has not been
+ * created"), `SKILL.md:95` ("has not been created yet").
+ */
+const NO_VAULT_SHAPES = [
+  /no vaults? (?:has|have) been created/,
+  // The word boundary is load-bearing and was lost once already: without it, `exists?`
+  // matches the `exist` inside `existed`, and reds the TRUE historical sentence
+  // `apps/site/operators.html` carries (`This sentence said no vault existed until then.`).
+  /no vaults? exists?\b/,
+  /(?:factory|it) has created no vaults?/,
+  /a vault that (?:has not been|will not be|was never) created/,
+  /none has been created yet/,
+  /nothing is capped because nothing is created/,
+];
+
+/**
  * Does `text` carry the no-vault sentence?
  *
  * Whitespace-collapsed and lowercased, because the sentence is prose: it wraps across a line break
@@ -119,6 +138,28 @@ const NO_VAULT_PHRASE = 'no vault has been created';
  * forbidding half of this leg mean anything.
  */
 const saysNoVault = (text) => text.replace(/\s+/g, ' ').toLowerCase().includes(NO_VAULT_PHRASE);
+
+/**
+ * Files that legitimately carry a denial shape. Keyed by PATH, never by `path:line`: a line-keyed
+ * exemption silently un-pins the moment anything above it is edited, which cost four separate
+ * failures on 2026-09-10 alone. A path key survives an edit; a rotted one is caught by the test
+ * below, which requires every entry to still match something.
+ *
+ * There are exactly two legitimate shapes, and neither is a claim about the chain today:
+ *   - a HISTORICAL QUOTE, saying what a surface used to read before the vault existed
+ *   - a CONDITIONAL, printed only on the branch where it is true
+ */
+const DENIAL_EXEMPT = new Map([
+  ['apps/app/README.md', 'HISTORICAL: quotes what index.html "previously read", explicitly past tense, beside the sentence that replaced it'],
+  ['apps/app/test/claims.test.mjs', 'HISTORICAL: "it used to be an empty state" — the test exists BECAUSE that sentence became false'],
+  ['scripts/soak/lib.mjs', 'CONDITIONAL: inside `if (count === 0n)`, so it prints only when true, and it is about whichever factory it is handed rather than about 4663'],
+]);
+
+/** The forbidding half: ANY shape asserting no vault exists, not just the agreed sentence. */
+const deniesTheVault = (text) => {
+  const flat = text.replace(/\s+/g, ' ').toLowerCase();
+  return NO_VAULT_SHAPES.some((re) => re.test(flat));
+};
 
 /**
  * Read the vault out of the record as one of exactly two states, or throw.
@@ -162,15 +203,35 @@ const SKIP_DIRS = new Set([
 // `.ts` and `.tsx` were added on 2026-09-10, after this guard passed clean over a tree in which
 // `apps/site-next/src/sections/risks-register/entries.tsx:316` shipped the sentence "a capacity cap
 // is a per-vault parameter and no vault exists" to readers while `factory.vaultCount()` returned 1.
-// That is RENDERED copy, not a comment - `RisksRegister.tsx` imports `ENTRIES` and lays it out - and
-// it was the byte-identical twin of a sentence corrected in `apps/site/disclaimers.html` in the same
-// change. The whole of `apps/site-next` is a public surface written in TypeScript, and NO claims
-// guard in this repository walked a single file of it: not this one, and not
-// `claims-lede-truth.test.mjs`, whose PUBLIC_EXT is `.md`/`.html`/`.txt`/`.json`. A React site is
-// not less published than a hand-written page, and the extension was the only thing hiding it.
+// That is RENDERED copy, not a comment - `RisksRegister.tsx` imports `ENTRIES` and lays it out.
+//
+// BE PRECISE ABOUT WHAT THIS DID AND DID NOT FIX, because the first version of this comment was
+// wrong on both counts and a reviewer had to catch it:
+//
+//   - It is NOT true that no guard walked `apps/site-next`. THIS guard already reached
+//     `apps/site-next/dist/*.html` (CI builds the redesign before `test:backend` precisely so the
+//     claims guards can walk `dist/`), and those rendered pages carry this very sentence. And
+//     `claims-key-custody-truth.test.mjs` walks all of `apps/site-next`'s `.ts`/`.tsx` already: its
+//     walk has no allowlist at all, only a `DENY_EXT` deny-list of binary types.
+//   - The extension was therefore NOT what hid it. `NO_VAULT_SHAPES` is what hid it: the forbidding
+//     half of this leg used to test the single exact string `NO_VAULT_PHRASE`, and the offending
+//     cell said "no vault exists", not "no vault has been created". Walking `.tsx` would not have
+//     caught it. The patterns below are the actual fix; this widening only means the SOURCE is
+//     checked as well as the built output, which is where an author reads and edits.
 const WALK_EXT = new Set([
   '.md', '.html', '.txt', '.json', '.mjs', '.js', '.sol', '.yaml', '.yml', '.ts', '.tsx',
 ]);
+
+/**
+ * The forbidding half needs a PATTERN; the requiring half needs an exact string. One constant
+ * cannot be both, and treating it as both is what let a false sentence ship.
+ *
+ * `NO_VAULT_PHRASE` stays exact on purpose: while no vault exists, every surface must carry ONE
+ * agreed sentence, or the requirement degrades into "say something vaguely like this". But once a
+ * vault DOES exist, every paraphrase asserting otherwise is equally false, and forbidding only the
+ * agreed wording forbids the one phrasing a careful author was most likely to have already fixed.
+ *
+ * Each pattern below was written from an instance that actually shipped, not from imagination.
 
 /** Every file this guard sweeps, enumerated from the filesystem — never from a list. */
 const walk = () => {
@@ -527,7 +588,7 @@ test('every surface that cites the record carries the value the record holds', (
       );
       if (want === 'vault') {
         assert.ok(
-          !saysNoVault(text),
+          !deniesTheVault(text),
           `${rel} names the first vault ${v} from ${RECORD_REL} AND still says "${NO_VAULT_PHRASE}".` +
             ` The vault exists; that sentence was written for the state before it did and is now` +
             ` false. Rewrite the surface rather than adding the address beside it.`,
@@ -551,7 +612,8 @@ test('no surface claims there is no vault once the record holds one', () => {
     if (rel === GUARD_SELF) continue;
     if (rel === RECORD_REL) continue; // the record's own note explains its history
     const text = readFileSync(path.join(REPO, ...rel.split('/')), 'utf8').replace(/\s+/g, ' ');
-    if (saysNoVault(text)) offenders.push(rel);
+    if (DENIAL_EXEMPT.has(rel)) continue;
+    if (deniesTheVault(text)) offenders.push(rel);
   }
   assert.deepEqual(
     offenders,
@@ -560,6 +622,22 @@ test('no surface claims there is no vault once the record holds one', () => {
       ` wherever it still appears. Rewrite each of these to name the vault, or to say what is true` +
       ` of it now:\n  ` + offenders.join('\n  '),
   );
+});
+
+test('denial exemptions: every entry still matches, none has rotted', () => {
+  // An exemption that no longer matches is indistinguishable from a live one and protects nothing,
+  // while the reader believes the surface is covered. Cheapest possible check: require each key to
+  // still be a file, and still carry a denial shape.
+  for (const [rel, reason] of DENIAL_EXEMPT) {
+    const abs = path.join(REPO, ...rel.split('/'));
+    assert.ok(existsSync(abs), `DENIAL_EXEMPT names ${rel} (${reason}) but that file does not exist.`);
+    assert.ok(
+      deniesTheVault(readFileSync(abs, 'utf8')),
+      `DENIAL_EXEMPT has ${rel} (${reason}) but nothing there matches a denial shape any more.
+`
+        + 'Either the text was rewritten and the entry should go, or a shape stopped matching.',
+    );
+  }
 });
 
 test('the deploy script exempts chain 4663 from the sequencer uptime requirement', () => {

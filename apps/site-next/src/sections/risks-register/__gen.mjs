@@ -153,7 +153,7 @@ const HEADER = [
   ' *     contracts/src/Governance.sol:531      passing starts the timelock',
   ' *',
   ' *   r14  "planned capacity cap is 50,000 USDC"',
-  ' *     A planned parameter of a vault that has not been created. Any page',
+  ' *     A parameter of vault #1, which exists on chain 4663. Any page',
   ' *     carrying the figure must also carry the word "planned"; this cell',
   ' *     supplies both, in the same sentence.',
   ' *',
