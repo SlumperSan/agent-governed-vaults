@@ -48,14 +48,15 @@ import {
   FOOTER_LICENCE,
   FOOTER_PAGES,
   REPO_URL,
+  siteHref,
   TAGLINE,
   X_URL,
-  type PageId,
+  type ShellPage,
 } from './pinned';
 import { Pinned } from './PinnedText';
 import styles from './footer.module.css';
 
-export function Footer({ page }: { page: PageId }): JSX.Element {
+export function Footer({ page }: { page: ShellPage }): JSX.Element {
   const art = STILLS.mascot;
   const band = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLImageElement>(null);
@@ -81,7 +82,7 @@ export function Footer({ page }: { page: PageId }): JSX.Element {
       </div>
 
       <div className={styles.inner}>
-        <a className={styles.brand} href="index.html" aria-label={BRAND_NAME}>
+        <a className={styles.brand} href={siteHref(page, 'index.html')} aria-label={BRAND_NAME}>
           <Mark className={styles.mark} />
           <span className={styles.lockup}>
             <span className={styles.name} aria-hidden="true">
@@ -107,7 +108,7 @@ export function Footer({ page }: { page: PageId }): JSX.Element {
             <a
               className={styles.link}
               key={item.id}
-              href={item.id}
+              href={siteHref(page, item.id)}
               aria-current={item.id === page ? 'page' : undefined}
             >
               {item.label}

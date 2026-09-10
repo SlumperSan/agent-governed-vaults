@@ -47,7 +47,9 @@ Three rules follow from that, and each fails silently rather than loudly:
 ```
 index.html … status.html   eight entry HTMLs: head metadata, one #root div, one module script
 src/entry-<page>.tsx       eight thin client entries
-src/entry-server.tsx       render(pageId) — the interface the prerender calls
+404.html                   the not-found document; its ABSENCE is a soft-404, see below
+src/entry-404.tsx          its client entry — a plain import, not the page-body glob
+src/entry-server.tsx       render(pageId), and renderNotFound() for the document that is not one
 src/main.tsx               shared bootstrap; hydrates, imports the three stylesheets
 src/tokens.css             the palette, type scale, rhythm and motion curves
 src/fonts.css              three hand-written @font-face rules
@@ -75,6 +77,52 @@ the output. The middleware is not cosmetic: it 301s the `*.rwally.pages.dev` hos
 rwally.com, and the sanctions geofence is a WAF rule on the rwally.com zone that the pages.dev
 hostnames are not in. Losing it in the move reopens an unfiltered path to the same content.
 
+## A path that does not exist gets a 404, and that takes a file
+
+`dist/404.html` is the whole mechanism. Cloudflare Pages' asset server, on a request matching no
+asset, walks up from the requested path looking for a `404.html` and serves the first one it finds
+with a **404** status. Finding none, it falls back to serving `/index.html` with a **200** — the
+single-page-application behaviour — which is what rwally.com did until 2026-09-09:
+
+```
+/nonsense.html     200   13167 bytes
+/vision.html       200   13167 bytes   (identical bytes to /)
+/                  200   13167 bytes
+/disclaimers.html  308   -> /disclaimers   (correct)
+/vision            301   -> /              (correct)
+```
+
+The rule table in `public/_redirects` was never the defect — the last two lines are its work. The
+fallback for paths the table does not name was, and a soft-404 is expensive twice over: every
+mistyped or stale path is indexable as a duplicate of the homepage, and a broken internal link
+answers 200, so it appears in no log and no crawl.
+
+**Three things about that file are load-bearing, and none of them fails the build if undone.**
+`apps/site-next/test/edge.test.mjs` is what fails instead.
+
+1. **It is built, so it carries the chrome.** `vite.config.ts` names it as a third entry and
+   `scripts/prerender.mjs` splices the rendered markup in, the same as the two pages. A hand-written
+   file in `public/` could not link the content-hashed stylesheet, and `style-src 'self'` with no
+   `unsafe-inline` leaves it no other way to be styled.
+2. **Its in-site links are root-absolute.** Pages renders this document **at the path that was asked
+   for** rather than redirecting, so `/a/b/c` renders it and a relative `index.html` would resolve to
+   `/a/b/index.html` — a second 404, under a lost reader. `siteHref` in `src/shell/pinned.ts` is what
+   rewrites them, and it is the identity function on the two real pages, which must keep emitting the
+   byte-exact `href="index.html"` that `site.test.mjs` matches.
+3. **It is `noindex` and names no canonical.** It is served at every address that does not exist, so
+   there is no URL it could claim that is true of the request that produced it.
+
+It is deliberately **not** a `PageId`: it is in no nav, no sitemap and none of the per-page guards,
+because it is a document the site is never navigated to. `NOT_FOUND_ID` in `src/shell/pinned.ts`
+carries the long version. And there is deliberately **no** `/*  /404.html  404` catch-all in
+`_redirects` beside it — one mechanism, not two: a catch-all source there sits in front of
+`/assets/*` and `/media/*`, and nothing in this repository can test that it does not bite.
+
+**What none of this proves.** There is no wrangler here, so the live edge is not exercised by any
+test in this repository; the checks pin the preconditions the fix depends on, not the response. If
+the Pages project has `not_found_handling` set to single-page-application in the dashboard, that
+setting overrides the file and the soft-404 survives the deploy. Check it at publish time.
+
 ## Every request is same-origin
 
 The Content-Security-Policy in `public/_headers` is `default-src 'none'` with exactly two relaxations
@@ -101,10 +149,12 @@ The network panel must show zero non-self hosts. One request to a font host is a
   copy of each lives inside an answer body. The shell renders one of each, so a shell-only
   `faq.html` reads one and one. That second pair is the FAQ section's obligation, not the footer's.
 - The middleware test. `functions/_middleware.js` is here and is byte-identical to
-  `apps/site/functions/_middleware.js`, but nothing in this directory tests it: `test/` holds
-  `site.test.mjs` and nothing else, and `apps/site/test/middleware.test.mjs` still reads the copy
-  under `apps/site`. It is owed in the change that stops serving `apps/site` — a middleware left
-  behind under test at its old path is a middleware nobody is testing at the path that is served.
+  `apps/site/functions/_middleware.js`, but nothing in this directory tests it, and
+  `apps/site/test/middleware.test.mjs` still reads the copy under `apps/site`. `test/` now holds
+  `site.test.mjs` and `edge.test.mjs`, and the middleware belongs with the second of those: it is
+  edge behaviour, and that is the file for edge behaviour. It is owed in the change that stops
+  serving `apps/site` — a middleware left behind under test at its old path is a middleware nobody
+  is testing at the path that is served.
 
 ## What has landed
 

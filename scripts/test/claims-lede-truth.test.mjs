@@ -700,7 +700,24 @@ const SITE_NEXT = 'apps/site-next';
 // reached the pages the redesign actually publishes. Its only failure mode is being longer than
 // reality, which reds honestly, or shorter, which is the silent one. The two names below come from
 // `PAGE_IDS`, so the way to keep it in step is to keep reading them from there.
-const PRERENDERED = ['index.html', 'disclaimers.html'].map((page) => `${SITE_NEXT}/dist/${page}`);
+//
+// THE THIRD NAME IS NOT A PAGE, AND IT IS HERE ANYWAY. `404.html` is not in
+// `PAGE_IDS` — it is in no nav, no sitemap and none of the per-page guards in
+// `apps/site-next/test/site.test.mjs`, because it is a document the site is
+// never navigated TO. `src/shell/pinned.ts` carries the reason under
+// `NOT_FOUND_ID`: without it in the build output, Cloudflare Pages serves
+// `/index.html` with a 200 for every path that matches no asset, which is the
+// soft-404 measured on the live site on 2026-09-09.
+//
+// It is listed here because THIS test asks a different question from that one.
+// Not "is it a page of the site" but "did the guards above read the prose a
+// reader receives" — and a reader receives this document at every address that
+// does not exist, so its sentences are public surface with exactly the standing
+// of the homepage's. Being outside `PAGE_IDS` is precisely what would have made
+// it the silent omission this test's own comment warns about.
+const PRERENDERED = ['index.html', 'disclaimers.html', '404.html'].map(
+  (page) => `${SITE_NEXT}/dist/${page}`,
+);
 
 test('every prerendered redesign page is inside the walk', () => {
   // A checkout with no redesign owes nothing. `dist` alone is not the condition to test on: it is

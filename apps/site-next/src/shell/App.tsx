@@ -15,9 +15,9 @@
 import type { ComponentType, JSX } from 'react';
 import { LenisProvider } from '../motion/LenisProvider';
 import { PageShell } from './PageShell';
-import type { PageId } from './pinned';
+import type { ShellPage } from './pinned';
 
-export function App({ page, Body }: { page: PageId; Body: ComponentType | null }): JSX.Element {
+export function App({ page, Body }: { page: ShellPage; Body: ComponentType | null }): JSX.Element {
   return (
     <LenisProvider>
       <PageShell page={page}>{Body ? <Body /> : null}</PageShell>
