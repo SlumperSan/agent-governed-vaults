@@ -23,13 +23,40 @@
  *      by what a body opens. `tc()` is `t()` plus one more condition: the test
  *      that reads the reference configuration also skips, with its own message,
  *      when that file is not in the checkout — which happens on a branch cut
- *      before the target-chain decision landed it, and nowhere else. The nine
+ *      before the target-chain decision landed it, and nowhere else. The TEN
  *      declared with `test()` run either way: they read source, and one of them
  *      walks the source and adds `dist/` when it is there.
  *      THESE THREE NUMBERS WERE STALE AND ARE RECOUNTED. They read thirty-four,
- *      three and seven until 2026-09-05 and the checkout said thirty-six, one
- *      and eight; the mark swap of that date takes `test()` to nine. Recount all
- *      three with `grep -c "^t(" `, `grep -c "^tc(" ` and `grep -c "^test(" `.
+ *      three and seven until 2026-09-05, and the line then claimed thirty-six,
+ *      one and eight.
+ *
+ *      RECOUNTED 2026-09-09 AND THE FIRST RECOUNT GOT THE ATTRIBUTION WRONG,
+ *      which is worth writing down in the paragraph whose subject is counting.
+ *      It said the marquee provenance leg added that day was the tenth `test()`.
+ *      It is not a `test()` at all — it is declared with `t(`, so it is the
+ *      THIRTY-SIXTH `t()`, and `t()` is what this file's own recount command
+ *      distinguishes: `grep -c "^test("` cannot match a `^t(` line, whatever
+ *      `t()` wraps.
+ *
+ *      What the three numbers actually did: `t()` went thirty-five to
+ *      THIRTY-SIX with the marquee leg. THE THIRD CORRECTION TO THIS PARAGRAPH
+ *      IS THIS SENTENCE: it said "thirty-six" was wrong when written and is
+ *      right now by accident, and the first half of that is false. c33419ee
+ *      (#222) CREATED this file — it does not exist in c33419ee^ — with
+ *      `grep -c "^t("` already at thirty-six, so both the header line and this
+ *      paragraph's own "the line then claimed thirty-six" were written on
+ *      2026-09-05 against a file that had thirty-six. The number went wrong on
+ *      2026-09-09, when df9d13f4 (#227) removed a `t()` and left thirty-five,
+ *      and it is right again now, by accident. `tc()` is still ONE.
+ *      `test()` is TEN and was already ten before this change. The leg that took
+ *      it from nine to ten is the purchase-ban probe, which arrived earlier and
+ *      sits eighth in the file -- position and ordinal are different things, and
+ *      saying "the tenth" would be the same class of mistake again. The line
+ *      saying nine had simply not been recounted since.
+ *
+ *      Recount all three with `grep -c "^t(" `, `grep -c "^tc(" ` and
+ *      `grep -c "^test(" `, and attribute a change to the declaration form the
+ *      command actually matches.
  *      They are claims, and nothing else checks them.
  *
  *   2. PROSE_FILES moved: `README.md`, `src/tokens.css`, `src/index.css`. Same
@@ -2341,10 +2368,16 @@ const OWNER_AND_LIVE_STRINGS = [
   // index" is permitted BY NAME in `scripts/test/claims-lede-truth.test.mjs`, which masks it before
   // scanning for an agent as the subject of trading. One character of drift breaks that permission.
   'The AI agent trading index.',
-  // Two of the four marquee phrases, listed verbatim in the brief's own marquee line. The other two
-  // resolve against the corpus and the promo script, so they are not here: "No admin key." is the
-  // tail of the corpus sentence "The contracts carry no proxy, no upgrade path, no pause function
-  // and no admin key.", and "Every position put to a vote." is promo script line 7.
+  // ONE of the four marquee phrases, listed verbatim in the brief's own marquee line. The other
+  // THREE resolve elsewhere and so are not here: "No admin key." is the tail of the corpus sentence
+  // "The contracts carry no proxy, no upgrade path, no pause function and no admin key."; "No
+  // upgrade path." is a clause of apps/site/faq.html's "The contracts carry no pause function, no
+  // proxy and no upgrade path."; and "Every position put to a vote." is promo script line 7.
+  //
+  // IT READ "TWO … THE OTHER TWO" UNTIL 2026-09-09, and both halves were wrong by then: #232 swapped
+  // a brief-sourced phrase for a corpus-sourced one and moved neither number. A review of the leg
+  // that finally guards this strip caught the same arithmetic in that leg's own failure message, so
+  // both are corrected here rather than one of them.
   'The hive decides.',
   // 'Seven immutable contracts.' WAS HERE AND CAME OUT ON 2026-09-09, on the owner's instruction to
   // stop marketing a contract count. It was the only marquee phrase that needed this list at all,
@@ -2473,13 +2506,81 @@ t('every sentence on the homepage comes from a source that was already checked',
     'Every sentence on the homepage must appear verbatim in one of three sources:\n' +
       '  1. the corpus, apps/site/*.html, which is guarded by apps/site/test/site.test.mjs\n' +
       '  2. PROMO_SCRIPT, the promo lines the owner approved on 2026-09-05\n' +
-      '  3. OWNER_AND_LIVE_STRINGS, the tagline, two marquee phrases and the live panel labels\n' +
+      '  3. OWNER_AND_LIVE_STRINGS, the tagline, one marquee phrase and the live panel labels\n' +
       'A fourth source, RWLY_LAUNCH_RECORD, was retired on 2026-09-09 with the beat it sourced.\n' +
       'Do not add a sentence to source 3 to make this pass. Source 3 is for strings that CANNOT\n' +
       'exist in the corpus, and every entry in it carries the reason it cannot. If a sentence says\n' +
       'something the corpus already says, quote the corpus; if it says something new about the\n' +
       'protocol, it has not been read against the contracts yet and it does not belong on the page.\n' +
       'Unsourced sentences:\n' +
+      unsourced.map((s) => `  ${JSON.stringify(s)}`).join('\n'),
+  );
+});
+
+/**
+ * THE MARQUEE IS CHECKED SEPARATELY, BECAUSE THE SENTENCE EXTRACTOR CANNOT SEE IT.
+ *
+ * `homepageSentences` requires four words, for the good reason stated above it: it is what keeps
+ * markup fragments and UI labels out of a provenance check. The cost was invisible until a review
+ * measured it — THREE OF THE FOUR MARQUEE PHRASES ARE THREE WORDS LONG. "The hive decides.", "No
+ * upgrade path." and "No admin key." were read by no guard at all. Only "Every position put to a
+ * vote." reached the check, and only because it happens to be six words.
+ *
+ * So the strip had no provenance rule on a page whose entire discipline is that every sentence
+ * traces to something already read against the contracts. It was demonstrated by mutation: editing
+ * the corpus sentence a marquee phrase is quoted from left the suite green.
+ *
+ * The phrases are read FROM THE BUILT PAGE, by the class the renderer stamps on each one, rather
+ * than from the `PHRASES` array that produced them. That is deliberate twice over: the array is
+ * TypeScript and this suite is plain ESM, and — the real reason — a guard that reads the same
+ * constant the page reads proves only that a variable equals itself. The bytes that shipped are the
+ * thing under test.
+ *
+ * The word-count floor does not apply here because the fragment problem does not: every element
+ * with this class is a phrase the copy chose, never a label and never a split headline.
+ */
+const marqueePhrases = () => {
+  const html = raw.get('index.html') ?? '';
+  return [...html.matchAll(/class="[^"]*_phrase_[^"]*"[^>]*>([^<]+)</g)]
+    .map((m) => m[1].replace(/&amp;/gi, '&').replace(/&rsquo;|&#8217;/gi, "'").replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+};
+
+t('every marquee phrase comes from a source that was already checked', () => {
+  const haystack = [
+    normalise(corpusText()),
+    normalise(PROMO_SCRIPT.join('  ')),
+    normalise(OWNER_AND_LIVE_STRINGS.join('  ')),
+  ].join('  ');
+
+  const phrases = marqueePhrases();
+
+  // NON-VACUITY, and it is the whole risk here. This leg finds its subjects by a CSS-module class
+  // name, which the bundler regenerates on every build — `_phrase_17to7_47` today. The substring
+  // `_phrase_` is the stable part, but a renderer that renamed the class or stopped stamping one
+  // would make this extractor return nothing and the assertion below pass over an empty list, which
+  // is precisely the failure the leg exists to fix. Four is the count the strip has carried since it
+  // was written; a floor of four reds the moment the extractor stops reading.
+  assert.equal(
+    phrases.length,
+    4,
+    `expected four marquee phrases, extracted ${phrases.length}. Either the strip changed length — ` +
+      'in which case change this number and say why in the commit — or the class the extractor ' +
+      'matches on was renamed and this provenance check is no longer reading anything.',
+  );
+
+  const unsourced = phrases.filter((s) => !haystack.includes(normalise(s)));
+  assert.deepEqual(
+    unsourced,
+    [],
+    'Every phrase on the marquee must appear in one of the three sources the homepage leg lists.\n' +
+      'The strip is the most quotable surface on the site — four short declaratives, set in capitals,\n' +
+      'scrolling — and it was the one surface with no provenance rule. Do not add a phrase to\n' +
+      'OWNER_AND_LIVE_STRINGS to make this pass. Where each of the four comes from today:\n' +
+      '  "No upgrade path." and "No admin key."  the corpus, apps/site/faq.html and index.html\n' +
+      '  "Every position put to a vote."         promo script line 7\n' +
+      '  "The hive decides."                     OWNER_AND_LIVE_STRINGS, from the brief\n' +
+      'Unsourced phrases:\n' +
       unsourced.map((s) => `  ${JSON.stringify(s)}`).join('\n'),
   );
 });
