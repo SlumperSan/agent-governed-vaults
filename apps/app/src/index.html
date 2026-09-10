@@ -66,10 +66,15 @@
           <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
         </svg>
       </a>
-      <!-- THE CONNECT CONTROL IS UNCHANGED. Still aria-disabled with the same
-           explanatory note, because deposits open only once a vault exists
-           and nothing about that fact has changed with this pass. -->
-      <button type="button" class="connect" aria-disabled="true" aria-describedby="connect-note" title="Deposits open when a vault exists.">
+      <!-- THE CONNECT CONTROL IS INERT, AND ITS REASON CHANGED WITH THIS PASS.
+           It used to say deposits open once a vault exists. A vault exists now,
+           and the control is still inert, so that was never the real reason:
+           this page takes no deposits at all. The title and the sr-only note
+           are ONE unit with this comment and must say the same thing - a
+           previous pass rewrote the note and left the title contradicting it,
+           which handed sighted users the false half and screen-reader users
+           the true one. -->
+      <button type="button" class="connect" aria-disabled="true" aria-describedby="connect-note" title="This page takes no deposits. It is read-only.">
         Connect wallet
       </button>
       <span id="connect-note" class="sr-only">Vault #1 exists on chain 4663 and holds funds. This page does not take deposits; it is a read-only status page.</span>
@@ -121,8 +126,10 @@
       </div>
 
       <p class="reads-intro">
-        Three calls, sent from this browser straight to the chain 4663 public RPC with
-        <span class="mono">eth_call</span>. Nothing is proxied and nothing is cached.
+        The three reads below are sent from this browser straight to the chain 4663 public RPC
+        with <span class="mono">eth_call</span> - four calls, because the USDC row reads both
+        the address and its symbol - alongside one <span class="mono">eth_blockNumber</span>
+        for the stamp. Nothing is proxied and nothing is cached.
       </p>
 
       <ul class="reads-list">
@@ -220,7 +227,7 @@
     <!-- THE EMPTY STATE SITS OUTSIDE THE SCROLL CONTAINER, NOT IN A SPANNING
          CELL. Inside one it inherits the table's 40rem min-width, so at 375 px
          the sentence this page exists to say is clipped by the horizontal
-         scroll and the reader sees "No vaults have been create". A table may
+         scroll and the reader was left with a clipped half-sentence. A table may
          carry a header row and no body rows; the explanation of why there are
          none belongs beside the table, at the width of the card. -->
     <div class="empty">
@@ -246,8 +253,10 @@
         </div>
       </dl>
       <p class="empty-watch">
-        Watch this page. The first row appears here the moment the factory reports a vault,
-        because the count above is read from the chain on every load.
+        No row will appear here. The factory already reports a vault and this table still
+        lists none, because nothing on this page fetches per-vault data: the count above is a
+        live read, the table below it is static markup with no body. Follow the factory link
+        to enumerate vaults on the explorer.
       </p>
     </div>
   </section>

@@ -112,7 +112,7 @@ test('the built page names the factory address', () => {
     html.includes(FACTORY),
     'The state sentence names a vault on 4663. A reader who wants to check the count for\n' +
       'themselves needs the factory address to call vaultCount() on, on the same page,\n' +
-      'address to call it on, on the same page, without leaving to find it.\n' +
+      'without leaving to find it.\n' +
       `Expected to find: ${FACTORY}`,
   );
 });

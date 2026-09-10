@@ -106,5 +106,7 @@ directory; there is no such directory here and there should not be one.
 Everything in `Design/app-spec-2026-09-05.md` past v1's first screen: the vault detail page, the
 hive activity screens, stake, vote, and every wallet action. The Connect control in the masthead is
 inert and says so, carries `aria-disabled` rather than `disabled` so it keeps its place in the tab
-order, and names its reason through `aria-describedby`. It becomes a real control when there is a
-vault to deposit into and not before.
+order, and names its reason through `aria-describedby`. It does not become a real control when a
+vault exists: vault #1 exists and holds funds, and this control is still inert, because this app
+is a read-only status page and takes no deposits at any point. The earlier wording promised the
+opposite and its condition has already been met.
