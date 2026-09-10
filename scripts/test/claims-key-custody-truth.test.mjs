@@ -82,7 +82,7 @@
  *
  *   Measured cost of gap 2 on the tree as it stands: zero true cross-line claims exist to catch
  *   today (its whole value is prospective) and it produced exactly one new match, at
- *   `apps/web/index.html:1556`, which is TRUE and is exempted below with its geometry written out.
+ *   `apps/web/index.html:1583`, which is TRUE and is exempted below with its geometry written out.
  *   That ratio is stated rather than buried: a reviewer will compute it.
  *
  * ## What was measured and DELIBERATELY NOT added
@@ -384,7 +384,7 @@ const EXEMPT = new Map([
   // the claim's subject is the second clause. `unqualifiedClaims` has no clause parser and should
   // not grow one for a single site. The claim is true: the browser demo signs a dummy all-zero
   // envelope against a dev facilitator and never asks the user for a key (`renderApiConsent` at
-  // :1486 says the same thing about the same subject and is unaffected).
+  // :1513 says the same thing about the same subject and is unaffected).
   //
   // This is the only exemption pinned inside a 1500-line file that is edited often, so it WILL
   // drift. When it does, the fix is to re-pin the line, not to drop the CLAIM_SPAN join: the join
