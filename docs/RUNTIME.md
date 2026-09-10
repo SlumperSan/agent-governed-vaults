@@ -382,6 +382,46 @@ Both were exercised live; see the report.
 
 ---
 
+### 6.6 Solana (`FACILITATOR=svm`) — and how to check it yourself
+
+The asymmetry, because it is the reason §7's "the API holds no key" carries an exception. On the EVM
+path the client signs an EIP-3009 AUTHORIZATION and the server builds the transaction. On Solana the
+client builds and partially signs the WHOLE TRANSACTION, and the facilitator co-signs as **fee payer**
+and submits — so the facilitator holds a key, pays lamports, and endorses anything it does not check.
+There is nothing to delegate over HTTP: the key lives in the API process. The mode is opt-in and off
+by default.
+
+| Variable | Meaning |
+|---|---|
+| `FACILITATOR=svm` | selects it |
+| `SVM_RPC_URL` | the cluster |
+| `SVM_KEYPAIR` | the fee payer's 64-byte secret, as a JSON array or base58 |
+| `SVM_DESTINATION_TOKEN_ACCOUNT` | where payments land |
+| `SVM_DECIMALS` | the mint's decimals, which the challenge must carry |
+| `PRICE_ASSET` / `PRICE_PAYTO` | base58 in this mode, not `0x` |
+
+A malformed `SVM_KEYPAIR` is reported as a SHAPE (`keypair-unparseable:json-array`,
+`keypair-unparseable:base58`, `keypair-wrong-length:<n>`) and never by echoing the parser's message,
+which used to put real key bytes into the boot log through `JSON.parse`'s error window.
+
+**Run the whole path against devnet:**
+
+```
+SVM_LIVE=1 SVM_KEYPAIR_PATH=~/.svm-devnet.json node scripts/live-x402-svm-run.mjs
+```
+
+It creates its own mint, payer and token accounts, so it depends on no faucet and no address anybody
+has to keep current; it refuses to start without `SVM_LIVE=1` or if the RPC's genesis hash is not
+devnet's; and **it asserts on SPL token balance deltas read back from chain**, not on the receipt. A
+stub can fake a receipt; it cannot fake a balance. It also replays one envelope twice and requires a
+`replayed-nonce` refusal.
+
+That shape is deliberate. The first devnet run of this scheme called `verifyAndSettle` directly and
+its output was quoted as proof the payment path worked — while `decodeSignatureHeader` was in fact
+rejecting the envelope the shipped client builds, so no request could reach the facilitator through
+`gate()` at all. A claim that cannot be re-run from the repository is not evidence, which is why the
+runner is checked in rather than the log.
+
 ## 7. Non-custodial guarantees
 
 - The **indexer** is read-only: `getLogs` and `getBlockNumber` only. It never signs or sends.
