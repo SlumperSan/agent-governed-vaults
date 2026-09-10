@@ -37,8 +37,10 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONTRACTS = path.join(REPO, 'contracts');
 const WIN = process.platform === 'win32';
 
-// The entrypoints CI syntax-checks (seven as of 2026-09-10; do not write the count here, it
-// went stale the first time this list grew). They have no unit tests -- they are exercised by hand
+// The entrypoints CI syntax-checks. No count here: the previous wording said "six" while listing
+// seven, and a replacement that said "seven as of <date>" was self-refuting - it wrote the count
+// in the same sentence telling you not to. Read the array.
+// They have no unit tests -- they are exercised by hand
 // against a live chain -- so parsing them is the only thing standing between a typo and a
 // 6-hour smoke run or a production boot that dies on load.
 const ENTRYPOINTS = [

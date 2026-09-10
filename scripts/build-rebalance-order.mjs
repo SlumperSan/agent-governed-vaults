@@ -13,8 +13,10 @@
  *   - `deadline`      — must outlive the ENTIRE execution window, not merely reach it
  *
  * THE DEADLINE IS THE TRAP, AND IT IS WORSE THAN "must outlive the round". A passed proposal is
- * executable across `[executableAt, executableAt + executionWindow]`. On this vault that window is
- * 86,400 s. A deadline that clears the commit+reveal floor but expires inside the window leaves a
+ * executable across `[executableAt, executableAt + executionWindow]`, and `executionWindow` is a
+ * per-vault config value this script READS rather than assumes -- `--vault` is an argument, so
+ * "on this vault" has no referent here. A deadline that clears the commit+reveal floor but
+ * expires inside the window leaves a
  * proposal that is still `Passed` and still executable while `executeSwap` reverts `Expired()` —
  * the round is burned, the `actionHash` is frozen, and there is no re-execution path.
  *
@@ -169,7 +171,11 @@ async function main() {
   // `_validateConfig` requires commitDuration >= 1 hours, revealDuration >= 1 hours and
   // executionWindow >= 1 hours, so a registered vault CANNOT have a zero here. A zero is not a
   // fast vault, it is an unregistered one -- the wrong Governance, or the wrong vault.
-  if (commitDur === 0n || revealDur === 0n || execWindow === 0n) {
+  // `>= 1 hours`, not `!= 0`: the justification below cites _validateConfig's FLOORS, so the test
+  // has to be those floors. `commit=1, reveal=1, execWindow=1` is equally impossible for a
+  // registered vault and a `!= 0` test waved it through with a 3,603 s default ttl.
+  const HOUR = 3600n;
+  if (commitDur < HOUR || revealDur < HOUR || execWindow < HOUR) {
     fail(
       `configOf(${vault}) on ${governance} returns commit=${commitDur} reveal=${revealDur} `
         + `executionWindow=${execWindow}. Governance._validateConfig forbids a zero in any of `
@@ -272,13 +278,48 @@ async function main() {
   // minOut such that minOut * priceOut / unitOut >= valueIn * (BPS - slip) / BPS, rounded UP at
   // each step so the emitted value satisfies a `>=` rather than landing one wei under it.
   const requiredValueWad = (valueInWad * (BPS - maxSlipBps) + BPS - 1n) / BPS;
-  const minAmountOut = (requiredValueWad * unitOut + priceOutWad - 1n) / priceOutWad;
+  const bareFloor = (requiredValueWad * unitOut + priceOutWad - 1n) / priceOutWad;
+
+  // WHY A BUFFER IS NOT OPTIONAL POLISH. Work the bound at execute time:
+  //
+  //   minOut * priceOut_exec / unitOut  >=  amountIn * usdcScalar * (BPS - slip) / BPS
+  //
+  // The right-hand side is ORACLE-INDEPENDENT — `_valueWad(usdc, amt)` is `amt * usdcScalar`, a
+  // constant. `minOut` is frozen at propose time. So substituting the bare floor, which is defined
+  // by equality at TODAY's price, the condition at execute reduces to exactly:
+  //
+  //   priceOut_exec >= priceOut_now
+  //
+  // An order whose minAmountOut is the bare floor therefore reverts `MinOutTooLow()` on ANY fall
+  // in tokenOut's oracle price between propose and execute — and the gap is at least
+  // commit+reveal, two hours on this vault. That is not a tail risk on a two-hour horizon; it is
+  // roughly a coin flip, and it burns the whole round because `actionHash` is frozen.
+  //
+  // The buffer buys tolerance to a price FALL of `floorBufferBps`, and it is paid for on the other
+  // side: the swap must actually deliver `minAmountOut`, so too large a buffer reverts
+  // `SwapSlippage()` on the measured delta instead. The headroom between the two is set by
+  // `MAX_REBALANCE_SLIPPAGE_BPS` minus the pool fee, so a buffer must stay well inside it.
+  const floorBufferBps = BigInt(arg('floor-buffer-bps', '100'));
+  if (floorBufferBps >= maxSlipBps) {
+    fail(
+      `--floor-buffer-bps ${floorBufferBps} is at or above MAX_REBALANCE_SLIPPAGE_BPS ${maxSlipBps}. `
+        + 'The oracle bound allows the swap to come in that far below oracle value; a buffer that '
+        + 'large demands more from the pool than the bound leaves room for, and the swap reverts '
+        + 'SwapSlippage() instead. Stay well inside it.',
+    );
+  }
+  const minAmountOut = (bareFloor * (BPS + floorBufferBps) + BPS - 1n) / BPS;
 
   console.log(`MAX_REBALANCE_SLIPPAGE_BPS  ${maxSlipBps}`);
   console.log(`priceWad(tokenOut)          ${priceOutWad}`);
   console.log(`usdcScalar()                ${usdcScalar}`);
   console.log(`value(amountIn)             ${valueInWad} wad`);
-  console.log(`oracle floor                ${minAmountOut}\n`);
+  console.log(`bare oracle floor           ${bareFloor}`);
+  console.log(`minAmountOut                ${minAmountOut}  (+${floorBufferBps} bps)`);
+  console.log(
+    `  => survives a fall in tokenOut's oracle price of up to ${floorBufferBps} bps before\n`
+    + '     MinOutTooLow(); a bare floor survives ZERO and reverts on any fall at all.\n',
+  );
 
   // ---- what the pool can actually pay ------------------------------------------------------------
   const factory = call(router, 'factory()(address)');
@@ -309,6 +350,39 @@ async function main() {
       ? `order is ${ppmOfPool} ppm of the pool's usdc side (depth ratio, NOT a quote)`
       : `order is under 1 ppm of the pool's usdc side: 1 part in ${ratio} (depth ratio, NOT a quote)`,
   );
+  // WHAT THE POOL WOULD ACTUALLY PAY, from slot0. This is the check that makes the buffer safe
+  // rather than merely chosen: the buffer defends against an oracle fall, and it is paid for by
+  // demanding more from the swap, so the only way to know it is affordable is to price it.
+  //
+  // NOT A QUOTE. It is spot from `sqrtPriceX96` less the pool fee, with no tick-crossing and no
+  // price impact — sound only because this order is a rounding error against the pool's depth
+  // (printed above). A real quote needs the Quoter, a state-mutating staticcall, not deployed here.
+  const slot0 = cast('call', pool, 'slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)')
+    .split('\n')[0].split(/\s+/)[0].trim();
+  const sqrtP = BigInt(slot0);
+  const token0 = call(pool, 'token0()(address)');
+  const Q192 = 1n << 192n;
+  // price of token1 in token0 units, scaled: (sqrtP^2 / 2^192)
+  const usdcIsToken0 = token0.toLowerCase() === usdc.toLowerCase();
+  const num = sqrtP * sqrtP;
+  // out = in * (price) adjusted for which side usdc is on, then less the fee tier.
+  const grossOut = usdcIsToken0
+    ? (amountIn * num) / Q192
+    : (amountIn * Q192) / num;
+  const expectedOut = (grossOut * (1000000n - feeTier)) / 1000000n;
+
+  console.log(`pool spot would pay ~${expectedOut} (slot0, less the ${feeTier} fee tier; NOT a quote)`);
+  if (expectedOut < minAmountOut) {
+    fail(
+      `the pool would pay about ${expectedOut} and minAmountOut is ${minAmountOut}, so the swap `
+        + `reverts SwapSlippage() on the measured delta. The +${floorBufferBps} bps buffer is not `
+        + 'affordable at this pool price. Lower --floor-buffer-bps, accept less tolerance to an '
+        + 'oracle fall, or use a deeper fee tier.',
+    );
+  }
+  const headroomBps = minAmountOut === 0n ? 0n : ((expectedOut - minAmountOut) * BPS) / minAmountOut;
+  console.log(`  => ${headroomBps} bps of headroom above minAmountOut before SwapSlippage()\n`);
+
   const bpsOfPool = ppmOfPool / 100n;
   if (bpsOfPool > 100n) {
     console.log(
@@ -369,23 +443,38 @@ async function main() {
   console.log(`tokenOut      ${tokenOut}`);
   console.log(`amountIn      ${amountIn}`);
   console.log(`minAmountOut  ${minAmountOut}   <-- FROZEN NOW, FILLED HOURS LATER`);
+  // STATE THE COVERAGE, ALWAYS. An earlier version printed "covers the whole 86400s window" as a
+  // flat assertion and that was false; removing it left NOTHING, so an --accept-partial-window run
+  // emitted output byte-identical to a fully-covered one and a pasted payload carried no evidence
+  // of which produced it. Both are wrong. The arithmetic is already done, so print it.
+  const covered = ttl > roundFloor ? ttl - roundFloor : 0n;
+  const coverPct = execWindow === 0n ? 0n : (covered * 100n) / execWindow;
   console.log(`deadline      ${deadline}  (ttl ${ttl}s)`);
+  console.log(
+    `              covers ${covered}s of the ${execWindow}s window (${coverPct}%)`
+    + `${acceptShort ? '  <-- --accept-partial-window WAS PASSED' : ''}`,
+  );
+  console.log(
+    '              measured from the EARLIEST possible executableAt; a late finalize slides the\n'
+    + '              real window later and this deadline does not move with it.',
+  );
   console.log(`recipient     ${adapter}   <-- the ADAPTER, which measures its own balance delta`);
   console.log(`\nactionHash    ${actionHash}`);
   console.log(`\npayload\n${payload}\n`);
 
   console.log('--- what is still uncontrolled --------------------------------------------------');
   console.log(
-    'The H-4 bound is re-evaluated at EXECUTE time against the oracle price THEN. This order sets\n'
-    + "minAmountOut to exactly the floor implied by today's price, so ANY fall in tokenOut's oracle\n"
-    + 'price before execution makes the bound fail and the round revert.\n'
+    'The H-4 bound is re-evaluated at EXECUTE time against the oracle price THEN, and the value of\n'
+    + 'the INPUT leg is oracle-independent, so the bound reduces to a condition on one price only:\n'
+    + `this order survives a fall in tokenOut's oracle price of up to ${floorBufferBps} bps between\n`
+    + 'propose and execute, and reverts MinOutTooLow() beyond that. A BARE floor survives zero -\n'
+    + 'any fall at all - which is why --floor-buffer-bps defaults to 100 rather than 0.\n'
     + '\n'
-    + 'If you want margin, raise minAmountOut ABOVE this floor, never below it. Below the floor is\n'
-    + 'precisely the region H-4 rejects: the bound is a MINIMUM on what you must receive, so a\n'
-    + 'lower figure fails it outright with MinOutTooLow(). Note that raising it trades one failure\n'
-    + 'for another - too high and the swap reverts SwapSlippage() on the measured delta instead -\n'
-    + 'and that there is no flag for it here on purpose: changing it means changing the payload,\n'
-    + 'and the payload is what the actionHash binds.\n'
+    + 'The buffer is paid for on the other side: the swap must actually deliver minAmountOut, so\n'
+    + `too large a buffer reverts SwapSlippage() instead. Measured above at ${headroomBps} bps of\n`
+    + 'headroom against what the pool would pay at spot. Never set minAmountOut BELOW the bare\n'
+    + 'floor: that is the region H-4 rejects outright, since the bound is a minimum on what you\n'
+    + 'must receive.\n'
     + '\n'
     + 'THE DEADLINE DOES NOT COVER A FIXED WINDOW, and an earlier version of this script asserted\n'
     + 'that it did. `Governance.finalize` sets `executableAt = block.timestamp + timelockDuration`\n'
