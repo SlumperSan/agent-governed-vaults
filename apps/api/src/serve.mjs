@@ -37,7 +37,9 @@
  *              Verify it end to end before you trust it with a funded key:
  *              `SVM_LIVE=1 node scripts/live-x402-svm-run.mjs` (devnet-only, refuses any other
  *              genesis) asserts on SPL balance deltas read back from chain. docs/RUNTIME.md 6.6.
- *   SVM_RPC_URL, SVM_KEYPAIR, SVM_DESTINATION_TOKEN_ACCOUNT   required when FACILITATOR=svm.
+ *   SVM_RPC_URL, SVM_KEYPAIR, SVM_DESTINATION_TOKEN_ACCOUNT, SVM_DECIMALS   ALL FOUR are required
+ *              when FACILITATOR=svm; `SVM_REQUIRED` below is the one list they come from, and this
+ *              line said three until a review counted them against the code.
  *              The Solana path settles an SPL TransferChecked the CLIENT built, so this process
  *              signs as fee payer and needs a funded keypair -- unlike the EVM path, which can be
  *              keyless behind an HTTP delegate. SVM_KEYPAIR is the 64-byte secret key as a JSON
@@ -70,6 +72,16 @@ import { x402Capability } from '../../../packages/chain-config/src/x402.mjs';
  * Parse + validate the API config from a raw env object. Pure and testable.
  * @param {Record<string,string|undefined>} env
  */
+/**
+ * THE FOUR ENV VARS `FACILITATOR=svm` REQUIRES. One definition, because the env documentation at the
+ * top of this file, `docs/RUNTIME.md`'s lede and its 6.6 table all describe it, and a review caught
+ * two of those three saying "three" while the code required four.
+ */
+export const SVM_REQUIRED = ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT', 'SVM_DECIMALS'];
+const SVM_REQUIRED_WHY = {
+  SVM_DECIMALS: ', the mint decimals that TransferChecked takes',
+};
+
 export function resolveApiConfig(env) {
   // THE ADDRESS SHAPE FOLLOWS THE FACILITATOR, because on Solana `PRICE_ASSET` is a mint and
   // `PRICE_PAYTO` is a token account, and neither is twenty hex bytes. Checking the EVM shape
@@ -93,9 +105,15 @@ export function resolveApiConfig(env) {
   // Every one of these is required rather than defaulted, and that is the point: a Solana
   // facilitator with a missing destination would verify against `undefined` and refuse every
   // payment, which looks like a client problem for as long as it takes somebody to read this file.
+  //
+  // SVM_DECIMALS IS IN THIS LIST AND NOT IN A SEPARATE CHECK BELOW IT, which is where it used to
+  // live. Two places to look up one answer is how the count went wrong: the env doc block at the
+  // top of this file and `docs/RUNTIME.md` were both written from this loop and both said THREE,
+  // while the code required four. `SVM_REQUIRED` is now the single definition, and the doc block
+  // names it.
   if (facilitator === 'svm')
-    for (const k of ['SVM_RPC_URL', 'SVM_KEYPAIR', 'SVM_DESTINATION_TOKEN_ACCOUNT'])
-      if (!env[k]) throw new Error(`api: FACILITATOR=svm requires ${k}`);
+    for (const k of SVM_REQUIRED)
+      if (!env[k]) throw new Error(`api: FACILITATOR=svm requires ${k}${SVM_REQUIRED_WHY[k] ?? ''}`);
 
   // THE BOOT REFUSAL THAT STOOD HERE IS GONE, BECAUSE THE PATH IT DESCRIBED IS FINISHED. It said
   // the mode would boot and refuse every payment, and it was right: PRICE_ASSET could not name a
@@ -103,12 +121,6 @@ export function resolveApiConfig(env) {
   // does not have. Both are fixed -- above, and in x402.mjs -- and the path is proven end to end on
   // devnet with a real signature.
   //
-  // SVM_DECIMALS joins the required three for the same reason they are required: `TransferChecked`
-  // takes the mint's decimals as an argument and the token program rejects a wrong value, so a
-  // challenge that omits them sends every client off to build a transaction that cannot succeed.
-  if (facilitator === 'svm' && !env.SVM_DECIMALS)
-    throw new Error('api: FACILITATOR=svm requires SVM_DECIMALS, the mint decimals that TransferChecked takes');
-
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
   const flag = (k) => env[k] === '1' || env[k] === 'true';
 

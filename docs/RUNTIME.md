@@ -5,7 +5,8 @@ live product: the **indexer**, the **API**, and the **web** front end. Everythin
 **non-custodial**, with one opt-in exception: no process in this repo holds a private key or
 moves funds, except the API under `FACILITATOR=svm`. The x402 `exact` scheme on Solana has the
 facilitator sign as fee payer and submit, so that mode holds a keypair by design and pays
-network fees; it is off by default and requires three env vars to turn on. Everything below is
+network fees; it is off by default and requires four env vars to turn on (`SVM_RPC_URL`,
+`SVM_KEYPAIR`, `SVM_DESTINATION_TOKEN_ACCOUNT`, `SVM_DECIMALS` — see 6.6). Everything below is
 about the other modes unless it says otherwise. Payment settlement
 is delegated to an external **facilitator**.
 
