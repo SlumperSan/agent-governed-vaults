@@ -179,7 +179,7 @@ components:
         scheme: { type: string, enum: [exact] }
         x402Version: { type: integer, enum: [2] }
         asset: { type: string, description: USDC token address }
-        amount: { type: string, description: integer, USDC base units (6dp) }
+        amount: { type: string, description: "integer, USDC base units (6dp)" }
         payTo: { type: string }
         network: { type: string, example: base }
         nonce: { type: string }
@@ -209,12 +209,12 @@ components:
         creator: { type: string }
         usdc: { type: string, description: the vault's USDC token address }
         operatorId: { type: integer }
-        totalShares: { type: string, description: WAD, decimal string }
+        totalShares: { type: string, description: "WAD, decimal string" }
         idleUsdc: { type: string }
         memberCount: { type: integer }
         pendingCount: { type: integer, description: deposits in the 4h observation window }
         capacityCapUsdc: { type: string, description: "max NAV in USDC base units; 0 = uncapped" }
-        parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
+        parent: { type: [string, 'null'], description: "sub-vault parent, or null for a root" }
         depth: { type: integer, description: 0 root … 2 grandchild }
         holders: { type: integer }
         exitQueuedCount: { type: integer, description: lifetime ExitQueued events (Mode-F exit requests) }
@@ -240,7 +240,7 @@ components:
           properties:
             pid: { type: integer }
             vault: { type: string }
-            ptype: { type: integer, description: 0 Rebalance, 1 RuleChange, 2 ChildAllocation }
+            ptype: { type: integer, description: "0 Rebalance, 1 RuleChange, 2 ChildAllocation" }
             proposer: { type: string }
             status: { type: string, enum: [Active, Passed, Defeated, Executed, Expired] }
             forWeight: { type: string, description: decimal string — vote weights serialize as strings }
