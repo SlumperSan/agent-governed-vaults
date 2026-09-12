@@ -70,7 +70,20 @@ const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 
 // The empty state, exactly as it must read. Whitespace is collapsed on both
 // sides so a hard wrap in the markup does not break the match.
-const EMPTY_STATE = 'No vaults have been created yet. vaultCount() reads 0 on chain 4663.';
+//
+// IT USED TO PIN A COUNT, AND THE COUNT WENT STALE WITHOUT ANYTHING GOING RED.
+// The pinned sentence was "No vaults have been created yet. vaultCount() reads
+// 0 on chain 4663." That became false when vault #1 was created, and falser
+// again at vault #2, while this guard stayed green the whole time: it is a
+// static string match against the built HTML and reads no chain, so it can
+// only tell you the sentence is PRESENT, never that it is TRUE.
+//
+// The replacement is a claim about this table rather than about the chain. No
+// createVault call can falsify "this table lists no vaults"; only writing the
+// row-rendering code can, and whoever writes it will be editing this line
+// anyway. That is the property to preserve when changing this string: pin
+// something the deployment controls, not something the world does.
+const EMPTY_STATE = 'This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -104,8 +117,8 @@ test('the built page names the factory address', () => {
   const html = read('index.html');
   assert.ok(
     html.includes(FACTORY),
-    'The empty state claims vaultCount() reads 0. A reader who wants to check that needs the\n' +
-      'address to call it on, on the same page, without leaving to find it.\n' +
+    'The empty state points at a live vaultCount() read. A reader who wants to check that number\n' +
+      'for themselves needs the address to call it on, on the same page, without leaving to find it.\n' +
       `Expected to find: ${FACTORY}`,
   );
 });
