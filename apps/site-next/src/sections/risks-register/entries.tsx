@@ -79,9 +79,13 @@
  *       24-hour execution window)"
  *     contracts/config/robinhood-mainnet.json  smoke.gov.executionWindow = 86400
  *     The zero timelock is a parameter of the REFERENCE CONFIGURATION, not of
- *     any particular deployed vault — no vault has been created yet (see
- *     status.html), which is why the sentence names the configuration rather
- *     than a vault.
+ *     any particular deployed vault, which is why the sentence names the
+ *     configuration rather than a vault. That distinction got MORE important
+ *     on 2026-09-12, not less: two vaults now exist on chain 4663 and they do
+ *     not agree with each other. Both set timelockDuration 0, but vault #1
+ *     carries executionWindow 86400 (matching the reference) and vault #2
+ *     carries 3600. A sentence naming "the deployed vault's window" would now
+ *     be false about one of them whichever number it picked.
  *
  *   r7  "25% of voting-eligible stake" quorum floor, and the reference minimum
  *     contracts/config/robinhood-mainnet.json  smoke.gov.quorumBps = 2500
@@ -101,15 +105,21 @@
  *       p.revealedWeight == p.snapshotTotal && p.forWeight >= p.snapshotTotal
  *     contracts/src/Governance.sol:531      passing starts the timelock
  *
- *   r14  REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the
- *     safe vault yet. I want the pivot to the all-stocks index." The cell
- *     used to name a planned 50,000 USDG capacity cap; that figure described
- *     a vault that will not be created, so the cell states the honest,
- *     figure-free version instead — a capacity cap is a per-vault parameter
- *     and no vault exists. Its opening word is load-bearing: it must not
- *     start with "Nothing", or the risks-hero "Seven of these have no
- *     mitigation" count (derived from cells that DO start with "Nothing")
- *     goes to eight.
+ *   r14  REPOINTED 2026-09-05, copy deck v2, and again 2026-09-12.
+ *     The 2026-09-05 pass removed a planned 50,000 USDG figure because it
+ *     described a vault that would not be created, leaving "a capacity cap is
+ *     a per-vault parameter and no vault exists".
+ *     That second clause is now false. Two vaults exist on chain 4663 and BOTH
+ *     carry a cap, so the figure is real rather than planned:
+ *       0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4  capacityCapUsdc() 50000000000
+ *       0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38  capacityCapUsdc() 50000000000
+ *     Both read back on 2026-09-12; 5e10 at 6 decimals is 50,000 USDG. The cell
+ *     names the cap and then says what it does NOT bound, because a per-vault
+ *     cap is not a protocol-wide one and reading it as such is the mistake the
+ *     figure invites.
+ *     Its opening word is still load-bearing: it must not start with "Nothing",
+ *     or the risks-hero "Seven of these have no mitigation" count (derived from
+ *     cells that DO start with "Nothing") goes to eight. It opens with "A".
  *
 
  *   r6  the Mode-F trigger
@@ -313,7 +323,7 @@ export const ENTRIES: readonly RiskEntry[] = [
     rows: [
       { dt: "What it is", dd: "New contracts, a new governance mechanism and a new operator model, none of it battle-tested by time or volume." },
       { dt: "Worst case", dd: "Something nobody on this page thought of." },
-      { dt: "What is done", dd: "A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound in place today. Do not deposit what you cannot afford to lose entirely." },
+      { dt: "What is done", dd: "A capacity cap is a per-vault parameter. The two vaults on chain 4663 each set it to 50,000 USDG, so each vault's blast radius is bounded, but nothing bounds the protocol as a whole. Do not deposit what you cannot afford to lose entirely." },
     ],
   },
   {
