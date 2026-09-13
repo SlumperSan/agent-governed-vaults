@@ -1,8 +1,11 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: a table of vaults with no
-rows, above a protocol card whose three most load-bearing facts are re-read from chain 4663 in the
-reader's own browser every time the page loads.
+The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose three
+most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the page
+loads, above a table of vaults with no rows.
+
+The order used to be stated the other way round here. In `index.html` the protocol card is the first
+`<section>` and the vaults card the second, so the table is BELOW it.
 
 It is deployed to the Cloudflare Pages project `rwally-app`, production branch `protocol/main`.
 
@@ -15,7 +18,7 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 | `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
 | `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
 | The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. There are none |
+| Every vault row | Nothing. This page renders no rows: there is no `<tbody>` in `index.html` and `app.js` writes only into the live-reads panel. Two vaults existed on chain 4663 as of 2026-09-12 and neither is listed |
 
 **The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
 what the getter is called.** The getter keeps the name `usdc` because that is the name in the
@@ -25,12 +28,19 @@ trusting a variable name over a chain read.
 
 ## Three decisions that are easy to undo by accident
 
-**1. The empty state is static markup, not a rendered value.** The sentence "No vaults have been
-created yet. `vaultCount()` reads 0 on chain 4663." lives in `index.html` and is never written by
-`app.js`. A claim produced by a fetch disappears exactly when the fetch fails, which is the moment a
-reader most needs to be told what is true. The LIVE READS panel **corroborates** that sentence with
-a number read seconds ago; it does not produce it. `test/claims.test.mjs` asserts the sentence is in
-the built HTML, so moving it into the script reds the guard.
+**1. The empty state is static markup, not a rendered value.** The sentence "This table lists no
+vaults. `vaultCount()` above is read live from chain 4663 and is the count that matters." lives in
+`index.html` and is never written by `app.js`. A claim produced by a fetch disappears exactly when
+the fetch fails, which is the moment a reader most needs to be told what is true. The LIVE READS
+panel **corroborates** that sentence with a number read seconds ago; it does not produce it.
+`test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the script reds
+the guard.
+
+That sentence is deliberately a claim about the TABLE, not a count of vaults. The version before it
+pinned "`vaultCount()` reads 0", which was true when written and false from the moment vault #1 was
+created, with nothing going red in between: the guard is a static string match that reads no chain,
+so it can only prove the sentence is present, never that it is true. Pin what this deployment
+controls.
 
 **2. There is no `package.json`, and that is not an omission.** The repository root declares the
 workspace glob `apps/*`. A workspace package that is absent from `package-lock.json` makes `npm ci`
@@ -81,10 +91,15 @@ Six checks: the empty-state sentence survives into the build, the factory addres
 no banned claim shape appears in any built file, `_headers` carries every required directive, the
 markup has no inline script or style, and the page fetches from no origin but the chain RPC.
 
-**It is not wired into `npm run test:backend`.** That script enumerates `apps/web/test/*`,
-`apps/site/test/*` and `scripts/test/*` by name and does not glob `apps/app/test/*`. Wiring it in
-means editing the root `package.json`, which was outside this change's paths. Run it directly until
-someone does.
+**It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
+`.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before
+`test:backend`. It is deliberately NOT a glob inside `test:backend`: this file rebuilds `dist/`,
+and the repository-wide walks in `test:backend` enumerate files first and read them after, so
+batching them together lets this build delete a path another guard has listed and not yet opened.
+
+This paragraph previously said it was not wired in and to run it by hand. That stopped being true
+when `test:app` was added, and a stale instruction to run a check manually is worse than none: it
+invites someone to conclude the check is optional.
 
 The repository-wide claims guard, `scripts/test/claims-lede-truth.test.mjs`, **does** walk this
 page once it is built: `dist` is deliberately absent from that file's `SKIP_DIRS` and `.html` is in
@@ -106,5 +121,11 @@ directory; there is no such directory here and there should not be one.
 Everything in `Design/app-spec-2026-09-05.md` past v1's first screen: the vault detail page, the
 hive activity screens, stake, vote, and every wallet action. The Connect control in the masthead is
 inert and says so, carries `aria-disabled` rather than `disabled` so it keeps its place in the tab
-order, and names its reason through `aria-describedby`. It becomes a real control when there is a
-vault to deposit into and not before.
+order, and names its reason through `aria-describedby`.
+
+Its reason changed with this pass. It used to say deposits open "when a vault exists", which made
+the control's own copy a hostage to chain state: vaults now exist and the button is still inert, so
+that sentence had quietly become a broken promise. The blocker was never the factory. `app.js`
+contains no wallet code at all, so the title and the note now say what is true of this page, and
+they say the same thing as each other: a sighted reader gets the `title`, a screen-reader user gets
+the `aria-describedby` note, and those two disagreeing is its own defect.
