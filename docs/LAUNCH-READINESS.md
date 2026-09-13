@@ -115,12 +115,17 @@ proposal 3 holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at 
 **Neither was created by the creator Safe, and this document said the first one would be.** Both
 carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
 `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c` (Safe v1.4.1, threshold 1, single owner = the
-deployer, a 1-of-1, not a multisig, and not by itself shared custody) holds 0 ETH, **and that did
-not stop it: it could have created either vault.** A Safe's `execTransaction` is paid for by the
-submitting owner's EOA, not out of the Safe's own balance, and this one has executed **65**
-transactions on chain 4663 (`nonce()` reads 65, the last long before vault #1) while holding
-nothing. So this was a choice, not an impossibility, and an earlier draft of this paragraph said
-the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
+deployer, a 1-of-1, not a multisig, and not by itself shared custody) held 0 ETH at block
+**62,114,287**, **and that did not stop it: it could have created either vault.** A Safe's
+`execTransaction` is paid for by the submitting owner's EOA, not out of the Safe's own balance, and
+this one has executed **65** transactions on chain 4663 (`nonce()` reads 65, the last long before
+vault #1) while holding nothing. So this was a choice, not an impossibility, and an earlier draft
+of this paragraph said the opposite. On the balance figure itself: the clause was present tense
+with no block until 2026-09-13, and a balance is a per-block quantity, so it now carries one —
+`cast balance --block 62114287`, read 2026-09-13. That is a later block rather than either creation
+block because the chain-4663 RPC prunes historical state and answers `metadata is not found` for
+both, so the creation-block balances are not claimed here; nothing above rests on them.
+`VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
 attested operator and no later transaction can correct it, so the choice is now permanent on both
 vaults. **Member funds ARE at stake on that chain**, and NOT as USDG on both: vault one reads
 `idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash instead,
