@@ -91,15 +91,21 @@ the comments, and the owner is who decides a claim.
   that factory rather than about the script. Write `Deploy.s.sol` by name, or "every vault *it* deploys", or "on that
   factory"; best of all, write the instruction: read `VaultFactory.allowSubVaults()` on the factory
   you integrate against.
-- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. The first
-  vault on Robinhood Chain has not been created yet and is planned to launch small, so it sits
-  squarely in the sub-five regime the word misdescribes.
+- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. Both
+  vaults on Robinhood Chain read `holderCount()` 1 at block 61,646,791, so they sit squarely in the
+  sub-five regime the word misdescribes. This bullet used to assert the first vault did not exist
+  yet; it was created on 2026-09-10 and a second on 2026-09-12, and the false sentence survived four
+  review rounds. The reason is worth keeping, because it is the failure mode this whole file exists
+  to prevent: the guard over that claim tests for one exact sentence, and this bullet was a
+  paraphrase of it, so the sweep that enumerated files from the guard could not see it. Write a
+  claim so that a reader can check it, not so that a string match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed. Robinhood Chain
   mainnet (4663): the seven contracts are, since 2026-09-05, with gates 3 and 6 unrun there or
-  anywhere; no vault has been created on it yet, so "deployed" there does not mean anyone can
-  deposit and does not mean member funds are at stake. `smokeVault` null and
-  `verifiedWiring["factory.vaultCount()"]` 0 in that chain+s record are the two fields that say so,
-  and both are chain reads. Base Sepolia
+  anywhere; two vaults exist there and both hold real funds, so "deployed" there now DOES mean
+  member funds are at stake. `smokeVault` and `secondVault` in that chain's record name them and
+  `verifiedWiring["factory.vaultCount()"]` reads 2, and all of those are chain reads. Say also that
+  both were created by the deployer EOA rather than the creator Safe the record named, because
+  `creator` is immutable and that identity cannot be rotated. Base Sepolia
   (84532): yes, a testnet trial with no value at stake. No other chain: no. Settlement is USDG (6 dp)
   on 4663, and x402 metered reads still run on Base Sepolia only, with no facilitator for 4663, so
   a sentence about settlement and a sentence about metered reads are about different chains.

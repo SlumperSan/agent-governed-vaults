@@ -122,7 +122,7 @@ async function main() {
   // ── chain reader ───────────────────────────────────────────────────────────
   // No RPC ⇒ the stub, loudly marked. contracts/config/deployments/ holds base-sepolia.json (a
   // testnet trial) and robinhood-mainnet.json (Robinhood Chain mainnet since 2026-09-05: the
-  // singletons are wired and no vault has been created on it yet). Without an --rpc there is no
+  // singletons are wired and two vaults hold real funds on it). Without an --rpc there is no
   // node to read at all, so the demo run
   // answers from the fixture and does not pretend to.
   //
