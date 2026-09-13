@@ -1,12 +1,12 @@
 /**
  * Price and facilitator resolution for the metered read route, at the edge.
  *
- * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=http`, AND CANNOT HOLD ONE.
+ * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=standard`, AND CANNOT HOLD ONE.
  * `apps/api` has FOUR selectable facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
  * `stub`, `http`, `standard` and `svm`. `stub`, `http` and `standard` hold no key,
  * and `FACILITATOR=svm` DOES hold one — the one mode that does, because Solana's flow makes this
  * process the fee payer and there is nothing to delegate. This route is
- * EVM-only and hard-wires `http` — `createHttpFacilitator` POSTs an envelope to a facilitator URL
+ * EVM-only and uses `createStandardHttpFacilitator` — it POSTs spec-shaped bodies to a facilitator
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
  * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
@@ -102,8 +102,13 @@ export function resolveFacilitatorUrl(env) {
  *   requireAddr   PRICE_ASSET, PRICE_PAYTO   ECHOES the bad value. Both are on the free discovery
  *                                            document already, so there is nothing to withhold.
  *   PRICE_AMOUNT                             ECHOES the bad value. Also on the discovery document.
- *   requireEnv    all five, when BLANK       echoes nothing -- it reports only the key name. This is
+ *   requireEnv    all six, when BLANK        echoes nothing -- it reports only the key name. This is
  *                                            why `PRICE_NETWORK` has no value-echoing branch at all.
+ *   FACILITATOR_NETWORK                      ECHOES the bad value. A CAIP-2 chain id is public and
+ *                                            an operator debugging `base` vs `eip155:8453` needs to
+ *                                            see which one they typed. Enumerated here because the
+ *                                            commit that ADDED this setting did not, which is the
+ *                                            fourth time this comment missed a branch.
  *   FACILITATOR_URL                          WITHHELD in both of its branches, unparseable and
  *                                            non-https. Published nowhere, and a facilitator
  *                                            endpoint may carry a key in path or query.
@@ -111,9 +116,11 @@ export function resolveFacilitatorUrl(env) {
  * Before adding a setting here, find the branch that would print it and decide there. Note the 500
  * answers an unauthenticated GET.
  *
- * One thing this file does NOT control: on a fetch rejection `createHttpFacilitator` returns
- * `facilitator-unreachable: <err.message>`, which `gate` puts verbatim into the 402 body. Under Node
- * that message is `fetch failed` with no URL; what the Workers runtime puts there is unverified.
+ * One thing this file does NOT control: on a fetch rejection `createStandardHttpFacilitator` puts
+ * `<step>-unreachable: <err.message>` into the 402 body via `gate` -- measured as
+ * `settlement failed: verify-unreachable: ...`, so the failing STEP is named, which the bespoke
+ * client did not do. Under Node that message is `fetch failed` with no URL; what the Workers
+ * runtime puts there is unverified.
  *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */

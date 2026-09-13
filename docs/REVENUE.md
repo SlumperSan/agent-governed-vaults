@@ -45,10 +45,10 @@ free discovery document resolve it from there. A test asserts the discovery docu
 price the gate will not charge, because `apps/api/src/server.mjs` requires that discovery be "told
 the truth rather than quoted a price it will never be charged".
 
-## 3. How it is served, and why `FACILITATOR=http` holds no key
+## 3. How it is served, and why the `standard` facilitator client holds no key
 
 `apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
-`apps/api/src/x402.mjs` and `createHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
+`apps/api/src/x402.mjs` and `createStandardHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
 reimplementing the 402 handshake. Two implementations of one payment protocol drift, and the half
 that drifts at the edge is the half deciding whether a caller's USDC bought anything. The build
 inlines the real module: a `wrangler@4 pages functions build` on 2026-09-13 emitted a 31 KB bundle
@@ -68,7 +68,7 @@ This route was wired to it until review round 6, which means following §5 with 
 would have 402'd every payment on a transport error. Grep `apps/site-next/functions/` for `KEYPAIR`,
 `PRIVATE_KEY` or `signer` and the result is empty.
 
-**It fails closed.** Each of the five settings is refused rather than defaulted; a deployment missing
+**It fails closed.** Each of the six settings is refused rather than defaulted; a deployment missing
 any one answers 500, never the paid body for free. There is a test per setting, because a default
 `PRICE_PAYTO` would silently send a caller's USDC to whatever address the default named.
 
