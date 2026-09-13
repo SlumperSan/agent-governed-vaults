@@ -34,39 +34,6 @@ Three rules that guard has already had to be widened to catch:
   stake, not operatorship, and `Governance.sol` contains zero occurrences of "operator".
 - **"Stake-weighted" is true only at five or more members.** Qualify it or do not use it.
 
-## Absence is not evidence, and one RPC lies about it
-
-`https://base-sepolia-rpc.publicnode.com` **prunes logs and receipts.** `eth_call` and
-`eth_getBlockByNumber` answer correctly, so it looks entirely healthy, while `eth_getLogs` returns a
-bare `[]` — HTTP 200, no error object — for ranges other providers serve, and
-`eth_getTransactionReceipt` returns `null` for transactions that certainly landed, and its horizon
-moves — a range it refuses today it may have served last week.
-
-That silence was read as chain history on 2026-09-09. Three sentences about the protocol were
-written into `scripts/soak/` as chain readings and shipped in a pull request — *as a correction to a
-note that had been right all along*. An independent verdict caught it.
-
-- Use `https://sepolia.base.org`; `https://base-sepolia.drpc.org` is the fallback.
-- **Confirm every absence on a second provider** before concluding anything from it.
-- Where a state read and a log read disagree, **the state read wins**.
-- `assertLogsServed()` in `scripts/soak/lib.mjs` is the positive control: the factory's own
-  `allVaults[0]` is a vault it must have announced, so a scan that cannot find that event proves the
-  endpoint is hiding history rather than the chain lacking it. It scans in **10,000-block windows**,
-  which is the widest span either recommended provider will serve: a raw `eth_getLogs` over more is
-  refused outright (`-32614 "eth_getLogs is limited to a 10,000 range"` from `sepolia.base.org`,
-  `code 35` from `base-sepolia.drpc.org`). It was 50,000 and worked anyway, because `cast logs`
-  paginates internally — a behaviour of a different tool, which is the wrong thing for a probe whose
-  whole job is telling a refused range apart from a pruned one. PR #249 lowered it.
-
-  Two drafts of this paragraph got it wrong in opposite directions, which is why the numbers above
-  are quoted from `scripts/soak/lib.mjs` rather than remembered: one said the window was already
-  10,000 when it was 50,000, and the next attributed the `cast`-pagination reasoning to a code
-  comment that did not contain it.
-
-The general rule, of which this is one instance: **a check whose negative result is
-indistinguishable from "all clear" is not a check.** Pair every absence claim with a positive
-control that must fire.
-
 ## Definition of done
 
 `docs/SWARM.md` §7 sets the bar, and this file does not restate the rest of it: **`npm run gate`
@@ -158,7 +125,9 @@ correct until someone checks them:
   `git diff <old-base>..<new-base>` touches nothing the PR reads, calls, or makes a claim about.
 
 - **"Tier the verdict requirement — exempt docs, tests, scripts, tooling and fixtures."** Refuted by
-  its own evidence. The pruned-RPC defect recorded above was a false claim about chain history in
+  its own evidence. The pruned-RPC defect (the `base-sepolia-rpc.publicnode.com` rule in
+  `docs/TESTNET-CHECKLIST.md` §2; the same window and provider error codes are in
+  `assertLogsServed()` in `scripts/soak/lib.mjs`) was a false claim about chain history in
   `scripts/soak/soak-vaults.json` — a **fixture**, under **`scripts/soak/`**, both exempted
   categories — and an independent verdict is what caught it, after it had shipped. The exempt set
   also contains `scripts/lib/verdicts.mjs`, `scripts/lib/merge-policy.json` and every
