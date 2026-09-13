@@ -127,9 +127,13 @@ test('resource §5.1.1: ResourceInfo carries the url the caller supplied', async
 
 // ---------------------------------------------------------------------------------------------
 // Backward compatibility: the legacy flat fields this repo's own consumers read must survive.
-// packages/agent-sdk/src/index.mjs:71 does `JSON.parse(res.headers.get('payment-required'))` and
-// hands the WHOLE object straight to `authorizeFromChallenge`, which reads `.payTo`/`.amount`/
-// `.nonce`/`.asset`/`.network` off the TOP level — so the superset shape must keep those flat.
+// packages/agent-sdk/src/index.mjs:84, inside `createProtocolClient`'s `request`, does
+// `decodeHeaderJson(res.headers.get('payment-required'))` and hands the WHOLE object straight to
+// `authorizeFromChallenge`, which reads `.payTo`/`.amount`/`.nonce`/`.asset`/`.network` off the
+// TOP level — so the superset shape must keep those flat. (This comment said `:71` and
+// `JSON.parse`; the line was already wrong at the merge base — 71 was the `payer` JSDoc, the parse
+// was at 80 — and the 2026-09-13 header-encoding change made the `JSON.parse` half wrong too. The
+// claim it is making is unchanged and still guarded by the test below.)
 // ---------------------------------------------------------------------------------------------
 
 test('backward compat: legacy flat challenge fields are unchanged by the v2 additions', async () => {

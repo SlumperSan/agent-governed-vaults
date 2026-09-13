@@ -45,7 +45,8 @@ paths:
         '200':
           description: Vault list
           headers:
-            payment-response: { schema: { type: string, format: byte }, description: Base64-encoded SettlementResponse JSON. }
+            payment-response:
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema:
@@ -116,10 +117,7 @@ paths:
           description: Vault view
           headers:
             payment-response:
-              schema: { type: string, format: byte }
-              description: >-
-                Base64-encoded x402 `SettlementResponse` (spec §5.3.2), carrying this repo's own
-                `receiptId`/`nonce` keys alongside the spec fields.
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VaultView' }
@@ -145,10 +143,7 @@ paths:
             returns zeros rather than a 404.
           headers:
             payment-response:
-              schema: { type: string, format: byte }
-              description: >-
-                Base64-encoded x402 `SettlementResponse` (spec §5.3.2), carrying this repo's own
-                `receiptId`/`nonce` keys alongside the spec fields.
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MemberPosition' }
@@ -161,7 +156,8 @@ paths:
         '200':
           description: Leaderboard
           headers:
-            payment-response: { schema: { type: string, format: byte }, description: Base64-encoded SettlementResponse JSON. }
+            payment-response:
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema:
@@ -199,10 +195,7 @@ components:
         `challenge`.
       headers:
         payment-required:
-          schema: { type: string, format: byte }
-          description: >-
-            Base64-encoded `Challenge` JSON, per `specs/transports-v2/http.md:161-167`. Readers
-            that predate 2026-09-13 sent it as raw JSON.
+          schema: { $ref: '#/components/schemas/Base64Challenge' }
       content:
         application/json:
           schema:
@@ -223,14 +216,32 @@ components:
         network: { type: string, example: base }
         nonce: { type: string }
         expiresAt: { type: integer, description: unix ms }
+    Base64Challenge:
+      type: string
+      contentEncoding: base64
+      contentMediaType: application/json
+      contentSchema: { $ref: '#/components/schemas/Challenge' }
+      description: >-
+        The PAYMENT-REQUIRED header value: base64-encoded `Challenge` JSON, per
+        `specs/transports-v2/http.md:161-167`. Readers that predate 2026-09-13 saw raw JSON here.
+        On the wire this is a STRING — the `contentSchema` above says what it decodes to, which is
+        how OpenAPI 3.1 expresses a base64-wrapped document, and is the only way a client generator
+        learns the inner shape.
+    Base64SettlementResponse:
+      type: string
+      contentEncoding: base64
+      contentMediaType: application/json
+      contentSchema: { $ref: '#/components/schemas/SettlementResponse' }
+      description: >-
+        The PAYMENT-RESPONSE header value on a settled 200: base64-encoded `SettlementResponse`
+        JSON. No PAYMENT-RESPONSE is sent on a FAILED settlement — that leg is a 402 whose body
+        `error` carries the reason.
     SettlementResponse:
       type: object
       description: >-
-        Sent base64-encoded in the PAYMENT-RESPONSE header on a settled 200. The first four fields
-        are the x402 spec's §5.3.2 `SettlementResponse`; `receiptId` and `nonce` are this repo's
-        own names for the same settlement, kept so existing clients keep reading it. No
-        PAYMENT-RESPONSE is sent on a FAILED settlement — that leg is a 402 whose body `error`
-        carries the reason.
+        What `Base64SettlementResponse` decodes to. The first four fields are the x402 spec's
+        §5.3.2 `SettlementResponse`; `receiptId` and `nonce` are this repo's own names for the same
+        settlement, kept so existing clients keep reading it.
       properties:
         success: { type: boolean, enum: [true] }
         transaction: { type: string, description: the settlement returned by the facilitator }

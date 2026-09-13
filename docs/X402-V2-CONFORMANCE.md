@@ -219,8 +219,14 @@ fields and an `extensions` map and nowhere forbids additional ones, so the spec 
 and the two legacy keys left exactly where they were — the same "emit conformant, accept both"
 move this document describes for the 402 body.
 
-**What the readers do.** Each tries base64 and falls back to raw JSON, so a client of either
-vintage works against a server of either vintage. The discriminator is total rather than a guess:
+**What the readers do.** Each checks for a leading `{` first; everything else is base64. So every
+reader in this repository accepts either encoding, and each keeps working against a server that has
+not taken this change. That is the whole of the compatibility claim, and the direction it does NOT
+cover is worth stating: a reader that understands only raw JSON cannot read this server any more
+(`SyntaxError: Unexpected token 'e', "eyJzY2hlbW"...`). That break is inherent — a header cannot be
+base64 and still be raw JSON — and it has an empty subject, because all six in-repo readers are
+converted in the same change and no external client exists. The discriminator is total rather than
+a guess:
 `{` is not in the base64 alphabet, so a value whose first non-space character is `{` is the legacy
 raw JSON and everything else is base64. Sniffing the other way round would not work — Node's base64
 decoder silently drops characters outside the alphabet instead of throwing, so a "try base64, catch,

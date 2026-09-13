@@ -3,9 +3,10 @@
  * `decodeHeaderJson` reads BOTH x402 header encodings, and the two cannot be confused.
  *
  * `specs/transports-v2/http.md:161-167` specifies base64; this API emitted raw JSON until
- * 2026-09-13. The dual accept is what lets a client of either vintage talk to a server of either
- * vintage during the transition, so the property under test is that BOTH forms decode — a reader
- * that quietly lost one of them would strand half of that matrix.
+ * 2026-09-13. The dual accept is what lets this reader talk to a server of either vintage, so the
+ * property under test is that BOTH forms decode — a reader that quietly lost one of them would
+ * strand one of those servers. It is only that one direction: a raw-JSON-only reader cannot read a
+ * base64-emitting server, which is inherent to the fix and is why every reader moves in one change.
  *
  * The encoder side is `apps/api/src/x402.mjs`'s `encodeHeaderJson`, imported here rather than
  * reimplemented: a test that encodes with its own helper proves the helper round-trips, not that

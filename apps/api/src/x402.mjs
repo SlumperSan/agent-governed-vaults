@@ -64,8 +64,14 @@
  * The readers move with it rather than after it: `decodeHeaderJson` here, and the sibling copies in
  * `packages/agent-sdk/src/header-codec.mjs` and `apps/web/src/api-client.mjs`, accept EITHER
  * encoding — a value whose first non-space character is `{` is raw JSON, and `{` is not in the
- * base64 alphabet, so the two cases cannot be confused. An old client against this server and a
- * new client against a server that has not taken this change both keep working.
+ * base64 alphabet, so the two cases cannot be confused. Every reader in this repository therefore
+ * keeps working against a server that has not taken this change.
+ *
+ * THE OTHER DIRECTION IS NOT COVERED AND CANNOT BE. A reader that understands only raw JSON cannot
+ * read this server any more — it gets `SyntaxError: Unexpected token 'e', "eyJzY2hlbW"...` — because
+ * a header cannot be base64 and raw JSON at once. That break has an empty subject: all six in-repo
+ * readers are converted in the same change, and the deployed edge route — which still serves raw
+ * JSON until it is redeployed on top of this change — has no external clients to break.
  *
  * `PAYMENT-RESPONSE` is a SUPERSET, not a rename: the §5.3.2 fields are added and the `receiptId`/
  * `nonce` keys stay exactly where they were, because `scripts/live-x402-run.mjs:318` and
