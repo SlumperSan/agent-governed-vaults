@@ -21,6 +21,8 @@ import {
   evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, runsForHead,
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
+// Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
+import { PR_FIELDS, RUN_FIELDS, missingFields, validateGhPayloads } from '../merge-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -581,4 +583,142 @@ test('SELF_WORKFLOW_NAME is pinned to the workflow file, so a rename fails loudl
     SELF_WORKFLOW_NAME,
     'the workflow was renamed without updating SELF_WORKFLOW_NAME — the gate is evaluating its own runs again',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The fields the gate reads off `gh` must not go missing quietly
+// ---------------------------------------------------------------------------------------------
+//
+// #137 made `runsForHead` exclude this gate's own runs with `r.name !== SELF_WORKFLOW_NAME`, and
+// pinned `SELF_WORKFLOW_NAME` to the workflow's `name:` so a rename fails loudly. It pinned one end
+// of the chain. The other end was `r.name`, which `merge-preflight.mjs` maps from `workflowName` in
+// a `gh run list --json` field list that nothing referred to: drop that one word and every
+// `r.name` is `undefined`, `undefined !== 'merge-preflight'` is always true, the filter is a no-op,
+// and a head with NO CI clears `ci-matches-head` again.
+//
+// Reproduced end to end on 2026-09-10 against a `gh` that honours the `--json` field list: the
+// script printed CLEAR and exited 0 on a head with one preflight run and zero CI runs -- and this
+// suite stayed 30/30 green, because it imports `verdicts.mjs` and builds `name` onto its own
+// fixtures, so no test here could ever have seen a field-name change. That is the gap these close.
+
+test('a nameless run is invisible to the name filter, which is why the adapter must never emit one', () => {
+  // Characterisation, not endorsement: `runsForHead` belongs to the PURE evaluator, its `Run.name`
+  // is declared optional, and its fixtures may legitimately omit optional fields. Making it throw
+  // would put it at odds with its own typedef and with the "not checked, not silently passed as
+  // checked" tests above. So the contract check belongs in the adapter, where "this came from `gh`"
+  // is knowable -- and this is the exact behaviour that makes it load-bearing there.
+  const nameless = [{ headSha: 'newhead0', status: 'completed', conclusion: 'success' }];
+  assert.deepEqual(runsForHead(nameless, 'newhead0'), nameless, 'no name, nothing to exclude by');
+  const named = [{ ...nameless[0], name: SELF_WORKFLOW_NAME }];
+  assert.deepEqual(runsForHead(named, 'newhead0'), [], 'with the name present the filter bites');
+});
+
+test('the gh --json field lists are pinned to the fields the adapter maps, and to the mapping itself', () => {
+  // Both halves, because the mutation under test touches only one of them: pinning the `r.name`
+  // mapping alone stays green when the request loses `workflowName`, and pinning the request alone
+  // stays green when the mapping is rewritten. Anchored to each `gh` invocation rather than grepped
+  // as a bare substring -- `workflowName` also appears in merge-policy.json's `ci-matches-head.why`,
+  // where a loose match would pass for the wrong reason.
+  const src = readFileSync(path.join(ROOT, 'scripts', 'merge-preflight.mjs'), 'utf8');
+
+  const runReq = src.match(/'run',\s*'list',[\s\S]*?'--json',\s*'([^']+)'/);
+  assert.ok(runReq, 'merge-preflight.mjs must ask `gh run list` for an explicit --json field list');
+  assert.equal(
+    runReq[1], RUN_FIELDS.join(','),
+    'the run request and RUN_FIELDS have drifted. They are two independent statements of one list on purpose: a required set derived from the request cannot catch a field dropped from the request.',
+  );
+  const prReq = src.match(/'pr',\s*'view',[\s\S]*?'--json',\s*'([^']+)'/);
+  assert.ok(prReq, 'merge-preflight.mjs must ask `gh pr view` for an explicit --json field list');
+  assert.equal(prReq[1], PR_FIELDS.join(','), 'the PR request and PR_FIELDS have drifted');
+
+  // Named literally, so deleting a field from BOTH statements above is still red. These are the
+  // four FIELD-LIST entries whose absence DISARMS a rule instead of blocking on it; `.behind_by` is
+  // the fifth such value and is checked by type rather than by presence, since `--jq` names it.
+  assert.ok(RUN_FIELDS.includes('workflowName'), 'without workflowName, runsForHead excludes nothing and a head with no CI clears ci-matches-head');
+  assert.ok(PR_FIELDS.includes('commits'), 'without commits there is no headCommittedDate and verdict-covers-head silently stops running');
+  assert.ok(PR_FIELDS.includes('comments'), 'without comments there are no verdicts, so no-standing-reject, verdict-covers-head and base-current all silently stop running');
+  assert.ok(PR_FIELDS.includes('isDraft'), 'without isDraft a draft PR is not blocked');
+
+  // The mapping half: `workflowName` is what becomes `name`, which is what the filter reads.
+  assert.match(
+    src, /name:\s*r\.workflowName/,
+    'merge-preflight.mjs must map workflowName onto `name`; `runsForHead` filters on `name` and reads undefined otherwise',
+  );
+
+  // And the guard must actually sit between `gh` and the evaluator, on the real arguments.
+  const guardAt = src.indexOf('validateGhPayloads(pr.data, runs.data, cmp.data)');
+  const evalAt = src.indexOf('evaluate({');
+  assert.notEqual(guardAt, -1, 'main() must validate the gh payloads on the real arguments');
+  assert.ok(evalAt !== -1 && guardAt < evalAt, 'the payload check must run BEFORE evaluate(), or it checks nothing that matters');
+});
+
+test('missingFields answers on key PRESENCE, not truthiness', () => {
+  // `conclusion` is `""` on an in-progress run and `isDraft` is `false` on most PRs. Both are
+  // answers. A truthiness check would reject the live API's own output.
+  const inProgress = { headSha: 'a', status: 'in_progress', conclusion: '', workflowName: 'CI' };
+  assert.deepEqual(missingFields(inProgress, RUN_FIELDS), [], 'an empty conclusion is a conclusion');
+  assert.deepEqual(missingFields({ headSha: 'a', status: 'completed', conclusion: 'success' }, RUN_FIELDS), ['workflowName']);
+  assert.deepEqual(missingFields(null, RUN_FIELDS), RUN_FIELDS, 'no object: everything is missing');
+  assert.deepEqual(missingFields('not an object', RUN_FIELDS), RUN_FIELDS);
+});
+
+// A payload shaped like the live API's, so every negative case below differs from a working one by
+// one field and nothing else.
+const okPr = () => ({
+  number: 1, state: 'OPEN', isDraft: false, headRefName: 'b', headRefOid: 'newhead0',
+  baseRefName: 'protocol/main',
+  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' }],
+  commits: [{ oid: 'newhead0', committedDate: '2026-09-01T21:00:00Z' }],
+});
+const okRuns = () => [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', workflowName: 'CI' }];
+
+test('validateGhPayloads passes the live shapes it was written against', () => {
+  assert.equal(validateGhPayloads(okPr(), okRuns(), 0), null);
+  assert.equal(validateGhPayloads(okPr(), okRuns(), 43), null, 'a behind branch is a judgement for base-current, not a broken payload');
+  assert.equal(validateGhPayloads(okPr(), [], 0), null, 'NO RUNS is a legitimate state: ci-matches-head blocks on it correctly, and this must not pre-empt that');
+  assert.equal(
+    validateGhPayloads(okPr(), [{ headSha: 'newhead0', status: 'in_progress', conclusion: '', workflowName: 'CI' }], 0),
+    null,
+    'an in-progress run has an empty conclusion and is still a whole run',
+  );
+  assert.equal(
+    validateGhPayloads({ ...okPr(), comments: [] }, okRuns(), 0), null,
+    'a PR with no comments yet is a PR with no comments yet; the roster rules answer that, not this',
+  );
+});
+
+test('validateGhPayloads fails CLOSED on every field whose absence would disarm a rule', () => {
+  // Each of these puts undefined into the evaluator today, and each turns a rule off rather than
+  // making it complain. Exit 2 is "could not determine", which the workflow publishes as `error`
+  // and which merge-preflight.mjs's header records is not a pass.
+  const withoutWorkflowName = okRuns().map(({ workflowName, ...rest }) => rest);
+  assert.match(
+    String(validateGhPayloads(okPr(), withoutWorkflowName, 0)), /workflowName/,
+    'THE HOLE: no workflowName means runsForHead excludes nothing and a head with no CI clears ci-matches-head',
+  );
+
+  const { commits, ...noCommits } = okPr();
+  assert.match(String(validateGhPayloads(noCommits, okRuns(), 0)), /commits/);
+  assert.match(
+    String(validateGhPayloads({ ...okPr(), commits: [{ oid: 'newhead0' }] }, okRuns(), 0)), /committedDate/,
+    'nested, so no --json field name can ask for it: commits[].committedDate is Mode D only input',
+  );
+
+  const { comments, ...noComments } = okPr();
+  assert.match(String(validateGhPayloads(noComments, okRuns(), 0)), /comments/);
+
+  const { isDraft, ...noDraft } = okPr();
+  assert.match(String(validateGhPayloads(noDraft, okRuns(), 0)), /isDraft/);
+
+  // `--jq` on a key that is not there prints `null` and gh exits 0, so the JSON.parse failure path
+  // never sees it and Mode E just stops firing.
+  assert.match(String(validateGhPayloads(okPr(), okRuns(), null)), /behind_by/);
+  assert.match(String(validateGhPayloads(okPr(), okRuns(), undefined)), /behind_by/);
+
+  // The fields that already fail closed are in the set too: cheap, and it stops the next reader
+  // having to re-derive which half of the list is load-bearing.
+  const { state, ...noState } = okPr();
+  assert.match(String(validateGhPayloads(noState, okRuns(), 0)), /state/);
+  assert.ok(validateGhPayloads(okPr(), [{ status: 'completed', conclusion: 'success', workflowName: 'CI' }], 0));
+  assert.ok(validateGhPayloads(okPr(), 'not an array', 0));
 });
