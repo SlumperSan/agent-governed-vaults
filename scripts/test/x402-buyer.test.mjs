@@ -24,7 +24,7 @@ import {
   ChallengeMismatchError,
   PaymentFailedError,
 } from '../lib/x402-buyer.mjs';
-import { resolveBuyConfig } from '../x402-buy.mjs';
+import { resolveBuyConfig, parseArgs } from '../x402-buy.mjs';
 
 const ASSET = '0x' + 'a'.repeat(40);
 const PAY_TO = '0x' + 'b'.repeat(40);
@@ -461,6 +461,20 @@ test('resolveBuyConfig refuses a bare flag with no value, rather than silently s
       `expected --${key}=true (bare flag) to be refused`,
     );
   }
+});
+
+test('parseArgs keeps every "=" in a flag value, not just the first', () => {
+  // `--rpc-url=https://host/rpc?apikey=X` has two `=` characters. A naive `split('=')` truncates
+  // at the first one and silently drops `apikey=X` from the value — a URL that would still parse
+  // as a URL, just the wrong one, with no error anywhere.
+  const args = parseArgs(['--rpc-url=https://host/rpc?apikey=secret&other=1']);
+  assert.equal(args['rpc-url'], 'https://host/rpc?apikey=secret&other=1');
+});
+
+test('parseArgs maps a bare flag with no "=" to `true`, and a flag with "=" but nothing after to ""', () => {
+  const args = parseArgs(['--network', '--max=']);
+  assert.equal(args.network, true);
+  assert.equal(args.max, '');
 });
 
 test('resolveBuyConfig refuses a key passed as a CLI argument', () => {

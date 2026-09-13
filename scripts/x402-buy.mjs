@@ -52,13 +52,22 @@ import { readUsdcDomain } from '../apps/api/src/facilitator.mjs';
  */
 const HARD_MAX_USDC_BASE_UNITS = 5_000_000n; // $5.00
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   /** @type {Record<string, string|true>} */
   const out = {};
   for (const a of argv) {
     if (!a.startsWith('--')) continue;
-    const [k, v] = a.slice(2).split('=');
-    out[k] = v === undefined ? true : v;
+    const body = a.slice(2);
+    // `split('=')` truncates at the FIRST `=` and drops everything after a second one — a URL
+    // value with a query string (`--rpc-url=https://host/rpc?apikey=X`) would lose everything
+    // from the second `=` onward. `indexOf` + one slice keeps the whole rest of the string as the
+    // value, however many `=` characters it contains.
+    const eq = body.indexOf('=');
+    if (eq === -1) {
+      out[body] = true;
+    } else {
+      out[body.slice(0, eq)] = body.slice(eq + 1);
+    }
   }
   return out;
 }

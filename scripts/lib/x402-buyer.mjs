@@ -22,20 +22,21 @@
  * facilitator is what settles on-chain (see `apps/api/src/facilitator.mjs`). This module never
  * holds gas, never has a chain RPC write path, and cannot move funds by itself.
  *
- * WIRE FORMAT: THIS REPO'S OWN, NOT THE PUBLISHED x402 v2 SPEC. `validateChallenge` and
- * `buyResource` read/write the FLAT challenge and envelope shapes `apps/api/src/x402.mjs`
- * (`buildChallenge`, `decodeSignatureHeader`) and `packages/agent-sdk/src/eip3009.mjs`
- * (`buildEnvelope`) actually produce and expect on this server today — not the nested
- * `{accepts:[…], resource, extensions}` / `{accepted, payload:{…}, resource}` shapes the
- * Coinbase x402 v2 spec (`coinbase/x402` `specs/x402-specification-v2.md` §5.1.1 / §5.2.1) and its
- * HTTP transport (`specs/transports-v2/http.md`) define, nor that transport's requirement that
- * `PAYMENT-REQUIRED` and `PAYMENT-RESPONSE` themselves be base64-encoded (this repo's are plain
- * `JSON.stringify`). `docs/X402-INTEGRATION.md`'s "Known gap" section has the full comparison.
- * This client necessarily targets what the server actually does, per this file's own header — a
- * buyer that spoke only the spec's shapes could not pay this endpoint. If the wire format is later
- * made spec-conformant, the fields to change are `buildChallenge`/`decodeSignatureHeader` and
- * `buildEnvelope`/`authorizeFromChallenge`; `validateChallenge`'s field checks and `buyResource`'s
- * control flow (validate-then-sign-then-retry) stay the same shape either way.
+ * WIRE FORMAT: THIS REPO'S FLAT LEGACY SHAPE, WHICH THE SERVER STILL ACCEPTS ALONGSIDE THE SPEC'S.
+ * `validateChallenge` and `buyResource` read/write the FLAT challenge and envelope shapes
+ * `apps/api/src/x402.mjs` (`buildChallenge`, `decodeSignatureHeader`) and
+ * `packages/agent-sdk/src/eip3009.mjs` (`buildEnvelope`) have always produced — not the Coinbase
+ * x402 v2 spec's nested `{accepts:[…], resource, extensions}` / `{accepted, payload:{…}, resource}`
+ * shapes (`specs/x402-specification-v2.md` §5.1.1 / §5.2.1). As of `docs/X402-V2-CONFORMANCE.md`
+ * the SERVER now emits a superset (both shapes in the 402 body) and accepts either payload shape —
+ * so a spec-shaped client and this flat-shaped one are both payable — but this module still signs
+ * and sends the flat shape it always has, unchanged, because nothing requires it to do otherwise.
+ * Two divergences that document itself discloses as NOT fixed by that change: `PAYMENT-REQUIRED`
+ * and `PAYMENT-RESPONSE` are still plain `JSON.stringify`, not the base64 the HTTP transport spec
+ * (`specs/transports-v2/http.md`) requires, and `PAYMENT-RESPONSE`'s body is still this repo's own
+ * `{receiptId, nonce}`, not the spec's `SettlementResponse`. `docs/X402-INTEGRATION.md`'s "Known
+ * gap" section has the full, current comparison — read that, not this paragraph, for anything
+ * dated after this file's last edit, since a wire-format change would age this comment first.
  */
 
 import { authorizeFromChallenge, buildTypedData } from '../../packages/agent-sdk/src/eip3009.mjs';
@@ -169,7 +170,7 @@ export function validateChallenge(challenge, expected, nowMs) {
     throw new ChallengeMismatchError('amount-exceeds-max', { got: amount.toString(), max: maxAmount.toString() });
 
   // Same reasoning as the amount check, one field over: `challenge.nonce` is reused verbatim as
-  // the EIP-3009 authorization's on-chain nonce (`apps/api/src/x402.mjs:48-56`'s comment), so an
+  // the EIP-3009 authorization's on-chain nonce (`apps/api/src/x402.mjs:120-126`'s comment), so an
   // unchecked shape here is an unchecked shape in what gets signed. This repo's own `buildChallenge`
   // always emits `0x` + 64 lowercase hex chars (32 bytes); accept exactly that.
   if (typeof challenge.nonce !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(challenge.nonce))
