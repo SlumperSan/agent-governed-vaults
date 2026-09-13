@@ -13,8 +13,9 @@
    THIS COMMENT as its authority, so if you change the calls there, change that
    sentence too.
 
-   Pass 2, the VAULT ROWS: vaultCount(), then allVaults(i) for each index, then
-   four reads per vault (navWad, totalShares, holderCount, capacityCapUsdc).
+   Pass 2, the VAULT ROWS: its OWN vaultCount() call (it does not reuse pass 1's
+   answer, so the two passes stay independent), then allVaults(i) for each index,
+   then four reads per vault (navWad, totalShares, holderCount, capacityCapUsdc).
    That is 1 + n + 4n eth_calls, so the cost grows with the vault count and this
    is the thing to change first if the table ever gets long: a multicall, or an
    indexer, rather than a read per cell. It read idleUsdc as a fifth and
@@ -57,8 +58,9 @@ const SEL_ALLOW_SUB = '0x1979d1fd'; // allowSubVaults()
 const SEL_USDC = '0x3e413bee'; // usdc()
 const SEL_SYMBOL = '0x95d89b41'; // symbol()
 
-// Vault-row selectors, same provenance as the four above: computed with
-// `cast sig` and pinned, so this file carries no keccak implementation.
+// Vault-row selectors, same provenance as the four above: computed with viem's
+// toFunctionSelector and pinned, so this file carries no keccak implementation.
+// apps/app/test/claims.test.mjs recomputes all five and fails on a wrong pin.
 const SEL_ALL_VAULTS = '0x9094a91e'; // allVaults(uint256)
 const SEL_NAV_WAD = '0xd09074c0'; // navWad()
 const SEL_TOTAL_SHARES = '0x3a98ef39'; // totalShares()
@@ -212,7 +214,11 @@ function renderVaultRows(vaults) {
       fixed(v.navWad, 18, 2),
       navPerShare === null ? 'no shares' : fixed(navPerShare, 18, 6),
       v.holders.toString(),
-      fixed(v.cap, 6, 0),
+      // VaultCore.sol:81 documents 0 as "uncapped (no limit)", and creation is
+      // permissionless, so a third party can make this render. Printed as `0`
+      // under a header reading Capacity it means the exact inverse: a full
+      // vault. Same sentinel problem as totalShares above, handled the same way.
+      v.cap === 0n ? 'uncapped' : fixed(v.cap, 6, 0),
     ]) {
       const td = document.createElement('td');
       td.className = 'col-num';
@@ -221,6 +227,13 @@ function renderVaultRows(vaults) {
     }
     body.appendChild(tr);
   }
+
+  // THE CHIP COUNTS ROWS, SO WHATEVER RENDERS ROWS MUST OWN IT. It ships as
+  // "0 listed here", which is true before this function runs and stays true if
+  // the read fails. It stopped being true the moment rows rendered, and nothing
+  // updated it, so the card head contradicted the table one line below it.
+  const chip = document.querySelector('.count-chip .num');
+  if (chip) chip.textContent = String(vaults.length);
 
   // Only once a row actually exists does the fallback stop being the truth.
   if (vaults.length > 0) {

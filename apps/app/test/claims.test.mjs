@@ -189,10 +189,6 @@ test('every vault-row selector app.js pins is the real 4-byte selector', () => {
 });
 
 test('the columns, their order, and their decimals are all pinned', () => {
-  // THE GUARD THE REVIEW ASKED FOR. Pinning the container and the constants left
-  // the RENDERING unpinned: reordering the cell array in renderVaultRows, or
-  // changing fixed(v.navWad, 18, 2) to fixed(v.navWad, 6, 2) so TVL reads
-  // 20,000,000,000,000.00, passed every other check here.
   const html = read('index.html');
   const headers = [...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]);
   assert.deepEqual(
@@ -203,20 +199,61 @@ test('the columns, their order, and their decimals are all pinned', () => {
   );
 
   const js = read('app.js');
-  // Cell order and scale, read out of the source array rather than described.
-  const cells = js.slice(js.indexOf('for (const text of ['), js.indexOf('])) {', js.indexOf('for (const text of [')));
-  for (const [needle, why] of [
-    ['fixed(v.navWad, 18, 2)', 'TVL is navWad, 18 decimals'],
+  // THE WINDOW IS ASSERTED BEFORE IT IS USED, because the first version of this
+  // test was not. It sliced to `])) {`, which does not occur in app.js, so
+  // indexOf returned -1, the slice ran to the end of the file, and every needle
+  // below matched somewhere unrelated. A guard whose search window is silently
+  // the whole file passes for the wrong reason, which is the exact defect class
+  // this file exists to catch, committed inside it.
+  const open = js.indexOf('for (const text of [');
+  const close = js.indexOf('    ]) {', open);
+  assert.ok(open > 0, 'renderVaultRows no longer builds its cells from a literal array');
+  assert.ok(close > open, 'could not find the end of the cell array; this window must not silently become the whole file');
+  const cells = js.slice(open, close);
+  assert.ok(cells.length < 900, `the cell-array window is ${cells.length} chars, which is too large to be just the array`);
+
+  // EVERY cell is pinned, IN ORDER, and the order is checked by INDEX rather
+  // than by a chain of comparisons. The previous version chained only
+  // navWad -> holders -> cap and left NAV per share unconstrained, so swapping
+  // the first two cells rendered NAV per share under the TVL header and passed
+  // all ten checks. That counterexample is the reason this is an index list.
+  const expected = [
+    ['fixed(v.navWad, 18, 2)', 'TVL is navWad at 18 decimals'],
     ["navPerShare === null ? 'no shares' : fixed(navPerShare, 18, 6)", 'NAV per share is 18 decimals, and 0 shares is not 0.000000'],
     ['v.holders.toString()', 'Members is a plain count'],
-    ['fixed(v.cap, 6, 0)', 'Capacity is USDG at 6 decimals, no fraction'],
-  ]) {
-    assert.ok(cells.includes(needle), `renderVaultRows no longer renders ${needle}. ${why}.`);
+    ["v.cap === 0n ? 'uncapped' : fixed(v.cap, 6, 0)", 'Capacity is USDG at 6 decimals, and 0 means uncapped, not full'],
+  ];
+  const positions = expected.map(([needle, why]) => {
+    const at = cells.indexOf(needle);
+    assert.ok(at >= 0, `renderVaultRows no longer renders ${needle}. ${why}.`);
+    return at;
+  });
+  for (let i = 1; i < positions.length; i += 1) {
+    assert.ok(
+      positions[i] > positions[i - 1],
+      `Cell ${i} appears before cell ${i - 1} in renderVaultRows, so the values no longer line up `
+        + `with the header row ${JSON.stringify(headers)}. Swapping two cells relabels real numbers `
+        + 'under the wrong heading and every other check here still passes.',
+    );
   }
+});
+
+test('whatever renders rows also owns the count chip', () => {
+  // The chip ships as "0 listed here", which is true until a row renders. Once
+  // rows render it is false, and nothing in the markup can fix that: only the
+  // code that appended the rows knows the number. This shipped contradicting
+  // the table one line below it.
+  const html = read('index.html');
+  assert.match(
+    html,
+    /<span class="count-chip"><span class="num">0<\/span> listed here<\/span>/,
+    'The count chip must ship reading 0, which is what a reader sees before the read returns.',
+  );
+  const js = read('app.js');
   assert.ok(
-    cells.indexOf('fixed(v.navWad, 18, 2)') < cells.indexOf('v.holders.toString()')
-      && cells.indexOf('v.holders.toString()') < cells.indexOf('fixed(v.cap, 6, 0)'),
-    'The cell order no longer matches the header order above.',
+    js.includes(".querySelector('.count-chip .num')"),
+    'app.js renders the rows, so app.js must update the chip that counts them. '
+      + 'A static 0 above a populated table is a false number on the page.',
   );
 });
 

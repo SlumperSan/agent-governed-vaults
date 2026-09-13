@@ -89,14 +89,14 @@ screenshots/
 node --test --test-reporter=tap apps/app/test/claims.test.mjs
 ```
 
-Ten checks: the empty-state sentence survives into the build; the row container `app.js` writes
+Eleven checks: the empty-state sentence survives into the build; the row container `app.js` writes
 into exists in the markup; no column header promises a figure this page cannot read; every pinned
 vault-row selector is recomputed from its signature with viem and compared; the column order and
-their decimal scales are pinned; the factory address is on the page; no banned claim
+their decimal scales are pinned; whatever renders rows also updates the count chip; the factory address is on the page; no banned claim
 shape appears in any built file; `_headers` carries every required directive; the markup has no
 inline script or style; and the page fetches from no origin but the chain RPC.
 
-The four added with the vault rows guard what a runtime failure cannot tell you. An earlier draft
+The five added with the vault rows guard what a runtime failure cannot tell you. An earlier draft
 of this paragraph claimed they guard a *silent zero*, on the theory that `eth_call` answers an
 unknown selector with `0x` which decodes to zero. **That was never true here and was not probed
 before being written.** Chain 4663 answers an unknown selector with a JSON-RPC error
@@ -105,9 +105,17 @@ before being written.** Chain 4663 answers an unknown selector with a JSON-RPC e
 
 The real failure is loud but **wide**: `Promise.all` means one bad selector takes down every row,
 and the page reports a failure without being able to say which call broke. A renamed `tbody` id is
-worse, because it is silent: every read succeeds and the table simply stays empty. And the column
-guard exists because the rendering was otherwise unpinned, so reordering the cell array or changing
-a decimal scale relabelled real numbers with every other check still green.
+worse, because it is silent: every read succeeds and the table simply stays empty. And the column guard exists because the rendering was otherwise
+unpinned, so reordering the cell array or changing a decimal scale relabelled real numbers with
+every other check still green.
+
+**The first version of that column guard did not work, and the claim that it did was made without
+running the case.** It sliced the source to a delimiter (`])) {`) that does not occur in `app.js`,
+so `indexOf` returned `-1`, the window became the whole rest of the file, and its order check
+chained only three of the four cells. Swapping TVL and NAV per share rendered each under the
+other's heading and passed all ten checks. It now asserts its own window before using it, bounds
+the window's length, and compares all four cell positions by index. All three cases are run as
+controls: the swap, a broken delimiter, and a dropped chip update each red a named test.
 
 **It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
 `.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before
