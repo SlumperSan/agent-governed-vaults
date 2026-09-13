@@ -94,7 +94,9 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
 | The edge route refuses to serve unpaid | **Proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs` |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
-| A mainnet payment has settled | **No.** Nothing has been deployed |
+| The route is deployed and refuses unpaid requests in production | **Proven** — `rwally.com/api/vaults` answers 402, 2026-09-13 (§5.6) |
+| A mainnet payment has settled | **No.** Settlement has never been exercised on mainnet. A 402 is the gate refusing; it says nothing about settlement |
+| A conformant third-party client can pay | **No.** The headers are raw JSON where the transport spec requires base64 (#279) |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
@@ -144,23 +146,37 @@ USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet. Set
 the payee is the address the owner supplied, and the facilitator is `https://facilitator.payai.network`,
 which settles on Base mainnet and needs no API key.
 
-**5.2 — Set the six variables, and set them as SECRETS, not as environment variables.** This is
-the trap. `wrangler pages deploy` reads `apps/site-next/wrangler.toml` as the source of truth for the
-project config, and that file has no `[vars]` section — so **the deploy silently wipes every
-dashboard-set environment variable on the project**. Measured on 2026-09-13: all six read back
-correctly from the API at 16:41, the deploy ran, and at 17:02 the same read returned `env_vars: []`
-for both production and preview. The deploy output never mentions variables and reports success. The
-live route answered `500 {"error":"route misconfigured","detail":"PRICE_AMOUNT is not set on this
-deployment"}` — fail-closed, so no data was served for free, but the route was down.
+**5.2 — Set the six settings, and set them as SECRETS, not as environment variables.** This is the
+trap, and what follows is what was observed rather than a general account of how wrangler behaves.
 
-Upload them as secrets instead. Wrangler's config sync touches `vars`, not secrets, so these survive
-every subsequent deploy:
+**Measured on 2026-09-13.** All six environment variables read back from the Cloudflare API with
+correct values at 16:41. `npx wrangler@4 pages deploy` was run. At 17:02 the same API read returned
+`env_vars: []` for **both** production and preview. The deploy output never mentioned variables and
+reported success. The live route then answered:
+
+```
+500 {"error":"route misconfigured","detail":"PRICE_AMOUNT is not set on this deployment"}
+```
+
+Fail-closed, so no vault data was served for free — but the route was down, and nothing in the deploy
+said why.
+
+The likely mechanism, stated as the inference it is: `apps/site-next/wrangler.toml` declares
+`pages_build_output_dir`, which makes wrangler treat it as the project's configuration, and the file
+has no `[vars]` section. That was not verified against wrangler's source or its documentation. What
+IS verified is the before/after above, and that is enough to act on.
+
+Upload them as secrets instead. The six were re-uploaded this way and survived the redeploy that
+followed:
 
 ```bash
 npx wrangler@4 pages secret bulk <path-to-json> --project-name rwally
 ```
 
 The JSON is a flat `{"KEY": "value"}` object with these six keys. Write it outside the repository.
+Secrets are expected to survive later deploys, because the configuration file carries no secrets for
+wrangler to sync over them — but only one redeploy has been observed, so treat that as the working
+assumption and re-read the settings after any deploy that changes `wrangler.toml`.
 A Pages Function reads a secret through the same `env[KEY]` binding, so no code changes.
 
 **Secrets bind at deployment time, not at read time.** Uploading them changes nothing until you

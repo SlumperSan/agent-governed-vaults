@@ -49,8 +49,15 @@ compatibility_flags = ["nodejs_compat"]
 # history where a reviewer reads it as documentation rather than as live configuration, and rotating
 # it would become a code change and a redeploy.
 #
-# The SIX settings the metered route needs are set on the Pages project itself (Settings ->
-# Environment variables, Production), and `functions/api/_price.js` REFUSES to serve rather than
+# The SIX settings the metered route needs are set on the Pages project itself, as SECRETS rather
+# than as environment variables. That is not a preference. Measured on 2026-09-13: all six were set
+# as environment variables and read back correctly from the API; a `wrangler pages deploy` ran; and
+# the same read afterwards returned `env_vars: []` for both production and preview, with the deploy
+# reporting success and never mentioning variables. The route answered 500 until they were
+# re-uploaded with `wrangler pages secret bulk` and the site was redeployed. `docs/REVENUE.md` §5.2
+# carries the full sequence and is the place to read before the next deploy.
+#
+# `functions/api/_price.js` REFUSES to serve rather than
 # defaulting any of them — `apps/site-next/test/x402-edge.test.mjs` pins that behaviour for each one
 # individually:
 #
