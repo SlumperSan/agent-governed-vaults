@@ -154,16 +154,19 @@ underneath a doc-only follow-up commit the way the original did underneath two m
 At `2dd1e8dd` — the merge of `protocol/main` (through `#267`) that this PR's code last changed
 under; every commit after it, including the one that added this paragraph, touches only this
 document — the full `npm run test:backend` run (every workspace's `test/*.test.mjs` plus
-`scripts/test/*.test.mjs`), measured locally with `contracts/out` present (`npm run gate` builds it
-first; without it, six `contracts/out`-dependent guards fail closed rather than skip, which is a
-correct local artifact of this checkout and not a defect in the suite):
+`scripts/test/*.test.mjs`):
 
-**1366 tests, 1364 pass, 0 fail, 2 skipped.**
+- **CI** (Linux, GitHub Actions run `34771602979`, `headSha aeaa08e0` — one commit later than
+  `2dd1e8dd`, doc-only, so the test result is the same run): `1366 tests, 1365 pass, 0 fail, 1 skipped`.
+- **Local** (Windows, this session, `contracts/out` built first via `npm run gate` so the
+  `contracts/out`-dependent guards run rather than fail closed): `1366 tests, 1364 pass, 0 fail, 2 skipped`.
 
-Re-derive rather than trust this if `protocol/main` has moved again: `gh run list --branch
-test/x402-end-to-end-loop --json headSha,conclusion` for CI's figure at the actual landing SHA, or
-`node --test --test-reporter=tap` over the same file list locally. The skip count is expected to
-read one lower in CI than locally: one test (`SIGTERM to the real API entrypoint drains and exits
-0`) skips only on Windows, because `kill()` there is `TerminateProcess`, not a deliverable signal,
-and CI runs on Linux. The other skip — a live-indexer-snapshot test needing a fixture this checkout
-does not carry — is environment-independent and present either way.
+Same total both places. The pass/skip split differs by exactly one, and that is expected, not a
+discrepancy to chase: one test (`SIGTERM to the real API entrypoint drains and exits 0`) skips only
+on Windows, because `kill()` there is `TerminateProcess`, not a deliverable signal, and CI runs on
+Linux. The other skip present in both — a live-indexer-snapshot test needing a fixture this checkout
+does not carry — is environment-independent.
+
+Re-derive rather than trust either number if `protocol/main` has moved again since: `gh run list
+--branch test/x402-end-to-end-loop --json headSha,conclusion` for CI's figure at the actual landing
+SHA, or `node --test --test-reporter=tap` over the same file list locally.
