@@ -113,13 +113,17 @@ export default function ApiDocs(): JSX.Element {
             <code className="mono">GET /api/vaults</code> on this domain is live: a request with no
             payment header returns <code className="mono">402</code> with a real challenge — a
             nonce, an expiry and the accepted payment scheme — verified directly against{' '}
-            <code className="mono">{API_URL}</code> on 2026-09-13. The price is $0.10 per call,
-            paid in Circle-native USDC on Base mainnet (asset{' '}
-            <code className="mono">{PRICE_ASSET}</code>, network <code className="mono">eip155:8453</code>{' '}
-            — a different chain from the one the data below comes from). That figure is not fixed
-            on this page: it is read live from the free discovery document at{' '}
-            <code className="mono">/.well-known/x402</code>, which states the actual number the
-            route will charge rather than a copy that can drift from it.
+            <code className="mono">{API_URL}</code> on 2026-09-13. The price quoted by the
+            discovery document that same day was $0.10 per call, paid in Circle-native USDC on
+            Base mainnet (asset <code className="mono">{PRICE_ASSET}</code>, network{' '}
+            <code className="mono">eip155:8453</code> — a different chain from the one the data
+            below comes from). This page quotes that figure as a dated reading, not a live one:
+            it does not fetch anything at request time, and <code className="mono">PRICE_AMOUNT</code>{' '}
+            is set in one place — the Pages project&apos;s environment — and can change without
+            this page changing with it. The free discovery document at{' '}
+            <code className="mono">/.well-known/x402</code> is the one place that always states
+            the number the route will actually charge; if the two ever disagree, trust that
+            document, not this page.
           </p>
           <p>
             The payload is a pinned snapshot, not a live chain read: every response carries{' '}
