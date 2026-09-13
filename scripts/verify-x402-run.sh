@@ -17,6 +17,7 @@ TRANSCRIPT="${1:-docs/evidence/x402-live-run.json}"
 j() { python -c "import json,io,sys; print(eval('t'+sys.argv[2], {'t': json.load(io.open(sys.argv[1], encoding='utf8'))}))" "$TRANSCRIPT" "$1"; }
 
 RPC="${2:-$(j "['chain']['rpcUrl']")}"
+CHAIN_ID=$(j "['chain']['chainId']")
 USDC=$(j "['usdcDomain']['address']")
 PAYER=$(j "['accounts']['payer']")
 PAYTO=$(j "['accounts']['payTo']")
@@ -34,6 +35,41 @@ check() { # check <label> <actual> <expected>
 echo "Verifying $TRANSCRIPT"
 echo "  rpc   $RPC"
 echo "  tx    $TX"
+echo
+
+# 0. BIND THE RPC TO THE CHAIN THE TRANSCRIPT NAMES, before reading anything through it (#204).
+#
+# Every address below — the USDC contract, the payer, the payee — is chain-specific, and `$2`
+# overrides the transcript's own rpcUrl. Verifying a Base Sepolia transcript through a mainnet
+# endpoint does not produce a partial verdict; `cast receipt` simply finds no such transaction and
+# every row FAILs, which reads as "the runner lied" rather than "you pointed me at the wrong chain".
+#
+# NOT a `check` row. A row would be tallied into a verdict that is itself computed against the
+# wrong chain. An unreadable chain id refuses too: "I could not tell" is not "they match".
+#
+# A transcript with no `chain.chainId` refuses here too. `set -uo pipefail` has no `-e`, so a
+# failing `j` yields an empty string rather than aborting, which then compares unequal to any live
+# id and refuses. That is the right disposition reached for the wrong reason, and it printed the
+# confusing "the transcript records chain ." -- so it is named explicitly instead.
+if [ -z "$CHAIN_ID" ]; then
+  echo "  REFUSING: the transcript records no chain.chainId, so there is nothing to bind $RPC to."
+  echo "            Every address below is chain-specific, and a transcript that does not say which"
+  echo "            chain it was produced on cannot be verified against one."
+  exit 1
+fi
+LIVE_CHAIN_ID=$(cast chain-id --rpc-url "$RPC" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$LIVE_CHAIN_ID" ]; then
+  echo "  REFUSING: could not read the chain id of $RPC, so it is UNPROVEN that it is chain $CHAIN_ID"
+  echo "            (the transcript's chain.chainId). An unproven binding is not a binding."
+  exit 1
+fi
+if [ "$LIVE_CHAIN_ID" != "$CHAIN_ID" ]; then
+  echo "  REFUSING: WRONG CHAIN — $RPC reports chain id $LIVE_CHAIN_ID, but the transcript records"
+  echo "            chain $CHAIN_ID. Every address below is chain-specific, so a verdict computed"
+  echo "            against the wrong chain is not a partial answer, it is a meaningless one."
+  exit 1
+fi
+echo "  chain $LIVE_CHAIN_ID (matches the transcript)"
 echo
 
 # 1. The settlement transaction succeeded, and it was a call to the USDC contract.

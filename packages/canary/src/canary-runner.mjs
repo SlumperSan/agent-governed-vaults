@@ -387,6 +387,13 @@ export async function buildCanary(cfg, { log, error, logger = loggerFromEnv('can
     client, rpcUrl: cfg.rpcUrl, chainId: cfg.chainId, chainName: cfg.chainName,
   });
 
+  // BEFORE the first sweep: prove the RPC is the chain CHAIN_ID names, or refuse to build (#204).
+  // Every vault, operator and feed address this canary watches is chain-specific, so a canary
+  // pointed at the wrong chain does not go quiet — it pages on the wrong chain's state, or reports
+  // all-clear about vaults it never looked at. Raised here rather than from inside a read because
+  // `read`/`tryRead` are fault-tolerant by design and would log this as one degraded field.
+  await reader.assertBoundToDeclaredChain();
+
   const persisted = await loadCanaryState(cfg.canaryStatePath);
   const tracker = createTransitionTracker({ initial: persisted.transitions });
   let lastScannedBlock = persisted.lastScannedBlock ?? null;

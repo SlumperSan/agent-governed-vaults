@@ -106,6 +106,44 @@ test('phaseId alone can convict: it moved, so a swap happened even with aggregat
   assert.match(r.message, /NOT a failure/);
 });
 
+// --- the SAME failure, the other read (#266) --------------------------------
+// The two pin reads were not treated alike. A dropped `aggregator()` produced the UNREADABLE
+// notice above; a dropped `phaseId()` produced `ok` with the message "unchanged since the pin" --
+// an assertion that the pin was CONFIRMED, satisfied by a read that never happened. Exit 0, and
+// exit 0 under `--strict` too, because only notices set that code.
+//
+// This is the detector for aggregator-swap drift, so its `ok` is what docs/LAUNCH-READINESS.md
+// row 14 rests on. The rule these tests pin: nothing but two answered reads can produce `ok`.
+
+test('an unanswered phaseId() read with a matching implementation is UNREADABLE, not confirmed', () => {
+  const r = compareAggregatorPin(PIN, { implementation: IMPL, phaseId: null });
+  assert.equal(r.status, 'unreadable', 'a dropped phaseId() read must not be reported as a confirmed pin');
+  assert.doesNotMatch(
+    r.message,
+    /unchanged since the pin/,
+    'a read that did not happen must never be reported as a read that matched',
+  );
+  assert.doesNotMatch(r.message, /SWAPPED/, 'a dropped RPC call is not evidence of a swap either');
+  assert.match(r.message, /NOT confirmed/);
+});
+
+test('the implementation alone can convict: it moved, so a swap happened even with phaseId() unread', () => {
+  const r = compareAggregatorPin(PIN, { implementation: '0x' + '11'.repeat(20), phaseId: null });
+  assert.equal(r.status, 'drift');
+  assert.match(r.message, /SWAPPED/);
+  assert.match(r.message, /NOT a failure/);
+});
+
+test('an unpinned phaseId is not the same as an unanswered one — only the first can still be ok', () => {
+  // `pin.phaseId === undefined` is "nothing was pinned to compare", which the implementation match
+  // legitimately satisfies. `obsPhase === null` is "the read did not answer". Collapsing the two is
+  // exactly the defect; this asserts they stayed apart.
+  const unpinned = compareAggregatorPin({ implementation: IMPL }, { implementation: IMPL, phaseId: null });
+  assert.equal(unpinned.status, 'ok');
+  const unanswered = compareAggregatorPin({ implementation: IMPL, phaseId: 1 }, { implementation: IMPL, phaseId: null });
+  assert.equal(unanswered.status, 'unreadable');
+});
+
 // --- regression guard for the #75 denomination predicate --------------------
 // Kept here because `compareAggregatorPin` and `isUsdQuoted` are the two pure decisions in this
 // script, and the denomination one previously had no unit coverage at all — only the Solidity
@@ -325,6 +363,119 @@ test('end to end: matching ids proceed into the sweep, which then judges the con
     'the run must reach the feed checks — this fixture then fails them, which is the config being judged rather than the chain',
   );
   assert.doesNotMatch(r.stderr, /unexpected invocation/, 'no cast subcommand beyond chain-id should have been needed');
+});
+
+// --- #266 end to end: a dropped phaseId() must not exit 0 -------------------
+// The pure tests above prove the decision; this proves the PROCESS. It matters separately because
+// the defect's whole signature was the exit code: `compareAggregatorPin` returned `ok`, `main`
+// recorded it with `check(..., true, ...)` rather than `notice(...)`, and only notices set the exit
+// code under `--strict`. So the run exited 0 and printed "unchanged since the pin".
+//
+// The fixture is deliberately GREEN IN EVERY OTHER ROW. If any other check failed, the process
+// would exit 1 whether or not this bug is present, and the assertion below would pass against the
+// unfixed script — a mutation-insensitive test, which is the same class of defect as the bug.
+// `assert.match(stdout, /checks passed/)` with no FAIL row is what holds that property in place.
+
+/**
+ * Run the verifier over one healthy feed, with `phaseId()` either answering or dropped.
+ * Same CAST=node + NODE_OPTIONS=--require stub mechanism as `runVerifier` above.
+ */
+function runVerifierOverFeed({ dropPhaseId }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aggregator-pin-'));
+  const stub = path.join(dir, 'stub-cast.cjs');
+  const FEED = '0x' + 'ab'.repeat(20);
+  fs.writeFileSync(
+    stub,
+    [
+      `'use strict';`,
+      `const p = require('node:path');`,
+      `const argv = process.argv.slice(1);`,
+      `const sub = p.basename(String(argv[0] ?? ''));`,
+      // The verifier's own process inherits NODE_OPTIONS; there argv[1] is the .mjs entry point.
+      `if (/[.](mjs|cjs|js)$/.test(sub)) { return; }`,
+      `if (sub === 'chain-id') { console.log('4663'); process.exit(0); }`,
+      `if (sub === 'code') { console.log('0x60806040'); process.exit(0); }`,
+      `if (sub === 'call') {`,
+      `  const sig = String(argv[2] ?? '');`,
+      // `cast` prints a string return wrapped in quotes and the verifier strips them if present;
+      // printing it bare keeps this generated file free of nested quoting.
+      `  if (/^description/.test(sig)) { console.log('ETH / USD'); process.exit(0); }`,
+      `  if (/^decimals/.test(sig)) { console.log('8'); process.exit(0); }`,
+      `  if (/^aggregator/.test(sig)) { console.log('${IMPL}'); process.exit(0); }`,
+      `  if (/^phaseId/.test(sig)) {`,
+      // THE DEFECT UNDER TEST: one read of the two that make up the pin never answers. `castRetry`
+      // retries once, so failing unconditionally is what a genuinely dropped read looks like.
+      `    if (${dropPhaseId ? 'true' : 'false'}) { console.error('stub-cast: phaseId() dropped'); process.exit(1); }`,
+      `    console.log('1'); process.exit(0);`,
+      `  }`,
+      `  if (/^latestRoundData/.test(sig)) {`,
+      `    const now = Math.floor(Date.now() / 1000);`,
+      // (roundId, answer, startedAt, updatedAt, answeredInRound); answer is $3,000.00 at 8 decimals.
+      `    console.log([1, 300000000000, now, now, 1].join('\\n'));`,
+      `    process.exit(0);`,
+      `  }`,
+      `}`,
+      `console.error('stub-cast: unexpected invocation ' + argv.join(' '));`,
+      `process.exit(3);`,
+      '',
+    ].join('\n'),
+  );
+  const cfg = path.join(dir, 'cfg.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({
+      // 4663 is sequencer-exempt, so an empty uptime feed PASSES rather than failing a row.
+      chainId: 4663,
+      chainlinkOracle: {
+        sequencerUptimeFeed: '',
+        assets: [
+          {
+            symbol: 'ETH',
+            feed: FEED,
+            feedDescriptionOnChain: 'ETH / USD',
+            heartbeatSeconds: 3600,
+            // Band sized so every band row passes against the stub's $3,000 answer: the live price
+            // 3e21 WAD sits inside [1e20, 1e23], the ratio is exactly the 1000x ceiling, and a
+            // +/-2-decimal drift (3e23 / 3e19) leaves it in both directions.
+            minPriceWad: '100000000000000000000',
+            maxPriceWad: '100000000000000000000000',
+            aggregatorPin: { implementation: IMPL, phaseId: 1 },
+          },
+        ],
+      },
+    }),
+  );
+  const env = { ...process.env, CONFIG: cfg, CAST: process.execPath };
+  delete env.BASE_MAINNET_RPC;
+  delete env.BASE_RPC;
+  const r = spawnSync(process.execPath, [VERIFIER, '--strict'], {
+    encoding: 'utf8',
+    env: { ...env, NODE_OPTIONS: `--require "${stub.split(path.sep).join('/')}"` },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test('end to end: the control fixture is green — every row passes and --strict exits 0', () => {
+  const r = runVerifierOverFeed({ dropPhaseId: false });
+  assert.doesNotMatch(r.stdout, /^FAIL /m, `a row failed, so the fixture proves nothing: ${r.stdout}`);
+  assert.doesNotMatch(r.stderr, /unexpected invocation/, `the stub was asked for a call it does not implement: ${r.stderr}`);
+  assert.equal(r.status, 0, `expected exit 0 with both pin reads answering. stdout: ${r.stdout} stderr: ${r.stderr}`);
+  assert.match(r.stdout, /unchanged since the pin/, 'two answered, matching reads are what may legitimately confirm the pin');
+});
+
+test('end to end: dropping ONLY phaseId() must not exit 0 and must not claim the pin was confirmed', () => {
+  const r = runVerifierOverFeed({ dropPhaseId: true });
+  // Nothing else changed between the two runs, so any failure here is attributable to the dropped
+  // read alone — the control above is what establishes that.
+  assert.doesNotMatch(r.stdout, /^FAIL /m, `a row failed for an unrelated reason: ${r.stdout}`);
+  assert.doesNotMatch(
+    r.stdout,
+    /unchanged since the pin/,
+    'a read that did not happen was reported as a read that matched',
+  );
+  assert.match(r.stdout, /^DRIFT .*pin NOT confirmed/m, 'the unanswered read must be surfaced as an unconfirmed pin');
+  assert.notEqual(r.status, 0, `--strict must not exit 0 when a pin read never answered. stdout: ${r.stdout}`);
 });
 
 // ---------------------------------------------------------------------------

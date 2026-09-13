@@ -38,6 +38,7 @@
  * @typedef {{ok:boolean, value?:any, revertData?:string|null, error?:string, kind?:'revert'|'transport'}} ReadResult
  * @typedef {{ok:boolean, data:string|null, error?:string, kind?:'revert'|'transport'}} CallResult
  */
+import { assertChainBinding } from '../../chain-config/src/chain-binding.mjs';
 import { classifyCallError } from './call-error.mjs';
 
 const HEX_RE = /0x[0-9a-fA-F]{8,}/;
@@ -222,5 +223,27 @@ export function createChainReader({ client, rpcUrl, chainId = 8453, chainName = 
     }
   }
 
-  return { headBlock, chainNow, read, tryRead, getLogs, staticCall };
+  /**
+   * Refuse unless the RPC actually answers for `chainId` (#204). Call before the first sweep —
+   * `buildCanary` does.
+   *
+   * ONLY the `rpcUrl` path is bound: that is where this module builds
+   * `createPublicClient({chain: {id: chainId}}, transport: http(rpcUrl))` and so asserts the
+   * declared id ONTO an arbitrary URL instead of checking it against the chain that URL answers
+   * for. An injected client came from code in this same process and closes no gap here.
+   *
+   * Throws `ChainBindingError` — NOT the plain `Error` that `read`/`tryRead` deliberately swallow
+   * into a degraded field. A canary that alerts on the wrong chain's vaults is worse than silent.
+   */
+  async function assertBoundToDeclaredChain() {
+    if (client) return { ok: true, message: 'client injected — no RPC was resolved by this module' };
+    return assertChainBinding({
+      client: await getClient(),
+      declaredChainId: chainId,
+      rpc: rpcUrl ?? '(no rpcUrl)',
+      declaredBy: 'the canary CHAIN_ID',
+    });
+  }
+
+  return { headBlock, chainNow, read, tryRead, getLogs, staticCall, assertBoundToDeclaredChain };
 }
