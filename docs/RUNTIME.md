@@ -69,7 +69,10 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 ## 2. Prerequisites
 
 - **Node 24+** (`node --version`).
-- **viem**: the sole runtime dependency, lazily imported. Install it once at the repo root:
+- **viem**, plus **@solana/web3.js** and **@solana/spl-token**: the three declared runtime
+  dependencies, lazily imported. This line said viem was the sole one until 2026-09-13; the two
+  Solana packages landed on `protocol/main` afterwards and no guard walks this file. Install them
+  once at the repo root:
   ```bash
   npm install
   ```

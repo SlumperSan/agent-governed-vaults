@@ -22,6 +22,6 @@
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.99.0",
-    "viem": "^2.21.0"
+    "viem": "2.55.19"
   }
 }
