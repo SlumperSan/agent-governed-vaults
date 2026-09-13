@@ -14,10 +14,24 @@
    sentence too.
 
    Pass 2, the VAULT ROWS: vaultCount(), then allVaults(i) for each index, then
-   five reads per vault (navWad, totalShares, idleUsdc, holderCount,
-   capacityCapUsdc). That is 1 + n + 5n eth_calls, so the cost grows with the
-   vault count and this is the thing to change first if the table ever gets
-   long: a multicall, or an indexer, rather than a read per cell.
+   four reads per vault (navWad, totalShares, holderCount, capacityCapUsdc).
+   That is 1 + n + 4n eth_calls, so the cost grows with the vault count and this
+   is the thing to change first if the table ever gets long: a multicall, or an
+   indexer, rather than a read per cell. It read idleUsdc as a fifth and
+   rendered it nowhere; an unrendered read is a call nobody can check, so it is
+   gone rather than displayed for symmetry.
+
+   WHAT A WRONG SELECTOR ACTUALLY DOES HERE, because an earlier version of this
+   comment asserted the opposite without probing it. It does NOT silently render
+   a zero. Chain 4663 answers an unknown selector with a JSON-RPC error,
+   `{"code":3,"message":"execution reverted"}`, which `rpc()` turns into a throw;
+   and even a bare `0x` result would throw, because `BigInt('0x')` is a
+   SyntaxError. Both probed against the live endpoint. So the real failure is
+   loud but WIDE: `Promise.all` means one bad read suppresses EVERY row, not
+   just its own, and the table reports a failure instead of a wrong number. That
+   is the tradeoff this shape makes, and it is the honest reason to pin the
+   selectors at build time: not to prevent a silent zero, but because a typo
+   takes the whole table down and the page cannot tell you which call broke.
 
    WHAT IT STILL DELIBERATELY DOES NOT DO. It invents nothing. A failed row read
    leaves the tbody empty and names the failure, because the honest version of a
@@ -48,7 +62,6 @@ const SEL_SYMBOL = '0x95d89b41'; // symbol()
 const SEL_ALL_VAULTS = '0x9094a91e'; // allVaults(uint256)
 const SEL_NAV_WAD = '0xd09074c0'; // navWad()
 const SEL_TOTAL_SHARES = '0x3a98ef39'; // totalShares()
-const SEL_IDLE_USDC = '0x047b7fc7'; // idleUsdc()
 const SEL_HOLDER_COUNT = '0x1aab9a9f'; // holderCount()
 const SEL_CAPACITY_CAP = '0xb857d9b9'; // capacityCapUsdc()
 
@@ -148,12 +161,19 @@ function fixed(value, decimals, places) {
   return places > 0 ? grouped + '.' + fracStr : grouped;
 }
 
-/** One vault's row data, or null if any of its reads failed. */
+/**
+ * One vault's row data.
+ *
+ * REJECTS rather than returning null, and the caller's Promise.all makes that
+ * wide: a single failed read on a single vault suppresses every row. Stated
+ * here because the alternative, catching per vault and rendering the rest, would
+ * show a partial table with no indication that a row is missing, which is the
+ * worse failure for a page whose whole claim is that it invents nothing.
+ */
 async function readVault(address) {
-  const [navWad, totalShares, idle, holders, cap] = await Promise.all([
+  const [navWad, totalShares, holders, cap] = await Promise.all([
     ethCall(address, SEL_NAV_WAD),
     ethCall(address, SEL_TOTAL_SHARES),
-    ethCall(address, SEL_IDLE_USDC),
     ethCall(address, SEL_HOLDER_COUNT),
     ethCall(address, SEL_CAPACITY_CAP),
   ]);
@@ -161,7 +181,6 @@ async function readVault(address) {
     address,
     navWad: BigInt(navWad.slice(0, 66)),
     totalShares: BigInt(totalShares.slice(0, 66)),
-    idleUsdc: BigInt(idle.slice(0, 66)),
     holders: BigInt(holders.slice(0, 66)),
     cap: BigInt(cap.slice(0, 66)),
   };

@@ -133,15 +133,19 @@
         <p class="reads-stamp" id="reads-stamp" aria-live="polite">Reading from the public RPC.</p>
       </div>
 
-      <!-- THE COUNT IS OF CALLS, NOT OF ROWS BELOW, and the two differ: the
-           third row spends TWO calls, usdc() and then symbol() on whatever
-           address that returns. app.js says "four eth_call requests and one
-           eth_blockNumber" in its own header, and that file is the authority
-           on what it sends. This sentence said "three" and undercounted it. -->
+      <!-- THIS SENTENCE COUNTS THIS PANEL ONLY, AND IT HAS BEEN WRONG TWICE.
+           It said "three" while the panel sent four: the third row spends TWO
+           calls, usdc() and then symbol() on whatever address that returns.
+           Then the vault table below started sending its own reads and this
+           sentence, scoped to the panel, read as if it covered the page. Both
+           counts are now named, so neither can be read as the other. app.js is
+           the authority for both: if you change what either pass sends, change
+           this sentence in the same commit. -->
       <p class="reads-intro">
-        Four <span class="mono">eth_call</span> requests and one <span class="mono">eth_blockNumber</span>,
-        sent from this browser straight to the chain 4663 public RPC. Nothing is proxied and nothing
-        is cached.
+        Four <span class="mono">eth_call</span> requests and one <span class="mono">eth_blockNumber</span>
+        for this panel, sent from this browser straight to the chain 4663 public RPC. The vault
+        table below sends its own, one <span class="mono">allVaults</span> call per vault and four
+        reads each. Nothing is proxied and nothing is cached.
       </p>
 
       <ul class="reads-list">
@@ -236,7 +240,7 @@
         <caption class="sr-only">Vaults on chain 4663, one row each, read live from the public RPC when this page loads. Columns: vault address, total value locked, NAV per share, member count, and capacity cap.</caption>
         <thead>
           <tr>
-            <th scope="col" class="col-name">Name</th>
+            <th scope="col" class="col-name">Vault</th>
             <th scope="col" class="col-num">TVL</th>
             <th scope="col" class="col-num">NAV per share</th>
             <th scope="col" class="col-num">Members</th>

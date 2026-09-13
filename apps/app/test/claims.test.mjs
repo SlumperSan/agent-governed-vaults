@@ -55,6 +55,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { toFunctionSelector } from 'viem';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(APP, 'dist');
@@ -161,29 +162,62 @@ test('no column header promises a figure this page cannot read', () => {
 });
 
 test('every vault-row selector app.js pins is the real 4-byte selector', () => {
-  // These are pinned as hex so the page carries no keccak implementation, which
-  // means a typo is undetectable at runtime: eth_call returns 0x for an unknown
-  // selector and the column would render as a confident zero. Recomputed here
-  // from the signature text so the pin cannot drift from what it claims to be.
+  // COMPUTED, NOT TRANSCRIBED. An earlier version of this test compared a hex
+  // literal here against a hex literal in app.js and its comment claimed the
+  // selector was "recomputed from the signature text". It was not: two copies of
+  // the same constant agreeing proves only that nobody edited one of them. viem
+  // is already a root dependency, so the keccak is free and the claim can simply
+  // be made true.
   const js = read('app.js');
-  const expected = {
-    SEL_ALL_VAULTS: ['allVaults(uint256)', '0x9094a91e'],
-    SEL_NAV_WAD: ['navWad()', '0xd09074c0'],
-    SEL_TOTAL_SHARES: ['totalShares()', '0x3a98ef39'],
-    SEL_IDLE_USDC: ['idleUsdc()', '0x047b7fc7'],
-    SEL_HOLDER_COUNT: ['holderCount()', '0x1aab9a9f'],
-    SEL_CAPACITY_CAP: ['capacityCapUsdc()', '0xb857d9b9'],
-  };
-  for (const [name, [sig, sel]] of Object.entries(expected)) {
+  for (const [name, sig] of [
+    ['SEL_ALL_VAULTS', 'allVaults(uint256)'],
+    ['SEL_NAV_WAD', 'navWad()'],
+    ['SEL_TOTAL_SHARES', 'totalShares()'],
+    ['SEL_HOLDER_COUNT', 'holderCount()'],
+    ['SEL_CAPACITY_CAP', 'capacityCapUsdc()'],
+  ]) {
     const m = js.match(new RegExp(`const ${name} = '(0x[0-9a-f]{8})';`));
     assert.ok(m, `app.js no longer pins ${name}`);
     assert.equal(
       m[1],
-      sel,
-      `${name} is pinned as ${m[1]} but ${sig} is ${sel}. `
-        + 'A wrong selector does not throw: eth_call returns 0x and the cell renders as 0.',
+      toFunctionSelector(sig),
+      `${name} is pinned as ${m[1]} but ${sig} hashes to ${toFunctionSelector(sig)}. `
+        + 'A wrong selector reverts on chain 4663, and Promise.all means that takes down '
+        + 'every row, not just this column.',
     );
   }
+});
+
+test('the columns, their order, and their decimals are all pinned', () => {
+  // THE GUARD THE REVIEW ASKED FOR. Pinning the container and the constants left
+  // the RENDERING unpinned: reordering the cell array in renderVaultRows, or
+  // changing fixed(v.navWad, 18, 2) to fixed(v.navWad, 6, 2) so TVL reads
+  // 20,000,000,000,000.00, passed every other check here.
+  const html = read('index.html');
+  const headers = [...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]);
+  assert.deepEqual(
+    headers,
+    ['Vault', 'TVL', 'NAV per share', 'Members', 'Capacity'],
+    'The header row changed. renderVaultRows appends cells positionally, so a reordered or '
+      + 'renamed header silently relabels real numbers.',
+  );
+
+  const js = read('app.js');
+  // Cell order and scale, read out of the source array rather than described.
+  const cells = js.slice(js.indexOf('for (const text of ['), js.indexOf('])) {', js.indexOf('for (const text of [')));
+  for (const [needle, why] of [
+    ['fixed(v.navWad, 18, 2)', 'TVL is navWad, 18 decimals'],
+    ["navPerShare === null ? 'no shares' : fixed(navPerShare, 18, 6)", 'NAV per share is 18 decimals, and 0 shares is not 0.000000'],
+    ['v.holders.toString()', 'Members is a plain count'],
+    ['fixed(v.cap, 6, 0)', 'Capacity is USDG at 6 decimals, no fraction'],
+  ]) {
+    assert.ok(cells.includes(needle), `renderVaultRows no longer renders ${needle}. ${why}.`);
+  }
+  assert.ok(
+    cells.indexOf('fixed(v.navWad, 18, 2)') < cells.indexOf('v.holders.toString()')
+      && cells.indexOf('v.holders.toString()') < cells.indexOf('fixed(v.cap, 6, 0)'),
+    'The cell order no longer matches the header order above.',
+  );
 });
 
 test('the built page names the factory address', () => {
