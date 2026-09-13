@@ -124,7 +124,11 @@ attested operator and no later transaction can correct it, so the choice is now 
 vaults. **Member funds ARE at stake on that chain**: 20 USDG and 5 USDG, `idleUsdc()` on each.
 
 **What it proves:** the contracts deploy and wire on that chain, and that a vault can be created,
-funded and governed there. Both vaults have run governance rounds end to end. What it does NOT
+funded, governed and rebalanced there. Stated precisely, because an earlier draft of this line
+over-claimed while proposal 3 was still mid-round: three Rebalance proposals have been opened, two
+have executed, and exactly one has moved funds. Proposal 3 on vault two took 5 USDG of `idleUsdc`
+to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling 70 bps above the H-4
+floor. Proposal 1 executed carrying no orders; proposal 2 passed and expired unexecuted. What it does NOT
 prove is the custody shape: `operatorPayoutNote` in the Base Sepolia record requires a Safe rather
 than an EOA as the creator of a production vault, and that requirement was not met here, so the
 evidence is of the mechanism working, not of the intended operator model.

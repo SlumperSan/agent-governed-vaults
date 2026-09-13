@@ -111,12 +111,22 @@ number here; two things it carries are worth knowing before you open it:
 - **`factory.allowSubVaults()` reads false**, so this deployment is root-vaults-only — the opposite
   of the Base Sepolia record's `true`, and deliberately so in both places.
 
-**Vault #1 does not exist yet.** `factory.vaultCount()` reads 0. Creating it is the Safe
-`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do and nobody else's, for the reason §4 gives:
-`VaultCore.creator` is immutable and `createVault` takes the creator from `msg.sender`, so an EOA
-that creates it cannot hand it back. Until then no deposit, rebalance, fee accrual or exit has been
-exercised on chain 4663, no execution adapter is deployed there (§3 — adapters are per-vault, and
-`Deploy.s.sol` deploys none), and `scripts/test/claims-robinhood-deployment.test.mjs` stays red.
+**Two vaults exist, and neither was created by the Safe.** `factory.vaultCount()` reads 2:
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10) and
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12). This paragraph said vault #1 did not
+exist yet and that creating it was the Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do
+and nobody else's. The instruction was right and it was not followed: both carry the deployer EOA
+as `creator()`. The reason §4 gives is exactly why that cannot be undone: `VaultCore.creator` is
+immutable and `createVault` takes the creator from `msg.sender`, so an EOA that creates a vault
+cannot hand it back. The Safe could have done it, holding 0 ETH or not, because a Safe's
+`execTransaction` is gas-paid by the submitting owner; it has executed 65 transactions on this
+chain. **For any future vault this instruction still stands.**
+
+Deposits, a governance round and a filled rebalance have now been exercised on chain 4663:
+proposal 3 moved 5 USDG of `idleUsdc` into WETH on vault two. An execution adapter is deployed
+there, `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, but not as a singleton (§3: adapters are
+per-vault, `Deploy.s.sol` deploys none, and a creator supplies its own). No exit has settled and no
+ten-phase lifecycle artefact exists for this chain.
 
 **No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
 configures an x402 surface, and nothing recorded depends on one.
