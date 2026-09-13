@@ -1,0 +1,131 @@
+/* ===========================================================================
+   api-docs — the single section body for api.html, the agent-developer page
+   documenting the metered read.
+   ---------------------------------------------------------------------------
+   EVERY COLOUR IS var(--token) FROM tokens.css. No hex literal reaches this
+   file — `test/site.test.mjs`'s "src/tokens.css is the only stylesheet
+   permitted a colour literal" walks every .css under src/ by filesystem, not
+   by which page imports it, so this file is covered by that guard even though
+   api.html itself is outside that suite's PAGES array. Same for "no
+   stylesheet reaches off this origin": no @import, no absolute url().
+
+   A NOTE ON WORDING, carried over from RisksHero.module.css. The claims suite
+   reads stylesheets as prose, so a class name or a comment is as exposed as a
+   paragraph. The words below describe what a rule does, never what a reader
+   should feel about it.
+   =========================================================================== */
+
+.hero {
+  padding-block: var(--s8) var(--s6);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--ground) 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  max-width: none;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  line-height: 1.4;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.title {
+  font-size: min(var(--step-display), 3.5rem);
+  max-width: 14em;
+  margin: 0 0 var(--s5);
+  color: var(--ink);
+}
+
+.lede {
+  max-width: 62ch;
+  margin: 0;
+  font-size: clamp(1.0625rem, 1rem + 0.45vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.body {
+  padding-block: var(--s7);
+}
+
+.body + .body {
+  border-top: 1px solid var(--line);
+}
+
+.body h2 {
+  margin: 0 0 var(--s4);
+  max-width: none;
+}
+
+.body p {
+  margin: 0 0 var(--s4);
+  color: var(--muted);
+}
+
+.body p:last-child {
+  margin-bottom: 0;
+}
+
+/* The two-vault fact list. A <dl> rather than a table: each entry is one
+   address with two or three facts under it, not a grid of comparable rows. */
+.facts {
+  margin: var(--s5) 0 0;
+  display: grid;
+  gap: var(--s5);
+}
+
+.fact {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.fact dt {
+  margin: 0 0 var(--s2);
+  font-family: var(--mono);
+  font-size: var(--step-small);
+  color: var(--ink);
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step-small);
+  line-height: 1.55;
+}
+
+.fact dd + dd {
+  margin-top: var(--s2);
+}
+
+/* A verify command, shown as a scroll container rather than wrapped: a
+   command line broken across two lines is not the line a reader can paste. */
+.command {
+  display: block;
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  overflow-x: auto;
+  white-space: pre;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: var(--step-small);
+}
+
+.list {
+  margin: var(--s4) 0 0;
+  padding-left: var(--s5);
+  color: var(--muted);
+}
+
+.list li {
+  margin-bottom: var(--s3);
+  line-height: 1.55;
+}
+
+.list li:last-child {
+  margin-bottom: 0;
+}

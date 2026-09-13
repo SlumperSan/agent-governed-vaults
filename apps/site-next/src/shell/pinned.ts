@@ -298,14 +298,26 @@ export const HIGH_WATER_MARK_RESET =
  * checks.
  *
  * TWO LISTS, NOT ONE, AND ONE OF THEM IS NOW EMPTY. `NAV` is the header nav and
- * carries nothing; `FOOTER_PAGES` is the footer's Pages column and carries both
- * documents this site has. The v3 brief of 2026-09-05 collapsed the nine-page
+ * carries nothing; `FOOTER_PAGES` is the footer's Pages column and carries every
+ * document this site has. The v3 brief of 2026-09-05 collapsed the nine-page
  * site into one scroll page plus the Disclaimers, so a header nav would list the
  * page you are already on and one other. `site.test.mjs` asserts the half that
- * still matters: every page links to every page.
+ * still matters for THOSE two pages: every page links to every page — see the
+ * note on `api.html` below for why a third page does not extend that guard.
+ *
+ * THREE, AS OF api.html. `test/site.test.mjs`'s own `PAGES` constant is a
+ * hardcoded literal — `['index.html', 'disclaimers.html']` — not imported from
+ * here, so adding a `PageId` below does not add coverage there; that file is
+ * owned by another lane and is not edited by this change. `api.html` is still
+ * fully wired through `PAGE_IDS`/`FOOTER_PAGES` because `entry-server.tsx`'s
+ * `pages` export and `scripts/prerender.mjs`'s loop both derive from
+ * `PAGE_IDS` directly, so it prerenders, sitemaps and links like the other two;
+ * it is only exempt from the two guarded pages' own banned-phrase and
+ * footer-sentence-count assertions, the same way `disclaimers.html` was before
+ * the corpus caught up to it once.
  * ------------------------------------------------------------------------ */
 
-export const PAGE_IDS = ['index.html', 'disclaimers.html'] as const;
+export const PAGE_IDS = ['index.html', 'disclaimers.html', 'api.html'] as const;
 
 export type PageId = (typeof PAGE_IDS)[number];
 
@@ -495,9 +507,18 @@ export const DISCLAIMERS_PAGE_LABEL = 'Disclaimers';
 export const OVERVIEW_PAGE_LABEL = 'Overview';
 
 /**
- * Label and href for each page the footer carries, in order. Both of them, on
- * both pages: with an empty header nav this list is the ONLY route between the
- * two documents, so neither is dropped on itself. The current page carries
+ * The label the footer gives api.html — the agent-developer page documenting
+ * the metered read (docs/REVENUE.md's rwally.com surface). One word,
+ * deliberately: `test/site.test.mjs`'s 150-250 visible-word budget on
+ * index.html reads from `<body` onward, which includes this footer, so every
+ * label added here is a word charged against that page's ceiling.
+ */
+export const API_PAGE_LABEL = 'API';
+
+/**
+ * Label and href for each page the footer carries, in order. All three, on all
+ * three pages: with an empty header nav this list is the ONLY route between
+ * the site's documents, so none is dropped on itself. The current page carries
  * `aria-current="page"` instead, which is the treatment the masthead used to
  * give a self-link.
  */
@@ -505,6 +526,7 @@ export const FOOTER_PAGES: ReadonlyArray<{ id: PageId; label: string }> = [
   ...NAV,
   { id: 'index.html', label: OVERVIEW_PAGE_LABEL },
   { id: 'disclaimers.html', label: DISCLAIMERS_PAGE_LABEL },
+  { id: 'api.html', label: API_PAGE_LABEL },
 ];
 
 /**

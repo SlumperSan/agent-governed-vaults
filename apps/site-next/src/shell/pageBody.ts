@@ -24,6 +24,7 @@ import { type PageId } from './pinned';
 export const PAGE_COMPONENT: Record<PageId, string> = {
   'index.html': 'IndexPage',
   'disclaimers.html': 'DisclaimersPage',
+  'api.html': 'ApiPage',
 };
 
 /**
