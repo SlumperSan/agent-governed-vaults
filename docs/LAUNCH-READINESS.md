@@ -140,7 +140,7 @@ to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96
 Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
 **but it can never execute**, and an earlier draft of this line said "still executable" and
 contradicted this repository's own address book six files away. `Governance.execute` requires
-`keccak256(payload) == p.actionHash` (`Governance.sol:598`) and the committed payload carries a
+`keccak256(payload) == p.actionHash` (`Governance.sol:599`) and the committed payload carries a
 `SwapOrder.deadline` that `AggregationRouterAdapter` compares against `block.timestamp`. That
 deadline has passed and the payload cannot be re-dated without changing its hash, so the proposal is
 permanently unexecutable and simply waits out its window. That is precisely why vault two exists

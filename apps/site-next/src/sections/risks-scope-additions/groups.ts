@@ -26,10 +26,22 @@
  * one here would put a sentence in this build that the corpus does not carry,
  * and text-for-text sync with that corpus is the point of the pairing.
  *
- * WHERE IT CAME FROM. Every string below is lifted byte-for-byte from the
- * `Four groups this is wrong for` grid of `apps/site/disclaimers.html`.
- * Nothing here was rewritten, re-punctuated or tightened, and nothing here is
- * new: this section writes no sentence the current site does not already carry.
+ * WHERE IT CAME FROM. Every string below was lifted byte-for-byte from the
+ * `Four groups this is wrong for` grid of `apps/site/disclaimers.html` when
+ * this section was written, and nothing here was invented.
+ *
+ * THAT IS NO LONGER A STANDING GUARANTEE, and the unqualified version of this
+ * paragraph — "this section writes no sentence the current site does not
+ * already carry" — was false by 2026-09-13. CARD_1_BODY and its disclaimers
+ * counterpart have since diverged, each corrected on its own surface for the
+ * same fact: PR #256 rewrote CARD_1_BODY to "The two vaults on chain 4663 are
+ * capped at 50,000 USDG each", while the disclaimers paragraph was rewritten
+ * separately to "Both vaults on chain 4663 carry one". Both are true; neither
+ * is the other's bytes.
+ *
+ * Nothing enforces the pairing — no guard reads both surfaces and compares
+ * them — so treat this note as provenance, not as a live invariant, and
+ * re-read the counterpart before asserting the two agree.
  *
  * WHY BYTES RATHER THAN TEXT. `renderToString` escapes text children, so an
  * apostrophe reaches `dist/disclaimers.html` as `&#x27;` and a byte-comparison
@@ -104,8 +116,12 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    50000000000, so the figure is real rather than planned, and CARD_1_BODY
    now says so. The sibling comment in risks-register/entries.tsx:110-113
    already handled this tense correctly; this copy did not until 2026-09-13.
-   The figure comes out of CARD_1_BODY entirely
-   rather than being requalified. Carried verbatim from the "DAO treasuries
+   The trailing clause here used to say the figure "comes out of CARD_1_BODY
+   entirely rather than being requalified", and that was still false after the
+   first correction: CARD_1_BODY carries the figure today, as a deployed fact
+   ("The two vaults on chain 4663 are capped at 50,000 USDG each"), which is
+   what the sentence three lines above already says. The figure was REQUALIFIED,
+   not removed — that is the whole change. Carried from the "DAO treasuries
    and larger allocators" entry of the "Four groups this is wrong for" list
    on `apps/site/disclaimers.html` as of this deck — apps/site consolidated
    this list onto the Disclaimers page in an earlier round (PR #220) while
