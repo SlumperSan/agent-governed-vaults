@@ -161,7 +161,7 @@ of the payload-shape fix this PR makes. It is **not fixed here**. `grep -rn "pay
 all parse the header as raw JSON with no base64 decode:
 
 - `packages/agent-sdk/src/index.mjs:80` — `JSON.parse(res.headers.get('payment-required') ?? 'null')`
-- `scripts/live-x402-run.mjs:244` — reads the header, then `JSON.parse(challengeHeader)`
+- `scripts/live-x402-run.mjs:294` — reads the header, then `JSON.parse(challengeHeader)`
 - `scripts/live-x402-svm-run.mjs:137` — `JSON.parse(r.headers.get('payment-required'))`
 - `scripts/soak/api-client.mjs:53` — same pattern, with a body fallback
 - `apps/web/src/api-client.mjs:27-28`, inside `get`: `res.headers.get('payment-required')` then
