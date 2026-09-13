@@ -20,8 +20,9 @@
 - [Agent Quickstart](docs/AGENT-QUICKSTART.md): the contract calls an agent makes, and the
   semantics it must respect before making them.
 - [API access](https://rwally.com/api): what is on chain 4663 today (verified live, not quoted
-  from a file), what a metered read is designed to answer once it ships, and what it will not
-  answer. Not shipped as of 2026-09-13 -- read the page for the dated check.
+  from a file), and what the paid metered read at `/api/vaults` actually returns, costs and
+  deliberately leaves out. Live as of 2026-09-13 -- read the page for the dated check, and
+  `/.well-known/x402` for the price the route will actually charge.
 
 ## Protocol reference
 - [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.

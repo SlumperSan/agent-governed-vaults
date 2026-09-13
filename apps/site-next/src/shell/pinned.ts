@@ -510,9 +510,9 @@ export const OVERVIEW_PAGE_LABEL = 'Overview';
 
 /**
  * The label the footer gives api.html — the agent-developer page documenting
- * the metered read (the surface `docs/REVENUE.md` will document once it
- * exists; that file is absent from `protocol/main` as of 2026-09-13, which
- * api.html's own copy says explicitly — do not imply otherwise here). One
+ * the metered read (`docs/REVENUE.md` is the owner-facing runbook for that
+ * same surface; it merged in #267 on 2026-09-13, after this comment first
+ * said it was absent — read it there rather than restating it here). One
  * word, deliberately: `test/site.test.mjs`'s 150-250 visible-word budget on
  * index.html reads from `<body` onward, which includes this footer, so every
  * label added here is a word charged against that page's ceiling.
