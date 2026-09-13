@@ -255,10 +255,10 @@ function runVerifier({ fail = '', json = true, strict = false, cast = process.ex
   });
   assert.equal(r.error, undefined, String(r.error));
   const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
-  if (!json) return { status: r.status, text: r.stdout, calls };
+  if (!json) return { status: r.status, text: r.stdout, stderr: r.stderr, calls };
   const out = JSON.parse(r.stdout);
   assert.equal(out.passed + out.failed + out.errored + out.drift, out.total, 'the four counts must partition the results');
-  return { status: r.status, out, calls };
+  return { status: r.status, out, stderr: r.stderr, calls };
 }
 const byName = (out, re) => out.results.filter((r) => re.test(r.name));
 const details = (out) => out.results.map((r) => r.detail).join('\n');
@@ -375,20 +375,21 @@ test('a transport failure on aggregator() ALONE still goes through compareAggreg
   assert.doesNotMatch(pin.detail, /SWAPPED/);
 });
 
-test('a missing cast binary is ERR on every check and exit 2 — the text report says it is not a verdict', () => {
+test('a missing cast binary refuses at the chain-binding gate before any check runs — exit 1, not a per-check ERR', () => {
+  // Before this merge there was no chain-binding gate, so a missing cast fell straight into the
+  // sweep and every check ERR'd individually (exit 2). Now `readRpcChainId` is the FIRST cast
+  // invocation `main` makes (see the header: "the chain binding comes first, and it is a refusal
+  // rather than a check"), so a missing binary fails that read too, and `chainBindingVerdict`
+  // refuses -- exit 1, one line on stderr, no check rows, no JSON -- before any feed is read. That
+  // is a stronger guarantee than a per-check ERR: with no binary at all nothing was proven, not
+  // even the chain, so nothing is safe to report as a partial result.
   const cast = `definitely-not-a-real-binary-${'x'.repeat(8)}`;
-  const { status, out } = runVerifier({ cast });
-  assert.equal(status, 2);
-  assert.equal(out.failed, 0);
-  assert.equal(out.passed, 0);
-  assert.ok(out.errored > 0);
-  assert.ok(out.results.every((r) => r.error === true), details(out));
-  const { text, status: textStatus } = runVerifier({ cast, json: false });
-  assert.equal(textStatus, 2);
-  assert.match(text, /could not run/);
-  assert.match(text, /NOT a verdict on the config/);
-  assert.doesNotMatch(text, /do NOT deploy/, 'that sentence is the FAIL verdict, and nothing was read');
-  assert.doesNotMatch(text, /FAIL /);
+  const { status, text, stderr } = runVerifier({ cast, json: false });
+  assert.equal(status, 1, 'the chain id could not be read either, so the run refuses rather than sweeping');
+  assert.match(stderr, /could not read the chain id/);
+  assert.match(stderr, /UNPROVEN/);
+  assert.equal(text, '', 'a refusal prints no check rows at all -- an empty result list is never a silent pass');
+  assert.doesNotMatch(stderr, /do NOT deploy/, 'that sentence is the FAIL verdict, and nothing was read');
 });
 
 test('a real FAIL alongside an ERR exits 1 — an un-run check never masks a failed one', () => {

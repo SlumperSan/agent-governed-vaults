@@ -9,7 +9,7 @@
  * and exits before node goes looking for a script named "call". In any other process (the verifier
  * itself, the test runner) it recognises no subcommand and does nothing.
  *
- * Scenario. `FAKE_CAST_FAIL` is a `;`-separated list of `<signature|code>=<transport|revert|nocode>`
+ * Scenario. `FAKE_CAST_FAIL` is a `;`-separated list of `<signature|code|chain-id>=<transport|revert|nocode>`
  * naming which invocations fail and how. The three stderr wordings are the ones cast 1.7.1 printed
  * on 2026-09-04 against a local anvil (`revert`: a contract whose code is a bare REVERT; `nocode`:
  * an address with no code) and a local HTTP server answering 429 (`transport`), so what
@@ -17,16 +17,21 @@
  * `0x` and exits 0, which is what `cast code` really does for an address with no code.
  * `FAKE_CAST_LOG`, if set, receives one line per invocation so a test can count retries;
  * `FAKE_CAST_SEQ` names the address whose latestRoundData answers 0 (a sequencer feed).
+ *
+ * `chain-id`: the verifier's `main` reads this BEFORE any feed check (the `eth_chainId` refusal),
+ * so every scenario below must answer it or the run refuses before the check under test ever runs.
+ * Answers `FAKE_CAST_CHAIN_ID` (default '8453', matching this file's CONFIG.chainId) unless
+ * `FAKE_CAST_FAIL` names `chain-id` itself, which lets a test exercise the refusal path too.
  */
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
 
 const sub = path.basename(String(process.argv[1] ?? ''));
-if (sub === 'call' || sub === 'code') {
-  const addr = process.argv[2];
-  const key = sub === 'call' ? process.argv[3] : 'code';
-  if (process.env.FAKE_CAST_LOG) fs.appendFileSync(process.env.FAKE_CAST_LOG, `${sub} ${addr} ${key}\n`);
+if (sub === 'call' || sub === 'code' || sub === 'chain-id') {
+  const addr = sub === 'call' || sub === 'code' ? process.argv[2] : undefined;
+  const key = sub === 'call' ? process.argv[3] : sub;
+  if (process.env.FAKE_CAST_LOG) fs.appendFileSync(process.env.FAKE_CAST_LOG, `${sub} ${addr ?? ''} ${key}\n`.trim() + '\n');
 
   const fail = Object.fromEntries(
     (process.env.FAKE_CAST_FAIL ?? '').split(';').filter(Boolean).map((e) => e.split('=')),
@@ -44,6 +49,11 @@ if (sub === 'call' || sub === 'code') {
   if (mode) {
     fs.writeSync(2, STDERR[mode] ?? `${mode}\n`);
     process.exit(1);
+  }
+
+  if (sub === 'chain-id') {
+    fs.writeSync(1, `${process.env.FAKE_CAST_CHAIN_ID ?? '8453'}\n`);
+    process.exit(0);
   }
 
   const now = Math.floor(Date.now() / 1000);
