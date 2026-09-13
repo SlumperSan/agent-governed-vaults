@@ -232,9 +232,11 @@ const CONFIG = {
 /**
  * Run the verifier once. `fail` is the fake-cast scenario ("<sig>=<transport|revert|nocode>;…").
  * Returns the parsed --json report (or the text report when `json` is false), the exit status, and
- * the list of cast invocations the fake logged.
+ * the list of cast invocations the fake logged. `raw: true` skips JSON.parse and hands back stdout
+ * and stderr untouched — needed when the run is expected to REFUSE before printing any report at
+ * all (see the missing-cast-binary test below), where stdout is empty and parsing it would throw.
  */
-function runVerifier({ fail = '', json = true, strict = false, cast = process.execPath } = {}) {
+function runVerifier({ fail = '', json = true, strict = false, cast = process.execPath, raw = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vco-'));
   const cfgPath = path.join(dir, 'config.json');
   fs.writeFileSync(cfgPath, JSON.stringify(CONFIG));
@@ -255,6 +257,7 @@ function runVerifier({ fail = '', json = true, strict = false, cast = process.ex
   });
   assert.equal(r.error, undefined, String(r.error));
   const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+  if (raw) return { status: r.status, stdout: r.stdout, stderr: r.stderr, calls };
   if (!json) return { status: r.status, text: r.stdout, stderr: r.stderr, calls };
   const out = JSON.parse(r.stdout);
   assert.equal(out.passed + out.failed + out.errored + out.drift, out.total, 'the four counts must partition the results');
@@ -375,20 +378,21 @@ test('a transport failure on aggregator() ALONE still goes through compareAggreg
   assert.doesNotMatch(pin.detail, /SWAPPED/);
 });
 
-test('a missing cast binary refuses at the chain-binding gate before any check runs — exit 1, not a per-check ERR', () => {
-  // Before this merge there was no chain-binding gate, so a missing cast fell straight into the
-  // sweep and every check ERR'd individually (exit 2). Now `readRpcChainId` is the FIRST cast
-  // invocation `main` makes (see the header: "the chain binding comes first, and it is a refusal
-  // rather than a check"), so a missing binary fails that read too, and `chainBindingVerdict`
-  // refuses -- exit 1, one line on stderr, no check rows, no JSON -- before any feed is read. That
-  // is a stronger guarantee than a per-check ERR: with no binary at all nothing was proven, not
-  // even the chain, so nothing is safe to report as a partial result.
+// A missing `cast` binary used to reach the ERR machinery below (every helper's read fails, so
+// every check row comes back ERR, exit 2 — see the sibling PR that added it). Merged with the
+// chain-binding refusal above, it no longer gets that far: `readRpcChainId` calls `cast` too, so a
+// missing binary means the chain id can never be read, and `main` refuses BEFORE the sweep runs at
+// all — the same "unproven binding is not a binding" path a bad RPC hits, not the ERR path a single
+// bad feed read hits. That is a stricter fail-closed, not a weaker one: nothing is scored, and
+// nothing claims to have swept a config it never touched. Pinned against the refusal here rather
+// than against a full ERR sweep, since the refusal is what the merged script actually does.
+test('a missing cast binary refuses at the chain-binding step — exit 1, UNPROVEN, no check rows at all', () => {
   const cast = `definitely-not-a-real-binary-${'x'.repeat(8)}`;
-  const { status, text, stderr } = runVerifier({ cast, json: false });
-  assert.equal(status, 1, 'the chain id could not be read either, so the run refuses rather than sweeping');
-  assert.match(stderr, /could not read the chain id/);
+  const { status, stdout, stderr } = runVerifier({ cast, raw: true });
+  assert.equal(status, 1, 'a chain id that could never be read refuses; it does not sweep and score ERR rows');
+  assert.equal(stdout, '', 'a refusal prints no report at all, JSON or text — an empty result list is never a silent pass');
   assert.match(stderr, /UNPROVEN/);
-  assert.equal(text, '', 'a refusal prints no check rows at all -- an empty result list is never a silent pass');
+  assert.match(stderr, /Refusing rather than sweeping/);
   assert.doesNotMatch(stderr, /do NOT deploy/, 'that sentence is the FAIL verdict, and nothing was read');
 });
 
@@ -482,7 +486,7 @@ test('a config with no usable chainId refuses rather than binding to whatever an
 const VERIFIER = fileURLToPath(new URL('../verify-chainlink-oracle.mjs', import.meta.url));
 
 /** Run the verifier with `cast chain-id` stubbed to `rpcChainId`, against a written config. */
-function runVerifierChainBinding({ configChainId, rpcChainId }) {
+function runChainBindingVerifier({ configChainId, rpcChainId }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chain-binding-'));
   const stub = path.join(dir, 'stub-cast.cjs');
   // Written with console.log/console.error rather than fs.writeSync so the stub's own source needs
@@ -532,7 +536,7 @@ function runVerifierChainBinding({ configChainId, rpcChainId }) {
 }
 
 test('end to end: a 4663 config against a cast answering 8453 refuses, and reads no feed', () => {
-  const r = runVerifierChainBinding({ configChainId: 4663, rpcChainId: 8453 });
+  const r = runChainBindingVerifier({ configChainId: 4663, rpcChainId: 8453 });
   assert.equal(r.status, 1, `expected exit 1, got ${r.status}. stderr: ${r.stderr}`);
   assert.match(r.stderr, /WRONG CHAIN/);
   assert.match(r.stderr, /8453/);
@@ -545,7 +549,7 @@ test('end to end: a 4663 config against a cast answering 8453 refuses, and reads
 });
 
 test('end to end: matching ids proceed into the sweep, which then judges the config itself', () => {
-  const r = runVerifierChainBinding({ configChainId: 4663, rpcChainId: 4663 });
+  const r = runChainBindingVerifier({ configChainId: 4663, rpcChainId: 4663 });
   assert.doesNotMatch(r.stderr, /WRONG CHAIN|UNPROVEN/, 'a matching chain id must not be refused');
   assert.match(
     r.stdout,
