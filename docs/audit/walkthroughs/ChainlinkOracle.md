@@ -200,8 +200,12 @@ healthy at creation and dead later is the freeze above, not a rejected deploy.
 
 ## Shipped configuration (the actual numbers)
 
-Read from `contracts/config/base-mainnet.json` and `contracts/config/base-sepolia.json`, block
-`chainlinkOracle`, on `protocol/main`. These are deploy inputs, not contract constants.
+Base rows read from `contracts/config/base-mainnet.json` and `contracts/config/base-sepolia.json`,
+block `chainlinkOracle`, on `protocol/main` — deploy inputs, not contract constants. The Robinhood
+Chain row is different in kind: that chain carries a **live deployment** since 2026-09-05, so it is
+read from `contracts/config/deployments/robinhood-mainnet.json`'s `oracle` block, which records
+values read back from the deployed contract's own getters (`feedOf`, `sequencerUptimeFeed`) at
+block 54,991,182, not from the config file that was passed in at deploy time.
 
 | Chain | Asset | Feed | `heartbeatSeconds` | Band (WAD) |
 | --- | --- | --- | --- | --- |
@@ -209,6 +213,8 @@ Read from `contracts/config/base-mainnet.json` and `contracts/config/base-sepoli
 | Base mainnet | cbBTC | `BTC / USD` | `3600` (cadence 1200 s) | `1000e18 … 1_000_000e18` |
 | Base Sepolia | WETH | `ETH / USD` | `86_400` | `100e18 … 100_000e18` |
 | Base Sepolia | LINK | `LINK / USD` | `86_400` | `1e18 … 1000e18` |
+| Robinhood Chain mainnet (4663) | WETH | `ETH / USD` | `86_400` (= `MAX_HEARTBEAT` exactly) | `100e18 … 100_000e18` |
+| Robinhood Chain mainnet (4663) | cbBTC | `CBBTC / USD` | `86_400` (= `MAX_HEARTBEAT` exactly) | `1000e18 … 1_000_000e18` |
 
 - Mainnet configures the Base **L2 Sequencer Uptime Feed**, and the config calls it MANDATORY.
   Read the mechanism from the contract, not from that note: omitting the feed does not revert
@@ -217,9 +223,31 @@ Read from `contracts/config/base-mainnet.json` and `contracts/config/base-sepoli
   skipped on testnet** — deliberately, per the config note: the gate is exercised by
   `ChainlinkOracle.t.sol` against a mock (down / within-grace / up), and against three real Base
   outages in `ChainlinkOracleSequencerFork.t.sol`. **No testnet run is evidence about the gate.**
+- **Robinhood Chain mainnet (4663) has no sequencer feed either, but this is not a testnet skip —
+  it is a live mainnet deployment serving prices with the gate off.** `sequencerUptimeFeed` reads
+  back as `address(0)` from the deployed oracle at `0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB`
+  under an **owner-approved exemption dated 2026-09-04**, not an omission: Chainlink publishes no
+  L2 Sequencer Uptime Feed for chain 4663 and has said it will not add one, and the Base mainnet
+  feed address is not portable (it has zero bytes of code on 4663). `_requireSequencerUp` opens
+  `if (address(seq) == address(0)) return;`, so this oracle **fails open** on the sequencer
+  question on this chain — the gate is skipped, not tripped, and `GRACE_PERIOD` never applies.
+  `contracts/script/DeployChainlinkOracle.s.sol` normally requires a non-zero sequencer address on
+  every chain and refuses the deploy otherwise; chain 4663 was added to an explicit exemption
+  allowlist for this (PR #203, merged before the broadcast) rather than the check being weakened
+  globally. What is left carrying every bad-price case on this chain is the per-asset heartbeat and
+  the sane-price band, and the heartbeat sits at its loosest allowed value (below).
+- **Robinhood Chain mainnet's heartbeat is `MAX_HEARTBEAT` (`86_400` s) on both assets, the ceiling
+  the constructor accepts, not a mid-range choice.** Base mainnet has real headroom (`3600` against
+  a measured ~1200 s cadence); this chain does not — its feeds were measured publishing on the same
+  86,400 s cadence, so a price up to a full day old is accepted without reverting, by design, on the
+  owner's decision recorded in `docs/NOW.md`.
+- **The cbBTC feed on 4663 is named `CBBTC / USD`, not `BTC / USD`** — a different feed than the one
+  Base mainnet wires to the same asset symbol. `_requireUsdQuote` only checks the USD-quote suffix,
+  so this passes the same way Base's does; it is called out because a reader who assumes "the cbBTC
+  feed" is one fixed Chainlink feed across chains would be wrong.
 - **cbETH is not listed**, and this is the single-provider tradeoff made concrete: Base publishes
   only `CBETH / ETH`, and a single-feed-per-asset oracle cannot compose `cbETH/ETH × ETH/USD`.
-- Every shipped band sits at exactly `MAX_BAND_RATIO` (1000×).
+- Every shipped band sits at exactly `MAX_BAND_RATIO` (1000×), on every chain including 4663.
 
 ## Review focus
 
