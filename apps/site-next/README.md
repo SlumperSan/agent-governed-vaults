@@ -111,14 +111,14 @@ answers 200, so it appears in no log and no crawl.
 **Three things about that file are load-bearing, and none of them fails the build if undone.**
 `apps/site-next/test/edge.test.mjs` is what fails instead.
 
-1. **It is built, so it carries the chrome.** `vite.config.ts` names it as a third entry and
-   `scripts/prerender.mjs` splices the rendered markup in, the same as the two pages. A hand-written
+1. **It is built, so it carries the chrome.** `vite.config.ts` names it as an entry alongside every
+   real page and `scripts/prerender.mjs` splices the rendered markup in, the same as the others. A hand-written
    file in `public/` could not link the content-hashed stylesheet, and `style-src 'self'` with no
    `unsafe-inline` leaves it no other way to be styled.
 2. **Its in-site links are root-absolute.** Pages renders this document **at the path that was asked
    for** rather than redirecting, so `/a/b/c` renders it and a relative `index.html` would resolve to
    `/a/b/index.html` — a second 404, under a lost reader. `siteHref` in `src/shell/pinned.ts` is what
-   rewrites them, and it is the identity function on the two real pages, which must keep emitting the
+   rewrites them, and it is the identity function on every real page, which must keep emitting the
    byte-exact `href="index.html"` that `site.test.mjs` matches.
 3. **It is `noindex` and names no canonical.** It is served at every address that does not exist, so
    there is no URL it could claim that is true of the request that produced it.

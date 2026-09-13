@@ -691,17 +691,19 @@ const SITE_NEXT = 'apps/site-next';
 // IT WAS NINE PAGES UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site to
 // "ONE cinematic scroll page + the app button + a serious Disclaimers page", and how-it-works,
 // agents, who-its-for, operators, faq, vision and status were retired. `apps/site-next/public/
-// _redirects` 301s every one of their URLs, and `PAGE_IDS` in `apps/site-next/src/shell/pinned.ts`
-// is the two entries below.
+// _redirects` 301s every one of their URLs.
 //
 // SHRINKING THIS LIST DOES NOT SHRINK WHAT IS WALKED, which is the thing to understand before
 // editing it. `publicSurfaces()` enumerates the filesystem; it walks whatever `.md`, `.html`,
 // `.txt` and `.json` files exist. This list is not the walk, it is the ASSERTION that the walk
 // reached the pages the redesign actually publishes. Its only failure mode is being longer than
-// reality, which reds honestly, or shorter, which is the silent one. The two names below come from
-// `PAGE_IDS`, so the way to keep it in step is to keep reading them from there.
+// reality, which reds honestly, or shorter, which is the silent one. The `PageId` names below come
+// from `PAGE_IDS` in `apps/site-next/src/shell/pinned.ts`, so the way to keep this list in step is
+// to keep reading them from there — DELIBERATELY NOT BY COUNT, because a spelled-out count in this
+// comment is exactly the kind of claim that goes stale silently the moment a page is added, which is
+// what happened here once already (see the note below).
 //
-// THE THIRD NAME IS NOT A PAGE, AND IT IS HERE ANYWAY. `404.html` is not in
+// ONE NAME HERE IS NOT A PAGE, AND IT IS HERE ANYWAY. `404.html` is not in
 // `PAGE_IDS` — it is in no nav, no sitemap and none of the per-page guards in
 // `apps/site-next/test/site.test.mjs`, because it is a document the site is
 // never navigated TO. `src/shell/pinned.ts` carries the reason under
@@ -715,7 +717,15 @@ const SITE_NEXT = 'apps/site-next';
 // does not exist, so its sentences are public surface with exactly the standing
 // of the homepage's. Being outside `PAGE_IDS` is precisely what would have made
 // it the silent omission this test's own comment warns about.
-const PRERENDERED = ['index.html', 'disclaimers.html', '404.html'].map(
+//
+// 'api.html' ADDED 2026-09-13, caught in PR #274's review rather than by this test itself: adding a
+// third `PageId` to `pinned.ts` grew what `PAGE_IDS` publishes without growing this list, so
+// `dist/api.html` was already inside `publicSurfaces()`'s walk (coverage happened) while this test
+// kept asserting only the two names it was written with (the ASSERTION that coverage happened did
+// not) — exactly the silent-shrink failure mode the paragraph above names. The paragraph above used
+// to say "the two entries below" and "the two names below come from `PAGE_IDS`" — both went false
+// the same moment this line did, which is why neither says "two" (or any number) any more.
+const PRERENDERED = ['index.html', 'disclaimers.html', 'api.html', '404.html'].map(
   (page) => `${SITE_NEXT}/dist/${page}`,
 );
 

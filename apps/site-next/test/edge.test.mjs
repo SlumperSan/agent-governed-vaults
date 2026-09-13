@@ -9,12 +9,12 @@
  *   `public/_redirects`    the static rule table, copied to `dist/_redirects`
  *
  * WHY A SECOND FILE RATHER THAN MORE OF `site.test.mjs`. That suite iterates
- * `PAGES`, the two documents the site is navigated to, and nearly every guard in
+ * `PAGES`, the real documents the site is navigated to, and nearly every guard in
  * it is written as `for (const p of PAGES)`. Neither artefact here is one of
  * those pages: the 404 document is deliberately outside `PAGE_IDS` (see
  * `NOT_FOUND_ID` in `src/shell/pinned.ts`), and `_redirects` is not a page at
- * all. Adding them to `PAGES` would put a link to the 404 document in both real
- * pages' navs, because that suite asserts every page links to every other.
+ * all. Adding them to `PAGES` would put a link to the 404 document in every real
+ * page's nav, because that suite asserts every page links to every other.
  *
  * =========================================================================
  * THE DEFECT THIS FILE EXISTS FOR, measured against the live site 2026-09-09
@@ -83,8 +83,8 @@ const SITE = path.join(APP, 'dist');
 /** The one filename this whole file is about. Pages recognises no other. */
 const NOT_FOUND = '404.html';
 
-/** The two real pages, for the "a destination exists" check on the rule table. */
-const PAGES = ['index.html', 'disclaimers.html'];
+/** Every real page, for the "a destination exists" check on the rule table. */
+const PAGES = ['index.html', 'disclaimers.html', 'api.html'];
 
 /**
  * The hosts this site may point a reader at, NAVIGATION ONLY — nothing on this
@@ -207,7 +207,7 @@ t('every link on the 404 document is root-absolute, or a permitted off-site host
     const v = m[1];
     if (v === '' || v.startsWith('#')) continue; // in-page anchor: correct as-is
 
-    // OFF-SITE: held to the same rule as the two real pages rather than waved
+    // OFF-SITE: held to the same rule as the real pages rather than waved
     // through. `no external requests` in site.test.mjs iterates PAGES, which
     // this document is not in, so without this line the one page nothing else
     // guards would be the one page free to reach off this origin.

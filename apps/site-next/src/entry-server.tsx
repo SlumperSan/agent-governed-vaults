@@ -36,9 +36,9 @@ export function render(page: PageId): string {
  *
  * It is rendered through its own function rather than through the loop above
  * because it is not a `PageId`: it is in no nav, in no sitemap, and in none of
- * the per-page guards that iterate the two public documents. `NOT_FOUND_ID` in
+ * the per-page guards that iterate the public documents. `NOT_FOUND_ID` in
  * `src/shell/pinned.ts` carries the full reason, including what `site.test.mjs`
- * would demand of the two real pages if this id joined `PAGE_IDS`.
+ * would demand of the real pages if this id joined `PAGE_IDS`.
  *
  * It also takes its body by plain import rather than through `pickPage`. The
  * glob machinery exists so the build survives a page file that has not been

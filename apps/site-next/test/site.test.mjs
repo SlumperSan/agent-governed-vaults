@@ -234,7 +234,13 @@ const REPO = path.resolve(APP, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// TWO, and the count is written down in exactly one place: this array's length, asserted below.
+// THE COUNT IS WRITTEN DOWN IN EXACTLY ONE PLACE: this array's length, asserted below — DELIBERATELY
+// not spelled out as a number up here, because a spelled-out count in a comment is a claim that goes
+// stale silently, and that is exactly what happened to this line once already: it read "TWO" from
+// 2026-09-05 until 2026-09-13, when 'api.html' (PR #274, the agent-developer page documenting the
+// metered read) became the third `PageId` in `pinned.ts` and this line did not change with it — a
+// false comment sitting directly above a `PAGES` array it was describing, in the same file whose own
+// closing paragraph below names exactly this failure mode.
 //
 // IT WAS NINE UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site: "ONE
 // cinematic scroll page + the app button + a serious Disclaimers page." how-it-works, agents,
@@ -251,7 +257,7 @@ const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 //
 // Prose in this file says "every page" rather than a number wherever the number is not the thing
 // being asserted: a spelled-out count in a comment is a claim that goes stale silently.
-const PAGES = ['index.html', 'disclaimers.html'];
+const PAGES = ['index.html', 'disclaimers.html', 'api.html'];
 const DISCLAIMERS_PAGE = 'disclaimers.html';
 
 /**
@@ -517,7 +523,7 @@ function scrubPermitted(text) {
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
 t('every public page exists in the build', () => {
-  assert.equal(PAGES.length, 2, 'PAGES must list every public page; it is two since the v3 brief of 2026-09-05 collapsed the site to one scroll page plus Disclaimers');
+  assert.equal(PAGES.length, 3, 'PAGES must list every public page; it was two since the v3 brief of 2026-09-05 collapsed the site to one scroll page plus Disclaimers, and became three on 2026-09-13 when api.html (PR #274, the agent-developer page documenting the metered read) shipped as a third PageId in pinned.ts without a matching update here — this line asserted 2 while 3 pages existed, which is exactly the false-tripwire failure this array\'s own header comment warns about');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
@@ -714,7 +720,8 @@ t('DEPLOYED_LINE appears exactly where pinned, inside main and never in the foot
  */
 // RENAMED AND HALVED 2026-09-05: it was `the two standing sentences are stated once each`, and one
 // of the two was the no-token sentence. What replaced that half is not nothing, and it is not a
-// weaker check either: the sentence must now be ABSENT from both pages, and the token block that
+// weaker check either: the sentence must now be ABSENT from every page (the loop below reads PAGES,
+// so it is checked on all of them regardless of how many that is today), and the token block that
 // stands in its place is pinned by the RWLY leg further down, which requires the address, the fixed
 // supply figure and the creator-position disclosure to be on the page by name.
 t('the licence sentence is stated on the Disclaimers page, and the retired no-token sentence on neither', () => {

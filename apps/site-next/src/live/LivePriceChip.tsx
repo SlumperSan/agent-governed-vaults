@@ -13,8 +13,8 @@
  * rather than a bug. `#live` is a section of index.html. From index.html the
  * chip is a same-page jump; from disclaimers.html the same href would scroll to
  * nothing, so it resolves to `index.html#live`. The header is identical across
- * both pages, which is the brief's requirement, and the one link inside it that
- * points at a place still points at that place from either page.
+ * every page, which is the brief's requirement, and the one link inside it that
+ * points at a place still points at that place from any of them.
  *
  * IT RENDERS NOTHING UNTIL THERE IS SOMETHING TRUE TO RENDER. No zero, no dash,
  * no shimmering rectangle shaped like a price. The slot holds its width from the
