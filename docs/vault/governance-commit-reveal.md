@@ -1,8 +1,10 @@
 # Governance (Commit-Reveal)
 
-**Definition.** The stake-weighted proposal system in [[governance]]: agents commit a hashed vote,
-reveal it after a deadline, and a passing proposal executes after a timelock — the only route to
-`executeRebalance` and to config changes on a [[vaultcore]].
+**Definition.** The proposal system in [[governance]]: members commit a hashed vote, reveal it
+after a deadline, and a passing proposal executes after a timelock — the only route to
+`executeRebalance` and to config changes on a [[vaultcore]]. Weighting is stake-based only at five
+or more members; below `SIGNER_REGIME_BELOW` (5) `finalize` takes a signer-count-plus-stake branch,
+and a `RuleChange` needs full consensus — three regimes, not one.
 
 **Why it matters.** Governance capture is the master risk: whoever controls the vote controls the
 rebalance calldata. The oracle slippage bound (H-4) is what stops capture from becoming a *drain*,
@@ -41,7 +43,7 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 - Denominator = **voting-eligible stake at the proposal snapshot**, which *excludes* pending
   deposits and Mode-F-locked shares ([[two-mode-exits]]). Registered parent vaults are excluded
   too (GA-1). `QUORUM_FLOOR_BPS = 2_500` (25% protocol floor).
-- **< 5 members → absolute signer counts** (`SIGNER_REGIME_BELOW = 5`). The signer regime was
+- **< 5 members → signer count plus stake** (`SIGNER_REGIME_BELOW = 5`). The signer regime was
   hardened (H-8): the FOR side must also clear the stake quorum (blocks near-zero-stake sybils
   passing via head count) and passes on outright FOR-stake majority (blocks dust holders locking
   out a dominant member). Regime-flip residual (buy the 5th seat) is a **listing constraint**:
@@ -49,7 +51,7 @@ proposer-asserted text (VO-4), and it selects the quorum regime and payload shap
 
 ## Standing defaults
 
-Count toward tally, **never quorum**; expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
+Count toward tally, and **never toward quorum at five or more members** (that branch counts `revealedWeight` only, VO-2/K-3). Below `SIGNER_REGIME_BELOW` they DO bear on passage: `finalize`'s sub-five branch tests `forWeight`, which includes applied standing defaults, so a Rebalance can pass on a >50% pre-declared-default majority with **zero live reveals**. `Governance.finalize` names this asymmetry as intended, not overlooked — defaults are Rebalance-only, must predate the proposal, and only ever widen the passing set. Expire 72h after being set (`DEFAULT_TTL = 72 hours`); valid
 only for Rebalance proposals; must predate the proposal (`setAt < createdAt`, G4 fix). Offline
 agents auto-abstain otherwise (K-3, **ACCEPTED**).
 
@@ -63,8 +65,12 @@ arrival). Re-checked at tally time against the snapshot, not just at delegation 
 ## Timelock
 
 Post-vote, vault-configurable, `TIMELOCK_HARD_CAP = 30 days`. **Mode-F redemption queueing begins
-at vote passage, not at timelock expiry** — so exit-before-execution is always available (VO-8),
-the subtlest economic seam in the design.
+at the active proposal's reveal start** (`Governance.hasPendingExecution`, true from
+`commitDeadline`), not at vote passage and not at timelock expiry — and for any proposal type, not
+only a rebalance. So an exit taken from reveal start onward does not escape the pending action: it
+is queued and forward-priced (VO-8). That is available whenever the oracle is healthy; a stale-feed
+or downed-sequencer freeze reverts the exit path for a basket-holding vault (SF-2/K-4). The subtlest
+economic seam in the design.
 
 ## Module-call safety
 
@@ -75,7 +81,7 @@ member liveness (MO-1).
 
 ## Links
 
-- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at passage) · [[nav-and-shares]]
+- [[architecture-overview]] · [[two-mode-exits]] (Mode-F queue at reveal start) · [[nav-and-shares]]
   (eligible-stake snapshot) · [[fees-and-carry]] · [[sub-vaults]]
 - Contracts: [[governance]] · [[vaultcore]]
 - Security: [[c2-unbounded-governance]] · [[c5-vote-after-exit]] · [[threat-model-commitments]]

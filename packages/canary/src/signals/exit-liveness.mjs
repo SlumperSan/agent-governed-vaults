@@ -23,6 +23,9 @@
  *   FROZEN (StaleOracle) — the SF-2/K-4 breaker. By design, but it IS a live capital freeze, so it
  *           is `skipped` and attributed to the oracle signal, which pages for it. Never reported
  *           as OK — an operator must not read "exits fine" while capital is frozen.
+ *   BLIND  (the probe never reached the chain: 429, timeout, dropped socket) — DETECTOR BROKEN.
+ *           Nothing about the contract was observed, so there is no verdict to give. Told apart by
+ *           `kind` from the reader, never by `ok` alone: every one of these also yields `ok:false`.
  *   FAULT  (everything else: Reentrancy, Panic, Error(string), an unrecognized selector, or
  *           EMPTY returndata) — ALERT. Empty/unrecognized returndata is the actual H-1 signature
  *           (a module that ran out of its gas cap or bombed returndata), so it must land here.
@@ -34,7 +37,7 @@
  */
 
 import { REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS } from '../abis.mjs';
-import { ok, alert, skipped, shortAddr } from '../signal.mjs';
+import { ok, alert, skipped, detectorBroken, shortAddr } from '../signal.mjs';
 
 export const SIGNAL = 'exit-liveness';
 
@@ -100,6 +103,26 @@ export async function checkExitLiveness({ reader, vault, shareBook, creator, pro
       signal: SIGNAL, vault,
       message: `exits live on vault ${shortAddr(vault)}: requestExit(${shares}) static-calls clean as ${shortAddr(probe.member)}`,
       measured: 'no revert', threshold: 'no non-gate revert', detail,
+    })];
+  }
+
+  // THE PROBE DID NOT REACH THE CHAIN. `ok:false` is also what a 429, a timeout and a dropped
+  // socket produce, and none of them is evidence about `requestExit`. Before this branch existed
+  // all three landed in the FAULT alert below and paged "EXIT LIVENESS BROKEN … (H-1 regression)"
+  // — and worse than merely unclassified: `extractRevertData` scrapes hex out of the error text,
+  // viem's transport errors quote the request, so the "revert selector" it recovered was this
+  // module's OWN `encodeRequestExit` calldata. The reader now nulls `data` on a transport failure
+  // (reader.mjs), which is what makes the ordering here safe rather than the ordering itself: with
+  // no returndata to misread, the gate and frozen branches below cannot fire on a network error.
+  //
+  // This is `detectorBroken`, not `skipped`: the sentinel is blind, and transitions.mjs re-asserts
+  // a blind detector on a backoff instead of reporting it once. A rate-limited canary must stay
+  // visible — it just must not name a protocol fault it did not observe.
+  if (res.kind === 'transport') {
+    return [detectorBroken({
+      signal: SIGNAL, vault,
+      message: `exit-liveness sentinel BLIND on vault ${shortAddr(vault)}: the requestExit(${shares}) probe as ${shortAddr(probe.member)} did not reach the chain (${res.error ?? 'no error text'}), so no revert was observed and nothing was learned about H-1. This vault is UNMONITORED for exit liveness this sweep, it is not healthy — and this is NOT evidence of a fault`,
+      detail: { ...detail, kind: 'transport', reason: 'unreadable' },
     })];
   }
 

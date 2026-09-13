@@ -1,0 +1,15 @@
+{
+  "network": "solana-mainnet",
+  "chainName": "Solana mainnet-beta",
+  "scheme": "exact-svm",
+  "x402": {
+    "enabled": true,
+    "note": "Declared explicitly on 2026-09-09 rather than left to the enabled-by-default. Before this file existed the resolver did Number('solana-mainnet'), got NaN, and returned enabled with no config consulted -- fail-closed, but unconfigurable: no file anywhere could have turned Solana metering off. Nothing is deployed on Solana; this records the payment capability only."
+  },
+  "settlement": {
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "assetNote": "Circle USDC on Solana mainnet-beta, 6 decimals. NOT READ BACK FROM CHAIN YET -- this is the widely published mint address and it is recorded here as a starting point, not as a verified fact. Verify with getAccountInfo against the SPL token program and confirm decimals before any sentence on a public page cites it.",
+    "decimals": 6,
+    "schemeNote": "x402 exact on SVM is an SPL TransferChecked. The client builds and partially signs the transaction; the facilitator adds its own signature as fee payer and submits. That is a different trust shape from the EVM path, where the client signs an EIP-3009 authorization and never builds a transaction at all -- on Solana the facilitator pays the network fee, so it needs a funded keypair and a rate limit."
+  }
+}

@@ -2,10 +2,15 @@
 /**
  * Demo scenario — three vaults chosen to exercise every branch of the policy in one pass.
  *
- * This is FIXTURE DATA, not live protocol state. The contracts are not deployed yet (issue #10,
- * `VaultFactory` over the EIP-170 cap), so there is no chain to read and no indexer with real
- * history. Rather than run the demo against an empty snapshot — which produces "0 vaults known"
- * and an incoherent narrative — the same events are folded through the REAL projection code
+ * This is FIXTURE DATA, not live protocol state. (`contracts/config/deployments/` holds
+ * `base-sepolia.json`, a testnet trial, and `robinhood-mainnet.json`, a Robinhood Chain mainnet
+ * deployment of 2026-09-05 whose singletons are wired and on which no vault has been created yet.
+ * Nothing here is read from either.) But no
+ * deployment retires this file. The scenario below needs three vaults holding a specific joint state at
+ * the same moment — an unattested `operatorId 0`, an operator whose realized net has gone
+ * negative, and a Rebalance proposal in its reveal phase against a commit THIS agent already made
+ * — and no live chain can be relied on to be holding that when a demo happens to run. So the same
+ * events are folded through the REAL projection code
  * (`seed-snapshot.mjs` → `packages/indexer/src/projections.mjs`) so the API serves them exactly as
  * it would serve real ones, and the chain half comes from the stub reader, which marks every value
  * it produces `[stub-chain]`.
@@ -115,7 +120,8 @@ export function demoGovernance(nowSec) {
       revealed: null,
     },
     [DEMO_VAULTS.helios]: {
-      // A passed-but-unexecuted rebalance: this is what turns an exit into Mode F (§4.4).
+      // This vault has a pending execution, which is what turns an exit into Mode F (§4.4) —
+      // here a passed-but-unexecuted rebalance, but any active proposal past reveal start does it.
       hasPendingExecution: true,
       activePid: DEMO_PID,
       proposal: {

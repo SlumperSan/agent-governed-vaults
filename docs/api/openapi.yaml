@@ -6,10 +6,13 @@ info:
     Read API over the indexed state of the agent-governed index-vault protocol. Read routes are
     metered with x402 (V2): an unpaid request returns 402 with a `PAYMENT-REQUIRED` challenge;
     the client re-requests with a `PAYMENT-SIGNATURE` header carrying an EIP-3009
-    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. The server
-    holds no keys and moves no funds. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
+    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. In the
+    launch modes (`FACILITATOR=stub`, `FACILITATOR=http`) the server holds no keys and moves no
+    funds; the opt-in `FACILITATOR=svm` mode holds a Solana fee-payer keypair and pays network
+    fees. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
   license:
-    name: BUSL-1.1
+    name: MIT
+    identifier: MIT
 servers:
   - url: https://api.example.xyz
     description: Placeholder — set to the deployed API origin.
@@ -27,7 +30,8 @@ paths:
                 type: object
                 properties:
                   x402Version: { type: integer, enum: [2] }
-                  price: { type: object }
+                  enabled: { type: boolean, description: "false = this chain does not meter reads over x402; price is null and every route is listed under routes.free" }
+                  price: { type: [object, 'null'] }
                   routes: { type: object }
                   openapi: { type: string }
                   llms: { type: string }
@@ -79,8 +83,10 @@ paths:
       summary: >
         Operational counters (free, rate-limited). Prometheus text exposition format, readable
         with plain curl. `vault_indexer_snapshot_age_seconds` is the indexer-lag signal: the API
-        holds no RPC client by design, so it reports how long ago the snapshot was written rather
-        than claiming a blocks-behind figure it cannot know. See docs/RUNTIME.md section 8.
+        holds no client for the indexed chain by design (the opt-in `FACILITATOR=svm` mode's Solana
+        `Connection` is a node on a different chain and answers nothing about this one), so it
+        reports how long ago the snapshot was written rather than claiming a blocks-behind figure it
+        cannot know. See docs/RUNTIME.md section 8.
       operationId: metrics
       responses:
         '200':
@@ -116,6 +122,32 @@ paths:
               schema: { $ref: '#/components/schemas/VaultView' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '404': { description: Unknown vault }
+  /vaults/{address}/members/{member}:
+    get:
+      summary: One member's position in one vault, and the weight of it that can vote (metered)
+      operationId: getMemberPosition
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+        - name: member
+          in: path
+          required: true
+          schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+      responses:
+        '200':
+          description: >-
+            Member position. A member with no shares in the vault is not an error: the route
+            returns zeros rather than a 404.
+          headers:
+            payment-response:
+              schema: { type: string }
+              description: JSON receipt of the settled x402 payment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberPosition' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
   /operators/leaderboard:
     get:
       summary: Operator leaderboard — all attested vaults, no cherry-picking (metered)
@@ -177,7 +209,7 @@ components:
         scheme: { type: string, enum: [exact] }
         x402Version: { type: integer, enum: [2] }
         asset: { type: string, description: USDC token address }
-        amount: { type: string, description: integer, USDC base units (6dp) }
+        amount: { type: string, description: "integer, USDC base units (6dp)" }
         payTo: { type: string }
         network: { type: string, example: base }
         nonce: { type: string }
@@ -205,15 +237,101 @@ components:
       properties:
         vault: { type: string }
         creator: { type: string }
+        usdc: { type: string, description: the vault's USDC token address }
         operatorId: { type: integer }
-        totalShares: { type: string, description: WAD, decimal string }
+        totalShares: { type: string, description: "WAD, decimal string" }
         idleUsdc: { type: string }
         memberCount: { type: integer }
         pendingCount: { type: integer, description: deposits in the 4h observation window }
         capacityCapUsdc: { type: string, description: "max NAV in USDC base units; 0 = uncapped" }
-        parent: { type: [string, 'null'], description: sub-vault parent, or null for a root }
+        parent: { type: [string, 'null'], description: "sub-vault parent, or null for a root" }
         depth: { type: integer, description: 0 root … 2 grandchild }
         holders: { type: integer }
+        exitQueuedCount: { type: integer, description: lifetime ExitQueued events (Mode-F exit requests) }
+        exitSettledCount: { type: integer, description: lifetime ExitSettled events (Mode-F + Mode-I) }
+        exitQueuedOutstanding:
+          type: integer
+          description: >-
+            queued Mode-F exits not yet settled — a LEVEL that rises and falls, not a lifetime
+            total (contrast exitQueuedCount, which only ever rises). This is the stranded-queue
+            signal: a value that stays high while exitSettledCount does not move means members are
+            queued and not being paid out.
+        modeFSettledCount:
+          type: integer
+          description: >-
+            of exitSettledCount, the settlements that resolved a queued Mode-F exit. The Mode-F
+            share in basis points is modeFSettledCount * 10000 / exitSettledCount, and is a
+            partition, so it never exceeds 10000. UNDEFINED when exitSettledCount is 0 — compute
+            the share only when there is at least one settled exit.
+        activeProposal:
+          type: [object, 'null']
+          description: >-
+            the vault's currently active governance proposal, or null when there is none.
+          properties:
+            pid: { type: integer }
+            vault: { type: string }
+            ptype: { type: integer, description: "0 Rebalance, 1 RuleChange, 2 ChildAllocation" }
+            proposer: { type: string }
+            status: { type: string, enum: [Active, Passed, Defeated, Executed, Expired] }
+            forWeight: { type: string, description: decimal string — vote weights serialize as strings }
+            againstWeight: { type: string }
+            revealedWeight: { type: string }
+            revealedVoters: { type: integer }
+    MemberPosition:
+      type: object
+      description: >-
+        A member's holding in one vault, and separately the part of it that carries a vote. The two
+        are different numbers and the difference is silent on-chain, which is what this schema
+        exists to make legible: a member can hold a fifth of a vault and have a voting-eligible
+        weight of zero.
+      properties:
+        vault: { type: string }
+        member: { type: string }
+        shares:
+          type: string
+          description: >-
+            WAD, decimal string. Shares held, INCLUDING any locked by a queued exit: shares burn at
+            settlement, never at request.
+        shareOfVaultBps:
+          type: integer
+          description: >-
+            shares as a fraction of totalShares, in basis points. A holding fraction, NOT a voting
+            fraction — it is denominated in total supply, which includes locked and non-voting
+            stake.
+        queuedExitShares:
+          type: [string, 'null']
+          description: >-
+            decimal string — shares locked by an outstanding queued Mode-F exit, 0 when there is
+            none. Mode-F queues an exit instead of settling it when the vault has a pending
+            execution; the shares stay outstanding and still gain and lose with the vault, and are
+            excluded from voting-eligible stake until the exit settles. Settlement is a separate
+            settleQueuedExit(member) call that anyone can make once no execution is pending, and a
+            queued exit cannot be cancelled. null in the one case where the amount is UNKNOWN
+            rather than zero — the indexer knows this member has an outstanding queued exit but
+            not its size, which happens after resuming a state snapshot written before queued-exit
+            sizes were recorded. Do not read that null as 0; votingEligibleNote always says so, and
+            votingEligibleShares is null alongside it.
+        votingEligibleShares:
+          type: [string, 'null']
+          description: >-
+            decimal string — the live voting weight, mirroring VaultCore.votingEligibleShares:
+            zero when the member is the vault's registered parent vault (a non-voting member), and
+            otherwise shares minus queuedExitShares. This is the LIVE term only. Governance bounds a
+            vote by min(snapshot weight at proposal creation, this), so a non-zero value here does
+            not on its own establish that a vote would carry weight; a zero does establish that it
+            would not. null when queuedExitShares is null, i.e. when the withheld amount is unknown
+            — some non-zero part of the holding is locked and the exact remainder is not derivable
+            here, so no number is served rather than one that would over-report the weight that
+            votes. Read VaultCore.votingEligibleShares(member) on the vault for the exact figure.
+            The parent-vault zero is still exact in that state, because the contract returns 0 for
+            the parent before any subtraction.
+        votingEligibleNote:
+          type: [string, 'null']
+          description: >-
+            null when nothing is withheld and nothing is unknown. Otherwise a human-readable
+            sentence naming what is withheld or unknown, why, and how it resolves — so a zero or
+            absent voting weight beside a material holding is explained rather than merely
+            reported. It is never null while votingEligibleShares is null.
     LeaderboardRow:
       type: object
       properties:

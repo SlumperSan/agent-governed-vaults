@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps } from '../src/projections.mjs';
+import { applyAll, leaderboard, vaultView, emptyState, apply, memberPosition, modeFExitRateBps, queuedExitBacklog, MAX_TRACKED_ADAPTERS } from '../src/projections.mjs';
 
 const V = '0x' + '1'.repeat(40);
 const A = '0x' + 'a'.repeat(40);
@@ -145,7 +145,7 @@ test('standing default counts in tally but not quorum (revealedWeight)', () => {
   assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
 });
 
-test('ExitQueued + ExitSettled counts drive an approximate modeFExitRateBps', () => {
+test('a queued exit settled by its own member is counted as Mode-F', () => {
   const s = applyAll([
     ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
     ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
@@ -153,7 +153,22 @@ test('ExitQueued + ExitSettled counts drive an approximate modeFExitRateBps', ()
   ]);
   assert.equal(vaultView(s, V).exitQueuedCount, 1);
   assert.equal(vaultView(s, V).exitSettledCount, 1);
-  assert.equal(modeFExitRateBps(s, V), 10000, 'one queued, one settled == 100%');
+  assert.equal(vaultView(s, V).modeFSettledCount, 1);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'one queued, one settled == 100% Mode-F');
+  assert.equal(queuedExitBacklog(s, V), 0, 'the queue entry was consumed by the settlement');
+});
+
+test('an ExitSettled with no queue entry for that member is Mode I, not Mode-F', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 100n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
+    ev('ExitSettled', 3, 0, V, { member: B, sharesBurned: 100n }), // B never queued -> Mode I
+    ev('ExitSettled', 4, 0, V, { member: A, sharesBurned: 100n }), // A queued -> Mode F
+  ]);
+  assert.equal(vaultView(s, V).exitSettledCount, 2);
+  assert.equal(vaultView(s, V).modeFSettledCount, 1, "B's instant exit must not be attributed to the queue");
+  assert.equal(modeFExitRateBps(s, V), 5000, 'one of two settled exits went through the queue');
 });
 
 test('modeFExitRateBps is null for an unknown vault or a vault with no settled exits', () => {
@@ -163,15 +178,24 @@ test('modeFExitRateBps is null for an unknown vault or a vault with no settled e
   assert.equal(modeFExitRateBps(s, V), null, 'no ExitSettled yet');
 });
 
-test('modeFExitRateBps can exceed 10000 (a stranded-queue backlog), and is not clamped', () => {
+test('modeFExitRateBps is a partition and can never exceed 10000, backlog is reported separately', () => {
+  // Three members queue; only one settles. The old counts-over-counts shortcut read this as 300%.
+  // VaultCore permits ONE queued exit per member (requestExit: ExitAlreadyQueued), so three queue
+  // entries mean three distinct members — and two of them are still stranded (§3.6).
+  const C = '0x' + '7'.repeat(40);
   const s = applyAll([
-    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 300n }),
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 2, V, { member: C, sharesMinted: 100n }),
     ev('ExitQueued', 2, 0, V, { member: A, shares: 100n }),
-    ev('ExitQueued', 3, 0, V, { member: A, shares: 100n }),
-    ev('ExitQueued', 4, 0, V, { member: A, shares: 100n }),
+    ev('ExitQueued', 3, 0, V, { member: B, shares: 100n }),
+    ev('ExitQueued', 4, 0, V, { member: C, shares: 100n }),
     ev('ExitSettled', 5, 0, V, { member: A, sharesBurned: 100n }),
   ]);
-  assert.equal(modeFExitRateBps(s, V), 30000, '3 queued over 1 settled == 300%, not clamped');
+  assert.equal(vaultView(s, V).exitQueuedCount, 3);
+  assert.equal(modeFExitRateBps(s, V), 10000, 'the ONE settled exit was a Mode-F one: 100%, never 300%');
+  assert.ok(modeFExitRateBps(s, V) <= 10000, 'a partition can never exceed 100%');
+  assert.equal(queuedExitBacklog(s, V), 2, 'B and C are still stranded in the queue');
 });
 
 test('stat-only events (SliceEscrowed, EscrowClaimed, ModuleCallFailed, FeeAssessed, FeeCredited, '
@@ -217,4 +241,139 @@ test('memberPosition reports shares and vault fraction', () => {
   assert.equal(memberPosition(s, V, A).shares, 750n);
   assert.equal(memberPosition(s, V, A).shareOfVaultBps, 7500);
   assert.equal(memberPosition(s, V, '0x' + '9'.repeat(40)).shares, 0n);
+});
+
+/**
+ * `state.adapters` is the PERSISTED adapter set: it is written into every snapshot and it is what a
+ * restart re-seeds the poller from. It is reachable by anybody — `createVault` is permissionless and
+ * `allowedAdapters` is caller-supplied — so it needs the same ceiling the poll set has.
+ *
+ * It did not have one. An earlier revision bounded only the rpc-module-local set while a comment in
+ * that module claimed the bound covered the set "persisted in the snapshot forever"; 500 hostile
+ * RebalanceExecuted in one batch left 64 polled and 500 persisted. The bound is written as a
+ * LITERAL here for the same reason as in rpc.test.mjs: `MAX_TRACKED_ADAPTERS + 1` follows the
+ * constant and would stay green if the constant were raised to 100000.
+ */
+test('the persisted adapter set is bounded at exactly 64, at and above the boundary', () => {
+  const adapterAt = (i) => '0x' + i.toString(16).padStart(40, '0');
+  const rebalances = (n) => Array.from({ length: n }, (_, i) => ev('RebalanceExecuted', 14, i, V, { adapter: adapterAt(i + 1), orderCount: 0n }));
+
+  assert.equal(MAX_TRACKED_ADAPTERS, 64, 'the literal these boundaries are written against');
+
+  const under = applyAll(rebalances(64));
+  assert.equal(under.adapters.size, 64, 'the 64th adapter must still be recorded');
+  assert.ok(under.adapters.has(adapterAt(64)));
+
+  const over = applyAll(rebalances(500));
+  assert.equal(over.adapters.size, 64, 'the persisted set must not grow past the ceiling');
+  assert.ok(!over.adapters.has(adapterAt(65)), 'the 65th must not be persisted');
+});
+
+/**
+ * THE SOAK FINDING. During the Base Sepolia soak a member holding roughly a fifth of a vault read
+ * `votingEligibleShares` 0 on-chain and nothing off-chain said so: `memberPosition` returned
+ * `shares` and `shareOfVaultBps` only, so the member's own position page could show 20% of the
+ * vault beside a weight the contract treats as nothing.
+ *
+ * The two assertions belong in one block deliberately. A material `shareOfVaultBps` alone is not
+ * the finding, and a zero eligible weight alone is not either — the finding is the two coexisting
+ * with no third field reconciling them.
+ */
+test('a member holding a fifth of the vault with a queued Mode-F exit reads zero voting weight, and the projection says so', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 2_000n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+
+  assert.equal(pos.shares, 2_000n, 'queued shares stay outstanding until settlement');
+  assert.equal(pos.shareOfVaultBps, 2000, 'a fifth of the vault');
+  assert.equal(pos.queuedExitShares, 2_000n);
+  assert.equal(pos.votingEligibleShares, 0n, 'VaultCore.votingEligibleShares: sharesOf - queuedExitShares');
+  assert.ok(pos.votingEligibleNote, 'the zero must be explained, not merely reported');
+  assert.match(pos.votingEligibleNote, /2000/, 'the note names the locked amount');
+  assert.match(pos.votingEligibleNote, /settleQueuedExit/, 'and how it resolves');
+
+  // B queued nothing, so B keeps a full weight and gets no note.
+  const other = memberPosition(s, V, B);
+  assert.equal(other.queuedExitShares, 0n);
+  assert.equal(other.votingEligibleShares, 8_000n);
+  assert.equal(other.votingEligibleNote, null);
+});
+
+test('a PARTIAL queued exit subtracts rather than zeroing', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 1_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 400n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.queuedExitShares, 400n);
+  assert.equal(pos.votingEligibleShares, 600n);
+  assert.ok(pos.votingEligibleNote, 'a partial lock is still withheld weight and still needs saying');
+});
+
+test('settling the queued exit clears the lock from the projection', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 1_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 400n }),
+    ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 400n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.shares, 600n);
+  assert.equal(pos.queuedExitShares, 0n);
+  assert.equal(pos.votingEligibleShares, 600n);
+  assert.equal(pos.votingEligibleNote, null);
+});
+
+/**
+ * The second way `votingEligibleShares` returns zero on material stake, and the one a lock-only
+ * field would report wrongly: `VaultCore.votingEligibleShares` opens with
+ * `if (member == parentVault()) return 0` (VaultCore.sol:1025-1027), so a registered parent's
+ * position in its child carries no weight at all, queued exit or not.
+ */
+test('a registered parent vault holds shares in its child and votes with none of them', () => {
+  const P = '0x' + 'p'.replace('p', '2').repeat(40);
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: P, sharesMinted: 5_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 5_000n }),
+    ev('ChildRegistered', 2, 0, V, { child: V, parent: P, depth: 1 }),
+  ]);
+  const pos = memberPosition(s, V, P);
+  assert.equal(pos.shares, 5_000n);
+  assert.equal(pos.shareOfVaultBps, 5000);
+  assert.equal(pos.queuedExitShares, 0n, 'nothing is queued: the lock is not why this reads zero');
+  assert.equal(pos.votingEligibleShares, 0n);
+  assert.ok(pos.votingEligibleNote, 'and the reason must be the parent carve-out, not a queued exit');
+  assert.match(pos.votingEligibleNote, /parent/i);
+});
+
+/**
+ * The same over-report reachable without a snapshot at all: an ExitQueued whose `shares` argument
+ * is missing. `abis.mjs` decodes `shares` from a non-indexed field of a two-field event, so a
+ * well-formed log always carries it and this is unreachable in production — but it is the identical
+ * class to the resumed-snapshot gap, and the old `?? 0n` default failed the same way: the size book
+ * would record "nothing locked" for a member the queued set says IS locked. The entry is left out
+ * instead, which puts the member in the honest "locked, amount unknown" state.
+ */
+test('an ExitQueued with no amount records the lock as unknown, never as zero', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A }), // no `shares`
+  ]);
+  assert.equal(queuedExitBacklog(s, V), 1, 'the member is queued either way');
+  assert.equal(s.queuedExitShares.get(V)?.has(A) ?? false, false, 'and no size was invented for them');
+
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.shares, 2_000n);
+  assert.equal(pos.queuedExitShares, null, 'unknown, not 0n');
+  assert.equal(pos.votingEligibleShares, null, 'so no eligible number is served');
+  assert.notEqual(pos.votingEligibleNote, null);
+  assert.match(pos.votingEligibleNote, /does not know/);
+
+  // And the discriminator still resolves at settlement, exactly as it does with a known size.
+  apply(s, ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 2_000n }));
+  assert.equal(s.vaults.get(V).modeFSettledCount, 1, 'an unknown size is still a Mode-F settlement');
+  assert.equal(memberPosition(s, V, A).votingEligibleNote, null, 'and the lock is gone from the report');
 });
