@@ -151,6 +151,16 @@ jobs:
         run: npm run test:app
       - name: Backend + frontend logic tests
         run: npm run test:backend
+      # Is each contracts/config/deployments/*.json record still current with contracts/src?
+      # ADVISORY, narrowly and deliberately: both records are BEHIND today (a BUSL-1.1 -> MIT
+      # relicense touched all 19 contracts/src files), and the remedy is a redeploy, which is an
+      # owner action under docs/SWARM.md section 10 -- not something a pull request can fix. The
+      # script still exits 1, so dropping continue-on-error is all it takes to make this blocking
+      # once the records are refreshed. The blocking half of #261 is scripts/test/
+      # deployment-currency.test.mjs, inside npm run test:backend above.
+      - name: Deployment currency (advisory)
+        run: node scripts/verify-deployment-currency.mjs
+        continue-on-error: true
       # The live site under apps/site keeps its own suite inside npm run test:backend above.
       - name: Redesign wording guards (apps/site-next) against dist/
         run: npm test --workspace apps/site-next
@@ -158,4 +168,4 @@ jobs:
       # by hand against a live chain. Parse them so a syntax error can't reach a
       # 6-hour smoke run or a production boot.
       - name: Syntax-check entrypoints and operational scripts
-        run: node --check scripts/smoke-test.mjs && node --check scripts/verify-chainlink-oracle.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs && node --check packages/oplog/src/ops-check.mjs
+        run: node --check scripts/smoke-test.mjs && node --check scripts/verify-chainlink-oracle.mjs && node --check apps/api/src/serve.mjs && node --check packages/indexer/src/index-runner.mjs && node --check packages/canary/src/canary-runner.mjs && node --check packages/oplog/src/ops-check.mjs && bash -n scripts/verify-x402-run.sh
