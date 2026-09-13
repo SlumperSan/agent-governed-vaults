@@ -5,9 +5,10 @@ pragma solidity 0.8.26;
 /// @notice VENDORED THIRD-PARTY CODE. Derived from Uniswap v3-core `TickMath.sol`
 /// (https://github.com/Uniswap/v3-core, `contracts/libraries/TickMath.sol`), whose SPDX
 /// license identifier is **GPL-2.0-or-later** — reproduced in this file's header above. It
-/// applies to this file only; the rest of this repository is BUSL-1.1. Keeping the vendored
-/// code in its own file, under its own header, is what keeps that boundary legible — do not
-/// inline these constants into a BUSL-1.1 file.
+/// applies to this file only; the rest of this repository is MIT (BUSL-1.1 until 2026-09-05,
+/// see LICENSE-HISTORY.md). Keeping the vendored code in its own file, under its own header, is
+/// what keeps that boundary legible — do not inline these constants into an MIT file. The
+/// relicense did not dissolve the boundary: GPL-2.0-or-later is not MIT either.
 ///
 /// @dev Only the `tick → sqrtPriceX96` direction is vendored; `getTickAtSqrtRatio` is not
 /// needed by any consumer here and is omitted rather than carried unused and unreviewed.

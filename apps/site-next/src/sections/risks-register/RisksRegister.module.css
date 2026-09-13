@@ -1,0 +1,183 @@
+/* ===========================================================================
+   risks-register — the fifteen entries of risks.html
+   ---------------------------------------------------------------------------
+   THE DESIGN POSITION, stated because every rule below follows from it: this
+   is a reference document, and it is styled as one. Fifteen entries, each a
+   chip, a numbered heading and three labelled cells, separated by a hairline
+   and nothing else. No card, no elevation, no gradient, no icon, no accent
+   fill behind a body. The page is the most-linked destination on the site and
+   the one a reader arrives at from an anchor mid-scroll, so what it owes them
+   is legibility at the anchor, not a composition seen from the top.
+
+   TWO CLASS NAMES ARE GLOBAL ON PURPOSE — `.risk` and `.severity`. The claims
+   suite reads `<article class="risk" id="rN">` out of the built page, and
+   checks that the r5 entry never carries `severity--mitigated`. A hashed
+   module class would not match, so those two are written as the reviewed page
+   writes them and scoped under `.register` here, which keeps them off the rest
+   of the site while leaving the bytes the guard reads unchanged.
+
+   `severity--mitigated` IS NOT DEFINED ANYWHERE IN THIS FILE. There is no
+   green chip on this page and there is no rule to add one by accident: nothing
+   in this register is a solved problem, and `--good` appears nowhere below.
+
+   EVERY COLOUR IS var(--token) FROM tokens.css. No hex literal reaches this
+   file, and no token is redefined here — a local value is a value nobody
+   re-measures for contrast.
+
+   A NOTE ON WORDING. The claims suite reads stylesheets as prose, so a class
+   name, a custom property or a comment is as exposed as a paragraph is. The
+   comments here describe what a rule does; they make no claim about outcomes
+   and reach for no reassurance vocabulary.
+   =========================================================================== */
+
+.register {
+  /* The --s scale, symmetrically, at the step every body section on the site
+     uses. tokens.css calls that scale "one scale, used for every margin, gap
+     and pad"; the seam with the contents list above belongs to the shell,
+     which collapses the meeting edge between adjacent sections in one place
+     rather than in each of them. */
+  padding-block: var(--s8);
+}
+
+/* --- one entry -------------------------------------------------------------
+   Entries are separated by a rule rather than boxed. A box implies each entry
+   is a self-contained unit that can be read alone; the register reads as a
+   list, and several entries refer to each other by number. */
+
+.register :global(.risk) {
+  /* One step of the --s scale, the same one the entry spacing on the sibling
+     row sections uses. The first entry's start pad is zeroed below, so this
+     value sets the air between entries and nothing else. */
+  padding-block: var(--s7);
+  border-top: 1px solid var(--line);
+
+  /* Arriving from the contents list lands the reader ON the heading rather
+     than with it flush to the top of the window. The masthead is not sticky,
+     so this is breathing room, not a collision offset. */
+  scroll-margin-block-start: var(--s6);
+}
+
+.register :global(.risk:first-of-type) {
+  border-top: 0;
+  padding-block-start: 0;
+}
+
+/* The chip and the heading move together and are the only things in the
+   section that move at all. */
+.head {
+  margin-bottom: var(--s5);
+}
+
+/* --- the severity chip -----------------------------------------------------
+   A label, not a badge: no fill, no pill, no icon. It states how the entry is
+   classified and gets out of the way of the heading under it. Status colour is
+   carried on the text and a hairline, which is the least amount of colour that
+   still distinguishes the two classes at a glance. */
+
+.register :global(.severity) {
+  display: inline-block;
+  margin-bottom: var(--s3);
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--warn); /* ratio recorded in src/tokens.css */
+  background: var(--warn-wash);
+}
+
+/* An entry with no mitigation at all. The harsher of the two status colours,
+   because the distinction between "partially mitigated" and "accepted, nothing
+   is done" is the single most useful thing a reader takes from this page. */
+.register :global(.severity--accepted) {
+  border-color: var(--crit);
+  color: var(--crit); /* ratio recorded in src/tokens.css */
+  background: var(--crit-wash);
+}
+
+.heading {
+  max-width: 30ch;
+  margin: 0;
+  font-size: clamp(1.5rem, 1.15rem + 1.5vw, 2.125rem);
+  color: var(--ink);
+}
+
+/* --- the three cells -------------------------------------------------------
+   A two-column grid on a wide screen: the term sits in a narrow left rail so
+   the three bodies align on one edge and can be compared down the page. The
+   cells carry no class of their own — the guard that reads them admits no
+   attributes — so they are selected through this grid. */
+
+.rows {
+  display: grid;
+  gap: var(--s5);
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  gap: var(--s2) var(--s5);
+}
+
+.row dt {
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  line-height: 1.5;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint); /* the body-text floor; ratio in src/tokens.css */
+}
+
+.row dd {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+}
+
+/* Addresses and config paths. A 42-character hex string and a slashed path are
+   each one token with no break opportunity, so at 375 they set the row's
+   min-content width and push the document sideways — measured at 404 CSS pixels
+   against a 375 viewport on 2026-09-05. Breaking inside them is ugly and is
+   still better than a page that scrolls horizontally. */
+.row dt code,
+.row dd code {
+  overflow-wrap: anywhere;
+}
+
+/* The bolded sentence at the head of r6 — Vault #1's zero timelock — and the
+   one emphasised word in r15. Both are in the reviewed copy; they raise
+   luminance to --ink rather than changing size, which is the site's rule for
+   emphasis and for hover alike. */
+.row dd strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.row dd em {
+  font-style: italic;
+  color: var(--ink);
+}
+
+/* Function and file names inside a cell. --mono and tabular figures come from
+   the global `code` rule; this adds only the tint that separates an identifier
+   from the prose around it. */
+.row dd code {
+  padding: 0 0.2em;
+  border-radius: 2px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+@media (min-width: 52rem) {
+  .row {
+    grid-template-columns: 11rem minmax(0, 1fr);
+  }
+
+  .row dt {
+    /* Optically aligned with the first line of the body beside it: the term is
+       set several steps smaller, so matching baselines needs a nudge. */
+    padding-block-start: 0.28em;
+  }
+}

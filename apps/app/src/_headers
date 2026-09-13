@@ -1,0 +1,63 @@
+# Cloudflare Pages edge headers for app.rwally.com.
+#
+# WHERE THIS FILE HAS TO LIVE. Pages reads _headers from the root of the SERVED
+# directory, which is the build output. It therefore sits in src/ and build.mjs
+# copies it to dist/_headers. A missing _headers is not an error and is not
+# reported: the site simply serves with no policy at all, which looks identical
+# to a working deploy.
+#
+# SYNTAX. A path pattern at column 0, then indented `Name: value` lines. A
+# comment is a line beginning with # at column 0; Cloudflare documents comments
+# only at column 0 and says nothing about indented ones, so every comment here
+# sits at column 0 and the rule block below carries header lines and nothing
+# else. A malformed line is ignored silently, so a header accidentally written
+# at column 0 becomes a path pattern with no headers and does nothing.
+#
+# THE POLICY, DIRECTIVE BY DIRECTIVE.
+#
+# default-src 'none'
+#   Deny by default. Every fetch directive not written below inherits it, so a
+#   directive that is absent is 'none' and not 'anything'.
+#
+# script-src 'self'
+#   /app.js and nothing else. No 'unsafe-inline' and no 'unsafe-eval', which
+#   has one consequence worth stating because it is invisible until production:
+#   an inline <script> block in index.html would be blocked with no error on
+#   the page. All behaviour lives in the external file.
+#
+# style-src 'self'
+#   /app.css and nothing else. This also blocks every style="..." attribute in
+#   the document, so the markup carries none.
+#
+# connect-src 'self' https://rpc.mainnet.chain.robinhood.com
+#   THE ONE THIRD-PARTY ORIGIN ON THIS PAGE, and it is the chain's own public
+#   RPC. It is what makes the LIVE READS panel possible and it is the entire
+#   list. Narrow it and the reads stop; widen it and the page can talk to
+#   somewhere the reader did not agree to.
+#
+# img-src 'self'
+#   The favicon. There is no other image and no data: or blob: anywhere.
+#
+# font-src 'self'
+#   The two self-hosted woff2 faces. No font CDN, no external stylesheet.
+#
+# base-uri 'none' and form-action 'none'
+#   There is no <base> and no <form>. Saying so costs nothing and removes two
+#   injection routes.
+#
+# frame-ancestors 'none'
+#   This page is never framed, which is the clickjacking defence a wallet
+#   surface will need before it ever has a button that signs anything.
+#
+# X-Content-Type-Options: nosniff
+#   The browser honours the declared type rather than guessing one.
+#
+# Referrer-Policy and Permissions-Policy
+#   Not required by the brief. Included because both are pure subtraction: the
+#   first stops the path leaking to the explorer on an outbound click, the
+#   second turns off device APIs this page does not use and must never use.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://rpc.mainnet.chain.robinhood.com; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()

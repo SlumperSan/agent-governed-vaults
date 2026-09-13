@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07070b">
+<!-- THE FILENAME IS THE FEATURE. Cloudflare Pages' asset server, on a request that matches no
+     asset, walks up from the requested path looking for a `404.html` and serves the first one it
+     finds WITH A 404 STATUS. Finding none, it falls back to serving `/index.html` with a 200 —
+     the single-page-application behaviour — which is what rwally.com did until this file existed.
+     Measured against the live site on 2026-09-09:
+
+         /nonsense.html   200   13167 bytes
+         /vision.html     200   13167 bytes   (identical bytes to /)
+         /                200   13167 bytes
+
+     So every mistyped or stale path was a 200 duplicate of the homepage: indexable as such, and
+     invisible to anyone auditing links, because a broken link that answers 200 announces itself
+     nowhere. The redirect table was never the defect — `/vision` and `/faq` 301 correctly and
+     `/disclaimers.html` 308s to `/disclaimers` — the fallback for paths the table does not name
+     was. RENAMING OR REMOVING THIS FILE PUTS THAT BACK, silently and with no build error.
+
+     ONE MECHANISM, NOT TWO. There is deliberately no `/*  /404.html  404` catch-all in
+     `public/_redirects` beside it: a catch-all source there would sit in front of `/assets/*` and
+     `/media/*`, and it cannot be tested anywhere in this repository. -->
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- NO `rel="canonical"` AND NO `og:url`, WHICH IS THE OTHER HALF OF THE FIX. This one document is
+     served at every address that does not exist, so there is no URL it could name that would be
+     true of the request that produced it. A canonical copied from index.html would declare each of
+     those addresses a duplicate of the homepage — the exact signal the 404 status is here to
+     withdraw. `robots: noindex` says the same thing to a crawler that reads meta but not status,
+     and this page is absent from `sitemap.xml` for the same reason it is absent from `PAGE_IDS`. -->
+<meta name="robots" content="noindex">
+<!-- The display face, preloaded. It sets the h1, the largest paint on the page, and the browser
+     would otherwise not learn it is needed until the stylesheet has arrived and been matched, one
+     round trip later. The href is a path into node_modules, rewritten by the build: Vite resolves
+     it through the same asset pipeline that rewrites the url() in fonts.css, emits ONE hashed copy
+     shared with the other two documents, and writes the /assets/ path here, so the preload cannot
+     go stale against the file the CSS actually loads. Do not hand-edit the hash. -->
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2">
+<title>Page not found | RWAlly</title>
+<meta name="description" content="The address you asked for is not a document on this site.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RWAlly">
+<meta property="og:title" content="Page not found">
+<meta property="og:description" content="The address you asked for is not a document on this site.">
+<meta property="og:image" content="https://rwally.com/og-card.png">
+<meta property="og:image:alt" content="A dark card carrying the RWAlly comic wordmark, cream lettering over a violet drop shadow, above the deployment-status line Deployed on Robinhood Chain.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Page not found">
+<meta name="twitter:description" content="The address you asked for is not a document on this site.">
+<meta name="twitter:image" content="https://rwally.com/og-card.png">
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/entry-404.tsx"></script>
+</body>
+</html>

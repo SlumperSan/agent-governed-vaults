@@ -43,7 +43,8 @@
  *
  * Host is vault B, created by drill 1 — run that first.
  *
- * Env: SOAK_SIGNER_ARGS (required), BASE_SEPOLIA_RPC, SOAK_STATE_DIR, SOAK_RESET=1.
+ * Env: SOAK_SIGNER_ARGS (required), SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT,
+ *      SOAK_STATE_DIR, SOAK_RESET=1.
  * Run:  node scripts/soak/drill3-modef.mjs
  */
 import fs from 'node:fs';
@@ -53,12 +54,9 @@ import {
   ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime,
   openState, runSteps, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
 } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const STATE_DIR = process.env.SOAK_STATE_DIR ?? path.join(ROOT, 'scripts', 'soak');
 const STATE_PATH = path.join(STATE_DIR, '.state-drill3.json');
@@ -82,8 +80,7 @@ function resolveHost() {
 
 function preflight() {
   log(`rpc=${RPC}  governance=${dep.governance}`);
-  const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
-  assert(chainId === dep.chainId, `RPC chain id ${chainId} != address-book chainId ${dep.chainId}`);
+  assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   const vault = resolveHost();
   log(`Mode-F host: vault B ${vault}`);
@@ -233,8 +230,16 @@ function stepProveSettleBlocked() {
   const attempt = tryCall(state.vault, 'settleQueuedExit(address)', state.signer);
   assert(!attempt.ok,
     'settleQueuedExit succeeded while execution was still pending — EE-10/K-1 violated');
-  log(`settleQueuedExit correctly refused while pending: ${attempt.err}`);
-  state.steps.proveSettleBlocked = { done: true, revertedWith: attempt.err };
+  // `!ok` alone does NOT prove the contract refused it. A rate limit, a timeout or an unreachable
+  // RPC also produces `ok:false`, so the assertion above was satisfiable by a 429 — a security
+  // invariant PASSING because the network was busy, and then persisted to the state file as
+  // `revertedWith: "...429 Too Many Requests..."` where it reads like evidence. Only a recognised
+  // REVERT is evidence about the contract; anything else means this step did not run.
+  assert(attempt.kind === 'revert',
+    `settleQueuedExit did not revert — the call failed for a NON-CONTRACT reason (${attempt.kind}), `
+      + `so EE-10/K-1 is UNPROVEN, not proven: ${attempt.err}`);
+  log(`settleQueuedExit correctly reverted while pending: ${attempt.err}`);
+  state.steps.proveSettleBlocked = { done: true, revertedWith: attempt.err, kind: attempt.kind };
   save();
 }
 
