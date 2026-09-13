@@ -51,10 +51,12 @@ const ENTRYPOINTS = [
   'packages/canary/src/canary-runner.mjs',
   'packages/oplog/src/ops-check.mjs',
   // Added 2026-09-10. It sizes a real mainnet trade by hand against a live chain and nothing
-  // executes it in CI, which is precisely the category this list exists for. It was landed once
-  // without being added here, and `npm run gate` passed over it without parsing a single line --
-  // this list errors on listed-but-missing and is silent about missing-from-list, so a green gate
-  // was not evidence about the file at all.
+  // executes it in CI, which is precisely the category this list exists for. An earlier commit on
+  // this branch added the file without adding it here, and `npm run gate` passed over it without
+  // parsing a single line -- this list errors on listed-but-missing and is silent about
+  // missing-from-list, so a green gate was not evidence about the file at all. Said "it was landed
+  // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
+  // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
 ];
 
