@@ -16,7 +16,8 @@
  * Per vault, every field is therefore one of exactly three states, and never a fourth:
  *   - present with a value       → the read succeeded
  *   - absent, vault.pricingFrozen: true  → oracle-frozen (navWad/navPerShareWad only)
- *   - absent, vault.unreadable[field]    → missing evidence (transport, or an unrecognised revert)
+ *   - absent, vault.unreadable[field]    → missing evidence (transport, an unrecognised revert, or
+ *                                          a local decode defect — `kind: 'decode'`, see `readOneVault`)
  * A field is NEVER `null` or `0` for "could not read it" — that is indistinguishable from a real
  * zero balance, which is the exact catastrophic false claim this route must not make.
  */

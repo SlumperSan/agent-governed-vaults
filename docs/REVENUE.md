@@ -30,9 +30,10 @@ carries `blockNumber` — the height every field in that response was read at. T
 **A field can be absent instead of a number, and that is not the same as zero.** Two distinct
 reasons, both tested in `apps/site-next/test/x402-edge.test.mjs`: `pricingFrozen: true` means the
 oracle itself reverted the NAV read (`StaleOracle`) — a real product signal, not missing data; a
-field named under `unreadable` means this deployment could not read it this request (a transport
-failure, or a revert the route does not recognise) — missing evidence, and never presented as a
-value. A revert and a transport failure are kept structurally distinct on purpose: this repository
+field named under `unreadable` means this deployment could not read it this request — a transport
+failure, a revert the route does not recognise, or a local decode defect (`kind: 'decode'`, e.g. an
+address that failed to checksum) — missing evidence, and never presented as a value. A revert and
+a transport failure are kept structurally distinct on purpose: this repository
 has twice shipped a defect where the two collapsed into one field (issues #266, PR #185), so a test
 drives a reader whose every read fails as a transport error and asserts no vault ever reports
 `pricingFrozen` from that.
@@ -75,7 +76,7 @@ repository has shipped that exact confusion twice (issues #266, PR #185), so the
 edge reuses the tested classifier rather than re-deriving it.
 
 The build inlines all of it. Measured 2026-09-13: `wrangler@4 pages functions build` reports
-"Compiled Worker successfully" and emits a bundle of 435,812 bytes minified (134,370 bytes gzip) —
+"Compiled Worker successfully" and emits a bundle of 435,916 bytes minified (134,417 bytes gzip) —
 up substantially from the pinned-snapshot version's 31 KB, because this route now statically pulls
 in viem via `apps/site-next/functions/api/_vaultread.js` (`reader.mjs` itself still lazy-imports
 viem; the static import that pulls it into this bundle is in `_vaultread.js`, for `getAddress`).
@@ -108,11 +109,11 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid, and makes no RPC call while refusing | **Proven** — 32 tests in `apps/site-next/test/x402-edge.test.mjs`, including a reader/facilitator pair that fails the test outright if either is ever called on the unpaid/invalid-envelope paths |
-| The live read matches the deployed chain | **Proven** — every field of both vaults, read against `https://rpc.mainnet.chain.robinhood.com` with no payment involved, matched the values recorded in `contracts/config/deployments/robinhood-mainnet.json`, including the derived `capacityHeadroomUsdc` |
+| The edge route refuses to serve unpaid, makes no RPC call while refusing, and never echoes `FACILITATOR_URL` | **Proven** — 37 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The live read's values are correct | **Proven against a live RPC read**, reproduced independently in review — NOT cross-checked against `contracts/config/deployments/robinhood-mainnet.json`, which records only `address`, `creator`, `minDepositUsdc` and `capacityCapUsdc` per vault (grep it: no `navWad`, `navPerShareWad`, `totalShares`, `usdcScalar`, `totalPendingUsdc`, or `childVaultCount` key exists there). Those four fields DO match the record. `capacityHeadroomUsdc` is derived at request time from live inputs and checks arithmetically against them, not against any recorded value. |
 | A revert (oracle freeze) and a transport failure never collapse into one field | **Proven** — tested against an injected reader whose every read fails as a transport error: no vault ever reports `pricingFrozen`, matching the requirement drawn from issues #266 and PR #185 |
 | A chain read that fails costs the caller nothing | **Proven for two distinct failure shapes**: the chain cannot report a block number at all, and a block number comes back but every field of every vault fails to read (a bad RPC that answers `eth_blockNumber` and fails everything after). Both are 503 with the facilitator never called. A read where at least one field of at least one vault succeeds still settles — a partial read is still a read. |
-| The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13, "Compiled Worker successfully" |
+| The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13, "Compiled Worker successfully"; `wrangler@3` also builds it, re-measured |
 | A mainnet payment has settled | **No.** Nothing has been deployed |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 

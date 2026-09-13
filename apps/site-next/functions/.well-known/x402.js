@@ -61,8 +61,8 @@ export const onRequestGet = async (context) => {
               perVaultCaveats:
                 'A field can be absent from a served vault instead of a number: `pricingFrozen: true` ' +
                 'means the oracle itself reverted the NAV read (a real signal), and `unreadable` names a ' +
-                'field this deployment could not read this request (a transport failure, or an ' +
-                'unrecognised revert) rather than a value of zero.',
+                'field this deployment could not read this request — a transport failure, an ' +
+                'unrecognised revert, or a local decode defect — rather than a value of zero.',
             },
           },
         ],
