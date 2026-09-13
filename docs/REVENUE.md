@@ -131,8 +131,11 @@ Every payment, forever. Choosing it needs a spec-shaped `/verify` + `/settle` wr
 repository does not have yet. Listing it as an available option was the same harm review round 6
 rejected — the runbook naming a facilitator the route cannot talk to — with the direction reversed.
 
-Until a working `FACILITATOR_URL` exists, the route answers 500 by design rather than serving reads
-for free.
+`FACILITATOR_URL` is now set to a facilitator that does speak the standard contract (§5.1), so the
+route answers 402 rather than 500 — 500 is what a MISSING setting produces, not a non-working one.
+The distinction matters for debugging: a `FACILITATOR_URL` that is present but points somewhere that
+cannot answer `/verify` yields the `402 settlement failed: verify-http-404` above, at settlement
+time, on a request that got all the way through the gate.
 
 ## 5. Deploying it, and the one step that is still the owner's
 
@@ -254,7 +257,9 @@ flat `network: "base"`, and an `accepts[]` entry with `network: "eip155:8453"` a
 `GET https://rwally.com/.well-known/x402` answers **200**, free, quoting the same price.
 
 The site itself was unchanged by the deploy: `/` and `/disclaimers` both answer 200 on the same
-hashed JS bundle, and the built page set matched the live sitemap before the deploy was run.
+hashed entry bundle each — `index-Dswh-tMk.js` and `disclaimers-Bny7kgXy.js`, sharing
+`main-CAxB7eBr.js` and `pageBody-CH-Y7cxl.js` — and the built page set matched the live sitemap
+before the deploy was run.
 
 **A conformant third-party client still cannot pay this, and that is a separate gap.** The 402 is
 emitted as raw JSON where `specs/transports-v2/http.md:161-167` requires base64. Issue #279 tracks it.
