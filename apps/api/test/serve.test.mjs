@@ -43,7 +43,53 @@ test('resolveApiConfig: FACILITATOR=http demands a URL', () => {
   assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'http' }), /requires FACILITATOR_URL/);
   const ok = resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'http', FACILITATOR_URL: 'https://f.example' });
   assert.equal(ok.facilitatorKind, 'http');
-  assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'nope' }), /must be 'stub', 'http' or 'svm'/);
+  assert.throws(() => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'nope' }), /must be 'stub', 'http', 'standard' or 'svm'/);
+});
+
+test('resolveApiConfig: FACILITATOR=standard demands a URL AND a network, and defaults the rest', () => {
+  assert.throws(
+    () => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'standard' }),
+    /requires FACILITATOR_URL/,
+  );
+  assert.throws(
+    () => resolveApiConfig({ ...BASE_ENV, FACILITATOR: 'standard', FACILITATOR_URL: 'https://facilitator.payai.network' }),
+    /requires FACILITATOR_NETWORK/,
+  );
+  const ok = resolveApiConfig({
+    ...BASE_ENV, FACILITATOR: 'standard',
+    FACILITATOR_URL: 'https://facilitator.payai.network', FACILITATOR_NETWORK: 'eip155:8453',
+  });
+  assert.equal(ok.facilitatorKind, 'standard');
+  assert.deepEqual(ok.standard, { network: 'eip155:8453', usdcName: 'USD Coin', usdcVersion: '2', maxTimeoutSeconds: 60 });
+
+  const overridden = resolveApiConfig({
+    ...BASE_ENV, FACILITATOR: 'standard',
+    FACILITATOR_URL: 'https://facilitator.payai.network', FACILITATOR_NETWORK: 'eip155:84532',
+    FACILITATOR_USDC_NAME: 'USDC', FACILITATOR_USDC_VERSION: '1', FACILITATOR_MAX_TIMEOUT_SECONDS: '120',
+  });
+  assert.deepEqual(overridden.standard, { network: 'eip155:84532', usdcName: 'USDC', usdcVersion: '1', maxTimeoutSeconds: 120 });
+});
+
+test('facilitatorFromConfig builds a standard facilitator that speaks the two-endpoint wire protocol', async () => {
+  const cfg = resolveApiConfig({
+    ...BASE_ENV, FACILITATOR: 'standard',
+    FACILITATOR_URL: 'https://facilitator.example', FACILITATOR_NETWORK: 'eip155:8453',
+  });
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push(url);
+    const path = url.split('/').pop();
+    if (path === 'verify') return { ok: true, json: async () => ({ isValid: true, payer: '0x' + '1'.repeat(40) }) };
+    return { ok: true, json: async () => ({ success: true, transaction: '0xdeadbeef', network: 'eip155:8453', payer: '0x' + '1'.repeat(40) }) };
+  };
+  const fac = facilitatorFromConfig(cfg, { fetchImpl });
+  const envelope = {
+    x402Version: 2, signature: '0x' + 'b'.repeat(130),
+    authorization: { from: '0x' + '1'.repeat(40), to: PAYTO, value: '10000', validAfter: '0', validBefore: '999999999999', nonce: '0x' + 'a'.repeat(64) },
+  };
+  const r = await fac.verifyAndSettle({ price: { asset: USDC, amount: '10000', payTo: PAYTO } }, envelope);
+  assert.deepEqual(r, { ok: true, receiptId: '0xdeadbeef' });
+  assert.deepEqual(calls, ['https://facilitator.example/verify', 'https://facilitator.example/settle']);
 });
 
 test("resolveApiConfig: FACILITATOR=svm demands all FOUR of its settings", () => {
