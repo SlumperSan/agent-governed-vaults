@@ -20,7 +20,8 @@
  * none is supplied via --password-file, cast prompts on YOUR terminal (stdin is inherited).
  *
  * Environment:
- *   BASE_SEPOLIA_RPC   RPC url            (default: https://base-sepolia-rpc.publicnode.com)
+ *   BASE_SEPOLIA_RPC   RPC url            (default: https://sepolia.base.org -- publicnode
+ *                                          prunes logs and receipts, see .env.example)
  *   SMOKE_SIGNER_ARGS  cast signer flags  (required; e.g. "--account deployer --password-file .pw")
  *   DEPLOY_JSON        forge broadcast output
  *                      (default: contracts/broadcast/DeployTestnet.s.sol/84532/run-latest.json)
@@ -33,10 +34,15 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PROPOSAL_SIG, decodeProposal } from './lib/proposal-decode.mjs';
 import { classifyProposal } from './proposal-recovery.mjs';
+import { wiringImmutabilityFailure, oracleProbeWarning } from './smoke-preflight.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
-const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// NOT publicnode: it prunes logs and receipts, and this script decodes phase results FROM
+// RECEIPTS. See the note in `.env.example` for the measurement.
+const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 const DEPLOY_JSON = process.env.DEPLOY_JSON
   ?? path.join(ROOT, 'contracts', 'broadcast', 'DeployTestnet.s.sol', '84532', 'run-latest.json');
@@ -70,7 +76,9 @@ function cast(args, { interactive = false } = {}) {
     }).trim();
   } catch (e) {
     const detail = e.stderr ? String(e.stderr).trim() : e.message;
-    throw new Error(`cast ${args.slice(0, 3).join(' ')} … failed: ${detail}`);
+    // `detail` rides on the error so a catch site can classify cast's own words (revert vs
+    // transport, packages/canary/src/call-error.mjs) without the prefix below in front of them.
+    throw Object.assign(new Error(`cast ${args.slice(0, 3).join(' ')} … failed: ${detail}`), { detail });
   }
 }
 
@@ -83,6 +91,14 @@ function call(to, sig, ...args) {
   return out.split('\n').map(clean);
 }
 const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
+
+/** Run a read whose EXPECTED outcome may be a revert, and return the failure as data for a verdict
+ * function (smoke-preflight.mjs) instead of swallowing it. `error` is cast's own stderr (`detail`,
+ * set in `cast()`), which is what `classifyCallError` is measured against. */
+function attempt(fn) {
+  try { return { ok: true, value: fn() }; }
+  catch (e) { return { ok: false, error: String(e.detail ?? e.message) }; }
+}
 
 /** Synchronous sleep — used only by readUntilEq's retry loop, so the (non-async) step functions
  * need no async plumbing. Atomics.wait blocks this thread for `ms`. */
@@ -196,10 +212,10 @@ const T_VAULT_CREATED = keccakOf('VaultCreated(address,address,address,uint256)'
 const T_REBALANCE_EXECUTED = keccakOf('RebalanceExecuted(address,uint256)');
 const T_EXIT_SETTLED = keccakOf('ExitSettled(address,uint256,uint256,uint256,uint256)');
 
-const PROPOSAL_SIG = 'proposals(uint256)(address,uint8,address,uint64,uint64,uint64,uint64,uint64,uint8,bytes32,uint256,uint256,uint256,uint256,uint256,uint256)';
-const P_COMMIT_DEADLINE = 4, P_REVEAL_DEADLINE = 5, P_EXPIRES_AT = 7, P_STATUS = 8;
-const P_REVEALED_VOTER_COUNT = 15;
-const STATUS = ['None', 'Active', 'Passed', 'Defeated', 'Executed', 'Expired'];
+// PROPOSAL_SIG, the tuple index map and the Status enum now live in ./lib/proposal-decode.mjs,
+// which is pure and therefore reachable by scripts/test/proposal-decode.test.mjs. This file
+// executes its whole lifecycle at import, so while the decode lived here no test could run it
+// (issue #196).
 
 // ────────────────────────────────── phases ──────────────────────────────────
 
@@ -223,25 +239,25 @@ function preflight() {
     assert(usdcBal >= need, `signer needs >= ${need} USDC units (has ${usdcBal}) — faucet.circle.com → Base Sepolia`);
   }
 
-  // Wiring is one-shot: a second wire() MUST revert (AlreadyWired / OnlyDeployer).
-  let rewired = false;
-  try {
-    call(dep.registry, 'wire(address,address)', '0x0000000000000000000000000000000000000001', '0x0000000000000000000000000000000000000002');
-    rewired = true;
-  } catch { /* expected revert */ }
-  assert(!rewired, 'registry.wire() did NOT revert — deployment is not wired/locked correctly');
+  // Wiring is one-shot: a second wire() MUST revert (AlreadyWired / OnlyDeployer), and only a
+  // CONFIRMED revert proves it. This was a bare catch commented "expected revert", which read a
+  // 429, a timeout or a DNS miss as that revert and PASSED the assertion having tested nothing —
+  // a false PASS on a security check, the quiet direction. smoke-preflight.mjs holds the three
+  // outcomes; a call that reaches no verdict now FAILS the run.
+  const wiring = wiringImmutabilityFailure(attempt(() =>
+    call(dep.registry, 'wire(address,address)', '0x0000000000000000000000000000000000000001', '0x0000000000000000000000000000000000000002')));
+  assert(wiring === null, wiring);
 
-  // Oracle probe: real Chainlink feeds through the deployed aggregator. Testnet feeds can
-  // idle past maxStaleness; the no-op lifecycle never prices a non-zero basket balance, so
-  // a tripped breaker here is a WARNING, not a failure.
+  // Oracle probe: real Chainlink feeds through the deployed aggregator. Testnet feeds can idle
+  // past their heartbeat; the no-op lifecycle never prices a non-zero basket balance, so a
+  // tripped breaker here is a WARNING, not a failure. A read that reached no verdict is a
+  // different warning, and is no longer worded as a stale feed (smoke-preflight.mjs).
   for (const a of cfg.assets) {
-    try {
-      const p = callU(dep.aggregator, 'priceWad(address)(uint256)', a.token);
-      assert(p > 10n ** 12n && p < 10n ** 26n, `${a.symbol} priceWad ${p} outside sanity range`);
-      log(`oracle ${a.symbol}: priceWad = ${p} (~$${Number(p / 10n ** 12n) / 1e6})`);
-    } catch (e) {
-      log(`WARN oracle ${a.symbol}: priceWad reverted (${e.message.split('\n')[0]}) — feed likely stale >24h on testnet; breaker is doing its job, lifecycle continues`);
-    }
+    const r = attempt(() => callU(dep.aggregator, 'priceWad(address)(uint256)', a.token));
+    if (!r.ok) { log(oracleProbeWarning(a.symbol, r.error).message); continue; }
+    const p = r.value;
+    assert(p > 10n ** 12n && p < 10n ** 26n, `${a.symbol} priceWad ${p} outside sanity range`);
+    log(`oracle ${a.symbol}: priceWad = ${p} (~$${Number(p / 10n ** 12n) / 1e6})`);
   }
   log('preflight OK');
 }
@@ -323,9 +339,9 @@ function stepPropose() {
   const pid = callU(dep.governance, 'activeProposalOf(address)(uint256)', state.vault);
   assert(pid > 0n, 'no active proposal after propose');
   state.pid = pid.toString();
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  state.commitDeadline = Number(p[P_COMMIT_DEADLINE]);
-  state.revealDeadline = Number(p[P_REVEAL_DEADLINE]);
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  state.commitDeadline = p.commitDeadline;
+  state.revealDeadline = p.revealDeadline;
   log(`proposal ${state.pid}: commit until ${state.commitDeadline}, reveal until ${state.revealDeadline}`);
   state.steps.propose = { done: true, tx: r.transactionHash };
   save();
@@ -355,10 +371,10 @@ async function stepReveal() {
 async function stepFinalize() {
   await waitUntilChainTime(state.revealDeadline, 'reveal phase end (1h)');
   const r = send('governance.finalize', dep.governance, 'finalize(uint256)', state.pid);
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  const status = STATUS[Number(p[P_STATUS])];
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  const status = p.status;
   assert(status === 'Passed', `proposal finalized as ${status}, expected Passed (signer-regime quorum: 1 of 1 members revealed FOR)`);
-  state.expiresAt = Number(p[P_EXPIRES_AT]);
+  state.expiresAt = p.expiresAt;
   log(`proposal Passed; executable now (timelock 0), window closes at ${state.expiresAt}`);
   state.steps.finalize = { done: true, tx: r.transactionHash };
   save();
@@ -412,16 +428,16 @@ function stepExit() {
  */
 function recoverStrandedProposal() {
   if (!state.pid || state.steps.execute?.done) return;
-  const p = call(dep.governance, PROPOSAL_SIG, state.pid);
-  const status = STATUS[Number(p[P_STATUS])];
+  const p = decodeProposal(call(dep.governance, PROPOSAL_SIG, state.pid));
+  const status = p.status;
   const now = chainNow();
 
   const { stranded, action, reason } = classifyProposal({
     status,
     now,
-    expiresAt: Number(p[P_EXPIRES_AT]),
-    revealDeadline: Number(p[P_REVEAL_DEADLINE]),
-    revealedVoterCount: Number(p[P_REVEALED_VOTER_COUNT]),
+    expiresAt: p.expiresAt,
+    revealDeadline: p.revealDeadline,
+    revealedVoterCount: p.revealedVoterCount,
   });
   if (!stranded) return;
 

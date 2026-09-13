@@ -102,6 +102,120 @@ test('malformed signature header decodes to null → 402', () => {
   assert.equal(decodeSignatureHeader(Buffer.from('{"x402Version":1}').toString('base64')), null); // wrong version
 });
 
+// ── the scheme is the SERVER's to choose ────────────────────────────────────
+
+const svmPrice = {
+  asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  amount: '10000',
+  payTo: 'GsbwXfJraMomNxBcjK4kZ1DXG9RrbCXjVBQdRSCTgLcz',
+  network: 'solana-devnet',
+  svm: { feePayer: '3MAZqvKUxvuPmqmkYX6FGgpJHNPzBn9BvKKEmDVEvk4j', decimals: 6 },
+};
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64');
+
+test('a client CANNOT disable the price checks by claiming a scheme', async () => {
+  // THE REGRESSION THIS PINS. `checkEnvelopeAgainstPrice` branched on `env.scheme` — a string the
+  // client writes — so against an EVM price an envelope that merely said `scheme:'exact-svm'` and
+  // carried any non-empty `transaction` returned ok. Asset, recipient, amount and expiry were all
+  // skipped, and so was the replay guard, which reads `env.authorization.nonce` that a spoofed
+  // envelope does not have. Wrong asset, wrong recipient, and it settled.
+  const spoof = {
+    x402Version: 2,
+    scheme: 'exact-svm',
+    network: 'base',
+    transaction: 'AAAA',
+    signature: '0x' + '1'.repeat(130),
+    authorization: {},
+  };
+  const local = checkEnvelopeAgainstPrice(price, spoof, 1000);
+  assert.equal(local.ok, false, 'an SVM claim must not switch off an EVM price check');
+  assert.equal(local.reason, 'scheme-mismatch');
+
+  let billed = false;
+  const spy = { async verifyAndSettle() { billed = true; return { ok: true, receiptId: 'r' }; } };
+  const v = await gate({ headers: { [HEADERS.SIGNATURE]: b64(spoof) }, price, facilitator: spy, nowMs: 1000 });
+  assert.equal(v.status, 402, 'the gate must refuse it');
+  assert.equal(billed, false, 'and must not reach the facilitator');
+});
+
+test('an EVM envelope cannot be paid against an SVM price either', () => {
+  const evm = { x402Version: 2, network: 'solana-devnet', signature: '0x' + '1'.repeat(130), authorization: { asset: 'x', to: 'y', value: '10000' } };
+  const r = checkEnvelopeAgainstPrice(svmPrice, evm, 1000);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'scheme-mismatch');
+});
+
+test('an SVM envelope reaches the facilitator when the SERVER’s price is SVM', async () => {
+  // BLOCKER 1. `decodeSignatureHeader` required `{signature, authorization}` unconditionally, and
+  // the shipped `buildSvmEnvelope` produces neither — so `gate()` 402'd every SVM payment forever
+  // and the facilitator was never reached through the only production entry point, while the
+  // commit that removed the boot refusal said the path was finished. This is that path, end to end.
+  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB' };
+  assert.notEqual(decodeSignatureHeader(b64(env)), null, 'the decoder must accept the SVM shape');
+  assert.equal(checkEnvelopeAgainstPrice(svmPrice, env, 1000).ok, true);
+
+  let seenEnvelope = null;
+  const spy = { async verifyAndSettle(_c, e) { seenEnvelope = e; return { ok: true, receiptId: 'sig' }; } };
+  const v = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: spy, nowMs: 1000 });
+  assert.equal(v.status, 200, `expected settlement, got ${v.status} ${v.body?.error ?? ''}`);
+  assert.equal(seenEnvelope?.transaction, 'AQAB');
+});
+
+test('the SVM replay key is the transaction, because there is no nonce to read', async () => {
+  // `env.authorization?.nonce` is undefined on this path, so the guard was present and inert —
+  // which is worse than absent, because it looks like protection.
+  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB' };
+  const seen = new Set();
+  const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'sig' }; } };
+  const first = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
+  assert.equal(first.status, 200);
+  const second = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
+  assert.equal(second.status, 402);
+  assert.match(second.body.error, /replayed-nonce/);
+});
+
+test('a client cannot pick its own replay key by attaching an invented nonce', async () => {
+  // THE ATTACK, AS DEMONSTRATED IN REVIEW. The key was
+  // `env.authorization?.nonce ?? (scheme === 'exact-svm' ? env.transaction : undefined)`, and
+  // `env.authorization` is client-supplied while the SVM branch of the price check never reads it.
+  // So identical transaction bytes with a fresh invented `authorization.nonce` each time presented
+  // the same payment over and over: five attempts, five 200s. One line below the comment explaining
+  // that a client-supplied field must not select which server check runs.
+  const seen = new Set();
+  const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'sig' }; } };
+  const statuses = [];
+  for (let i = 0; i < 5; i += 1) {
+    const env = {
+      x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB',
+      authorization: { nonce: `0xinvented${i}` },
+    };
+    const r = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
+    statuses.push(r.status);
+  }
+  assert.deepEqual(statuses, [200, 402, 402, 402, 402],
+    `identical transaction bytes must settle once however the envelope is dressed, got ${statuses.join(',')}`);
+  assert.equal(seen.size, 1, 'the set must hold ONE key for one payment, not one per invented nonce');
+});
+
+test('the EVM replay key is still the authorization nonce, not the price', async () => {
+  // The other direction: the fix selects on `price.svm`, so an EVM price must be unaffected — a
+  // `transaction` field on an EVM envelope must not become anybody's key.
+  const seen = new Set();
+  const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'r' }; } };
+  const mk = (nonce) => b64({ x402Version: 2, network: 'base', signature: `0x${'1'.repeat(130)}`, transaction: 'AQAB', authorization: { asset: USDC, to: PAYTO, value: '10000', nonce } });
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 200);
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 402);
+  // Same identical `transaction` string, a different authorization: a DIFFERENT payment on this path.
+  assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xbbb') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 200);
+});
+
+test('an EVM price still produces a byte-identical challenge', () => {
+  const c = buildChallenge(price, { nowMs: 1000 });
+  assert.equal(c.scheme, 'exact');
+  assert.equal(c.feePayer, undefined);
+  assert.equal(c.decimals, undefined);
+});
+
 // ── end-to-end through the server handler ────────────────────────────────────
 
 const VAULT = '0x' + '1'.repeat(40);

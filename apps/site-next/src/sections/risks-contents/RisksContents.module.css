@@ -1,0 +1,155 @@
+/* ===========================================================================
+   risks-contents — the jump list at the top of risks.html
+   ---------------------------------------------------------------------------
+   A table of contents, styled as one. Nothing here reveals, scrubs, pins or
+   parallaxes: the section's motion line in the build brief reads "None", and
+   the only transition below is the hover and focus state on a row, which
+   index.css already zeroes under prefers-reduced-motion.
+
+   EVERY COLOUR IS var(--token) FROM tokens.css. No hex literal reaches this
+   file and no token is defined here — a locally redefined value is a value
+   nobody re-measures for contrast.
+
+   A NOTE ON WORDING. The claims suite reads stylesheets as prose and class
+   names survive minification into dist/assets/*.css, so an identifier is as
+   exposed as a paragraph. Two entries in that list are ordinary CSS nobody
+   thinks of as copy: the environment variable for a device's inset area and
+   the overflow keyword that can follow justify-content share a banned word on
+   its boundaries, and the Greek letter used for an opacity channel is another.
+   Neither appears below, and the comments describe what a rule does rather
+   than what a reader should feel about it.
+   =========================================================================== */
+
+.section {
+  /* The --s scale, symmetrically, at the step every body section on the site
+     uses. tokens.css calls that scale "one scale, used for every margin, gap
+     and pad"; a per-section figure written to tune the seam with risks-hero
+     above belongs to the shell, which collapses the meeting edge between
+     adjacent sections in one place rather than in each of them. */
+  padding-block: var(--s8);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  max-width: none;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  line-height: 1.4;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+}
+
+.heading {
+  margin: 0 0 var(--s6);
+  color: var(--ink); /* ratio recorded in src/tokens.css */
+}
+
+/* --- the list -------------------------------------------------------------
+   Two columns from 52rem, one below it. CSS multicolumn rather than a grid
+   with a fixed row count: the number of entries is not this file's to decide —
+   it follows risks-register's article count — and a `grid-template-rows:
+   repeat(8, auto)` would silently mis-split the day a sixteenth risk is named.
+   Multicolumn balances whatever it is given, and fills the first column before
+   the second, so 1-8 still reads down the left and 9-15 down the right. */
+
+.list {
+  columns: 1;
+  column-gap: var(--s8);
+  /* index.css already zeroes list padding and markers globally; restated as a
+     margin reset only, so nothing here depends on rule order. */
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.item {
+  /* A row split across a column boundary would put its hairline in the middle
+     of nothing. */
+  break-inside: avoid;
+  border-top: 1px solid var(--line);
+}
+
+.link {
+  /* The whole row is the target, not just the words. Fifteen short lines are a
+     lot of small hit areas otherwise, and on a phone that is the difference
+     between a usable index and a careful one. */
+  display: block;
+
+  /* The bar plus this padding sets the row text 18px in from the wrap's edge,
+     so the list hangs indented under a heading that stays flush with it. That
+     is deliberate — a contents list reading as content beneath its heading —
+     and not a side effect of making the whole row a target. Measured at 1440:
+     wrap edge 223px, heading 223px, row text 241px. */
+  padding: var(--s3) var(--s4);
+
+  /* The ordinal is part of the anchor's own text and is deliberately not split
+     into its own element (see RisksContents.tsx). Tabular figures line the
+     single- and double-digit rows up without touching the copy. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+
+  /* --muted, not the global link --accent: fifteen violet lines in one slab
+     shout, and the accent is worth more here as the thing that answers a
+     pointer. Its ratio on --ground is recorded in src/tokens.css, and the
+     resting state clears AA on its own. */
+  color: var(--muted);
+
+  /* The underline is what carries "these are links" once the text is no longer
+     accent-coloured. --accent-dim clears the 3:1 non-text floor on --ground —
+     the ratio is recorded in src/tokens.css — so it is visible as a rule;
+     --line-strong at 16% white would not be. */
+  text-decoration: underline;
+  text-decoration-color: var(--accent-dim);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+
+  /* A 2px bar that is present at rest and only changes colour, so lighting it
+     moves nothing. Hover changes luminance and never size.
+     --accent-wash rather than the `transparent` keyword, and that is not a
+     preference: vite's CSS minifier rewrites `transparent` into a four-digit
+     hex literal in the built stylesheet, which is the one thing the token
+     contract says may not reach dist — colour arrives as var(--token) or it
+     does not arrive. Verified by reading the emitted CSS, not the source. The
+     wash is the accent at 10% opacity, so the resting bar is a hair above
+     invisible on --ground and the hover state is the same bar turned up. */
+  border-left: 2px solid var(--accent-wash);
+
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter),
+    border-left-color var(--dur-fast) var(--ease-enter),
+    text-decoration-color var(--dur-fast) var(--ease-enter);
+}
+
+.link:hover,
+.link:focus-visible {
+  color: var(--ink); /* ratio in src/tokens.css; the row brightens, it does not grow */
+  background-color: var(--accent-wash);
+  border-left-color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+/* The global focus ring is never removed; it is only pulled in tight to the
+   row so a keyboard reader sees one rectangle rather than a ring around a
+   full-width block with a wash inside it. */
+.link:focus-visible {
+  outline-offset: -2px;
+}
+
+/* --- the closing note ------------------------------------------------------
+   Added 2026-09-05 with the sentence that moved here from risks-hero (see
+   RisksContents.tsx). A plain narrow paragraph, the same measure and colour
+   every other section's `.tight`-style closing line on this site uses. */
+.tight {
+  max-width: var(--measure);
+  margin-top: var(--s6);
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+@media (min-width: 52rem) {
+  .list {
+    columns: 2;
+  }
+}

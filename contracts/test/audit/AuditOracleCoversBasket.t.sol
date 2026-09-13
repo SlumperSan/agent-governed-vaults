@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
 // Oracle-covers-basket gate — closes the "creatable permanent brick" hole found by the pre-mainnet

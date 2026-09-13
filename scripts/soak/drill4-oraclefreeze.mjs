@@ -21,7 +21,9 @@
  *
  * What Base Sepolia additionally cannot exercise is the SEQUENCER leg: the testnet oracle leaves
  * `sequencerUptimeFeed` at `address(0)` by design, so `_requireSequencerUp` is a no-op and the
- * grace-tail path's first real execution is still mainnet.
+ * grace-tail path has never executed. Being deployed to a mainnet did not discharge that either:
+ * Chainlink publishes no L2 sequencer uptime feed for Robinhood Chain (4663) and has said it will
+ * not add one, so its first real execution waits for a chain that has a feed to wire.
  *
  * So a "no freeze occurred" outcome is NOT a weaker version of this drill — it is the expected
  * outcome on a healthy feed, and #21 anticipates it: *"if none occurs within the soak window,
@@ -49,16 +51,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, log, assert, openState } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { deploymentPath, loadDeployment } from './deployment.mjs';
 import {
   readSeries, summarize, findGaps, summarizeFreezeSafety, summarizeSequencer, oracleCanaryRows, verdictOf,
   freezeSafetyReport,
 } from './series-analysis.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series.jsonl');
 const CANARY_STATE = process.env.SOAK_CANARY_STATE ?? path.join(ROOT, 'data', 'canary-state.json');
@@ -112,7 +111,8 @@ if (gaps.length) {
 log(`sequencer gate: ${JSON.stringify(sequencer.states)}`);
 if (!sequencer.exercised) {
   log('  the sequencer leg was NOT exercised in this window (sequencerUptimeFeed is address(0) — Base Sepolia by design).');
-  log('  That is an unexecuted code path, not a passing sub-check: its first real execution is mainnet.');
+  log('  That is an unexecuted code path, not a passing sub-check: a first real execution waits for a chain');
+  log('  that has an uptime feed to wire, which Robinhood Chain (4663) does not.');
 } else if (sequencer.notUpSamples) {
   log(`  *** the sequencer was not fully up in ${sequencer.notUpSamples} sample(s); earliest computed resume ${sequencer.earliestResumesAtSec ?? 'n/a'} ***`);
 }
@@ -137,7 +137,7 @@ if (result.verdict === 'INSUFFICIENT_EVIDENCE') {
   log('VERDICT: STALENESS EVENT OBSERVED');
   for (const a of result.breached) log(`  ${a.symbol}: ${a.breachSamples}/${a.readableSamples} readable samples frozen (priceWad reverted)`);
   assert(result.canaryTracked,
-    `a staleness breach was observed on-chain but no canary oracle-freshness row keyed by a BASKET ASSET left ok (${result.canaryAssetRows} such row(s) exist) — the canary did NOT track the freeze. Per-vault meta rows (sequencer, flavor) are excluded on purpose: on Base Sepolia the sequencer row is permanently skipped and would satisfy this check by itself`);
+    `a staleness breach was observed on-chain but no canary oracle-freshness row keyed by a BASKET ASSET left ok (${result.canaryAssetRows} such row(s) exist) — the canary did NOT track the freeze. Per-vault meta rows (sequencer, flavor) are excluded on purpose: neither evidences anything about an asset. The sequencer row used to be permanently skipped where sequencerUptimeFeed is address(0) and would have satisfied this check by itself; it now reports ok (not-applicable), and the exclusion is kept on status-blind grounds because the flavor row is skipped today`);
   log('  canary tracked the event (at least one ASSET row left ok)');
 } else {
   log('VERDICT: NO STALENESS EVENT IN THE WINDOW — documenting worst-case age instead (per #21)');

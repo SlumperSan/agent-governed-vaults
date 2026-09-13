@@ -17,19 +17,19 @@ deployable at all. It is the newest contract in the package (Sprint 7).
 
 - **Constructor** takes `type(VaultCore).creationCode` (initcode is capped at 49,152 B by EIP-3860,
   so it fits there) and copies it into **two immutable, non-executable data contracts** (`codeChunkA`,
-  `codeChunkB`) via the SSTORE2 convention — each chunk is prefixed with a `STOP` byte so it can
+  `codeChunkB`) via the SSTORE2 convention: each chunk is prefixed with a `STOP` byte so it can
   never be executed.
 - **`deploy(bytes ctorArgs)`** reads both chunks back, appends the caller's ABI-encoded constructor
   arguments, and `CREATE`s. The bytes that reach `CREATE` are therefore fixed at compile time and
   verifiable on-chain. A failing VaultCore constructor bubbles its own revert data unchanged (so
   callers still observe `VaultCore.BadConfig()`).
-- **`creationCode()`** reassembles both chunks — a verification aid that must equal the compiled
+- **`creationCode()`** reassembles both chunks: a verification aid that must equal the compiled
   `type(VaultCore).creationCode`.
 
-## Trust — none
+## Trust: none
 
 This contract holds **no authority**: no owner, no state after construction, no privileged
-relationship with any singleton. Calling `deploy` directly yields an **unattested** VaultCore —
+relationship with any singleton. Calling `deploy` directly yields an **unattested** VaultCore;
 exactly what anyone could already obtain by deploying VaultCore themselves. Attestation stays
 anchored in [[operatorregistry]], whose `attestVault` is callable only by the wired
 [[vaultfactory]] (CM-5). What the factory's immutable `deployer` pin buys is the *other* direction:
@@ -37,16 +37,16 @@ the factory can only ever `CREATE` through this one code path.
 
 ## Findings
 
-No standalone security findings live here — it is a mechanical byte-plumbing contract. It is
+No standalone security findings live here: it is a mechanical byte-plumbing contract. It is
 relevant to the [[delegatecall-split-rejected]] decision (an alternative way to relieve VaultCore's
 EIP-170 pressure that was considered and rejected) and it is the reason the factory's own size is
 comfortable (see [[vaultfactory]]).
 
-## Size — EIP-170
+## Size: EIP-170
 
 Runtime tiny (~60-line contract); its *initcode* is the large artifact (it carries VaultCore's
 creation code), which fits under the EIP-3860 initcode cap. VaultCore itself remains the binding
-constraint — see [[vaultcore]].
+constraint; see [[vaultcore]].
 
 ## Links
 

@@ -1,0 +1,145 @@
+/* ===========================================================================
+   risks-scope-additions: the whole of "The limits of every claim on this site"
+   ---------------------------------------------------------------------------
+   Owned by this section. Every colour and length below is a token from
+   src/tokens.css. Deliberately the same shape as risks-verify's own <dl> —
+   this section sits immediately before it in document order and reads as
+   part of the same run of static disclosures, not as a new component style.
+   NOTHING HERE MOVES: no Reveal, no transition, no hover affordance.
+   =========================================================================== */
+
+.section {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.heading {
+  margin: 0 0 var(--s6);
+  max-width: 22ch;
+  color: var(--ink);
+}
+
+/* The intro sentence, between the heading and the list. Same shape as
+   risks-verify's own lede, which sits immediately below this section: the two
+   read as one run of static disclosures rather than as two components. */
+.lede {
+  margin: 0 0 var(--s6);
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+.rows {
+  margin: 0;
+  max-width: 58rem;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: block;
+  padding-block: var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.term {
+  margin: 0 0 var(--s2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+@media (max-width: 46rem) {
+  .row {
+    padding-block: var(--s4);
+  }
+}
+
+/* --- the four groups this is wrong for -------------------------------------
+   MOVED HERE from who-not-for on 2026-09-05, round 8, with the copy; see
+   RisksScopeAdditions.tsx and groups.ts. The rules are that section's own,
+   carried across with two things dropped: the hover affordance, because
+   nothing else in this run of disclosures moves and a hover state on a block
+   that is not a link reads as an affordance that is not there; and a comment
+   about a Reveal stagger, because there is no Reveal on this page.
+
+   Each entry is set under a single hairline rule: no fill, no border box, no
+   radius. A filled panel is the shape this site uses for a claim it is making;
+   these four are the opposite of a claim, and giving a refusal the presence of
+   a claim flatters it. The rule is the whole ornament.
+
+   TWO COLUMNS, NEVER THREE. `auto-fit` at this reading width resolves to three
+   tracks and strands the fourth entry alone on a row, which reads as one more
+   thing tacked on. The fourth entry is the jurisdiction exclusion; it is not an
+   afterthought. The column count is declared, not derived. */
+
+.groupsHeading {
+  margin: var(--s8) 0 var(--s6);
+  max-width: 24ch;
+  color: var(--ink);
+}
+
+.groups {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s6);
+}
+
+@media (min-width: 48rem) {
+  .groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--s7);
+    row-gap: var(--s7);
+
+    /* An entry ends where its sentence ends, rather than stretching to the
+       taller of its row: an entry carries a rule on its top edge and nothing
+       on its bottom, so a stretched one would draw no boundary anyway. */
+    align-items: start;
+  }
+}
+
+.entry {
+  padding-block-start: var(--s5);
+  border-block-start: 1px solid var(--line);
+}
+
+/* `text-wrap: pretty`, not `balance`. Balance evens the line lengths and does
+   it, on the second heading, by breaking inside `set-and-forget`, splitting
+   the compound the entry is about. Pretty only protects the last line, which
+   leaves the term intact. */
+.entryTitle {
+  margin: 0 0 var(--s3);
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* max-width: none because the entry column is already narrower than the
+   measure at two columns, and a second bound would make the single-column
+   layout ragged against its own rule. */
+.entryBody {
+  margin: 0;
+  max-width: none;
+  color: var(--muted);
+}
+
+/* The emphasis inside the first entry restricts "will not be raised" to the
+   first vault. It is meaning, not decoration, so it is marked by weight and
+   ink rather than by italics alone, which at this size on this ground is
+   nearly invisible. */
+.entryBody em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--ink);
+}

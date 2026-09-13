@@ -4,7 +4,8 @@
  * The remote settling facilitator, as an HTTP service.
  *
  * This is the piece that was missing between the two halves the repo already had:
- * `createHttpFacilitator` (API side — POSTs a challenge + envelope to a URL, stays keyless) and
+ * `createHttpFacilitator` (API side under `FACILITATOR=http` — POSTs a challenge + envelope to a
+ * URL, stays keyless) and
  * `createSettlingFacilitator` (chain side — recovers the payer and broadcasts
  * `transferWithAuthorization`). Nothing spoke the wire protocol between them. This does.
  *
@@ -13,10 +14,15 @@
  *
  * ## Why this is a separate process
  *
- * It is the only component in the system that holds a key. The API server and the indexer stay
- * keyless and non-custodial (docs/RUNTIME.md §7); putting the settler behind an HTTP boundary is
- * what makes that true rather than aspirational. Run it isolated, on a host you control, and
- * expose it only to your API.
+ * It is the only component that holds a key in the modes launch uses. Under `FACILITATOR=stub` and
+ * `FACILITATOR=http` the API server and the indexer stay keyless and non-custodial
+ * (docs/RUNTIME.md §7); putting the settler behind an HTTP boundary is what makes that true rather
+ * than aspirational. Run it isolated, on a host you control, and expose it only to your API.
+ *
+ * The opt-in `FACILITATOR=svm` mode is the exception, and this paragraph asserted the universal
+ * until the mode that falsifies it shipped: x402 `exact` on Solana requires the facilitator to sign
+ * as FEE PAYER, so there is nothing to delegate over HTTP — the key lives in the API process and it
+ * pays lamports. That mode is off by default. See `facilitator-svm.mjs`.
  *
  * ## What it refuses to do
  *

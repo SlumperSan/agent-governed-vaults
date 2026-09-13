@@ -33,7 +33,7 @@ args = {
 }
 ```
 
-Returns `{ confirmed, killed, report }`. `killed` is kept deliberately — knowing what was proposed
+Returns `{ confirmed, killed, report }`. `killed` is kept deliberately; knowing what was proposed
 and refuted is how you tell a thorough review from a lucky one.
 
 **Why it is shaped this way.** A finder pool alone produces plausible-but-wrong findings at a high
@@ -41,7 +41,7 @@ rate, and each one costs a human reviewer real time. Three things do the work:
 
 - **Refuters are told that killing the finding is the win.** The burden of proof sits on the
   finding. A verifier that cannot establish the claim votes to refute.
-- **Lenses differ rather than repeat.** A wrong finding usually fails in one specific way — it
+- **Lenses differ rather than repeat.** A wrong finding usually fails in one specific way: it
   misread the code, or it is real but unreachable, or it is already mitigated elsewhere. Identical
   verifiers share blind spots; different ones do not.
 - **Ties and verifier failures count against the finding.** Unverified is not the same as confirmed.
@@ -66,7 +66,7 @@ args = {
 
 Returns `{ units, documents, integrated }`.
 
-**Why it is shaped this way.** Writing N documents in one context makes them blur — later sections
+**Why it is shaped this way.** Writing N documents in one context makes them blur; later sections
 inherit the vocabulary and assumptions of earlier ones, and the set converges on a single voice that
 agrees with itself. Independent authors disagree, and the disagreements are the valuable output:
 they mark where an unstated assumption is hiding.
@@ -74,7 +74,7 @@ they mark where an unstated assumption is hiding.
 So the integrate pass is **not a summarizer**. It hunts for contradictions between units, names the
 binding constraint and argues for it against the runner-up, and collects the decisions no author had
 standing to make. A synthesis reporting "all units are aligned" has usually just flattened the
-signal — the workflow tells the integrator to say what it checked when it finds no conflicts.
+signal; the workflow tells the integrator to say what it checked when it finds no conflicts.
 
 This is the one place a barrier is correct: the integrator compares every unit against every other,
 so it genuinely needs the complete set.
@@ -84,7 +84,7 @@ so it genuinely needs the complete set.
 ## Adding a workflow
 
 A pattern earns a file here once it has been run twice and worked. Before then it is a script, not a
-pattern. When you add one, write down *why* the structure is what it is — a future reader can see
+pattern. When you add one, write down *why* the structure is what it is; a future reader can see
 the shape from the code, but not the failure mode it was built to avoid.
 
 Both scripts log their caps (`CAP: reviewing 5 of 8 targets. NOT covered: …`). Keep that habit: a

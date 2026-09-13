@@ -69,11 +69,18 @@
  *
  * Every branch below that cannot measure returns `detectorBroken`, which the transition tracker
  * re-asserts on a doubling backoff. The one departure from `oracle-health.mjs` is
- * `minConsecutive: UNREADABLE_SWEEPS`: every blind branch here is triggered by an eth_call coming
- * back empty, and PR #92 recorded observing exactly that against `aggregator()` on 2026-08-30 —
- * a single empty return is RPC noise, three consecutive is the feed. oracle-health needs no such
- * damping because its blind branch is structural (an oracle answering an ABI it does not have),
- * not a transient read.
+ * `minConsecutive: UNREADABLE_SWEEPS`: the case that earned it is an eth_call coming back empty,
+ * which PR #92 recorded observing against `aggregator()` on 2026-08-30 — a single empty return is
+ * RPC noise, three consecutive is the feed. That is the case it was written for, not the only one
+ * it covers: every blind branch here is also reachable on a confirmed revert, and on a transport
+ * failure since the reader began telling those apart, and the damping applies to all three.
+ *
+ * `oracle-health` carries no such damping, but not for the reason this header used to give. Its
+ * blind branches are FOUR, not one (`oracle-health.mjs:173, 264, 356, 401`), and only `:173`'s CAN
+ * be structural — an oracle answering neither known ABI — its `:176` leg being the transport case.
+ * Of the rest, `:264` and `:401` fire only when the kind is transport (`:259`, `:400`), and `:356`
+ * on any failed `feedOf()`, a confirmed revert included (`:350`) — so “structural, not a transient
+ * read” never covered all of them; they simply set no `minConsecutive`.
  *
  * Fans out one result per (vault, asset), keyed by asset, like `oracle-freshness`.
  */
@@ -249,9 +256,23 @@ async function assetIdentity({ reader, vault, oracle, asset, pins }) {
   // HARM LEGS FIRST, in the constructor's own order (`_requireUsdQuote`, then `decimals`). Order
   // decides which cause a responder chases — the Dev11 lesson, applied here too.
   if (!desc.ok || !dec.ok) {
+    // "did not answer" is a claim about the FEED, so only a confirmed revert from every read that
+    // failed may make it — the same rule `:212` already applies to `feedOf()`. The guard is `||`
+    // above, so one of the two may have succeeded; a succeeded read carries no `kind` and must not
+    // drag the wording neutral on its own.
+    const answered = (desc.ok || desc.kind === 'revert') && (dec.ok || dec.kind === 'revert');
+    const which = `${!desc.ok ? 'description()' : ''}${!desc.ok && !dec.ok ? ' or ' : ''}${!dec.ok ? 'decimals()' : ''}`;
+    const why = (desc.error ?? dec.error) || 'no error text';
     return blind(
-      `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} did not answer ${!desc.ok ? 'description()' : ''}${!desc.ok && !dec.ok ? ' or ' : ''}${!dec.ok ? 'decimals()' : ''} (${(desc.error ?? dec.error) || 'no error text'}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift, not clean`,
-      { ...detail, descriptionError: desc.error ?? null, decimalsError: dec.error ?? null },
+      answered
+        ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} did not answer ${which} (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift, not clean`
+        : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${which} on the feed at ${shortAddr(cfg.feed)} could not be read (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
+      {
+        ...detail,
+        descriptionError: desc.error ?? null, decimalsError: dec.error ?? null,
+        descriptionKind: desc.ok ? null : desc.kind ?? null,
+        decimalsKind: dec.ok ? null : dec.kind ?? null,
+      },
     );
   }
 
@@ -280,9 +301,19 @@ async function assetIdentity({ reader, vault, oracle, asset, pins }) {
 
   // IDENTITY LEG. Harm-free by itself, and only reached once both harm legs have passed.
   if (!agg.ok && !phase.ok) {
+    // "answered neither" is the same claim about the feed as the harm leg's "did not answer", and
+    // carries the same condition: both reads must have come back as confirmed reverts.
+    const answered = agg.kind === 'revert' && phase.kind === 'revert';
+    const why = (agg.error ?? phase.error) || 'no error text';
     return blind(
-      `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} answered neither aggregator() nor phaseId() (${(agg.error ?? phase.error) || 'no error text'}), so an aggregator swap cannot be observed at all. The denomination and cached-scale checks DID pass this sweep — the harm checks are running; it is the swap NOTICE that is blind`,
-      { ...detail, aggregatorError: agg.error ?? null, phaseIdError: phase.error ?? null },
+      answered
+        ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} answered neither aggregator() nor phaseId() (${why}), so an aggregator swap cannot be observed at all. The denomination and cached-scale checks DID pass this sweep — the harm checks are running; it is the swap NOTICE that is blind`
+        : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: neither aggregator() nor phaseId() on the feed at ${shortAddr(cfg.feed)} could be read (${why}), so an aggregator swap cannot be observed this sweep. The denomination and cached-scale checks DID pass this sweep — the harm checks are running; it is the swap NOTICE that is blind`,
+      {
+        ...detail,
+        aggregatorError: agg.error ?? null, phaseIdError: phase.error ?? null,
+        aggregatorKind: agg.kind ?? null, phaseIdKind: phase.kind ?? null,
+      },
     );
   }
 

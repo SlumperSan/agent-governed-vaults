@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { oracleHealth, position, vaultView, SORTS } from '../src/vault-view.mjs';
+import { oracleHealth, position, votingEligibility, vaultView, SORTS } from '../src/vault-view.mjs';
 import { VAULTS, WALLET, NOW, vaultByAddress } from '../src/fixtures.mjs';
 import { mapVaultRecords } from '../src/live-adapter.mjs';
 import { PROPOSAL_UNKNOWN } from '../src/governance.mjs';
@@ -192,4 +192,71 @@ test('sorts rank on the named signal, and tolerate a missing one', () => {
   }
   const byFee = [...views].sort(SORTS.fee.fn);
   assert.equal(byFee[0].fees.exitFeeMaxBps, 0, 'lowest exit fee first');
+});
+
+test('votingEligibility mirrors votingEligibleShares, including a partial queue', () => {
+  // VaultCore.sol:1025-1028 — `if (member == parentVault()) return 0; return sharesOf[member] -
+  // queuedExitShares[member]`. `requestExit(shares)` takes any amount up to the balance
+  // (VaultCore.sol:545-547), so a partial queue leaves a voting remainder, and a strip that only
+  // knew "queued / not queued" would report that remainder as nothing.
+  const partial = votingEligibility({ shares: 100n * WAD, queuedExitShares: 30n * WAD, isParentVault: false });
+  assert.equal(partial.eligibleShares, 70n * WAD);
+  assert.equal(partial.lockedShares, 30n * WAD);
+  assert.equal(partial.reason, 'queued');
+
+  const whole = votingEligibility({ shares: 100n * WAD, queuedExitShares: 100n * WAD, isParentVault: false });
+  assert.equal(whole.eligibleShares, 0n, 'a queue for the whole balance leaves no vote at all');
+  assert.equal(whole.reason, 'queued');
+
+  const none = votingEligibility({ shares: 100n * WAD, queuedExitShares: 0n, isParentVault: false });
+  assert.equal(none.eligibleShares, 100n * WAD);
+  assert.equal(none.lockedShares, 0n);
+  assert.equal(none.reason, 'full');
+});
+
+test('votingEligibility carves out the parent vault, queued exit or not', () => {
+  // The carve-out is the FIRST branch in the contract and does not read queuedExitShares at all:
+  // a registered parent holds shares in its child and is excluded from eligible stake and from
+  // the holder count (`_snapshot` pushes 0 for it — VaultCore.sol:509-517).
+  const p = votingEligibility({ shares: 500n * WAD, queuedExitShares: 0n, isParentVault: true });
+  assert.equal(p.eligibleShares, 0n);
+  assert.equal(p.lockedShares, 0n, 'zero because it is the parent, not because anything is queued');
+  assert.equal(p.reason, 'parent');
+});
+
+test('position states the voting-eligible amount, so a queued exit does not silently strip the vote', () => {
+  // The soak case: a member holding ~20% of a vault whose votingEligibleShares reads 0, with
+  // nothing on the page saying so. 0x2222's holder has queued their whole balance.
+  const view = vaultView(vaultByAddress('0x2222000000000000000000000000000000002222'), WALLET, NOW);
+  assert.equal(view.facts.hasQueuedExit, true);
+  assert.ok(view.position.shares > 0n, 'still holds shares — they are locked, not burned');
+  assert.equal(view.position.voting.eligibleShares, 0n);
+  assert.equal(view.position.voting.lockedShares, view.position.shares);
+  assert.equal(view.position.voting.reason, 'queued');
+
+  // A vault the same wallet holds with nothing queued keeps its whole vote.
+  const open = vaultView(vaultByAddress('0x1111000000000000000000000000000000001111'), WALLET, NOW);
+  assert.equal(open.position.voting.eligibleShares, open.position.shares);
+  assert.equal(open.position.voting.reason, 'full');
+});
+
+test('position resolves the parent-vault carve-out from the record, not from a guess', () => {
+  // 0x3333 is a sub-vault whose `parent` is 0x1111. Viewed AS that parent, the position holds
+  // shares and carries no vote; viewed as anyone else, the same holding votes in full.
+  const sub = vaultByAddress('0x3333000000000000000000000000000000003333');
+  const holding = { vault: sub.address, shares: 245n * WAD, costBasisUsdc: 0n, lastDepositTime: NOW };
+
+  const asParent = position(sub, holding, NOW, sub.parent);
+  assert.equal(asParent.voting.eligibleShares, 0n);
+  assert.equal(asParent.voting.reason, 'parent');
+
+  const asMember = position(sub, holding, NOW, WALLET.address);
+  assert.equal(asMember.voting.eligibleShares, 245n * WAD);
+  assert.equal(asMember.voting.reason, 'full');
+
+  // A ROOT vault carries `parent: null`, so the carve-out can never bite: address(0) is not a
+  // member. Reading a root record must not turn a wallet with no address into the parent.
+  const root = vaultByAddress('0x1111000000000000000000000000000000001111');
+  assert.equal(root.parent, null);
+  assert.equal(position(root, { ...holding, vault: root.address }, NOW, null).voting.reason, 'full');
 });

@@ -18,9 +18,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer,
-  LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN,
+  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, runsForHead,
+  LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
+// Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
+import { PR_FIELDS, RUN_FIELDS, missingFields, validateGhPayloads } from '../merge-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -417,4 +419,306 @@ test('MERGE-POLICY.md embeds merge-policy.json verbatim', () => {
     raw.replace(/\r\n/g, '\n').trimEnd(),
     'the doc humans read has drifted from the rules the program enforces — regenerate it',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The gate must not evaluate its own runs
+// ---------------------------------------------------------------------------------------------
+//
+// `merge-preflight.mjs` lists runs with `--branch <headRefName>` and no `--workflow` filter, so the
+// preflight's OWN runs come back inside the set it is about to judge. One root cause, three
+// symptoms, and the third is permissive:
+//
+//   1. SELF-BLOCK. A `pull_request`-triggered run is on the PR head and `in_progress` while it
+//      evaluates, so it lands in `pending` and pushes a blocker against itself.
+//   2. MISCOUNTING. A *completed* preflight run lands in `succeeded`, because `conclusion` is the
+//      RUN's conclusion -- a run that succeeded at posting a `failure` commit status has
+//      `conclusion: 'success'`. The gate commits inside itself the artifact-substitution error that
+//      four sessions committed reading it.
+//   3. A HEAD WITH NO CI PASSES `ci-matches-head`. One completed preflight run makes
+//      `mine.length === 0` false and `succeeded.length === 1` true, which defeats the
+//      `succeeded===0 && failed===0 && pending===0` catch-all. LATENT today only because `ci.yml`
+//      has a bare `pull_request:` trigger with no `paths:` filter, so CI and the preflight always
+//      appear together -- one routine "skip CI for docs-only changes" arms it.
+//
+// Every fixture here reuses the shape of the stale-CI test above: roster + ACCEPT token, no
+// `headCommittedDate`, no `behindBy`, so `ci-matches-head` is the only rule that can fire and the
+// assertions isolate it.
+
+/** Roster + ACCEPT, so nothing but `ci-matches-head` can block. */
+const cleared = [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->\n<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->' }];
+const onHead = { number: 1, state: 'OPEN', headRefOid: 'newhead0', headRefName: 'b' };
+
+test('symptom 1 — the gate own in-progress run does not block the head it is judging', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      ...greenOn('newhead0'),
+      // The preflight looking at itself: same head, still running, because it IS the run asking.
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, true, 'a green CI on this head is green; the gate own run is not evidence about the head');
+});
+
+test('symptom 1 — a real CI run still in progress DOES block, so the exclusion is not a blanket mute', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: 'CI' },
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.equal(d.blockers.length, 1, 'exactly one blocker: CI. The gate must not also report itself.');
+  assert.match(d.blockers[0].detail, /run CI on head/);
+  assert.doesNotMatch(d.blockers[0].detail, /merge-preflight/);
+});
+
+test('symptom 2 — a COMPLETED preflight run is not a green: its conclusion is the run, not the status it posted', () => {
+  // This run concluded `success`. What it posted may have been `merge-preflight = failure`; the run
+  // succeeded at posting it. Counting it as CI green is reading the wrong artifact.
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME }],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false, 'the only run on this head is the gate own run — that is not CI');
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /no workflow run exists for head/);
+});
+
+test('symptom 2 — the preflight is excluded from the tally even when a genuine red is present', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'failure', name: 'CI' },
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.equal(d.blockers.length, 1, 'one red, one blocker — the gate own success must not offset it');
+  assert.match(d.blockers[0].detail, /run CI on head newhead0 concluded failure/);
+});
+
+test('symptom 3 (LATENT) — a head whose CI was SKIPPED must not be greened by the preflight own run', () => {
+  // The world one `paths-ignore: ['docs/**']` away: a docs-only PR skips CI, the preflight still
+  // runs. Pre-fix the completed preflight run sits in `succeeded`, defeating the catch-all that
+  // exists for exactly this case, and `ci-matches-head` — the rule NAMED for matching CI to the
+  // head — reports clear on a head that has no CI.
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'skipped', name: 'CI' },
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false, 'a skipped CI plus the gate own run is not a green head');
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, /none conclusive/);
+});
+
+test('symptom 3 (LATENT) — a head with NO CI at all blocks, and the message says the gate runs are excluded', () => {
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    // Both of the preflight's own triggers can land on the PR branch; neither is CI.
+    runs: [
+      { headSha: 'newhead0', status: 'completed', conclusion: 'success', name: SELF_WORKFLOW_NAME },
+      { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    ],
+    mode: 'strict',
+  });
+  assert.equal(d.clear, false);
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  // `gh run list` plainly shows two runs on this head, so the message must say why it counted none —
+  // or the next reader spends a night deciding the gate is lying to them.
+  assert.match(d.blockers[0].detail, /no workflow run exists for head/);
+  assert.match(d.blockers[0].detail, new RegExp(`own '${SELF_WORKFLOW_NAME}' runs are excluded`));
+});
+
+test('the exclusion is exact-match, so it cannot silently swallow another workflow', () => {
+  // A future `merge-preflight-lint` is a real workflow whose result is real evidence. A
+  // `startsWith`/`includes` filter would eat it and nobody would notice.
+  const neighbour = `${SELF_WORKFLOW_NAME}-lint`;
+  const d = evaluate({
+    pr: onHead,
+    comments: cleared,
+    runs: [
+      ...greenOn('newhead0'),
+      { headSha: 'newhead0', status: 'completed', conclusion: 'failure', name: neighbour },
+    ],
+    mode: 'strict',
+  });
+  assert.deepEqual(ruleIds(d.blockers), ['ci-matches-head']);
+  assert.match(d.blockers[0].detail, new RegExp(`run ${neighbour} on head`));
+});
+
+test('runsForHead excludes the gate own runs at the unit level, on either head-SHA casing', () => {
+  const runs = [
+    { headSha: 'NEWHEAD0', status: 'completed', conclusion: 'success', name: 'CI' },
+    { headSha: 'newhead0', status: 'in_progress', conclusion: null, name: SELF_WORKFLOW_NAME },
+    { headSha: 'oldhead0', status: 'completed', conclusion: 'success', name: 'CI' },
+  ];
+  assert.deepEqual(runsForHead(runs, 'newhead0').map((r) => r.name), ['CI']);
+});
+
+test('SELF_WORKFLOW_NAME is pinned to the workflow file, so a rename fails loudly instead of silently un-filtering', () => {
+  // The whole safety argument for filtering on a DISPLAY STRING is this test. Without it, editing
+  // `name:` in the yml re-arms all three symptoms and nothing anywhere goes red.
+  const yml = readFileSync(path.join(ROOT, '.github', 'workflows', 'merge-preflight.yml'), 'utf8');
+  const m = yml.match(/^name:\s*(\S.*?)\s*$/m);
+  assert.ok(m, '.github/workflows/merge-preflight.yml must declare a top-level `name:`');
+  assert.equal(
+    m[1],
+    SELF_WORKFLOW_NAME,
+    'the workflow was renamed without updating SELF_WORKFLOW_NAME — the gate is evaluating its own runs again',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The fields the gate reads off `gh` must not go missing quietly
+// ---------------------------------------------------------------------------------------------
+//
+// #137 made `runsForHead` exclude this gate's own runs with `r.name !== SELF_WORKFLOW_NAME`, and
+// pinned `SELF_WORKFLOW_NAME` to the workflow's `name:` so a rename fails loudly. It pinned one end
+// of the chain. The other end was `r.name`, which `merge-preflight.mjs` maps from `workflowName` in
+// a `gh run list --json` field list that nothing referred to: drop that one word and every
+// `r.name` is `undefined`, `undefined !== 'merge-preflight'` is always true, the filter is a no-op,
+// and a head with NO CI clears `ci-matches-head` again.
+//
+// Reproduced end to end on 2026-09-10 against a `gh` that honours the `--json` field list: the
+// script printed CLEAR and exited 0 on a head with one preflight run and zero CI runs -- and this
+// suite stayed 30/30 green, because it imports `verdicts.mjs` and builds `name` onto its own
+// fixtures, so no test here could ever have seen a field-name change. That is the gap these close.
+
+test('a nameless run is invisible to the name filter, which is why the adapter must never emit one', () => {
+  // Characterisation, not endorsement: `runsForHead` belongs to the PURE evaluator, its `Run.name`
+  // is declared optional, and its fixtures may legitimately omit optional fields. Making it throw
+  // would put it at odds with its own typedef and with the "not checked, not silently passed as
+  // checked" tests above. So the contract check belongs in the adapter, where "this came from `gh`"
+  // is knowable -- and this is the exact behaviour that makes it load-bearing there.
+  const nameless = [{ headSha: 'newhead0', status: 'completed', conclusion: 'success' }];
+  assert.deepEqual(runsForHead(nameless, 'newhead0'), nameless, 'no name, nothing to exclude by');
+  const named = [{ ...nameless[0], name: SELF_WORKFLOW_NAME }];
+  assert.deepEqual(runsForHead(named, 'newhead0'), [], 'with the name present the filter bites');
+});
+
+test('the gh --json field lists are pinned to the fields the adapter maps, and to the mapping itself', () => {
+  // Both halves, because the mutation under test touches only one of them: pinning the `r.name`
+  // mapping alone stays green when the request loses `workflowName`, and pinning the request alone
+  // stays green when the mapping is rewritten. Anchored to each `gh` invocation rather than grepped
+  // as a bare substring -- `workflowName` also appears in merge-policy.json's `ci-matches-head.why`,
+  // where a loose match would pass for the wrong reason.
+  const src = readFileSync(path.join(ROOT, 'scripts', 'merge-preflight.mjs'), 'utf8');
+
+  const runReq = src.match(/'run',\s*'list',[\s\S]*?'--json',\s*'([^']+)'/);
+  assert.ok(runReq, 'merge-preflight.mjs must ask `gh run list` for an explicit --json field list');
+  assert.equal(
+    runReq[1], RUN_FIELDS.join(','),
+    'the run request and RUN_FIELDS have drifted. They are two independent statements of one list on purpose: a required set derived from the request cannot catch a field dropped from the request.',
+  );
+  const prReq = src.match(/'pr',\s*'view',[\s\S]*?'--json',\s*'([^']+)'/);
+  assert.ok(prReq, 'merge-preflight.mjs must ask `gh pr view` for an explicit --json field list');
+  assert.equal(prReq[1], PR_FIELDS.join(','), 'the PR request and PR_FIELDS have drifted');
+
+  // Named literally, so deleting a field from BOTH statements above is still red. These are the
+  // four FIELD-LIST entries whose absence DISARMS a rule instead of blocking on it; `.behind_by` is
+  // the fifth such value and is checked by type rather than by presence, since `--jq` names it.
+  assert.ok(RUN_FIELDS.includes('workflowName'), 'without workflowName, runsForHead excludes nothing and a head with no CI clears ci-matches-head');
+  assert.ok(PR_FIELDS.includes('commits'), 'without commits there is no headCommittedDate and verdict-covers-head silently stops running');
+  assert.ok(PR_FIELDS.includes('comments'), 'without comments there are no verdicts, so no-standing-reject, verdict-covers-head and base-current all silently stop running');
+  assert.ok(PR_FIELDS.includes('isDraft'), 'without isDraft a draft PR is not blocked');
+
+  // The mapping half: `workflowName` is what becomes `name`, which is what the filter reads.
+  assert.match(
+    src, /name:\s*r\.workflowName/,
+    'merge-preflight.mjs must map workflowName onto `name`; `runsForHead` filters on `name` and reads undefined otherwise',
+  );
+
+  // And the guard must actually sit between `gh` and the evaluator, on the real arguments.
+  const guardAt = src.indexOf('validateGhPayloads(pr.data, runs.data, cmp.data)');
+  const evalAt = src.indexOf('evaluate({');
+  assert.notEqual(guardAt, -1, 'main() must validate the gh payloads on the real arguments');
+  assert.ok(evalAt !== -1 && guardAt < evalAt, 'the payload check must run BEFORE evaluate(), or it checks nothing that matters');
+});
+
+test('missingFields answers on key PRESENCE, not truthiness', () => {
+  // `conclusion` is `""` on an in-progress run and `isDraft` is `false` on most PRs. Both are
+  // answers. A truthiness check would reject the live API's own output.
+  const inProgress = { headSha: 'a', status: 'in_progress', conclusion: '', workflowName: 'CI' };
+  assert.deepEqual(missingFields(inProgress, RUN_FIELDS), [], 'an empty conclusion is a conclusion');
+  assert.deepEqual(missingFields({ headSha: 'a', status: 'completed', conclusion: 'success' }, RUN_FIELDS), ['workflowName']);
+  assert.deepEqual(missingFields(null, RUN_FIELDS), RUN_FIELDS, 'no object: everything is missing');
+  assert.deepEqual(missingFields('not an object', RUN_FIELDS), RUN_FIELDS);
+});
+
+// A payload shaped like the live API's, so every negative case below differs from a working one by
+// one field and nothing else.
+const okPr = () => ({
+  number: 1, state: 'OPEN', isDraft: false, headRefName: 'b', headRefOid: 'newhead0',
+  baseRefName: 'protocol/main',
+  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' }],
+  commits: [{ oid: 'newhead0', committedDate: '2026-09-01T21:00:00Z' }],
+});
+const okRuns = () => [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', workflowName: 'CI' }];
+
+test('validateGhPayloads passes the live shapes it was written against', () => {
+  assert.equal(validateGhPayloads(okPr(), okRuns(), 0), null);
+  assert.equal(validateGhPayloads(okPr(), okRuns(), 43), null, 'a behind branch is a judgement for base-current, not a broken payload');
+  assert.equal(validateGhPayloads(okPr(), [], 0), null, 'NO RUNS is a legitimate state: ci-matches-head blocks on it correctly, and this must not pre-empt that');
+  assert.equal(
+    validateGhPayloads(okPr(), [{ headSha: 'newhead0', status: 'in_progress', conclusion: '', workflowName: 'CI' }], 0),
+    null,
+    'an in-progress run has an empty conclusion and is still a whole run',
+  );
+  assert.equal(
+    validateGhPayloads({ ...okPr(), comments: [] }, okRuns(), 0), null,
+    'a PR with no comments yet is a PR with no comments yet; the roster rules answer that, not this',
+  );
+});
+
+test('validateGhPayloads fails CLOSED on every field whose absence would disarm a rule', () => {
+  // Each of these puts undefined into the evaluator today, and each turns a rule off rather than
+  // making it complain. Exit 2 is "could not determine", which the workflow publishes as `error`
+  // and which merge-preflight.mjs's header records is not a pass.
+  const withoutWorkflowName = okRuns().map(({ workflowName, ...rest }) => rest);
+  assert.match(
+    String(validateGhPayloads(okPr(), withoutWorkflowName, 0)), /workflowName/,
+    'THE HOLE: no workflowName means runsForHead excludes nothing and a head with no CI clears ci-matches-head',
+  );
+
+  const { commits, ...noCommits } = okPr();
+  assert.match(String(validateGhPayloads(noCommits, okRuns(), 0)), /commits/);
+  assert.match(
+    String(validateGhPayloads({ ...okPr(), commits: [{ oid: 'newhead0' }] }, okRuns(), 0)), /committedDate/,
+    'nested, so no --json field name can ask for it: commits[].committedDate is Mode D only input',
+  );
+
+  const { comments, ...noComments } = okPr();
+  assert.match(String(validateGhPayloads(noComments, okRuns(), 0)), /comments/);
+
+  const { isDraft, ...noDraft } = okPr();
+  assert.match(String(validateGhPayloads(noDraft, okRuns(), 0)), /isDraft/);
+
+  // `--jq` on a key that is not there prints `null` and gh exits 0, so the JSON.parse failure path
+  // never sees it and Mode E just stops firing.
+  assert.match(String(validateGhPayloads(okPr(), okRuns(), null)), /behind_by/);
+  assert.match(String(validateGhPayloads(okPr(), okRuns(), undefined)), /behind_by/);
+
+  // The fields that already fail closed are in the set too: cheap, and it stops the next reader
+  // having to re-derive which half of the list is load-bearing.
+  const { state, ...noState } = okPr();
+  assert.match(String(validateGhPayloads(noState, okRuns(), 0)), /state/);
+  assert.ok(validateGhPayloads(okPr(), [{ status: 'completed', conclusion: 'success', workflowName: 'CI' }], 0));
+  assert.ok(validateGhPayloads(okPr(), 'not an array', 0));
 });

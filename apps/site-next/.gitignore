@@ -12,6 +12,40 @@ dist
 dist-ssr
 *.local
 
+# Section scratch: preview scaffolding and rendered probe output.
+#
+# WHY THIS BLOCK EXISTS. Each section is built and looked at in isolation before
+# it is composed, and the scaffolding that does it lands beside the component: a
+# preview entry, a build script, and a directory of rendered output. Six of those
+# were still in the tree on 2026-09-04 — one of them a whole copy of a built
+# site, _headers and favicons included, at 77 KB — and were removed.
+#
+# THE LINE THESE PATTERNS DRAW, because "starts with an underscore" is not it.
+# A section's directory holds two different kinds of extra file, and only one is
+# disposable:
+#
+#   Disposable — PREVIEW SCAFFOLDING AND RENDERED OUTPUT. A `__preview/` entry
+#   and its build script, a `__preview.html`, a `__probe-out/` of rendered
+#   files. These are how a section was looked at once. Ignored below.
+#
+#   NOT disposable — VERIFICATION SCRIPTS. `__probe.mjs`, `__probe-entry.tsx`,
+#   `__gen.mjs`, `__serve.mjs`, and the `_out/` and `_verify/` directories,
+#   which despite their names hold `verify.mjs` and `render-check.mjs` rather
+#   than output. Section docstrings cite these BY NAME as the re-runnable check
+#   behind a claim — src/sections/risks-register/entries.tsx and
+#   RisksRegister.tsx cite `__probe.mjs`, agents-reference-client/copy.ts cites
+#   `./_out/verify.mjs`, faq-questions/copy.ts cites `_verify/verify.mjs`. A
+#   file a comment tells a reader to run has to be a file the repository
+#   carries, so none of them is ignored and none was removed.
+#
+# The patterns match the shape rather than the six names, because the next
+# preview directory will be called something else.
+__preview*
+__probe-out/
+
+# Reference screenshots. Regenerated from a served dist/, not authored.
+screenshots/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

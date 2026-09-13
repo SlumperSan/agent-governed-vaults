@@ -12,7 +12,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseDeployment, wiringExpectations, loadDeployment } from '../soak/deployment.mjs';
+import {
+  parseDeployment, wiringExpectations, loadDeployment, deploymentPath, assertLiveChainId,
+} from '../soak/deployment.mjs';
 import { classifyCancelPending, SEL_NO_PENDING } from '../soak/oracle-sampler.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -138,6 +140,51 @@ test('the committed base-sepolia address book parses and is chain-84532', () => 
   }
   // The oracle resolves to the deployed ChainlinkOracle in the factory allowlist.
   assert.equal(d.aggregator, '0x3a8bd8a6599c3fdd0b3a269e0142e6b468ddd935');
+});
+
+// ── which chain a soak run targets ────────────────────────────────────────────
+//
+// The expected chain id used to be written down nine times: once per soak entrypoint as
+// `{ expectChainId: 84532 }`, and again in each record's own `chainId`. These pin the one that
+// survived — the record's — and the check that the endpoint agrees with it.
+
+test('a 4663 address book against a live chain 84532 refuses, naming both numbers', () => {
+  // The failure this exists to make legible: a Robinhood Chain 4663 record loaded while SOAK_RPC
+  // still points at Base Sepolia. Both halves are plausible on their own, so the message has to say
+  // which is which or the operator cannot tell whether to change the record or the endpoint.
+  const raw = { ...good(), chainId: 4663, chainName: 'robinhood-mainnet' };
+  const dep = parseDeployment(raw);
+  assert.throws(() => assertLiveChainId(dep, 84532), (e) => {
+    assert.match(e.message, /4663/, 'the record chain id must appear');
+    assert.match(e.message, /84532/, 'the live chain id must appear');
+    assert.match(e.message, /robinhood-mainnet/, 'name the book, so the operator knows which file');
+    return true;
+  });
+});
+
+test('the mismatch is symmetric — a Base Sepolia book against live 4663 refuses too', () => {
+  // Not a formality: a guard that only fires in one direction lets the exact reverse mistake — the
+  // committed base-sepolia.json left in place while SOAK_RPC is repointed — run to completion and
+  // write a series attributed to the wrong chain.
+  const dep = parseDeployment(good());
+  assert.throws(() => assertLiveChainId(dep, 4663), /is chain 84532, but the RPC answers chain 4663/);
+});
+
+test('a matching pair passes and hands back the record chain id', () => {
+  const dep = parseDeployment(good());
+  assert.equal(assertLiveChainId(dep, 84532), 84532);
+  // cast prints the id as text; a string that matches numerically must not be refused.
+  assert.equal(assertLiveChainId(dep, '84532'), 84532);
+});
+
+test('deploymentPath defaults to the committed book and SOAK_DEPLOYMENT overrides it', () => {
+  assert.equal(deploymentPath(ROOT, {}), BOOK);
+  const abs = path.join(ROOT, 'contracts', 'config', 'deployments', 'elsewhere.json');
+  assert.equal(deploymentPath(ROOT, { SOAK_DEPLOYMENT: abs }), abs);
+  // A relative override resolves against the repo root, not the process cwd: the drills are run
+  // from wherever the operator happens to be standing.
+  assert.equal(deploymentPath(ROOT, { SOAK_DEPLOYMENT: 'contracts/config/deployments/rh.json' }),
+    path.join(ROOT, 'contracts/config/deployments/rh.json'));
 });
 
 // ── freeze-safety classifier (drill 4) ────────────────────────────────────────
