@@ -31,7 +31,7 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
    Base RPC ──logs──▶  indexer  ──snapshot file──▶  API  ──HTTP/x402──▶  web
  (viem getLogs)     (index-runner.mjs)  (JSON)   (serve.mjs)          (index.html?api=)
        │                                   │             │
-       │                          (reads)  │    verifyAndSettle │ (no key here: stub/http)
+       │                          (reads)  │    verifyAndSettle │ (no key here: stub/http/standard)
        │                                   ▼             ▼
        └──eth_call / eth_getLogs──▶      canary    facilitator (external)
               (read-only)         (canary-runner.mjs)  verifies EIP-712 sig + settles
@@ -41,12 +41,17 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 - The **indexer** reads real logs from a Base RPC via viem, folds them into projection state, and
   writes an atomic **snapshot file** on an interval. It resumes from that snapshot on restart.
 - The **API** loads the snapshot and reloads it on an interval (separate process, shared file). It
-  serves read routes gated by the x402 payment scheme. Under `FACILITATOR=stub` and
-  `FACILITATOR=http` it holds **no key** and asks a facilitator to verify+settle each payment; the
-  opt-in `FACILITATOR=svm` is the exception and holds one itself (6.6).
+  serves read routes gated by the x402 payment scheme. Under `FACILITATOR=stub`,
+  `FACILITATOR=http` and `FACILITATOR=standard` it holds **no key** and asks a facilitator to
+  verify+settle each payment; the opt-in `FACILITATOR=svm` is the exception and holds one itself
+  (6.6).
 - The **facilitator** is where settlement (and the only key) lives. In production this is a
-  **remote HTTP facilitator** you point the API at. You may also run your own settler: this repo
-  ships one (`apps/api/src/facilitator-server.mjs`), proven live on Base Sepolia (§6).
+  **remote HTTP facilitator** you point the API at, and there are two ways to talk to one:
+  `FACILITATOR=http` speaks this repo's own bespoke wire contract and can therefore only reach a
+  facilitator that also speaks it — this repo ships the one that does
+  (`apps/api/src/facilitator-server.mjs`), proven live on Base Sepolia (§6). `FACILITATOR=standard`
+  (§6.7) speaks the actual x402 protocol instead, so it can reach a real, public, third-party
+  facilitator (e.g. `facilitator.payai.network`) without you running anything yourself.
 - The **canary** watches the deployed contracts for the [DEPLOYMENT §6](DEPLOYMENT.md) signals and
   alerts on transitions. It reads the chain directly (`eth_call`/`eth_getLogs`) and reads, never
   writes, the indexer snapshot, which two of its signals compare against chain state. It is
@@ -213,8 +218,11 @@ Production notes:
 | `PRICE_PAYTO` | ✅ | n/a | recipient of metered-read payments |
 | `PRICE_AMOUNT` | | `10000` | price in USDC base units (6dp); `10000` = $0.01 |
 | `PRICE_NETWORK` | | `base` | network label echoed in the x402 challenge |
-| `FACILITATOR` | | `stub` | `stub` (dev, accept-all) or `http` (remote settler) |
-| `FACILITATOR_URL` | if `http` | n/a | remote facilitator endpoint |
+| `FACILITATOR` | | `stub` | `stub` (dev, accept-all), `http` (this repo's own settler, §6), `standard` (any real x402 facilitator, §6.7) or `svm` (§6.6) |
+| `FACILITATOR_URL` | if `http` or `standard` | n/a | for `http`, this repo's own settle endpoint (e.g. `http://host:8403/settle`); for `standard`, a facilitator's BASE url with no path (e.g. `https://facilitator.payai.network`) — this process appends `/verify` and `/settle` itself |
+| `FACILITATOR_NETWORK` | if `standard` | n/a | the facilitator's own CAIP-2 network id, e.g. `eip155:8453` for Base — NOT the plain `PRICE_NETWORK` label; see §6.7 |
+| `FACILITATOR_USDC_NAME` / `FACILITATOR_USDC_VERSION` | | `USD Coin` / `2` | EIP-712 domain sent in `extra` (§6.7) |
+| `FACILITATOR_MAX_TIMEOUT_SECONDS` | | `60` | echoed in the payment requirements sent on the wire (§6.7) |
 | `STATE_PATH` | | `./data/indexer-state.json` | snapshot file (share with the indexer) |
 | `PORT` | | `8402` | HTTP listen port |
 | `RELOAD_MS` | | `5000` | snapshot re-read cadence |
@@ -427,6 +435,52 @@ rejecting the envelope the shipped client builds, so no request could reach the 
 `gate()` at all. A claim that cannot be re-run from the repository is not evidence, which is why the
 runner is checked in rather than the log.
 
+### 6.7 Talking to a real, public facilitator (`FACILITATOR=standard`)
+
+`FACILITATOR=http` above can only ever reach `facilitator-server.mjs` (§6.1): it speaks a
+single-POST wire contract this repo invented, and no public facilitator accepts it. Without a
+second client this server could verify a payment locally but could **never settle one**, because
+settlement needs a facilitator with a funded key, and none exists that this process could talk to.
+`FACILITATOR=standard` is that second client: it speaks the actual x402 wire protocol
+(`specs/x402-specification-v2.md` §7 in the [coinbase/x402](https://github.com/coinbase/x402) repo
+— two endpoints, `POST {base}/verify` then `POST {base}/settle`, request bodies shaped
+`{x402Version, paymentPayload, paymentRequirements}`), so it can reach any facilitator that speaks
+the same protocol — for example `facilitator.payai.network`, which this section was checked
+against.
+
+```
+FACILITATOR=standard FACILITATOR_URL=https://facilitator.payai.network \
+FACILITATOR_NETWORK=eip155:8453 npm run start:api
+```
+
+`FACILITATOR_NETWORK` is required and is **not** `PRICE_NETWORK`: `PRICE_NETWORK` is this
+repo's own plain label (`base`, `base-sepolia`) echoed in the 402 challenge; the wire protocol's
+`network` field is a CAIP-2 id (`eip155:8453` for Base mainnet, `eip155:84532` for Base Sepolia).
+There is no general, safe way to derive one from the other — a hardcoded table here would be one
+more thing to get wrong for a chain nobody tested — so state it explicitly.
+
+**What was checked against the live facilitator (2026-09-13), and what that does and does not
+prove.** `GET /supported` returned `200` listing, among many others,
+`{"x402Version":2,"scheme":"exact","network":"eip155:8453"}` for Base mainnet. A `POST /verify`
+with an empty body returned `400 {"isValid":false,"invalidReason":"invalid_payment_requirements"}`
+— a request-shape rejection, not an authentication failure (`400`, never `401`), matching the
+facilitator's own documentation that it requires no API key on its free tier. A **structurally
+valid but deliberately unusable** request (zero amount, a placeholder recipient, a fake
+signature) reached a **signature-level** rejection instead —
+`200 {"isValid":false,"invalidReason":"invalid_exact_evm_signature"}` — which is evidence that the
+facilitator parsed the request all the way to cryptographic verification, and nothing more: it is
+not evidence that a real signature would verify, and it is absolutely not evidence that a
+settlement would succeed. `POST /settle` was checked the same way and answered the same shape,
+`{"success":false,"errorReason":"...","transaction":"","network":"...","payer":"..."}`. **No probe
+in this section used a real signature, a funded account, or moved any funds — settlement can only
+be demonstrated with a real payment, which this repo does not perform in its own tests.**
+
+`createStandardHttpFacilitator` (`apps/api/src/facilitator.mjs`) calls settle only after verify
+answers `isValid:true`, and reports `ok:true` only when settle answers `success:true` with a
+non-empty `transaction` — a timeout, an unparseable response, or a non-2xx response carrying
+neither field is a transport failure and is always `ok:false`, never mistaken for either a payment
+verdict or a settlement.
+
 ## 7. Non-custodial guarantees
 
 - The **indexer** is read-only: `getLogs` and `getBlockNumber` only. It never signs or sends.
@@ -435,14 +489,15 @@ runner is checked in rather than the log.
   and no key in `packages/canary`. Its `requestExit` probe is an `eth_call` with an impersonated
   `from`, which never touches a key and never changes chain state. Enforced by tests, not just
   documented.
-- The **API** holds no key under `FACILITATOR=stub` and `FACILITATOR=http`. It only asks a
-  facilitator to `verifyAndSettle`; it serves the resource
+- The **API** holds no key under `FACILITATOR=stub`, `FACILITATOR=http` and `FACILITATOR=standard`.
+  It only asks a facilitator to `verifyAndSettle`; it serves the resource
   when settlement succeeds. USDC moves via EIP-3009 executed **by the facilitator**, from payer to
   `payTo`, never through the API.
 - The **web** browser signer is a dummy against a dev facilitator; real signing is the user's wallet.
 - Keys in this stack live in three places, and this is the whole list: the EVM settlement key inside
   the facilitator you run in §6; the same key held by a third-party facilitator under
-  `FACILITATOR=http`; and, under the opt-in `FACILITATOR=svm`, the Solana fee-payer keypair loaded
+  `FACILITATOR=http` or `FACILITATOR=standard` (§6.7) — the wire protocol differs, the custody
+  boundary does not; and, under the opt-in `FACILITATOR=svm`, the Solana fee-payer keypair loaded
   from `SVM_KEYPAIR` **inside the API process** (§6.6). All three are **relayers** paying network
   fees: none of them takes custody of vault funds, and no contract in this repository knows the
   third one exists.

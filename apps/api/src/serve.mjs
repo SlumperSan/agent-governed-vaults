@@ -1,9 +1,9 @@
 // @ts-check
 /**
  * Runnable API server entrypoint. Serves the x402-metered read API over the indexer's snapshot.
- * Env-driven and, under `FACILITATOR=stub` and `FACILITATOR=http`, NON-CUSTODIAL: it holds no key
- * and settles nothing itself. `FACILITATOR=svm` is the one mode that does hold one — see the
- * `svm` branch below and docs/RUNTIME.md 6.6. Payment verification
+ * Env-driven and, under `FACILITATOR=stub`, `FACILITATOR=http` and `FACILITATOR=standard`,
+ * NON-CUSTODIAL: it holds no key and settles nothing itself. `FACILITATOR=svm` is the one mode
+ * that does hold one — see the `svm` branch below and docs/RUNTIME.md 6.6. Payment verification
  * and settlement are delegated to a facilitator (a remote HTTP facilitator in production; an
  * accept-all stub for local dev). It shares state with the indexer through the snapshot file: it
  * loads the snapshot on boot and reloads it periodically, so indexer and API run as separate
@@ -26,7 +26,22 @@
  *              `x402.enabled` is false — chain 4663 — makes this server answer the metered routes
  *              without a 402 gate and bucket every route instead. Unset, or a chain with no config
  *              or no `x402` block, leaves metering ON, which is what it has always been.
- *   FACILITATOR (stub | http | svm)   FACILITATOR_URL (required when FACILITATOR=http)
+ *   FACILITATOR (stub | http | standard | svm)   FACILITATOR_URL (required when FACILITATOR=http
+ *              or FACILITATOR=standard — for `http` it is this repo's own bespoke settle endpoint;
+ *              for `standard` it is a real facilitator's BASE url, e.g.
+ *              `https://facilitator.payai.network`, with `/verify` and `/settle` appended by this
+ *              process, never included in the env var itself)
+ *   FACILITATOR=standard talks the ACTUAL x402 wire protocol (two endpoints, spec-shaped bodies —
+ *              see `createStandardHttpFacilitator` in facilitator.mjs) to a public facilitator,
+ *              rather than this repo's own single-POST shape that only `facilitator-server.mjs`
+ *              understands. It requires `FACILITATOR_NETWORK`, the facilitator's own CAIP-2 network
+ *              id (e.g. `eip155:8453` for Base — not the plain `PRICE_NETWORK` label this server
+ *              uses internally; there is no safe general way to derive one from the other).
+ *              `FACILITATOR_USDC_NAME` / `FACILITATOR_USDC_VERSION` (default `USD Coin` / `2`) name
+ *              the EIP-712 domain the facilitator should verify against; `FACILITATOR_MAX_TIMEOUT_SECONDS`
+ *              (default 60) is echoed in the payment requirements sent on the wire. This mode holds
+ *              no key — settlement funds and signs on the remote facilitator's side, same as
+ *              `FACILITATOR=http`.
  *   FACILITATOR=svm HOLDS A PRIVATE KEY AND PAYS NETWORK FEES, which no other mode does. This
  *              block described a boot interlock, `SVM_I_UNDERSTAND_SETTLEMENT_IS_NOT_WIRED=yes`,
  *              that was removed when the path was finished -- and the sentence describing it was
@@ -59,7 +74,7 @@
 import { fileURLToPath } from 'node:url';
 import { stat } from 'node:fs/promises';
 import { createApi, DEFAULT_LIMITS } from './server.mjs';
-import { createHttpFacilitator, createStubFacilitator } from './facilitator.mjs';
+import { createHttpFacilitator, createStandardHttpFacilitator, createStubFacilitator } from './facilitator.mjs';
 import { createSvmFacilitator, keypairFromEnv, Connection } from './facilitator-svm.mjs';
 import { createRateLimiter } from './ratelimit.mjs';
 import { createMetrics } from './metrics.mjs';
@@ -99,10 +114,18 @@ export function resolveApiConfig(env) {
   if (!okAddr(env.PRICE_PAYTO)) throw new Error(`api: PRICE_PAYTO is not ${shape}: ${env.PRICE_PAYTO}`);
 
   const facilitator = (env.FACILITATOR || 'stub').toLowerCase();
-  if (facilitator !== 'stub' && facilitator !== 'http' && facilitator !== 'svm')
-    throw new Error(`api: FACILITATOR must be 'stub', 'http' or 'svm', got '${facilitator}'`);
+  if (facilitator !== 'stub' && facilitator !== 'http' && facilitator !== 'standard' && facilitator !== 'svm')
+    throw new Error(`api: FACILITATOR must be 'stub', 'http', 'standard' or 'svm', got '${facilitator}'`);
   if (facilitator === 'http' && !env.FACILITATOR_URL)
     throw new Error('api: FACILITATOR=http requires FACILITATOR_URL');
+  // `standard` talks the real x402 wire protocol to a third-party facilitator (see
+  // createStandardHttpFacilitator in facilitator.mjs) rather than this repo's own bespoke shape,
+  // so it needs the facilitator's own CAIP-2 network id — there is no safe general way to derive
+  // it from PRICE_NETWORK's plain label (`base` vs `eip155:8453`).
+  if (facilitator === 'standard' && !env.FACILITATOR_URL)
+    throw new Error('api: FACILITATOR=standard requires FACILITATOR_URL (the facilitator\'s base url)');
+  if (facilitator === 'standard' && !env.FACILITATOR_NETWORK)
+    throw new Error('api: FACILITATOR=standard requires FACILITATOR_NETWORK (a CAIP-2 id, e.g. "eip155:8453")');
   // Every one of these is required rather than defaulted, and that is the point: a Solana
   // facilitator with a missing destination would verify against `undefined` and refuse every
   // payment, which looks like a client problem for as long as it takes somebody to read this file.
@@ -171,6 +194,16 @@ export function resolveApiConfig(env) {
     },
     facilitatorKind: facilitator,
     facilitatorUrl: env.FACILITATOR_URL,
+    // Only meaningful under FACILITATOR=standard; null otherwise so a `stub`/`http`/`svm` config
+    // object never carries fields that look like they configure a mode it is not in.
+    standard: facilitator === 'standard'
+      ? {
+          network: env.FACILITATOR_NETWORK,
+          usdcName: env.FACILITATOR_USDC_NAME || 'USD Coin',
+          usdcVersion: env.FACILITATOR_USDC_VERSION || '2',
+          maxTimeoutSeconds: num('FACILITATOR_MAX_TIMEOUT_SECONDS', 60),
+        }
+      : null,
     // The keypair is carried on the config object and NEVER logged. `resolveApiConfig` is pure and
     // does not parse it -- `facilitatorFromConfig` does, so a bad key fails where the facilitator
     // is built rather than where the config is read.
@@ -199,9 +232,20 @@ export function resolveApiConfig(env) {
  * whatever satisfies `verifyAndSettle(challenge, envelope)`, and it has taken an injected one since
  * it was written, so adding Solana costs the gate nothing. `connection` is injectable for the same
  * reason the EVM clients are: the whole facilitator is testable with no network and no key.
+ *
+ * `standard` is the same shape of addition: `createHttpFacilitator` speaks this repo's own bespoke
+ * wire contract, so it can only ever talk to `facilitator-server.mjs` in this same repo. `standard`
+ * speaks the actual x402 protocol instead, so it can settle through a real, public facilitator —
+ * the piece that was missing for this server to ever collect real revenue.
  */
 export function facilitatorFromConfig(cfg, { fetchImpl, connection } = {}) {
   if (cfg.facilitatorKind === 'http') return createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl });
+  if (cfg.facilitatorKind === 'standard')
+    return createStandardHttpFacilitator({
+      url: cfg.facilitatorUrl, network: cfg.standard.network,
+      usdcName: cfg.standard.usdcName, usdcVersion: cfg.standard.usdcVersion,
+      maxTimeoutSeconds: cfg.standard.maxTimeoutSeconds, fetchImpl,
+    });
   if (cfg.facilitatorKind === 'svm') {
     const parsed = keypairFromEnv(cfg.svm?.keypair);
     // Throwing here and not at config time is deliberate: this is the first moment the key is
@@ -329,7 +373,7 @@ if (isMain) {
       });
     }
     if (cfg.facilitatorKind === 'stub') {
-      log.warn('facilitator.stub', { msg: 'payments are ACCEPTED WITHOUT on-chain settlement (dev only). Set FACILITATOR=http + FACILITATOR_URL for production.' });
+      log.warn('facilitator.stub', { msg: 'payments are ACCEPTED WITHOUT on-chain settlement (dev only). Set FACILITATOR=standard + FACILITATOR_URL + FACILITATOR_NETWORK to settle through a real facilitator, or FACILITATOR=http + FACILITATOR_URL for this repo\'s own facilitator-server.mjs.' });
     }
     const timer = setInterval(reload, cfg.reloadMs);
     if (typeof timer.unref === 'function') timer.unref();
