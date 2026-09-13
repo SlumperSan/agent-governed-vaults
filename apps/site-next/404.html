@@ -35,8 +35,8 @@
      would otherwise not learn it is needed until the stylesheet has arrived and been matched, one
      round trip later. The href is a path into node_modules, rewritten by the build: Vite resolves
      it through the same asset pipeline that rewrites the url() in fonts.css, emits ONE hashed copy
-     shared with the other two documents, and writes the /assets/ path here, so the preload cannot
-     go stale against the file the CSS actually loads. Do not hand-edit the hash. -->
+     shared with every other document on the site, and writes the /assets/ path here, so the preload
+     cannot go stale against the file the CSS actually loads. Do not hand-edit the hash. -->
 <link rel="preload" as="font" type="font/woff2" crossorigin href="../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2">
 <title>Page not found | RWAlly</title>
 <meta name="description" content="The address you asked for is not a document on this site.">

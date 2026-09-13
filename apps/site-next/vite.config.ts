@@ -8,11 +8,13 @@
  * nav link is an ordinary document navigation, and `site.test.mjs` asserts the
  * `.html` suffix on every one of them.
  *
- * FOUR ENTRIES, AND THE LAST IS NOT A PAGE. `index`, `disclaimers` and `api`
- * are the three `PageId`s (`api` added for api.html, the agent-developer page
- * documenting the metered read — see `PAGE_IDS` in `src/shell/pinned.ts`).
- * `notFound` builds `404.html`, which Cloudflare Pages serves — with a 404
- * status — for any path matching no asset and no `_redirects` rule.
+ * ONE ENTRY PER `PageId`, PLUS ONE THAT IS NOT A PAGE. `index`, `disclaimers`
+ * and `api` are every current `PageId` (`api` added for api.html, the
+ * agent-developer page documenting the metered read — see `PAGE_IDS` in
+ * `src/shell/pinned.ts`; keep this object's keys in step with that array by
+ * hand, there is no guard that reads one from the other). `notFound` builds
+ * `404.html`, which Cloudflare Pages serves — with a 404 status — for any
+ * path matching no asset and no `_redirects` rule.
  * DROPPING IT FROM THIS LIST DOES NOT FAIL THE BUILD, it reinstates a soft-404:
  * with no top-level `404.html` in the output, the Pages asset server falls back
  * to serving `/index.html` with a 200 for every unmatched path. That was the

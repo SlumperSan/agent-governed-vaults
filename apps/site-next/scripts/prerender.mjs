@@ -3,10 +3,14 @@
  * Prerender: render the site's documents with React and write the markup into
  * the built HTML files.
  *
- * THREE FILES, TWO OF THEM PAGES. `pages` is the two `PageId`s, and `404.html`
- * is written after the loop through `renderNotFound()`: it is a document the
- * site is never navigated to, so it is in no nav, no sitemap and none of the
- * per-page guards. See `NOT_FOUND_ID` in `src/shell/pinned.ts`.
+ * ONE FILE MORE THAN THERE ARE PAGES. `pages` is every real `PageId`
+ * (`src/shell/pinned.ts`'s `PAGE_IDS`), and `404.html` is written after the
+ * loop through `renderNotFound()`: it is a document the site is never
+ * navigated to, so it is in no nav, no sitemap and none of the per-page
+ * guards. See `NOT_FOUND_ID` in `src/shell/pinned.ts`. DELIBERATELY not
+ * spelled out as a number: this comment named the count "TWO" until
+ * 2026-09-13, when `api.html` became a third `PageId` and this line did not
+ * change with it.
  *
  * WHY THIS STEP EXISTS. Everything that checks this site reads the built HTML
  * as text. `apps/site/test/site.test.mjs` asserts banner strings, footer
@@ -121,7 +125,7 @@ if (wrote !== pages.length) {
  * It is not a `PageId`, so it is not in `pages`, so `landedPages()` says
  * nothing about it and the `wrote !== pages.length` check above must not see
  * it. It still goes through `splice`, so a missing file, a missing root div or
- * an empty render fails the build exactly as they do for the other two.
+ * an empty render fails the build exactly as it does for every real page.
  *
  * WHY THE FILE HAS TO EXIST AT ALL: without a top-level `404.html` the
  * Cloudflare Pages asset server falls back to serving `/index.html` with a 200

@@ -301,20 +301,22 @@ export const HIGH_WATER_MARK_RESET =
  * carries nothing; `FOOTER_PAGES` is the footer's Pages column and carries every
  * document this site has. The v3 brief of 2026-09-05 collapsed the nine-page
  * site into one scroll page plus the Disclaimers, so a header nav would list the
- * page you are already on and one other. `site.test.mjs` asserts the half that
- * still matters for THOSE two pages: every page links to every page — see the
- * note on `api.html` below for why a third page does not extend that guard.
+ * page you are already on and one other.
  *
- * THREE, AS OF api.html. `test/site.test.mjs`'s own `PAGES` constant is a
- * hardcoded literal — `['index.html', 'disclaimers.html']` — not imported from
- * here, so adding a `PageId` below does not add coverage there; that file is
- * owned by another lane and is not edited by this change. `api.html` is still
- * fully wired through `PAGE_IDS`/`FOOTER_PAGES` because `entry-server.tsx`'s
- * `pages` export and `scripts/prerender.mjs`'s loop both derive from
- * `PAGE_IDS` directly, so it prerenders, sitemaps and links like the other two;
- * it is only exempt from the two guarded pages' own banned-phrase and
- * footer-sentence-count assertions, the same way `disclaimers.html` was before
- * the corpus caught up to it once.
+ * THREE, AS OF api.html (PR #274, 2026-09-13, the agent-developer page
+ * documenting the metered read). `api.html` is fully wired through
+ * `PAGE_IDS`/`FOOTER_PAGES` because `entry-server.tsx`'s `pages` export and
+ * `scripts/prerender.mjs`'s loop both derive from `PAGE_IDS` directly, so it
+ * prerenders, sitemaps and links like the other two.
+ *
+ * `test/site.test.mjs`'s own `PAGES` constant is a hardcoded literal, not
+ * imported from here, so it does NOT automatically pick up a `PageId` added
+ * below — that file's `PAGES` array and the `assert.equal(PAGES.length, …)`
+ * beside it were BOTH edited by hand in this same change to add `api.html`
+ * and correct the count. The two lists are independent by design (see that
+ * file's own comment on why), so a future `PageId` still needs both edits;
+ * this note exists so the next author does not repeat the coverage gap this
+ * one closed. `every page links to every page` now asserts across all three.
  * ------------------------------------------------------------------------ */
 
 export const PAGE_IDS = ['index.html', 'disclaimers.html', 'api.html'] as const;
@@ -343,7 +345,7 @@ export type PageId = (typeof PAGE_IDS)[number];
  * document the site NAVIGATES TO, and `site.test.mjs` enforces exactly that:
  * "every page links to every other page" asserts `href="<other>"` on every one
  * of them. Adding this id to the list would put a link to the 404 page in the
- * nav of both real pages, which is the opposite of what a 404 page is for. It
+ * nav of every real page, which is the opposite of what a 404 page is for. It
  * is also absent from `NAV`, `FOOTER_PAGES`, `HEADER_NAV` and `sitemap.xml`,
  * and its entry HTML carries `robots: noindex` and NO canonical, for the same
  * reason: a page nobody should link to is a page nobody should index either.
@@ -351,7 +353,7 @@ export type PageId = (typeof PAGE_IDS)[number];
 export const NOT_FOUND_ID = '404.html';
 
 /**
- * Every document `PageShell` can render: the two public pages plus the 404.
+ * Every document `PageShell` can render: every public page plus the 404.
  * The shell is typed on this; everything that builds a nav or a sitemap stays
  * typed on `PageId`.
  */
@@ -360,8 +362,8 @@ export type ShellPage = PageId | typeof NOT_FOUND_ID;
 /**
  * Rewrite an in-site href for the document it is being rendered into.
  *
- * ON THE TWO REAL PAGES THIS IS THE IDENTITY FUNCTION, and it has to be. Both
- * are served at depth one, so the relative `index.html` the masthead and footer
+ * ON EVERY REAL PAGE THIS IS THE IDENTITY FUNCTION, and it has to be. Each one
+ * is served at depth one, so the relative `index.html` the masthead and footer
  * write resolves correctly from either, and `site.test.mjs` matches the
  * attribute BYTE FOR BYTE: `html.includes('href="index.html"')`. A prefix added
  * here unconditionally reds that guard.
@@ -387,7 +389,7 @@ export const siteHref = (page: ShellPage, href: string): string => {
   // A relative page path (`index.html`) or a homepage fragment (`#how`). Both
   // become root-absolute: `/#how` reaches the homepage's section, and
   // `/index.html` reaches the homepage through the 308 Pages already serves for
-  // it — the same hop the two real pages' own relative links take.
+  // it — the same hop every real page's own relative links take.
   return `/${href}`;
 };
 
@@ -508,8 +510,10 @@ export const OVERVIEW_PAGE_LABEL = 'Overview';
 
 /**
  * The label the footer gives api.html — the agent-developer page documenting
- * the metered read (docs/REVENUE.md's rwally.com surface). One word,
- * deliberately: `test/site.test.mjs`'s 150-250 visible-word budget on
+ * the metered read (the surface `docs/REVENUE.md` will document once it
+ * exists; that file is absent from `protocol/main` as of 2026-09-13, which
+ * api.html's own copy says explicitly — do not imply otherwise here). One
+ * word, deliberately: `test/site.test.mjs`'s 150-250 visible-word budget on
  * index.html reads from `<body` onward, which includes this footer, so every
  * label added here is a word charged against that page's ceiling.
  */

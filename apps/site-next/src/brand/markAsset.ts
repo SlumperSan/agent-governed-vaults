@@ -26,10 +26,12 @@
  * to inherit, so nothing is lost by linking it.
  *
  * WHAT IS GAINED IS SIZE. The traced artwork is about 14 KB. The masthead and
- * the footer both draw it, on both pages, so inlining would cost roughly 56 KB
- * of markup across the build to draw a logo the browser would otherwise fetch
- * once and cache. Linked, it is one request, one entry in the cache, and the
- * same bytes on both surfaces.
+ * the footer both draw it, on every page — three as of api.html (2026-09-13),
+ * up from the two this estimate was first written against — so inlining would
+ * cost roughly 84 KB of markup across the build (14 KB × 2 chrome elements × 3
+ * pages) to draw a logo the browser would otherwise fetch once and cache.
+ * Linked, it is one request, one entry in the cache, and the same bytes on
+ * both surfaces.
  *
  * THE FILE IS SHIPPED TWICE, ONCE PER ORIGIN, AND THE TWO COPIES ARE GUARDED.
  * rwally.com serves `apps/site-next/public/brand/mark-comic.svg`;

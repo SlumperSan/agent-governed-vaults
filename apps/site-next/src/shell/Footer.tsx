@@ -29,14 +29,15 @@
  * what makes the 7:1 hold over every pixel a word sits on rather than over the
  * average of the image.
  *
- * BOTH PAGES ARE LISTED ON BOTH PAGES. With a header nav of four entries, two of
- * which leave the site, this list is still the complete map of the two documents
- * here, so neither is dropped on itself; the current one carries
+ * EVERY PAGE IS LISTED ON EVERY PAGE. With a header nav of four entries, two of
+ * which leave the site, this list is still the complete map of the documents
+ * here (three as of api.html, 2026-09-13 — this note read "both"/"two" when
+ * there were only two), so none is dropped on itself; the current one carries
  * `aria-current="page"`.
  *
  * THE LICENCE SENTENCE IS COUNTED. `Open source under the MIT licence.` is the
  * only permitted use of the words "open source" anywhere on this site, and `test/site.test.mjs` pins how many times it may appear per page.
- * Rendering it here puts one copy on both pages.
+ * Rendering it here puts one copy on every page.
  */
 import { useRef, type JSX } from 'react';
 import { STILLS } from '../assets/manifest';
