@@ -2,13 +2,17 @@
  * Price and facilitator resolution for the metered read route, at the edge.
  *
  * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=http`, AND CANNOT HOLD ONE.
- * `apps/api` has three facilitator modes: `FACILITATOR=stub` and `FACILITATOR=http` hold no key,
+ * `apps/api` has three SELECTABLE facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
+ * exactly `stub`, `http` and `svm`. `stub` and `http` hold no key,
  * and `FACILITATOR=svm` DOES hold one — the one mode that does, because Solana's flow makes this
  * process the fee payer and there is nothing to delegate. This route is
  * EVM-only and hard-wires `http` — `createHttpFacilitator` POSTs an envelope to a facilitator URL
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
  * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
+ * (facilitator.mjs defines a FOURTH implementation, `createSettlingFacilitator`, which takes an
+ * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
+ * not reachable from this route. Counting modes and counting implementations give 3 and 4.)
  *
  * WHY THE NUMBERS COME FROM ENV AND NOT FROM THIS FILE.
  * `PRICE_PAYTO` decides who is paid. Committing an address here would put a payee in git history
@@ -80,7 +84,15 @@ export function resolveFacilitatorUrl(env) {
 }
 
 /**
- * A 500 that says which setting is missing, for the operator, without leaking values.
+ * A 500 that names the setting at fault, for the operator.
+ *
+ * It DOES echo a malformed value back -- `PRICE_PAYTO is not an address: my-treasury.eth`. That is
+ * deliberate (an operator debugging a typo needs to see the typo) and it is safe HERE only because
+ * none of these five is a secret: `payTo` and `amount` are published on the free discovery document
+ * anyway, and the other three are public constants. An earlier version of this comment claimed the
+ * response leaked no values, which was simply false. Do not extend this helper to a setting that IS
+ * secret without changing that behaviour first.
+ *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */
 export function configErrorResponse(err) {

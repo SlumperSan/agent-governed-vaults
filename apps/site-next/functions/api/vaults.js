@@ -137,7 +137,11 @@ export async function handle(context, deps = {}) {
         'Chain read taken at request time, not a pinned snapshot. `blockNumber` is the height ' +
         'every field below was read at. A vault missing a field carries `unreadable` for it ' +
         '(the read failed and nothing was guessed); `pricingFrozen: true` means the oracle itself ' +
-        'reverted the NAV read, which is a real product signal, not a missing one.',
+        'reverted the NAV read, which is a real product signal, not a missing one. There is no ' +
+        '`notIncluded` list any more (that was the pinned-snapshot version\'s mechanism for the ' +
+        'same concern) — a live field is either present, `unreadable`, or explained by ' +
+        '`pricingFrozen`, per vault, which is a strictly finer-grained answer to "what is absent ' +
+        'and why" than a fixed list could give.',
       chainId: DATA_CHAIN_ID,
       chainName: DATA_CHAIN_NAME,
       blockNumber: read.blockNumber,
@@ -145,7 +149,12 @@ export async function handle(context, deps = {}) {
       receiptId: settled.receiptId ?? '',
     },
     200,
-    { [HEADERS.RESPONSE]: JSON.stringify({ receiptId: settled.receiptId, nonce }) },
+    {
+      [HEADERS.RESPONSE]: JSON.stringify({ receiptId: settled.receiptId, nonce }),
+      // `live: true` rests on no intermediary caching it — a cached 200 would keep answering with
+      // a stale block after the chain moved.
+      'cache-control': 'no-store',
+    },
   );
 }
 
