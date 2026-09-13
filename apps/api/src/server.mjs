@@ -159,7 +159,10 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
     if (metering) {
       const lc = {};
       for (const [k, v] of Object.entries(headers)) lc[k.toLowerCase()] = v;
-      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces });
+      // `resource.url` (x402 v2 spec §5.1.1's ResourceInfo) is the one field of the 402 body that
+      // x402.mjs cannot fill in on its own — it has no request path — so this is the one call
+      // site in the whole conformance change that reaches outside apps/api/src/x402.mjs.
+      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces, resource: { url: path } });
       if (verdict.status === 402) {
         metrics.inc('vault_api_payment_required_total');
         return { status: 402, headers: verdict.headers, body: jsonStringify(verdict.body) };
