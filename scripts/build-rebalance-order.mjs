@@ -49,6 +49,11 @@
  * the refusal text before reaching for it, because it trades one real risk for another.
  * `GOVERNANCE` in the environment overrides the address read from `vault.governance()`.
  *
+ * `RPC_URL` in the environment overrides the default, which is `https://rpc.mainnet.chain.robinhood.com`
+ * — Robinhood MAINNET, chain 4663, not a testnet. Every call this script makes against it is
+ * read-only (see the `cast` helpers below); it broadcasts nothing and holds no key. The resolved
+ * RPC is printed as the first line of output either way.
+ *
  * `--amount-in` is in the vault's `usdc()` base units (USDG has 6 decimals, so 5000000 = 5 USDG).
  */
 
