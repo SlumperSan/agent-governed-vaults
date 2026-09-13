@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Signal (i) — DEPEG REFERENCE, closing G4 (OPS-8, "USDC depeg. Undetected internally: days").
+ * Signal (j) — DEPEG REFERENCE, closing G4 (OPS-8, "USDC depeg. Undetected internally: days").
  *
  * Purely informational: the vault's own oracle pins USDC at $1.00 unconditionally, on every code
  * path, and nothing here changes that. Every test perturbs exactly one thing against a healthy

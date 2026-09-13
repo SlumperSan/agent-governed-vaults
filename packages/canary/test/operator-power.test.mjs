@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Signal (h) — OPERATOR POWER, closing G1 (OPS-5, "operator dilution below `proposalThresholdBps`.
+ * Signal (i) — OPERATOR POWER, closing G1 (OPS-5, "operator dilution below `proposalThresholdBps`.
  * Undetected: indefinitely").
  *
  * Every case perturbs exactly one thing against the healthy default fixture: the operator (vault

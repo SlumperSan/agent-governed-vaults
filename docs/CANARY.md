@@ -453,149 +453,6 @@ deprecation is still recoverable, because on-chain a deprecation looks like ordi
 **Silent on a retired-oracle deployment**, and deliberately so: `OracleAggregator` has no Chainlink
 proxy anywhere, so feed identity is not a capability that exists to be blind about there.
 
-### (h) `operator-power` — is the operator about to lose the right to propose, or to exit?
-
-**What it measures.** Per vault, every sweep: the operator's own proportional stake against **two
-independent gates**, both read from the chain — and each measured against **the share book that gate
-actually reads**, which is not the same book for both:
-
-1. Governance's `configOf(vault).proposalThresholdBps` (default 500 bps at launch, but configurable
-   per vault, and can even be 0 — see M-6 below), which gates the operator's own next `propose()`
-   call. Measured as `votingEligibleShares(creator) * 10000 / totalVotingEligibleShares()`, because
-   that is what `Governance.propose` compares (`pastVotingEligibleShares` /
-   `pastTotalVotingEligibleShares`, `Governance.sol:287-291`). **Voting-eligible** is
-   `sharesOf - queuedExitShares`, with a registered parent vault counted as 0.
-2. VaultCore's `CREATOR_MIN_STAKE_BPS` (a protocol **constant**, 500 bps everywhere), which gates the
-   operator's own voluntary **exit** while non-creator members remain (`_checkCreatorGate`). Only
-   live once `nonCreatorMemberCount > 0`. Measured as `sharesOf(creator) * 10000 / totalShares` —
-   the **raw** book, because `_checkCreatorGate` reads exactly that.
-
-**Why the two books matter.** A queued Mode-F exit removes voting weight the instant it is queued
-(`VaultCore.sol:515-517`, "locked shares leave eligible stake immediately"). A creator holding 2,000
-of 10,000 shares who queues a 1,500-share exit still reads 20.00% on the raw book while their
-eligible weight is 500 of 8,500 = 5.88% — so against a 10.00% `proposalThresholdBps` their
-`propose()` reverts `BelowProposalThreshold` **right now**, which is precisely the failure G1 exists
-to catch. The reverse direction is noise rather than danger: any non-creator queued exit shrinks the
-eligible denominator, so real operator power is higher than the raw book suggests. Each leg reports
-its own `measuredBps` and names its `book`; the signal never collapses the two into one number.
-
-**The gap it closes (G1).** Nothing on-chain computes this ratio against either threshold. Ordinary
-member deposits dilute the vault, and the operator's stake falls passively — with no action on
-anyone's part — until the operator's next `propose()` reverts `BelowProposalThreshold`, potentially
-weeks or months after the crossing, or their own exit reverts `CreatorStakeGate`. This signal exists
-to surface the *approach*, not just the crossing.
-
-**This is dilution by design, not a bug.** `Governance._validateConfig` enforces **no floor** on
-`proposalThresholdBps` (M-6) — a floor was implemented and then deliberately reverted; see
-`contracts/test/audit/AuditProposalThresholdFloor.t.sol`. The operator's stake is real capital at
-risk: staying above either gate requires the operator to deposit alongside members, exactly like
-anyone else. This signal never claims the operator's capital is free, safe, or guaranteed anything —
-it reports a share of voting stake against a configured threshold, nothing else.
-
-**Bars, and the two transition keys.** WARN at operator power **<= 1.5x** the binding threshold,
-ALERT at **<= 1.1x**. Both map to this package's `alert()` status (there is no fourth status), and
-the signal emits **two results per sweep** under the fixed keys `early-warning` and `critical` —
-`operator-power|<vault>|early-warning` and `operator-power|<vault>|critical`. That is load-bearing.
-Transition state is keyed on STATUS alone, so one result deteriorating from WARN to CRITICAL is
-`alert` → `alert` and emits nothing; on the ordinary monotone-dilution path the "decision needed now"
-line would never be delivered. Under two keys the critical bar makes its own OK→ALERT transition, and
-that is the one that pages (§5.3). Both keys are emitted on **every** sweep, including the
-skipped/detector-broken paths, so no tracked id ever disappears. `detail.level` carries the vault's
-overall worst level on both, and `detail.bar` names which bar the line is about.
-
-The **worst** leg decides the reported line, broken on the **tightest margin** rather than on array
-order: with two legs at the same level, reporting whichever is listed first can name a gate with
-plenty of headroom while the other is already lost. Both are always in `detail.thresholds`, and
-`detail.thresholdsDiffer` says whether they disagree on this vault.
-
-**Headroom.** `detail.thresholds[].depositHeadroomUsdc` estimates how much further **non-operator**
-deposit (native USDC units) would dilute the operator down to exactly that gate's `bps`, holding the
-operator's own shares and the current NAV-per-share fixed — solved from `VaultCore._mintShares`'s own
-formula. Holding NAV-per-share fixed is **not** an approximation: `_mintShares` does
-`navWad += amountWad` and `totalShares += amountWad * totalShares / navWad`, which preserves
-NAV-per-share exactly, so the estimate is exact whether the money lands as one deposit or a thousand
-(the integer floor on `minted` makes it marginally conservative in the safe direction — the crossing
-lands at or after the estimate, never before). What it does not account for: escrowed
-`totalPendingUsdc`, which will activate and dilute on its own, so the room left for *new* money is
-smaller by that much; and NAV moving from trading between a pending deposit and its activation, since
-`_activatePending` prices at activation-time NAV. `0` means the vault is already at or past that gate.
-
-**The capacity trap — and it is wider than "the vault is full".** Restoring the fraction to a gate
-needs a deposit of at least `detail.thresholds[].topUpDeficitUsdc`; `_deposit` rejects anything below
-`minDepositUsdc` (`VaultCore.sol:369`) and anything that pushes `navUsdc + totalPendingUsdc` past
-`capacityCapUsdc` (`VaultCore.sol:374-375`). So `detail.noTopUpPath` is true whenever
-`max(deficit, minDeposit) > cap - committed`, which is the "**the top-up must lead the fill, not
-chase it**" point of no return in `Business/Finance/Operator Capital Requirement.md` — not the much
-later moment the vault reaches its cap. Worked case from that note: cap 50,000, operator 2,000,
-others 47,600; restoring 5% needs 505.27 and only 400 of headroom remains, so the operator is already
-locked out while committed (49,600) < cap (50,000). A second case the old test missed entirely: cap
-headroom smaller than one `minDepositUsdc`, where no deposit can land at all. An ALERT in either
-state says so literally: **"no top-up path — decision needed now"**. `detail.atCapacity` is still
-reported as the plain fact "the vault is full", but it is not the lockout test.
-
-**Degrades gracefully, on two axes.** A tripped oracle breaker (`navWad` reverting `StaleOracle`)
-never blinds the WARN/ALERT verdict — dilution is plain share accounting, unrelated to price, and is
-exactly as visible during a freeze as any other time. It only means the headroom estimate cannot be
-computed this sweep — and the message says the **top-up-path determination** was skipped too, making
-no claim either way, rather than reporting an unknown as "there is a path"
-(`detail.navAvailable: false`, `detail.capacityAssessed: false`). The voting-eligible reads are
-`view` calls on plain accounting state and are **required**, not best-effort: falling back to the raw
-book when they are unreadable would silently reinstate the wrong-quantity comparison, so an
-unreadable one is a DETECTOR BROKEN. Separately, an unregistered
-vault, a zero/unreadable `governance()`, or a `proposalThresholdBps` of 0 all drop the Governance leg
-alone — the VaultCore exit-gate leg still applies on its own — and if **neither** gate is live the
-signal reports `skipped` ("no binding threshold is active"), not a false OK.
-
-**When it fires.** There is no on-chain remedy that repairs the ratio directly: the operator either
-deposits more (if capacity allows) or accepts the consequence — losing the ability to `propose()`, or
-to voluntarily exit below the gate while members remain. Neither is a freeze; the vault keeps
-operating normally for everyone else.
-
-### (i) `depeg-reference` — a USDC/USD reference read, purely informational
-
-**What it measures.** A Chainlink USDC/USD Data Feed on Base, read every sweep, independent of any
-vault's own oracle. ALERTs outside **0.995 .. 1.005** (inclusive at both bounds).
-
-**The gap it closes (G4).** Both oracle flavors **pin** USDC at $1.00 rather than measuring it —
-deposits, exits and NAV all price USDC at par unconditionally. A sustained depeg produces no freeze
-and no staleness anywhere else in this package: `nav-backing` recomputes NAV through the same pin, so
-a depeg cancels on both sides of that comparison exactly the way a mis-scaled feed does in signal (g).
-The event is externally loud, but nothing of ours measured it or triggered the de-list decision this
-protocol depends on a human making — until now.
-
-**Purely informational, always.** Every message — ALERT or OK — says explicitly that the contract
-keeps pricing USDC at exactly $1.00 regardless of this reading, by design, and will keep doing so
-until a human relists or unwinds the vault. There is no freeze, no staleness attribution, and no
-on-chain consequence tied to this signal at all; it exists solely to feed the human de-list decision.
-"Informational" describes the *contract's* response, not the responder's: the ALERT **pages** (§5.3).
-
-**Two things it will not report as a depeg.** A **non-positive answer** is a broken aggregator, not a
-$0.00 USDC, and a reading **older than `USDC_USD_FEED_MAX_AGE_SEC`** (default 86,400s) is not current
-evidence either way — a feed frozen at $1.0000 reads in-band indefinitely, which is exactly how this
-detector would go silently dead during the market disruption a depeg causes. Both report DETECTOR
-BROKEN rather than ALERT: a fault in the monitor's own input must never be emitted as de-list
-evidence. `detail.ageSec` carries the observed age on every reading, in band or not, so the bound can
-be calibrated from data — the max-age is a bound **we** choose, since no heartbeat is documented for
-this feed in `contracts/config/base-mainnet.json` (unlike the asset feeds, which carry
-`heartbeatSeconds`).
-
-**The feed address, and why there is no guessed testnet default.** The mainnet feed
-(`0x7e860098F58bBFC8648a4311b374B1D669a2bc6B`) is `contracts/config/base-mainnet.json`'s
-`usdcReferenceFeeds.chainlinkUsdcUsd`, verified on-chain 2026-08-24 — the same file calls it "the
-off-chain monitoring inputs for that residual (a canary signal, not an on-chain input)", which is
-what this file is. `USDC_USD_FEED_ADDRESS` defaults to that address **only** when `CHAIN_ID` was
-**explicitly set** to 8453 — `CHAIN_ID`'s own default is 8453, so an unset one must not be read as
-"this is mainnet", or a Sepolia deployment that never set it would be handed a mainnet address with
-no code behind it and report a permanent DETECTOR BROKEN. No equivalent is documented anywhere for
-Base Sepolia, so none is invented — the signal reports `skipped` (a configuration fact, not a blind
-detector) on any other chain, and when `CHAIN_ID` is unset, until one is supplied.
-
-**When it fires.** Nothing on-chain needs fixing — the contract will not react. Treat it as the
-trigger to start the human de-list/unwind decision this protocol's design depends on: verify the
-reading against an independent source, and act off-chain.
-
----
-
 ### (h) `governance-watch`: a proposal is moving, and here is when its windows close
 
 **Why it exists.** Monitoring Gap Analysis G8 (Incident Catalogue OPS-7): the design's answer to
@@ -707,6 +564,149 @@ re-asserts: a vault whose proposals cannot be seen is unmonitored, not quiet.
 
 Threat-model rows: [VO-7](THREAT-MODEL.md) (reveal-order visibility), [VO-8](THREAT-MODEL.md)
 (Mode-F from reveal start), [CM-6](THREAT-MODEL.md) (one proposal at a time).
+
+---
+
+### (i) `operator-power` — is the operator about to lose the right to propose, or to exit?
+
+**What it measures.** Per vault, every sweep: the operator's own proportional stake against **two
+independent gates**, both read from the chain — and each measured against **the share book that gate
+actually reads**, which is not the same book for both:
+
+1. Governance's `configOf(vault).proposalThresholdBps` (default 500 bps at launch, but configurable
+   per vault, and can even be 0 — see M-6 below), which gates the operator's own next `propose()`
+   call. Measured as `votingEligibleShares(creator) * 10000 / totalVotingEligibleShares()`, because
+   that is what `Governance.propose` compares (`pastVotingEligibleShares` /
+   `pastTotalVotingEligibleShares`, `Governance.sol:287-291`). **Voting-eligible** is
+   `sharesOf - queuedExitShares`, with a registered parent vault counted as 0.
+2. VaultCore's `CREATOR_MIN_STAKE_BPS` (a protocol **constant**, 500 bps everywhere), which gates the
+   operator's own voluntary **exit** while non-creator members remain (`_checkCreatorGate`). Only
+   live once `nonCreatorMemberCount > 0`. Measured as `sharesOf(creator) * 10000 / totalShares` —
+   the **raw** book, because `_checkCreatorGate` reads exactly that.
+
+**Why the two books matter.** A queued Mode-F exit removes voting weight the instant it is queued
+(`VaultCore.sol:515-517`, "locked shares leave eligible stake immediately"). A creator holding 2,000
+of 10,000 shares who queues a 1,500-share exit still reads 20.00% on the raw book while their
+eligible weight is 500 of 8,500 = 5.88% — so against a 10.00% `proposalThresholdBps` their
+`propose()` reverts `BelowProposalThreshold` **right now**, which is precisely the failure G1 exists
+to catch. The reverse direction is noise rather than danger: any non-creator queued exit shrinks the
+eligible denominator, so real operator power is higher than the raw book suggests. Each leg reports
+its own `measuredBps` and names its `book`; the signal never collapses the two into one number.
+
+**The gap it closes (G1).** Nothing on-chain computes this ratio against either threshold. Ordinary
+member deposits dilute the vault, and the operator's stake falls passively — with no action on
+anyone's part — until the operator's next `propose()` reverts `BelowProposalThreshold`, potentially
+weeks or months after the crossing, or their own exit reverts `CreatorStakeGate`. This signal exists
+to surface the *approach*, not just the crossing.
+
+**This is dilution by design, not a bug.** `Governance._validateConfig` enforces **no floor** on
+`proposalThresholdBps` (M-6) — a floor was implemented and then deliberately reverted; see
+`contracts/test/audit/AuditProposalThresholdFloor.t.sol`. The operator's stake is real capital at
+risk: staying above either gate requires the operator to deposit alongside members, exactly like
+anyone else. This signal never claims the operator's capital is free, safe, or guaranteed anything —
+it reports a share of voting stake against a configured threshold, nothing else.
+
+**Bars, and the two transition keys.** WARN at operator power **<= 1.5x** the binding threshold,
+ALERT at **<= 1.1x**. Both map to this package's `alert()` status (there is no fourth status), and
+the signal emits **two results per sweep** under the fixed keys `early-warning` and `critical` —
+`operator-power|<vault>|early-warning` and `operator-power|<vault>|critical`. That is load-bearing.
+Transition state is keyed on STATUS alone, so one result deteriorating from WARN to CRITICAL is
+`alert` → `alert` and emits nothing; on the ordinary monotone-dilution path the "decision needed now"
+line would never be delivered. Under two keys the critical bar makes its own OK→ALERT transition, and
+that is the one that pages (§5.3). Both keys are emitted on **every** sweep, including the
+skipped/detector-broken paths, so no tracked id ever disappears. `detail.level` carries the vault's
+overall worst level on both, and `detail.bar` names which bar the line is about.
+
+The **worst** leg decides the reported line, broken on the **tightest margin** rather than on array
+order: with two legs at the same level, reporting whichever is listed first can name a gate with
+plenty of headroom while the other is already lost. Both are always in `detail.thresholds`, and
+`detail.thresholdsDiffer` says whether they disagree on this vault.
+
+**Headroom.** `detail.thresholds[].depositHeadroomUsdc` estimates how much further **non-operator**
+deposit (native USDC units) would dilute the operator down to exactly that gate's `bps`, holding the
+operator's own shares and the current NAV-per-share fixed — solved from `VaultCore._mintShares`'s own
+formula. Holding NAV-per-share fixed is **not** an approximation: `_mintShares` does
+`navWad += amountWad` and `totalShares += amountWad * totalShares / navWad`, which preserves
+NAV-per-share exactly, so the estimate is exact whether the money lands as one deposit or a thousand
+(the integer floor on `minted` makes it marginally conservative in the safe direction — the crossing
+lands at or after the estimate, never before). What it does not account for: escrowed
+`totalPendingUsdc`, which will activate and dilute on its own, so the room left for *new* money is
+smaller by that much; and NAV moving from trading between a pending deposit and its activation, since
+`_activatePending` prices at activation-time NAV. `0` means the vault is already at or past that gate.
+
+**The capacity trap — and it is wider than "the vault is full".** Restoring the fraction to a gate
+needs a deposit of at least `detail.thresholds[].topUpDeficitUsdc`; `_deposit` rejects anything below
+`minDepositUsdc` (`VaultCore.sol:369`) and anything that pushes `navUsdc + totalPendingUsdc` past
+`capacityCapUsdc` (`VaultCore.sol:374-375`). So `detail.noTopUpPath` is true whenever
+`max(deficit, minDeposit) > cap - committed`, which is the "**the top-up must lead the fill, not
+chase it**" point of no return in `Business/Finance/Operator Capital Requirement.md` — not the much
+later moment the vault reaches its cap. Worked case from that note: cap 50,000, operator 2,000,
+others 47,600; restoring 5% needs 505.27 and only 400 of headroom remains, so the operator is already
+locked out while committed (49,600) < cap (50,000). A second case the old test missed entirely: cap
+headroom smaller than one `minDepositUsdc`, where no deposit can land at all. An ALERT in either
+state says so literally: **"no top-up path — decision needed now"**. `detail.atCapacity` is still
+reported as the plain fact "the vault is full", but it is not the lockout test.
+
+**Degrades gracefully, on two axes.** A tripped oracle breaker (`navWad` reverting `StaleOracle`)
+never blinds the WARN/ALERT verdict — dilution is plain share accounting, unrelated to price, and is
+exactly as visible during a freeze as any other time. It only means the headroom estimate cannot be
+computed this sweep — and the message says the **top-up-path determination** was skipped too, making
+no claim either way, rather than reporting an unknown as "there is a path"
+(`detail.navAvailable: false`, `detail.capacityAssessed: false`). The voting-eligible reads are
+`view` calls on plain accounting state and are **required**, not best-effort: falling back to the raw
+book when they are unreadable would silently reinstate the wrong-quantity comparison, so an
+unreadable one is a DETECTOR BROKEN. Separately, an unregistered
+vault, a zero/unreadable `governance()`, or a `proposalThresholdBps` of 0 all drop the Governance leg
+alone — the VaultCore exit-gate leg still applies on its own — and if **neither** gate is live the
+signal reports `skipped` ("no binding threshold is active"), not a false OK.
+
+**When it fires.** There is no on-chain remedy that repairs the ratio directly: the operator either
+deposits more (if capacity allows) or accepts the consequence — losing the ability to `propose()`, or
+to voluntarily exit below the gate while members remain. Neither is a freeze; the vault keeps
+operating normally for everyone else.
+
+### (j) `depeg-reference` — a USDC/USD reference read, purely informational
+
+**What it measures.** A Chainlink USDC/USD Data Feed on Base, read every sweep, independent of any
+vault's own oracle. ALERTs outside **0.995 .. 1.005** (inclusive at both bounds).
+
+**The gap it closes (G4), on the chains where it can run.** On any chain whose `CHAIN_ID` is not explicitly `8453` there is no default feed address, so this signal reports `skipped` and G4 stays OPEN there until `USDC_USD_FEED_ADDRESS` is set — including Robinhood Chain 4663, where the protocol is actually deployed. `skipped` is an honest configuration fact, not a closure. Both oracle flavors **pin** USDC at $1.00 rather than measuring it —
+deposits, exits and NAV all price USDC at par unconditionally. A sustained depeg produces no freeze
+and no staleness anywhere else in this package: `nav-backing` recomputes NAV through the same pin, so
+a depeg cancels on both sides of that comparison exactly the way a mis-scaled feed does in signal (g).
+The event is externally loud, but nothing of ours measured it or triggered the de-list decision this
+protocol depends on a human making — until now.
+
+**Purely informational, always.** Every message — ALERT or OK — says explicitly that the contract
+keeps pricing USDC at exactly $1.00 regardless of this reading, by design, and will keep doing so
+until a human relists or unwinds the vault. There is no freeze, no staleness attribution, and no
+on-chain consequence tied to this signal at all; it exists solely to feed the human de-list decision.
+"Informational" describes the *contract's* response, not the responder's: the ALERT **pages** (§5.3).
+
+**Two things it will not report as a depeg.** A **non-positive answer** is a broken aggregator, not a
+$0.00 USDC, and a reading **older than `USDC_USD_FEED_MAX_AGE_SEC`** (default 86,400s) is not current
+evidence either way — a feed frozen at $1.0000 reads in-band indefinitely, which is exactly how this
+detector would go silently dead during the market disruption a depeg causes. Both report DETECTOR
+BROKEN rather than ALERT: a fault in the monitor's own input must never be emitted as de-list
+evidence. `detail.ageSec` carries the observed age on every reading, in band or not, so the bound can
+be calibrated from data — the max-age is a bound **we** choose, since no heartbeat is documented for
+this feed in `contracts/config/base-mainnet.json` (unlike the asset feeds, which carry
+`heartbeatSeconds`).
+
+**The feed address, and why there is no guessed testnet default.** The mainnet feed
+(`0x7e860098F58bBFC8648a4311b374B1D669a2bc6B`) is `contracts/config/base-mainnet.json`'s
+`usdcReferenceFeeds.chainlinkUsdcUsd`, verified on-chain 2026-08-24 — the same file calls it "the
+off-chain monitoring inputs for that residual (a canary signal, not an on-chain input)", which is
+what this file is. `USDC_USD_FEED_ADDRESS` defaults to that address **only** when `CHAIN_ID` was
+**explicitly set** to 8453 — `CHAIN_ID`'s own default is 8453, so an unset one must not be read as
+"this is mainnet", or a Sepolia deployment that never set it would be handed a mainnet address with
+no code behind it and report a permanent DETECTOR BROKEN. No equivalent is documented anywhere for
+Base Sepolia, so none is invented — the signal reports `skipped` (a configuration fact, not a blind
+detector) on any other chain, and when `CHAIN_ID` is unset, until one is supplied.
+
+**When it fires.** Nothing on-chain needs fixing — the contract will not react. Treat it as the
+trigger to start the human de-list/unwind decision this protocol's design depends on: verify the
+reading against an independent source, and act off-chain.
 
 ---
 
@@ -879,7 +879,7 @@ Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` ex
 PR #103), so its "LOG: everything else" never ruled on this; the tier map here is the reconciliation
 and the note remains Operations' to update.
 
-**`depeg-reference` pages.** (§3(i), G4.) The argument for logging it instead is that the signal is
+**`depeg-reference` pages.** (§3(j), G4.) The argument for logging it instead is that the signal is
 "purely informational": the contract pins USDC at $1.00 unconditionally, so there is no on-chain
 remedy and nothing an alert can make the code do. That describes the CONTRACT's response, not the
 human's. What the ALERT reports is that every deposit, exit and NAV computation in the vault is
@@ -890,7 +890,7 @@ par, out of everyone else's capital. It cannot flap (a 50 bps band around a stab
 ways this signal can be wrong about the world — a dead feed and a non-positive answer — are
 `detectorBroken`, so they stay LOG. A blind detector is not an incident.
 
-**`operator-power` pages on the CRITICAL bar only.** (§3(h), G1.) Its WARN (1.5x) and ALERT (1.1x)
+**`operator-power` pages on the CRITICAL bar only.** (§3(i), G1.) Its WARN (1.5x) and ALERT (1.1x)
 bars both ride this package's single `alert()` status, so it emits under two fixed transition keys —
 `operator-power|<vault>|early-warning` and `operator-power|<vault>|critical` — and its
 `CONDITIONAL_PAGE` predicate pages on the second. The two keys are not cosmetic: transition state is
@@ -952,7 +952,7 @@ named `tier` must not be able to demote its own page.
   read: each is a pure function of the reader, which is what lets every one of them be tested against
   a plain mock, and one duplicate `eth_call` per asset is a cheaper price than coupling them. Against
   the retired aggregator a sweep is
-  `O(vaults × basket assets × oracle sources)`, and signal (g) does not run at all. Signal (h) adds
+  `O(vaults × basket assets × oracle sources)`, and signal (g) does not run at all. Signal (i) adds
   **twelve** fixed reads per vault (plus two more against Governance when it applies), issued as two
   batched `Promise.all`s of seven and five — three of the twelve being the voting-eligible pair and
   `minDepositUsdc`, added when the propose gate was corrected to the book it actually reads, and the

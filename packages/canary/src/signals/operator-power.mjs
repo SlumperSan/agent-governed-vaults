@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Signal (h) — OPERATOR POWER. Closes G1 (OPS-5, "operator dilution below `proposalThresholdBps`.
+ * Signal (i) — OPERATOR POWER. Closes G1 (OPS-5, "operator dilution below `proposalThresholdBps`.
  * Undetected: indefinitely") from Business/Operations/Monitoring Gap Analysis.md §2 — see §3 item 2
  * for the spec this file implements.
  *

@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * Signal (i) — DEPEG REFERENCE. Closes G4 (OPS-8, "USDC depeg. Undetected internally: days") from
+ * Signal (j) — DEPEG REFERENCE. Closes G4 ONLY where a feed address is configured; on any chain
+ * whose CHAIN_ID is not explicitly 8453 this returns `skipped` and the gap stays open. Closes G4 (OPS-8, "USDC depeg. Undetected internally: days") from
  * Business/Operations/Monitoring Gap Analysis.md §2 — see §3 item 6 for the spec this file
  * implements, in its "cheapest possible form".
  *
