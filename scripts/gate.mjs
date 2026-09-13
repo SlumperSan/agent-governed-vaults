@@ -61,6 +61,13 @@ const ENTRYPOINTS = [
 ];
 
 /**
+ * The same idea for shell. `node --check` cannot parse a `.sh`, so these had NOTHING parsing them:
+ * a syntax error in one reached whoever next ran it against a live chain. Checked with `bash -n`
+ * in runSyntaxStep, and mirrored by the syntax-check step in ci.yml.
+ */
+const SHELL_ENTRYPOINTS = ['scripts/verify-x402-run.sh'];
+
+/**
  * @typedef {object} Step
  * @property {string} id            short name for --only
  * @property {string} title         what shows in the log
@@ -362,6 +369,28 @@ async function runSyntaxStep() {
       return 1;
     }
     const code = await run(process.execPath, ['--check', abs], REPO);
+    if (code !== 0) return code;
+  }
+  // The SHELL entrypoints, which `node --check` cannot see. `scripts/verify-x402-run.sh` reads a
+  // live chain through `cast` and nothing in this repo parsed it, so a syntax error in it shipped
+  // silently -- the same category ENTRYPOINTS exists for, one interpreter over.
+  //
+  // Run here, serially, rather than from inside the backend suite: `bash -n` spawned from a
+  // `node --test` worker intermittently fails on Windows under that suite's parallelism, and a
+  // gate that reds at random teaches people to ignore red. SKIPPED with a notice when bash is
+  // absent, exactly as slither is -- on CI's ubuntu runner it always runs.
+  for (const f of SHELL_ENTRYPOINTS) {
+    const abs = path.join(REPO, f);
+    if (!existsSync(abs)) {
+      console.error(`${C.r}missing shell entrypoint: ${f}${C.x} -- update SHELL_ENTRYPOINTS in scripts/gate.mjs`);
+      return 1;
+    }
+    const probe = spawnSync('bash', ['--version'], { stdio: 'ignore' });
+    if (probe.error) {
+      console.log(`${C.y}SKIP${C.x} bash -n ${f} ${C.d}-- bash not installed${C.x}`);
+      continue;
+    }
+    const code = await run('bash', ['-n', abs], REPO);
     if (code !== 0) return code;
   }
   return 0;

@@ -7,11 +7,11 @@
  *
  * WHY THIS EXISTS. Launch gates 2 (testnet lifecycle), 3 (soak drills) and 6 (canary) in
  * `docs/LAUNCH-READINESS.md` are earned by exercising a LIVE deployment. Every `contracts/src`
- * merge silently invalidates them, and nothing in the repo noticed —
+ * merge silently invalidates them, and nothing in the repo noticed â€”
  * `verify-deployment-reproducibility.mjs` deliberately asks a different question (can the
  * deployment still be source-verified), and its own header says it does not answer this one.
  *
- * THE TRAP THIS EXISTS TO CLOSE — twice over.
+ * THE TRAP THIS EXISTS TO CLOSE â€” twice over.
  *   1. Comparing the SINGLETON contracts' codesizes gives a false all-clear. `VaultFactory`,
  *      `Governance`, `FeeEngine` and the rest do not change when `VaultCore` does, because the
  *      vault's code is not inside any of them: `VaultDeployer` pins it as two SSTORE2 chunks
@@ -37,7 +37,7 @@
  * without letting it fail the build, and that is a deliberate, narrow decision: BOTH recorded
  * deployments are behind the mainline TODAY, by a BUSL-1.1 -> MIT relicense that touched all 19
  * `contracts/src` files. Hard-failing would turn `protocol/main` red for every contributor over a
- * fact no pull request can fix — the remedy is a redeploy, which is an owner action under
+ * fact no pull request can fix â€” the remedy is a redeploy, which is an owner action under
  * `docs/SWARM.md` section 10. The exit code below is still the script's contract, so the day the
  * records are refreshed this can be flipped to blocking by deleting one `advisory: true`. The
  * BLOCKING half of this issue lives in `scripts/test/deployment-currency.test.mjs`, which
@@ -63,6 +63,7 @@ import {
   anyHardFail,
   formatResultLine,
   formatOnchainLine,
+  onchainKey,
 } from './lib/deployment-currency.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -172,7 +173,9 @@ if (ONCHAIN) {
     // comparison -- the on-chain leg then reported SKIP for a deployment it had just read and found
     // mismatched. A result silently replaced by a SKIP is the same fail-open shape this script
     // exists to close, so the unique thing (the filename) is the key and the chain name is display.
-    const name = `${path.basename(file, '.json')}${cfg.chainName ? ` (${cfg.chainName})` : ''}`;
+    // Keyed per RECORD, never per chain — see `onchainKey`. Two records here declare the same
+    // chainName, and keying by it let one record's SKIP overwrite another's completed comparison.
+    const name = onchainKey(path.basename(file, '.json'), cfg);
     const url = process.env.DEPLOYMENT_RPC_URL ?? cfg.rpc;
     const vaultDeployer = cfg?.singletons?.VaultDeployer;
     if (!url || !vaultDeployer) {
@@ -180,7 +183,7 @@ if (ONCHAIN) {
       continue;
     }
     if (localCode === null) {
-      onchain[name] = { skipped: 'contracts/out/VaultCore.sol/VaultCore.json missing — run `forge build`' };
+      onchain[name] = { skipped: 'contracts/out/VaultCore.sol/VaultCore.json missing â€” run `forge build`' };
       continue;
     }
     try {

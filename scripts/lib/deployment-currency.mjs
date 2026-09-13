@@ -182,6 +182,25 @@ export function compareVaultCoreChunks(chunkCodes, localCreationCode) {
 }
 
 /**
+ * The key an on-chain result is filed under. MUST be unique per deployment RECORD, not per chain.
+ *
+ * `protocol/main` carries two records that both declare `"chainName": "robinhood-mainnet"` (the
+ * protocol deployment and the RWLY one). Keyed by chain name, the second record's SKIP overwrote
+ * the first record's completed comparison, and the on-chain leg printed SKIP for a deployment it
+ * had just read and found MISMATCHED. A result silently replaced by a SKIP reads exactly like a
+ * result that was never computed — the same fail-open shape this module exists to close.
+ *
+ * The filename is the unique thing, so it leads; the chain name follows for readability only.
+ *
+ * @param {string} fileBasename the record's filename without `.json`
+ * @param {{chainName?:string}} cfg
+ * @returns {string}
+ */
+export function onchainKey(fileBasename, cfg) {
+  return `${fileBasename}${cfg?.chainName ? ` (${cfg.chainName})` : ''}`;
+}
+
+/**
  * One printable line for an on-chain comparison. Here rather than in the runner so the wording is
  * unit-testable — the whole point of this check is what an operator reads off it.
  *

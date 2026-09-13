@@ -19,6 +19,7 @@ import {
   launchConfigNotes,
   compareVaultCoreChunks,
   formatOnchainLine,
+  onchainKey,
   anyHardFail,
   formatResultLine,
 } from '../lib/deployment-currency.mjs';
@@ -219,6 +220,80 @@ test('an unreadable on-chain leg reports SKIP — it never reports a match it di
   const line = formatOnchainLine('robinhood-mainnet', /** @type {any} */ ({ skipped: 'rpc read failed: timeout' }));
   assert.match(line, /SKIP/);
   assert.doesNotMatch(line, /identical|consistent/, 'a read that did not happen must not read as a pass');
+});
+
+test('the on-chain leg is keyed per RECORD, so two records sharing a chainName cannot collide', () => {
+  // Found while porting, and it is the same fail-open class this file exists for: `protocol/main`
+  // carries TWO records declaring "chainName": "robinhood-mainnet" (the protocol deployment and the
+  // RWLY one). Keying the on-chain map by chain name let the second record's SKIP overwrite the
+  // first record's completed comparison, so the leg printed SKIP for a deployment it had just read
+  // and found MISMATCHED. A result silently replaced by a SKIP reads exactly like a result that was
+  // never computed.
+  //
+  // BEHAVIOUR, not source text. The first version of this test asserted the runner's keying
+  // expression matched /path\.basename\(file/ -- which the reverted expression
+  // `cfg.chainName ?? path.basename(file, '.json')` ALSO matches, so it passed on the mutant while
+  // the live run visibly lost a record. A guard that passes when the bug returns is decorative.
+  const a = onchainKey('robinhood-mainnet', { chainName: 'robinhood-mainnet' });
+  const b = onchainKey('rwly-robinhood-mainnet', { chainName: 'robinhood-mainnet' });
+  assert.notEqual(a, b, 'two records sharing a chainName must not collapse onto one key');
+  assert.equal(new Set([a, b]).size, 2);
+  assert.match(a, /^robinhood-mainnet/, 'the filename leads, because it is the unique part');
+  assert.match(b, /^rwly-robinhood-mainnet/);
+  // A record with no chainName still gets a usable key rather than "undefined".
+  assert.equal(onchainKey('base-sepolia', {}), 'base-sepolia');
+
+  // Non-vacuous: prove the collision this guards against is real in the tracked records, so the
+  // test cannot quietly become decorative if one of the two records is renamed away.
+  const dir = path.join(ROOT, 'contracts', 'config', 'deployments');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+  const names = files
+    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).chainName)
+    .filter(Boolean);
+  assert.ok(
+    names.length !== new Set(names).size,
+    'no two deployment records share a chainName any more — re-read this test before deleting it; ' +
+      'the keying fix is still correct but this non-vacuity check no longer proves anything',
+  );
+  // And the keys derived from the real records are all distinct, which is the property that matters.
+  const keys = files.map((f) =>
+    onchainKey(path.basename(f, '.json'), JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))),
+  );
+  assert.equal(new Set(keys).size, files.length, `on-chain keys collide across records: ${keys.join(', ')}`);
+});
+
+test('verify-x402-run.sh binds the chain before its first read', () => {
+  // The PARSE check for this file lives in `gate.mjs`'s syntax step and ci.yml's, next to the
+  // `node --check` line, NOT here. It was here first and it was flaky: `bash -n` spawned from
+  // inside a `node --test` worker intermittently fails on Windows under the suite's parallelism
+  // (Git Bash fork emulation), and a gate that goes red at random teaches people to ignore red —
+  // which is the reasoning `gate.mjs` already applies to slither. Run serially in the syntax step
+  // it is deterministic, and on CI's ubuntu runner bash is native.
+  //
+  // What stays here is the part that is pure, fast and deterministic: the ORDERING.
+  const sh = path.join(ROOT, 'scripts', 'verify-x402-run.sh');
+
+  // ORDERING is the property: a binding that runs after the first `cast receipt` verifies nothing.
+  //
+  // Measured over EXECUTABLE lines only. The first version of this assertion read the raw source
+  // and failed on the correct script, because the binding's own explanatory comment says the words
+  // "cast receipt" several lines ABOVE the `cast chain-id` it is explaining. That is the same trap
+  // `scripts/test/test-wiring-truth.test.mjs` documents: both files here are heavily commented, and
+  // every comment names the command it describes.
+  const src = fs
+    .readFileSync(sh, 'utf8')
+    .split('\n')
+    .filter((l) => !/^\s*#/.test(l))
+    .join('\n');
+  const bindAt = src.indexOf('cast chain-id');
+  const firstReadAt = src.indexOf('cast receipt');
+  assert.ok(bindAt > 0, 'the chain binding is gone — the script reads addresses through an unverified RPC');
+  assert.ok(firstReadAt > 0, 'the settlement read is gone; this guard is measuring nothing');
+  assert.ok(
+    bindAt < firstReadAt,
+    'the chain binding must come BEFORE the first chain read, not after it',
+  );
+  assert.match(src, /REFUSING/, 'the binding must refuse, not print a check row that is tallied into a verdict');
 });
 
 test('the hard-coded chunk selectors still match VaultDeployer\'s getters', () => {

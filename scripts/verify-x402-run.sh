@@ -46,6 +46,17 @@ echo
 #
 # NOT a `check` row. A row would be tallied into a verdict that is itself computed against the
 # wrong chain. An unreadable chain id refuses too: "I could not tell" is not "they match".
+#
+# A transcript with no `chain.chainId` refuses here too. `set -uo pipefail` has no `-e`, so a
+# failing `j` yields an empty string rather than aborting, which then compares unequal to any live
+# id and refuses. That is the right disposition reached for the wrong reason, and it printed the
+# confusing "the transcript records chain ." -- so it is named explicitly instead.
+if [ -z "$CHAIN_ID" ]; then
+  echo "  REFUSING: the transcript records no chain.chainId, so there is nothing to bind $RPC to."
+  echo "            Every address below is chain-specific, and a transcript that does not say which"
+  echo "            chain it was produced on cannot be verified against one."
+  exit 1
+fi
 LIVE_CHAIN_ID=$(cast chain-id --rpc-url "$RPC" 2>/dev/null | tr -d '[:space:]')
 if [ -z "$LIVE_CHAIN_ID" ]; then
   echo "  REFUSING: could not read the chain id of $RPC, so it is UNPROVEN that it is chain $CHAIN_ID"
