@@ -33,6 +33,12 @@
  * ## Safety
  *
  *   - Testnet chain ids only; any other id is a hard refusal.
+ *   - `USDC_ADDRESS` defaults to Base Sepolia's USDC and `RPC_URL` defaults to a Base Sepolia RPC,
+ *     but the two env vars resolve independently — point `RPC_URL` at a different testnet chain
+ *     (still in `TESTNET_CHAIN_IDS`, e.g. a plain local anvil) and leave `USDC_ADDRESS` unset, and
+ *     this runner would read Base Sepolia's USDC contract on a chain it does not exist on (issue
+ *     #204). `bindChain` refuses unless the RPC proves it is chain 84532 whenever `USDC_ADDRESS`
+ *     was not set explicitly; an unreadable chain id refuses too, as UNPROVEN rather than a pass.
  *   - Consent env var required (the facilitator-server's own gate; this script does not bypass it).
  *   - No raw key is ever accepted from the environment, printed, or written to the transcript.
  *   - Spend is bounded: the funding float and the price are both capped and asserted before any
@@ -43,6 +49,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadAccountFromKeystore } from './lib/keystore.mjs';
+import { chainBindingVerdict } from './lib/chain-binding.mjs';
 import { startFacilitatorServer, CONSENT_ENV_VAR } from '../apps/api/src/facilitator-server.mjs';
 import { readUsdcDomain } from '../apps/api/src/facilitator.mjs';
 import { buildApiServer, resolveApiConfig } from '../apps/api/src/serve.mjs';
@@ -50,6 +57,9 @@ import { createProtocolClient } from '../packages/agent-sdk/src/index.mjs';
 import { seed } from '../packages/reference-agent/fixtures/seed-snapshot.mjs';
 
 const TESTNET_CHAIN_IDS = new Set([84532, 11155111, 31337, 1337]);
+// The chain BASE_SEPOLIA_USDC below actually is. Not necessarily the chain this run is against —
+// RPC_URL can be pointed elsewhere — which is exactly the gap `bindChain` closes.
+const BASE_SEPOLIA_CHAIN_ID = 84532;
 // NOT publicnode: it prunes logs and receipts, and this runner reads receipts for its own fee
 // accounting. See the note in `.env.example` for the measurement.
 const DEFAULT_RPC = 'https://sepolia.base.org';
@@ -107,6 +117,9 @@ export function resolveRunConfig({ env, args }) {
   return {
     rpcUrl: env.RPC_URL || DEFAULT_RPC,
     usdcAddress: env.USDC_ADDRESS || BASE_SEPOLIA_USDC,
+    // Whether that address came from the operator or from the Base-Sepolia-specific default —
+    // `bindChain` needs this to know whether the default's chain assumption still applies.
+    usdcAddressExplicit: Boolean(env.USDC_ADDRESS),
     keystore: env.SETTLER_KEYSTORE,
     password: env.SETTLER_KEYSTORE_PASSWORD,
     price,
@@ -141,6 +154,45 @@ export function assertNoSecrets(value, path = 'transcript') {
   }
 }
 
+/**
+ * Bind the resolved USDC address to the chain the RPC actually answers, BEFORE any address is
+ * read through it (issue #204). `publicClient` here only needs `getChainId()` — injectable so
+ * this is unit-testable with no real RPC and no `cast`/`viem` stub.
+ *
+ * The residual this closes: `USDC_ADDRESS` defaults to Base Sepolia's USDC and `RPC_URL` defaults
+ * to a Base Sepolia RPC, but the two resolve independently. Point `RPC_URL` at a different testnet
+ * chain id (still one of `TESTNET_CHAIN_IDS` — a plain local anvil, say) and leave `USDC_ADDRESS`
+ * unset, and this runner would read Base Sepolia's USDC contract on a chain it does not exist on,
+ * and report whatever that read happens to return as a verdict about USDC. An unreadable chain id
+ * refuses too: an unproven binding is not a binding.
+ *
+ * @param {{publicClient:{getChainId:() => Promise<number>}, cfg:{rpcUrl:string, usdcAddressExplicit:boolean}}} p
+ * @returns {Promise<number>} the live chain id, once bound
+ */
+export async function bindChain({ publicClient, cfg }) {
+  let chainId;
+  try {
+    chainId = await publicClient.getChainId();
+  } catch (e) {
+    throw new Error(
+      `could not read the chain id of ${cfg.rpcUrl}, so it is UNPROVEN which chain this run would move ` +
+        `funds on. Refusing rather than proceeding: an unproven binding is not a binding. (${e?.message ?? e})`,
+    );
+  }
+  if (!TESTNET_CHAIN_IDS.has(chainId))
+    throw new Error(`refusing to run against chain ${chainId} — testnet only`);
+  if (!cfg.usdcAddressExplicit) {
+    const binding = chainBindingVerdict({
+      declaredChainId: BASE_SEPOLIA_CHAIN_ID,
+      rpcChainId: chainId,
+      rpc: cfg.rpcUrl,
+      declaredBy: 'the built-in default USDC_ADDRESS (Base Sepolia); set USDC_ADDRESS explicitly for this chain',
+    });
+    if (!binding.ok) throw new Error(binding.message);
+  }
+  return chainId;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const cfg = resolveRunConfig({ env: process.env, args });
@@ -161,9 +213,7 @@ async function main() {
   const publicClient = createPublicClient({ transport: http(cfg.rpcUrl) });
 
   // ── 0. chain identity, then the safety gate ──
-  const chainId = await publicClient.getChainId();
-  if (!TESTNET_CHAIN_IDS.has(chainId))
-    throw new Error(`refusing to run against chain ${chainId} — testnet only`);
+  const chainId = await bindChain({ publicClient, cfg });
   const headBlock = await publicClient.getBlock();
   const localSec = Math.floor(Date.now() / 1000);
   const skewSec = localSec - Number(headBlock.timestamp);
