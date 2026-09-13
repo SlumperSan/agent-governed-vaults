@@ -79,6 +79,48 @@ test('SDK-produced envelope is accepted by the real server gate', async () => {
   assert.equal(verdict.status, 200, 'server accepts the SDK envelope end to end');
 });
 
+// ── the client reads the REAL gate()'s headers, and those are base64 ──
+//
+// The 402 test above hands the client a RAW JSON `payment-required` header on purpose: that is
+// what this API emitted before 2026-09-13 and the client must keep understanding it. This test is
+// the other direction — the headers come from `gate()` itself, so nothing here restates what the
+// server emits, and a client that only understood raw JSON would fail on the first line.
+test('client pays end to end against the real gate(), whose headers are base64', async () => {
+  const price = { asset: USDC, amount: '10000', payTo: '0x' + 'd'.repeat(40), network: 'base' };
+  const facilitator = { async verifyAndSettle() { return { ok: true, receiptId: '0xtx' }; } };
+  let requiredHeader = null;
+  let responseHeader = null;
+  const fetchImpl = async (_url, opts) => {
+    const v = await gate({
+      headers: { 'payment-signature': opts?.headers?.['payment-signature'] },
+      price, facilitator, nowMs: 1_000_000,
+    });
+    if (v.status === 402) {
+      requiredHeader = v.headers['payment-required'];
+      return makeRes(402, v.body, v.headers);
+    }
+    responseHeader = v.headers['payment-response'];
+    return makeRes(200, { leaderboard: [] }, v.headers);
+  };
+
+  const client = createProtocolClient({ baseUrl: 'http://x', wallet, domain, fetchImpl, nowSec: () => 1000 });
+  const { receipt } = await client.leaderboard();
+
+  // What the client actually read was base64, decoded here explicitly rather than through the
+  // SDK's own dual-accept decoder — which would pass just as well against raw JSON.
+  for (const [label, h] of [['payment-required', requiredHeader], ['payment-response', responseHeader]]) {
+    assert.equal(typeof h, 'string', `${label} present`);
+    assert.ok(!h.startsWith('{'), `${label} is base64, not raw JSON`);
+    assert.equal(Buffer.from(h, 'base64').toString('base64'), h, `${label} is canonical base64`);
+  }
+  assert.equal(JSON.parse(Buffer.from(requiredHeader, 'base64').toString('utf8')).x402Version, 2);
+
+  // The receipt reaches the caller under BOTH the spec name and this repo's own.
+  assert.equal(receipt.transaction, '0xtx');
+  assert.equal(receipt.success, true);
+  assert.equal(receipt.receiptId, '0xtx');
+});
+
 // ── validAfter clock skew (sprint-14 live hardening) ──
 
 test('authorizeFromChallenge backdates validAfter by 60s so a fast local clock cannot invalidate it', async () => {

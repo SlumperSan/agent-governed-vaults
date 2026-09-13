@@ -54,6 +54,7 @@ import { startFacilitatorServer, CONSENT_ENV_VAR } from '../apps/api/src/facilit
 import { readUsdcDomain } from '../apps/api/src/facilitator.mjs';
 import { buildApiServer, resolveApiConfig } from '../apps/api/src/serve.mjs';
 import { createProtocolClient } from '../packages/agent-sdk/src/index.mjs';
+import { decodeHeaderJson } from '../packages/agent-sdk/src/header-codec.mjs';
 import { seed } from '../packages/reference-agent/fixtures/seed-snapshot.mjs';
 
 const TESTNET_CHAIN_IDS = new Set([84532, 11155111, 31337, 1337]);
@@ -292,7 +293,9 @@ async function main() {
   // ── 6. the unpaid request must be a 402 with a challenge ──
   const unpaid = await fetch(`${baseUrl}/vaults`);
   const challengeHeader = unpaid.headers.get('payment-required');
-  t.challenge = { status: unpaid.status, header: challengeHeader ? JSON.parse(challengeHeader) : null };
+  // Base64 per `specs/transports-v2/http.md:161-167`, or the raw JSON this API emitted before
+  // 2026-09-13; `decodeHeaderJson` takes either (see packages/agent-sdk/src/header-codec.mjs).
+  t.challenge = { status: unpaid.status, header: decodeHeaderJson(challengeHeader) };
   if (unpaid.status !== 402 || !challengeHeader) throw new Error(`expected 402 + challenge, got ${unpaid.status}`);
   step('402-challenge', { detail: `nonce ${t.challenge.header.nonce}` });
 

@@ -28,6 +28,12 @@ x402 failure is contained to the API; agents apply their own spend limits.
   envelope. Settlement is executed by an **injected facilitator**, never this server.
 - `PAYMENT-RESPONSE` echoes the receipt.
 
+All three headers are base64-encoded JSON, per `specs/transports-v2/http.md:161-167`, and
+`PAYMENT-RESPONSE` carries the spec's §5.3.2 `SettlementResponse` fields alongside this repo's own
+`receiptId`/`nonce`. The two outbound headers were raw JSON until 2026-09-13; every reader in this
+repository accepts either encoding, so nothing in flight broke. See
+[`docs/X402-V2-CONFORMANCE.md`](../X402-V2-CONFORMANCE.md).
+
 Settlement is USDC on Base via EIP-3009, executed by the facilitator per the x402 V2 scheme
 (dedicated `PAYMENT-*` headers, no contract-layer coupling; confirmed in research).
 

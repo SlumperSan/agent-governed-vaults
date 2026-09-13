@@ -32,9 +32,10 @@ Two independent reviewers found real gaps in the first version of this change. B
   this again. The test that was supposed to catch this instead asserted it settled "end to end"
   while stubbing the exact leg that broke; it now runs a facilitator spy that genuinely calls
   `checkChallengePrice`, plus a dedicated unit-level test on `checkChallengePrice` itself.
-- **MAJOR 2 (disclosed, not fixed here): outbound headers are not base64-encoded / not
-  `SettlementResponse`-shaped.** See "Header names AND encoding" below for the full finding and
-  why fixing it needs a coordinated change across files this PR does not own.
+- **MAJOR 2 (disclosed then, fixed since): outbound headers were not base64-encoded and not
+  `SettlementResponse`-shaped.** The finding is recorded under "Header names AND encoding" below,
+  followed by "Header encoding: closed 2026-09-13", which records the coordinated change that
+  closed it.
 - The doc also had a wrong section citation and a false claim ("the spec is silent on header
   naming") — both corrected below rather than quietly dropped.
 
@@ -127,7 +128,12 @@ chain in either position. `facilitator-server.mjs`'s `checkChallengePrice` impor
 `networksEqual` rather than re-implementing the comparison — see "Fixes from review" above for why
 that specific line was the change's one real end-to-end gap.
 
-### Header names AND encoding (corrected — see "Corrections from review" below)
+### Header names AND encoding — the finding as it stood (corrected; see "Corrections from review")
+
+> **SUPERSEDED 2026-09-13.** This section is the record of the divergence as it was found, in the
+> tense it was written in. It is kept because the next section only makes sense against it. What
+> the code does today is "Header encoding: closed 2026-09-13" below.
+
 
 The core spec (`x402-specification-v2.md`, unnumbered "Document Scope" front matter at line 5,
 **not** a numbered section; numbered `**1. Overview**` starts at line 30) puts transport mechanics
@@ -145,37 +151,94 @@ names all three headers explicitly and, critically, specifies their **encoding**
 | `PAYMENT-SIGNATURE` | Client → Server | Base64-encoded `PaymentPayload` object |
 | `PAYMENT-RESPONSE` | Server → Client | Base64-encoded `SettlementResponse` object |
 
-So this repo's header **names** happen to match the spec's transport convention exactly. The
-**encoding** does not, on two of the three:
+So this repo's header **names** happened to match the spec's transport convention exactly. The
+**encoding** did not, on two of the three:
 
-- `PAYMENT-SIGNATURE` (inbound): `decodeSignatureHeader` already base64-decodes — conformant.
-- `PAYMENT-REQUIRED` (outbound, `x402.mjs`'s `gate()`): emits `JSON.stringify(challenge)` — raw
+- `PAYMENT-SIGNATURE` (inbound): `decodeSignatureHeader` already base64-decoded — conformant.
+- `PAYMENT-REQUIRED` (outbound, `x402.mjs`'s `gate()`): emitted `JSON.stringify(challenge)` — raw
   JSON, not base64.
-- `PAYMENT-RESPONSE` (outbound, `gate()`): emits `JSON.stringify({receiptId, nonce})` — raw JSON,
+- `PAYMENT-RESPONSE` (outbound, `gate()`): emitted `JSON.stringify({receiptId, nonce})` — raw JSON,
   and not a §5.3 `SettlementResponse` (`{success, transaction, network, payer, errorReason?}`)
   either.
 
-**This is a real, second reason a spec-conformant client cannot use this API today**, independent
-of the payload-shape fix this PR makes. It is **not fixed here**. `grep -rn "payment-required"
---include=*.mjs packages/ scripts/ apps/`, excluding tests, finds **five** non-test readers that
-all parse the header as raw JSON with no base64 decode:
+**That was a real, second reason a spec-conformant client could not use this API**, independent of
+the payload-shape fix the change this section was written for made. It was not fixed there; it is
+fixed now — see the next section. At the time of writing, `grep -rn "payment-required"
+--include=*.mjs packages/ scripts/ apps/`, excluding tests, found **five** non-test readers that
+all parsed the header as raw JSON with no base64 decode:
 
-- `packages/agent-sdk/src/index.mjs:80` — `JSON.parse(res.headers.get('payment-required') ?? 'null')`
-- `scripts/live-x402-run.mjs:294` — reads the header, then `JSON.parse(challengeHeader)`
-- `scripts/live-x402-svm-run.mjs:137` — `JSON.parse(r.headers.get('payment-required'))`
-- `scripts/soak/api-client.mjs:53` — same pattern, with a body fallback
-- `apps/web/src/api-client.mjs:27-28`, inside `get`: `res.headers.get('payment-required')` then
-  `JSON.parse(challengeHeader)` — same pattern; `get`'s line 34 passes
-  `res.headers.get('payment-response')` to `finish`, whose line 40 does `JSON.parse(receipt)` the
-  same raw way (this is the browser client `apps/api/src/server.mjs`'s CORS comment calls "the
-  browser live mode")
+> **SUPERSEDED 2026-09-13** — all five readers below were re-pointed by the change recorded in the
+> next section, so the line numbers are the ones that were true when this was written and no
+> longer resolve. The list is left standing because it is the evidence for the "six files" count
+> that decided the work had to be one coordinated change.
+>
+> - `packages/agent-sdk/src/index.mjs:80` — `JSON.parse(res.headers.get('payment-required') ?? 'null')`
+> - `scripts/live-x402-run.mjs:294` — reads the header, then `JSON.parse(challengeHeader)`
+> - `scripts/live-x402-svm-run.mjs:137` — `JSON.parse(r.headers.get('payment-required'))`
+> - `scripts/soak/api-client.mjs:53` — same pattern, with a body fallback
+> - `apps/web/src/api-client.mjs:27-28`, inside `get`: `res.headers.get('payment-required')` then
+>   `JSON.parse(challengeHeader)` — same pattern; `get`'s line 34 passes
+>   `res.headers.get('payment-response')` to `finish`, whose line 40 does `JSON.parse(receipt)` the
+>   same raw way (this is the browser client `apps/api/src/server.mjs`'s CORS comment calls "the
+>   browser live mode")
 
 An earlier version of this section said "three files" and "all four files" — undercounting by
 missing the two above. Base64-encoding the header without updating all five simultaneously would
 break every one of them, including the live-settlement flow `docs/X402-LIVE-REPORT.md` records.
 Making both true at once needs a single coordinated change across **six files total** (this one
-plus the five above), not a change inside `apps/api/src/x402.mjs` alone, and is recommended as its
-own follow-up rather than attempted here.
+plus the five above), not a change inside `apps/api/src/x402.mjs` alone, and was recommended as its
+own follow-up rather than attempted there.
+
+### Header encoding: closed 2026-09-13 (issue #279)
+
+That follow-up landed. The six files named above changed together, and the transport spec was
+re-downloaded first rather than read out of this document:
+
+```
+gh api repos/coinbase/x402/contents/specs/transports-v2/http.md --jq .content | base64 -d
+```
+
+**What the server emits.** `gate()` base64-encodes `PAYMENT-REQUIRED` on all four of its 402
+branches — no signature, locally-invalid envelope, replayed nonce, and refused settlement — through
+one `require402` helper, so the four copies of the header line that made this easy to get wrong are
+now one. `PAYMENT-RESPONSE` is base64 too, and is a §5.3.2 `SettlementResponse`:
+
+| field | §5.3.2 | value |
+|---|---|---|
+| `success` | Required | `true` (this header is emitted only on a settled 200) |
+| `transaction` | Required | the facilitator's settlement — a tx hash on both settling facilitators |
+| `network` | Required | CAIP-2, via the same `toCaip2` the `accepts[]` entry uses |
+| `payer` | Optional | the address that signed the authorization; omitted when there is none |
+| `receiptId`, `nonce` | — | this repo's own names, kept (see below) |
+
+**Why it is a superset and not a rename.** `scripts/live-x402-run.mjs` and
+`scripts/live-x402-svm-run.mjs` both fail closed on `receipt.receiptId`, and neither can run inside
+`npm run gate` — one needs a funded testnet account, the other a devnet. Dropping the key to make
+the object a minimal `SettlementResponse` would have broken both silently. §5.3.2 lists Optional
+fields and an `extensions` map and nowhere forbids additional ones, so the spec fields were added
+and the two legacy keys left exactly where they were — the same "emit conformant, accept both"
+move this document describes for the 402 body.
+
+**What the readers do.** Each tries base64 and falls back to raw JSON, so a client of either
+vintage works against a server of either vintage. The discriminator is total rather than a guess:
+`{` is not in the base64 alphabet, so a value whose first non-space character is `{` is the legacy
+raw JSON and everything else is base64. Sniffing the other way round would not work — Node's base64
+decoder silently drops characters outside the alphabet instead of throwing, so a "try base64, catch,
+fall back" reader never reaches its fallback. The four Node-side readers share one copy of that
+decoder, `packages/agent-sdk/src/header-codec.mjs`; `apps/api/src/x402.mjs` and
+`apps/web/src/api-client.mjs` carry their own, the first because the server must not depend on the
+client SDK and the second because everything under `apps/web/src/` is loaded straight into a
+browser, imports nothing outside that directory, and has no `Buffer`.
+
+**Two things this did not do**, named rather than implied:
+
+- A **failed** settlement still returns a 402 with no `PAYMENT-RESPONSE` header. The transport
+  spec shows a `{success:false, errorReason, transaction:""}` body on that leg
+  (`transports-v2/http.md:139-159`); this API does not emit it. A client learns the reason from
+  the 402 body's `error` instead.
+- `network` is CAIP-2 through `toCaip2`, which maps this repo's two Base short names and passes
+  anything else through unchanged — so on the repo-specific SVM scheme the field is not CAIP-2.
+  No `solana:` mapping was invented for it.
 
 ### Corrections from review
 
@@ -213,11 +276,22 @@ the legacy flat envelope still decoding byte-for-byte unchanged, and the CAIP-2/
 equivalence in both directions. Every JSON literal in that file's spec-shape tests is transcribed
 from the downloaded spec's own example JSON, not paraphrased.
 
-15 tests in that file, measured at this document's final head:
+The 2026-09-13 header-encoding change added three tests to that same file: `PAYMENT-REQUIRED` is
+base64 on all four 402 branches (with the four distinct `error` strings asserted, so the test
+cannot pass by reaching one branch four times), `PAYMENT-RESPONSE` decodes to the §5.3.2 fields
+above, and `decodeHeaderJson` reads both encodings and rejects everything else. **Those assertions
+deliberately do not go through `decodeHeaderJson`** — it accepts raw JSON by design, so a test
+written through it would pass against the very defect it exists to catch. They decode base64
+explicitly and assert the value is not raw JSON. `packages/agent-sdk/test/header-codec.test.mjs`
+covers the shared reader directly, and `packages/agent-sdk/test/sdk.test.mjs` and
+`apps/web/test/api-client.test.mjs` each pay once against base64 headers and once against the
+legacy raw-JSON ones, which is what pins the backward compatibility.
+
+18 tests in `x402-v2-conformance.test.mjs`, measured at this document's final head:
 
 ```
 node --test --test-reporter=tap apps/api/test/x402-v2-conformance.test.mjs
-# tests 15
-# pass 15
+# tests 18
+# pass 18
 # fail 0
 ```

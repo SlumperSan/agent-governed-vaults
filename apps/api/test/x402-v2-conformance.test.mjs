@@ -16,7 +16,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gate, buildChallenge, decodeSignatureHeader, checkEnvelopeAgainstPrice, HEADERS } from '../src/x402.mjs';
+import { gate, buildChallenge, decodeSignatureHeader, checkEnvelopeAgainstPrice, decodeHeaderJson, encodeHeaderJson, HEADERS } from '../src/x402.mjs';
 import { checkChallengePrice } from '../src/facilitator-server.mjs';
 
 const USDC = '0x' + 'c'.repeat(40);
@@ -51,7 +51,7 @@ test('402 body §5.1.1: x402Version, resource, accepts and extensions are all pr
 
 test('402 body §5.1.1: the PAYMENT-REQUIRED header carries the same accepts/resource/extensions', async () => {
   const v = await gate({ headers: {}, price, facilitator: okFacilitator, nowMs: 1000 });
-  const header = JSON.parse(v.headers[HEADERS.REQUIRED]);
+  const header = decodeHeaderJson(v.headers[HEADERS.REQUIRED]);
   assert.equal(header.x402Version, 2);
   assert.ok(Array.isArray(header.accepts));
   assert.equal(header.accepts.length, 1);
@@ -134,7 +134,7 @@ test('resource §5.1.1: ResourceInfo carries the url the caller supplied', async
 
 test('backward compat: legacy flat challenge fields are unchanged by the v2 additions', async () => {
   const v = await gate({ headers: {}, price, facilitator: okFacilitator, nowMs: 1000 });
-  const ch = JSON.parse(v.headers[HEADERS.REQUIRED]);
+  const ch = decodeHeaderJson(v.headers[HEADERS.REQUIRED]);
   assert.equal(ch.scheme, 'exact');
   assert.equal(ch.asset, price.asset);
   assert.equal(ch.amount, price.amount);
@@ -145,7 +145,7 @@ test('backward compat: legacy flat challenge fields are unchanged by the v2 addi
 });
 
 test('backward compat: body still carries the legacy nested `challenge` key some callers read', async () => {
-  // scripts/soak/api-client.mjs:53-54 falls back to `(await first.json()).challenge` when the
+  // scripts/soak/api-client.mjs's `apiGet` falls back to `(await first.json()).challenge` when the
   // header is unavailable, and checks `challenge.scheme` to recognise the flat shape.
   const v = await gate({ headers: {}, price, facilitator: okFacilitator, nowMs: 1000 });
   assert.equal(typeof v.body.challenge, 'object');
@@ -348,4 +348,141 @@ test('checkEnvelopeAgainstPrice: a genuinely different network is still rejected
   );
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'network-mismatch');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Header ENCODING — `specs/transports-v2/http.md:161-167` ("Header Summary"): all three x402
+// headers are base64-encoded JSON, and `PAYMENT-RESPONSE` carries a §5.3.2 `SettlementResponse`.
+//
+// The 402 body above and these headers are two different conformance questions and this file had
+// only ever answered the first. A client that follows the transport spec base64-decodes
+// `PAYMENT-REQUIRED`; against raw JSON it gets bytes that are not JSON and cannot form a payment
+// at all, whatever shape the body has.
+//
+// THESE ASSERTIONS DELIBERATELY DO NOT USE `decodeHeaderJson`. That function accepts base64 OR raw
+// JSON by design, so a test written through it passes just as happily against the defect it is
+// supposed to catch — the decorative-guard shape this repository has shipped before. Every check
+// below decodes base64 explicitly and asserts the value is NOT raw JSON.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Assert a header value is base64 and is not raw JSON, then return what it decodes to.
+ *
+ * Two independent checks, because either alone is weak. `{` is not in the base64 alphabet, so a
+ * raw-JSON value fails the first outright. The second is a canonical round-trip: Node's decoder
+ * silently DROPS characters outside the alphabet, so re-encoding what it produced returns the
+ * input only when the input was already canonical base64.
+ */
+const decodeStrictBase64 = (value, label) => {
+  assert.equal(typeof value, 'string', `${label}: header must be present`);
+  assert.ok(value.length > 0, `${label}: header must not be empty`);
+  assert.ok(!value.trimStart().startsWith('{'), `${label}: must be base64, not raw JSON`);
+  assert.equal(
+    Buffer.from(value, 'base64').toString('base64'), value,
+    `${label}: must be canonical base64 (round-trip)`,
+  );
+  return JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
+};
+
+const PAYER = '0x' + 'a'.repeat(40);
+
+const envelopeFor = (over = {}) => b64({
+  x402Version: 2,
+  network: 'base-sepolia',
+  signature: '0x' + '11'.repeat(65),
+  authorization: {
+    from: PAYER,
+    to: PAYTO,
+    value: '10000',
+    validAfter: '0',
+    validBefore: '9999999999',
+    nonce: '0x' + 'e'.repeat(64),
+    asset: USDC,
+    ...over,
+  },
+});
+
+test('transport §161-167: PAYMENT-REQUIRED is base64, on every one of gate()\'s four 402 branches', async () => {
+  const nonce = '0x' + 'e'.repeat(64);
+
+  // 1. no PAYMENT-SIGNATURE at all
+  const noSig = await gate({ headers: {}, price, facilitator: okFacilitator, nowMs: 1000 });
+  // 2. locally invalid (underpaid) — refused before the facilitator is called
+  const underpaid = await gate({
+    headers: { [HEADERS.SIGNATURE]: envelopeFor({ value: '1' }) },
+    price, facilitator: okFacilitator, nowMs: 1000,
+  });
+  // 3. replayed nonce — the local seen-nonce guard
+  const replayed = await gate({
+    headers: { [HEADERS.SIGNATURE]: envelopeFor() },
+    price, facilitator: okFacilitator, nowMs: 1000, seenNonces: new Set([nonce]),
+  });
+  // 4. the facilitator refused to settle
+  const failed = await gate({
+    headers: { [HEADERS.SIGNATURE]: envelopeFor() },
+    price,
+    facilitator: { async verifyAndSettle() { return { ok: false, reason: 'insufficient_funds' }; } },
+    nowMs: 1000,
+  });
+
+  const branches = [
+    ['no-signature', noSig], ['underpaid', underpaid],
+    ['replayed-nonce', replayed], ['settlement-failed', failed],
+  ];
+  for (const [label, v] of branches) {
+    assert.equal(v.status, 402, `${label}: expected a 402`);
+    const ch = decodeStrictBase64(v.headers[HEADERS.REQUIRED], `${label} PAYMENT-REQUIRED`);
+    // It decodes to the same PaymentRequired the body carries — §5.1.1 fields and all.
+    assert.equal(ch.x402Version, 2, `${label}: decoded x402Version`);
+    assert.equal(ch.asset, price.asset, `${label}: decoded asset`);
+    assert.equal(ch.amount, price.amount, `${label}: decoded amount`);
+    assert.ok(Array.isArray(ch.accepts) && ch.accepts.length === 1, `${label}: decoded accepts`);
+    assert.equal(ch.accepts[0].network, 'eip155:84532', `${label}: decoded CAIP-2 network`);
+  }
+  // Non-vacuity: four distinct branches were actually reached, not the same one four times.
+  assert.deepEqual(
+    branches.map(([, v]) => v.body.error),
+    [
+      'payment required',
+      'payment invalid: underpaid',
+      'payment invalid: replayed-nonce',
+      'settlement failed: insufficient_funds',
+    ],
+  );
+});
+
+test('transport §161-167 + §5.3.2: PAYMENT-RESPONSE is base64 and decodes to a SettlementResponse', async () => {
+  const v = await gate({
+    headers: { [HEADERS.SIGNATURE]: envelopeFor() },
+    price, facilitator: okFacilitator, nowMs: 1000,
+  });
+  assert.equal(v.status, 200);
+  const s = decodeStrictBase64(v.headers[HEADERS.RESPONSE], 'PAYMENT-RESPONSE');
+
+  // §5.3.2's Required fields, with the types the table gives them.
+  assert.equal(s.success, true);
+  assert.equal(typeof s.transaction, 'string');
+  assert.equal(s.transaction, 'rcpt_1', 'transaction carries the settlement the facilitator returned');
+  assert.equal(typeof s.network, 'string');
+  assert.equal(s.network, 'eip155:84532', 'network is CAIP-2 (§5.3.2), not the repo shorthand');
+  // `payer` is Optional there; it is the address that signed the authorization.
+  assert.equal(s.payer, PAYER);
+
+  // …and the legacy keys this repo's own readers use are still present, in the same places.
+  // scripts/live-x402-run.mjs:318 and scripts/live-x402-svm-run.mjs both fail closed on
+  // `receipt.receiptId`, and neither can run inside `npm run gate`.
+  assert.equal(s.receiptId, 'rcpt_1');
+  assert.equal(s.nonce, '0x' + 'e'.repeat(64));
+});
+
+test('dual-accept: decodeHeaderJson reads the spec base64 AND the raw JSON emitted before it', () => {
+  const obj = { x402Version: 2, asset: USDC, nested: { a: 1 }, unicode: 'ü€' };
+  assert.deepEqual(decodeHeaderJson(encodeHeaderJson(obj)), obj, 'base64 round-trips, UTF-8 intact');
+  assert.deepEqual(decodeHeaderJson(JSON.stringify(obj)), obj, 'the legacy raw JSON still reads');
+  assert.deepEqual(decodeHeaderJson(`  ${JSON.stringify(obj)}  `), obj, 'surrounding space is tolerated');
+
+  // Nothing else decodes to an object, and nothing throws.
+  for (const bad of [undefined, null, '', '   ', 'not-base64-json', '{"unterminated":', 42, {}]) {
+    assert.equal(decodeHeaderJson(/** @type {any} */ (bad)), null, `must reject: ${String(bad)}`);
+  }
 });
