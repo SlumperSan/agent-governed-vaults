@@ -1,9 +1,12 @@
 // @ts-check
 /**
- * Signal (j) — DEPEG REFERENCE. Closes G4 ONLY where a feed address is configured; on any chain
- * whose CHAIN_ID is not explicitly 8453 this returns `skipped` and the gap stays open. Closes G4 (OPS-8, "USDC depeg. Undetected internally: days") from
+ * Signal (j) — DEPEG REFERENCE. Addresses G4 (OPS-8, "USDC depeg. Undetected internally: days") from
  * Business/Operations/Monitoring Gap Analysis.md §2 — see §3 item 6 for the spec this file
  * implements, in its "cheapest possible form".
+ *
+ * IT CLOSES G4 ONLY WHERE A FEED ADDRESS IS CONFIGURED. There is no default unless CHAIN_ID is
+ * explicitly 8453, so on every other chain — including Robinhood Chain 4663, where the protocol
+ * is deployed — this returns `skipped` and the gap stays open until USDC_USD_FEED_ADDRESS is set.
  *
  * WHAT THIS EXISTS FOR. `ChainlinkOracle` and `OracleAggregator` both PIN USDC at $1.00 rather than
  * measuring it — deposits and exits price USDC at par through the whole vault, unconditionally, by

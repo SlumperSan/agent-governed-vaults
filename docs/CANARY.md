@@ -45,8 +45,8 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
 | `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap; the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
 | `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2; set `0` to explicitly opt out |
-| `USDC_USD_FEED_ADDRESS` | | Base mainnet feed when `CHAIN_ID` is explicitly `8453`, else unset | Chainlink USDC/USD reference feed for the `depeg-reference` signal (G4); see §3(i) |
-| `USDC_USD_FEED_MAX_AGE_SEC` | | `86400` | how old that feed's reading may be before `depeg-reference` calls itself BLIND instead of reporting a frozen $1.0000 as in-band; see §3(i) |
+| `USDC_USD_FEED_ADDRESS` | | Base mainnet feed when `CHAIN_ID` is explicitly `8453`, else unset | Chainlink USDC/USD reference feed for the `depeg-reference` signal (G4); see §3(j) |
+| `USDC_USD_FEED_MAX_AGE_SEC` | | `86400` | how old that feed's reading may be before `depeg-reference` calls itself BLIND instead of reporting a frozen $1.0000 as in-band; see §3(j) |
 
 **Signals (c) and (d) need the indexer projection.** With `VAULTS` alone and no snapshot they report
 DEGRADED, not OK; see §4.
@@ -957,7 +957,7 @@ named `tier` must not be able to demote its own page.
   batched `Promise.all`s of seven and five — three of the twelve being the voting-eligible pair and
   `minDepositUsdc`, added when the propose gate was corrected to the book it actually reads, and the
   exit-liveness/oracle signals already read the vault separately for their own reasons — and signal
-  (i) adds two reads **against the SAME reference feed address for every vault**, deliberately not
+  (j) adds two reads **against the SAME reference feed address for every vault**, deliberately not
   shared across vaults for the same testability-over-one-fewer-`eth_call` reason signal (g) does not
   share `feedOf` with signal (a). The default 30s cadence is comfortable for a handful of vaults on a
   normal RPC; raise `CANARY_POLL_INTERVAL_MS` before raising your rate limit.
