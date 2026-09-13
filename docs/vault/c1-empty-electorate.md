@@ -13,7 +13,7 @@ admin path to undo it after deployment.
 ## Mechanism
 
 The GA-1 fix excluded the parent from the child's voting-eligible stake **and** from its holder
-count (`VaultCore.sol:425-430`), to keep full-consensus `RuleChange` reachable. The unanticipated
+count (`_snapshot`, `VaultCore.sol:514-518`), to keep full-consensus `RuleChange` reachable. The unanticipated
 consequence: in a child whose only capital is the parent's allocation,
 `pastTotalVotingEligibleShares == 0` and `pastHolderCount == 0` — the vault holds real money with no
 electorate. `deposit` is permissionless, so one deposit makes the attacker the sole eligible voter,
