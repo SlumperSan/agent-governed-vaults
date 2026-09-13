@@ -28,7 +28,10 @@ const ENV = {
   PRICE_PAYTO: PAYTO,
   PRICE_AMOUNT: '100000',
   PRICE_NETWORK: 'base',
-  FACILITATOR_URL: 'https://facilitator.example/settle',
+  FACILITATOR_URL: 'https://facilitator.example',
+  // CAIP-2, and deliberately NOT the same value as PRICE_NETWORK above: that one is the label
+  // the challenge shows a paying client, this one is what the facilitator's /verify expects.
+  FACILITATOR_NETWORK: 'eip155:8453',
 };
 
 const ctx = (env = ENV, headers = {}) => ({
@@ -104,7 +107,7 @@ test('a well-formed envelope for the WRONG amount is refused before any facilita
 
 // ── fail closed on misconfiguration ───────────────────────────────────────────────────────────
 
-for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETWORK', 'FACILITATOR_URL']) {
+for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETWORK', 'FACILITATOR_URL', 'FACILITATOR_NETWORK']) {
   test(`a deployment missing ${missing} refuses rather than serving the body free`, async () => {
     const env = { ...ENV };
     delete env[missing];
@@ -117,11 +120,41 @@ for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETW
   });
 }
 
+test('an unparseable FACILITATOR_URL is refused WITHOUT echoing it back', async () => {
+  // Unlike the other four settings, this one is operator configuration published nowhere, and a
+  // facilitator endpoint may carry a key in its path or query. Omitting the scheme is the commonest
+  // URL typo, so this branch is exactly where a credential would reach an unauthenticated GET.
+  const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'facilitator.example/x?apiKey=SUPER_SECRET_KEY' }));
+  assert.equal(res.status, 500);
+  const body = await bodyOf(res);
+  assert.ok(!body.detail.includes('SUPER_SECRET_KEY'), 'the credential must not reach the response');
+  assert.ok(!body.detail.includes('facilitator.example'), 'the value must not be echoed at all');
+  assert.match(body.detail, /FACILITATOR_URL/, 'but it must still name the setting at fault');
+  assert.equal(body.vaults, undefined);
+});
+
+test('a scheme-omitted FACILITATOR_URL is refused WITHOUT echoing the host', async () => {
+  // `host:443/path` PARSES -- WHATWG reads the host as the scheme -- so it reaches the non-https
+  // branch rather than the unparseable one. That branch used to print `parsed.protocol`, i.e. the
+  // hostname. Asserting on ABSENCE, so a reworded message cannot quietly reintroduce the leak.
+  const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'facilitator.example.com:443/settle?apiKey=SUPER_SECRET_KEY' }));
+  assert.equal(res.status, 500);
+  const body = await bodyOf(res);
+  assert.ok(!body.detail.includes('SUPER_SECRET_KEY'), 'the credential must not reach the response');
+  assert.ok(!body.detail.includes('facilitator.example.com'), 'the host must not reach the response');
+  assert.match(body.detail, /FACILITATOR_URL/, 'but it must still name the setting at fault');
+  assert.equal(body.vaults, undefined);
+});
+
 test('a non-https FACILITATOR_URL is refused — a signed envelope must not cross plain http', async () => {
   const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'http://facilitator.example/settle' }));
   assert.equal(res.status, 500);
   const body = await bodyOf(res);
-  assert.match(body.detail, /must be https/);
+  // Assert the SETTING is named and the VALUE is absent, not the exact wording -- an earlier
+  // version pinned /must be https/ and broke when the message was reworded to withhold the value.
+  assert.match(body.detail, /FACILITATOR_URL/);
+  assert.match(body.detail, /https/);
+  assert.ok(!body.detail.includes('facilitator.example'), 'the value must not be echoed');
 });
 
 test('PRICE_AMOUNT must be positive base units, so a free or malformed price cannot deploy', async () => {
@@ -129,6 +162,28 @@ test('PRICE_AMOUNT must be positive base units, so a free or malformed price can
     const res = await vaults(ctx({ ...ENV, PRICE_AMOUNT: bad }));
     assert.equal(res.status, 500, `PRICE_AMOUNT=${JSON.stringify(bad)} should refuse`);
   }
+});
+
+test('FACILITATOR_NETWORK must be CAIP-2 — a wrong chain id rejects every payment forever', async () => {
+  // Not defaulted on purpose. The facilitator verifies against whatever chain this names, so a
+  // plausible-but-wrong value (the client-facing label, a bare chain number) would make every
+  // payment fail verification with nothing in the response explaining why.
+  for (const bad of ['base', '8453', 'eip155', ':8453', 'eip155:', '']) {
+    const res = await vaults(ctx({ ...ENV, FACILITATOR_NETWORK: bad }));
+    assert.equal(res.status, 500, `FACILITATOR_NETWORK=${JSON.stringify(bad)} should refuse`);
+    const body = await bodyOf(res);
+    assert.equal(body.vaults, undefined);
+  }
+});
+
+test('the facilitator network and the advertised network are allowed to differ', async () => {
+  // One chain, two spellings, different audiences: the challenge advertises `base` (what PayAI's
+  // /supported lists for its x402Version 1 Base-mainnet entry) while the facilitator is addressed
+  // as eip155:8453 (its v2 entry for the same chain). Merging them would break one side.
+  const res = await vaults(ctx());
+  const { challenge } = await bodyOf(res);
+  assert.equal(challenge.network, 'base', 'the client sees the advertised label');
+  assert.notEqual(ENV.FACILITATOR_NETWORK, challenge.network, 'and the facilitator gets CAIP-2');
 });
 
 test('a PRICE_PAYTO that is not an address is refused — it decides who receives the money', async () => {

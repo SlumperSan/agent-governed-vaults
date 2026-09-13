@@ -2,7 +2,11 @@
  * `GET /api/vaults` — the metered read, at the edge.
  *
  * THIS FILE DELIBERATELY CONTAINS NO PAYMENT LOGIC. It imports `gate` from `apps/api/src/x402.mjs`,
- * the same module `apps/api` serves from, and `createHttpFacilitator` from its facilitator module.
+ * the same module `apps/api` serves from, and `createStandardHttpFacilitator` from its facilitator
+ * module. NOT `createHttpFacilitator`: that one speaks this repo's own bespoke single-POST shape,
+ * which only `apps/api/src/facilitator-server.mjs` implements -- no public facilitator speaks it,
+ * so a route wired to it and pointed at a real facilitator 402s every payment on a transport
+ * error. That is exactly what this file did until review round 6 caught it.
  * A second implementation of the 402 handshake is the obvious way to write this and it is the wrong
  * one: two implementations of one protocol drift, and the half that drifts here is the half that
  * decides whether a caller's USDC bought anything. The bundler follows the relative import, so what
@@ -29,8 +33,8 @@
  * spending a facilitator call; it would not change what a caller can obtain.
  */
 import { gate, HEADERS } from '../../../api/src/x402.mjs';
-import { createHttpFacilitator } from '../../../api/src/facilitator.mjs';
-import { resolvePrice, resolveFacilitatorUrl, configErrorResponse } from './_price.js';
+import { createStandardHttpFacilitator } from '../../../api/src/facilitator.mjs';
+import { resolvePrice, resolveFacilitatorUrl, resolveFacilitatorNetwork, configErrorResponse } from './_price.js';
 import snapshot from './_snapshot.json' with { type: 'json' };
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -47,9 +51,11 @@ export const onRequestGet = async (context) => {
 
   let price;
   let facilitatorUrl;
+  let facilitatorNetwork;
   try {
     price = resolvePrice(env);
     facilitatorUrl = resolveFacilitatorUrl(env);
+    facilitatorNetwork = resolveFacilitatorNetwork(env);
   } catch (err) {
     // Fail CLOSED. A route that cannot resolve who gets paid must not serve the paid body.
     return configErrorResponse(err);
@@ -58,7 +64,9 @@ export const onRequestGet = async (context) => {
   const decision = await gate({
     headers: headerBag(request),
     price,
-    facilitator: createHttpFacilitator({ url: facilitatorUrl }),
+    // `network` is the CAIP-2 id the FACILITATOR expects, deliberately separate from
+    // `price.network`, which is the label the CHALLENGE advertises to the paying client.
+    facilitator: createStandardHttpFacilitator({ url: facilitatorUrl, network: facilitatorNetwork }),
     nowMs: Date.now(),
     // seenNonces deliberately omitted — see the header comment.
   });

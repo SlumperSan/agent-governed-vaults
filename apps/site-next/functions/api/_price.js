@@ -1,18 +1,18 @@
 /**
  * Price and facilitator resolution for the metered read route, at the edge.
  *
- * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=http`, AND CANNOT HOLD ONE.
- * `apps/api` has three SELECTABLE facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
- * exactly `stub`, `http` and `svm`. `stub` and `http` hold no key,
+ * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=standard`, AND CANNOT HOLD ONE.
+ * `apps/api` has FOUR selectable facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
+ * `stub`, `http`, `standard` and `svm`. `stub`, `http` and `standard` hold no key,
  * and `FACILITATOR=svm` DOES hold one — the one mode that does, because Solana's flow makes this
  * process the fee payer and there is nothing to delegate. This route is
- * EVM-only and hard-wires `http` — `createHttpFacilitator` POSTs an envelope to a facilitator URL
+ * EVM-only and uses `createStandardHttpFacilitator` — it POSTs spec-shaped bodies to a facilitator
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
  * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
- * (facilitator.mjs defines a FOURTH implementation, `createSettlingFacilitator`, which takes an
+ * (facilitator.mjs defines a FIFTH implementation, `createSettlingFacilitator`, which takes an
  * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
- * not reachable from this route. Counting modes and counting implementations give 3 and 4.)
+ * not reachable from this route. Counting modes and counting implementations give 4 and 5.)
  *
  * WHY THE NUMBERS COME FROM ENV AND NOT FROM THIS FILE.
  * `PRICE_PAYTO` decides who is paid. Committing an address here would put a payee in git history
@@ -73,12 +73,19 @@ export function resolveFacilitatorUrl(env) {
   try {
     parsed = new URL(url);
   } catch {
-    throw new ConfigError(`FACILITATOR_URL is not a URL: ${url}`);
+    // NOT echoed. Unlike the other four, this value is operator configuration that is published
+    // nowhere, and facilitator endpoints routinely carry a key in the path or query. Omitting the
+    // scheme is the commonest URL typo, so the unparseable branch is exactly where a credential
+    // would surface -- to an unauthenticated GET, since this becomes a 500 body.
+    throw new ConfigError('FACILITATOR_URL is not a valid URL (value withheld: it may carry a credential)');
   }
   // A facilitator receives a signed payment authorization. Over plain http that envelope is
   // readable and replayable by anything on the path, so the scheme is checked rather than assumed.
   if (parsed.protocol !== 'https:') {
-    throw new ConfigError(`FACILITATOR_URL must be https, got: ${parsed.protocol}`);
+    // `parsed.protocol` is NOT safe to echo. When the scheme is omitted but a port is present
+    // -- `facilitator.example.com:443/settle?apiKey=...` -- WHATWG parses the HOST as the scheme,
+    // so echoing it prints the hostname of a setting published nowhere.
+    throw new ConfigError('FACILITATOR_URL must use https (value withheld: it may carry a credential)');
   }
   return parsed.toString();
 }
@@ -86,15 +93,56 @@ export function resolveFacilitatorUrl(env) {
 /**
  * A 500 that names the setting at fault, for the operator.
  *
- * It DOES echo a malformed value back -- `PRICE_PAYTO is not an address: my-treasury.eth`. That is
- * deliberate (an operator debugging a typo needs to see the typo) and it is safe HERE only because
- * none of these five is a secret: `payTo` and `amount` are published on the free discovery document
- * anyway, and the other three are public constants. An earlier version of this comment claimed the
- * response leaked no values, which was simply false. Do not extend this helper to a setting that IS
- * secret without changing that behaviour first.
+ * WHICH BRANCHES ECHO A VALUE, enumerated per branch rather than asserted as a rule. Three earlier
+ * versions of this comment stated a rule and each was falsified by a branch it had not enumerated:
+ * "no values are echoed" (false), "all five are safe to echo" (false), "FACILITATOR_URL is not
+ * echoed" (false -- the non-https branch printed `parsed.protocol`, which for a scheme-omitted value
+ * like `host:443/path?key=...` is the HOST). So:
+ *
+ *   requireAddr   PRICE_ASSET, PRICE_PAYTO   ECHOES the bad value. Both are on the free discovery
+ *                                            document already, so there is nothing to withhold.
+ *   PRICE_AMOUNT                             ECHOES the bad value. Also on the discovery document.
+ *   requireEnv    all six, when BLANK        echoes nothing -- it reports only the key name. This is
+ *                                            why `PRICE_NETWORK` has no value-echoing branch at all.
+ *   FACILITATOR_NETWORK                      ECHOES the bad value. A CAIP-2 chain id is public and
+ *                                            an operator debugging `base` vs `eip155:8453` needs to
+ *                                            see which one they typed. Enumerated here because the
+ *                                            commit that ADDED this setting did not, which is the
+ *                                            fourth time this comment missed a branch.
+ *   FACILITATOR_URL                          WITHHELD in both of its branches, unparseable and
+ *                                            non-https. Published nowhere, and a facilitator
+ *                                            endpoint may carry a key in path or query.
+ *
+ * Before adding a setting here, find the branch that would print it and decide there. Note the 500
+ * answers an unauthenticated GET.
+ *
+ * One thing this file does NOT control: on a fetch rejection `createStandardHttpFacilitator` puts
+ * `<step>-unreachable: <err.message>` into the 402 body via `gate` -- measured as
+ * `settlement failed: verify-unreachable: ...`, so the failing STEP is named, which the bespoke
+ * client did not do. Under Node that message is `fetch failed` with no URL; what the Workers
+ * runtime puts there is unverified.
  *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */
+/**
+ * The CAIP-2 chain id sent to the facilitator in `paymentRequirements.network`.
+ *
+ * This is NOT `PRICE_NETWORK` and the two must not be merged. `PRICE_NETWORK` is what the 402
+ * challenge advertises to a paying client (`base`, the label PayAI's `/supported` lists for its
+ * x402Version 1 Base-mainnet entry). `FACILITATOR_NETWORK` is what the facilitator's `/verify` and
+ * `/settle` expect (`eip155:8453`, its v2 entry for the same chain). One chain, two spellings,
+ * different audiences -- `createStandardHttpFacilitator` refuses to start without the CAIP-2 one.
+ */
+export function resolveFacilitatorNetwork(env) {
+  const v = requireEnv(env, 'FACILITATOR_NETWORK');
+  // Required to be CAIP-2 rather than defaulted: a wrong chain id here means every payment is
+  // verified against the wrong chain and rejected forever, and a default would hide that.
+  if (!/^[a-z0-9-]{3,8}:[a-zA-Z0-9._-]{1,32}$/.test(v)) {
+    throw new ConfigError(`FACILITATOR_NETWORK must be a CAIP-2 id such as eip155:8453, got: ${v}`);
+  }
+  return v;
+}
+
 export function configErrorResponse(err) {
   const isConfig = err instanceof ConfigError;
   return new Response(
