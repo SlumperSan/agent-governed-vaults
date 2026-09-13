@@ -9,7 +9,8 @@
  * EVM-only and uses `createStandardHttpFacilitator` — it POSTs spec-shaped bodies to a facilitator
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
- * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
+ * no key material appears in any of these files. (Stated that way on purpose: the earlier wording
+ * invited a grep whose only hit was the sentence itself.)
  * (facilitator.mjs defines a FIFTH implementation, `createSettlingFacilitator`, which takes an
  * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
  * not reachable from this route. Counting modes and counting implementations give 4 and 5.)
@@ -73,7 +74,7 @@ export function resolveFacilitatorUrl(env) {
   try {
     parsed = new URL(url);
   } catch {
-    // NOT echoed. Unlike the other four, this value is operator configuration that is published
+    // NOT echoed. Unlike the other five, this value is operator configuration that is published
     // nowhere, and facilitator endpoints routinely carry a key in the path or query. Omitting the
     // scheme is the commonest URL typo, so the unparseable branch is exactly where a credential
     // would surface -- to an unauthenticated GET, since this becomes a 500 body.
