@@ -374,10 +374,16 @@ const MODE_TOKEN = /FACILITATOR\s*=\s*[`'"]?(?:svm|stub|http)\b|\bSVM_?KEYPAIR\b
  * one entry it currently reaches past is `apps/web/index.html:1583`, whose match runs into 1584.
  */
 const EXEMPT = new Map([
-  ['docs/X402-LIVE-REPORT.md:41', 'RECORD: a FACILITATOR=http run; the API was keyless in it'],
-  ['docs/X402-LIVE-REPORT.md:305', 'RECORD: same run — the keyless-API/key-holding-facilitator split as measured'],
-  ['docs/audit/TEST-CROSS-REFERENCE.md:125', 'WINDOW: subject is the canary and the reference agent, both genuinely keyless; `apps/api` is two lines later in a different sentence about audit scope'],
-  ['docs/LAUNCH-READINESS.md:278', 'WINDOW: subject is scripts/verify-chainlink-oracle.mjs, which is read-only and keyless; the API is two table ROWS above, at line 276'],
+  ['docs/X402-LIVE-REPORT.md', [
+    ['3. API (keyless) → facilitator', 'RECORD: a FACILITATOR=http run; the API was keyless in it'],
+    ['the keyless-API', 'RECORD: same run, the keyless-API/key-holding-facilitator split as measured'],
+  ]],
+  ['docs/audit/TEST-CROSS-REFERENCE.md', [
+    ['They custody nothing, hold no keys', 'WINDOW: subject is the canary and the reference agent, both genuinely keyless; `apps/api` is two lines later in a different sentence about audit scope'],
+  ]],
+  ['docs/LAUNCH-READINESS.md', [
+    ['Aggregator-swap drift', 'WINDOW: subject is scripts/verify-chainlink-oracle.mjs, which is read-only and keyless; the API is named two table ROWS above, in the curation-immobility row'],
+  ]],
   // CLAUSE, not WINDOW, and the difference is worth the extra line. The two entries above are the
   // documented cost of the ±WINDOW heuristic: a NEIGHBOURING sentence names the API. This one is
   // different geometry — the API is named in the SAME sentence, in the clause before the `;`, and
@@ -390,8 +396,45 @@ const EXEMPT = new Map([
   // drift. When it does, the fix is to re-pin the line, not to drop the CLAIM_SPAN join: the join
   // is what makes the claim visible at all, and a wrapped claim about the API is exactly the miss
   // this file exists for.
-  ['apps/web/index.html:1583', 'CLAUSE: subject is the browser demo, which holds no key; the API is named in the preceding clause of the same sentence'],
+  ['apps/web/index.html', [
+    ['the browser never holds', 'CLAUSE: subject is the browser demo, which holds no key; the API is named in the preceding clause of the same sentence'],
+  ]],
 ]);
+
+/**
+ * Is this hit exempt?
+ *
+ * KEYED BY PATH PLUS A QUOTED ANCHOR FROM THE CLAIM, NOT BY LINE, and the change of key is the
+ * whole point of this function existing. The map used to be `path:line`. A line number is a
+ * coordinate into a file that unrelated prose edits renumber, so an entry was invalidated by
+ * changes that never touched the claim it exempts.
+ *
+ * Measured, not theorised: on 2026-09-12 the `docs/LAUNCH-READINESS.md` entry was re-pinned THREE
+ * TIMES IN ONE DAY, 278 to 283 to 288 to 292, every move caused by paragraphs being rewritten
+ * ABOVE it and none by the row itself changing. PR #252 had repaired the identical rot by hand
+ * before that. Four repairs, zero of which were about the claim.
+ *
+ * The failure mode that matters is not the churn, it is the direction the churn can fail in. A
+ * stale pin does not only stop protecting its claim; the line it names is now a DIFFERENT claim,
+ * so the entry silently exempts something nobody reviewed. The rot test catches a pin that matches
+ * nothing, but it cannot catch a pin that has landed on a new true-looking neighbour.
+ *
+ * An anchor is a substring of the claim's own text, so it moves with the claim and breaks only
+ * when the sentence is rewritten, which is exactly when a human should re-read the exemption. The
+ * rot test below additionally requires each anchor to match EXACTLY ONE hit, so an anchor that
+ * becomes ambiguous fails loudly rather than widening.
+ *
+ * @param {Map<string, [string, string][]>} exempt
+ * @param {string} file
+ * @param {string} claimText the raw lines the match covers, whitespace-collapsed
+ */
+function exemptReason(exempt, file, claimText) {
+  const entries = exempt.get(file);
+  if (!entries) return null;
+  const flat = claimText.replace(/\s+/g, ' ');
+  for (const [anchor, reason] of entries) if (flat.includes(anchor)) return reason;
+  return null;
+}
 
 /**
  * Every unqualified claim of `patterns` whose window names the API.
@@ -450,14 +493,16 @@ function unqualifiedClaims(patterns, { files = textFiles(), read = readText, exe
         .replace(/\s+/g, ' ');
       if (!SUBJECT.test(window)) continue;
       if (MODE_TOKEN.test(window)) continue;
-      const key = `${file}:${i + 1}`;
-      if (exempt.has(key)) continue;
       // A cross-line claim quoted as its first line alone reads as a sentence fragment and sends
       // the reader to the wrong place. Quote every line the match actually covers.
+      const covered = raw.slice(i, last + 1).map((l) => l.trim());
+      // The anchor is tested against the RAW covered text, not the normalised line, because the
+      // normaliser strips the `*`, `_` and backticks an anchor is most naturally copied with.
+      if (exemptReason(exempt, file, covered.join(' '))) continue;
       hits.push({
         file,
         line: i + 1,
-        quote: raw.slice(i, last + 1).map((l) => l.trim()).join(' ⏎ '),
+        quote: covered.join(' ⏎ '),
       });
     }
   }
@@ -712,15 +757,31 @@ test('synthetic: every claim family reds, and every measured false positive stay
 // check — run with the exemptions off and require every key to come back.
 test('exemptions: every entry is still load-bearing, none has rotted', () => {
   const all = unqualifiedClaims(CLAIM_PATTERNS, { exempt: new Map() })
-    .concat(unqualifiedClaims(RPC_PATTERNS, { exempt: new Map() }))
-    .map((h) => `${h.file}:${h.line}`);
-  for (const [key, reason] of EXEMPT) {
-    assert.ok(
-      all.includes(key),
-      `EXEMPT has ${key} (${reason}) but nothing matches there any more.\n`
-        + 'Either the line moved — re-pin it — or the claim was rewritten and the entry should go.\n'
-        + 'A stale exemption is indistinguishable from a live one, which is how the next miss hides.',
-    );
+    .concat(unqualifiedClaims(RPC_PATTERNS, { exempt: new Map() }));
+  for (const [file, entries] of EXEMPT) {
+    for (const [anchor, reason] of entries) {
+      const matched = all.filter(
+        (h) => h.file === file && h.quote.replace(/\s+/g, ' ').includes(anchor),
+      );
+      assert.ok(
+        matched.length > 0,
+        `EXEMPT has ${file} anchored on "${anchor}" (${reason}) but no claim there contains it.\n`
+          + 'The claim was rewritten, so the exemption no longer describes anything. Re-read the\n'
+          + 'sentence and either re-anchor the entry or delete it. A stale exemption is\n'
+          + 'indistinguishable from a live one, which is how the next miss hides.',
+      );
+      // AN ANCHOR THAT MATCHES TWICE IS WIDER THAN IT WAS REVIEWED TO BE. The old line key could
+      // only ever name one claim; an anchor could silently grow to cover a second one that nobody
+      // read. Requiring exactly one keeps the new key at least as narrow as the key it replaced.
+      assert.equal(
+        matched.length,
+        1,
+        `EXEMPT anchor "${anchor}" in ${file} now matches ${matched.length} claims:\n`
+          + matched.map((h) => `  :${h.line}: "${h.quote}"`).join('\n')
+          + '\nAn exemption reviewed against one sentence is now silencing more than one.\n'
+          + 'Lengthen the anchor until it selects exactly the claim it was written for.',
+      );
+    }
   }
 });
 
