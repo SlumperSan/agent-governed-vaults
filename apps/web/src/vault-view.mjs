@@ -56,12 +56,55 @@ export function oracleHealth(basket, nowSec) {
 }
 
 /**
+ * Voting-eligible stake, mirroring `VaultCore.votingEligibleShares` (VaultCore.sol:1025-1028):
+ * the parent vault reads 0, everyone else reads `sharesOf[member] - queuedExitShares[member]`.
+ *
+ * It is its own derivation because both subtractions are invisible on a page that shows only a
+ * share balance. A Mode-F exit locks shares the instant it is QUEUED — `requestExit` writes
+ * `queuedExitShares` and calls `_snapshot` in the same transaction (VaultCore.sol:551-556) — and
+ * `requestExit(shares)` takes any amount up to the balance, so a PARTIAL queue leaves a real
+ * voting remainder that "queued / not queued" alone cannot express.
+ *
+ * `eligibleShares` is not the same claim as "shares you can vote with today": `commitVote` weighs
+ * `min(pastVotingEligibleShares(createdAt-1), votingEligibleShares(now))` (Governance.sol:352-356),
+ * so stake minted after a proposal was created is eligible here and still carries no weight in
+ * that proposal. This is the eligibility term, and nothing more.
+ *
+ * @param {{shares:bigint, queuedExitShares:bigint, isParentVault:boolean}} p
+ * @returns {{shares:bigint, lockedShares:bigint, eligibleShares:bigint, isParentVault:boolean,
+ *            reason:'parent'|'queued'|'full'}}
+ */
+export function votingEligibility({ shares, queuedExitShares, isParentVault }) {
+  // The carve-out is the contract's FIRST branch and never reads `queuedExitShares`, so a parent
+  // vault reports its zero for the reason the contract gives, queued exit or not.
+  if (isParentVault) {
+    return { shares, lockedShares: 0n, eligibleShares: 0n, isParentVault: true, reason: 'parent' };
+  }
+  // Clamped defensively only: `requestExit` requires `sharesOf >= shares`, shares are
+  // non-transferable, and a member with a queued exit cannot queue again, so the contract cannot
+  // reach queued > held. Incoherent input renders as zero, never as a negative share count.
+  const locked = queuedExitShares > shares ? shares : queuedExitShares;
+  return {
+    shares,
+    lockedShares: locked,
+    eligibleShares: shares - locked,
+    isParentVault: false,
+    reason: locked > 0n ? 'queued' : 'full',
+  };
+}
+
+/**
  * The viewer's position in one vault, valued at the vault's NAV/share.
+ * @param {object} vault
+ * @param {object|null} holding
+ * @param {number} nowSec
+ * @param {string|null} [viewerAddress] whose position this is — compared against the vault's
+ *   registered parent, to mirror the contract's parent-vault carve-out
  * @returns {{shares:bigint, valueUsdc:bigint|null, costBasisUsdc:bigint|null,
  *            pnlUsdc:bigint|null, tenureSec:number, feeBpsNow:bigint, isSoleHolder:boolean,
- *            queuedExitShares:bigint}|null}
+ *            queuedExitShares:bigint, voting:ReturnType<typeof votingEligibility>}|null}
  */
-export function position(vault, holding, nowSec) {
+export function position(vault, holding, nowSec, viewerAddress) {
   if (!vault || !holding) return null;
   const shares = toBig(holding.shares) ?? 0n;
   const totalShares = toBig(vault.totalShares) ?? 0n;
@@ -77,6 +120,12 @@ export function position(vault, holding, nowSec) {
 
   const tenureSec = Math.max(0, nowSec - Number(holding.lastDepositTime ?? nowSec));
   const isSoleHolder = totalShares > 0n && shares === totalShares;
+  const queuedExitShares = toBig(holding.queuedExitShares) ?? 0n;
+
+  // A ROOT vault carries `parent: null`, and `parentVault()` returns address(0) there — never a
+  // member — so the carve-out cannot bite, and a record missing the field reads as root. Both
+  // record producers set it: `fixtures.mjs` verbatim, `mapVaultRecords` as `v.parent ?? null`.
+  const parent = vault.parent ?? null;
 
   return {
     shares,
@@ -91,7 +140,12 @@ export function position(vault, holding, nowSec) {
       isSoleHolder,
     }),
     isSoleHolder,
-    queuedExitShares: toBig(holding.queuedExitShares) ?? 0n,
+    queuedExitShares,
+    voting: votingEligibility({
+      shares,
+      queuedExitShares,
+      isParentVault: parent !== null && eqAddr(viewerAddress, parent),
+    }),
   };
 }
 
@@ -128,7 +182,7 @@ export function vaultView(vault, wallet, nowSec) {
 
   // The derived freeze state, not the record's own flag, decides whether the position can be
   // valued — so a card and the detail page cannot disagree about it.
-  const pos = position({ ...vault, frozen }, holding, nowSec);
+  const pos = position({ ...vault, frozen }, holding, nowSec, wallet?.address ?? null);
 
   const mode = resolveExitMode(vault.proposal ?? null, nowSec);
 

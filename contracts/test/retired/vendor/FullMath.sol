@@ -5,8 +5,9 @@ pragma solidity 0.8.26;
 /// @notice VENDORED THIRD-PARTY CODE. Derived from Uniswap v3-core `FullMath.sol`
 /// (https://github.com/Uniswap/v3-core, `contracts/libraries/FullMath.sol`), whose SPDX
 /// license identifier is **MIT** — reproduced in this file's header above. That license is
-/// preserved on this file and does not extend to the rest of this repository, which is
-/// BUSL-1.1; see the header of every other file.
+/// preserved on this file and is independent of the licence on the rest of this repository,
+/// which is MIT since 2026-09-05 and was BUSL-1.1 before it; see the header of every other file
+/// and LICENSE-HISTORY.md.
 ///
 /// @dev Port notes for solc 0.8.26 (the original targets 0.7.6):
 /// - the whole body is `unchecked`: the algorithm relies on wrapping arithmetic, and 0.8's

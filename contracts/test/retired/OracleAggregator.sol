@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
 // RETIRED (C-6), formerly src/OracleAggregator.sol. The bespoke median-aggregator stack is

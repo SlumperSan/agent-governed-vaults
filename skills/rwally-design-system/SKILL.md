@@ -3,7 +3,7 @@ name: rwally-design-system
 description: The visual and motion system for the rwally.com redesign — dark cinematic, self-hosted React. Load before designing or building any component, page, animation, or shader for apps/site-next. Encodes the owner's two decisions (self-hosted React; dark cinematic), the security envelope the build must stay inside, the token system, the motion grammar, and the performance and accessibility budgets.
 ---
 
-# rwally design system — dark cinematic, self-hosted
+# rwally design system: dark cinematic, self-hosted
 
 ## The two decisions (owner, 2026-09-04)
 
@@ -12,7 +12,7 @@ description: The visual and motion system for the rwally.com redesign — dark c
 2. **Dark cinematic.** Near-black ground, luminous data, one hero moment that makes a first-time
    visitor say *wow*, scroll-driven reveals, restraint everywhere else.
 
-## The security envelope — non-negotiable, enforced by `_headers`
+## The security envelope: non-negotiable, enforced by `_headers`
 
 The current CSP is `default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none';
 form-action 'none'; frame-ancestors 'none'`. The new one makes five relaxations and no others: it
@@ -45,7 +45,7 @@ Consequences a component author must design around:
 
 - **No CDN, no Google Fonts, no analytics, no remote images, no `unsafe-inline`.** Fonts are
   `@fontsource` packages bundled into `dist/`. Every asset ships from this origin.
-- **No inline `style=` attributes and no inline `<script>`** — CSP refuses them. Motion libraries
+- **No inline `style=` attributes and no inline `<script>`**: CSP refuses them. Motion libraries
   that set `style` via JS are fine (that is CSSOM, not the attribute in HTML). Vite's default
   injected module script is fine (`'self'`). Anything needing `'unsafe-inline'` or `'unsafe-eval'`
   is out; if a library demands it, pick another library.
@@ -65,13 +65,13 @@ family, then commit to dark:
 
 | token | value | note |
 |---|---|---|
-| `--ground` | `#07070b` | near-black, not pure black — pure `#000` banding on OLED gradients |
+| `--ground` | `#07070b` | near-black, not pure black: pure `#000` banding on OLED gradients |
 | `--surface` | `#0e0e16` | cards, nav |
 | `--surface-2` | `#16161f` | raised |
 | `--line` | `rgba(255,255,255,.08)` | hairlines only |
 | `--ink` | `#eaeaf3` | body |
 | `--muted` | `#a8a8bd` | secondary |
-| `--accent` | `#a094ff` | the Atlas violet, dark-mode value — ONE accent, used for data and focus |
+| `--accent` | `#a094ff` | the Atlas violet, dark-mode value: ONE accent, used for data and focus |
 | `--good` / `--warn` / `--crit` | `#5fd89a` / `#f2c14e` / `#ff8b83` | status only, never decoration |
 | `--display` | `'Newsreader Variable', Georgia, serif` | bundled via `@fontsource-variable/newsreader` |
 | `--sans` | `'IBM Plex Sans Variable', system-ui, sans-serif` | `@fontsource-variable/ibm-plex-sans` |
@@ -83,18 +83,18 @@ Type scale: display at 64/72/96 with tight tracking (`-0.02em`) and serif; body 
 1.6; numbers ALWAYS mono with `font-variant-numeric: tabular-nums` so animated counters do not
 jitter.
 
-## The hero — where the wow lives
+## The hero: where the wow lives
 
 One idea, executed precisely, beats five effects. The thesis is *the first agent-aggregated index*
 (owner decision `product-thesis-agent-aggregated-index`). The hero should make that visible:
 
-- A WebGL field of constituents (R3F) — points/instances whose position and luminance are driven
+- A WebGL field of constituents (R3F): points/instances whose position and luminance are driven
   by weight and conviction, drifting under a slow orbital camera. Not a generic particle cloud: the
   data must be legible as *an index being formed*.
 - One headline in serif, one line, centered, that a member could quote. Copy goes through the
   claims contract before it renders.
 - A single restrained CTA. Ondo's structure: nav · headline · CTA · "scroll to explore" · logo strip.
-  We have no partner logos and must not fake any — the strip is replaced by three verifiable facts
+  We have no partner logos and must not fake any. The strip is replaced by three verifiable facts
   (contracts immutable, member-governed, source-available) each linking to the evidence.
 - Reduced motion: the field renders **static**, the counters render final values, the camera does
   not move. `prefers-reduced-motion` is a first-class state, not a fallback.

@@ -1,0 +1,80 @@
+/* ===========================================================================
+   not-found — the body of 404.html
+   ---------------------------------------------------------------------------
+   THE SAME RESTRAINT AS THE DEEP-PAGE HERO, for the same reason and one more.
+   No canvas, no pin, no parallax: the build brief puts the one WebGL field on
+   index.html, and this document is rendered when a reader has already failed to
+   reach what they wanted. The extra reason is that Pages serves this file at
+   WHATEVER PATH WAS ASKED FOR, including a path under /assets/ — so it is the
+   one document on the site that can be rendered by a request that never wanted
+   a page at all, and it should cost as little as it can.
+
+   EVERY COLOUR IS var(--token) FROM tokens.css. No hex literal reaches this
+   file and no token is defined here, which is the rule every other stylesheet
+   in this build follows.
+
+   THE ACTIONS USE THE GLOBAL .door AND .quiet, not classes of their own. They
+   are the same two link treatments the homepage hero uses; a fourth button
+   style invented for the page nobody plans to visit is a style nobody
+   maintains.
+   =========================================================================== */
+
+.notFound {
+  /* The one section on the page, so it carries the whole vertical rhythm: the
+     hero's opening measure above, and enough below that the footer band does
+     not ride up under the actions on a tall viewport. Both values are from the
+     --s scale tokens.css calls "one scale, used for every margin, gap and
+     pad". */
+  padding-block: var(--s8) var(--s9);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--ground) 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0 0 var(--s3);
+  max-width: none;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  line-height: 1.4;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+}
+
+.title {
+  /* One step under the display maximum, matching the deep-page hero: this
+     document announces a fact and gets out of the way. The scale is still
+     --step-display, so a change to the token still lands here.
+
+     In em rather than ch, for the reason RisksHero.module.css records at
+     length: `ch` resolves against the used font's advance for "0", which the
+     metric-adjusted fallback does not equalise, and the mismatch was a measured
+     layout shift on the deep-page headline. */
+  font-size: min(var(--step-display), 4rem);
+  max-width: 11.33em;
+  margin: 0 0 var(--s5);
+  color: var(--ink); /* ratio recorded in src/tokens.css */
+}
+
+.lede {
+  max-width: 62ch;
+  margin: 0 0 var(--s6);
+  font-size: clamp(1.0625rem, 1rem + 0.45vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s5);
+}
+
+@media (max-width: 40rem) {
+  .title {
+    /* A twenty-character cap on a phone leaves the headline in a narrow ribbon
+       down the left of a full-width column. Let it use the measure it has. */
+    max-width: none;
+  }
+}
