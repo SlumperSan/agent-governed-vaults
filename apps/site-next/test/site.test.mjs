@@ -1458,15 +1458,35 @@ t('the corrections from the 2026-08-29 review have not been undone', () => {
     assert.ok(!/no share of the exit fee/i.test(html), `${p}: "no share of the exit fee" is false, the operator's mandatory 5% collects it through share value`);
     // A7: the creator gate is a withdrawal gate, not a top-up obligation.
     assert.ok(!/must be topped up/i.test(html), `${p}: the creator gate is a withdrawal gate, not a top-up obligation`);
-    // C7: there is no population of vaults to generalise from.
-    assert.ok(!/set lower by many vaults/i.test(html), `${p}: there are no other vaults, nothing has been deployed`);
+    // C7: there is no population of vaults to generalise from. Two vaults exist on chain 4663 as
+    // of 2026-09-12, and two vaults created by the same account are still not a population: the
+    // claim this forbids generalises across independent creators, and there are none.
+    assert.ok(!/set lower by many vaults/i.test(html), `${p}: two vaults exist, both created by the same account, so there is no population of vaults to generalise from`);
     // A1: Mode F opens at reveal start, not at passage.
     assert.ok(!/rebalance has passed but has not yet executed/i.test(html), `${p}: Mode F opens at reveal start, not when a proposal passes`);
     // A4: the pre-audit findings are not all closed.
     assert.ok(!/all of which are now resolved/i.test(html), `${p}: one High remains open at the launch configuration and a sub-vault class is dormant, not fixed`);
-    // C8: the cap is a planned parameter of a vault that does not exist.
-    if (html.includes('50,000')) {
-      assert.ok(/\bplanned\b/i.test(html), `${p}: states the 50,000 figure without labelling it planned and undeployed`);
+    // C8, INVERTED ON 2026-09-12, and the inversion is the point.
+    //
+    // It used to require the opposite: a page stating 50,000 had to label it "planned", because
+    // the figure described a capacity cap on a vault nobody had created. That premise died when
+    // the vaults were created. Both now read capacityCapUsdc() 50000000000, which is 50,000 USDG
+    // at 6 decimals, so calling the figure planned is now the false statement and this guard was
+    // requiring it.
+    //
+    //   0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4
+    //   0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38
+    //
+    // SCOPED TO A WINDOW, not to the page. The old form tested /planned/ anywhere in the whole
+    // document, so inverting it page-wide would red on any unrelated legitimate use of the word.
+    // Each occurrence of the figure is judged by the prose around it and nothing else.
+    for (const m of html.matchAll(/50,000/g)) {
+      const window = html.slice(Math.max(0, m.index - 240), m.index + 240);
+      assert.ok(
+        !/\bplanned\b/i.test(window),
+        `${p}: calls the 50,000 cap "planned". It is deployed: two vaults on chain 4663 read` +
+          ` capacityCapUsdc() 50000000000. Say what it is, not what it was going to be.`,
+      );
     }
   }
 });
