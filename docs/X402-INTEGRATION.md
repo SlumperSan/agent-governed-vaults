@@ -41,10 +41,10 @@ that first if you haven't. This file starts after discovery, at "I have a URL an
 | Field | Meaning |
 |---|---|
 | `scheme` | Payment scheme. This route only ever issues `"exact"` (EIP-3009 on EVM) — never `"exact-svm"`, since `apps/site-next/functions/api/vaults.js` never sets `price.svm` (`buildChallenge`'s own `scheme: price.svm ? 'exact-svm' : 'exact'`, `apps/api/src/x402.mjs:134` — server-side config only, never on anything a client sends). |
-| `asset` | The USDC contract address you're being asked to pay with. On this deployment it should be Circle-native USDC on Base mainnet, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (`apps/site-next/functions/api/_price.js:28`, `BASE_MAINNET_USDC`) — **check it against that constant yourself**; a challenge naming anything else is not this deployment behaving correctly. |
+| `asset` | The USDC contract address you're being asked to pay with. On this deployment it should be Circle-native USDC on Base mainnet, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (`apps/site-next/functions/api/_price.js:29`, `BASE_MAINNET_USDC`) — **check it against that constant yourself**; a challenge naming anything else is not this deployment behaving correctly. |
 | `amount` | Integer string, USDC base units (6dp). `docs/REVENUE.md` §2 prices this route at $0.10 = `"100000"`, but the price is operator-configured (`PRICE_AMOUNT`) and can change — treat the challenge's `amount` as authoritative for what you'll actually be charged, and your own maximum as the thing that must never be exceeded. |
-| `payTo` | The recipient address. This is an operator-controlled value with no repo-side default — `resolvePrice` (`apps/site-next/functions/api/_price.js:57-68`) reads it with `requireAddr(env, 'PRICE_PAYTO')` at `:64`, refused rather than defaulted, so a misconfigured deployment answers 500, never silently pays the wrong address. You must know in advance who you expect to be paying. |
-| `network` | A bare string, e.g. `"base"` (`docs/REVENUE.md:130`, the `PRICE_NETWORK` setting) — this flat field is **not** CAIP-2. The challenge's `accepts[0].network` field, added since, carries the CAIP-2 form (`eip155:8453`) of the same chain (`apps/api/src/x402.mjs:157`, `toCaip2(price.network)`) — see §5.5. |
+| `payTo` | The recipient address. This is an operator-controlled value with no repo-side default — `resolvePrice` (`apps/site-next/functions/api/_price.js:58-69`) reads it with `requireAddr(env, 'PRICE_PAYTO')` at `:65`, refused rather than defaulted, so a misconfigured deployment answers 500, never silently pays the wrong address. You must know in advance who you expect to be paying. |
+| `network` | A bare string, e.g. `"base"` (`docs/REVENUE.md:149`, the `PRICE_NETWORK` setting) — this flat field is **not** CAIP-2. The challenge's `accepts[0].network` field, added since, carries the CAIP-2 form (`eip155:8453`) of the same chain (`apps/api/src/x402.mjs:157`, `toCaip2(price.network)`) — see §5.5. |
 | `nonce` | 32-byte hex, fresh per challenge, reused verbatim as the EIP-3009 authorization's on-chain nonce — the doc comment directly above `buildChallenge` in `apps/api/src/x402.mjs` explains why it must be unpredictable, not a counter. |
 | `expiresAt` | Unix milliseconds. This repo's own `authorizeFromChallenge` does **not** read it to set the authorization's `validBefore` — it uses a fixed 300s TTL from your signing time regardless (`packages/agent-sdk/src/eip3009.mjs:92-113`). Check it anyway: a stale or implausibly long-lived challenge is a signal something is wrong upstream of you (a caching proxy, or a server not generating fresh challenges). |
 
@@ -171,15 +171,15 @@ a real example of "the chain's own replay guard surfacing through this error fie
 reason string this route's current facilitator client is guaranteed to reproduce verbatim.
 
 **`500` — route misconfigured.** Body `{error: "route misconfigured", detail: "<VAR> is not set on
-this deployment"}` (`apps/site-next/functions/api/_price.js:146-155`, `configErrorResponse`). Fires when
+this deployment"}` (`apps/site-next/functions/api/_price.js:147-156`, `configErrorResponse`). Fires when
 any of `PRICE_ASSET`, `PRICE_PAYTO`, `PRICE_AMOUNT`, `PRICE_NETWORK`, `FACILITATOR_URL` or
 `FACILITATOR_NETWORK` (six settings total, `docs/REVENUE.md` §5.2) is missing or malformed on the
 Cloudflare Pages project — deliberately refused rather than defaulted (`docs/REVENUE.md` §3, "It
 fails closed"). This is an operator-configuration state, not something a caller triggers by sending
 a bad payment. Whether the 500 body's `detail` echoes the bad value differs setting by setting —
-`apps/site-next/functions/api/_price.js:93-125`'s comment enumerates each branch; the short version
+`apps/site-next/functions/api/_price.js:94-127`'s comment enumerates each branch; the short version
 is that `FACILITATOR_URL` never echoes (both its malformed branches withhold the value, since a
-facilitator URL may carry a credential in its path or query, `:70-91`), while the others echo a
+facilitator URL may carry a credential in its path or query, `:71-92`), while the others echo a
 malformed value because it is already public on the free discovery document.
 
 **`503`.** Grepped rather than assumed: neither `apps/api/src/x402.mjs`, `apps/api/src/facilitator.mjs`
@@ -259,7 +259,7 @@ strings in the flat field.** Spec §11.1 (`x402-specification-v2.md:617-633`) sp
 `buildChallenge`'s `accepts[0].network` now carries exactly that (`apps/api/src/x402.mjs:157`,
 `toCaip2(price.network)`) — but the challenge's top-level flat `network` field, which this doc's
 buyer reads (§2), is still the repo's bare shorthand, `"base"` / `"base-sepolia"`
-(`docs/REVENUE.md:130`, `PRICE_NETWORK base`), because the legacy consumers listed in 5.2 read that
+(`docs/REVENUE.md:149`, `PRICE_NETWORK base`), because the legacy consumers listed in 5.2 read that
 field directly and removing it would break them.
 
 **5.6 — PARTIALLY FIXED, and not for this route: the `extra` domain hint is now supportable, but
@@ -268,7 +268,7 @@ documents `extra` as an optional bag on each `accepts[]` entry, and the spec's o
 fills it with `{name:"USDC", version:"2"}` — precisely the asset's EIP-712 domain name and version.
 `buildChallenge` can now populate `accepts[0].extra` (`apps/api/src/x402.mjs:162`,
 `...(price.extra ? { extra: price.extra } : {})`) — **when the caller supplies `price.extra`**.
-`resolvePrice` (`apps/site-next/functions/api/_price.js:57-68`) does not: it returns
+`resolvePrice` (`apps/site-next/functions/api/_price.js:58-69`) does not: it returns
 `{asset, payTo, amount, network}`, with no `.extra` field at all, so this specific route's challenge
 still omits `extra` in practice, even though the capability now exists in the module it imports.
 Independently of that, this repo's own evidence (`docs/X402-LIVE-REPORT.md` §6, `:119-142`) is that
