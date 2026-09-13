@@ -29,8 +29,8 @@ Two independent reviewers found real gaps in the first version of this change. B
   `checkChallengePrice: {ok:false, reason:'network-mismatch'}`, so `gate()` returned 402
   "settlement failed" for a valid payment. Fixed by importing the same `networksEqual` (now
   exported from `x402.mjs`) into `checkChallengePrice`, so the two checks cannot drift apart on
-  this again. The test that was supposed to catch this or asserted it settled "end to end" while
-  stubbing the exact leg that broke; it now runs a facilitator spy that genuinely calls
+  this again. The test that was supposed to catch this instead asserted it settled "end to end"
+  while stubbing the exact leg that broke; it now runs a facilitator spy that genuinely calls
   `checkChallengePrice`, plus a dedicated unit-level test on `checkChallengePrice` itself.
 - **MAJOR 2 (disclosed, not fixed here): outbound headers are not base64-encoded / not
   `SettlementResponse`-shaped.** See "Header names AND encoding" below for the full finding and
@@ -156,15 +156,26 @@ So this repo's header **names** happen to match the spec's transport convention 
   either.
 
 **This is a real, second reason a spec-conformant client cannot use this API today**, independent
-of the payload-shape fix this PR makes. It is **not fixed here**: `PAYMENT-REQUIRED` is read raw
-(no base64 decode) by three files outside this PR's grant — `packages/agent-sdk/src/index.mjs`
-(`JSON.parse(res.headers.get('payment-required'))`), `scripts/live-x402-run.mjs`
-(`JSON.parse(challengeHeader)`), and `scripts/soak/api-client.mjs` (same pattern) — spanning code
-this PR does not own and, for the two `scripts/` files, code a different lane owns. Base64-encoding
-the header without updating all three simultaneously would break every one of them, including the
-live-settlement flow `docs/X402-LIVE-REPORT.md` records. Making both true at once needs a single
-coordinated change across all four files (this one plus three others), not a change inside
-`apps/api/src/x402.mjs` alone, and is recommended as its own follow-up.
+of the payload-shape fix this PR makes. It is **not fixed here**. `grep -rn "payment-required"
+--include=*.mjs packages/ scripts/ apps/`, excluding tests, finds **five** non-test readers that
+all parse the header as raw JSON with no base64 decode:
+
+- `packages/agent-sdk/src/index.mjs:80` — `JSON.parse(res.headers.get('payment-required') ?? 'null')`
+- `scripts/live-x402-run.mjs:244` — reads the header, then `JSON.parse(challengeHeader)`
+- `scripts/live-x402-svm-run.mjs:137` — `JSON.parse(r.headers.get('payment-required'))`
+- `scripts/soak/api-client.mjs:53` — same pattern, with a body fallback
+- `apps/web/src/api-client.mjs:27-28`, inside `get`: `res.headers.get('payment-required')` then
+  `JSON.parse(challengeHeader)` — same pattern; `get`'s line 34 passes
+  `res.headers.get('payment-response')` to `finish`, whose line 40 does `JSON.parse(receipt)` the
+  same raw way (this is the browser client `apps/api/src/server.mjs`'s CORS comment calls "the
+  browser live mode")
+
+An earlier version of this section said "three files" and "all four files" — undercounting by
+missing the two above. Base64-encoding the header without updating all five simultaneously would
+break every one of them, including the live-settlement flow `docs/X402-LIVE-REPORT.md` records.
+Making both true at once needs a single coordinated change across **six files total** (this one
+plus the five above), not a change inside `apps/api/src/x402.mjs` alone, and is recommended as its
+own follow-up rather than attempted here.
 
 ### Corrections from review
 

@@ -47,8 +47,14 @@
  * legacy flat envelope OR the spec's nested one and normalizes both to the same flat shape before
  * anything downstream (`checkEnvelopeAgainstPrice`, `gate()`, and the facilitator modules `gate()`
  * hands the envelope to) ever sees it — see the comments at each function for the field-by-field
- * reasoning. This is "emit conformant, accept both": a v2 client can now pay this API, and every
- * existing flat-shape consumer keeps working unchanged.
+ * reasoning. This is "emit conformant, accept both": a v2 client's PAYMENT-SIGNATURE payload is
+ * now accepted, and every existing flat-shape consumer keeps working unchanged.
+ *
+ * That is not the same as "a v2 client can pay this API end to end" — it cannot yet. A spec
+ * client base64-decodes the `PAYMENT-REQUIRED` header per `specs/transports-v2/http.md:161-167`;
+ * this module's `gate()` still emits it as raw JSON (and `PAYMENT-RESPONSE` as raw JSON that is
+ * not a §5.3 `SettlementResponse` either). See `docs/X402-V2-CONFORMANCE.md`'s "Header names AND
+ * encoding" section for why that is not fixed in this module alone.
  *
  * `extra` (§5.1.2, the USDC EIP-712 domain — `facilitator.mjs`'s `readUsdcDomain` documents that it
  * varies per chain, "USDC" on Base Sepolia vs "USD Coin" on mainnet) is populated only when the
