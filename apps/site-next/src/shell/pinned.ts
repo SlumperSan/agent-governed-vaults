@@ -310,6 +310,76 @@ export const PAGE_IDS = ['index.html', 'disclaimers.html'] as const;
 export type PageId = (typeof PAGE_IDS)[number];
 
 /**
+ * THE 404 DOCUMENT, WHICH IS DELIBERATELY NOT A `PageId`.
+ *
+ * `dist/404.html` is the file Cloudflare Pages serves, with a 404 status, for a
+ * path that matches no asset and no `_redirects` rule. Its absence is not a
+ * missing nicety: the Pages asset server walks up from the requested path
+ * looking for a `404.html`, and when it finds none it falls back to serving
+ * `/index.html` WITH A 200. Measured against the live site on 2026-09-09,
+ * before this file existed:
+ *
+ *     /nonsense.html   200   13167 bytes
+ *     /               200   13167 bytes   (identical bytes)
+ *
+ * So every mistyped or stale path was a 200 duplicate of the homepage, and a
+ * broken internal link announced itself nowhere. The fix is the file, and the
+ * file has to be built, so `vite.config.ts` names it as an entry and
+ * `scripts/prerender.mjs` splices its markup in.
+ *
+ * WHY IT IS NOT A `PageId`, WHICH IS THE PART TO NOT UNDO. A `PageId` is a
+ * document the site NAVIGATES TO, and `site.test.mjs` enforces exactly that:
+ * "every page links to every other page" asserts `href="<other>"` on every one
+ * of them. Adding this id to the list would put a link to the 404 page in the
+ * nav of both real pages, which is the opposite of what a 404 page is for. It
+ * is also absent from `NAV`, `FOOTER_PAGES`, `HEADER_NAV` and `sitemap.xml`,
+ * and its entry HTML carries `robots: noindex` and NO canonical, for the same
+ * reason: a page nobody should link to is a page nobody should index either.
+ */
+export const NOT_FOUND_ID = '404.html';
+
+/**
+ * Every document `PageShell` can render: the two public pages plus the 404.
+ * The shell is typed on this; everything that builds a nav or a sitemap stays
+ * typed on `PageId`.
+ */
+export type ShellPage = PageId | typeof NOT_FOUND_ID;
+
+/**
+ * Rewrite an in-site href for the document it is being rendered into.
+ *
+ * ON THE TWO REAL PAGES THIS IS THE IDENTITY FUNCTION, and it has to be. Both
+ * are served at depth one, so the relative `index.html` the masthead and footer
+ * write resolves correctly from either, and `site.test.mjs` matches the
+ * attribute BYTE FOR BYTE: `html.includes('href="index.html"')`. A prefix added
+ * here unconditionally reds that guard.
+ *
+ * ON THE 404 PAGE IT IS NOT, and that is the whole reason this exists. Pages
+ * serves `404.html` at WHATEVER PATH WAS ASKED FOR — `/a/b/c` renders it
+ * without redirecting — so a relative `index.html` resolves against `/a/b/`
+ * and lands on another 404. The chrome would be broken exactly where a lost
+ * reader needs it. Every in-site href on that document is therefore made
+ * root-absolute, and a bare fragment (`#how`, a section of the homepage) is
+ * repointed at the homepage rather than at a section this document does not
+ * have.
+ *
+ * `#main` IS THE ONE FRAGMENT THIS MUST NOT TOUCH: the skip link targets the
+ * 404 page's own `<main>`. `SkipLink` writes it directly and never calls this,
+ * which is why this function is applied at the call sites in `Masthead`,
+ * `Footer` and `LivePriceChip` rather than swept over the rendered markup.
+ */
+export const siteHref = (page: ShellPage, href: string): string => {
+  if (page !== NOT_FOUND_ID) return href;
+  // Off-site (`https://app.rwally.com`) or already root-absolute: leave it alone.
+  if (href.startsWith('/') || href.includes('://')) return href;
+  // A relative page path (`index.html`) or a homepage fragment (`#how`). Both
+  // become root-absolute: `/#how` reaches the homepage's section, and
+  // `/index.html` reaches the homepage through the 308 Pages already serves for
+  // it — the same hop the two real pages' own relative links take.
+  return `/${href}`;
+};
+
+/**
  * THE HEADER NAV IS EMPTY, AND THE HEADER'S OWN NAV IS `HEADER_NAV` BELOW.
  *
  * `NAV` is the list of PAGE ids the footer composes `FOOTER_PAGES` from, and it
