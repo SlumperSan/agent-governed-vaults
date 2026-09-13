@@ -4,9 +4,10 @@
 paid HTTP reads settled in USDC over x402. It records what is done, what is not, and the exact steps
 only the owner can run. It is not a business plan and it does not forecast anything.
 
-**Status: the rail is built and unpublished.** Every step below up to "What the owner runs" is
-landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
-is **$0.00**.
+**Status: the rail is built and LIVE, and nobody has paid yet.** The route was deployed to the
+`rwally` Cloudflare Pages project on 2026-09-13 and answers `402 Payment Required`; §5.6 records the
+measurement. No mainnet payment has been taken and revenue to date is **$0.00**. Those two facts sit
+together deliberately: a rail that answers 402 is plumbing, not a customer.
 
 ---
 
@@ -131,16 +132,40 @@ rejected — the runbook naming a facilitator the route cannot talk to — with 
 Until a working `FACILITATOR_URL` exists, the route answers 500 by design rather than serving reads
 for free.
 
-## 5. What the owner runs
+## 5. Deploying it, and the one step that is still the owner's
 
-Everything above is landed. These are the steps an agent cannot take — they need the Cloudflare
-account, the payee address, and real funds. `docs/SWARM.md` §10 puts all three out of bounds.
+**5.1 through 5.4 are DONE.** They are kept because they are the procedure for the next deploy, and
+because two of them carry traps that cost real time the first time. §5.6 records what was measured
+afterwards. **5.5 — the first purchase — moves real funds and remains the owner's alone**, under
+`docs/SWARM.md` §10.
 
 **5.1 — Choose the payee and the facilitator.** An address you control on Base mainnet to receive
-USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet.
+USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet. Settled on 2026-09-13:
+the payee is the address the owner supplied, and the facilitator is `https://facilitator.payai.network`,
+which settles on Base mainnet and needs no API key.
 
-**5.2 — Set the six variables** on the Pages project (Settings → Environment variables →
-Production), then redeploy so they take effect:
+**5.2 — Set the six variables, and set them as SECRETS, not as environment variables.** This is
+the trap. `wrangler pages deploy` reads `apps/site-next/wrangler.toml` as the source of truth for the
+project config, and that file has no `[vars]` section — so **the deploy silently wipes every
+dashboard-set environment variable on the project**. Measured on 2026-09-13: all six read back
+correctly from the API at 16:41, the deploy ran, and at 17:02 the same read returned `env_vars: []`
+for both production and preview. The deploy output never mentions variables and reports success. The
+live route answered `500 {"error":"route misconfigured","detail":"PRICE_AMOUNT is not set on this
+deployment"}` — fail-closed, so no data was served for free, but the route was down.
+
+Upload them as secrets instead. Wrangler's config sync touches `vars`, not secrets, so these survive
+every subsequent deploy:
+
+```bash
+npx wrangler@4 pages secret bulk <path-to-json> --project-name rwally
+```
+
+The JSON is a flat `{"KEY": "value"}` object with these six keys. Write it outside the repository.
+A Pages Function reads a secret through the same `env[KEY]` binding, so no code changes.
+
+**Secrets bind at deployment time, not at read time.** Uploading them changes nothing until you
+redeploy; the route kept answering the same 500 for four minutes until it was redeployed. Always:
+upload, then redeploy, then probe.
 
 ```
 PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
@@ -174,6 +199,12 @@ build with the retired one. Caught in review before any deploy; nothing was publ
 Wrangler **4 or newer**: wrangler 3's esbuild cannot parse the JSON import attribute that Node
 requires, and fails the build.
 
+**A preview deploy cannot be used to test the route.** `functions/_middleware.js` redirects every
+hostname that is not literally `rwally.com`, so `https://<hash>.rwally.pages.dev/api/vaults` answers
+`301` and never reaches the route; preview secrets are empty anyway. The 301 is still worth having as
+a smoke test, because it proves the Functions bundle compiled and is executing — a deploy with no
+Functions serves the SPA HTML instead. Real verification has to happen on the production host.
+
 **5.4 — Confirm the gate is live before paying anything.** Discovery is free, so this costs nothing:
 
 ```bash
@@ -189,10 +220,30 @@ curl -s -i https://rwally.com/api/vaults
 
 If either returns 500, a variable from 5.2 is missing; the body names which one.
 
-**5.5 — Make the first purchase.** Ten reads at $0.10 is the first dollar.
+**5.5 — Make the first purchase.** Ten reads at $0.10 is the first dollar. **Not done.**
 
 This is the step that moves real funds, and it is yours alone. Nothing in this repository will do it,
 and no agent here should be asked to.
+
+## 5.6 — What the deploy measured
+
+Deployed 2026-09-13 from `apps/site-next` at `90e84991`, the squash of #267. Read back from the
+production host, not from the deploy output:
+
+`GET https://rwally.com/api/vaults` answers **402 Payment Required** with a `payment-required` header
+carrying `scheme: exact`, `x402Version: 2`, `asset: 0x833589fC…A02913`, `amount: "100000"`, the payee,
+flat `network: "base"`, and an `accepts[]` entry with `network: "eip155:8453"` and
+`maxTimeoutSeconds: 300`. The body carries no vault data.
+
+`GET https://rwally.com/.well-known/x402` answers **200**, free, quoting the same price.
+
+The site itself was unchanged by the deploy: `/` and `/disclaimers` both answer 200 on the same
+hashed JS bundle, and the built page set matched the live sitemap before the deploy was run.
+
+**A conformant third-party client still cannot pay this, and that is a separate gap.** The 402 is
+emitted as raw JSON where `specs/transports-v2/http.md:161-167` requires base64. Issue #279 tracks it.
+Settlement itself has never been exercised on mainnet — the 402 proves the gate refuses unpaid
+requests, and proves nothing whatever about settlement.
 
 ## 6. Phase 2 — demand
 
