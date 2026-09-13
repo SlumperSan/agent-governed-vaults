@@ -1,0 +1,141 @@
+/* ===========================================================================
+   HOW IT WORKS.
+
+   THREE ROWS SEPARATED BY HAIRLINES, NOT THREE CARDS. A card is a container, and
+   a container says "these three things are separate objects". These three are
+   consecutive states of one process, so the device is a rule between them: the
+   same mark a ledger uses between entries, and the same one the reference uses
+   down its own numbered section.
+
+   THE NUMERAL IS OUTLINED, NOT FILLED, and it is the only outlined type on the
+   site. Filled, at this size, three violet numbers would out-shout the verbs
+   beside them and the section would read as a countdown. Outlined, they read as
+   position markers: present, large enough to scan by, and quieter than the words
+   they are numbering. `-webkit-text-stroke` is the only way to do this without
+   shipping a second font weight, and it degrades to the fill colour in an engine
+   that does not support it, which is a legible number rather than a missing one.
+
+   --accent-deep IS AN ILLUSTRATION FILL AND tokens.css SAYS SO. It is 4.21:1 on
+   --ground, below every text floor this site holds. It is correct here for the
+   same reason it is correct in a drawing: these numerals carry no information a
+   reader needs to read. The `<ol>` element carries the ordering, the numerals
+   are `aria-hidden`, and the verb beside each one is --ink at 16.82:1.
+   =========================================================================== */
+
+.how {
+  padding-block: var(--s9);
+  padding-inline: var(--gutter);
+  background: var(--ground);
+}
+
+.inner {
+  max-width: var(--wrap);
+  margin-inline: auto;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s5);
+  margin-bottom: var(--s7);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.heading {
+  margin: var(--s4) 0 0;
+  max-width: 18ch;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-h2);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display);
+  color: var(--ink);
+}
+
+/* The seven-step rail. It sits at the far end of the heading row, in mono, at
+   the size of a caption, because it is a table of contents for the three rows
+   below rather than a claim of its own. --muted, 8.62:1, because it is prose a
+   reader is expected to read rather than a label they scan past. */
+.rail {
+  margin: 0;
+  max-width: 22rem;
+  font-family: var(--mono);
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block-start: 1px solid var(--line);
+}
+
+.step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 9rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s6);
+  padding-block: var(--s6);
+  border-block-end: 1px solid var(--line);
+}
+
+.numeral {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(2.5rem, 1.4rem + 3.6vw, 4.5rem);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--accent-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+.verb {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-h3);
+  letter-spacing: var(--track-display);
+  color: var(--ink);
+}
+
+.line {
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
+  color: var(--muted);
+}
+
+@media (max-width: 52rem) {
+  .how {
+    padding-block: var(--s8);
+  }
+
+  /* Two columns: the numeral keeps its own, and the verb sits above the line
+     rather than beside it. Three columns at this width would put the sentence in
+     a four-word measure. */
+  .step {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--s4) var(--s5);
+    padding-block: var(--s5);
+  }
+
+  .numeral {
+    grid-row: 1 / span 2;
+  }
+
+  .line {
+    grid-column: 2;
+  }
+}

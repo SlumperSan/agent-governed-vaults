@@ -11,6 +11,10 @@
  *             so it never collapses into `ok`. The runner reports OK→SKIPPED as its own
  *             transition line, which is how a dead sentinel becomes visible instead of silent.
  *
+ * `notApplicable()` below is a REFINEMENT of `ok`, not a fourth status: the check's subject is
+ * inert in this deployment, so the condition it reports on cannot arise. That is a different fact
+ * from `skipped`, and conflating the two is what this vocabulary exists to prevent.
+ *
  * @typedef {'ok'|'alert'|'skipped'} SignalStatus
  * @typedef {Object} SignalResult
  * @property {string} id            stable identity for transition tracking: signal|vault|key
@@ -62,6 +66,32 @@ export const skipped = build('skipped');
  */
 export function detectorBroken(fields) {
   return skipped({ ...fields, detail: { ...(fields.detail ?? {}), detectorBroken: true } });
+}
+
+/**
+ * An `ok` whose check DOES NOT APPLY to this deployment: the contract path it watches is inert, so
+ * the condition it reports on cannot arise here at all.
+ *
+ * This is deliberately not `skipped`. `skipped` means "could not be measured" — a check that might
+ * have found something and did not get to look — so the tracker holds it as a not-OK state and
+ * `unhealthy()` carries it for as long as it lasts. That is the right shape for a transient
+ * blocker and the wrong shape for a permanent one: a check whose subject does not exist in this
+ * deployment would report "cannot run" on every vault on every sweep for the life of the
+ * deployment, which reads as a fault someone should chase rather than a fact about the wiring.
+ *
+ * So it is `ok` carrying a flag. `observe()` in transitions.mjs makes the FIRST sighting emit — a
+ * first-sighting `ok` is otherwise silent — and `markFor()` renders it `NOTICE` rather than
+ * `RECOVERED`, because nothing recovered. Every sweep after that matches the tracked status and
+ * emits nothing, and the tracker snapshot is persisted (see state-file.mjs), so a restart does not
+ * repeat the notice either. `unhealthy()` and `summariseTransitions().notOk` both filter on
+ * `status !== 'ok'` and so do not carry it.
+ *
+ * @param {{signal:string, vault:string, key?:string, message:string,
+ *          measured?:string, threshold?:string, detail?:Record<string,any>}} fields
+ * @returns {SignalResult}
+ */
+export function notApplicable(fields) {
+  return ok({ ...fields, detail: { ...(fields.detail ?? {}), notApplicable: true } });
 }
 
 /** Short vault label for alert lines: 0x1234…cdef. Full address always rides in `detail`. */

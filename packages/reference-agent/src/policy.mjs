@@ -226,9 +226,10 @@ export function decideExit({ chain, entryNavPerShareWad, operatorRow, governance
     );
 
   const fired = triggers.filter((t) => t.ok);
-  // Forward pricing: exiting while a passed-but-unexecuted rebalance exists settles at POST-
-  // rebalance NAV, and the shares lock until settleQueuedExit (ARCHITECTURE §4.4). The agent still
-  // exits — but the plan must say so, because the price it gets is not the price it sees.
+  // Forward pricing: exiting while a pending execution exists (any active proposal past its reveal
+  // start, of any type) settles at POST-execution NAV, and the shares lock until someone calls
+  // settleQueuedExit (ARCHITECTURE §4.4). The agent still exits — but the plan must say so, because
+  // the price it gets is not the price it sees.
   const modeF = governance?.hasPendingExecution === true;
   return {
     exit: fired.length > 0,
@@ -402,9 +403,9 @@ export function decideEntry({ chain, nowSec, timing, danger }) {
 }
 
 /**
- * Mode F settlement: shares queued behind a rebalance settle at post-rebalance NAV, and stay
- * locked until someone calls settleQueuedExit (ARCHITECTURE §4.4). Nobody is obliged to call it
- * for us, so the agent watches for its own.
+ * Mode F settlement: shares queued behind a pending execution settle at post-execution NAV, and
+ * stay locked until someone calls settleQueuedExit (ARCHITECTURE §4.4). Nobody is obliged to call
+ * it for us, so the agent watches for its own.
  *
  * @param {Object} p @param {any} p.chain @param {any} p.governance
  * @returns {{action:'settle-queued-exit'|'none', reason:string}}

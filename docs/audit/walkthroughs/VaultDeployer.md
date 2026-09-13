@@ -30,7 +30,8 @@ code instead, where the applicable cap is EIP-3860's 49,152 B.
 ## Mechanism
 
 1. **Compile time.** `type(VaultCore).creationCode` is embedded in this contract's own
-   creation code (26,148 B — 23,004 B under the EIP-3860 cap).
+   creation code (**23,808 B — 25,344 B under the EIP-3860 cap**; `forge build --sizes`,
+   2026-09-03. This read 26,148 B / 23,004 B until then).
 2. **Construction.** The constructor splits the blob in half and writes each half as the
    runtime code of a fresh contract, via the SSTORE2 convention: an 11-byte header that
    `CODECOPY`s the payload and `RETURN`s it, with a leading `00` (`STOP`) so the stored data
@@ -98,8 +99,8 @@ deliberately.
    this path: the vault that gets created is a plain, fully immutable `VaultCore`, so the
    package's "no proxies, no upgrade path" claim is unaffected.
 5. **The cap this design trades onto.** VaultCore's creation code no longer needs a runtime
-   slot, but it must still fit inside this contract's initcode (EIP-3860, 49,152 B; currently
-   26,148 B used). Two chunks accommodate a creation code up to ~47.7 KB, which is where
+   slot, but it must still fit inside this contract's initcode (EIP-3860, 49,152 B; **23,808 B
+   used**, measured 2026-09-03). Two chunks accommodate a creation code up to ~47.7 KB, which is where
    EIP-3860 binds anyway — there is no hidden cliff between the two limits.
    `Eip170::test_vaultCoreCreationCodeFitsInsideTheDeployersInitcode` guards it.
 

@@ -268,3 +268,112 @@ test('the persisted adapter set is bounded at exactly 64, at and above the bound
   assert.equal(over.adapters.size, 64, 'the persisted set must not grow past the ceiling');
   assert.ok(!over.adapters.has(adapterAt(65)), 'the 65th must not be persisted');
 });
+
+/**
+ * THE SOAK FINDING. During the Base Sepolia soak a member holding roughly a fifth of a vault read
+ * `votingEligibleShares` 0 on-chain and nothing off-chain said so: `memberPosition` returned
+ * `shares` and `shareOfVaultBps` only, so the member's own position page could show 20% of the
+ * vault beside a weight the contract treats as nothing.
+ *
+ * The two assertions belong in one block deliberately. A material `shareOfVaultBps` alone is not
+ * the finding, and a zero eligible weight alone is not either — the finding is the two coexisting
+ * with no third field reconciling them.
+ */
+test('a member holding a fifth of the vault with a queued Mode-F exit reads zero voting weight, and the projection says so', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 2_000n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+
+  assert.equal(pos.shares, 2_000n, 'queued shares stay outstanding until settlement');
+  assert.equal(pos.shareOfVaultBps, 2000, 'a fifth of the vault');
+  assert.equal(pos.queuedExitShares, 2_000n);
+  assert.equal(pos.votingEligibleShares, 0n, 'VaultCore.votingEligibleShares: sharesOf - queuedExitShares');
+  assert.ok(pos.votingEligibleNote, 'the zero must be explained, not merely reported');
+  assert.match(pos.votingEligibleNote, /2000/, 'the note names the locked amount');
+  assert.match(pos.votingEligibleNote, /settleQueuedExit/, 'and how it resolves');
+
+  // B queued nothing, so B keeps a full weight and gets no note.
+  const other = memberPosition(s, V, B);
+  assert.equal(other.queuedExitShares, 0n);
+  assert.equal(other.votingEligibleShares, 8_000n);
+  assert.equal(other.votingEligibleNote, null);
+});
+
+test('a PARTIAL queued exit subtracts rather than zeroing', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 1_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 400n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.queuedExitShares, 400n);
+  assert.equal(pos.votingEligibleShares, 600n);
+  assert.ok(pos.votingEligibleNote, 'a partial lock is still withheld weight and still needs saying');
+});
+
+test('settling the queued exit clears the lock from the projection', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 1_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A, shares: 400n }),
+    ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 400n }),
+  ]);
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.shares, 600n);
+  assert.equal(pos.queuedExitShares, 0n);
+  assert.equal(pos.votingEligibleShares, 600n);
+  assert.equal(pos.votingEligibleNote, null);
+});
+
+/**
+ * The second way `votingEligibleShares` returns zero on material stake, and the one a lock-only
+ * field would report wrongly: `VaultCore.votingEligibleShares` opens with
+ * `if (member == parentVault()) return 0` (VaultCore.sol:1025-1027), so a registered parent's
+ * position in its child carries no weight at all, queued exit or not.
+ */
+test('a registered parent vault holds shares in its child and votes with none of them', () => {
+  const P = '0x' + 'p'.replace('p', '2').repeat(40);
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: P, sharesMinted: 5_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 5_000n }),
+    ev('ChildRegistered', 2, 0, V, { child: V, parent: P, depth: 1 }),
+  ]);
+  const pos = memberPosition(s, V, P);
+  assert.equal(pos.shares, 5_000n);
+  assert.equal(pos.shareOfVaultBps, 5000);
+  assert.equal(pos.queuedExitShares, 0n, 'nothing is queued: the lock is not why this reads zero');
+  assert.equal(pos.votingEligibleShares, 0n);
+  assert.ok(pos.votingEligibleNote, 'and the reason must be the parent carve-out, not a queued exit');
+  assert.match(pos.votingEligibleNote, /parent/i);
+});
+
+/**
+ * The same over-report reachable without a snapshot at all: an ExitQueued whose `shares` argument
+ * is missing. `abis.mjs` decodes `shares` from a non-indexed field of a two-field event, so a
+ * well-formed log always carries it and this is unreachable in production — but it is the identical
+ * class to the resumed-snapshot gap, and the old `?? 0n` default failed the same way: the size book
+ * would record "nothing locked" for a member the queued set says IS locked. The entry is left out
+ * instead, which puts the member in the honest "locked, amount unknown" state.
+ */
+test('an ExitQueued with no amount records the lock as unknown, never as zero', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 2_000n }),
+    ev('DepositActivated', 1, 1, V, { member: B, sharesMinted: 8_000n }),
+    ev('ExitQueued', 2, 0, V, { member: A }), // no `shares`
+  ]);
+  assert.equal(queuedExitBacklog(s, V), 1, 'the member is queued either way');
+  assert.equal(s.queuedExitShares.get(V)?.has(A) ?? false, false, 'and no size was invented for them');
+
+  const pos = memberPosition(s, V, A);
+  assert.equal(pos.shares, 2_000n);
+  assert.equal(pos.queuedExitShares, null, 'unknown, not 0n');
+  assert.equal(pos.votingEligibleShares, null, 'so no eligible number is served');
+  assert.notEqual(pos.votingEligibleNote, null);
+  assert.match(pos.votingEligibleNote, /does not know/);
+
+  // And the discriminator still resolves at settlement, exactly as it does with a known size.
+  apply(s, ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 2_000n }));
+  assert.equal(s.vaults.get(V).modeFSettledCount, 1, 'an unknown size is still a Mode-F settlement');
+  assert.equal(memberPosition(s, V, A).votingEligibleNote, null, 'and the lock is gone from the report');
+});

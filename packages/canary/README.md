@@ -1,10 +1,10 @@
 # @vault/canary
 
 Read-only post-launch watcher for a deployed vault set. Silent while healthy; one line per signal
-transition otherwise. ("Silent" is about transition lines specifically — an hourly liveness
+transition otherwise. ("Silent" is about transition lines specifically. An hourly liveness
 heartbeat is on by default; see [sinks and paging](#sinks-and-paging) below.)
 
-Full operator guide — what each signal means, its threshold, and what to do when it fires — is in
+Full operator guide (what each signal means, its threshold, and what to do when it fires) is in
 [docs/CANARY.md](../../docs/CANARY.md). This file is the code map.
 
 ```bash
@@ -13,10 +13,17 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 
 ## Non-custodial, and read-only on top of that
 
-The indexer and API are non-custodial (no keys). The canary is that **plus** read-only against the
+The indexer is non-custodial and holds no keys, and so is the API in the modes launch uses
+(`FACILITATOR=stub`, `FACILITATOR=http`). **The opt-in `FACILITATOR=svm` mode is the exception** and
+this sentence did not carry it: x402 `exact` on Solana has the facilitator co-sign as fee payer, so
+that mode loads a keypair from `SVM_KEYPAIR` and pays lamports. It stays non-custodial in the sense
+that matters — the key holds the operator's own gas money, never member funds — but "no keys" is
+simply not true of it. See `docs/RUNTIME.md` 6.6.
+
+None of that touches the canary, which is the subject of this file: it is that **plus** read-only against the
 chain: it builds a viem *public* client and issues only `eth_blockNumber`, `eth_getBlockByNumber`,
 `eth_call`, and `eth_getLogs`. There is no wallet client, no account, no `PRIVATE_KEY` read, and no
-ABI fragment for a state-changing function anywhere in this package — `requestExit` appears solely to
+ABI fragment for a state-changing function anywhere in this package. `requestExit` appears solely to
 build calldata for `eth_call`, which never touches a key.
 
 Both claims are tested rather than asserted: `test/reader.test.mjs` checks the reader exposes no
@@ -30,10 +37,11 @@ its own `CANARY_STATE_PATH`.
 | File | Role |
 |---|---|
 | `src/canary-runner.mjs` | entrypoint: env config, the sweep, the poll loop |
-| `src/reader.mjs` | the only file that talks to an RPC; lazy/optional viem, same pattern as the indexer's `rpc.mjs` |
-| `src/abis.mjs` | views, watched events, and the embedded revert selectors — kept separate from the indexer's table on purpose (see the file header) |
+| `src/reader.mjs` | the only file that talks to an RPC; lazy/optional viem, same pattern as the indexer's `rpc.mjs`. Tags every failure `kind: 'revert' \| 'transport'` |
+| `src/call-error.mjs` | the `revert` vs `transport` classifier, imported with zero dependencies. `scripts/soak/lib.mjs` re-exports it so the two harnesses cannot drift |
+| `src/abis.mjs` | views, watched events, and the embedded revert selectors, kept separate from the indexer's table on purpose (see the file header) |
 | `src/signal.mjs` | the `ok` / `alert` / `skipped` result vocabulary, the `detectorBroken` marker, and integer bps math |
-| `src/transitions.mjs` | pure transition detection — the piece that makes the canary quiet, and the one rule that keeps a blind detector loud |
+| `src/transitions.mjs` | pure transition detection, the piece that makes the canary quiet, and the one rule that keeps a blind detector loud |
 | `src/sinks.mjs` | console + tiered webhook (PAGE vs LOG) + off-host dead-man ping; a sink failure never propagates |
 | `src/signals/*.mjs` | one file per signal, each a pure function over an injected reader |
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
@@ -50,7 +58,7 @@ five methods documented at the top of `src/reader.mjs`.
 
 **Three statuses, not two.** `skipped` exists because a check that *cannot run* has not passed. The
 exit-liveness sentinel with no member to probe with, or a NAV check behind a tripped oracle breaker,
-reports DEGRADED — never a false OK.
+reports DEGRADED, never a false OK.
 
 **A blind detector is not a degraded check.** `skipped` results carrying `detail.detectorBroken`
 render as DETECTOR BROKEN and are re-asserted on a doubling backoff instead of being reported once.
@@ -58,7 +66,7 @@ Report-once is right for a problem in the system; for a problem in the monitor i
 confidence, which is how the pre-pivot oracle signal stayed dead for a whole deployment after one
 startup line. Things that set the flag: an oracle answering neither known ABI, an unreadable vault, a
 signal that threw, and every branch of `feed-identity` that could not read the feed. That last group
-is the only one that damps — each is an `eth_call` coming back empty, so they carry
+is the only one that damps. Each is an `eth_call` coming back empty, so they carry
 `minConsecutive: 3` (one empty return is RPC noise, three consecutive is the feed), except on a first
 sighting, which reports at once because a monitor that has never succeeded must not look like silence.
 
@@ -68,7 +76,7 @@ gets one alert instead of three.
 
 ## Sinks and paging
 
-Closes the Monitoring Gap Analysis' G6 — `sinks.mjs` used to be console + one generic webhook,
+Closes the Monitoring Gap Analysis' G6. `sinks.mjs` used to be console + one generic webhook,
 every transition, same channel, no severity. Full env reference is in
 [docs/CANARY.md](../../docs/CANARY.md); the shape of it:
 
@@ -81,7 +89,7 @@ every transition, same channel, no severity. Full env reference is in
   fallback for whichever of the two is unset; set only that one and behaviour is exactly what it was
   before tiering existed.
 - **`feed-identity` pages on harm only.** Its `decimals` / `denomination` ALERTs LATCH (the oracle's
-  cached scale is immutable — every price since is silently wrong, not frozen) and PAGE; its
+  cached scale is immutable. Every price since is silently wrong, not frozen) and PAGE; its
   aggregator-swap ALERT self-clears next sweep and LOGs. `sinks.mjs`'s `CONDITIONAL_PAGE` keys that
   on `detail.harm != null`. Above BTC $100,000 the sane-price band stops catching a −2-decimal drift
   (`Owner Decisions 2026-09-01.md` §1), and this is then the only detector.
@@ -96,13 +104,13 @@ every transition, same channel, no severity. Full env reference is in
   response, not the responder's. Its two blind branches (dead feed, non-positive answer) are
   `detectorBroken` and stay LOG.
 - **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep **that
-  watched at least one vault** — an empty watch set is not "watching", so the ping is withheld and
+  watched at least one vault**. An empty watch set is not "watching", so the ping is withheld and
   the external check goes red rather than reporting a canary that watches nothing. `ops-check`
-  (`packages/oplog`) already detects a stalled canary, but it runs on the *same host* — this ping is
+  (`packages/oplog`) already detects a stalled canary, but it runs on the *same host*. This ping is
   the thing that notices from outside it. Off by default (startup says so on stderr); provisioning
   the external check account (e.g. Healthchecks.io) is a human task, not something this package does.
 - **Alert self-test.** `CANARY_TEST_ALERT_ON_START=1` fires one synthetic PAGE and one synthetic LOG
-  transition through the real sinks right after startup — the "the first real page must not be the
+  transition through the real sinks right after startup: the "the first real page must not be the
   first test" requirement (security-ops.md §5.3). Same thing on demand, without starting the sweep
   loop: `node packages/canary/src/canary-runner.mjs test-alert`. Never touches transition state.
   **Do not leave it set in `.env`:** compose restarts this service automatically and it fires on
@@ -114,6 +122,6 @@ every transition, same channel, no severity. Full env reference is in
 node --test packages/canary/test/*.test.mjs
 ```
 
-347 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+377 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.

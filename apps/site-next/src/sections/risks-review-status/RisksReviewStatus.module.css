@@ -1,0 +1,188 @@
+/* ===========================================================================
+   risks-review-status — "What has and has not been checked." on risks.html
+   ---------------------------------------------------------------------------
+   Scoped to src/sections/risks-review-status/ and imported only by
+   RisksReviewStatus.tsx.
+
+   NO RAW COLOUR LITERAL BELOW. Every colour is var(--token) from
+   src/tokens.css, which is what keeps the palette a one-file change and what a
+   grep over the built stylesheet checks.
+
+   NO NEW TOKEN EITHER. Spacing, type steps, radii, curves and durations are
+   read from the scale. A local value is a value nobody re-measures for
+   contrast.
+
+   A NOTE ON WORDING IN THIS FILE. The claims sweep reads stylesheets the way
+   it reads prose, so a class name, a custom property or a comment is exposed
+   exactly as a paragraph is. Two ordinary CSS constructs match banned words on
+   their boundaries — the environment variable for a device inset area, and the
+   overflow keyword of the same name that can follow justify-content — and
+   neither appears below. Nothing here is named for the review it describes
+   using the noun that is on the banned list, and nothing is named for an
+   outcome or a figure.
+
+   NOTHING IN THIS FILE MOVES ON SCROLL. The section's brief is "Motion: None",
+   so there is no enter transition, no observer hook and no transform. The only
+   transitions are on the three links, and they change luminance rather than
+   geometry: a control that grows under the pointer moves the two beside it.
+   =========================================================================== */
+
+/* The section closes the argument the register above it made, so it is set
+   apart by a hairline and generous space rather than by a second background.
+   A tinted panel here would read as a callout, and the point of the passage is
+   that it is the plain statement of what was and was not checked. */
+.section {
+  padding-block: var(--s8);
+  border-top: 1px solid var(--line);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted); /* ratio recorded in src/tokens.css */
+}
+
+.heading {
+  margin-top: var(--s3);
+  margin-bottom: 0;
+  color: var(--ink); /* ratio recorded in src/tokens.css */
+}
+
+/* THE TWO PARAGRAPHS BELOW ARE LONG ON PURPOSE AND ARE NOT ALLOWED TO BE
+   SHORTENED, so the typography has to make a nine-sentence block readable
+   rather than hide that it is one.
+
+   Both take --ink at the body step, not the small step and not --muted: this
+   is the substance of the section, and setting standing qualifications in
+   smaller, dimmer text than the copy around them is the house style of every
+   document that hopes you skip them.
+
+   The measure is a little wider than --measure. At 38rem these run to twelve
+   or thirteen lines each and read as a wall; at 46rem they are nine or ten and
+   the sentence boundaries stay visible. */
+.attestation,
+.status {
+  max-width: 46rem;
+  margin-top: var(--s5);
+  margin-bottom: 0;
+  color: var(--ink);
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
+}
+
+/* A 1px accent rule down the left of the attestation, and nothing else. It
+   marks the paragraph as the passage that travels — the same bytes appear on
+   two other pages — without tinting it, boxing it or turning a disclosure into
+   a decorated callout. --accent-dim rather than --accent because a full-weight
+   accent hairline beside body copy pulls harder than the copy does. */
+.attestation {
+  padding-left: var(--s5);
+  border-left: 1px solid var(--accent-dim);
+}
+
+/* The git ref inside the closing sentence. Mono, one step down, on a raised
+   surface so it reads as a literal string rather than as emphasis. */
+.status code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s6);
+}
+
+/* Three ways on. They are links that have been given a target area, not
+   submission controls — this site has none, and the resemblance is worth
+   avoiding on the page that says so. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.875rem;
+  padding-inline: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter),
+    background-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Luminance and hue, never geometry. Focus is left to the global
+   :focus-visible ring, which is never removed and never narrowed. */
+.action:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* One emphasised link of three, and it is the questions page rather than the
+   repository: a reader who has finished the register is most likely to want
+   the direct answers next. */
+.actionPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink); /* ratio recorded in src/tokens.css */
+  transition:
+    filter var(--dur-fast) var(--ease-enter),
+    border-color var(--dur-fast) var(--ease-enter);
+}
+
+/* Brightening the filled control raises its contrast against the dark ink it
+   carries, so the hover state is more readable than the resting one. */
+.actionPrimary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.12);
+}
+
+/* Below about 46rem the accent rule and its indent cost the paragraph three
+   characters a line without adding anything a narrow column needs; the rule
+   goes above the paragraph instead, where it still marks the passage. */
+@media (max-width: 46rem) {
+  .attestation {
+    padding-left: 0;
+    padding-top: var(--s4);
+    border-left: 0;
+    border-top: 1px solid var(--accent-dim);
+  }
+}
+
+/* THE THREE LABELS STOP FITTING ON ONE LINE BELOW ABOUT 615px, and left to
+   wrap on their own they break two-and-one — a row of two followed by an
+   orphan that reads as an afterthought rather than as the third of three. So
+   below 42rem the row becomes one per line, which is also the only honest
+   layout for three controls of unequal width in a narrow column.
+
+   The measured widths this is set against, at 550: 199 / 149 / 195 plus two
+   gaps of 12, against a reading column of 502. Measured, not estimated — the
+   first draft of this rule broke at 34rem and left the orphan visible for the
+   70px band between the two. */
+@media (max-width: 42rem) {
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+  }
+
+  .action {
+    justify-content: center;
+    padding-inline: var(--s4);
+  }
+}
