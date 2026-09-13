@@ -24,20 +24,17 @@
  * fast track adds coverage rather than removing it. The report states this ordering plainly.
  *
  * Env: SOAK_AGENT_KEYSTORE, SOAK_AGENT_KEYSTORE_PASSWORD, AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS=yes,
- *      BASE_SEPOLIA_RPC. Testnet chain ids only.
+ *      SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT. Testnet chain ids only.
  * Run:  node scripts/soak/drill5-fasttrack.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, RPC, log, assert, call, callU, cast, pollUntil } from './lib.mjs';
-import { loadDeployment } from './deployment.mjs';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { loadAccountFromKeystore } from '../lib/keystore.mjs';
 import { resolveAgentRunConfig, TESTNET_CHAIN_IDS } from './agent-policy.mjs';
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
 const VAULT = soak.smokeVault.address;
 const AMOUNT = 1_000_000n; // 1.00 USDC — the smoke vault minimum
@@ -54,6 +51,7 @@ const ERC20_ABI = [
 const cfg = resolveAgentRunConfig(process.env);
 const chainId = Number(cast(['chain-id', '--rpc-url', cfg.rpcUrl]));
 assert(TESTNET_CHAIN_IDS.has(chainId), `refusing chain ${chainId} — testnet only`);
+assertLiveChainId(dep, chainId);
 
 const account = await loadAccountFromKeystore(cfg.keystore, cfg.password);
 log(`fast-track for agent ${account.address} on ${VAULT}`);

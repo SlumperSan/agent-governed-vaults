@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyCallError } from '../packages/canary/src/call-error.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RPC = process.env.BASE_MAINNET_RPC ?? 'https://mainnet.base.org';
@@ -55,7 +56,14 @@ function sleepSync(ms) {
 /** Transport failure (rate limit, timeout, DNS) as distinct from a contract-level revert. */
 export class RpcError extends Error {}
 
-const RATE_LIMITED = /429|rate.?limit|Max retries exceeded|timed out|ECONNRESET|ETIMEDOUT|502|503|521/i;
+// Was a third private copy of the transport regex, narrower than the other two: it lacked
+// ENOTFOUND, EAI_AGAIN, dns, socket, connection and 504, so a DNS failure was thrown straight
+// through as a contract-level failure and printed FAIL. Single-sourced now. The one behaviour
+// change is for wording none of the patterns recognise: `classifyCallError` calls that
+// 'transport', so an unrecognised error is retried and finally reported ERR (an un-run check)
+// instead of FAIL (a finding about the config) — which is the rule this whole file already
+// states at line 61.
+const isTransport = (detail) => classifyCallError(detail) === 'transport';
 
 /**
  * Public RPCs throttle hard and this script makes ~80 calls. A 429 must NEVER be reported as a
@@ -77,7 +85,7 @@ function cast(args, { attempts = 5 } = {}) {
       const detail = String(e.stderr ?? e.message);
       lastErr = detail;
       // A genuine contract-level failure — surface it now, never retry it.
-      if (!RATE_LIMITED.test(detail)) throw new Error(detail.split('\n')[0].slice(0, 200));
+      if (!isTransport(detail)) throw new Error(detail.split('\n')[0].slice(0, 200));
     }
   }
   throw new RpcError(`RPC unavailable after ${attempts} attempts: ${String(lastErr).split('\n')[0].slice(0, 160)}`);
@@ -85,9 +93,24 @@ function cast(args, { attempts = 5 } = {}) {
 function call(to, sig, ...args) {
   return cast(['call', to, sig, ...args.map(String)]).split('\n').map(clean);
 }
+/**
+ * `call()` that reports a REVERT as data. A transport failure is deliberately NOT data: it is
+ * re-thrown so `check()` below can tag it ERR (an un-run check) the way it already does for a
+ * direct `call()`.
+ *
+ * This swallowed both into `{ok:false}`, so the `e instanceof RpcError` test in `check()` below
+ * could never fire for a `tryCall` site, and all four callers printed a config verdict — "observe
+ * reverted", "wrong price id for this chain?" — for a 429 that never reached the pool. `kind` is
+ * on the returned
+ * object for the same reason `scripts/soak/lib.mjs` puts it there: so a caller cannot read
+ * `ok:false` as a finding without saying which failure it means.
+ */
 function tryCall(to, sig, ...args) {
   try { return { ok: true, lines: call(to, sig, ...args) }; }
-  catch (e) { return { ok: false, err: String(e.stderr ?? e.message).split('\n')[0].slice(0, 160) }; }
+  catch (e) {
+    if (e instanceof RpcError) throw e;
+    return { ok: false, err: String(e.stderr ?? e.message).split('\n')[0].slice(0, 160), kind: 'revert' };
+  }
 }
 
 function check(label, fn) {

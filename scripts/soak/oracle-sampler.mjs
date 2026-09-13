@@ -53,26 +53,55 @@
  * Output: one JSON line per sample to the series file, so a gap in the series is visible as a
  * timestamp jump rather than being silently interpolated.
  *
- * Env: BASE_SEPOLIA_RPC, SOAK_SERIES (default data/oracle-series.jsonl),
+ * Env: SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_SERIES (default data/oracle-series.jsonl),
  *      SOAK_SAMPLE_MS (default 120000), SOAK_PROBE_MEMBER (address to probe cancelPending as)
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadDeployment } from './deployment.mjs';
+import { fileURLToPath } from 'node:url';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
-const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+// Same default as `lib.mjs`: publicnode prunes logs, and a sampler on a different endpoint
+// from the drills it feeds is a second opinion nobody asked for.
+const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series.jsonl');
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
 const PROBE_MEMBER = process.env.SOAK_PROBE_MEMBER ?? '';
 const VAULTS = (process.env.SOAK_VAULTS ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+const STATE_PATH = process.env.SOAK_INDEXER_STATE ?? path.join(ROOT, 'data', 'indexer-state.json');
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+/**
+ * The vaults to probe `cancelPending` against — explicit `SOAK_VAULTS`, else every vault the
+ * indexer has projected. Mirrors `canary-runner.resolveVaults`, and for the same reason.
+ *
+ * WHY THE FALLBACK EXISTS. `run-soak.ps1` sets `SOAK_PROBE_MEMBER` — with a comment explaining
+ * exactly why drill 4's freeze-safety probe needs it — and never set `SOAK_VAULTS`, which is the
+ * other half of the same wiring. So `VAULTS` was `[]`, the probe `.map` produced NO ROWS AT ALL,
+ * and every sample recorded `freezeSafety: []`. Drill 4 then correctly refused to claim freeze
+ * safety, but the reason looked like "no pending deposit existed" rather than "the probe was never
+ * configured" — two very different facts.
+ *
+ * It also cannot be fixed by setting `SOAK_VAULTS` at launch: drills 1 and 2 CREATE their vaults
+ * at runtime, so the addresses do not exist when the sampler starts. Discovery is the only
+ * configuration that is correct on the first sample and still correct on the hundredth.
+ */
+function resolveProbeVaults() {
+  if (VAULTS.length > 0) return { vaults: VAULTS, source: 'SOAK_VAULTS' };
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    // `vaults` is a serialized Map: [[address, projection], ...].
+    const found = (state.vaults ?? []).map((e) => (Array.isArray(e) ? e[0] : e?.vault)).filter(Boolean);
+    if (found.length > 0) return { vaults: found, source: 'indexer' };
+    return { vaults: [], source: 'indexer-empty' };
+  } catch {
+    return { vaults: [], source: 'no-indexer-state' };
+  }
+}
+
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clean = (s) => s.replace(/\s+\[[^\]]*\]$/, '').trim();
@@ -81,21 +110,15 @@ const clean = (s) => s.replace(/\s+\[[^\]]*\]$/, '').trim();
  * A transport failure is NOT a contract verdict. Conflating the two is how a rate-limited public
  * RPC turns into "the oracle is frozen" in a report — the same defect `verify-chainlink-oracle.mjs`
  * found in itself when a dropped `aggregator()` call announced a swap that never happened.
+ *
+ * SINGLE SOURCE, in `lib.mjs`. This used to be defined here and `lib.mjs`'s own `tryCall` had no
+ * equivalent at all, which is how drill 3 came to assert `!attempt.ok` as proof that a call had
+ * been REFUSED — an assertion a 429 satisfies. Two copies of a security-relevant regex drift; one
+ * of them would eventually be the stale one. Re-exported so this module's public API is unchanged.
  */
-const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
-/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
-const REVERTED = /execution reverted|revert(ed)?:/i;
+import { classifyCallError } from './lib.mjs';
 
-/**
- * Classify a failed `cast call`. Only a recognised REVERT is evidence about the contract; anything
- * else is missing evidence and must be recorded as such.
- * @param {string} err
- * @returns {'revert'|'transport'}
- */
-export function classifyCallError(err) {
-  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
-  return REVERTED.test(err) ? 'revert' : 'transport';
-}
+export { classifyCallError };
 
 /** @returns {{ok:true,out:string}|{ok:false,err:string,kind:'revert'|'transport'}} */
 function tryCast(args, { attempts = 2 } = {}) {
@@ -123,10 +146,10 @@ export const SEL_STALE_ORACLE = '0xa2671f4b';
 export const SEL_NO_PENDING = '0xda7557bc';
 
 /**
- * Classify a `cancelPending()` static call into a TRI-STATE verdict.
+ * Classify a `cancelPending()` static call into a FOUR-STATE verdict.
  *
- * This is the evidence drill 4 turns on, so "it reverted" is not good enough — the call reverts
- * for two entirely different reasons and only one of them is a finding:
+ * This is the evidence drill 4 turns on, so "it failed" is not good enough — the call can fail for
+ * three entirely different reasons and only one of them is a finding:
  *
  *   'callable'        the escrow-return path is open. THIS is the freeze-safety property.
  *   'n/a-no-pending'  reverted NoPending(): there is no pending deposit for this member to
@@ -137,13 +160,34 @@ export const SEL_NO_PENDING = '0xda7557bc';
  *   'BLOCKED'         reverted for any other reason. While the oracle is frozen this is the
  *                     real finding: a path that must never consult a price just did.
  *
- * @param {{ok:true,out:string}|{ok:false,err:string}} r
+ *   'unreadable'      the call was ATTEMPTED and the transport failed (rate limit, timeout,
+ *                     unreachable RPC). Missing evidence, never a finding — see below.
+ *
+ * NOTE the classifier is FAIL-OPEN by default: `classifyCallError` is effectively
+ * `REVERTED.test(err) ? 'revert' : 'transport'`, so an error string this file does not recognise
+ * lands on 'transport' and therefore 'unreadable' rather than 'BLOCKED'. Against a real RPC `cast`
+ * prints "execution reverted", which is matched, so the production path classifies correctly; but
+ * an exotic client wording would be recorded as missing evidence rather than as a finding. That is
+ * the quieter failure and it is deliberate — a fabricated "member funds are trapped" page is worse
+ * than a sample scored unmeasured — but it is stated here rather than left to be discovered.
+ *
+ * @param {{ok:true,out:string}|{ok:false,err:string,kind?:'revert'|'transport'}} r
  * @param {string|null} pendingAmount
- * @returns {'callable'|'n/a-no-pending'|'BLOCKED'}
+ * @returns {'callable'|'n/a-no-pending'|'unreadable'|'BLOCKED'}
  */
 export function classifyCancelPending(r, pendingAmount) {
   if (r.ok) return 'callable';
   if (r.err.includes(SEL_NO_PENDING)) return 'n/a-no-pending';
+  // A TRANSPORT failure is not a contract verdict — this file's own header says so, and the
+  // priceWad path already honours it via `kind === 'transport'`. This branch did not, and the
+  // consequence is worse here than there: two consecutive rate-limits against a public RPC would
+  // have fallen through to BLOCKED, which drill 4 prints as "freeze-safety VIOLATED" — a
+  // fabricated claim that member funds were trapped, caused by a 429. Recorded as unreadable
+  // instead, which counts as missing evidence and pages nobody.
+  //
+  // Latent until now: `VAULTS` was always empty, so this classifier never ran on a live probe.
+  // The discovery fallback is what makes it reachable, at 3 vaults every 120 s.
+  if (r.kind === 'transport') return 'unreadable';
   // Defence in depth: if the revert data was truncated by the RPC, a zero pending balance is
   // itself sufficient to explain a NoPending revert.
   if (pendingAmount === '0') return 'n/a-no-pending';
@@ -171,9 +215,12 @@ export function sequencerState({ feed, round, chainNow, grace }) {
     unreadable: false, answer: null, startedAtSec: null, upForSec: null, resumesAtSec: null,
     gracePeriodSec: grace,
   };
-  // Not a fault and not health: off a sequencer L2 (Base Sepolia leaves this at address(0) by
-  // design) `_requireSequencerUp` is a no-op, so there is nothing to observe. On Base MAINNET the
-  // same reading means the deployment shipped with no sequencer guard at all.
+  // Not a fault and not health: `_requireSequencerUp` returns without reading a feed when this is
+  // address(0) (ChainlinkOracle.sol:314), so there is nothing to observe. This sampler cannot tell
+  // WHY a deployment has no feed and does not guess — the two guesses it used to print (off a
+  // sequencer L2; on Base mainnet) are both wrong at once on a sequencer L2 whose vendor publishes
+  // no uptime feed. Which chains may ship without one is settled at deploy time by
+  // DeployChainlinkOracle.requiresSequencerUptimeFeed.
   if (!base.configured || round == null) return base;
 
   if (!round.ok) {
@@ -337,11 +384,11 @@ function readFeedConfig(asset) {
 /**
  * Prove the deployed oracle is the one this sampler models, ONCE, before any series line exists.
  *
- * There is deliberately no fall-back to the retired quorum sampler: nothing points this script at a
- * pre-pivot address book (`loadDeployment` is pinned to `base-sepolia.json` / chain 84532), so a
- * legacy path here would be untested dead code. If the probe fails the sampler REFUSES rather than
- * writing a series nobody can trust — a soak that produces no evidence is recoverable, one that
- * produces wrong evidence is what this rewrite is fixing.
+ * There is deliberately no fall-back to the retired quorum sampler. `SOAK_DEPLOYMENT` now chooses
+ * the address book, so this probe — not a pin on the filename — is what establishes that the oracle
+ * answering is a ChainlinkOracle. If it fails the sampler REFUSES rather than writing a series
+ * nobody can trust: a soak that produces no evidence is recoverable, one that produces wrong
+ * evidence is what this rewrite is fixing.
  */
 function probeOracle() {
   const seq = callRaw(dep.aggregator, 'sequencerUptimeFeed()(address)');
@@ -429,7 +476,12 @@ function sample(env) {
   });
 
   // FREEZE-SAFETY: cancelPending must stay callable while the oracle is frozen.
-  const freezeSafety = VAULTS.map((vault) => {
+  //
+  // An EMPTY probe set must record itself. Mapping over `[]` yields `[]`, which reads downstream as
+  // "probed, nothing to report" when the truth is "never probed" — the silent-inertness failure
+  // this repository has shipped three times. One sentinel row per sample keeps it in the series.
+  const { vaults: probeVaults, source: probeSource } = resolveProbeVaults();
+  const probeOne = (vault) => {
     if (!PROBE_MEMBER) return { vault, probed: false, verdict: 'not-probed', reason: 'no SOAK_PROBE_MEMBER set' };
     const pend = callRaw(vault, 'pendingDeposit(address)(uint256,uint64)', PROBE_MEMBER);
     const pendingAmount = pend.ok ? clean(pend.out.split('\n')[0]) : null;
@@ -439,7 +491,10 @@ function sample(env) {
       verdict: classifyCancelPending(r, pendingAmount),
       detail: r.ok ? 'static call returned successfully' : r.err,
     };
-  });
+  };
+  const freezeSafety = probeVaults.length === 0
+    ? [{ vault: null, probed: false, verdict: 'not-configured', reason: `no vaults to probe (${probeSource})` }]
+    : probeVaults.map(probeOne);
 
   return { t: new Date().toISOString(), chainNow, oracle: dep.aggregator, sequencer: seq, assets, freezeSafety };
 }
@@ -447,9 +502,16 @@ function sample(env) {
 // Runner guard: the pure classifiers above are unit-tested, and an infinite sampling loop at
 // import time would hang the test process. Only sample when invoked as a script.
 const invokedDirectly = process.argv[1]
-  && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
+  // Before the first series line exists, prove the endpoint is the chain the address book
+  // describes. Everything downstream — the oracle probe, every price age, drill 4's whole verdict —
+  // is attributed to `dep`, so sampling the wrong chain writes a series that reads as evidence.
+  const idRead = tryCast(['chain-id', '--rpc-url', RPC]);
+  if (!idRead.ok) throw new Error(`oracle-sampler: could not read the chain id from ${RPC}: ${idRead.err}`);
+  assertLiveChainId(dep, Number(clean(idRead.out)));
+
   const { sequencerFeed } = probeOracle();
   const graceRead = callRaw(dep.aggregator, 'GRACE_PERIOD()(uint256)');
   const pinRead = callRaw(dep.aggregator, 'usdc()(address)');

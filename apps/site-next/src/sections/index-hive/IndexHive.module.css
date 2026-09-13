@@ -1,0 +1,114 @@
+/* ===========================================================================
+   THE HIVE SECTION.
+
+   THE ART IS CROPPED TO THE FIGURE, NOT FITTED TO THE BOX. The source drawing is
+   1920 by 1072 with the character standing at about 72% across and a wide field
+   of near-black to the left of him. Letting the whole frame into a half-width
+   column would put the mascot in the far corner of a mostly empty rectangle.
+   `object-fit: cover` with `object-position` at 72% keeps the figure and the
+   shaft of light he stands in, and throws away the empty ground, which is the
+   part of the image the section's own background already provides.
+
+   THE FIGURE BLEEDS INTO THE SECTION RATHER THAN SITTING IN A FRAME. The mask on
+   the left edge fades the crop into --ground over about a fifth of its width, so
+   there is no hard vertical seam between the paragraph and the drawing. That is
+   the one place this page uses a mask, and it is here because the alternative,
+   a visible edge, would make the mascot read as an illustration pasted beside
+   the text rather than as a character standing in the same room as it.
+   =========================================================================== */
+
+.hive {
+  padding-block: var(--s9);
+  padding-inline: var(--gutter);
+  background: var(--ground);
+}
+
+.inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s7);
+  max-width: var(--wrap);
+  margin-inline: auto;
+}
+
+.words {
+  max-width: var(--measure);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* THE THREE SENTENCES BREAK ONTO THREE LINES BY THEMSELVES at this measure, and
+   that is why the heading has one. "Different models. Different minds. Different
+   thoughts." is an anaphora: the repetition is the point, and it only reads as
+   repetition when the three clauses stack. `max-width` in ch rather than a
+   forced `<br>`, so a reader at a larger text size gets the same effect instead
+   of a break in the wrong place. */
+.heading {
+  margin: var(--s4) 0 0;
+  max-width: 16ch;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-h2);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display);
+  color: var(--ink);
+}
+
+.body {
+  margin: var(--s5) 0 0;
+  font-size: var(--step-body);
+  line-height: var(--leading-body);
+  color: var(--muted);
+}
+
+.art {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+}
+
+.mascot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 72% 45%;
+  mask-image: linear-gradient(to right, transparent, black 22%);
+}
+
+@media (max-width: 60rem) {
+  .hive {
+    padding-block: var(--s8);
+  }
+
+  /* Stacked, and the art goes SECOND rather than becoming a background behind
+     the text. A drawing under a paragraph is a contrast problem solved with a
+     scrim; a drawing after a paragraph is a picture. The aspect ratio flattens
+     so the figure is not a full phone screen tall. */
+  .inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s6);
+  }
+
+  .art {
+    aspect-ratio: 16 / 10;
+  }
+
+  .mascot {
+    object-position: 72% 40%;
+    mask-image: linear-gradient(to right, transparent, black 18%);
+  }
+
+  .words,
+  .heading {
+    max-width: none;
+  }
+}

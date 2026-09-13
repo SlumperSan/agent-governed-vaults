@@ -1,0 +1,268 @@
+/* ===========================================================================
+   THE LIVE PANEL.
+
+   ONE GIANT FIGURE, THEN A ROW OF FOUR SMALL ONES. The hierarchy is the
+   argument: the block number is the proof that the page is talking to a chain at
+   all, and the four cells are what it asked once it got there. Making all five
+   the same size would be a dashboard; making the block number enormous and the
+   rest quiet is a ledger with a heading.
+
+   EVERY NUMBER IN HERE IS TABULAR. The block number changes every few seconds at
+   a display size, and proportional figures would make the whole line breathe in
+   and out as digits swap. `font-variant-numeric: tabular-nums` is not a polish
+   detail here, it is what makes a live figure sit still.
+
+   THE FIGURE'S HEIGHT IS RESERVED BEFORE IT ARRIVES. `min-height: 1em` on the
+   value span means the section is laid out at its final height in the server
+   markup, and the number appears into space that was already there. Without it
+   the whole page below this section jumps down by nine rem the moment the read
+   lands, which is the layout shift a reader feels as the page fighting them.
+   =========================================================================== */
+
+.live {
+  position: relative;
+  overflow: hidden;
+  padding-block: var(--s9);
+  padding-inline: var(--gutter);
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  max-width: var(--wrap);
+  margin-inline: auto;
+  text-align: center;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-eyebrow);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pulse {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  animation: live-pulse 2.2s var(--ease-enter) infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   THE GIANT FIGURE.
+   -------------------------------------------------------------------------- */
+
+/* `max-width: none` UNDOES A GLOBAL RULE, AND WITHOUT IT THIS SECTION IS
+   SILENTLY LEFT-ALIGNED. `index.css` sets `p { max-width: var(--measure) }`,
+   which is 38rem, because a paragraph wider than about seventy-two characters
+   is hard to read. That is right for prose and wrong for every centred display
+   element in this panel: a `<p>` capped at 608px inside a 1088px column is a
+   608px box sitting at the left edge, and `text-align: center` then centres the
+   text inside THAT box rather than in the section. The result looks deliberate
+   and is not, which is why each of these three carries the override explicitly
+   rather than the panel resetting `p` wholesale. */
+.figure {
+  position: relative;
+  max-width: none;
+  margin: var(--s4) 0 0;
+}
+
+/* A blurred disc of accent behind the digits. It is the one glow on the page,
+   and it is here because a very large number in a flat colour on a flat ground
+   reads as a graphic; the halo is what makes it read as lit. It is
+   `pointer-events: none` and aria-hidden by being empty. */
+.figureGlow {
+  position: absolute;
+  inset: -25% 20%;
+  border-radius: 50%;
+  background: var(--glow-accent);
+  filter: blur(90px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.figureValue {
+  position: relative;
+  display: block;
+  min-height: 1em;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-figure);
+  line-height: 0.9;
+  letter-spacing: var(--track-hero);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.figureLabel {
+  max-width: none;
+  margin: var(--s3) 0 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.stamp,
+.stampBad {
+  max-width: none;
+  margin: var(--s2) 0 0;
+  font-family: var(--mono);
+  font-size: var(--step-small);
+  color: var(--muted);
+}
+
+/* --crit is 8.88:1 on --ground and carries the word "failed" beside it, so the
+   state is never signalled by hue alone. */
+.stampBad {
+  color: var(--crit);
+}
+
+/* --------------------------------------------------------------------------
+   THE FOUR CELLS.
+
+   `auto-fit` with a 13rem floor rather than a fixed column count: four across
+   at 1440, two across on a tablet, one on a phone, with no breakpoint written
+   for any of them. The floor is set by the widest thing a cell has to hold on
+   one line, which is `factory.allowSubVaults()` in mono at 0.6875rem.
+   -------------------------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1px;
+  margin-top: var(--s7);
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+/* The hairline between cells is the grid's own background showing through a 1px
+   gap, so it is one rule rather than a set of border overrides that have to
+   know which cell is last in a row that reflows. */
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s5) var(--s4);
+  background: var(--surface);
+  text-align: left;
+}
+
+.cellLabel {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--step-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cellValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+  min-height: 1.6em;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.plain {
+  color: var(--ink);
+}
+
+.price {
+  color: var(--accent);
+}
+
+/* The verdict is a word, a dot and a colour. The word is what a reader who
+   cannot separate the two hues gets, and it is the reason this is not simply a
+   green dot and a red dot. */
+.fresh,
+.stale {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 0.6875rem;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.fresh {
+  color: var(--good);
+}
+
+.stale {
+  color: var(--warn);
+}
+
+.verdictDot {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.aged {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 0.6875rem;
+  color: var(--faint);
+}
+
+/* The provenance line. It is the smallest type in the cell and it is the reason
+   the cell is trustworthy, which is a tension this design resolves in favour of
+   the number: a reader who wants the call can find it, and a reader who does not
+   is not made to read a selector before a figure. */
+.cellSource {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 40rem) {
+  .live {
+    padding-block: var(--s8);
+  }
+
+  .grid {
+    margin-top: var(--s6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

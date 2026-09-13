@@ -376,3 +376,64 @@ test('applyIdentityObservations ignores results from every other signal', () => 
   const foreign = [{ id: 'oracle-freshness|v|a', signal: 'oracle-freshness', detail: { observedIdentity: { aggregator: AGGREGATOR } } }];
   assert.deepEqual(applyIdentityObservations({}, foreign), {});
 });
+
+// ── transport is not a verdict ───────────────────────────────────────────────
+
+const UNREACHABLE = () => ({ transport: 'HTTP request failed.' });
+
+test('a 429 on the FIRST flavor probe must not be read as a confirmed retired aggregator', async () => {
+  // The only branch in this package that returns SILENCE. Reached when `sequencerUptimeFeed()`
+  // merely failed in transit while `assetConfig()` happened to answer, it concluded "retired
+  // OracleAggregator, no feed identity to watch" and emitted nothing at all — a signal switched
+  // off by one unlucky request. "Confirmed" now means a revert, and only a revert.
+  const reader = readerFor({
+    overrides: { [ORACLE]: { sequencerUptimeFeed: UNREACHABLE, assetConfig: () => [[FEED], 3600, 1] } },
+  });
+  const results = await run(reader);
+  assert.notEqual(results.length, 0, 'a transport failure must never silence this signal');
+  assert.equal(results[0].detail.detectorBroken, true);
+  assert.match(results[0].message, /could not be probed/);
+  assert.doesNotMatch(results[0].message, /answers neither/);
+});
+
+test('a genuine revert on the first probe with a live assetConfig IS a retired aggregator, and stays silent', async () => {
+  const reader = readerFor({
+    overrides: {
+      [ORACLE]: { sequencerUptimeFeed: () => ({ revert: '0xdeadbeef' }), assetConfig: () => [[FEED], 3600, 1] },
+    },
+  });
+  assert.deepEqual(await run(reader), [], 'the retired-aggregator path is unchanged for a real revert');
+});
+
+test('an unreadable feedOf() says the call did not arrive, not that the oracle reverted', async () => {
+  const reader = readerFor({ overrides: { [ORACLE]: { feedOf: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.kind, 'transport');
+  assert.match(r.message, /could not be read/);
+  assert.doesNotMatch(r.message, /reverts \(/);
+});
+
+test('an unreadable decimals() says the read failed, not that the feed refused to answer', async () => {
+  // The harm leg's "did not answer decimals()" is a claim about the FEED. On a 429 the feed was
+  // never asked, so the line must not make it. The revert leg keeps the old wording, and its
+  // unqualified "UNMONITORED … not clean" tail is pinned at `:279`.
+  const reader = readerFor({ overrides: { [FEED]: { decimals: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.decimalsKind, 'transport');
+  assert.match(r.message, /decimals\(\) on the feed at .* could not be read/);
+  assert.doesNotMatch(r.message, /did not answer/);
+});
+
+test('an unreadable aggregator() and phaseId() do not become "answered neither"', async () => {
+  const reader = readerFor({ overrides: { [FEED]: { aggregator: UNREACHABLE, phaseId: UNREACHABLE } } });
+  const [r] = await run(reader);
+  assert.equal(r.detail.detectorBroken, true);
+  assert.equal(r.detail.aggregatorKind, 'transport');
+  assert.equal(r.detail.phaseIdKind, 'transport');
+  assert.match(r.message, /neither aggregator\(\) nor phaseId\(\) on the feed at .* could be read/);
+  assert.doesNotMatch(r.message, /answered neither/);
+  // The harm legs still ran and still passed, which is the half of this line that is a finding.
+  assert.match(r.message, /denomination and cached-scale checks DID pass this sweep/);
+});

@@ -14,6 +14,10 @@
  *   FEE_ENGINE_ADDRESS  FeeEngine — enables FeeAssessed/FeeCredited/FeesClaimed indexing when set;
  *                        omitted deployments simply skip that singleton group (SINGLETON_LABELS
  *                        loop in rpc.mjs already treats every label as optional).
+ *   ADAPTER_ADDRESSES   comma-separated execution adapters this deployment uses. Polled
+ *                        unconditionally and exempt from MAX_TRACKED_ADAPTERS, so a deployment that
+ *                        names its adapters can never have them crowded out by chain-discovered
+ *                        ones. Unset = discovery only (see the trust-boundary note in rpc.mjs).
  *   CHAIN_ID (8453)  CHAIN_NAME (base)  START_BLOCK (0)  STATE_PATH (./data/indexer-state.json)
  *   CONFIRMATIONS (5)  BATCH_BLOCKS (2000)  POLL_INTERVAL_MS (12000)
  *   SNAPSHOT_BACKUPS (3)  SNAPSHOT_BACKUP_INTERVAL_MS (300000)
@@ -26,7 +30,7 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { createChainSource } from './rpc.mjs';
+import { createChainSource, MAX_TRACKED_ADAPTERS } from './rpc.mjs';
 import { createIndexerDaemon } from './daemon.mjs';
 import { loadSnapshot, resumeCursor, createSnapshotWriter, verifySnapshot, formatSnapshotReport } from './store.mjs';
 import { loggerFromEnv } from '../../oplog/src/logger.mjs';
@@ -46,6 +50,12 @@ export function resolveIndexerConfig(env) {
 
   const num = (k, d) => (env[k] != null && env[k] !== '' ? Number(env[k]) : d);
   const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a);
+  // The zero address SATISFIES isAddr and is truthy, so nothing above rejects it — and it is what
+  // `.env.example` ships as a placeholder for every address row. Without this an operator who does
+  // the normal thing (`cp .env.example .env`, fill in what they recognise) gets a config that
+  // validates completely and indexes nothing, with no error to explain it.
+  const isZero = (a) => typeof a === 'string' && /^0x0{40}$/.test(a);
+  const PLACEHOLDER = 'the zero address is the .env.example placeholder — fill it in from singletons.* in contracts/config/deployments/<chain>.json';
   const addresses = {
     factory: env.FACTORY_ADDRESS,
     operatorRegistry: env.OPERATOR_REGISTRY_ADDRESS,
@@ -54,11 +64,21 @@ export function resolveIndexerConfig(env) {
   };
   for (const [label, a] of Object.entries(addresses)) {
     if (!isAddr(a)) throw new Error(`indexer: ${label} is not a 20-byte address: ${a}`);
+    if (isZero(a)) throw new Error(`indexer: ${label} is the zero address — ${PLACEHOLDER}`);
   }
-  // Optional: unset means "don't index FeeEngine events yet", not a config error.
-  if (env.FEE_ENGINE_ADDRESS) {
+  // Optional: unset means "don't index FeeEngine events yet", not a config error. The zero address
+  // is treated as UNSET rather than as a value, so the startup warning below still fires for the
+  // `.env.example` placeholder instead of being suppressed by it — a hard error would be wrong
+  // here, since an unset FeeEngine is a supported (if near-always mistaken) configuration.
+  if (env.FEE_ENGINE_ADDRESS && !isZero(env.FEE_ENGINE_ADDRESS)) {
     if (!isAddr(env.FEE_ENGINE_ADDRESS)) throw new Error(`indexer: feeEngine is not a 20-byte address: ${env.FEE_ENGINE_ADDRESS}`);
     addresses.feeEngine = env.FEE_ENGINE_ADDRESS;
+  }
+  // Comma-separated, whitespace-tolerant, zero-address entries dropped (same placeholder problem).
+  const configuredAdapters = (env.ADAPTER_ADDRESSES ?? '')
+    .split(',').map((a) => a.trim()).filter((a) => a !== '' && !isZero(a));
+  for (const a of configuredAdapters) {
+    if (!isAddr(a)) throw new Error(`indexer: ADAPTER_ADDRESSES contains a non-address entry: ${a}`);
   }
   const statePath = env.STATE_PATH || './data/indexer-state.json';
   const pollIntervalMs = num('POLL_INTERVAL_MS', 12_000);
@@ -67,6 +87,7 @@ export function resolveIndexerConfig(env) {
     chainId: num('CHAIN_ID', 8453),
     chainName: env.CHAIN_NAME || 'base',
     addresses,
+    configuredAdapters,
     startBlock: num('START_BLOCK', 0),
     statePath,
     confirmations: num('CONFIRMATIONS', 5),
@@ -94,10 +115,33 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
   const knownVaults = [...resumed.vaults.keys()];
   const knownAdapters = [...resumed.adapters];
 
+  // FEE_ENGINE_ADDRESS is optional, but EVERY deploy script deploys a FeeEngine (Deploy.s.sol,
+  // DeployTestnet.s.sol; `contracts/config/deployments/<chain>.json` records it under
+  // `singletons.FeeEngine`), so an unset one is almost always a misconfiguration rather than a
+  // deployment that genuinely has none. Silently indexing no fee events would leave
+  // FeeAssessed/FeeCredited/FeesClaimed permanently missing from a running indexer with nothing
+  // in the log to explain the gap — so say so once, loudly, at startup. See docs/RUNTIME.md §5.
+  if (!cfg.addresses.feeEngine) {
+    logger.warn?.('indexer.feeEngine.unset', {
+      detail: 'FEE_ENGINE_ADDRESS is not set — FeeAssessed / FeeCredited / FeesClaimed will NOT be indexed',
+      fix: 'set FEE_ENGINE_ADDRESS to singletons.FeeEngine from contracts/config/deployments/<chain>.json',
+    });
+    line('WARNING: FEE_ENGINE_ADDRESS unset — fee events (FeeAssessed/FeeCredited/FeesClaimed) are NOT indexed');
+  }
+
   const source = createChainSource({
     client, // tests inject a fake viem client; production builds one from rpcUrl
     rpcUrl: cfg.rpcUrl, chainId: cfg.chainId, chainName: cfg.chainName,
     addresses: cfg.addresses, knownVaults, knownAdapters,
+    configuredAdapters: cfg.configuredAdapters ?? [],
+    // ONE line per batch (or per resume), carrying the count — not one per adapter. A single
+    // hostile batch can decline hundreds of adapters, and a warn channel that floods is a warn
+    // channel nobody reads. Names a bounded sample so the line stays greppable, and says the fix.
+    onAdapterCap: ({ dropped, cap, tracked, phase }) => logger.warn?.('indexer.adapterCap.hit', {
+      phase, cap, tracked, droppedCount: dropped.length, dropped: dropped.slice(0, 5),
+      detail: `adapter discovery is capped at ${cap}; ${dropped.length} adapter(s) will NOT be polled for SwapExecuted`,
+      fix: 'name the adapters this deployment uses in ADAPTER_ADDRESSES — configured adapters are polled unconditionally and are exempt from the cap',
+    }),
   });
 
   const writer = createSnapshotWriter({
