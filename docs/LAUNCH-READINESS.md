@@ -136,7 +136,7 @@ to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96
 `minAmountOut`**, which is NOT the same as the H-4 floor and an earlier draft conflated the two:
 `minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
 171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
-(`VaultCore.sol:908-912`), not the measured delta. Proposal 1 executed carrying no orders.
+(`executeRebalance`, `VaultCore.sol:908-912`), not the measured delta. Proposal 1 executed carrying no orders.
 Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
 **but it can never execute**, and an earlier draft of this line said "still executable" and
 contradicted this repository's own address book six files away. `Governance.execute` requires
