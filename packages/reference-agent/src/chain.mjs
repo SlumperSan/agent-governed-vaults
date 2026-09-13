@@ -348,8 +348,9 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
 
       return {
         available: true,
-        // A passed-but-unexecuted rebalance turns an exit into Mode F: forward-priced at
-        // POST-rebalance NAV (ARCHITECTURE §4.4). Never plan an exit without checking this.
+        // A pending execution turns an exit into Mode F: forward-priced at POST-execution NAV
+        // (ARCHITECTURE §4.4). This is true from any active proposal's reveal start, for any
+        // proposal type — not only a passed rebalance. Never plan an exit without checking it.
         hasPendingExecution: pendingExec.ok ? Boolean(pendingExec.value) : null,
         activePid: pid,
         proposal,
@@ -371,7 +372,8 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
 /**
  * A chain reader with no chain behind it. Used by the demo run and the tests: it answers from a
  * fixture and marks every value it produces so the narrative cannot be mistaken for live data.
- * The protocol has no deployment yet (issue #10, EIP-170), so the demo run uses this by default.
+ * The demo run uses this whenever no RPC is configured: `config.mjs` defaults `chain.rpcUrl` to
+ * null, and `run.mjs` builds the real reader only when that value is set.
  *
  * @param {Record<string, any>} fixture  vault ⇒ partial readVault result
  * @param {Record<string, any>} [govFixture]  vault ⇒ partial readGovernance result

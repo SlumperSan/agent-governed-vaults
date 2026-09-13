@@ -3,10 +3,15 @@
  * Mocked chain plumbing shared by the canary tests. NO LIVE RPC ANYWHERE — every test in this
  * package injects one of these readers, which is exactly the interface reader.mjs exposes.
  *
- * A contract is declared as `{ address: { fnName: value | fn(args) | {revert: '0xselector…'} } }`.
+ * A contract is declared as
+ * `{ address: { fnName: value | fn(args) | {revert: '0xselector…'} | {transport: 'message'} } }`.
  * Returning `{revert}` makes tryRead/read behave the way viem does on a revert, carrying the
- * returndata, so the signals' revert-classification paths are exercised for real.
+ * returndata, so the signals' revert-classification paths are exercised for real. `{transport}`
+ * is the counterpart for a read that never reached the chain — no returndata, `kind: 'transport'`,
+ * and no evidence about the contract.
  */
+
+import { classifyCallError } from '../src/call-error.mjs';
 
 export const A = (c) => `0x${String(c).repeat(40).slice(0, 40)}`;
 
@@ -102,6 +107,12 @@ export function mockReader({ contracts, logs = [], head = 1000, nowSec = 1_700_0
     const entry = c[fn];
     const value = typeof entry === 'function' ? entry(...args) : entry;
     if (value && typeof value === 'object' && 'revert' in value) throw new MockRevert(value.revert);
+    // `{transport}` is the OTHER way a read fails, and the reason `kind` exists: the call never
+    // reached the chain, so there is no returndata and nothing was learned about the contract.
+    // Default wording is what viem 2.x produces for an HTTP 429.
+    if (value && typeof value === 'object' && 'transport' in value) {
+      throw new Error(typeof value.transport === 'string' ? value.transport : 'HTTP request failed.');
+    }
     return value;
   }
 
@@ -112,11 +123,17 @@ export function mockReader({ contracts, logs = [], head = 1000, nowSec = 1_700_0
       calls.push({ kind: 'read', address: lc(address), fn, args, blockNumber: opts.blockNumber ?? null });
       return resolve(address, fn, args, opts);
     },
+    // Mirrors reader.mjs's tryRead exactly, INCLUDING the `kind` tag and the rule that a transport
+    // failure carries no returndata. Using the real classifier rather than hardcoding 'revert' is
+    // what keeps the mock honest: `MockRevert` says "execution reverted" and classifies 'revert',
+    // while the `missing trie node` thrown for an unavailable archive height classifies
+    // 'transport' — which is the shape share-conservation's unpinned retry actually sees.
     async tryRead(address, _abi, fn, args = [], opts = {}) {
       try {
         return { ok: true, value: await reader.read(address, _abi, fn, args, opts) };
       } catch (err) {
-        return { ok: false, revertData: err.data ?? null, error: err.message };
+        const kind = classifyCallError(err.message);
+        return { ok: false, revertData: kind === 'revert' ? err.data ?? null : null, error: err.message, kind };
       }
     },
     async getLogs({ address, event, args, fromBlock, toBlock }) {

@@ -135,6 +135,25 @@ test('tierOf: a feed-identity ALERT that carries HARM pages; the self-clearing s
   assert.equal(tierOf(degraded), 'log', 'a DEGRADED feed-identity is a broken detector, not a proven drift');
 });
 
+test('tierOf: a NOTICE is INFO-class -- LOG tier, on a PAGE signal, and stdout not stderr', () => {
+  // A not-applicable check rides on an `ok` transition carrying `detail.notApplicable`. It must
+  // reach the LOG webhook and stdout, never the pager, even on `oracle-freshness` -- which is in
+  // PAGE_SIGNALS, so the assertion is not vacuous. `tierOf` gates on `to === 'alert'` before it
+  // consults the signal map; this pins that the ordering keeps holding.
+  const notice = tr('ok', 'oracle-freshness');
+  notice.result.detail = { ...notice.result.detail, notApplicable: true };
+  notice.line = 'NOTICE [oracle-freshness] sequencer check inactive on this deployment';
+  assert.ok(PAGE_SIGNALS.has('oracle-freshness'), 'the signal under test must be one that CAN page');
+  assert.equal(tierOf(notice), 'log', 'a NOTICE must never wake anyone');
+
+  const out = []; const err = [];
+  const sink = createConsoleSink({ log: (m) => out.push(m), error: (m) => err.push(m) });
+  return sink.emit(notice).then(() => {
+    assert.deepEqual(out, [notice.line], 'a NOTICE belongs on the clean feed');
+    assert.deepEqual(err, [], '`2>` is the problem feed; a statement of fact is not a problem');
+  });
+});
+
 test('tierOf: an unknown/renamed signal defaults to LOG, never silently PAGE', () => {
   assert.equal(tierOf(tr('alert', 'some-future-signal')), 'log');
 });

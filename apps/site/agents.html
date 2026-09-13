@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The agent path | RWAlly</title>
+<meta name="description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
+<link rel="canonical" href="https://rwally.com/agents">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RWAlly">
+<meta property="og:url" content="https://rwally.com/agents">
+<meta property="og:title" content="The agent path">
+<meta property="og:description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
+<meta property="og:image" content="https://rwally.com/assets/og-card.png">
+<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark RWAlly, and the deployment-status line Deployed on Robinhood Chain.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The agent path">
+<meta name="twitter:description" content="How an autonomous agent reads this protocol and acts on it. There is no key to request and no gateway to pass: deposit, propose, commit, reveal and exit are contract calls on Robinhood Chain mainnet, chain id 4663.">
+<meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">RWAlly</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html">Vision</a></li>
+        <li><a href="agents.html" aria-current="page">Agents</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="hero">
+    <div class="wrap">
+      <p class="eyebrow">The machine-readable path</p>
+      <h1>Every page here is for a person. This one is not.</h1>
+      <p class="lede">The hive is permissionless. Stake and you are in. An agent does not need the rest of this site. It needs the chain id, the contract addresses, and an ABI. That is the whole integration surface. There is no key to request, no allowlist to join, and no gateway between an agent and a vault.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="llms.txt">llms.txt</a>
+        <a class="btn" href="status.html">The address ledger</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Bootstrap</p>
+      <h2>Three reads and you are integrated.</h2>
+      <dl class="rows">
+        <div>
+          <dt>The chain</dt>
+          <dd>Robinhood Chain mainnet, chain id 4663. The settlement token is USDG.</dd>
+        </div>
+        <div>
+          <dt>The addresses</dt>
+          <dd>The factory, the governance contract, the fee engine, the operator registry and the oracle are listed on the <a href="status.html">status page</a> and committed to <code>contracts/config/deployments/robinhood-mainnet.json</code>, each read back on-chain.</dd>
+        </div>
+        <div>
+          <dt>The ABIs</dt>
+          <dd>Build the contracts and read them out of <code>contracts/out/</code>: VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle, AggregationRouterAdapter, SubVaultRegistry, VaultFactory.</dd>
+        </div>
+        <div>
+          <dt>The wiring you must check yourself</dt>
+          <dd>Read <code>VaultFactory.allowSubVaults()</code> on the factory you integrate against; it is a per-deployment immutable, not a protocol property. Read <code>OperatorRegistry.operatorOf(vault)</code> rather than a display name: vault creation is permissionless, so verify the operator, not the label.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">What an agent can and cannot do</p>
+      <h2>Membership is bought, not granted.</h2>
+      <dl class="rows">
+        <div>
+          <dt>Deposit</dt>
+          <dd>Permissionless. The contracts gate on amount alone &mdash; a minimum deposit and a capacity cap &mdash; and screen nobody. Any address meeting those can join.</dd>
+        </div>
+        <div>
+          <dt>Propose</dt>
+          <dd>Follows stake, not identity. A member holding at least the vault's proposal threshold may open a proposal; an operator holding no shares may not. There is no operator check in the governance contract at all.</dd>
+        </div>
+        <div>
+          <dt>Vote</dt>
+          <dd>Commit, then reveal. The contract takes an arbitrary salt and stores nothing for you, so an agent that loses its memory between the two phases cannot reveal and its vote is lost. The reference client derives the salt from a signature it can reproduce rather than storing it. That is a client technique, not a protocol property; an integrator writing their own client gets it only by implementing it.</dd>
+        </div>
+        <div>
+          <dt>Exit</dt>
+          <dd>Pro-rata and in kind. From the moment the reveal phase opens on any live proposal &mdash; not from the moment one passes &mdash; the request is queued and settles at post-execution NAV. <code>Governance.hasPendingExecution(vault)</code> is the exact predicate. What that costs you, and what an oracle freeze does to it, is in the <a href="disclaimers.html">Disclaimers</a>.</dd>
+        </div>
+      </dl>
+
+      <div class="note note--flat">
+        <span class="label">The gate that will surprise an integrator first</span>
+        <p>A first deposit sits in a four-hour observation window before it becomes shares. During that window it has no vote and no share price, and it is fully reclaimable. An agent that deposits and immediately reads its balance will read zero. That is correct, not a failure.</p>
+        <p><code>skipWindow()</code> opts out and activates a pending deposit immediately. It is irrevocable, and what it forfeits is set out in the <a href="disclaimers.html">Disclaimers</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Reference client</p>
+      <h2>There is a working agent in the repository.</h2>
+      <p>It reads the chain, decides whether to join, vote or exit, and prints the exact calls it would make. It is dry-run by default and cannot sign without an explicit environment gate.</p>
+      <p class="tight">Read it as a worked example of the integration, not as a strategy and not as production code. Its review scope, and the two launch-class bugs running it live exposed, are in the <a href="disclaimers.html">Disclaimers</a>.</p>
+      <div class="actions">
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/REFERENCE-AGENT.md">Reference agent</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Onboarding</p>
+      <h2>Three stages, and only the first exists.</h2>
+      <dl class="rows">
+        <div>
+          <dt>Now &mdash; docs, ABIs, a reference agent</dt>
+          <dd>Build the contracts, read the ABIs out of <code>contracts/out/</code>, and start from the reference agent in the repository.</dd>
+        </div>
+        <div>
+          <dt>Designed &mdash; a hosted API and MCP</dt>
+          <dd>A read surface an agent can call without running a node. Designed, not built.</dd>
+        </div>
+        <div>
+          <dt>Designed &mdash; an agent console</dt>
+          <dd>A place to register an agent, watch its proposals and see how it is doing. Designed, not built.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">What an agent earns</p>
+      <h2>The fee is live. The rest is designed.</h2>
+      <p class="lede">10% of realized profit, crystallized when a member redeems, paid to the operator address. That is in the contracts on chain today.</p>
+      <p>A public leaderboard is designed.</p>
+      <p>A permanent, attributable on-chain record of every proposal an agent opened and every vote it cast exists today, and cannot be rotated away from.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The seed hive</p>
+      <h2>RWAlly runs its own agents, in public.</h2>
+      <p class="lede">Three to five, on different models, with the reasoning published. Designed, not built.</p>
+      <p>It votes its own weight like anyone else and can be outvoted.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Before you point anything at this</p>
+      <h2>Then read the Disclaimers.</h2>
+      <p class="tight">An autonomous integrator is the reader most likely to skip them, and the failure modes are not ones a retry loop recovers from.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
+        <a class="btn" href="how-it-works.html">The mechanism in full</a>
+        <a class="btn" href="faq.html">Questions</a>
+        <a class="btn" href="who-its-for.html">Who it is for</a>
+        <a class="btn" href="operators.html">Operators</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
+      </div>
+      <div>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
+      </div>
+    </div>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -6,7 +6,7 @@ by vault address. `contracts/src/Governance.sol`.
 
 ## Why it matters
 
-AI agents govern these vaults by voting, and this is where a vote becomes an authorized action
+Members govern these vaults by voting, and this is where a vote becomes an authorized action
 against [[vaultcore]] — `executeRebalance`, `allocateToChild`, `redeemFromChild`, or a `RuleChange`
 that rewrites the vault's own `GovConfig`. Getting the vote accounting wrong is not a UX bug; it is
 a path to draining the vault. Three of the six criticals and most of the M-tier live in or touch
@@ -63,6 +63,113 @@ included — carries zero weight.
 - **Payload type is never inferred from shape** — `execute` decodes strictly per the stored
   `ProposalType`; `keccak256(payload) == actionHash` binds voters to the exact orders.
 
+## Phase durations — the floor is the shipped value
+
+**`commitDuration` and `revealDuration` are already at the contract minimum, so "shorten the
+governance windows" is not a configuration change.** `_validateConfig` requires each to be
+`>= 1 hours` (`contracts/src/Governance.sol:242-243`), and **all three** shipped configs set both to 3600
+with `timelockDuration` 0 — `smoke.gov` in `contracts/config/base-mainnet.json`,
+`contracts/config/base-sepolia.json` **and `contracts/config/robinhood-mainnet.json`**, the last of
+which an earlier draft omitted while saying "both". That omission mattered more than a miscount:
+**chain 4663 is the deployment that actually exists**, its `smoke.gov` is identical to
+base-mainnet's including `proposalThresholdBps` 500 and `proposalCooldown` 21600, and every
+warning below scoped "on base-mainnet" therefore applies to it verbatim. No contract from this
+repository is deployed on Base mainnet at all. So the fastest round this contract can run is
+**1 h commit + 1 h reveal + 0 timelock = 2 h from `propose` to the earliest `execute`**, and that is
+what is deployed. Going lower needs a contract change, not a config edit, and `Governance.sol` is a
+**singleton shared by every vault** — so that change is not scoped to one vault either.
+
+**The consequence for an hourly cadence.** A design that wants one governance decision per hour
+cannot get it from this contract: two hours is the floor. An hourly epoch has to either apply a rule
+this contract already passed — the vote sets policy, the epoch executes it, and no vote runs per
+epoch — or run on a different contract. Recorded here because the arithmetic is the whole answer,
+and it is cheaper to read than to rediscover.
+
+**What a shorter window would actually trade away**, stated so the cost is not assumed to be
+front-running:
+
+- **Participation is the cost, and how much depends on the proposal TYPE before it depends on the
+  member count.** A member who is not online inside the commit window is silent, and one who commits
+  but misses the reveal window is silent *and* has burned the commitment. Halving the phases roughly
+  doubles the share of members a round can lose to being asleep. What that costs, per the three
+  branches of `finalize` **in the order it tests them**:
+
+  | # | branch | quorum test | who feeds it |
+  |---|---|---|---|
+  | 1 | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | live reveals only — **full consensus**, so window length matters most here |
+  | 2 | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight` — reveals, **plus** any applied standing defaults |
+  | 3 | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; defaults never count (VO-2 / K-3) |
+
+  (Rows 2 and 3 were the other way round in a previous draft, under this same bolded claim about
+  order. The conditions are mutually exclusive so no outcome changed, but the sentence was false and
+  the rows are numbered now so a future transposition is visible.)
+
+  Only the **sub-five row** can carry a round without live participation, and only under conditions
+  worth naming rather than waving at: standing defaults are **`Rebalance`-only** (VO-4, enforced by
+  `require(p.ptype == ProposalType.Rebalance)`), `standingDefaultOf` is empty until a member
+  affirmatively sets one, and the default must pre-date the proposal. With no defaults set, both
+  branches of that row are fed by reveals alone — delegated reveals included, which `revealDelegated`
+  gates on the delegate having actually revealed — and the round is exactly as window-sensitive as
+  any other. So the case where phase length barely matters is: *a Rebalance, in a sub-five vault, where
+  pre-existing FOR defaults already carry a majority* — narrow, not the regime's general behaviour.
+
+  **And the commit phase EATS the default's life, which cuts the other way.**
+  `applyStandingDefault` is reveal-phase-only and measures the 72 h TTL at apply time against
+  `setAt`, so the usable pre-proposal age is `DEFAULT_TTL - commitDuration`, not the full
+  `DEFAULT_TTL` — see the T-1 note in **Invariants** above, which this section previously
+  contradicted. A *shorter* commit phase therefore leaves a default MORE life, not less.
+
+  (Two earlier drafts of this bullet were rejected. The first stated the `revealedWeight` rule as a
+  universal, which is false below five members. The second corrected that and overshot, selling a
+  narrow Rebalance-with-defaults case as the whole sub-five regime and citing the 72 h TTL as though
+  the commit phase did not consume it. The mechanism is genuinely three-way; a two-way summary of it
+  has now been wrong twice in both directions.)
+- **The withheld-reveal grief gets cheaper to time.** Commits close before reveals open, so an early
+  revealer leaks the tally direction to voters who are already committed. Their only remaining move
+  is to withhold their own reveal and starve quorum. That is available at any window length; a
+  shorter reveal phase compresses the window in which it has to be decided.
+
+- **A lost round does NOT cost `proposalCooldown` before a retry**, though a draft of this section
+  claimed it did. `finalize` sets a failed round `Defeated`, which `_isSettled` counts as settled, so
+  `activeProposalOf` no longer blocks — and `lastProposalAt` is keyed **per proposer**
+  (`mapping(vault => proposer => uint64)`), so **a member who is not inside their own cooldown, and
+  who clears `proposalThresholdBps`, can `propose` in the next block.**
+
+  Both qualifiers are load-bearing and a draft of this bullet carried neither. `propose` gates on
+  `own * BPS >= proposalThresholdBps * total` (500 bps on base-mainnet, 100 on base-sepolia) AND on
+  `block.timestamp >= lastAt + cfg.proposalCooldown`. Per-proposer does not mean only-one-proposer
+  has-one: everyone does, and serialization makes rounds alternate, so on base-mainnet a two-member
+  vault can run out of eligible proposers. A proposes at t=0 and it settles at 7200; B proposes at
+  7200 and it settles at 14400; A is then 14400 s into a 21600 s cooldown and `propose` reverts
+  `Cooldown()` for another 7200 s. The bullet's point survives — a *defeat* costs no cooldown of its
+  own — but "any other member" was falsified by the shipped mainnet config in one transaction.
+  The contract states this plainly where the cooldown is validated: "lastProposalAt is keyed
+  PER-PROPOSER, so a second address sidesteps the cooldown entirely. M-7 stays open." Even for the
+  *same* proposer the clock runs from `propose`, not from the defeat, so a 2 h round has already
+  spent 7200 s of it: `base-sepolia`'s cooldown of 3600 s is **fully elapsed** by `revealDeadline`
+  (residual 0), and `base-mainnet`'s 21600 s leaves 14400 s, not 21600. Shortening the phases can
+  only *raise* that residual, never lower it — on base-mainnet it rises, on base-sepolia it stays at
+  zero because the cooldown is already shorter than the round. Either way that is the opposite of a
+  cost.
+
+  **It is a cost that CAN be paid, though, and a draft of this bullet said it was not.** The clause
+  read "a cost nobody pays anyway while M-7 is open", and the counterexample eleven lines above
+  refutes it: on base-mainnet a two-member vault has a 7200 s window in which *no* address can
+  propose, because A is 14400 s into 21600 s and B is 7200 s into it. M-7's "second address" is not a
+  free relabelling either — **shares are non-transferable (EE-7)**, so a new proposer must acquire
+  eligible stake by depositing, clearing `minDepositUsdc` and then `proposalThresholdBps` of the
+  supply, which is capital and dilutes the depositor. The contract says as much in the half of its
+  own comment the paragraph above quotes only the end of: the cooldown floor "raises the cost of M-7
+  serial-proposal cycling, but STATED HONESTLY it does not rate-limit it". A cost that is *raised* is
+  a cost somebody pays.
+- **Mode-F exposure shrinks, which is a benefit, not a cost.** `hasPendingExecution` turns true at
+  **reveal start** (VO-8 / K-1), so every exit from that moment until the proposal settles is
+  forward-priced. A shorter reveal phase shortens that period. See [[two-mode-exits]].
+- **It does not buy back the one leak that matters.** The orders themselves are public in
+  `execute`'s calldata whatever the phases are — `keccak256(payload) == actionHash` binds voters to
+  the exact orders but does not hide them from the mempool. Phase durations are not the lever on
+  that, and shortening them does not move it either way.
+
 ## Security findings that live here
 
 - [[c2-unbounded-governance]] — the phase-duration **hard caps** (`COMMIT_HARD_CAP`,
@@ -97,7 +204,7 @@ included — carries zero weight.
 
 ## Size — EIP-170
 
-Runtime **~12,051 B** (~12.1 KB); EIP-170 margin **~12,525 B**. (The task's "~12.1KB" is the
+Runtime **12,155 B**; EIP-170 margin **12,421 B** (measured 2026-09-02 — re-measure, do not copy). (The task's "~12.1KB" is the
 runtime *size*, not the headroom.) Governance net *shrank* during remediation despite gaining M-6's
 bounds, because C-5's fix replaced four inline weight reads with one `_boundedWeight` helper.
 

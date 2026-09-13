@@ -26,8 +26,9 @@
  * @property {bigint} capacityCapUsdc
  * @property {string|null} parent        // sub-vault parent, or null for a root
  * @property {number} depth
- * @property {number} exitQueuedCount    // ExitQueued occurrences (Mode-F entries)
+ * @property {number} exitQueuedCount    // ExitQueued occurrences (lifetime Mode-F entries)
  * @property {number} exitSettledCount   // ExitSettled occurrences (all settled exits, Mode-F + Mode-I)
+ * @property {number} modeFSettledCount  // of those, the ones that resolved a queued Mode-F exit
  */
 
 /**
@@ -82,6 +83,25 @@ const STAT_ONLY_EVENTS = Object.freeze([
 ]);
 const STAT_ONLY_EVENT_SET = new Set(STAT_ONLY_EVENTS);
 
+/**
+ * Ceiling on the DISCOVERED execution-adapter set — the one learned from chain logs, as opposed to
+ * the one an operator names in `ADAPTER_ADDRESSES`.
+ *
+ * It lives here, in the pure core, because it has to hold in TWO places that would otherwise drift:
+ * `state.adapters` below (persisted in every snapshot, and what a restart re-seeds the poller from)
+ * and the poll set in rpc.mjs (the `address` array of every `getLogs` call). Bounding only the
+ * second, as an earlier revision did, left the first growing without limit while a comment claimed
+ * otherwise.
+ *
+ * Membership is attacker-influenceable: `createVault` is permissionless and `allowedAdapters` is
+ * caller-supplied, so anyone can get an address in here for the cost of one vault and one no-op
+ * rebalance. 64 is chosen to sit far above any deployment that has not yet needed to configure its
+ * adapters explicitly, and far below a set that would degrade a `getLogs` call. It is a
+ * LOAD-SHEDDING bound, not a trust boundary — config is the trust boundary — which is why exceeding
+ * it is reported rather than silently absorbed, and why configured adapters are exempt.
+ */
+export const MAX_TRACKED_ADAPTERS = 64;
+
 function bumpEventStat(state, e) {
   const s = state.eventStats.get(e.name) ?? { count: 0, lastBlock: 0, lastLogIndex: -1 };
   s.count += 1;
@@ -100,6 +120,15 @@ export function emptyState() {
     /** @type {Map<string, {count:number, lastBlock:number, lastLogIndex:number}>} */
     eventStats: new Map(), // event name -> occurrence count + last-seen cursor (STAT_ONLY_EVENTS)
     /** @type {Set<string>} */ adapters: new Set(), // execution-adapter addresses, learned from RebalanceExecuted
+    /** @type {Map<string, Set<string>>} */
+    queuedExits: new Map(), // vault -> members with an OUTSTANDING queued Mode-F exit (see `apply`)
+    /** @type {Map<string, Map<string, bigint>>} */
+    // vault -> member -> the SIZE of that outstanding queue entry. Deliberately a second structure
+    // rather than a `Map<member,bigint>` replacing the Set above: `queuedExits` is serialized as a
+    // flat array of members (store.mjs) and store.test.mjs pins that on-disk shape, so widening it
+    // would turn an observability fix into a snapshot-format migration. The two are written and
+    // cleared in the same two `apply` cases, and store.test.mjs pins both round-trips.
+    queuedExitShares: new Map(),
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -109,27 +138,61 @@ function big(x) {
   return typeof x === 'bigint' ? x : BigInt(x);
 }
 
+/**
+ * Every field of a vault record, at its zero value. Exported because `store.deserializeState` uses
+ * it as the BASE a resumed record is spread over: a snapshot written before a field existed simply
+ * has no key for it, and spreading over this default is what turns that absence into 0 rather than
+ * `undefined` (which then poisons `+= 1` into NaN, and the next snapshot write into null). Adding a
+ * field here is therefore the whole migration for it — see the note in `deserializeState`.
+ * @param {string} vault
+ * @returns {VaultState}
+ */
+export function newVault(vault) {
+  return {
+    vault,
+    creator: '0x',
+    usdc: '0x',
+    operatorId: 0,
+    totalShares: 0n,
+    idleUsdc: 0n,
+    memberCount: 0,
+    pendingCount: 0,
+    capacityCapUsdc: 0n,
+    parent: null,
+    depth: 0,
+    exitQueuedCount: 0,
+    exitSettledCount: 0,
+    modeFSettledCount: 0,
+  };
+}
+
 function ensureVault(state, vault) {
   let v = state.vaults.get(vault);
   if (!v) {
-    v = {
-      vault,
-      creator: '0x',
-      usdc: '0x',
-      operatorId: 0,
-      totalShares: 0n,
-      idleUsdc: 0n,
-      memberCount: 0,
-      pendingCount: 0,
-      capacityCapUsdc: 0n,
-      parent: null,
-      depth: 0,
-      exitQueuedCount: 0,
-      exitSettledCount: 0,
-    };
+    v = newVault(vault);
     state.vaults.set(vault, v);
   }
   return v;
+}
+
+/** The set of members with an outstanding queued Mode-F exit in `vault` (created on demand). */
+function queuedExitSet(state, vault) {
+  let q = state.queuedExits.get(vault);
+  if (!q) {
+    q = new Set();
+    state.queuedExits.set(vault, q);
+  }
+  return q;
+}
+
+/** Member -> outstanding queued-exit size for `vault` (created on demand). */
+function queuedExitShareBook(state, vault) {
+  let b = state.queuedExitShares.get(vault);
+  if (!b) {
+    b = new Map();
+    state.queuedExitShares.set(vault, b);
+  }
+  return b;
 }
 
 function shareBook(state, vault) {
@@ -227,16 +290,48 @@ export function apply(state, e) {
       break;
     }
     case 'ExitQueued':
+      // VaultCore.requestExit allows ONE queued exit per member at a time
+      // (`queuedExitShares[msg.sender] == 0`, ExitAlreadyQueued) and a queued exit is
+      // irrevocable, so this set holds at most one entry per member and needs no per-member count.
       ensureVault(state, e.vault).exitQueuedCount += 1;
+      queuedExitSet(state, e.vault).add(a.member);
+      // The SIZE of the entry, not only its existence: `requestExit(shares)` accepts any amount up
+      // to the balance, so a queued exit subtracts from voting-eligible stake rather than zeroing
+      // it, and `memberPosition` cannot state the withheld weight without this.
+      //
+      // An ABSENT amount is recorded as absent, not as 0n. `abis.mjs` decodes `shares` from a
+      // non-indexed, non-optional event field, so this branch is unreachable from a well-formed
+      // log — but `0n` is the wrong failure direction whatever produces it: the size book would
+      // then say "nothing is locked" about a member `queuedExits` says IS locked, and
+      // `memberPosition` would report the member's whole position as voting-eligible when
+      // `VaultCore.votingEligibleShares` returns strictly less. Leaving the entry out instead puts
+      // the member in the one state that is honest, "locked, amount unknown", which is the same
+      // state a snapshot predating this book resumes into and which `memberPosition` reports as
+      // null with a note rather than as a number.
+      if (a.shares !== undefined && a.shares !== null) {
+        queuedExitShareBook(state, e.vault).set(a.member, big(a.shares));
+      }
       break;
-    case 'ExitSettled':
-      ensureVault(state, e.vault).exitSettledCount += 1;
+    case 'ExitSettled': {
+      const v = ensureVault(state, e.vault);
+      v.exitSettledCount += 1;
+      // The EXACT Mode-F discriminator, not an approximation. While a member sits in the queued
+      // set, `requestExit` reverts for them (ExitAlreadyQueued) and `settleQueuedExit` is the only
+      // path that clears `queuedExitShares` — so the next ExitSettled for a queued member is
+      // necessarily the settlement of that queued exit, and every other ExitSettled is Mode I.
+      if (queuedExitSet(state, e.vault).delete(a.member)) v.modeFSettledCount += 1;
+      queuedExitShareBook(state, e.vault).delete(a.member); // the lock ends with the settlement
       creditShares(state, e.vault, a.member, -big(a.sharesBurned));
       break;
+    }
     case 'RebalanceExecuted':
       // Learns the adapter's address so the chain source can poll it for SwapExecuted the same
-      // way it learns a vault's address from VaultCreated (see rpc.mjs).
-      if (a.adapter) state.adapters.add(a.adapter);
+      // way it learns a vault's address from VaultCreated (see rpc.mjs). Bounded, because unlike
+      // the vault set this one is reachable by anybody (permissionless `createVault` +
+      // caller-supplied `allowedAdapters`) and it is PERSISTED in every snapshot — an unbounded
+      // one grows the state file and the resume cost without limit. An operator who needs a
+      // specific adapter indexed names it in ADAPTER_ADDRESSES, which never consults this set.
+      if (a.adapter && state.adapters.size < MAX_TRACKED_ADAPTERS) state.adapters.add(a.adapter);
       break;
     case 'Proposed': {
       const pid = Number(a.pid);
@@ -344,7 +439,18 @@ export function vaultView(state, vault) {
   // NAV, live basket balances, and proposal phase deadlines are chain-read enrichment (events
   // don't carry post-swap balances or prices) — the daemon merges those in. Everything here is
   // event-derived and deterministic.
-  return { ...v, holders: shareBook(state, vault).size, activeProposal: proposal };
+  //
+  // `exitQueuedOutstanding` is the §3.6 stranded-queue signal, computed from `state.queuedExits`
+  // rather than stored on the record (a Set on the record would spread onto this response as `{}`).
+  // It is deliberately NOT named `queuedExitBacklog` on the wire: on a response that already
+  // carries `exitQueuedCount`, a near-anagram of it with a different meaning is a trap. The
+  // "outstanding" / "count" pairing says which is a level and which is a lifetime total.
+  return {
+    ...v,
+    holders: shareBook(state, vault).size,
+    exitQueuedOutstanding: queuedExitBacklog(state, vault),
+    activeProposal: proposal,
+  };
 }
 
 /** Summary list of all known vaults — the discovery surface for agents. */
@@ -361,44 +467,140 @@ export function listVaults(state) {
 }
 
 /**
- * Approximate Mode-F exit rate for a vault, in integer basis points of `ExitQueued` occurrences
- * over `ExitSettled` occurrences (counts, not value — matches the vault note's "exits, NOT value"
- * framing and its own field name, `mode_f_exit_rate_bps`, §4.2). Bps rather than a float ratio to
- * match the repo's existing convention for a counts-over-counts fraction (see `shareOfVaultBps` in
- * `memberPosition`, right below) and because §4.4's public-field lint permits `_bps` only for
- * exactly this shape.
+ * The vault note's `mode_f_exit_rate_bps` (§4.2): what share of a vault's SETTLED exits went
+ * through the Mode-F queue rather than settling instantly (Mode I). Integer basis points of a
+ * counts-over-counts fraction — the shape §4.4's public-field lint permits `_bps` for, and the
+ * same convention as `shareOfVaultBps` in `memberPosition` below. Counts, not value, matching the
+ * note's "exits, NOT value" framing.
  *
- * This is a first-order signal, not the exact per-member discriminator from the data-analytics
- * build note (§3.6): the precise rule is "an ExitSettled is Mode-F iff that (vault, member) has an
- * ExitQueued with no intervening ExitSettled," which needs a per-member exit ledger (the
- * `exit_event` table in the note's build order item 4+, on the Postgres substrate). Two counts
- * over the vault's whole history is the natural small addition available from the existing
- * scalar-fold shape; it will over- or under-count relative to the exact ledger whenever queued
- * exits settle out of order across members.
+ * This is the note's EXACT discriminator, computed in the fold, not an approximation of it. The
+ * rule the note states — "an ExitSettled is Mode-F iff that (vault, member) has an ExitQueued with
+ * no intervening ExitSettled" — is decidable from the event stream alone and needs no per-member
+ * `exit_event` table on a Postgres substrate: VaultCore permits one queued exit per member
+ * (`requestExit` requires `queuedExitShares[msg.sender] == 0`) and `settleQueuedExit` is the only
+ * way a queued exit ever resolves, so `state.queuedExits` — a per-vault set of members with an
+ * outstanding queue entry — is a complete and exact ledger. See the `ExitSettled` case in `apply`.
  *
- * Can legitimately exceed 10000 bps (100%) when more exits have been queued than have settled —
- * e.g. 3 queued, 1 settled, a stranded-queue situation (§3.6) — since it divides two independent
- * lifetime counters, not a partition of one total. That is a real signal (a backlog of unsettled
- * Mode-F exits), not a bug; do not clamp it.
+ * Because Mode-F settlements are a subset of all settlements, the result is a genuine partition
+ * and is bounded by 10000 (100%). The unsettled backlog it deliberately does NOT fold in — the
+ * stranded-queue signal of §3.6 — is a different quantity with its own accessor,
+ * `queuedExitBacklog`; conflating the two is what makes a "rate" exceed 100%.
  *
  * Returns null when the vault is unknown or has no settled exits yet (undefined rate, not zero).
  */
 export function modeFExitRateBps(state, vault) {
   const v = state.vaults.get(vault);
   if (!v || v.exitSettledCount === 0) return null;
-  return Math.round((v.exitQueuedCount * 10000) / v.exitSettledCount);
+  return Math.round((v.modeFSettledCount * 10000) / v.exitSettledCount);
 }
 
-/** A member's share position in a vault (0 if none). */
+/**
+ * Members with an outstanding queued Mode-F exit in `vault` — the stranded-queue backlog (§3.6).
+ * A count, not a rate: it has no denominator, so it is deliberately not expressed in bps.
+ */
+export function queuedExitBacklog(state, vault) {
+  return state.queuedExits.get(vault)?.size ?? 0;
+}
+
+/**
+ * A member's share position in a vault (0 if none), INCLUDING the weight it can actually vote.
+ *
+ * `shares` and `votingEligibleShares` are different quantities and the difference is silent
+ * on-chain. The Base Sepolia soak found a member holding roughly a fifth of a vault whose
+ * `votingEligibleShares` read 0, with nothing off-chain saying so — this projection carried no
+ * eligibility field at all, so the number a member sees and the number that carries a vote could
+ * disagree by their whole position and nothing here reconciled them.
+ *
+ * `votingEligibleShares` mirrors `VaultCore.votingEligibleShares` (VaultCore.sol:1025-1028) term
+ * for term, INCLUDING the branch that is not about exits at all:
+ *
+ *     if (member == parentVault()) return 0;
+ *     return sharesOf[member] - queuedExitShares[member];
+ *
+ * So there are TWO ways a material position votes with nothing, and a field carrying only the
+ * queued-exit lock would report the second one wrongly. `votingEligibleNote` names whichever
+ * applies, the amount it withholds, and how it resolves; it is `null` when nothing is withheld,
+ * so a consumer can treat its presence as the whole signal.
+ *
+ * There is a THIRD state, and it is a state of this projection rather than of the chain: the fold
+ * can know that a member is locked without knowing by how much. `queuedExits` (who) and
+ * `queuedExitShares` (how much) are separate structures, and `store.mjs` keeps `VERSION = 1` so a
+ * snapshot written before the second existed LOADS rather than being rejected — `buildIndexer`
+ * calls `loadSnapshot` on every restart, so that is the ordinary upgrade path and not an edge
+ * case. Across such a resume `queuedExits` still names the member and the size book does not, and
+ * the honest report is `null`: unknown, not zero. Defaulting the amount to `0n` would make
+ * `votingEligibleShares` equal `shares` — the member's WHOLE position reported as votable, with a
+ * `null` note affirming nothing is withheld, for a member whose on-chain eligible weight is
+ * strictly less. Clamping to `0n` instead would be wrong in the other direction and would falsify
+ * the paragraph below: the member may have queued one share of two thousand, so a zero here would
+ * no longer establish that a vote carries nothing. `null` is the only value that claims what is
+ * actually known, and it never over-reports; the note always says so, and names the chain read
+ * that answers exactly.
+ *
+ * What this is NOT: the weight a vote would actually carry. `Governance._boundedWeight`
+ * (Governance.sol:352-356) takes `min(pastVotingEligibleShares(member, createdAt - 1),
+ * votingEligibleShares(member))` and `commitVote` requires that minimum to be non-zero
+ * (Governance.sol:365). The snapshot term is a chain read of a checkpoint this fold does not keep,
+ * so a non-zero value here is the LIVE term only and promises nothing about the snapshot term. A
+ * zero is the stronger statement: zero is the smaller term whatever the snapshot holds. A `null`
+ * is neither statement — it is the absence of one, which is why it may never be read as a number.
+ */
 export function memberPosition(state, vault, member) {
   const shares = shareBook(state, vault).get(member) ?? 0n;
   const v = state.vaults.get(vault);
   const totalShares = v ? v.totalShares : 0n;
+  // "Locked, amount unknown" is a state the fold can be in and must not round off: `queuedExits`
+  // names the member and the size book has no entry for them. The two structures are written and
+  // cleared together in `apply`, so within a single run this cannot happen; it is reached by
+  // resuming a snapshot written before the size book existed, which `store.mjs` still loads.
+  const sizeBook = state.queuedExitShares.get(vault);
+  const lockedAmountUnknown = (state.queuedExits.get(vault)?.has(member) ?? false) && !sizeBook?.has(member);
+  const queued = lockedAmountUnknown ? null : sizeBook?.get(member) ?? 0n;
+
+  const parent = v?.parent ?? null;
+  const isParent = parent !== null && String(parent).toLowerCase() === String(member).toLowerCase();
+  // The parent branch is unconditional on chain — `if (member == parentVault()) return 0` runs
+  // before the subtraction — so it stays exact even when the withheld amount is unknown.
+  const eligible = isParent ? 0n : lockedAmountUnknown ? null : shares > queued ? shares - queued : 0n;
+
+  const notes = [];
+  if (isParent) {
+    notes.push(
+      `This position belongs to ${parent}, the vault's registered parent vault, which is a ` +
+      'non-voting member: VaultCore.votingEligibleShares returns 0 for the parent whatever it holds.',
+    );
+  }
+  if (lockedAmountUnknown) {
+    notes.push(
+      `This position of ${shares} shares carries an outstanding queued Mode-F exit whose size ` +
+      'this projection does not know, so queuedExitShares and votingEligibleShares are null ' +
+      'rather than numbers that would over-report the weight that votes. Some part of the ' +
+      'holding is locked and excluded from voting-eligible stake: VaultCore.votingEligibleShares ' +
+      'returns sharesOf(member) minus queuedExitShares(member), and a queued exit is for a ' +
+      'non-zero amount, so the votable weight is strictly less than the holding shown here. Read ' +
+      'votingEligibleShares(member) on the vault for the exact figure. The lock ends when the ' +
+      'exit settles, which is a separate settleQueuedExit(member) call that anyone can make once ' +
+      'the vault has no pending execution.',
+    );
+  }
+  if (queued !== null && queued > 0n) {
+    notes.push(
+      `${queued} of ${shares} shares are locked by a queued Mode-F exit and are excluded from ` +
+      'voting-eligible stake. Locked shares stay outstanding and still gain and lose with the ' +
+      'vault, and a queued exit cannot be cancelled: the lock ends when the exit settles, which is ' +
+      'a separate settleQueuedExit(member) call that anyone can make once the vault has no pending ' +
+      'execution.',
+    );
+  }
+
   return {
     vault,
     member,
     shares,
     // fraction in basis points (integer) — NAV-denominated value is chain-read enrichment.
     shareOfVaultBps: totalShares > 0n ? Number((shares * 10000n) / totalShares) : 0,
+    queuedExitShares: queued,
+    votingEligibleShares: eligible,
+    votingEligibleNote: notes.length ? notes.join(' ') : null,
   };
 }

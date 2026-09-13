@@ -222,7 +222,7 @@ test('exit: triggers are OR-ed — any one is sufficient', () => {
 test('exit: a pending execution marks the exit MODE F (forward-priced)', () => {
   const r = exit({ chain: goodChain({ navPerShareWad: (WAD * 50n) / 100n }), governance: { hasPendingExecution: true } });
   assert.equal(r.exit, true);
-  assert.equal(r.modeF, true, 'exiting into a pending rebalance settles at POST-rebalance NAV');
+  assert.equal(r.modeF, true, 'exiting into a pending execution settles at POST-execution NAV');
 });
 
 test('exit: disabling a trigger in config actually disables it', () => {

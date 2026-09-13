@@ -17,8 +17,9 @@
  * Flags:
  *   --api=<url>        metered API base URL          (default http://127.0.0.1:8402)
  *   --rpc=<url>        JSON-RPC endpoint for chain reads. Omitted ⇒ the STUB reader, whose values
- *                      are marked [stub-chain] in the narrative. The protocol has no deployment
- *                      yet (issue #10), so the stub is the default for the demo run.
+ *                      are marked [stub-chain] in the narrative. `config.mjs` defaults
+ *                      `chain.rpcUrl` to null, so the stub is what a demo run gets unless you
+ *                      pass one.
  *   --governance=<addr> --subvault-registry=<addr> --usdc=<addr> --chain-id=<n>
  *   --ticks=<n>        how many loop passes to run (default 1)
  *   --demo-wallet      generate a throwaway in-memory key, used as the x402 payer AND as the
@@ -119,8 +120,18 @@ async function main() {
   }
 
   // ── chain reader ───────────────────────────────────────────────────────────
-  // No RPC ⇒ the stub, loudly marked. The protocol is not deployed yet (docs/RUNTIME.md, #10), so
-  // the demo run cannot read a real chain and does not pretend to.
+  // No RPC ⇒ the stub, loudly marked. contracts/config/deployments/ holds base-sepolia.json (a
+  // testnet trial) and robinhood-mainnet.json (Robinhood Chain mainnet since 2026-09-05: the
+  // singletons are wired and two vaults hold real funds on it). Without an --rpc there is no
+  // node to read at all, so the demo run
+  // answers from the fixture and does not pretend to.
+  //
+  // These comments are swept BY HAND. `.mjs` is in no claims guard's walk — not
+  // claims-lede-truth's PUBLIC_EXT, not config-doc-truth's PROSE_EXT — so five sites in this
+  // package carried "the protocol is not deployed" for months after it was, were narrowed to
+  // "mainnet" on 2026-09-04 (#197), and were falsified again by the Robinhood Chain deployment of
+  // 2026-09-05. Do not narrow one of these to the boundary that happens to be visible;
+  // name the chain, or name the directory and let the reader look.
   let chainReader;
   let entryMarks = {};
   if (config.chain.rpcUrl) {

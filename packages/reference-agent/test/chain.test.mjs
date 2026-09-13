@@ -134,6 +134,32 @@ test('decodeProposal also accepts a NAMED object, in case viem starts returning 
   assert.equal(p.statusName, 'Active');
 });
 
+test('an out-of-range enum byte decodes to Unknown rather than undefined (issue #196)', () => {
+  // THE ONE BRANCH THE TWO TESTS ABOVE DO NOT REACH. Between them they already pin the enum
+  // arrays (`the enums match Governance.sol declaration order`) and every tuple position with
+  // pairwise-distinct values, so a respelt entry or a shifted index is caught. What nothing
+  // executed was the `?? 'Unknown'` fallback at chain.mjs:128 and :136 — deleting both left this
+  // whole suite green, verified by mutation. The fallback has one reader, `policy.mjs:341-343`,
+  // and it is the reader's message that degrades: an out-of-range byte would make the agent
+  // decline with "proposal status is undefined, not Active", or name the mandate check's subject
+  // "undefined", instead of saying Unknown. That is a behaviour, not a formality, so it is pinned.
+  //
+  // Reachable through decode drift, not through Governance: a `status` beyond 5 or a `ptype`
+  // beyond 2 cannot be written by the contract's own enums, but an ABI change that shifted the
+  // tuple would put an unrelated field's value into either position.
+  const raw = new Array(16).fill(0n);
+  raw[0] = '0x' + 'a'.repeat(40);
+  raw[1] = 9n; // ptype, past ChildAllocation (2)
+  raw[8] = 7n; // status, past Expired (5)
+  const p = decodeProposal(raw);
+  assert.equal(p.ptype, 9, 'the numeric field still carries the raw byte');
+  assert.equal(p.ptypeName, 'Unknown');
+  assert.equal(p.status, 7);
+  assert.equal(p.statusName, 'Unknown');
+  assert.equal(PROPOSAL_TYPE.length, 3, '9 is out of range only while ProposalType has three members');
+  assert.equal(PROPOSAL_STATUS.length, 6, '7 is out of range only while Status has six members');
+});
+
 // ── the reader's fault tolerance ────────────────────────────────────────────
 
 /** A viem-shaped client that answers from a table and can be told to fail. */
