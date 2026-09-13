@@ -17,7 +17,7 @@ trigger") with an executed end-to-end test driving a **real** `OracleAggregator`
 The H-1 remediation prescribes m ≥ 5 / quorum ≥ 3 and asserts the lower median is "bounded by the
 honest set." That is correct against *benign* withholdings (with `a = 0` controlled sources, `k` can
 fall to 3 and the median stays honest). With lower-median selection `fresh[(k-1)/2]`
-(`OracleAggregator.sol:131`, deliberately un-averaged to avoid H-1's even-`k` swing), an actor
+(`priceWad`, `OracleAggregator.sol:152`, deliberately un-averaged to avoid H-1's even-`k` swing), an actor
 controlling `a` sources owns the reported price once the fresh count `k ≤ 2a`. Because `k` falls to
 the quorum through **ordinary withholding**, at m=5 / quorum 3 a single honest leg withholding drops
 `k` to 4, and two adversarial sources then own `fresh[1]`.
