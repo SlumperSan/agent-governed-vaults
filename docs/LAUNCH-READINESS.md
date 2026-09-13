@@ -114,15 +114,20 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 **Neither was created by the creator Safe, and this document said the first one would be.** Both
 carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
 `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c` (Safe v1.4.1, threshold 1, single owner = the
-deployer, a 1-of-1, not a multisig, and not by itself shared custody) held 0 ETH at both creations
-and could not have sent either transaction. This is not correctable, because
-`VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and attested
-operator and no later transaction can correct it. No member funds are at stake on that chain.
+deployer, a 1-of-1, not a multisig, and not by itself shared custody) holds 0 ETH, **and that did
+not stop it: it could have created either vault.** A Safe's `execTransaction` is paid for by the
+submitting owner's EOA, not out of the Safe's own balance, and this one has executed **65**
+transactions on chain 4663 (`nonce()` reads 65, the last long before vault #1) while holding
+nothing. So this was a choice, not an impossibility, and an earlier draft of this paragraph said
+the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
+attested operator and no later transaction can correct it, so the choice is now permanent on both
+vaults. **Member funds ARE at stake on that chain**: 20 USDG and 5 USDG, `idleUsdc()` on each.
 
-**What it proves:** the contracts deploy and wire on that chain. It does not prove that a vault can
-be created there, because none has been; that a Safe rather than an EOA must be the creator is what
-`operatorPayoutNote` in the Base Sepolia record requires of a production vault, and it is a
-constraint on the transaction that has not happened yet rather than evidence from one that has.
+**What it proves:** the contracts deploy and wire on that chain, and that a vault can be created,
+funded and governed there. Both vaults have run governance rounds end to end. What it does NOT
+prove is the custody shape: `operatorPayoutNote` in the Base Sepolia record requires a Safe rather
+than an EOA as the creator of a production vault, and that requirement was not met here, so the
+evidence is of the mechanism working, not of the intended operator model.
 
 **Which of the gates below were NOT run on that chain, stated so the board stays literally true:**
 
