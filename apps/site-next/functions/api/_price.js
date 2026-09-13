@@ -2,17 +2,17 @@
  * Price and facilitator resolution for the metered read route, at the edge.
  *
  * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=http`, AND CANNOT HOLD ONE.
- * `apps/api` has three SELECTABLE facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
- * exactly `stub`, `http` and `svm`. `stub` and `http` hold no key,
+ * `apps/api` has FOUR selectable facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
+ * `stub`, `http`, `standard` and `svm`. `stub`, `http` and `standard` hold no key,
  * and `FACILITATOR=svm` DOES hold one — the one mode that does, because Solana's flow makes this
  * process the fee payer and there is nothing to delegate. This route is
  * EVM-only and hard-wires `http` — `createHttpFacilitator` POSTs an envelope to a facilitator URL
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
  * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
- * (facilitator.mjs defines a FOURTH implementation, `createSettlingFacilitator`, which takes an
+ * (facilitator.mjs defines a FIFTH implementation, `createSettlingFacilitator`, which takes an
  * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
- * not reachable from this route. Counting modes and counting implementations give 3 and 4.)
+ * not reachable from this route. Counting modes and counting implementations give 4 and 5.)
  *
  * WHY THE NUMBERS COME FROM ENV AND NOT FROM THIS FILE.
  * `PRICE_PAYTO` decides who is paid. Committing an address here would put a payee in git history
@@ -117,6 +117,25 @@ export function resolveFacilitatorUrl(env) {
  *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */
+/**
+ * The CAIP-2 chain id sent to the facilitator in `paymentRequirements.network`.
+ *
+ * This is NOT `PRICE_NETWORK` and the two must not be merged. `PRICE_NETWORK` is what the 402
+ * challenge advertises to a paying client (`base`, the label PayAI's `/supported` lists for its
+ * x402Version 1 Base-mainnet entry). `FACILITATOR_NETWORK` is what the facilitator's `/verify` and
+ * `/settle` expect (`eip155:8453`, its v2 entry for the same chain). One chain, two spellings,
+ * different audiences -- `createStandardHttpFacilitator` refuses to start without the CAIP-2 one.
+ */
+export function resolveFacilitatorNetwork(env) {
+  const v = requireEnv(env, 'FACILITATOR_NETWORK');
+  // Required to be CAIP-2 rather than defaulted: a wrong chain id here means every payment is
+  // verified against the wrong chain and rejected forever, and a default would hide that.
+  if (!/^[a-z0-9-]{3,8}:[a-zA-Z0-9._-]{1,32}$/.test(v)) {
+    throw new ConfigError(`FACILITATOR_NETWORK must be a CAIP-2 id such as eip155:8453, got: ${v}`);
+  }
+  return v;
+}
+
 export function configErrorResponse(err) {
   const isConfig = err instanceof ConfigError;
   return new Response(
