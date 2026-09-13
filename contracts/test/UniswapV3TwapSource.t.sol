@@ -504,6 +504,18 @@ contract UniswapV3TwapSourceTest is Test {
     /// The full read path never reverts, whatever the pool reports — it either prices or
     /// withholds. This is the property the aggregator's `try/catch` relies on and the reason
     /// the computation is wrapped in a self-call.
+    ///
+    /// Issue #219: this assertion used to read `assertEq(ts, block.timestamp, ...)`, which is
+    /// the PRE-H-2 convention (see the `latestPrice` notice above and line 124's fixture, both
+    /// of which document the change). `latestPrice` now stamps `_newestObservationTs()`, not
+    /// `block.timestamp` — deliberately, so the aggregator's staleness bound has something to
+    /// measure. `age` (bound to [0, 20 days] below) is a HEALTHY input whenever it is within
+    /// `MAX_OBS_AGE` (90s here): the source prices it and stamps `block.timestamp - age`, not
+    /// `block.timestamp`. The reported counterexample was `age == 51`, squarely inside that
+    /// range — not a rare edge, which is why most runs still saw `p == 0` (age drawn > 90) and
+    /// only a fraction of runs (age drawn in [1, 90] that also happened to price) hit the stale
+    /// assertion. Bounding `ageSeed` away from that range would exclude exactly the pool states
+    /// this source exists to price, so the fix is the assertion, not the input domain.
     function testFuzz_latestPriceNeverReverts(int256 rawTick, int64 rawCum, uint16 card, uint32 ageSeed)
         public
     {
@@ -522,8 +534,37 @@ contract UniswapV3TwapSourceTest is Test {
 
         (uint256 p, uint256 ts) = src.latestPrice();
         // Either a real price stamped now, or the not-fresh signal. Never anything else.
-        if (p == 0) assertEq(ts, 0, "withholding must zero updatedAt");
-        else assertEq(ts, block.timestamp, "a price must be stamped now");
+        if (p == 0) {
+            assertEq(ts, 0, "withholding must zero updatedAt");
+        } else {
+            // H-2's actual invariant: a priced quote is stamped with the age of the DATA
+            // backing it, not the time of the read. `_meanTick`'s guard 3 (age > MAX_OBS_AGE
+            // reverts to TwapPoolNotUsable, caught by `latestPrice` as (0,0)) is what bounds
+            // how old that stamp may be; a price only reaches here when age <= MAX_OBS_AGE.
+            assertLe(ts, block.timestamp, "updatedAt is never in the future");
+            assertGe(
+                ts,
+                block.timestamp - MAX_OBS_AGE,
+                "a priced quote must be within the freshness bound, not stamped now"
+            );
+        }
+    }
+
+    /// The exact counterexample from issue #219, pinned as a deterministic regression test
+    /// rather than left to a fuzzer to rediscover. `age = 51` reproduces
+    /// `1699999949 != 1700000000` against the pre-fix assertion; against the fixed assertion it
+    /// passes because 51 <= MAX_OBS_AGE (90).
+    function test_fuzzCounterexample_age51StampsDataAgeNotReadTime() public {
+        MockV3Pool pool = _healthyPool(address(weth), address(usdc), int24(0));
+        UniswapV3TwapSource src = _oneHop(address(weth), pool);
+
+        uint32 age = 51;
+        pool.setRing(MIN_CARD, 7, uint32(block.timestamp - 2 * WINDOW), uint32(block.timestamp - age));
+        pool.setRawCumulatives(0, 0);
+
+        (uint256 p, uint256 ts) = src.latestPrice();
+        assertGt(p, 0, "age 51 is within MAX_OBS_AGE (90) and must price");
+        assertEq(ts, block.timestamp - age, "updatedAt must be the age of the data, 1699999949");
     }
 
     // --------------------------------------------------------------------------------------
