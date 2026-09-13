@@ -73,7 +73,11 @@ export function resolveFacilitatorUrl(env) {
   try {
     parsed = new URL(url);
   } catch {
-    throw new ConfigError(`FACILITATOR_URL is not a URL: ${url}`);
+    // NOT echoed. Unlike the other four, this value is operator configuration that is published
+    // nowhere, and facilitator endpoints routinely carry a key in the path or query. Omitting the
+    // scheme is the commonest URL typo, so the unparseable branch is exactly where a credential
+    // would surface -- to an unauthenticated GET, since this becomes a 500 body.
+    throw new ConfigError('FACILITATOR_URL is not a valid URL (value withheld: it may carry a credential)');
   }
   // A facilitator receives a signed payment authorization. Over plain http that envelope is
   // readable and replayable by anything on the path, so the scheme is checked rather than assumed.
@@ -86,12 +90,17 @@ export function resolveFacilitatorUrl(env) {
 /**
  * A 500 that names the setting at fault, for the operator.
  *
- * It DOES echo a malformed value back -- `PRICE_PAYTO is not an address: my-treasury.eth`. That is
- * deliberate (an operator debugging a typo needs to see the typo) and it is safe HERE only because
- * none of these five is a secret: `payTo` and `amount` are published on the free discovery document
- * anyway, and the other three are public constants. An earlier version of this comment claimed the
- * response leaked no values, which was simply false. Do not extend this helper to a setting that IS
- * secret without changing that behaviour first.
+ * It echoes a malformed value back for FOUR of the five -- `PRICE_PAYTO is not an address:
+ * my-treasury.eth` -- because an operator debugging a typo needs to see the typo, and those four
+ * carry nothing secret: `payTo` and `amount` are published on the free discovery document anyway,
+ * and `asset` and `network` are public constants.
+ *
+ * `FACILITATOR_URL` is the exception and is NOT echoed. It is per-deployment operator configuration,
+ * published nowhere (grep the discovery document -- it is absent), and a facilitator endpoint may
+ * carry a key in its path or query. Two earlier versions of this comment were wrong about this file:
+ * the first claimed no values were echoed at all, the second claimed all five were safe to echo
+ * because "the other three are public constants". `FACILITATOR_URL` is neither published nor a
+ * constant. Classify a setting before adding it here, and withhold it if it can carry a credential.
  *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */

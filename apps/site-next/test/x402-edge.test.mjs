@@ -117,6 +117,19 @@ for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETW
   });
 }
 
+test('an unparseable FACILITATOR_URL is refused WITHOUT echoing it back', async () => {
+  // Unlike the other four settings, this one is operator configuration published nowhere, and a
+  // facilitator endpoint may carry a key in its path or query. Omitting the scheme is the commonest
+  // URL typo, so this branch is exactly where a credential would reach an unauthenticated GET.
+  const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'facilitator.example/x?apiKey=SUPER_SECRET_KEY' }));
+  assert.equal(res.status, 500);
+  const body = await bodyOf(res);
+  assert.ok(!body.detail.includes('SUPER_SECRET_KEY'), 'the credential must not reach the response');
+  assert.ok(!body.detail.includes('facilitator.example'), 'the value must not be echoed at all');
+  assert.match(body.detail, /FACILITATOR_URL/, 'but it must still name the setting at fault');
+  assert.equal(body.vaults, undefined);
+});
+
 test('a non-https FACILITATOR_URL is refused — a signed envelope must not cross plain http', async () => {
   const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'http://facilitator.example/settle' }));
   assert.equal(res.status, 500);
