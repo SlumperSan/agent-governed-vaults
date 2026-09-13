@@ -144,12 +144,20 @@ named `VaultCore::test_staleOracleFreezesDepositsAndExits_whenBasketHeld`. Withi
 freeze is total, and note that `_deposit` reads `navWad()` **unconditionally**, before the capacity
 branch and on both the pending and immediate paths, so an uncapped vault is no less frozen.
 
-On the launch oracle a freeze has exactly **four** causes:
+On the launch oracle a freeze has **seven** causes. An earlier version of this section said
+"exactly four" and listed the first four, contradicting this document’s own read-path section
+sixty lines above, which enumerates the last three correctly:
 
 1. the asset's single feed is past its configured heartbeat;
 2. the price is outside the sane-price band;
 3. the L2 sequencer is down, or up but still inside the 3600 s grace window;
-4. the feed is dead (reverting / non-decoding) or the asset is unlisted.
+4. the feed is dead (reverting / non-decoding) or the asset is unlisted;
+5. the round’s `answer` is non-positive (`ChainlinkOracle.sol:288`);
+6. the round’s `updatedAt` is `0`, an unset or incomplete round (`ChainlinkOracle.sol:289`);
+7. the round’s `updatedAt` is in the future (`ChainlinkOracle.sol:290`).
+
+Causes 5-7 are round-shape rejects: a live, ABI-decoding feed can trip them, so they are not
+covered by "the feed is dead".
 
 There is **no second source to absorb any of them** — see the single-provider residual below.
 
@@ -220,9 +228,16 @@ block 54,991,182, not from the config file that was passed in at deploy time.
   Read the mechanism from the contract, not from that note: omitting the feed does not revert
   anything, it **silently skips the gate** — which is exactly why the note is emphatic.
 - **Base Sepolia sets `sequencerUptimeFeed` to the empty string, i.e. `address(0)`, so the gate is
-  skipped on testnet** — deliberately, per the config note: the gate is exercised by
-  `ChainlinkOracle.t.sol` against a mock (down / within-grace / up), and against three real Base
-  outages in `ChainlinkOracleSequencerFork.t.sol`. **No testnet run is evidence about the gate.**
+  skipped on testnet** — deliberately, per the config note: the gate is exercised deterministically
+  by `ChainlinkOracle.t.sol` against mocks — down, within grace, at the grace boundary,
+  uninitialized, reverting, and USDC-pin-gated. `ChainlinkOracleSequencerFork.t.sol` adds
+  live-history assertions against Base, but read what it actually asserts before leaning on it: it
+  walks at most six prior rounds and, only when it walked at least two, requires **at least one**
+  observed status transition plus one DOWN and one UP round — not three outages, which an earlier
+  version of this bullet claimed and which appears nowhere in that file. It also `vm.skip(true)`s
+  every test when `BASE_MAINNET_RPC_URL` / `BASE_RPC_URL` is unset, and CI has no Base RPC, so on
+  the CI path it contributes no evidence at all. **No testnet run is evidence about the gate**, and
+  neither is a skipped fork run.
 - **Robinhood Chain mainnet (4663) has no sequencer feed either, but this is not a testnet skip —
   it is a live mainnet deployment serving prices with the gate off.** `sequencerUptimeFeed` reads
   back as `address(0)` from the deployed oracle at `0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB`
@@ -318,9 +333,20 @@ block 54,991,182, not from the config file that was passed in at deploy time.
     no observed occurrence in the survey row 14 records.
   - **The re-read fix was rejected on freeze semantics, not gas.** Re-reading `decimals()` per call
     and reverting on mismatch was measured and is affordable; it was rejected because it converts a
-    benign upstream operation into a permanent vault-wide freeze nothing on-chain could lift. Under
-    drift a member on a childless vault still exits whole (`_settleExit` sizes the payout from
-    balances and consults the oracle only to *value* it); under a false freeze nobody exits ever.
+    benign upstream operation into a permanent vault-wide freeze nothing on-chain could lift. Under drift a
+    member on a childless vault is **not** made whole, and an earlier version of this bullet said
+    they were. `_settleExit` sizes the pro-rata slice oracle-free, but the oracle-valued payout
+    does not stop at bookkeeping: it feeds `payoutValueWad` (`_settleExit`, `VaultCore.sol:659`),
+    which sets `gain`, which sets `perfFee` under its `gain / 10` clamp (`VaultCore.sol:701-709`),
+    which sets `feeFracWad` (`VaultCore.sol:725`) — and that fraction is withheld from the
+    member’s **actual tokens** on both legs (`_settleExit`, `VaultCore.sol:728` and `:750`). A +1-decimal drift on
+    a fully-invested vault turns a zero real gain into a phantom one and takes the full 10% cap out
+    of what the member receives. Bounded and one-directional (an under-pricing drift books a loss
+    and takes no fee), but not "whole". The comparison still holds — a bounded haircut against a
+    freeze under which nobody exits ever — and it is now the comparison actually being made.
+    **The same wrong claim is live in two other places** and is out of a docs PR’s scope to edit
+    under `contracts/src/`: the `constructor` comment at `ChainlinkOracle.sol:201-203`, and
+    `docs/LAUNCH-READINESS.md` §4 row 14.
   - **Detection is off-chain and is not fully delivered.** `scripts/verify-chainlink-oracle.mjs` is
     read-only and keyless, and its `decimals() == 8` check is complete *at the sampling instant* —
     but row 14 records that nothing in CI or cron runs it, so its cadence is a human habit rather
@@ -348,9 +374,14 @@ block 54,991,182, not from the config file that was passed in at deploy time.
   uptime feed's own `updatedAt` (see above), an uptime feed stuck at `answer == 0` is
   indistinguishable from a healthy one. Accepted; it is the posture standard Chainlink L2 consumers
   take, and checking `updatedAt` would freeze pricing during normal uptime.
-- **The USDC pin does not measure USDC.** A sustained depeg is mispriced by exactly the depeg. The
-  documented alternative is to list USDC in the feed map instead of pinning it; the constructor
-  forbids doing both.
+- **The USDC pin does not measure USDC — and on the only live deployment the pinned token is not
+  USDC at all.** A sustained depeg is mispriced by exactly the depeg. The documented alternative is
+  to list USDC in the feed map instead of pinning it; the constructor forbids doing both. On 4663
+  this is larger than the generic risk: `ChainlinkOracle.usdc()` reads back
+  `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, whose `symbol()` returns **"USDG"**, not Circle
+  USDC — recorded in `contracts/config/deployments/robinhood-mainnet.json`’s own `usdcNote`, read
+  at block 54,991,182. So the pin holds a *different* token at $1.00, and an earlier version of
+  this list omitted that while citing the same source block.
 - **A price sitting inside the deviation band reads as fresh.** A Chainlink feed updates on its
   heartbeat **or** a deviation-threshold move, so a price up to roughly the deviation band stale is
   legitimately "fresh" to this contract. This is a bounded, inherent-to-Chainlink NAV arb; E7/EE-5
