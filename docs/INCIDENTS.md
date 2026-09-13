@@ -51,7 +51,8 @@ reader can run. Never state a recovery time you cannot evidence.
 > or an exit was therefore hypothetical on this chain. **They are no longer hypothetical.**
 > `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974:
 > `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holds 20 USDG and
-> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 5 USDG, so funds ARE at stake on 4663 and the
+> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 0.001980484 WETH, worth about $4.98 after trading its
+> USDG away, so funds ARE at stake on 4663 and the
 > deposit, proposal and exit sections apply to a live vault from today. Both vaults have also
 > already run governance rounds, so the proposal sections are exercised rather than theoretical.
 > What was already live remains live: the factory, the registries, the fee engine, governance and

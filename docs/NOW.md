@@ -28,7 +28,8 @@ work it describes.
   `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp).
   **Two vaults exist there and both hold real funds:** `verifiedWiring["factory.vaultCount()"]`
   reads 2 at block 61,513,974. `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, 20 USDG)
-  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, 5 USDG), both capped at 50,000
+  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, now 0.001980484 WETH, worth about $4.98
+  after proposal 3 traded its USDG), both capped at 50,000
   USDG. **Both were created by the deployer EOA, not by the creator Safe, which the record's
   `intendedCreator` said must not happen** and which `createVault` makes permanent. See
   `creatorDeviationNote` in the address book; the remedy is a new vault created by the Safe, not a

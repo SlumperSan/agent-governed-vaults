@@ -500,7 +500,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
 > holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
 > two vaults now hold real money on it: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 with 20 USDG
-> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 5 USDG, so the constraint applies there in
+> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 0.001980484 WETH, worth about $4.98, so the constraint applies there in
 > full rather than in principle. Confirm
 > `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
 > the value read back at deployment is in that chain's address book under

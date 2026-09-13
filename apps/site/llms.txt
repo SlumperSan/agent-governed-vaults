@@ -34,8 +34,9 @@
 - TWO VAULTS EXIST ON 4663 AND BOTH HOLD REAL FUNDS. verifiedWiring["factory.vaultCount()"]
   reads 2 at block 61,513,974. The first is 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4, created
   2026-09-10 in block 58,991,819, holding 20 USDG; the second is
-  0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, created 2026-09-12 in block 61,481,025, holding
-  5 USDG. Both are capped at 50,000 USDG by capacityCapUsdc(). This bullet said the opposite until
+  0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, created 2026-09-12 in block 61,481,025, which now
+  holds 0.001980484 WETH, worth about $4.98 and no USDG at all, because its proposal 3 traded the
+  whole balance. Both are capped at 50,000 USDG by capacityCapUsdc(). This bullet said the opposite until
   2026-09-12 -- "THERE IS NOTHING TO DEPOSIT INTO ON 4663" -- which was true when written on
   2026-09-05 and false from 2026-09-10.
 - BOTH VAULTS WERE CREATED BY THE DEPLOYER EOA 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35, NOT

@@ -109,7 +109,8 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 **Two vaults exist on it and both hold real funds.** `verifiedWiring["factory.vaultCount()"]` reads
 2 at block 61,513,974, read from chain 4663 rather than inferred from a broadcast:
 `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, block 58,991,819, 20 USDG) and
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025, 5 USDG).
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025), which after
+proposal 3 holds 0.001980484 WETH, worth about $4.98 and `idleUsdc()` 0.
 
 **Neither was created by the creator Safe, and this document said the first one would be.** Both
 carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
@@ -121,14 +122,23 @@ transactions on chain 4663 (`nonce()` reads 65, the last long before vault #1) w
 nothing. So this was a choice, not an impossibility, and an earlier draft of this paragraph said
 the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
 attested operator and no later transaction can correct it, so the choice is now permanent on both
-vaults. **Member funds ARE at stake on that chain**: 20 USDG and 5 USDG, `idleUsdc()` on each.
+vaults. **Member funds ARE at stake on that chain**, and NOT as USDG on both: vault one reads
+`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH, worth about $4.98 instead,
+because proposal 3 traded its whole balance sixteen minutes before this paragraph was first
+written. An earlier draft said "20 USDG and 5 USDG, `idleUsdc()` on each" and contradicted its own
+next paragraph seven lines below.
 
 **What it proves:** the contracts deploy and wire on that chain, and that a vault can be created,
 funded, governed and rebalanced there. Stated precisely, because an earlier draft of this line
 over-claimed while proposal 3 was still mid-round: three Rebalance proposals have been opened, two
 have executed, and exactly one has moved funds. Proposal 3 on vault two took 5 USDG of `idleUsdc`
-to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling 70 bps above the H-4
-floor. Proposal 1 executed carrying no orders; proposal 2 passed and expired unexecuted. What it does NOT
+to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96 bps above its own
+`minAmountOut`**, which is NOT the same as the H-4 floor and an earlier draft conflated the two:
+`minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
+171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
+(`VaultCore.sol:908-912`), not the measured delta. Proposal 1 executed carrying no orders.
+Proposal 2 is **Passed and still executable**, not expired: `status` 2 with `expiresAt`
+1789340584, roughly 21 hours out at the time of writing. What it does NOT
 prove is the custody shape: `operatorPayoutNote` in the Base Sepolia record requires a Safe rather
 than an EOA as the creator of a production vault, and that requirement was not met here, so the
 evidence is of the mechanism working, not of the intended operator model.

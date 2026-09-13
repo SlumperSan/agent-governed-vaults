@@ -343,7 +343,8 @@ the protocol has been deployed to Base Sepolia and, since 2026-09-05, to Robinho
 mainnet (chain 4663), which makes the warning below sharper rather than softer: this agent can now
 be pointed at a chain whose USDG is real money, and at a factory that will create a real vault for
 whoever calls it. Two vaults exist on it today, 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 and
-0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, both holding real USDG, so there IS something there to
+0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, the first holding USDG and the second a WETH position,
+so there IS something there to
 join and the warning is no longer hypothetical. The guard below is about the key, not about the
 vault, and a key configured against 4663 signs
 whatever it is asked to sign. Note the one guard that already exists and its exact
