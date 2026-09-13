@@ -99,7 +99,12 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the safe
    vault yet. I want the pivot to the all-stocks index." CARD_1_BODY used to
    carry the page-level 50,000/"planned" pairing on its own; that figure
-   described a vault that will not be created, so it comes out entirely
+   described a vault that WOULD not be created — past intent, not a standing
+   fact: two vaults exist on chain 4663 and both read capacityCapUsdc()
+   50000000000, so the figure is real rather than planned, and CARD_1_BODY
+   now says so. The sibling comment in risks-register/entries.tsx:110-113
+   already handled this tense correctly; this copy did not until 2026-09-13.
+   The figure comes out of CARD_1_BODY entirely
    rather than being requalified. Carried verbatim from the "DAO treasuries
    and larger allocators" entry of the "Four groups this is wrong for" list
    on `apps/site/disclaimers.html` as of this deck — apps/site consolidated
