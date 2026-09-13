@@ -7,7 +7,7 @@
  *
  * `contracts/config/deployments/` holds `base-sepolia.json`, a testnet trial, and
  * `robinhood-mainnet.json`, a Robinhood Chain mainnet deployment of 2026-09-05 whose singletons
- * are wired and on which no vault has been created yet. The events here are synthetic for a reason
+ * are wired and on which two vaults hold real funds. The events here are synthetic for a reason
  * no deployment changes, though.
  * The demo needs a specific joint state across three vaults at once — see
  * `fixtures/demo-chain.mjs`, down to a reveal-phase proposal against a commit the demo agent
