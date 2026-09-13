@@ -107,8 +107,11 @@ export const CONDITIONAL_PAGE = new Map([
 /**
  * Every OTHER signal name the runner can currently emit, spelled out on purpose rather than left as
  * "whatever isn't in PAGE_SIGNALS". A signal that lands in NONE of the three categories fails
- * `sinks.test.mjs`'s coverage test instead of silently defaulting to LOG (or PAGE) — and that test
- * enumerates `src/signals/` from disk, so a brand-new signal FILE fails it too, not just a rename.
+ * `sinks.test.mjs`'s coverage test instead of silently defaulting to LOG (or PAGE). That test now
+ * enumerates `EMITTABLE_SIGNALS` — what the runner can actually emit — and a SEPARATE test checks
+ * that declaration against a recursive `readdir` of `src/signals/`. This comment said the coverage
+ * test itself read the directory until 2026-09-13, which was true before that split. The operative
+ * guarantee is unchanged: a brand-new signal FILE still fails `sinks.test.mjs`, not just a rename.
  */
 export const LOG_SIGNALS = new Set(['module-events', 'vault-config']);
 

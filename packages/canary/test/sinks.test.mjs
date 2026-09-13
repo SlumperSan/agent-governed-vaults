@@ -281,8 +281,10 @@ test('coverage: every signal the runner can EMIT is an explicit PAGE / CONDITION
   for (const signal of [...PAGE_SIGNALS, ...CONDITIONAL_PAGE.keys(), ...LOG_SIGNALS]) {
     assert.ok(liveSignals.has(signal), `${signal} is classified but no signal file emits it any more`);
   }
-  // A self-check on the mechanism: eight emittable names when this was written — seven dispatched by
-  // `collectSignals` plus the synthesised `vault-config`.
+  // A self-check on the mechanism: NINE emittable names at this head — eight dispatched by
+  // `collectSignals` plus the synthesised `vault-config`. It read "eight ... seven dispatched"
+  // until 2026-09-13; the commit that added `governance-watch` updated the Set and not this
+  // comment, which is the same drift the Set exists to catch, one level up.
   assert.ok(liveSignals.size >= 8, `only ${liveSignals.size} signals discovered — EMITTABLE_SIGNALS is not being read`);
 });
 
