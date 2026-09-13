@@ -73,8 +73,13 @@ Two things worth knowing before the numbers stop making sense:
 
 - **The settlement token is USDG, not Circle USDC.** Every getter says `Usdc` because that is what
   the contract calls the settlement asset. On this chain it resolves to
-  `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, whose `symbol()` returns `USDG` and whose
-  `decimals()` returns 6. Check it yourself: `cast call $USDG "symbol()(string)" --rpc-url $RPC`.
+  `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, which returned `"USDG"` and `6` when those two
+  getters were read at block 62,156,146. Read them yourself rather than taking it from here:
+
+```bash
+cast call $USDG "symbol()(string)" --rpc-url $RPC
+cast call $USDG "decimals()(uint8)" --rpc-url $RPC
+```
 - **A vault's basket is its own.** The two vaults on this chain do not carry the same assets. Read
   §2 step 8 rather than assuming.
 

@@ -165,10 +165,24 @@ any `priceWad(WETH)` at or above `2491698148247524157496`, which is about 2491.7
 about 0.4% to spare. The check that mattered was the one at execution, and the execute transaction
 succeeding is the proof it passed then.
 
-**What this round does not establish.** `minAmountOut` here is about 98.4% of the oracle-implied
-output at the price above, which is inside the contract's 2% ceiling but **outside** the 1%
-commitment this policy makes in §4.2. That is not a breach, because the policy did not exist; it is
-recorded so the first entry made under v1.0 can be compared against it rather than against nothing.
+**What this round does not establish, and a trap a draft of this entry fell into.** You cannot grade
+this order's `minAmountOut` against §4.2's 99% rule by re-pricing it at today's oracle. Re-pricing a
+fixed `minAmountOut` at a price that has since moved measures the drift in the price, not the rule
+the order was built to. Done that way at block 62,130,940 the arithmetic gives 98.43% of the
+oracle-implied output and reads like a deviation. It is not one.
+
+**Run the rule backwards instead, which is price-independent.** A `minAmountOut` of
+1966530337330907 is exactly 99% of the oracle-implied output at a `priceWad(WETH)` of
+`2517123639556172363185`, about 2517.12, and exactly 98% at about 2491.70. So this order is
+consistent with having been built to a 99% rule at a construction-time price around 2517.12, which
+is roughly 0.6% above where the feed sat at block 62,130,940.
+
+**It cannot be settled from this endpoint, and this entry declines to guess in either direction.**
+`eth_call` at the propose block answers `metadata is not found`: that price is behind the rolling
+archive window, the same constraint the address book records for its own pinned state block. The
+construction-time price is not recoverable, so **no compliance finding is made here**. One line
+written before the vote would have fixed it permanently, and that is the sharpest argument in this
+file for writing entries in advance rather than reconstructing them.
 
 ---
 

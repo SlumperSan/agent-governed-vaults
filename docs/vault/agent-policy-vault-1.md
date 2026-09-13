@@ -120,10 +120,11 @@ produces a proposal.
 
 **3.3 The measurement.** For each basket asset, `V = priceWad(asset) * assetBalance(asset) /
 assetUnit(asset)`. Idle value is `idleUsdc * 10**12`. `NAV` is their sum, which equals `navWad()`
-exactly when the vault has no child vaults, and every vault on this chain does have none:
-`allowSubVaults()` on the factory reads false and `parentVault()` on each vault reads the zero
-address. Weight is `V / NAV` in basis points. **Drift** is the largest absolute difference between
-any asset's weight and its target weight.
+exactly when the vault has no child vaults, and neither vault on this chain has any: at block
+62,156,146 `allowSubVaults()` on the factory reads false, and `parentVault()` reads the zero address
+on both vaults, each read individually rather than inferred from the other. Weight is `V / NAV` in
+basis points. **Drift** is the largest absolute difference between any asset's weight and its target
+weight.
 
 **3.4 The trigger, if and only if.** A proposal is opened when, and only when, drift is at least
 **500 bps** at the evaluation instant and no suspension in §3.5 applies. The proposal is opened
