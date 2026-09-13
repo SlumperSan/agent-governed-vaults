@@ -83,7 +83,7 @@ const result = await buyResource({
     asset: ASSET,
     payTo: '0x…',        // the address YOU expect to be paying
     network: 'base',
-    maxAmount: '150000', // 6 cents of headroom over the documented $0.10 price — never "whatever it asks"
+    maxAmount: '150000', // $0.15 — 5 cents of headroom over the documented $0.10 price, never "whatever it asks"
   },
   walletAddress: account.address,
   domain: { name: domain.name, version: domain.version, chainId: CHAIN_ID, verifyingContract: ASSET },
