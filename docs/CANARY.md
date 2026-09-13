@@ -638,7 +638,7 @@ two lines that behave differently: `feed-identity`'s “could not be probed” d
 “neither probe … could be read” does not. **Every other blind line re-asserts from the first
 sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
 branches set no `minConsecutive`, and neither do the two the runner emits itself
-(`canary-runner.mjs:271`, the `vault … is unreadable` row; and `canary-runner.mjs:248`, the `check ERRORED on vault …` row).
+(`canary-runner.mjs:309`, the `vault … is unreadable` row; and `canary-runner.mjs:286`, the `check ERRORED on vault …` row).
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on: the older blocks are never
