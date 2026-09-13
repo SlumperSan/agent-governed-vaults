@@ -88,14 +88,36 @@ export function parseChallengeHeader(headerValue) {
 }
 
 /**
+ * Parse the `PAYMENT-RESPONSE` header value into a receipt object. Same null-on-malformed rule as
+ * `parseChallengeHeader`, and for a sharper reason here: by the time this is called the payment has
+ * ALREADY been authorized and accepted (the response is a `200`) — a bare `JSON.parse` throw at
+ * this point would discard the paid body over a cosmetic problem with the receipt, which is a worse
+ * failure than serving the data with no receipt. Losing the receipt is a real loss (nothing to
+ * reconcile against the chain later, see the integration doc's "what the receipt id is good for"),
+ * but it must never cost the caller the thing they already paid for.
+ * @param {string|null|undefined} headerValue
+ */
+export function parseReceiptHeader(headerValue) {
+  if (!headerValue) return null;
+  try {
+    const parsed = JSON.parse(headerValue);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Validate a 402 challenge against what the caller expects BEFORE any signature is produced.
  * Throws `ChallengeMismatchError` on the first mismatch found; returns nothing on success.
  *
  * Every field the buyer is required to check per the task this module exists for: amount (capped
- * by `expected.maxAmount`, never trusted as a floor), asset, payTo, network, and expiry (both "not
+ * by `expected.maxAmount`, never trusted as a floor, and required to be the exact canonical decimal
+ * shape this repo signs — see the comment inline), asset, payTo, network, and expiry (both "not
  * already expired" and, unless the caller opts out, "not implausibly long-lived" — a challenge
  * that stays payable for hours is a bigger blast radius than the ~5 minute default this repo's own
- * `buildChallenge` issues, see `apps/api/src/x402.mjs`).
+ * `buildChallenge` issues, see `apps/api/src/x402.mjs`). `nonce` gets the same canonical-shape
+ * treatment as `amount`, for the same reason: it is reused verbatim in what gets signed.
  *
  * @param {object} challenge
  * @param {Object} expected
@@ -131,16 +153,27 @@ export function validateChallenge(challenge, expected, nowMs) {
   if (typeof challenge.network !== 'string' || challenge.network.toLowerCase() !== String(expected.network).toLowerCase())
     throw new ChallengeMismatchError('network-mismatch', { got: challenge.network, want: expected.network });
 
-  let amount;
-  try {
-    amount = BigInt(challenge.amount);
-  } catch {
+  // STRICT DECIMAL SHAPE, NOT JUST "BigInt() ACCEPTS IT". `BigInt` happily parses `"0x186a0"` and
+  // whitespace-padded strings, so checking `BigInt(challenge.amount) <= max` alone validates a
+  // NUMERIC VIEW of the amount while `authorizeFromChallenge` (packages/agent-sdk/src/eip3009.mjs)
+  // signs `challenge.amount` VERBATIM as `authorization.value` — a hex-spelled amount that BigInt
+  // reads as within budget would still be the string actually signed, and downstream typed-data
+  // encoding of that string is not guaranteed to agree with the value just validated. Requiring the
+  // canonical decimal shape this repo's own `buildChallenge` always emits ties what is checked to
+  // what is signed, with no gap for a differently-spelled-but-numerically-equal string to hide in.
+  if (typeof challenge.amount !== 'string' || !/^(0|[1-9][0-9]*)$/.test(challenge.amount))
     throw new ChallengeMismatchError('bad-amount', { got: challenge.amount });
-  }
-  if (amount < 0n) throw new ChallengeMismatchError('bad-amount', { got: challenge.amount });
+  const amount = BigInt(challenge.amount);
   const maxAmount = BigInt(expected.maxAmount);
   if (amount > maxAmount)
     throw new ChallengeMismatchError('amount-exceeds-max', { got: amount.toString(), max: maxAmount.toString() });
+
+  // Same reasoning as the amount check, one field over: `challenge.nonce` is reused verbatim as
+  // the EIP-3009 authorization's on-chain nonce (`apps/api/src/x402.mjs:48-56`'s comment), so an
+  // unchecked shape here is an unchecked shape in what gets signed. This repo's own `buildChallenge`
+  // always emits `0x` + 64 lowercase hex chars (32 bytes); accept exactly that.
+  if (typeof challenge.nonce !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(challenge.nonce))
+    throw new ChallengeMismatchError('bad-nonce', { got: challenge.nonce });
 
   const expiresAt = Number(challenge.expiresAt);
   if (!Number.isFinite(expiresAt))
@@ -253,8 +286,7 @@ export async function buyResource({
     });
   }
 
-  const receiptHeader = second.headers.get('payment-response');
-  const receipt = receiptHeader ? JSON.parse(receiptHeader) : null;
+  const receipt = parseReceiptHeader(second.headers.get('payment-response'));
   return { paid: true, status: 200, data: body, receipt, challenge, envelope };
 }
 

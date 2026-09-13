@@ -17,6 +17,7 @@ import {
   buyResource,
   validateChallenge,
   parseChallengeHeader,
+  parseReceiptHeader,
   signerFromAccount,
   parseUsdcAmount,
   isAddress,
@@ -114,6 +115,37 @@ test('buyResource: 402 -> validate -> sign -> retry -> 200 with data and receipt
   } finally {
     await close();
   }
+});
+
+test('buyResource: a malformed PAYMENT-RESPONSE header does not discard the paid body', async () => {
+  // The authorization was already signed and accepted (the server answered 200) by the time this
+  // header is read — a bare JSON.parse here would throw AFTER the money moved, discarding the very
+  // data the caller just paid for over a cosmetic problem with the receipt. That must never happen:
+  // the receipt comes back null, not an exception, and the paid body is still returned.
+  const { url, close } = await startFakeServer({
+    onPaid: (req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'payment-response': '{not json' });
+      res.end(JSON.stringify({ vaults: [{ id: 1 }] }));
+    },
+  });
+  try {
+    const { sign, calls } = spySign();
+    const result = await buyResource({ url, expected: EXPECTED, walletAddress: WALLET, domain: DOMAIN, sign });
+    assert.equal(result.paid, true);
+    assert.deepEqual(result.data, { vaults: [{ id: 1 }] }, 'the paid body must survive a malformed receipt header');
+    assert.equal(result.receipt, null);
+    assert.equal(calls.length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('parseReceiptHeader returns null rather than throwing on anything malformed', () => {
+  assert.equal(parseReceiptHeader(null), null);
+  assert.equal(parseReceiptHeader(undefined), null);
+  assert.equal(parseReceiptHeader('not json'), null);
+  assert.equal(parseReceiptHeader('"a string, not an object"'), null);
+  assert.deepEqual(parseReceiptHeader(JSON.stringify({ receiptId: '0xabc' })), { receiptId: '0xabc' });
 });
 
 test('buyResource: a free (200) resource returns immediately and never signs', async () => {
@@ -316,6 +348,34 @@ test('validateChallenge rejects a non-object and a wrong x402Version', () => {
   assert.throws(() => validateChallenge(challenge({ x402Version: 1 }), EXPECTED, Date.now()), { reason: 'x402Version-mismatch' });
 });
 
+test('validateChallenge rejects an amount that is numerically in-budget but not the canonical decimal shape this repo signs', () => {
+  // BigInt("0x186a0") === 100000n, exactly the price — but that is not the string
+  // `authorizeFromChallenge` would sign into `authorization.value`, so accepting it here would
+  // validate a different value than the one actually signed. Same for whitespace and a leading `+`.
+  for (const bad of ['0x186a0', ' 100000', '100000 ', '+100000', '1e5', '100000.0', '-1']) {
+    assert.throws(
+      () => validateChallenge(challenge({ amount: bad }), EXPECTED, Date.now()),
+      { reason: 'bad-amount' },
+      `expected ${JSON.stringify(bad)} to be rejected as bad-amount`,
+    );
+  }
+});
+
+test('validateChallenge accepts "0" but never a leading-zero-padded amount', () => {
+  assert.doesNotThrow(() => validateChallenge(challenge({ amount: '0' }), EXPECTED, Date.now()));
+  assert.throws(() => validateChallenge(challenge({ amount: '000100000' }), EXPECTED, Date.now()), { reason: 'bad-amount' });
+});
+
+test('validateChallenge rejects a malformed nonce — wrong length, missing prefix, or non-hex', () => {
+  for (const bad of ['0x' + 'd'.repeat(63), '0x' + 'd'.repeat(65), 'd'.repeat(64), '0x' + 'z'.repeat(64), '', 123]) {
+    assert.throws(
+      () => validateChallenge(challenge({ nonce: bad }), EXPECTED, Date.now()),
+      { reason: 'bad-nonce' },
+      `expected ${JSON.stringify(bad)} to be rejected as bad-nonce`,
+    );
+  }
+});
+
 test('parseChallengeHeader returns null rather than throwing on anything malformed', () => {
   assert.equal(parseChallengeHeader(null), null);
   assert.equal(parseChallengeHeader(undefined), null);
@@ -387,6 +447,20 @@ test('resolveBuyConfig refuses when --network or --max is omitted — no default
   assert.throws(() => resolveBuyConfig({ env: BASE_ENV, args: noNetwork }), /--network is required/);
   const { max, ...noMax } = BASE_ARGS;
   assert.throws(() => resolveBuyConfig({ env: BASE_ENV, args: noMax }), /--max is required/);
+});
+
+test('resolveBuyConfig refuses a bare flag with no value, rather than silently stringifying `true`', () => {
+  // `parseArgs` maps a bare `--network` (no `=value`) to the boolean `true`. A check that only asks
+  // "is this truthy" would let that through and hand `String(true)` = `"true"` downstream as the
+  // network name — passing the "required" check while still not being a real value. Every required
+  // flag must be checked for being an actual, non-empty string.
+  for (const key of ['url', 'network', 'rpc-url', 'asset', 'pay-to', 'max']) {
+    assert.throws(
+      () => resolveBuyConfig({ env: BASE_ENV, args: { ...BASE_ARGS, [key]: true } }),
+      /needs a value \(got a bare flag\)/,
+      `expected --${key}=true (bare flag) to be refused`,
+    );
+  }
 });
 
 test('resolveBuyConfig refuses a key passed as a CLI argument', () => {

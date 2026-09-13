@@ -99,6 +99,18 @@ function requireSecureUrl(u, flagName) {
 export function resolveBuyConfig({ env, args }) {
   const problems = [];
 
+  // A bare flag with no `=value` (`--network` on its own) parses to the boolean `true`, not a
+  // string — see `parseArgs`. Checking only truthiness below would let that pass as "provided" and
+  // hand `String(true)` = `"true"` downstream as the network name, silently defeating the "never
+  // defaulted" guarantee this function exists to give. So every required flag is checked for being
+  // a non-empty STRING, not merely present.
+  const requireStringArg = (key, flagName, note) => {
+    const v = args[key];
+    if (v === undefined) problems.push(`${flagName} is required${note ? ` (${note})` : ''}`);
+    else if (typeof v !== 'string' || v === '')
+      problems.push(`${flagName} needs a value (got a bare flag) — pass ${flagName}=<value>`);
+  };
+
   if (args.key || args['private-key'] || args.privateKey)
     problems.push('a key must never be passed as a CLI argument — set BUYER_KEYSTORE / BUYER_KEYSTORE_PASSWORD instead');
   if (env.BUYER_PRIVATE_KEY || env.PRIVATE_KEY)
@@ -106,15 +118,15 @@ export function resolveBuyConfig({ env, args }) {
   if (!env.BUYER_KEYSTORE) problems.push('BUYER_KEYSTORE (path to a keystore file) is not set');
   if (!env.BUYER_KEYSTORE_PASSWORD) problems.push('BUYER_KEYSTORE_PASSWORD is not set');
 
-  if (!args.url) problems.push('--url is required');
-  if (!args.network) problems.push('--network is required (never defaulted — e.g. "base", never assumed)');
-  if (!args['rpc-url']) problems.push('--rpc-url is required (never defaulted — used to read the USDC EIP-712 domain and chain id)');
-  if (!args.asset) problems.push('--asset is required (the USDC contract address you expect the challenge to name)');
-  if (!args['pay-to']) problems.push('--pay-to is required (the recipient address you expect the challenge to name)');
-  if (args.max === undefined) problems.push('--max is required (the most you are willing to pay, in USDC — never defaulted)');
+  requireStringArg('url', '--url');
+  requireStringArg('network', '--network', 'never defaulted — e.g. "base", never assumed');
+  requireStringArg('rpc-url', '--rpc-url', 'never defaulted — used to read the USDC EIP-712 domain and chain id');
+  requireStringArg('asset', '--asset', 'the USDC contract address you expect the challenge to name');
+  requireStringArg('pay-to', '--pay-to', 'the recipient address you expect the challenge to name');
+  requireStringArg('max', '--max', 'the most you are willing to pay, in USDC — never defaulted');
 
-  if (args.asset && !isAddress(args.asset)) problems.push(`--asset is not an address: ${args.asset}`);
-  if (args['pay-to'] && !isAddress(args['pay-to'])) problems.push(`--pay-to is not an address: ${args['pay-to']}`);
+  if (typeof args.asset === 'string' && !isAddress(args.asset)) problems.push(`--asset is not an address: ${args.asset}`);
+  if (typeof args['pay-to'] === 'string' && !isAddress(args['pay-to'])) problems.push(`--pay-to is not an address: ${args['pay-to']}`);
 
   if (problems.length) throw new Error('cannot start x402-buy:\n  - ' + problems.join('\n  - '));
 

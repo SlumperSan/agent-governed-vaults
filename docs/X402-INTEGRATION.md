@@ -23,7 +23,7 @@ that first if you haven't. This file starts after discovery, at "I have a URL an
    `payTo`, `network` and `expiresAt` are all server-controlled and a server can put anything in
    them. §2 lists what each field means; §6 (the security property) is why this step exists.
 4. Sign an EIP-3009 `transferWithAuthorization` authorization over the challenge's `asset`, `amount`
-   and `payTo` (`packages/agent-sdk/src/eip3009.mjs:92-118`, `authorizeFromChallenge`).
+   and `payTo` (`packages/agent-sdk/src/eip3009.mjs:92-113`, `authorizeFromChallenge`).
 5. Base64 the envelope — **plain JSON**, `{x402Version, scheme, network, signature, authorization}`
    (`packages/agent-sdk/src/eip3009.mjs:67-75`, `buildEnvelope`) — into a `PAYMENT-SIGNATURE` header
    and repeat the GET.
@@ -36,12 +36,12 @@ that first if you haven't. This file starts after discovery, at "I have a URL an
 | Field | Meaning |
 |---|---|
 | `scheme` | Payment scheme. This route only ever issues `"exact"` (EIP-3009 on EVM) — never `"exact-svm"`, since `apps/site-next/functions/api/vaults.js` never sets `price.svm` (`apps/api/src/x402.mjs:145` gates the SVM branch on that field, server-side config only, never on anything a client sends). |
-| `asset` | The USDC contract address you're being asked to pay with. On this deployment it should be Circle-native USDC on Base mainnet, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (`apps/site-next/functions/api/_price.js:20`, `BASE_MAINNET_USDC`) — **check it against that constant yourself**; a challenge naming anything else is not this deployment behaving correctly. |
+| `asset` | The USDC contract address you're being asked to pay with. On this deployment it should be Circle-native USDC on Base mainnet, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (`apps/site-next/functions/api/_price.js:28`, `BASE_MAINNET_USDC`) — **check it against that constant yourself**; a challenge naming anything else is not this deployment behaving correctly. |
 | `amount` | Integer string, USDC base units (6dp). `docs/REVENUE.md` §2 prices this route at $0.10 = `"100000"`, but the price is operator-configured (`PRICE_AMOUNT`) and can change — treat the challenge's `amount` as authoritative for what you'll actually be charged, and your own maximum as the thing that must never be exceeded. |
-| `payTo` | The recipient address. This is an operator-controlled value with no repo-side default (`apps/site-next/functions/api/_price.js:35-42`, `requireAddr(env, 'PRICE_PAYTO')` — refused rather than defaulted, so a misconfigured deployment answers 500, never silently pays the wrong address). You must know in advance who you expect to be paying. |
+| `payTo` | The recipient address. This is an operator-controlled value with no repo-side default — `resolvePrice` (`apps/site-next/functions/api/_price.js:57-68`) reads it with `requireAddr(env, 'PRICE_PAYTO')` at `:64`, refused rather than defaulted, so a misconfigured deployment answers 500, never silently pays the wrong address. You must know in advance who you expect to be paying. |
 | `network` | A bare string, e.g. `"base"` (`docs/REVENUE.md:108`) — **not** the CAIP-2 identifier (`eip155:8453`) the published spec uses. See §5. |
 | `nonce` | 32-byte hex, fresh per challenge, reused verbatim as the EIP-3009 authorization's on-chain nonce — the doc comment directly above `buildChallenge` in `apps/api/src/x402.mjs` explains why it must be unpredictable, not a counter. |
-| `expiresAt` | Unix milliseconds. This repo's own `authorizeFromChallenge` does **not** read it to set the authorization's `validBefore` — it uses a fixed 300s TTL from your signing time regardless (`packages/agent-sdk/src/eip3009.mjs:92-118`). Check it anyway: a stale or implausibly long-lived challenge is a signal something is wrong upstream of you (a caching proxy, or a server not generating fresh challenges). |
+| `expiresAt` | Unix milliseconds. This repo's own `authorizeFromChallenge` does **not** read it to set the authorization's `validBefore` — it uses a fixed 300s TTL from your signing time regardless (`packages/agent-sdk/src/eip3009.mjs:92-113`). Check it anyway: a stale or implausibly long-lived challenge is a signal something is wrong upstream of you (a caching proxy, or a server not generating fresh challenges). |
 
 ## 3. A copy-pasteable snippet
 
@@ -66,6 +66,8 @@ const result = await buyResource({
     maxAmount: '150000', // 6 cents of headroom over the documented $0.10 price — never "whatever it asks"
   },
   walletAddress: account.address,
+  // Illustrative only — see the note below the snippet. Read `name`/`version` from the chain
+  // (readUsdcDomain) rather than hardcoding either of these.
   domain: { name: 'USD Coin', version: '2', chainId: 8453, verifyingContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
   sign: signerFromAccount(account),
 });
@@ -73,12 +75,22 @@ const result = await buyResource({
 console.log(result.paid, result.receipt, result.data);
 ```
 
-`domain.name`/`domain.version` are the USDC contract's own EIP-712 domain, and this repo's own
-evidence is that it **varies by chain**: Base Sepolia's deployment reports `"USDC"`, mainnet reports
-`"USD Coin"` (`apps/api/src/facilitator.mjs:202-204`, and `docs/X402-LIVE-REPORT.md`'s "Events
-emitted by the settlement" section records the mainnet-shaped domain check passing). Read it from
-the chain rather than hardcoding it — `readUsdcDomain` in `apps/api/src/facilitator.mjs:216-233` does
-this and is what `scripts/x402-buy.mjs` calls before signing anything.
+`domain.name`/`domain.version` are the USDC contract's own EIP-712 domain, and it **varies by
+chain** — this matters more than it looks, because signing under the wrong name/version does not
+fail loudly: it produces a structurally valid signature over a *different* struct hash, which
+recovers to an unrelated address, and the failure surfaces downstream as a mysterious rejection
+rather than at signing time.
+
+What this repository has actually verified, and only this: `docs/X402-LIVE-REPORT.md` §6
+(`:119-142`) read the domain from Base **Sepolia**'s deployment on-chain and reproduced its
+`DOMAIN_SEPARATOR()` with `name()="USDC"`, `version()="2"` — and, in the same table, explicitly
+**ruled out** `"USD Coin"`/`"2"` (computed separator `0x2f5ab5ee…068b`, does not match). **There is
+no recorded mainnet domain check in this repository.** `apps/api/src/facilitator.mjs:202-204`'s
+comment asserts mainnet USDC reports `"USD Coin"`, but that is a comment claim, not something this
+repo's own evidence has checked on mainnet the way §6 checked Sepolia — do not treat it as
+equivalent proof. Read the domain from the chain rather than hardcoding either value —
+`readUsdcDomain` in `apps/api/src/facilitator.mjs:216-233` does this and is what
+`scripts/x402-buy.mjs` calls before signing anything.
 
 For a one-shot real purchase from a terminal — the CLI wrapping the same library, reading its key
 from an encrypted keystore rather than any argument or bare environment variable:
@@ -113,6 +125,7 @@ the non-SVM branch of that function is reachable:
 | `bad-value` | `authorization.value` isn't parseable as an integer |
 | `underpaid` | `authorization.value` is less than the price |
 | `authorization-expired` | `authorization.validBefore` is already in the past |
+| `scheme-mismatch` | Your envelope declared `scheme: "exact-svm"` (`apps/api/src/x402.mjs:155`) against this EVM-only route — send `scheme: "exact"` |
 
 A settlement attempt that the facilitator refuses also comes back as `402`, body
 `{error: "settlement failed: <reason>", challenge}` — that shape is `gate`'s own
@@ -124,7 +137,7 @@ vocabulary. One observed value, from a real replay against a real facilitator on
 doing its job, not something this route's own code decides.
 
 **`500` — route misconfigured.** Body `{error: "route misconfigured", detail: "<VAR> is not set on
-this deployment"}` (`apps/site-next/functions/api/_price.js:79-90`, `configErrorResponse`). Fires when any
+this deployment"}` (`apps/site-next/functions/api/_price.js:98-107`, `configErrorResponse`). Fires when any
 of `PRICE_ASSET`, `PRICE_PAYTO`, `PRICE_AMOUNT`, `PRICE_NETWORK` or `FACILITATOR_URL` is missing or
 malformed on the Cloudflare Pages project — deliberately refused rather than defaulted
 (`docs/REVENUE.md` §3, "It fails closed"). This is an operator-configuration state, not something a
@@ -163,9 +176,12 @@ flat object with no `accepts` array, no `resource`, no `maxTimeoutSeconds`, no `
 — the signature and authorization live under `payload`, not at the top level. This repo's
 `buildEnvelope` (`packages/agent-sdk/src/eip3009.mjs:67-75`) puts `signature` and `authorization`
 directly on the envelope, alongside `scheme` and `network` which the spec instead nests inside
-`accepted`. `decodeSignatureHeader` (`apps/api/src/x402.mjs:92-117`) requires exactly this flat shape
-— `typeof env.signature === 'string' && typeof env.authorization === 'object'` at the top level — so
-a spec-conformant nested payload would decode as malformed here, not as an accepted payment.
+`accepted`. `decodeSignatureHeader` (`apps/api/src/x402.mjs:92-117`) accepts exactly two flat
+shapes — EVM, `typeof env.signature === 'string' && typeof env.authorization === 'object'` at the
+top level, or SVM, `{scheme:'exact-svm', transaction}` (`apps/api/src/x402.mjs:110-111`) — and
+this route's price never selects the SVM one. Neither shape is the spec's nested
+`payload.signature`/`payload.authorization`, so a spec-conformant nested payload would decode as
+malformed here, not as an accepted payment.
 
 **5.3 — Two of the three headers are the wrong encoding.** The spec's HTTP transport
 (`specs/transports-v2/http.md`, "Header Summary") requires **all three** protocol headers —
@@ -195,9 +211,12 @@ mainnet, `eip155:84532` for Base Sepolia. This repo uses bare strings, `"base"` 
 **5.6 — The `extra` domain hint is absent, and its absence has a real cost.** Spec §5.1.2
 (`x402-specification-v2.md:123`) documents `extra` as an optional bag on each `accepts[]` entry, and
 the spec's own worked example fills it with `{name:"USDC", version:"2"}` — precisely the asset's
-EIP-712 domain name and version. This repo's challenge carries no `extra` at all, and — independently
-of the spec gap — this repo's own evidence is that the domain genuinely varies by deployment:
-`"USDC"` on Base Sepolia, `"USD Coin"` on mainnet (`apps/api/src/facilitator.mjs:202-204`). A client
+EIP-712 domain name and version. This repo's challenge carries no `extra` at all, and —
+independently of the spec gap — this repo's own evidence (`docs/X402-LIVE-REPORT.md` §6,
+`:119-142`) is that the domain genuinely varies by deployment: it verified `"USDC"`/`"2"` on Base
+Sepolia and explicitly ruled out `"USD Coin"`/`"2"` there. `apps/api/src/facilitator.mjs:202-204`'s
+comment additionally claims mainnet reports `"USD Coin"`, but — as §3 above says — this repository
+has no recorded on-chain check of that; do not treat the comment as equivalent evidence. A client
 that only spoke the spec's `accepts[].extra` field would have the answer handed to it; a client
 against this endpoint has none and must read the domain off-chain itself — which is what
 `readUsdcDomain` (`apps/api/src/facilitator.mjs:216-233`) and this doc's `scripts/x402-buy.mjs` CLI
@@ -235,8 +254,8 @@ distribution decision `docs/REVENUE.md` §6 already flags as phase-2 work, and d
 registration mechanics nobody has yet confirmed from a primary source.
 
 **Secondary, unconfirmed:** `docs/RESEARCH-SPRINT1.md:59-61` records that Coinbase operates a
-CDP-hosted facilitator at `https://x402.org/facilitator` with API-key auth, covering Base and Base
-Sepolia. That claim comes from that research brief, not from independent verification in this
+CDP-hosted facilitator at `https://x402.org/facilitator` with API-key auth, covering Base, Base
+Sepolia, Solana and Solana Devnet. That claim comes from that research brief, not from independent verification in this
 session, and is not confirmed here.
 
 ## 8. What the receipt id is good for
