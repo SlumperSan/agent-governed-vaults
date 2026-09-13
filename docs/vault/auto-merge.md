@@ -12,6 +12,24 @@ Each finding gets its own `security/*` branch and PR; CI runs the full battery (
 
 This pairs with [[continuous-autonomous-mode]]: parallel workers each own a finding, and the merge queue serializes their output onto the live branch without a human gate per PR. **Caveat, learned the hard way:** the worktree is shared across concurrent sessions, so `git add -A` is banned here; it once swept another sprint's contracts into an unrelated PR. Stage explicitly.
 
+**Standing exceptions (security-ops §3, launch gate 10).** Two cases never auto-merge, however green the board:
+
+- **Any `viem` or `@noble/*` version bump gets a human review gate.** A human reads the diff, or at minimum the release provenance, before it lands. These are the signing-path dependencies; no agent merges them on CI alone. `@noble/ciphers`, `@noble/curves` and `@noble/hashes` are all installed by `npm ci --omit=dev` against this lockfile, so this is not a hypothetical class.
+- **No new runtime dependency without an explicit, recorded decision.** There are three declared runtime dependencies — `viem`, `@solana/web3.js`, `@solana/spl-token` — and each one spends a budget measured in packages rather than in names. Do not take a figure from this paragraph; re-derive it. There are **three** numbers here with three different provenances, and an earlier version of this bullet ran two of them together:
+
+  ```
+  npm ci --omit=dev --no-audit --no-fund --dry-run
+  node -e "const d=require('./package-lock.json');console.log(Object.entries(d.packages).filter(([k,v])=>k&&!v.dev&&!v.devOptional).length)"
+  ```
+
+  Run the first in a directory holding **only** `package.json` and `package-lock.json` — the context the Dockerfile's `COPY` actually builds — and it reports **84**. That, and only that, is the image. Run it at the repo root and it reports **98**, because the workspaces are present and `apps/site-next` brings `react`, `react-dom`, `framer-motion`, `gsap`, `lenis`, the `motion*` trio, `scheduler` and four `@fontsource*` faces with it. The second command counts non-dev lockfile keys: **99**, the 98 plus the `apps/site-next` workspace entry itself.
+
+  So the pairwise gaps are **1** (99 vs 98), **14** (98 vs 84) and **15** (99 vs 84) — none of them "roughly twenty", which is what this bullet claimed while also pointing at the repo-root command as the image's. `typescript` is in all three sets, the image included, as a peer of viem, `abitype`, `ox`, `@solana/errors` and the `@solana/codecs*` family; the earlier list of packages "not reachable from the three runtime roots" named it, and named `react` and `framer-motion` as though the root install excluded them. The figure before that read 13 and was simply stale.
+
+  One trap in the first command, worth stating because it produced a wrong number while this bullet was being corrected: `--dry-run` reports a **delta** against whatever `node_modules` already exists, so in a populated worktree it prints something like `removed 21 packages` and no total at all. Every figure above came from a clean directory.
+
+  A PR that grows `dependencies` in `package.json` waits for that decision; it is not a CI question.
+
 Because the fixes are additive and gated by CI, gate 8 ("all CI gates green at the candidate ref") stays GO throughout, though a green board certifies the gates *ran*, not that the protocol is *safe* ([[launch-readiness-gates]]).
 
 ## Links

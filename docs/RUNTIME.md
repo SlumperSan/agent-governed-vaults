@@ -69,11 +69,35 @@ produces the addresses this guide consumes, [TESTNET-CHECKLIST.md](TESTNET-CHECK
 ## 2. Prerequisites
 
 - **Node 24+** (`node --version`).
-- **viem**: the sole runtime dependency, lazily imported. Install it once at the repo root:
+- **viem**, plus **@solana/web3.js** and **@solana/spl-token**: the three declared runtime
+  dependencies. Install them once at the repo root:
   ```bash
   npm install
   ```
-  (The test suite needs no dependencies; only the running indexer/API/settler import viem.)
+  **They do not load the same way, and a single word for all three is what went wrong here.**
+  viem is loaded lazily and optionally: every runtime site is an `await import('viem')` guarded
+  by `.catch()` — `packages/indexer/src/rpc.mjs:77`, `packages/canary/src/reader.mjs:137`,
+  `apps/api/src/facilitator.mjs:113` and `:218` among them — and there is no static
+  `from 'viem'` anywhere under a `src/` directory. The two Solana packages are the opposite:
+  `apps/api/src/facilitator-svm.mjs` and `packages/agent-sdk/src/svm-exact.mjs` name them in
+  top-level `import` statements, and `apps/api/src/serve.mjs` imports the first of those the same
+  way, so starting the API loads both whether or not `FACILITATOR=svm` is set. The opt-in gates
+  the keypair, not the load. Those three are cited without line numbers on purpose: an `import`
+  sits inside no declaration, so `doc-claims` cannot anchor a citation to one — it rejects the
+  citation outright, and for any that slipped through it could never report later drift. `grep`
+  for the binding instead.
+
+  Two further claims stood here and were false; they are recorded rather than quietly dropped,
+  because each passed every gate. **"No guard walks this file"**:
+  `scripts/test/claims-lede-truth.test.mjs` walks every `.md` outside its `SKIP_DIRS`, which does
+  not list `docs` — this file is walked. It matches banned claim *shapes*, and a false dependency
+  claim is not one of them, so being walked was never going to catch it. **"The test suite needs
+  no dependencies; only the running indexer/API/settler import viem"**: five test files import
+  these packages statically and fail outright without them —
+  `packages/canary/test/exit-liveness.test.mjs`, `packages/reference-agent/test/loop.test.mjs`
+  and `packages/reference-agent/test/salt.test.mjs` for viem;
+  `apps/api/test/facilitator-svm.test.mjs` and `packages/agent-sdk/test/svm-exact.test.mjs`
+  for the Solana pair.
 - A **Base RPC URL** (mainnet `8453` or Base Sepolia `84532`). A public endpoint works for low
   volume; use a provider endpoint for production throughput.
 - **Deployed contract addresses** + the **deploy block**. On testnet these come from the
@@ -90,7 +114,7 @@ facilitator so you don't need a live facilitator to see the loop work. **Stub ac
 without on-chain settlement: dev only.**
 
 ```bash
-npm install                      # pulls viem
+npm install                      # pulls viem and the two Solana packages
 cp .env.example .env             # then edit .env (see the table in §5)
 ```
 
