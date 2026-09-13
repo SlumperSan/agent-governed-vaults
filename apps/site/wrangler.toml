@@ -1,0 +1,60 @@
+# Cloudflare Pages configuration for rwally.com.
+#
+# WHERE THIS FILE HAS TO LIVE, AND WHY IT IS NOT AT THE REPOSITORY ROOT.
+# Pages bundles Functions from `./functions` RELATIVE TO THE DIRECTORY WRANGLER RUNS IN — not from
+# inside the uploaded asset directory. The first publish of this site (2026-09-05) learned that the
+# hard way. The upload directory is `apps/site`, so wrangler is run from `apps/site`, so `./functions`
+# is `apps/site/functions` and this file sits beside it. Moving it to the repository root would make
+# `./functions` resolve to a directory that does not exist and the site would deploy with NO
+# Functions at all — which fails silently: the static assets still publish, `_middleware.js` stops
+# running, and the hostname canonicalization plus the metered route both just disappear.
+#
+# WHY `nodejs_compat` IS REQUIRED AND IS NOT OPTIONAL.
+# `functions/api/vaults.js` imports `apps/api/src/x402.mjs` rather than reimplementing the 402
+# handshake, which is deliberate — one implementation of a payment protocol, not two that drift.
+# That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` to decode
+# the base64 payment envelope. Both are Node built-ins that the Workers runtime provides only under
+# this flag. Without it the bundle fails to build, which is the good failure; the flag is recorded
+# here rather than set in the dashboard so that the requirement travels with the code.
+
+# WRANGLER 4 OR NEWER IS REQUIRED, AND WRANGLER 3 FAILS LOUDLY RATHER THAN SUBTLY.
+# `functions/api/_snapshot.json` is imported with an import attribute — `with { type: 'json' }` —
+# because Node REQUIRES the attribute for JSON modules (without it `node --test` cannot even load
+# the route, which is how the site test suite exercises it). Wrangler 3 bundles with an esbuild old
+# enough to reject that syntax outright:
+#
+#   X [ERROR] Expected ";" but found "with"    functions/.well-known/x402.js:15:45
+#
+# Wrangler 4 compiles it. Measured on 2026-09-13: `wrangler@3 pages functions build` fails with the
+# error above and `wrangler@4 pages functions build` reports "Compiled Worker successfully" and
+# emits a 31 KB bundle containing the real `gate` from apps/api. Nothing about this is a preference:
+# Node needs the attribute and wrangler 3 cannot parse it, so there is no version of these files
+# that satisfies both.
+
+name = "rwally"
+pages_build_output_dir = "."
+compatibility_date = "2026-09-13"
+compatibility_flags = ["nodejs_compat"]
+
+# NO SECRETS OR PRICES ARE SET HERE, ON PURPOSE.
+#
+# `PRICE_PAYTO` decides who receives a caller's USDC. Committing it would put a payee address in git
+# history where a reviewer reads it as documentation rather than as live configuration, and rotating
+# it would become a code change and a redeploy.
+#
+# The five settings the metered route needs are set on the Pages project itself (Settings ->
+# Environment variables, Production), and `functions/api/_price.js` REFUSES to serve rather than
+# defaulting any of them — `apps/site/test/x402-edge.test.mjs` pins that behaviour for each one
+# individually:
+#
+#   PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913   Circle-native USDC on Base, 6dp.
+#                                                                 NOT USDbC (0xd9aA...4CA2).
+#   PRICE_PAYTO      <the address that receives metered-read payments>
+#   PRICE_AMOUNT     100000                                       base units, 6dp = $0.10
+#   PRICE_NETWORK    base
+#   FACILITATOR_URL  <https url of an x402 facilitator that settles on Base mainnet>
+#
+# None of these is a private key, and this deployment cannot hold one. The only facilitator mode in
+# this repository that holds a key is `svm` (Solana, where this process would be the fee payer);
+# `functions/api/_price.js` hard-wires the `http` mode, which POSTs an envelope to FACILITATOR_URL
+# and reads back a receipt. See docs/REVENUE.md.
