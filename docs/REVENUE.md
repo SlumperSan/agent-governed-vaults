@@ -69,8 +69,7 @@ It deliberately does **not** use `createHttpFacilitator`, and that distinction i
 between taking money and not. That client speaks this repository's own bespoke single-POST shape,
 which only `apps/api/src/facilitator-server.mjs` implements -- **no public facilitator speaks it**.
 This route was wired to it until review round 6, which means following §5 with a real facilitator URL
-would have 402'd every payment on a transport error. Grep `apps/site-next/functions/` for `KEYPAIR`,
-`PRIVATE_KEY` or `signer` and the result is empty.
+would have 402'd every payment on a transport error. No key material appears in any of these files.
 
 **It fails closed.** Each of the six settings is refused rather than defaulted; a deployment missing
 any one answers 500, never the paid body for free. There is a test per setting, because a default
@@ -100,17 +99,37 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
 on Base mainnet costs gas, so somebody's funded key must broadcast it. This route delegates that over
 HTTPS to `FACILITATOR_URL`. Which facilitator to point at is an owner decision and is **not** made
-here. There are **three** real options, and this paragraph has now been wrong in both directions:
-an earlier version invented a `FACILITATOR=svm`-style EVM mode that did not exist, and its
-replacement then said flatly that **no** `FACILITATOR` value settles on an EVM chain — which #272
-falsified by adding one. `FACILITATOR=standard` (`apps/api/src/serve.mjs`, `facilitatorFromConfig`)
-settles on EVM through a real third-party facilitator, and is what this edge route uses.
+here. There are **two** real arrangements, and this paragraph has now been wrong three times: an
+early version invented a `FACILITATOR=svm`-style EVM mode that did not exist; its replacement said
+flatly that **no** `FACILITATOR` value settles on an EVM chain, which #272 falsified by adding one;
+and its replacement counted **three** options by listing one arrangement twice.
 
-The second in-repo path is `createSettlingFacilitator`, which its own definition in
+**1. A third-party facilitator that speaks the standard wire contract**, reached over HTTPS. This is
+what `FACILITATOR_URL` takes, and the only arrangement usable today. `createStandardHttpFacilitator`
+POSTs `{FACILITATOR_URL}/verify` and then `/settle`. (`FACILITATOR=standard` is the `apps/api` server
+mode built on the same client; it is not itself a second option, and this edge route has no
+`FACILITATOR` setting at all — `vaults.js` constructs the standard client directly.)
+
+**2. Run your own settler** — `createSettlingFacilitator`, which its own definition in
 `apps/api/src/facilitator.mjs` records as not wired into the API server and intended to run as a
-SEPARATE process — which is how the Sepolia run did it. The third option is a third-party
-facilitator reached over HTTPS. Until that URL exists, the route answers 500 by design rather than
-serving reads for free.
+separate process, which is how the Sepolia run did it.
+
+**Arrangement 2 does not work today and §3 above already says why.** Its only HTTP wrapper in this
+repository is `apps/api/src/facilitator-server.mjs`, which speaks the BESPOKE single-POST shape:
+`facilitator-server.mjs:195-196` routes `/` and `/settle` and returns
+`404 {ok:false, reason:'not-found'}` for anything else. The standard client asks for `/verify`
+first, so pointing `FACILITATOR_URL` at it yields, measured:
+
+```
+402  settlement failed: verify-http-404: not-found
+```
+
+Every payment, forever. Choosing it needs a spec-shaped `/verify` + `/settle` wrapper that this
+repository does not have yet. Listing it as an available option was the same harm review round 6
+rejected — the runbook naming a facilitator the route cannot talk to — with the direction reversed.
+
+Until a working `FACILITATOR_URL` exists, the route answers 500 by design rather than serving reads
+for free.
 
 ## 5. What the owner runs
 

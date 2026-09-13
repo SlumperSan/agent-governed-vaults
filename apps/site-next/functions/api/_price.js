@@ -9,7 +9,8 @@
  * EVM-only and uses `createStandardHttpFacilitator` — it POSTs spec-shaped bodies to a facilitator
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
- * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
+ * no key material appears in any of these files. (Stated that way on purpose: the earlier wording
+ * invited a grep whose only hit was the sentence itself.)
  * (facilitator.mjs defines a FIFTH implementation, `createSettlingFacilitator`, which takes an
  * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
  * not reachable from this route. Counting modes and counting implementations give 4 and 5.)
