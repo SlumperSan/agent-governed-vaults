@@ -3,8 +3,11 @@
 # WHERE THIS FILE HAS TO LIVE, AND WHY IT IS NOT AT THE REPOSITORY ROOT.
 # Pages bundles Functions from `./functions` RELATIVE TO THE DIRECTORY WRANGLER RUNS IN — not from
 # inside the uploaded asset directory. The first publish of this site (2026-09-05) learned that the
-# hard way. The upload directory is `apps/site`, so wrangler is run from `apps/site`, so `./functions`
-# is `apps/site/functions` and this file sits beside it. Moving it to the repository root would make
+# hard way (2026-09-05). Wrangler is run from `apps/site-next`, so `./functions` is `apps/site-next/functions` and this
+# file sits beside it. `apps/site-next/README.md` states the same rule from the other side:
+# `_headers` and `_redirects` go in `public/` because Pages reads those from the SERVED directory
+# (the build output), while `functions/` goes at the PROJECT root because Pages reads it from the
+# project rather than the output. Moving it to the repository root would make
 # `./functions` resolve to a directory that does not exist and the site would deploy with NO
 # Functions at all — which fails silently: the static assets still publish, `_middleware.js` stops
 # running, and the hostname canonicalization plus the metered route both just disappear.
@@ -32,7 +35,7 @@
 # that satisfies both.
 
 name = "rwally"
-pages_build_output_dir = "."
+pages_build_output_dir = "dist"
 compatibility_date = "2026-09-13"
 compatibility_flags = ["nodejs_compat"]
 
@@ -44,7 +47,7 @@ compatibility_flags = ["nodejs_compat"]
 #
 # The five settings the metered route needs are set on the Pages project itself (Settings ->
 # Environment variables, Production), and `functions/api/_price.js` REFUSES to serve rather than
-# defaulting any of them — `apps/site/test/x402-edge.test.mjs` pins that behaviour for each one
+# defaulting any of them — `apps/site-next/test/x402-edge.test.mjs` pins that behaviour for each one
 # individually:
 #
 #   PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913   Circle-native USDC on Base, 6dp.

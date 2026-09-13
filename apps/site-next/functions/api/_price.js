@@ -2,13 +2,17 @@
  * Price and facilitator resolution for the metered read route, at the edge.
  *
  * WHY THIS FILE HOLDS NO KEY UNDER `FACILITATOR=http`, AND CANNOT HOLD ONE.
- * `apps/api` has three facilitator modes: `FACILITATOR=stub` and `FACILITATOR=http` hold no key,
+ * `apps/api` has three SELECTABLE facilitator modes -- `facilitatorFromConfig` in serve.mjs builds
+ * exactly `stub`, `http` and `svm`. `stub` and `http` hold no key,
  * and `FACILITATOR=svm` DOES hold one — the one mode that does, because Solana's flow makes this
  * process the fee payer and there is nothing to delegate. This route is
  * EVM-only and hard-wires `http` — `createHttpFacilitator` POSTs an envelope to a facilitator URL
  * and reads back a receipt, using nothing but `fetch`. No key is read here, none can be configured
  * here, and a deploy of this Worker moves no funds. That is a property of the code, not a promise:
  * grep this directory for `KEYPAIR`, `PRIVATE_KEY` or `signer` and the result is empty.
+ * (facilitator.mjs defines a FOURTH implementation, `createSettlingFacilitator`, which takes an
+ * operator-supplied signing walletClient -- but it is not a selectable FACILITATOR value and is
+ * not reachable from this route. Counting modes and counting implementations give 3 and 4.)
  *
  * WHY THE NUMBERS COME FROM ENV AND NOT FROM THIS FILE.
  * `PRICE_PAYTO` decides who is paid. Committing an address here would put a payee in git history
