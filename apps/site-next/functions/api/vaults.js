@@ -79,6 +79,9 @@ export const onRequestGet = async (context) => {
       chainId: snapshot.chainId,
       chainName: snapshot.chainName,
       vaults: snapshot.vaults,
+      // Served because the FREE discovery document promises it by name. A buyer decides to pay
+      // partly on what is absent, so the absence has to arrive with the thing they bought.
+      notIncluded: snapshot.notIncluded,
       receiptId: decision.receiptId,
     }),
     { status: 200, headers: { ...JSON_HEADERS, ...decision.headers } },

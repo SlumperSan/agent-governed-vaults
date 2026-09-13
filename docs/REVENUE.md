@@ -24,7 +24,7 @@ no Solidity in this repository reads the switch.
 **It is a pinned snapshot, not a live chain read**, and every response says so in `live: false` and
 `asOf`. Balances, NAV, share supply and member positions are deliberately absent: they move block to
 block, and a pinned file carrying them would be wrong within minutes while still looking
-authoritative. `apps/site/test/x402-edge.test.mjs` fails if a balance-shaped field ever appears in
+authoritative. `apps/site-next/test/x402-edge.test.mjs` fails if a balance-shaped field ever appears in
 the snapshot, and fails if any vault field drifts from
 `contracts/config/deployments/robinhood-mainnet.json`.
 
@@ -47,17 +47,17 @@ the truth rather than quoted a price it will never be charged".
 
 ## 3. How it is served, and why `FACILITATOR=http` holds no key
 
-`apps/site/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
+`apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
 `apps/api/src/x402.mjs` and `createHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
 reimplementing the 402 handshake. Two implementations of one payment protocol drift, and the half
 that drifts at the edge is the half deciding whether a caller's USDC bought anything. The build
 inlines the real module: a `wrangler@4 pages functions build` on 2026-09-13 emitted a 31 KB bundle
 containing `gate`, `verifyAndSettle` and the Base USDC constant.
 
-**This deployment cannot hold a private key.** `apps/api` has three facilitator modes and exactly
-one holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
+**This deployment cannot hold a private key.** `apps/api` has three SELECTABLE facilitator modes --
+`facilitatorFromConfig` builds exactly `stub`, `http` and `svm` -- and exactly one of those holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
 delegate. This route hard-wires the `http` mode: it POSTs a signed envelope to `FACILITATOR_URL` and
-reads back a receipt, using nothing but `fetch`. Grep `apps/site/functions/` for `KEYPAIR`,
+reads back a receipt, using nothing but `fetch`. Grep `apps/site-next/functions/` for `KEYPAIR`,
 `PRIVATE_KEY` or `signer` and the result is empty.
 
 **It fails closed.** Each of the five settings is refused rather than defaulted; a deployment missing
@@ -70,7 +70,9 @@ isolates or colos, so an in-memory set would cover only the isolate that served 
 while reading like protection. EIP-3009 authorizations are single-use by nonce and the token
 contract rejects a reused one — the property the Sepolia run verified when a resubmitted envelope
 came back `authorization-used` (`docs/X402-LIVE-REPORT.md`). A replayed envelope therefore fails at
-settlement and never reaches the body.
+settlement and never reaches the body — conditional, like every other settlement outcome here, on
+the configured facilitator behaving. This route trusts the facilitator's verdict and performs no
+local corroboration of it; `docs/REVENUE.md` names that dependency in §4 deliberately.
 
 ## 4. What is proven, and what is not
 
@@ -78,7 +80,7 @@ settlement and never reaches the body.
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid | **Proven** — 18 tests in `apps/site/test/x402-edge.test.mjs` |
+| The edge route refuses to serve unpaid | **Proven** — 18 tests in `apps/site-next/test/x402-edge.test.mjs` |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
 | A mainnet payment has settled | **No.** Nothing has been deployed |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
@@ -86,9 +88,14 @@ settlement and never reaches the body.
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
 on Base mainnet costs gas, so somebody's funded key must broadcast it. This route delegates that over
 HTTPS to `FACILITATOR_URL`. Which facilitator to point at is an owner decision and is **not** made
-here: an x402 facilitator that settles on Base mainnet, either a hosted one or `apps/api` run with
-`FACILITATOR=svm`-style funding on the EVM side. Until that URL exists, the route answers 500 by
-design rather than serving reads for free.
+here. There are two real options, and an earlier version of this section named a third that does
+not exist — there is no `FACILITATOR` value that makes `apps/api` settle on an EVM chain.
+`facilitatorFromConfig` in `apps/api/src/serve.mjs` builds only `http`, `svm` and `stub`, and `svm`
+is Solana. The in-repo EVM path is `createSettlingFacilitator`, which its own definition in
+`apps/api/src/facilitator.mjs` records as not wired into the API server and intended to run as a
+SEPARATE process — which is how the Sepolia run did it. The other option is a third-party
+facilitator reached over HTTPS. Until that URL exists, the route answers 500 by design rather than
+serving reads for free.
 
 ## 5. What the owner runs
 
@@ -112,12 +119,22 @@ FACILITATOR_URL  <https facilitator that settles on Base mainnet>
 `PRICE_ASSET` is Circle-native USDC on Base. It is **not** USDbC (`0xd9aA…4CA2`), the bridged legacy
 token; getting that wrong prices the route against the wrong dollar.
 
-**5.3 — Publish the site with Functions.** Run from `apps/site`, because Pages bundles Functions from
-`./functions` relative to the working directory, not from inside the uploaded folder:
+**5.3 — Publish the site with Functions.** Run from **`apps/site-next`**, and deploy its build
+output, because Pages bundles Functions from `./functions` relative to the working directory rather
+than from inside the uploaded folder:
 
 ```bash
-npx wrangler@4 pages deploy . --project-name rwally --branch protocol/main
+npx wrangler@4 pages deploy dist --project-name rwally --branch protocol/main
 ```
+
+Build `dist/` first by this directory's own build step.
+
+**An earlier version of this runbook said to run `wrangler pages deploy .` from `apps/site`, and
+that would have taken the live site down.** `apps/site` is the RETIRED nine-page static site;
+`rwally.com` serves `apps/site-next` (`apps/site-next/README.md:4`, and the live origin returns
+`<script type="module" crossorigin src="/assets/index-*.js">` while `apps/site/index.html` carries
+zero `<script>` tags). Deploying `apps/site` to the `rwally` project would have replaced the live
+build with the retired one. Caught in review before any deploy; nothing was published.
 
 Wrangler **4 or newer**: wrangler 3's esbuild cannot parse the JSON import attribute that Node
 requires, and fails the build.
