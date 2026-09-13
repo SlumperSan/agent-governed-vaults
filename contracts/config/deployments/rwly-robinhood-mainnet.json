@@ -46,7 +46,7 @@
     "creatorTaxBps": 8,
     "protocolFeeShareBps": 3000,
     "creatorFeeRecipient": "0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c",
-    "creatorFeeRecipientNote": "A 1-of-1 multisig whose only owner is the deployer EOA above, on version 1.4.1. getThreshold() returns 1 and getOwners() returns that one address, checked against a known 2-of-3 multisig as a positive control. One key can move whatever it holds, so nothing it holds is locked by it."
+    "creatorFeeRecipientNote": "A 1-of-1 Safe contract wallet whose only owner is the deployer EOA above, on version 1.4.1. getThreshold() returns 1 and getOwners() returns that one address, checked against a known 2-of-3 multisig as a positive control. One key can move whatever it holds, so nothing it holds is locked by it. THE OPENING WORDS USED TO READ 'A 1-of-1 multisig', which is a contradiction in terms and disagreed with apps/site/status.html, where the same contract is described as not a multisig. The substance below was always right; only the label was wrong."
   },
   "creatorBuy": {
     "inSameTransactionAsLaunch": true,

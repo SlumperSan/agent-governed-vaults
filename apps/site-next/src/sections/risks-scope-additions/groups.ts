@@ -12,8 +12,12 @@
  * it was applying: page bodies are positive and factual, and the Disclaimers
  * page carries every risk, warning and caveat. Four headings that open "Anyone
  * who cannot..." are caveats by that rule, so they belong on the page that
- * holds them, and who-its-for keeps the factual half: what the design assumes,
- * what the deal is, and that nothing is capped because nothing is created.
+ * holds them, and who-its-for keeps the factual half: what the design assumes
+ * and what the deal is. THE THIRD ITEM HERE WENT FALSE AND IS CORRECTED: this
+ * sentence used to end by saying nothing was capped because nothing had been
+ * created. Two vaults exist on chain 4663, `capacityCapUsdc()` reads
+ * 50000000000 on both and is immutable, and `CARD_1_BODY` below now says so.
+ * The stale half survived because no guard walks a comment.
  *
  * NO POINTER SENTENCE WAS ADDED TO who-its-for TO REPLACE THEM. It already
  * closes on `who-decide` ("Read the Disclaimers in full, then decide." with
@@ -22,10 +26,22 @@
  * one here would put a sentence in this build that the corpus does not carry,
  * and text-for-text sync with that corpus is the point of the pairing.
  *
- * WHERE IT CAME FROM. Every string below is lifted byte-for-byte from the
- * `Four groups this is wrong for` grid of `apps/site/disclaimers.html`.
- * Nothing here was rewritten, re-punctuated or tightened, and nothing here is
- * new: this section writes no sentence the current site does not already carry.
+ * WHERE IT CAME FROM. Every string below was lifted byte-for-byte from the
+ * `Four groups this is wrong for` grid of `apps/site/disclaimers.html` when
+ * this section was written, and nothing here was invented.
+ *
+ * THAT IS NO LONGER A STANDING GUARANTEE, and the unqualified version of this
+ * paragraph — "this section writes no sentence the current site does not
+ * already carry" — was false by 2026-09-13. CARD_1_BODY and its disclaimers
+ * counterpart have since diverged, each corrected on its own surface for the
+ * same fact: PR #256 rewrote CARD_1_BODY to "The two vaults on chain 4663 are
+ * capped at 50,000 USDG each", while the disclaimers paragraph was rewritten
+ * separately to "Both vaults on chain 4663 carry one". Both are true; neither
+ * is the other's bytes.
+ *
+ * Nothing enforces the pairing — no guard reads both surfaces and compares
+ * them — so treat this note as provenance, not as a live invariant, and
+ * re-read the counterpart before asserting the two agree.
  *
  * WHY BYTES RATHER THAN TEXT. `renderToString` escapes text children, so an
  * apostrophe reaches `dist/disclaimers.html` as `&#x27;` and a byte-comparison
@@ -95,8 +111,17 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    REPOINTED 2026-09-05, copy deck v2. Owner: "I haven't created the safe
    vault yet. I want the pivot to the all-stocks index." CARD_1_BODY used to
    carry the page-level 50,000/"planned" pairing on its own; that figure
-   described a vault that will not be created, so it comes out entirely
-   rather than being requalified. Carried verbatim from the "DAO treasuries
+   described a vault that WOULD not be created — past intent, not a standing
+   fact: two vaults exist on chain 4663 and both read capacityCapUsdc()
+   50000000000, so the figure is real rather than planned, and CARD_1_BODY
+   now says so. The sibling comment in risks-register/entries.tsx:110-113
+   already handled this tense correctly; this copy did not until 2026-09-13.
+   The trailing clause here used to say the figure "comes out of CARD_1_BODY
+   entirely rather than being requalified", and that was still false after the
+   first correction: CARD_1_BODY carries the figure today, as a deployed fact
+   ("The two vaults on chain 4663 are capped at 50,000 USDG each"), which is
+   what the sentence three lines above already says. The figure was REQUALIFIED,
+   not removed — that is the whole change. Carried from the "DAO treasuries
    and larger allocators" entry of the "Four groups this is wrong for" list
    on `apps/site/disclaimers.html` as of this deck — apps/site consolidated
    this list onto the Disclaimers page in an earlier round (PR #220) while

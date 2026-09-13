@@ -1024,9 +1024,28 @@ test('the corrections from the 2026-08-29 review have not been undone', () => {
     assert.ok(!/rebalance has passed but has not yet executed/i.test(html), `${p}: Mode F opens at reveal start, not when a proposal passes`);
     // A4: the pre-audit findings are not all closed.
     assert.ok(!/all of which are now resolved/i.test(html), `${p}: one High remains open at the launch configuration and a sub-vault class is dormant, not fixed`);
-    // C8: the cap is a planned parameter of a vault that does not exist.
-    if (html.includes('50,000')) {
-      assert.ok(/\bplanned\b/i.test(html), `${p}: states the 50,000 figure without labelling it planned and undeployed`);
+    // C8, INVERTED ON 2026-09-13, for the same reason and in the same shape as
+    // the apps/site-next copy inverted by PR #256.
+    //
+    // It used to require any page stating 50,000 to also say "planned", because
+    // the figure described a capacity cap on a vault nobody had created. Both
+    // vaults on chain 4663 now read capacityCapUsdc() 50000000000, which is
+    // 50,000 USDG at 6 decimals, so this guard had become a requirement to
+    // state a deployed, immutable parameter as a plan.
+    //
+    //   0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4
+    //   0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38
+    //
+    // Scoped to a window rather than the page, because the old form tested
+    // /planned/ anywhere in the document and inverting that page-wide would red
+    // on any unrelated legitimate use of the word.
+    for (const m of html.matchAll(/50,000/g)) {
+      const window = html.slice(Math.max(0, m.index - 240), m.index + 240);
+      assert.ok(
+        !/\bplanned\b/i.test(window),
+        `${p}: calls the 50,000 cap "planned". It is deployed: two vaults on chain 4663 read `
+          + 'capacityCapUsdc() 50000000000. Say what it is, not what it was going to be.',
+      );
     }
   }
 });
