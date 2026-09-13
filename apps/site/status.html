@@ -84,7 +84,7 @@
             <tr><th scope="row">Governance</th><td><code>0x790A308f1ac06FeD4C79884BAD25d0C721C5B125</code></td></tr>
             <tr><th scope="row">VaultDeployer</th><td><code>0xc36198FD2c7C62738159ED1FF965679105FAF05a</code></td></tr>
             <tr><th scope="row">VaultFactory</th><td><code>0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</code></td></tr>
-            <tr><th scope="row">Vaults created</th><td>none &mdash; <code>factory.vaultCount()</code> returns 0</td></tr>
+            <tr><th scope="row">Vaults created</th><td>2 &mdash; <code>factory.vaultCount()</code>, read at block 61,513,974</td></tr>
             <tr><th scope="row">Oracle deploy block</th><td>54,989,143</td></tr>
             <tr><th scope="row">Singletons deploy block</th><td>54,989,195, all six singleton receipts plus three wire calls in that one block</td></tr>
           </tbody>
@@ -142,11 +142,13 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">The first vault</p>
-      <h2>No vault has been created yet.</h2>
-      <p class="tight">The singletons are on chain and the factory is open, and <code>factory.vaultCount()</code> returns 0. Until a vault exists there is nothing to deposit into and no address to check, which is why the row above says so rather than leaving a gap.</p>
+      <h2>Two vaults exist, and both hold real funds.</h2>
+      <p class="tight"><code>factory.vaultCount()</code> reads 2 at block 61,513,974. The first is <code>0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4</code>, created 2026-09-10 in block 58,991,819, holding <code>idleUsdc</code> 20000000 &mdash; 20 USDG. The second is <code>0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38</code>, created 2026-09-12 in block 61,481,025, which holds <code>assetBalance</code> 1980483895862031 wei of WETH &mdash; 0.001980484 rounded, a priced position rather than cash &mdash; and no USDG: its proposal 3 traded the whole balance. Both balances were read at block 61,646,791 and move on the next deposit, exit or rebalance; the block is stated because this page cannot notice when they do. Each one&rsquo;s capacity cap is fixed at creation and readable on-chain with <code>capacityCapUsdc()</code>.</p>
+      <p class="tight">This heading denied that any vault existed until 2026-09-12. That was true when written and false from 2026-09-10, and nothing detected the gap, because every check over it compared prose against prose rather than against the chain. The wording itself is not repeated here: the guard that enforces this page forbids the shape outright, so quoting it even to disown it would red the build.</p>
+      <p class="tight">Both vaults were created by the deployer EOA <code>0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35</code>, rather than by the contract wallet <code>0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c</code> the deployment record named for the job. That wallet is a 1-of-1: <code>getThreshold()</code> reads 1 and <code>getOwners()</code> returns that same EOA as its only owner, so it is not a multisig and does not by itself amount to shared custody. This paragraph called it &ldquo;the multisig&rdquo; until 2026-09-13, which told a reader the intended creator was a stronger arrangement than it actually is &mdash; the one direction a deviation record must never lean. It is not named here by its product name because this page bans that word as an outcome claim, and that ban is what pushed the earlier wording toward the inaccurate synonym. <code>createVault</code> fixes the caller as the vault&rsquo;s immutable creator and attested operator, so that cannot be corrected on these two.</p>
       <p class="tight"><code>contracts/config/robinhood-mainnet.json</code> is the chain&rsquo;s configuration, not a plan for a vault.</p>
       <p class="tight">It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.</p>
-      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters only when it is funded, and none has been.</p>
+      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters when it is funded, and both of these are funded.</p>
       <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
     </div>
   </section>

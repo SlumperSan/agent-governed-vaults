@@ -1,6 +1,6 @@
 # Open Items
 
-The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Everything that keeps [[current-state]] at NO-GO for **Base mainnet**, plus the accepted residuals. Since 2026-09-05 every item below is also owed against a live Robinhood Chain mainnet deployment — the singletons are deployed and wired and no vault has been created on it yet, so none of these items was closed by deploying. The two gates at the top of the list (soak, canary) have no current evidence on any chain: the 5/5 soak run and the canary observation alongside it are real and are recorded in [[../SOAK-REPORT]], but they were earned against superseded bytecode and have not been re-run.
+The live to-do list between now and a meaningful `v1.0.0-launch-candidate`. Everything that keeps [[current-state]] at NO-GO for **Base mainnet**, plus the accepted residuals. Since 2026-09-05 every item below is also owed against a live Robinhood Chain mainnet deployment — the singletons are deployed and wired and two vaults now hold real funds on it, so none of these items was closed by deploying and several of them now bear on live money rather than on a hypothetical. The two gates at the top of the list (soak, canary) have no current evidence on any chain: the 5/5 soak run and the canary observation alongside it are real and are recorded in [[../SOAK-REPORT]], but they were earned against superseded bytecode and have not been re-run.
 
 ## Why it matters
 
