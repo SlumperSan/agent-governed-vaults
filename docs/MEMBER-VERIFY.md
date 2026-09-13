@@ -209,8 +209,11 @@ cast call $ORACLE "feedOf(address)(address,uint32,uint64,uint128,uint128)" <asse
 ```
 
 That returns the Chainlink feed address, its heartbeat, the scale, and the minimum and maximum
-prices the oracle will accept. On this chain the feeds publish on an 86,400 second heartbeat, which
-is the widest the oracle will take, so a price up to a day old is a price the vault will use.
+prices the oracle will accept. Read at block 62,171,205, **both** basket assets return a heartbeat
+of `86400`: WETH is feed `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9` and cbBTC is
+`0x0009cD492adf8167f9eEBf1293556A673530a21a`. 86,400 seconds is exactly `MAX_HEARTBEAT`, the widest
+the oracle will accept (`contracts/src/oracle/ChainlinkOracle.sol:98`), so on this chain a price up
+to a full day old is a price the vault will use.
 
 **4. The sequencer gate does not run on this chain, and you should confirm that rather than take
 it.**
