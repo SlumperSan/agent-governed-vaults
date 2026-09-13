@@ -206,6 +206,20 @@ test('createStandardHttpFacilitator: a non-2xx /verify that DOES carry isValid i
   assert.deepEqual(r, { ok: false, reason: 'invalid_exact_evm_signature' });
 });
 
+test('createStandardHttpFacilitator: a malformed 200 on /settle (no success field) is a TRANSPORT-shaped miss, not a settlement verdict', async () => {
+  // Mirrors the /verify malformed-response test above. {weird:'shape'} must not be read as
+  // "the facilitator said no and gave no transaction" (settle-failed-no-transaction) — that
+  // reason asserts a verdict the facilitator never gave. This is the #266 misdiagnosis class
+  // one leg over: an unreadable answer is missing evidence, not a rejection.
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    return { ok: true, json: async () => ({ weird: 'shape' }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'settle-malformed-response' });
+});
+
 test('createStandardHttpFacilitator: settle success:true but an empty transaction is ok:false — no positive evidence, no pass', async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };

@@ -236,7 +236,10 @@ export function resolveApiConfig(env) {
  * `standard` is the same shape of addition: `createHttpFacilitator` speaks this repo's own bespoke
  * wire contract, so it can only ever talk to `facilitator-server.mjs` in this same repo. `standard`
  * speaks the actual x402 protocol instead, so it can settle through a real, public facilitator —
- * the piece that was missing for this server to ever collect real revenue.
+ * the piece that was missing on the settlement side. The INBOUND leg is a separate gap this does
+ * not touch: `x402.mjs` still issues its own `payment-required`/`payment-signature`/
+ * `payment-response` challenge, not a spec-shaped one, so a stock third-party x402 client still
+ * cannot pay this server either way.
  */
 export function facilitatorFromConfig(cfg, { fetchImpl, connection } = {}) {
   if (cfg.facilitatorKind === 'http') return createHttpFacilitator({ url: cfg.facilitatorUrl, fetchImpl });

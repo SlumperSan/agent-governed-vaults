@@ -309,9 +309,16 @@ export function createStandardHttpFacilitator({
         fetchImpl, timeoutMs, step: 'settle', verdictField: 'success',
       });
       if (s.failed) return { ok: false, reason: s.reason };
+      // Mirrors the verify-leg check at :305. An unreadable 200 (`success` missing or not a
+      // boolean — {}, [], {weird:'shape'}) is NOT a settlement verdict: `settle-failed-no-transaction`
+      // below asserts "the facilitator said no and gave no transaction", which is a claim about
+      // what the facilitator ANSWERED, not about what it FAILED TO ANSWER. Collapsing the two
+      // is the exact misdiagnosis class this PR exists to close (#266): a transport-shaped
+      // problem must never read as a payment verdict, and "unreadable" is a transport shape.
+      if (typeof s.body.success !== 'boolean') return { ok: false, reason: 'settle-malformed-response' };
       // Positive evidence required: `success === true` AND a non-empty transaction hash. A
-      // malformed 200, a missing `transaction`, or an empty string are all `ok:false` — settlement
-      // is never reported without something to point at.
+      // missing `transaction` or an empty string are `ok:false` — settlement is never reported
+      // without something to point at.
       if (s.body.success === true && typeof s.body.transaction === 'string' && s.body.transaction.length > 0)
         return { ok: true, receiptId: s.body.transaction };
       return { ok: false, reason: s.body?.errorReason ?? 'settle-failed-no-transaction' };
