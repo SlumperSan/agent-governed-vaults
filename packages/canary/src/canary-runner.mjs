@@ -301,6 +301,14 @@ export const EMITTABLE_SIGNALS = new Set([
   // which is the design working; but the cost of a declaration is that somebody must remember it,
   // and within 24 hours nobody did.
   'governance-watch',
+  // The second data point on the same failure mode, and this time the guard caught it rather
+  // than a reader. #126 landed EMITTABLE_SIGNALS while this branch was open; merging it forward
+  // reddened `a healthy deployment produces ZERO alerts across every signal` with
+  // "dispatched but not declared". That is the design working: a new signal cannot reach a sink
+  // untiered. Both are tiered in sinks.mjs -- depeg-reference in PAGE_SIGNALS, operator-power in
+  // CONDITIONAL_PAGE on detail.bar === 'critical'.
+  'operator-power',
+  'depeg-reference',
   // Not a file: synthesised below when a whole vault's config is unreadable.
   'vault-config',
 ]);
