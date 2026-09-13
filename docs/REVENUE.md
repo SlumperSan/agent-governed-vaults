@@ -4,9 +4,14 @@
 paid HTTP reads settled in USDC over x402. It records what is done, what is not, and the exact steps
 only the owner can run. It is not a business plan and it does not forecast anything.
 
-**Status: the rail is built and unpublished.** Every step below up to "What the owner runs" is
-landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
-is **$0.00**.
+**Status: the rail is published. The live read described below is not.** Measured 2026-09-13:
+`https://rwally.com/api/vaults` answers `402` with a spec-shaped `PAYMENT-REQUIRED` challenge, and
+`https://rwally.com/.well-known/x402` answers `200` for free — so §5.1 through §5.3 have been run.
+What is serving there is the **pinned-snapshot** route (the live discovery document reports
+`"live": false, "asOf": "2026-09-13"`), the version landed as 90e84991. The request-time chain read
+this document describes from §1 onward is landed in the repository and has **not** been deployed;
+deploying it is a re-run of §5.3. No mainnet payment has been taken — the payee's USDC balance on
+Base mainnet reads `0` (`cast call balanceOf`, 2026-09-13) — and revenue to date is **$0.00**.
 
 ---
 
@@ -128,7 +133,8 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 | A revert (oracle freeze) and a transport failure never collapse into one field | **Proven** — tested against an injected reader whose every read fails as a transport error: no vault ever reports `pricingFrozen`, matching the requirement drawn from issues #266 and PR #185 |
 | A chain read that fails costs the caller nothing | **Proven for two distinct failure shapes**: the chain cannot report a block number at all, and a block number comes back but every field of every vault fails to read (a bad RPC that answers `eth_blockNumber` and fails everything after). Both are 503 with the facilitator never called. A read where at least one field of at least one vault succeeds still settles — a partial read is still a read. |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13, "Compiled Worker successfully"; `wrangler@3` also builds it, re-measured |
-| A mainnet payment has settled | **No.** Nothing has been deployed |
+| The live read is what `rwally.com` serves today | **No.** The route is deployed and answering `402`, but the deployed build is the pinned-snapshot one — the live discovery document reports `"live": false` (measured 2026-09-13). Deploying this change is §5.3 |
+| A mainnet payment has settled | **No.** The payee's USDC balance on Base mainnet reads `0` (`cast call balanceOf`, 2026-09-13) |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
@@ -171,6 +177,11 @@ for free.
 Everything above is landed. These are the steps an agent cannot take — they need the Cloudflare
 account, the payee address, and real funds. `docs/SWARM.md` §10 puts all three out of bounds.
 
+**5.1 through 5.3 have already been run once**, for the pinned-snapshot route: `rwally.com` answers
+`402` on the paid route and `200` on the discovery document today. They are kept here in full because
+5.3 is exactly what puts the live chain read above in front of callers, and because 5.2's variables
+are what a redeploy must not lose. **5.4 and 5.5 have not been run.**
+
 **5.1 — Choose the payee and the facilitator.** An address you control on Base mainnet to receive
 USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet.
 
@@ -204,7 +215,9 @@ that would have taken the live site down.** `apps/site` is the RETIRED nine-page
 `rwally.com` serves `apps/site-next` (`apps/site-next/README.md:4`, and the live origin returns
 `<script type="module" crossorigin src="/assets/index-*.js">` while `apps/site/index.html` carries
 zero `<script>` tags). Deploying `apps/site` to the `rwally` project would have replaced the live
-build with the retired one. Caught in review before any deploy; nothing was published.
+build with the retired one. Caught in review before any deploy; the retired site was never
+published, and what `rwally.com` serves today is `apps/site-next` — its Functions are what answer
+`/api/vaults` with a `402` rather than the site's HTML.
 
 The `wrangler@4` above is not a requirement any more — see `apps/site-next/wrangler.toml`'s own
 comment for why. It used to be: the pinned-snapshot version of this route imported a JSON file with
