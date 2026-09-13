@@ -397,7 +397,17 @@ test('status.html carries the full status block, inside main rather than above t
   assert.ok(at > html.indexOf('<main id="main"'), `${STATUS_PAGE}: the band must sit inside <main>, not above the nav`);
   assert.ok(at < html.indexOf('<footer'), `${STATUS_PAGE}: the band must sit inside <main>, not in the footer`);
   // The page exists to be reachable without being in the header nav, so both halves are pinned.
-  assert.ok(!/<nav[\s\S]*?status\.html[\s\S]*?<\/nav>/.test(html), `${STATUS_PAGE}: the status page is deliberately not in the header nav`);
+  //
+  // FIXED (#210): this used to test only `html`, i.e. only status.html's OWN nav. Adding
+  // status.html to one of the other eight pages' header nav left the suite green, because nothing
+  // ever read those pages' markup for this check. Checked across every page now, using each
+  // page's own `raw.get(p)` rather than the outer `html` binding.
+  for (const p of PAGES) {
+    assert.ok(
+      !/<nav[\s\S]*?status\.html[\s\S]*?<\/nav>/.test(raw.get(p) ?? ''),
+      `${p}: the status page is deliberately not in the header nav`,
+    );
+  }
   // Attribute-tolerant on purpose. The footer Pages list omits the page you are on, everywhere
   // except here: the status link is the ONLY route to this page, so it stays in the list on the
   // status page too, and carries aria-current="page" -- the same treatment the header nav gives a
