@@ -45,7 +45,11 @@ free discovery document resolve it from there. A test asserts the discovery docu
 price the gate will not charge, because `apps/api/src/server.mjs` requires that discovery be "told
 the truth rather than quoted a price it will never be charged".
 
-## 3. How it is served, and why the `standard` facilitator client holds no key
+## 3. How it is served, and why `FACILITATOR=standard` holds no key
+
+Of the four selectable modes, `FACILITATOR=stub`, `FACILITATOR=http` and `FACILITATOR=standard`
+hold no key; `FACILITATOR=svm` DOES, because Solana's flow makes that process the fee payer and
+it loads `SVM_KEYPAIR`. This route is EVM-only and uses `standard`.
 
 `apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
 `apps/api/src/x402.mjs` and `createStandardHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
