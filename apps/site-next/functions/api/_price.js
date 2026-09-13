@@ -84,7 +84,15 @@ export function resolveFacilitatorUrl(env) {
 }
 
 /**
- * A 500 that says which setting is missing, for the operator, without leaking values.
+ * A 500 that names the setting at fault, for the operator.
+ *
+ * It DOES echo a malformed value back -- `PRICE_PAYTO is not an address: my-treasury.eth`. That is
+ * deliberate (an operator debugging a typo needs to see the typo) and it is safe HERE only because
+ * none of these five is a secret: `payTo` and `amount` are published on the free discovery document
+ * anyway, and the other three are public constants. An earlier version of this comment claimed the
+ * response leaked no values, which was simply false. Do not extend this helper to a setting that IS
+ * secret without changing that behaviour first.
+ *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */
 export function configErrorResponse(err) {

@@ -3,7 +3,7 @@
 # WHERE THIS FILE HAS TO LIVE, AND WHY IT IS NOT AT THE REPOSITORY ROOT.
 # Pages bundles Functions from `./functions` RELATIVE TO THE DIRECTORY WRANGLER RUNS IN — not from
 # inside the uploaded asset directory. The first publish of this site (2026-09-05) learned that the
-# hard way (2026-09-05). Wrangler is run from `apps/site-next`, so `./functions` is `apps/site-next/functions` and this
+# hard way. Wrangler is run from `apps/site-next`, so `./functions` is `apps/site-next/functions` and this
 # file sits beside it. `apps/site-next/README.md` states the same rule from the other side:
 # `_headers` and `_redirects` go in `public/` because Pages reads those from the SERVED directory
 # (the build output), while `functions/` goes at the PROJECT root because Pages reads it from the

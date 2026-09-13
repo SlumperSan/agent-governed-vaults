@@ -54,8 +54,8 @@ that drifts at the edge is the half deciding whether a caller's USDC bought anyt
 inlines the real module: a `wrangler@4 pages functions build` on 2026-09-13 emitted a 31 KB bundle
 containing `gate`, `verifyAndSettle` and the Base USDC constant.
 
-**This deployment cannot hold a private key.** `apps/api` has three facilitator modes and exactly
-one holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
+**This deployment cannot hold a private key.** `apps/api` has three SELECTABLE facilitator modes --
+`facilitatorFromConfig` builds exactly `stub`, `http` and `svm` -- and exactly one of those holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
 delegate. This route hard-wires the `http` mode: it POSTs a signed envelope to `FACILITATOR_URL` and
 reads back a receipt, using nothing but `fetch`. Grep `apps/site-next/functions/` for `KEYPAIR`,
 `PRIVATE_KEY` or `signer` and the result is empty.
