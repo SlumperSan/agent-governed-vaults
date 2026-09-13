@@ -2,7 +2,7 @@
 
 The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose three
 most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the page
-loads, above a table of vaults with no rows.
+loads, above a table with one row per vault, also read live.
 
 The order used to be stated the other way round here. In `index.html` the protocol card is the first
 `<section>` and the vaults card the second, so the table is BELOW it.
@@ -18,7 +18,8 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 | `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
 | `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
 | The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. This page renders no rows: there is no `<tbody>` in `index.html` and `app.js` writes only into the live-reads panel. Two vaults existed on chain 4663 as of 2026-09-12 and neither is listed |
+| Every vault row | `VaultFactory.allVaults(i)` for each index, then five `eth_call`s per vault (`navWad`, `totalShares`, `idleUsdc`, `holderCount`, `capacityCapUsdc`), all from the browser on load. `1 + n + 5n` calls in total, so the cost grows with the vault count |
+| The "Age" and "Performance vs SPY" columns | Nothing, and they were removed rather than left blank. `VaultCore` exposes no `createdAt()` and no `name()`, and per-vault performance against an index needs price history this page does not hold. A header promising a figure the page cannot read is the same defect as a false sentence, in table form |
 
 **The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
 what the getter is called.** The getter keeps the name `usdc` because that is the name in the
@@ -87,9 +88,17 @@ screenshots/
 node --test --test-reporter=tap apps/app/test/claims.test.mjs
 ```
 
-Six checks: the empty-state sentence survives into the build, the factory address is on the page,
-no banned claim shape appears in any built file, `_headers` carries every required directive, the
-markup has no inline script or style, and the page fetches from no origin but the chain RPC.
+Nine checks: the empty-state sentence survives into the build; the row container `app.js` writes
+into exists in the markup; no column header promises a figure this page cannot read; every pinned
+vault-row selector is the real 4-byte selector; the factory address is on the page; no banned claim
+shape appears in any built file; `_headers` carries every required directive; the markup has no
+inline script or style; and the page fetches from no origin but the chain RPC.
+
+The three added with the vault rows all guard the same failure: **a wrong read does not throw
+here.** `eth_call` answers an unknown selector with `0x`, which decodes to zero, so a mistyped
+selector renders a confident `0.00` rather than an error. A renamed `tbody` id leaves every read
+succeeding and the table silently empty. Neither is visible at runtime, so both are pinned at build
+time instead.
 
 **It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
 `.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before

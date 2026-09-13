@@ -78,12 +78,18 @@ const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 // static string match against the built HTML and reads no chain, so it can
 // only tell you the sentence is PRESENT, never that it is TRUE.
 //
-// The replacement is a claim about this table rather than about the chain. No
-// createVault call can falsify "this table lists no vaults"; only writing the
-// row-rendering code can, and whoever writes it will be editing this line
-// anyway. That is the property to preserve when changing this string: pin
-// something the deployment controls, not something the world does.
-const EMPTY_STATE = 'This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.';
+// The replacement was a claim about this table rather than about the chain. No
+// createVault call could falsify "this table lists no vaults"; only writing the
+// row-rendering code could, and that is what happened: the rows are now built,
+// so that sentence went false by being fixed. This is the third wording, and it
+// holds in BOTH states, which the previous two did not:
+//   - script never runs, or the RPC fails  -> no rows, sentence true
+//   - rows render                          -> the fallback block is hidden, and
+//                                             the sentence is still true of it
+// The property to preserve when changing this string has not changed: pin
+// something the deployment controls, not something the world does, and prefer a
+// sentence that describes WHERE a figure comes from over one that states it.
+const EMPTY_STATE = 'Vault rows are read from chain 4663 when this page loads. None are listed here until that read returns, and none are invented if it fails.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -111,6 +117,73 @@ test('the built page carries the empty-state sentence verbatim', () => {
       'unreachable, which is precisely when a reader most needs to be told what is true.\n' +
       `Expected to find: "${EMPTY_STATE}"`,
   );
+});
+
+test('the row container app.js writes into exists in the built markup', () => {
+  const html = read('index.html');
+  // app.js does getElementById('vault-rows').appendChild(...). If this id is
+  // renamed or the tbody dropped, every read still succeeds, the loop still
+  // runs, and the table silently stays empty: a failure with no error anywhere.
+  assert.match(
+    html,
+    /<tbody id="vault-rows">\s*<\/tbody>/,
+    'index.html must carry an empty <tbody id="vault-rows"> for app.js to fill. '
+      + 'It is empty in the markup on purpose: no row is shipped that was not read from chain.',
+  );
+  assert.ok(
+    html.includes('id="vault-empty"'),
+    'The fallback block needs id="vault-empty" so app.js can hide it once a row renders. '
+      + 'Without it the page shows rows AND the sentence saying none are listed.',
+  );
+  assert.ok(
+    html.includes('id="vault-rows-fail"'),
+    'A failed row read must have somewhere to say so. Without this element the catch '
+      + 'branch is silent and an RPC failure is indistinguishable from a factory with no vaults.',
+  );
+});
+
+test('no column header promises a figure this page cannot read', () => {
+  const html = read('index.html');
+  // VaultCore exposes no createdAt() and no name(), and per-vault performance
+  // against an index needs history this page does not have. Columns for those
+  // could only ever be filled by inventing them, which is the same defect as a
+  // false sentence, in table form. They were removed rather than left blank.
+  for (const [header, why] of [
+    ['Age', 'VaultCore has no createdAt(); age can only come from a creation-log scan this page does not do'],
+    ['Performance vs SPY', 'per-vault performance needs price history this page does not hold'],
+  ]) {
+    assert.ok(
+      !html.includes('>' + header + '</th>'),
+      `index.html restores the "${header}" column. ${why}. `
+        + 'Add the column back only together with the read that fills it.',
+    );
+  }
+});
+
+test('every vault-row selector app.js pins is the real 4-byte selector', () => {
+  // These are pinned as hex so the page carries no keccak implementation, which
+  // means a typo is undetectable at runtime: eth_call returns 0x for an unknown
+  // selector and the column would render as a confident zero. Recomputed here
+  // from the signature text so the pin cannot drift from what it claims to be.
+  const js = read('app.js');
+  const expected = {
+    SEL_ALL_VAULTS: ['allVaults(uint256)', '0x9094a91e'],
+    SEL_NAV_WAD: ['navWad()', '0xd09074c0'],
+    SEL_TOTAL_SHARES: ['totalShares()', '0x3a98ef39'],
+    SEL_IDLE_USDC: ['idleUsdc()', '0x047b7fc7'],
+    SEL_HOLDER_COUNT: ['holderCount()', '0x1aab9a9f'],
+    SEL_CAPACITY_CAP: ['capacityCapUsdc()', '0xb857d9b9'],
+  };
+  for (const [name, [sig, sel]] of Object.entries(expected)) {
+    const m = js.match(new RegExp(`const ${name} = '(0x[0-9a-f]{8})';`));
+    assert.ok(m, `app.js no longer pins ${name}`);
+    assert.equal(
+      m[1],
+      sel,
+      `${name} is pinned as ${m[1]} but ${sig} is ${sel}. `
+        + 'A wrong selector does not throw: eth_call returns 0x and the cell renders as 0.',
+    );
+  }
 });
 
 test('the built page names the factory address', () => {
