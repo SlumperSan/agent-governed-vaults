@@ -211,8 +211,8 @@ and on `SEQUENCER_EXEMPT_REASONS` in
 `ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
 
 **One signal this switches off, and what already stops it mattering.** `SEQUENCER_REQUIRED` is
-computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:140`) and never from the RPC,
-while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:110`) — so a
+computed from the *config's* `chainId` (`SEQUENCER_REQUIRED`, `verify-chainlink-oracle.mjs:148`) and never from the RPC,
+while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`verify-chainlink-oracle.mjs:118`) — so a
 `BASE_MAINNET_RPC` left exported from a Base session still decides which endpoint a run launched
 with the 4663 config queries. Before this change that misdirected run **failed** the sequencer row,
 and something objected; on an exempt chain the row now **passes**, so on its own the exemption would
@@ -220,7 +220,7 @@ let a wrong-chain verification come back green. The root cause was the missing c
 than the exemption, and it was fixed separately and landed first: PR #205
 (`fix(verify-chainlink-oracle): bind the run to the chain the config names`) is on `protocol/main`
 as `89d0fbb6`, and this change is rebased on top of it. The script now reads `eth_chainId` from
-whichever RPC it resolved and refuses the entire run — before any feed is read (`:442`) — when that
+whichever RPC it resolved and refuses the entire run — before any feed is read (`chainBindingVerdict`, `verify-chainlink-oracle.mjs:463`) — when that
 id differs from the config's `chainId`, so a misdirected run never reaches the sequencer row at all,
 exempt chain or not. Clearing `BASE_MAINNET_RPC` by hand, which
 [`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json)'s
@@ -322,10 +322,10 @@ gift. Two have since closed and two remain:
   and was not cleared by deploying somewhere else.
 
 `verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
-`4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`:104-109`), so a run against this
+`4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`verify-chainlink-oracle.mjs:112-117`), so a run against this
 config no longer exits 1 for want of an explicit `BASE_RPC`. What keeps that convenience honest is
 the `eth_chainId` binding that arrived in the same PR — whichever endpoint is resolved has to answer
-4663 before a single feed is read (`:442`) — so a default can pick an endpoint but never certify one.
+4663 before a single feed is read (`chainBindingVerdict`, `verify-chainlink-oracle.mjs:463`) — so a default can pick an endpoint but never certify one.
 
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
@@ -614,8 +614,12 @@ node scripts/verify-chainlink-oracle.mjs
 Read-only and keyless, so it is safe to run against a live deployment as often as you like. Run it
 **weekly, and after any Chainlink feed announcement** — with
 `--strict`, so an aggregator swap exits non-zero instead of scrolling past as a notice nobody
-reads. Two things it catches that nothing on-chain
-can:
+reads. Read the exit code, not just "non-zero": **1** is a failed check (or, under `--strict`, a
+DRIFT notice, or a chain-binding refusal, which prints NO failed row at all because it
+refuses before any feed is read); **2** is an incomplete run — a read failed and no revert was observed (a rate limit,
+a timeout), so the affected checks print `ERR` and were not scored. Exit 2 is not a verdict either
+way; re-run against an RPC that answers before reading anything into it. Two things it catches
+that nothing on-chain can:
 
 - **Aggregator-swap drift** (residual register row 14). Chainlink swaps the aggregator behind a
   configured `EACAggregatorProxy` as routine operation, and `ChainlinkOracle` cached
