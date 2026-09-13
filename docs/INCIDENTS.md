@@ -50,11 +50,16 @@ reader can run. Never state a recovery time you cannot evidence.
 > say no vault had been created and that every incident below beginning with a deposit, a proposal
 > or an exit was therefore hypothetical on this chain. **They are no longer hypothetical.**
 > `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974:
-> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holds 20 USDG and
-> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 0.001980484 WETH (`assetBalance`), a priced position rather than cash after trading its
+> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holds `idleUsdc` 20000000 — 20 USDG — at block 61,646,791 and
+> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash after trading its
 > USDG away, so funds ARE at stake on 4663 and the
 > deposit, proposal and exit sections apply to a live vault from today. Both vaults have also
-> already run governance rounds, so the proposal sections are exercised rather than theoretical.
+> already run governance rounds, but read what that means before trusting it: `holderCount()` is 1
+> on both, and `proposals(1)`, `proposals(2)` and `proposals(3)` each carry `memberCount` 1 with the
+> same address, `0x0f80606a…`, as proposer. One address proposed, voted and was the whole electorate,
+> three times. The mechanics have run end to end; nothing contested has — no quorum contest, no
+> adversarial commit-reveal, no second voter. An earlier draft of this line said the proposal
+> sections were "exercised rather than theoretical", which is the comforting half of that.
 > What was already live remains live: the factory, the registries, the fee engine, governance and
 > the oracle are on-chain and immutable, so §§ about a wrong or unwired singleton, a bad oracle
 > configuration or an unusable address book apply as before. **One standing incident-relevant

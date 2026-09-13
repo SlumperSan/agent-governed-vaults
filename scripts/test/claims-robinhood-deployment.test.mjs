@@ -228,7 +228,9 @@ const HOWTO =
   `\n  chainId                        ${CHAIN_ID}` +
   `\n  deployedAt                     ISO-8601 instant of the deploy block` +
   `\n  singletons.VaultFactory        20-byte address` +
-  `\n  smokeVault                     the first vault (created by the Safe), or null if none exists` +
+  `\n  smokeVault                     the first vault, or null if none exists. The parenthetical here` +
+  `\n                                 used to read "created by the Safe"; that was the INTENT in` +
+  `\n                                 intendedCreator.why, and both vaults record createdByTheSafe false` +
   `\n  verifiedWiring["${VAULT_COUNT_KEY}"]  0 while smokeVault is null — the read that proves it` +
   `\n  oracle.sequencerUptimeFeed     ${ZERO} — no Chainlink uptime feed exists for this chain` +
   `\n  oracle.maxStalenessSeconds     ${MAX_HEARTBEAT} — the feeds' heartbeat, and ChainlinkOracle's` +

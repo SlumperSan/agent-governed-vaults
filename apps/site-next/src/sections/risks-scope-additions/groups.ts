@@ -12,8 +12,12 @@
  * it was applying: page bodies are positive and factual, and the Disclaimers
  * page carries every risk, warning and caveat. Four headings that open "Anyone
  * who cannot..." are caveats by that rule, so they belong on the page that
- * holds them, and who-its-for keeps the factual half: what the design assumes,
- * what the deal is, and that nothing is capped because nothing is created.
+ * holds them, and who-its-for keeps the factual half: what the design assumes
+ * and what the deal is. THE THIRD ITEM HERE WENT FALSE AND IS CORRECTED: this
+ * sentence used to end by saying nothing was capped because nothing had been
+ * created. Two vaults exist on chain 4663, `capacityCapUsdc()` reads
+ * 50000000000 on both and is immutable, and `CARD_1_BODY` below now says so.
+ * The stale half survived because no guard walks a comment.
  *
  * NO POINTER SENTENCE WAS ADDED TO who-its-for TO REPLACE THEM. It already
  * closes on `who-decide` ("Read the Disclaimers in full, then decide." with

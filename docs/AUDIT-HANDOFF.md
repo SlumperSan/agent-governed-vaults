@@ -98,9 +98,12 @@ adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft 
 **No Base mainnet deployment exists.** A Robinhood Chain mainnet deployment (chain 4663) does, made
 on 2026-09-05 and recorded at `contracts/config/deployments/robinhood-mainnet.json`. It was not
 audited as a deployment, and **it now holds real funds**: `verifiedWiring["factory.vaultCount()"]`
-reads 2 at block 61,513,974, with `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holding 20 USDG and
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holding 0.001980484 WETH (`assetBalance`), a priced position rather than cash, a priced
-position rather than cash. This sentence said the deployment held
+reads 2 at block 61,513,974, with `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holding `idleUsdc`
+20000000 (20 USDG) and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holding `assetBalance`
+1980483895862031 wei of WETH — a priced position rather than cash — both read at block 61,646,791.
+The WETH figure is the integer the chain returns; surfaces that render it as 0.001980484 are
+rounding it, and every one of these balances moves on the next deposit, exit or rebalance, which is
+why the block is stated rather than the reading being offered as current. This sentence said the deployment held
 no member funds until 2026-09-12; that was true when written and false from 2026-09-10. A reviewer
 should also read `creatorDeviationNote` in that record: both vaults were created by the deployer
 EOA rather than by the creator Safe the record specified, and `creator` is immutable, so that

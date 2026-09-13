@@ -91,9 +91,14 @@ the comments, and the owner is who decides a claim.
   that factory rather than about the script. Write `Deploy.s.sol` by name, or "every vault *it* deploys", or "on that
   factory"; best of all, write the instruction: read `VaultFactory.allowSubVaults()` on the factory
   you integrate against.
-- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. The first
-  vault on Robinhood Chain has not been created yet and is planned to launch small, so it sits
-  squarely in the sub-five regime the word misdescribes.
+- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. Both
+  vaults on Robinhood Chain read `holderCount()` 1 at block 61,646,791, so they sit squarely in the
+  sub-five regime the word misdescribes. This bullet used to assert the first vault did not exist
+  yet; it was created on 2026-09-10 and a second on 2026-09-12, and the false sentence survived four
+  review rounds. The reason is worth keeping, because it is the failure mode this whole file exists
+  to prevent: the guard over that claim tests for one exact sentence, and this bullet was a
+  paraphrase of it, so the sweep that enumerated files from the guard could not see it. Write a
+  claim so that a reader can check it, not so that a string match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed. Robinhood Chain
   mainnet (4663): the seven contracts are, since 2026-09-05, with gates 3 and 6 unrun there or
   anywhere; two vaults exist there and both hold real funds, so "deployed" there now DOES mean

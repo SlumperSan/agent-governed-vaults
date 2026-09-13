@@ -33,9 +33,9 @@
   intend to send a transaction to.
 - TWO VAULTS EXIST ON 4663 AND BOTH HOLD REAL FUNDS. verifiedWiring["factory.vaultCount()"]
   reads 2 at block 61,513,974. The first is 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4, created
-  2026-09-10 in block 58,991,819, holding 20 USDG; the second is
+  2026-09-10 in block 58,991,819, holding idleUsdc 20000000 (20 USDG) as at block 61,646,791; the second is
   0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, created 2026-09-12 in block 61,481,025, which now
-  holds 0.001980484 WETH (assetBalance), a priced position rather than cash and no USDG at all, because its proposal 3 traded the
+  holds 0.001980484 WETH (assetBalance 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash and no USDG at all, because its proposal 3 traded the
   whole balance. Both are capped at 50,000 USDG by capacityCapUsdc(). This bullet said the opposite until
   2026-09-12 -- "THERE IS NOTHING TO DEPOSIT INTO ON 4663" -- which was true when written on
   2026-09-05 and false from 2026-09-10.
@@ -44,7 +44,12 @@
   first vault here must be created BY THE SAFE, not by a script from the EOA". That was not
   followed, and it cannot be corrected on these two vaults, because VaultFactory.createVault fixes
   msg.sender as the immutable creator and attested operator and nothing can change it afterwards.
-  The Safe 0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c held 0 ETH when both were created. See
+  The Safe 0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c held 0 ETH when both were created, AND THAT
+  DID NOT PREVENT IT: execTransaction is paid for by the submitting owner's EOA, not out of the
+  Safe's balance, and this Safe had already executed 65 transactions on this chain while holding
+  nothing. Its sole owner is that same deployer EOA and getThreshold() reads 1, so it is a 1-of-1
+  and not a multisig. The constraint was not met by choice, not by impossibility. Until 2026-09-13
+  this bullet ended at the 0 ETH balance, which read as the reason the Safe was not used. See
   creatorDeviationNote in the address book. A Base Sepolia deployment of the same code also exists
   and is a testnet trial with no real value at stake. The go/no-go verdict on the board is still NO-GO
   (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 (the soak drills and the canary) have

@@ -108,9 +108,9 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 
 **Two vaults exist on it and both hold real funds.** `verifiedWiring["factory.vaultCount()"]` reads
 2 at block 61,513,974, read from chain 4663 rather than inferred from a broadcast:
-`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, block 58,991,819, 20 USDG) and
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (created 2026-09-10 in block 58,991,819; `idleUsdc` 20000000 read at block 61,646,791) and
 `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025), which after
-proposal 3 holds 0.001980484 WETH (`assetBalance`), a priced position rather than cash and `idleUsdc()` 0.
+proposal 3 holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash and `idleUsdc()` 0.
 
 **Neither was created by the creator Safe, and this document said the first one would be.** Both
 carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
@@ -123,7 +123,7 @@ nothing. So this was a choice, not an impossibility, and an earlier draft of thi
 the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
 attested operator and no later transaction can correct it, so the choice is now permanent on both
 vaults. **Member funds ARE at stake on that chain**, and NOT as USDG on both: vault one reads
-`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH (`assetBalance`), a priced position rather than cash instead,
+`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash instead,
 because proposal 3 traded its whole balance sixteen minutes before this paragraph was first
 written. An earlier draft said "20 USDG and 5 USDG, `idleUsdc()` on each" and contradicted its own
 next paragraph seven lines below.

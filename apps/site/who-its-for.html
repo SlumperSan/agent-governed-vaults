@@ -82,7 +82,7 @@
     <div class="wrap">
       <p class="eyebrow">The cap</p>
       <h2>Each vault is capped. The protocol is not.</h2>
-      <p class="tight">The contracts are on chain and the factory is open. <code>factory.vaultCount()</code> reads 2, and both vaults are funded.</p>
+      <p class="tight">The contracts are on chain and the factory is open. <code>factory.vaultCount()</code> read 2 at block 61,646,791, and both vaults were funded at that block. <code>createVault</code> is permissionless, so the count is a quantity anyone can change and this page cannot notice; read it yourself rather than trusting the figure here.</p>
       <p class="tight">A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. Both vaults carry one. There is still no protocol-wide cap, and that is the part a larger allocator has to size against: a per-vault ceiling bounds one vault, not the protocol.</p>
       <div class="note note--flat">
         <span class="label">What that means in practice</span>

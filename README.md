@@ -45,8 +45,8 @@ the chain returned and is the authority for every address in it; nothing in this
 
 **The singletons are deployed and wired, and two vaults now hold real funds there.**
 `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974. The first is
-`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created 2026-09-10, holding 20 USDG; the second is
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38`, created 2026-09-12, now holding 0.001980484 WETH (`assetBalance`), a priced position rather than cash
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created 2026-09-10, holding `idleUsdc` 20000000 — 20 USDG — at block 61,646,791; the second is
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38`, created 2026-09-12, now holding 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash
 and no USDG at all, because proposal 3 traded its whole balance. Both are capped
 at 50,000 USDG. This paragraph said there was nothing to deposit into until 2026-09-12, which was
 true when written and false from the day the first vault was created.

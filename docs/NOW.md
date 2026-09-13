@@ -27,8 +27,8 @@ work it describes.
   [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json)
   `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp).
   **Two vaults exist there and both hold real funds:** `verifiedWiring["factory.vaultCount()"]`
-  reads 2 at block 61,513,974. `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, 20 USDG)
-  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, now 0.001980484 WETH (`assetBalance`), a priced position rather than cash
+  reads 2 at block 61,513,974. `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10; `idleUsdc` 20000000 at block 61,646,791)
+  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, now 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash
   after proposal 3 traded its USDG), both capped at 50,000
   USDG. **Both were created by the deployer EOA, not by the creator Safe, which the record's
   `intendedCreator` said must not happen** and which `createVault` makes permanent. See

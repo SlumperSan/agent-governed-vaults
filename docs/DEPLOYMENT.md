@@ -298,10 +298,19 @@ gift. Two have since closed and two remain:
   and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
   (§0 above, "The chain-4663 deployment, and where it is recorded"), and no contract from this
   repository exists on any other mainnet.
-- **The funding and one immutable launch parameter are decided but not yet executed,** both
-  recorded in §0 above: the creator Safe (`creator` `0xC73B…AD4c`) holds 100 USDG for the first
-  deposit, and vault #1 takes the config's 100-unit `minDepositUsdc` (the owner's decision of
-  2026-09-05). The field is immutable once `createVault` has run, and vault #1 has not been created.
+- **The funding and one immutable launch parameter were executed, and neither landed as this
+  bullet used to describe it.** Every clause of the previous version was false by 2026-09-12, and
+  all four are corrected here rather than deleted, because the gap between the plan and the chain
+  is the point. It said creation was "not yet executed": `createVault` ran twice, on 2026-09-10 and
+  2026-09-12. It called `0xC73B…AD4c` the `creator`: `creator()` on both vaults returns the deployer
+  EOA, not the Safe — see `creatorDeviationNote` in the record. It said that Safe "holds 100 USDG
+  for the first deposit": `USDG.balanceOf` on it reads 0 at block 61,646,791, and the 20 USDG that
+  funded vault #1 came from the EOA. And it said vault #1 "takes the config's 100-unit
+  `minDepositUsdc`": `minDepositUsdc()` reads **10000** on both vaults — 0.01 USDG, not 100 — set
+  immutably at creation. `contracts/config/robinhood-mainnet.json` still carries
+  `smoke.minDepositUsdc` `"100000000"` and a `smokeParametersProvenanceNote` calling the gap an open
+  owner decision; the chain settled it at 10000 and the config was never reconciled. A constructor
+  argument is not a deployed fact.
 - **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
   `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
   ran both scripts, and the record was written from on-chain readback afterwards.
@@ -499,8 +508,8 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
 > holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
-> two vaults now hold real money on it: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 with 20 USDG
-> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 0.001980484 WETH (`assetBalance`), a priced position rather than cash, so the constraint applies there in
+> two vaults now hold real money on it: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 with 20 USDG (`idleUsdc` 20000000 at block 61,646,791)
+> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash, so the constraint applies there in
 > full rather than in principle. Confirm
 > `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
 > the value read back at deployment is in that chain's address book under
