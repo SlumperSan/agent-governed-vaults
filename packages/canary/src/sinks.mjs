@@ -98,10 +98,24 @@ export const PAGE_SIGNALS = new Set([
  * cannot substitute because it recomputes through the same mis-scaled `priceWad`.
  *
  * Each predicate takes the transition and returns true to PAGE. It is consulted only on an ALERT.
+ *
+ * TWO PROPERTIES EVERY PREDICATE HERE MUST HAVE, because a predicate decides whether an alert
+ * reaches a human at all:
+ *
+ * 1. **It may not demote what it did not classify.** The test is `harm !== null`, not `!= null`:
+ *    an alert pages UNLESS it explicitly classified itself benign, which the aggregator-swap leg
+ *    does literally (`harm: null`). An ALERT whose `harm` is ABSENT is a leg nobody has classified
+ *    yet, and that is exactly the case that should page. This matters more than it reads: the
+ *    `readdir` coverage test proves the signal NAME is classified, and NOTHING proves that every
+ *    `alert()` inside a signal sets the field its predicate reads — so the fail-safe direction has
+ *    to be the default, since the invariant does not reach the payload.
+ * 2. **It fails OPEN if it throws.** `tierOf` catches and returns 'page'; see the catch there for
+ *    why an escaping throw deletes the alert rather than mis-routing it. Do not rely on this — it
+ *    is a backstop, not a licence to skip the optional chaining.
  * @type {Map<string, (t: import('./transitions.mjs').Transition) => boolean>}
  */
 export const CONDITIONAL_PAGE = new Map([
-  ['feed-identity', (t) => t?.result?.detail?.harm != null],
+  ['feed-identity', (t) => t?.result?.detail?.harm !== null],
 ]);
 
 /**
@@ -129,7 +143,18 @@ export function tierOf(t) {
   if (t?.to !== 'alert') return 'log';
   if (PAGE_SIGNALS.has(t?.signal)) return 'page';
   const pagesWhen = CONDITIONAL_PAGE.get(t?.signal);
-  return pagesWhen?.(t) === true ? 'page' : 'log';
+  if (!pagesWhen) return 'log';
+  try {
+    return pagesWhen(t) === true ? 'page' : 'log';
+  } catch (err) {
+    // FAIL OPEN. A predicate that throws must not be able to delete the alert: `tierOf` is called
+    // from inside `createWebhookSink.emit` too (for `body.tier`), so an escaping throw is caught by
+    // `emitAll` as a skipped SINK and the transition reaches ZERO endpoints. A spurious page costs
+    // one person's attention once; a swallowed page costs the incident. Loud on stderr so the
+    // broken predicate is discoverable rather than silently paging on everything forever.
+    console.error(`canary: tier predicate for ${t?.signal} threw on ${t?.id}: ${err?.message ?? err} - defaulting to PAGE`);
+    return 'page';
+  }
 }
 
 /**
