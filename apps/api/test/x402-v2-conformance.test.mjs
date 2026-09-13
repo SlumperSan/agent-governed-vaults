@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gate, buildChallenge, decodeSignatureHeader, checkEnvelopeAgainstPrice, HEADERS } from '../src/x402.mjs';
+import { checkChallengePrice } from '../src/facilitator-server.mjs';
 
 const USDC = '0x' + 'c'.repeat(40);
 const PAYTO = '0x' + 'd'.repeat(40);
@@ -212,6 +213,17 @@ test('decodeSignatureHeader §5.2.1: accepts the spec-nested envelope shape', ()
 });
 
 test('checkEnvelopeAgainstPrice + gate(): a spec-nested envelope settles end to end against a base-sepolia price', async () => {
+  // THE REGRESSION THIS PINS (PR review, MAJOR-1). This test used to stub `verifyAndSettle` with
+  // an always-`ok:true` spy and assert only on the fields the spy happened to echo back — so it
+  // was named "settles end to end" while never exercising the ONE leg where the actual defect
+  // lived. `gate()` hoists a spec-nested envelope's `network` from `accepted.network`, which is
+  // CAIP-2 (`eip155:84532`); `checkEnvelopeAgainstPrice` (x402.mjs) already normalized that
+  // through `networksEqual`, but `facilitator-server.mjs`'s `checkChallengePrice` — the SAME
+  // relay guard a real `FACILITATOR=http` deployment runs on every `POST /settle` — compared it
+  // by exact lowercase string equality against the repo-shorthand `price.network`. Every
+  // correctly-signed v2 envelope failed there as `network-mismatch`, so the capability this PR's
+  // title claims did not actually hold end to end. The facilitator spy below now genuinely calls
+  // `checkChallengePrice`, so a regression here fails this test again instead of passing quietly.
   const specEnvelope = {
     x402Version: 2,
     resource: { url: '/vaults' },
@@ -241,19 +253,50 @@ test('checkEnvelopeAgainstPrice + gate(): a spec-nested envelope settles end to 
   assert.equal(checkEnvelopeAgainstPrice(price, decoded, 1000).ok, true);
 
   let seenEnvelope = null;
-  const spy = { async verifyAndSettle(_c, e) { seenEnvelope = e; return { ok: true, receiptId: 'r' }; } };
+  // A REAL relay guard, not a stub that always says yes: exactly what `startFacilitatorServer`
+  // wires `verifyAndSettle` behind in production (`facilitator-server.mjs`'s `createSettleHandler`
+  // runs `checkChallengePrice` before ever touching a chain client).
+  const relayFacilitator = {
+    async verifyAndSettle(challenge, e) {
+      seenEnvelope = e;
+      const check = checkChallengePrice(challenge, e);
+      if (!check.ok) return { ok: false, reason: check.reason };
+      return { ok: true, receiptId: 'r' };
+    },
+  };
   const v = await gate({
     headers: { [HEADERS.SIGNATURE]: b64(specEnvelope) },
     price,
-    facilitator: spy,
+    facilitator: relayFacilitator,
     nowMs: 1000,
   });
   assert.equal(v.status, 200, `expected settlement, got ${v.status} ${JSON.stringify(v.body)}`);
   assert.equal(v.receiptId, 'r');
-  // The facilitator (an ungranted file in this repo, but this pins the CONTRACT gate() hands it)
-  // receives the normalized flat authorization, not the spec-nested one.
+  // The facilitator receives the normalized flat authorization, not the spec-nested one, AND its
+  // own network re-check (checkChallengePrice) must independently agree the network matches —
+  // this is the assertion the previous version of this test was missing.
   assert.equal(seenEnvelope.authorization.asset, USDC);
   assert.equal(seenEnvelope.authorization.to, PAYTO);
+  assert.equal(checkChallengePrice({ price }, seenEnvelope).ok, true, 'the relay guard must independently accept the CAIP-2 network too');
+});
+
+test('checkChallengePrice §11.1 (facilitator-server.mjs): CAIP-2 network matches its repo-shorthand price in both directions', () => {
+  // Direct, minimal pin for MAJOR-1: BEFORE the fix, `checkChallengePrice` compared
+  // `envelope.network` to `price.network` with exact lowercase string equality, so this returned
+  // `{ok:false, reason:'network-mismatch'}` for a perfectly valid v2 envelope.
+  const shorthandPrice = { price: { network: 'base-sepolia' } };
+  const caip2Envelope = { authorization: {}, network: 'eip155:84532' };
+  assert.equal(checkChallengePrice(shorthandPrice, caip2Envelope).ok, true);
+
+  const caip2Price = { price: { network: 'eip155:84532' } };
+  const shorthandEnvelope = { authorization: {}, network: 'base-sepolia' };
+  assert.equal(checkChallengePrice(caip2Price, shorthandEnvelope).ok, true);
+
+  // And a genuinely different chain must still be refused under the normalization.
+  const mainnetEnvelope = { authorization: {}, network: 'eip155:8453' };
+  const r = checkChallengePrice(shorthandPrice, mainnetEnvelope);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'network-mismatch');
 });
 
 test('decodeSignatureHeader: still accepts the legacy flat envelope, byte for byte (regression)', () => {

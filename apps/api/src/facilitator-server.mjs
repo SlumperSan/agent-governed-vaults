@@ -53,6 +53,7 @@
 
 import { createServer } from 'node:http';
 import { createSettlingFacilitator, assertUsdcDomain } from './facilitator.mjs';
+import { networksEqual } from './x402.mjs';
 
 export const CONSENT_ENV_VAR = 'FACILITATOR_I_UNDERSTAND_THIS_SPENDS_FUNDS';
 export const CONSENT_ENV_VALUE = 'yes';
@@ -134,7 +135,18 @@ export function checkChallengePrice(challenge, envelope) {
   }
   if (price.asset != null && String(auth.asset ?? '').toLowerCase() !== String(price.asset).toLowerCase())
     return { ok: false, reason: 'asset-mismatch' };
-  if (price.network != null && String(envelope?.network ?? '').toLowerCase() !== String(price.network).toLowerCase())
+  // MAJOR-1 FIX (x402 v2 PR review): this used to be an exact lowercase string compare, which
+  // rejected every correctly-signed x402 v2 SPEC-NESTED envelope as `network-mismatch` — `gate()`
+  // hoists `envelope.network` from `accepted.network`, which is CAIP-2 (e.g. `eip155:84532`),
+  // while `price.network` stays the repo's own shorthand (`base-sepolia`) that `serve.mjs` and
+  // `scripts/live-x402-run.mjs` configure. Reproduced directly: a spec-shaped envelope that
+  // `checkEnvelopeAgainstPrice` (x402.mjs, which already used `networksEqual`) accepted was then
+  // refused HERE with `network-mismatch`, so `gate()` 402'd it as "settlement failed" even though
+  // the envelope was entirely valid — the v2 conformance work's headline capability (a spec client
+  // can pay this API) did not actually hold end to end. `networksEqual` is the same function
+  // `x402.mjs` uses, imported rather than re-implemented, so the two checks can never drift apart
+  // on this again.
+  if (price.network != null && !networksEqual(envelope?.network, price.network))
     return { ok: false, reason: 'network-mismatch' };
   if (price.amount != null) {
     let want, got;

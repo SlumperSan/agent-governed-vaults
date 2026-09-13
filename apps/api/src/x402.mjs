@@ -70,8 +70,14 @@ const HEADER_RESPONSE = 'payment-response';
  */
 const CAIP2_BY_LEGACY = { base: 'eip155:8453', 'base-sepolia': 'eip155:84532' };
 
-/** Legacy short name -> CAIP-2 for the two networks this repo configures; passes through anything else. */
-function toCaip2(network) {
+/**
+ * Legacy short name -> CAIP-2 for the two networks this repo configures; passes through anything
+ * else. Exported: `facilitator-server.mjs`'s `checkChallengePrice` re-checks the same envelope's
+ * network against the same challenge's price server-side (see that function's own comment on why
+ * it duplicates the check `gate()` already ran) and needs the identical equality, not a second
+ * hand-rolled one — see the MAJOR-1 fix note on `checkChallengePrice` for what happens otherwise.
+ */
+export function toCaip2(network) {
   return CAIP2_BY_LEGACY[String(network ?? '').toLowerCase()] ?? network;
 }
 
@@ -79,7 +85,7 @@ function toCaip2(network) {
  * True iff two network identifiers name the same chain once both are put through `toCaip2` — so a
  * spec client's `eip155:84532` matches this repo's own `'base-sepolia'`, in either argument order.
  */
-function networksEqual(a, b) {
+export function networksEqual(a, b) {
   if (!a || !b) return false;
   return toCaip2(String(a).toLowerCase()) === toCaip2(String(b).toLowerCase());
 }
@@ -212,9 +218,10 @@ export function decodeSignatureHeader(header) {
 
     // §5.2.2's Authorization object has exactly {from, to, value, validAfter, validBefore, nonce}
     // — no `asset`. This repo's flat authorization has always carried `asset` directly (see
-    // api.test.mjs's `envelope()` helper and `facilitator-server.mjs:129`'s `auth.asset` read), so
-    // a spec-shaped authorization needs it backfilled from `accepted.asset`. Never overwrite a
-    // value the envelope actually supplied — `!= null` also treats an explicit `null` as "fill it".
+    // api.test.mjs's `envelope()` helper, and `facilitator-server.mjs`'s `checkChallengePrice`
+    // function, which reads `auth.asset` off exactly this field), so a spec-shaped authorization
+    // needs it backfilled from `accepted.asset`. Never overwrite a value the envelope actually
+    // supplied — `!= null` also treats an explicit `null` as "fill it".
     const authorization = flatAuth.asset != null ? flatAuth : { ...flatAuth, asset: accepted?.asset };
 
     return {
