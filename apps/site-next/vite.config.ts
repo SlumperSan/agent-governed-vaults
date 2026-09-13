@@ -1,12 +1,21 @@
 /**
  * Build configuration for the public site.
  *
- * EIGHT ENTRIES, NOT ONE APP. `rollupOptions.input` names the eight root-level
- * entry HTMLs, so `dist/` carries eight flat files with exactly the filenames
- * the current site uses — `dist/risks.html`, never `dist/risks/index.html`.
- * There is no router and no client navigation: a nav link is an ordinary
- * document navigation, and `site.test.mjs` asserts the `.html` suffix on every
- * one of them.
+ * ONE ENTRY PER DOCUMENT, NOT ONE APP. `rollupOptions.input` names the
+ * root-level entry HTMLs, so `dist/` carries flat files with exactly the
+ * filenames the site serves — `dist/disclaimers.html`, never
+ * `dist/disclaimers/index.html`. There is no router and no client navigation: a
+ * nav link is an ordinary document navigation, and `site.test.mjs` asserts the
+ * `.html` suffix on every one of them.
+ *
+ * THREE ENTRIES, AND THE THIRD IS NOT A PAGE. `index` and `disclaimers` are the
+ * two `PageId`s. `notFound` builds `404.html`, which Cloudflare Pages serves —
+ * with a 404 status — for any path matching no asset and no `_redirects` rule.
+ * DROPPING IT FROM THIS LIST DOES NOT FAIL THE BUILD, it reinstates a soft-404:
+ * with no top-level `404.html` in the output, the Pages asset server falls back
+ * to serving `/index.html` with a 200 for every unmatched path. That was the
+ * live behaviour of rwally.com until 2026-09-09, and `src/shell/pinned.ts`
+ * records the measurement under `NOT_FOUND_ID`.
  *
  * TWO BUILDS, THEN A SPLICE. `npm run build` runs this config twice — once for
  * the client, once with `--ssr` for the server bundle — and then
@@ -50,7 +59,7 @@ export default defineConfig(({ isSsrBuild }) => ({
         //
         // `ssr: true` plus an explicit `input` rather than `ssr: '<entry>'`.
         // Under Vite 8 the string form leaves the ssr environment's input as
-        // the seven entry HTMLs, and the build stops with "rolldownOptions.
+        // the entry HTMLs, and the build stops with "rolldownOptions.
         // input should not be an html file when building for SSR" — a message
         // that reads like a config typo and is really the two forms diverging.
         ssr: true,
@@ -67,6 +76,7 @@ export default defineConfig(({ isSsrBuild }) => ({
           input: {
             index: entry('index.html'),
             disclaimers: entry('disclaimers.html'),
+            notFound: entry('404.html'),
           },
         },
       },

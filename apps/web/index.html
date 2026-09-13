@@ -185,6 +185,8 @@
   .panel .row.total{background:var(--surface-2);font-weight:600}
   .panel .row small{display:block;font-family:var(--sans);font-weight:400;font-size:11.5px;color:var(--muted);margin-top:2px;max-width:40ch}
   .panel .row .v{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* Never the only carrier of the fact: the row's own `small` always states it in words. */
+  .panel .row .v[data-sev="warn"]{color:var(--warn)}
 
   /* basket + oracle feeds */
   .basket{display:flex;flex-direction:column;gap:9px}
@@ -619,6 +621,29 @@ function renderActionBar(x) {
   </div>`;
 }
 
+/**
+ * Why the voting-eligible number differs from the share balance, in the contract's own terms.
+ * A queued exit strips the vote silently: the shares are still held, still valued, and still
+ * shown — and a strip that stopped at "Shares held" said nothing about the vote they no longer
+ * carry. The derivation is in `vault-view.mjs`; this is only its copy.
+ */
+function votingNote(vt) {
+  if (vt.reason === 'parent') {
+    return 'Zero: a registered parent vault holds shares in its child but is excluded from ' +
+      'voting-eligible stake and from the holder count. Its members vote in the parent instead.';
+  }
+  if (vt.reason === 'queued') {
+    return `${wadExact(vt.lockedShares, { maxFrac: 6 })} of your shares left voting-eligible ` +
+      'stake the moment you queued your exit. They stay outstanding and keep gaining and losing ' +
+      'with the vault. Nothing un-queues them: the lock ends only when settleQueuedExit(you) is ' +
+      'called, a separate call anyone can make once no execution is pending, and that settlement ' +
+      'burns exactly the locked shares, so the vote does not come back with them.';
+  }
+  return 'Your whole balance, because nothing here is locked. Queueing an exit subtracts from ' +
+    'this number the moment you queue, and vote weight and quorum stake are read from ' +
+    'voting-eligible shares, never from the share count above.';
+}
+
 function renderPositionStrip(x) {
   const p = x.position;
   const pend = x.pendingDeposit;
@@ -627,6 +652,8 @@ function renderPositionStrip(x) {
   if (p && p.shares > 0n) {
     html += `<div class="row"><div>Shares held<small>Non-transferable: exiting is the only way out.</small></div>
       <div class="v">${esc(wadExact(p.shares, { maxFrac: 6 }))}</div></div>
+      <div class="row"><div>Voting-eligible shares<small>${esc(votingNote(p.voting))}</small></div>
+        <div class="v"${p.voting.eligibleShares < p.shares ? ' data-sev="warn"' : ''}>${esc(wadExact(p.voting.eligibleShares, { maxFrac: 6 }))}</div></div>
       <div class="row"><div>Value today</div><div class="v">${p.valueUsdc !== null ? esc(usdcExact(p.valueUsdc)) : 'Unknown while frozen'}</div></div>
       <div class="row"><div>Cost basis</div><div class="v">${p.costBasisUsdc !== null ? esc(usdcExact(p.costBasisUsdc)) : '—'}</div></div>
       <div class="row"><div>Exit fee today<small>${esc(duration(p.tenureSec))} of tenure. ${p.isSoleHolder ? 'Waived: you are the only member, and the fee accrues to remaining members.' : 'Paid to the members who stay, never to the operator.'}</small></div>

@@ -6,8 +6,14 @@
  * fetched by the reader's own browser from the chain's public JSON-RPC endpoint
  * while the page is open, which means a reader who doubts them can open the
  * network panel and watch the request go out. That is the difference between
- * "the factory has created no vault" as a sentence and as an observation, and it
- * is the whole reason the section exists.
+ * "the factory has created two vaults" as a sentence and as an observation, and
+ * it is the whole reason the section exists.
+ *
+ * That example used to read "no vault", and it is worth keeping the change in
+ * view rather than quietly swapping the number: the written claim went stale
+ * when vault #1 was created and nothing here noticed, while the READ beside it
+ * had been correct the whole time without anyone touching it. The section is
+ * its own argument.
  *
  * THIS FILE IS A PORT, NOT AN INVENTION. `apps/app/src/app.js` has been doing
  * exactly this against the same endpoint since 2026-09-05 and the request shape

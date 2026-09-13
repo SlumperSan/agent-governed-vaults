@@ -55,7 +55,15 @@
 import type { JSX } from 'react';
 import { Mark } from '../brand/Mark';
 import { LivePriceChip } from '../live/LivePriceChip';
-import { APP_NAV, BRAND_NAME, HEADER_NAV, TAGLINE, X_URL, type PageId } from './pinned';
+import {
+  APP_NAV,
+  BRAND_NAME,
+  HEADER_NAV,
+  siteHref,
+  TAGLINE,
+  X_URL,
+  type ShellPage,
+} from './pinned';
 import styles from './masthead.module.css';
 
 /** The X glyph. One path, drawn at the viewBox X publishes for it. */
@@ -85,14 +93,14 @@ function DoorArrow(): JSX.Element {
   );
 }
 
-export function Masthead({ page }: { page: PageId }): JSX.Element {
+export function Masthead({ page }: { page: ShellPage }): JSX.Element {
   return (
     <header className={styles.masthead}>
       <div className={styles.pill}>
         <div className={styles.left}>
           <a
             className={styles.brand}
-            href="index.html"
+            href={siteHref(page, 'index.html')}
             aria-label={BRAND_NAME}
             aria-current={page === 'index.html' ? 'page' : undefined}
           >
@@ -117,7 +125,7 @@ export function Masthead({ page }: { page: PageId }): JSX.Element {
             <a
               key={item.label}
               className={styles.navLink}
-              href={item.href}
+              href={siteHref(page, item.href)}
               rel={item.external ? 'noopener' : undefined}
               aria-current={item.page === page ? 'page' : undefined}
             >
