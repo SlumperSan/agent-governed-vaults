@@ -145,7 +145,7 @@ thereafter; it does not repeat a "cannot run" line on every vault on every sweep
 the deployment,
 and the leg does not sit in the not-OK tally forever. Every other guard in `priceWad` is unaffected
 and still measured per asset: unlisted feed, dead or non-positive answer, unset or future timestamp,
-the heartbeat, and the sane-price band (`ChainlinkOracle.sol:285-304`).
+the heartbeat, and the sane-price band (`priceWad`, `ChainlinkOracle.sol:285-304`).
 
 **Which chains may ship without an uptime feed is not the canary's call.** It is settled before the
 oracle exists, by `DeployChainlinkOracle.requiresSequencerUptimeFeed`
@@ -487,7 +487,7 @@ masking failure of single-key signals, and it is why per-leg keys are the house 
 proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
 Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
 Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
-be settled (`Governance.sol:278`), so one vault cannot have two proposals running at once however
+be settled (`Governance.sol:293`), so one vault cannot have two proposals running at once however
 many proposers try. That, not the phase durations, is what bounds pages per vault per hour, and it
 is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
 true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
@@ -596,8 +596,8 @@ re-assert on a backoff until fixed:
 | `ORACLE DETECTOR BLIND … answers neither ChainlinkOracle.sequencerUptimeFeed() nor OracleAggregator.assetConfig()` | the vault's oracle is a flavor this canary does not know | the canary needs a new oracle implementation before this vault is monitored at all; do not treat the vault as healthy |
 | `vault … is unreadable` | wrong address, wrong chain, or the RPC is failing | check `RPC_URL`/`CHAIN_ID` and the address. **Every** signal for that vault is suspended |
 | `… check ERRORED on vault … and measured nothing` | the signal threw (usually an RPC fault) | read the error in `detail`; the vault is unmonitored for that signal until it clears |
-| `FEED IDENTITY DETECTOR BLIND … did not answer description() or decimals()`, or `… description() or decimals() … could not be read` | one branch, two wordings. `did not answer` needs every one of those reads that failed to be a confirmed revert: the proxy stopped answering the reads the harm checks compare against. `could not be read` means at least one of those reads failed without a confirmed revert: including an `eth_call` that came back empty, which classifies `transport` (`call-error.mjs:19-21`), so the feed may well have answered | the asset is unmonitored for aggregator-swap drift. On `did not answer`: a feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape: check it against Chainlink's feed registry. On `could not be read`: check the RPC's rate limit first, but an empty `eth_call` return lands here too: three consecutive sweeps is the feed, not the network (`feed-identity.mjs:72-76`) |
-| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()`, or `… neither aggregator() nor phaseId() … could be read` | one branch, two wordings, same rule: `answered neither` needs both reads to be confirmed reverts: the feed is not an `EACAggregatorProxy`. `could be read` means at least one failed without a confirmed revert: an `eth_call` that came back empty classifies `transport` too (`call-error.mjs:19-21`), and evidences neither | the harm checks (decimals, denomination) **did** run and passed either way; it is the swap *notice* that is blind |
+| `FEED IDENTITY DETECTOR BLIND … did not answer description() or decimals()`, or `… description() or decimals() … could not be read` | one branch, two wordings. `did not answer` needs every one of those reads that failed to be a confirmed revert: the proxy stopped answering the reads the harm checks compare against. `could not be read` means at least one of those reads failed without a confirmed revert: including an `eth_call` that came back empty, which classifies `transport` (`call-error.mjs:49-51`), so the feed may well have answered | the asset is unmonitored for aggregator-swap drift. On `did not answer`: a feed that has stopped answering the calls `ChainlinkOracle`'s own constructor made has itself changed shape: check it against Chainlink's feed registry. On `could not be read`: check the RPC's rate limit first, but an empty `eth_call` return lands here too: three consecutive sweeps is the feed, not the network (`feed-identity.mjs:72-76`) |
+| `FEED IDENTITY DETECTOR BLIND … answered neither aggregator() nor phaseId()`, or `… neither aggregator() nor phaseId() … could be read` | one branch, two wordings, same rule: `answered neither` needs both reads to be confirmed reverts: the feed is not an `EACAggregatorProxy`. `could be read` means at least one failed without a confirmed revert: an `eth_call` that came back empty classifies `transport` too (`call-error.mjs:49-51`), and evidences neither | the harm checks (decimals, denomination) **did** run and passed either way; it is the swap *notice* that is blind |
 | `exit-liveness sentinel BLIND … did not reach the chain` | the `requestExit` probe failed in transit (rate limit, timeout, dropped socket): no revert was observed | check the RPC's rate limit and `RPC_URL`. **This is not an H-1 finding**: nothing about `requestExit` was learned. It clears on the next sweep that reaches the chain |
 | `ORACLE DETECTOR BLIND … priceWad() … could not be read` | the ground-truth price read failed in transit | as above. Whether the asset is frozen is unknown, so it is not reported either way |
 | `ORACLE FRESHNESS DETECTOR BLIND … price sources could not be read` | enough sources were unreachable that the quorum margin cannot be stated | the verdict is still given whenever it holds on a bound: this line means the unreadable sources are what decides it |
@@ -612,7 +612,7 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 and explicitly not evidence of a fault.
 
 **`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
-blind branches (`feed-identity.mjs:179, 211, 266, 308`) carry
+blind branches (`feed-identity.mjs:185, 211, 266, 308`) carry
 `minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:101`), so they escalate only on the third
 consecutive sweep. The case that earned the damping is an `eth_call` coming back empty: one empty
 return is noise where three consecutive is the feed, but that is the case it was written for, not
@@ -624,7 +624,7 @@ never once succeeded must not be indistinguishable from silence.
 **`share-conservation` damps as well, which is why that lede is scoped to blind lines.**
 `minConsecutive: pinned ? 1 : 2` (`share-conservation.mjs:76`) makes an UNPINNED result wait for two
 consecutive observations before the tracker flips its status: `alert` and `ok` alike, because
-`transitions.mjs:146` gates every status flip on `need`, not only the blind ones. A result is
+`transitions.mjs:157` gates every status flip on `need`, not only the blind ones. A result is
 unpinned either because the caller passed no `atBlock` (`share-conservation.mjs:39`) or because the
 pinned read failed and the archive fallback re-read at chain head (`share-conservation.mjs:44-51`);
 that retry is `if (!res.ok && pinned)` and is deliberately NOT gated on `kind` (`:46-48`), so it
@@ -638,7 +638,7 @@ two lines that behave differently: `feed-identity`'s “could not be probed” d
 “neither probe … could be read” does not. **Every other blind line re-asserts from the first
 sweep**: the `oracle-health`, `oracle-freshness`, `exit-liveness` and `governance-watch` blind
 branches set no `minConsecutive`, and neither do the two the runner emits itself
-(`canary-runner.mjs:266`: row `:566`; `canary-runner.mjs:243`: row `:567`).
+(`canary-runner.mjs:271`, the `vault … is unreadable` row; and `canary-runner.mjs:248`, the `check ERRORED on vault …` row).
 
 **Event scan gaps.** If the canary is down long enough that the backlog exceeds
 `MAX_LOG_SPAN_BLOCKS`, it scans the most recent window and moves on: the older blocks are never
