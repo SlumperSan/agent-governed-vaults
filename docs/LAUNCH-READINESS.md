@@ -110,7 +110,7 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 2 at block 61,513,974, read from chain 4663 rather than inferred from a broadcast:
 `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, block 58,991,819, 20 USDG) and
 `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025), which after
-proposal 3 holds 0.001980484 WETH, worth about $4.98 and `idleUsdc()` 0.
+proposal 3 holds 0.001980484 WETH (`assetBalance`), a priced position rather than cash and `idleUsdc()` 0.
 
 **Neither was created by the creator Safe, and this document said the first one would be.** Both
 carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
@@ -123,7 +123,7 @@ nothing. So this was a choice, not an impossibility, and an earlier draft of thi
 the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
 attested operator and no later transaction can correct it, so the choice is now permanent on both
 vaults. **Member funds ARE at stake on that chain**, and NOT as USDG on both: vault one reads
-`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH, worth about $4.98 instead,
+`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH (`assetBalance`), a priced position rather than cash instead,
 because proposal 3 traded its whole balance sixteen minutes before this paragraph was first
 written. An earlier draft said "20 USDG and 5 USDG, `idleUsdc()` on each" and contradicted its own
 next paragraph seven lines below.
@@ -137,8 +137,14 @@ to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96
 `minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
 171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
 (`VaultCore.sol:908-912`), not the measured delta. Proposal 1 executed carrying no orders.
-Proposal 2 is **Passed and still executable**, not expired: `status` 2 with `expiresAt`
-1789340584, roughly 21 hours out at the time of writing. What it does NOT
+Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
+**but it can never execute**, and an earlier draft of this line said "still executable" and
+contradicted this repository's own address book six files away. `Governance.execute` requires
+`keccak256(payload) == p.actionHash` (`Governance.sol:598`) and the committed payload carries a
+`SwapOrder.deadline` that `AggregationRouterAdapter` compares against `block.timestamp`. That
+deadline has passed and the payload cannot be re-dated without changing its hash, so the proposal is
+permanently unexecutable and simply waits out its window. That is precisely why vault two exists
+with `executionWindow` 3600 instead of 86400: to make the same loss cost an hour rather than a day. What it does NOT
 prove is the custody shape: `operatorPayoutNote` in the Base Sepolia record requires a Safe rather
 than an EOA as the creator of a production vault, and that requirement was not met here, so the
 evidence is of the mechanism working, not of the intended operator model.

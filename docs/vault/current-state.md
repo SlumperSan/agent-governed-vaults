@@ -5,7 +5,7 @@ security reasons). Since 2026-09-05 the protocol is deployed on **Robinhood Chai
 mainnet (chain 4663)**, on the owner's decision of 2026-09-04 and without that board's soak and
 canary gates. Two vaults exist on it and both hold real money:
 `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (20 USDG) and
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (0.001980484 WETH, worth about $4.98).
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (0.001980484 WETH (`assetBalance`), a priced position rather than cash).
 
 > **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
 > [docs/NOW.md](../NOW.md); the argued go/no-go board is
@@ -82,7 +82,7 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
   deployed and wired, and **two vaults now hold real funds there**:
   `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974, with
   `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10) holding 20 USDG and
-  `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12) holding 0.001980484 WETH, worth about $4.98
+  `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12) holding 0.001980484 WETH (`assetBalance`), a priced position rather than cash
   after proposal 3 traded its USDG. Both were created by
   the deployer EOA rather than by the creator Safe
   `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, against the record's own `intendedCreator`, and
