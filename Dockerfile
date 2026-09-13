@@ -30,9 +30,13 @@ WORKDIR /app
 # Install runtime deps first for layer caching. `npm ci` against the committed lockfile so the
 # image resolves exactly what CI tested (security-ops §3). --omit=dev pulls the three declared
 # runtime dependencies — viem, @solana/web3.js, @solana/spl-token — and their transitive closure.
-# This comment said "only viem (the sole runtime dependency)" until 2026-09-13; the two Solana
-# packages landed on protocol/main after this file was last touched, and nothing walks a
-# Dockerfile, so the sentence went false with every guard green.
+# That closure includes `typescript`, declared a peer by viem, abitype, ox, @solana/errors and the
+# @solana/codecs* family: it ships in the image. Worth knowing before reading it as dev-only.
+# This comment said "only viem (the sole runtime dependency)" until 2026-09-13. It went false in
+# 2e7240b4 — the commit that declared the two Solana packages ALSO edited this file, twenty-five
+# lines above, without revisiting the sentence below it. An earlier version of this note said the
+# packages landed after the file was last touched; one commit did both. Nothing walks a
+# Dockerfile, so every guard stayed green either way.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
