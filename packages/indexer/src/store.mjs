@@ -46,6 +46,8 @@ export function serializeState(state) {
     eventStats: mapEntries(state.eventStats),
     adapters: [...state.adapters],
     queuedExits: mapEntries(state.queuedExits, (members) => [...members]),
+    // Same nested shape as `shares`, bigints as strings: vault -> [[member, "amount"], ...].
+    queuedExitShares: mapEntries(state.queuedExitShares, (book) => mapEntries(book, (b) => b.toString())),
   };
 }
 
@@ -103,13 +105,30 @@ export function deserializeState(obj) {
   for (const [k, pid] of obj.activeProposal) s.activeProposal.set(k, pid);
   // Absent on a snapshot written before these fields existed — default to empty rather than
   // throwing, so an older snapshot still resumes cleanly. VERSION deliberately stays at 1: the
-  // guard on line 53 rejects any snapshot whose version is not exactly VERSION, so bumping it
-  // would make every existing snapshot UNLOADABLE (loadSnapshot rethrows, the daemon dies on
-  // restart, verifySnapshot reports UNUSABLE) — the opposite of a migration. These defaults ARE
-  // the migration; the added fields are all additive and zero-valued.
+  // guard above rejects any snapshot whose version is not exactly VERSION (`!==`, not `<`), so
+  // bumping it would make every existing snapshot UNLOADABLE — `loadSnapshot` catches only ENOENT
+  // and rethrows this, so `buildIndexer` dies at startup; `verifySnapshot` stamps `version: VERSION`
+  // and would report every existing file UNUSABLE, which the docs/RUNTIME.md §8 troubleshooting
+  // table routes to "restore from .1 per §8.3" — a backup written by the same older build, so it
+  // would fail identically. That is an outage, not a migration. These
+  // defaults ARE the migration; the added fields are all additive and zero-valued.
   for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
   for (const a of obj.adapters ?? []) s.adapters.add(a);
   for (const [k, members] of obj.queuedExits ?? []) s.queuedExits.set(k, new Set(members));
+  // Absent on a snapshot written before the queued-exit SIZES were folded. `queuedExits` above
+  // still restores WHICH members are queued, so the Mode-F discriminator and the backlog survive
+  // such a resume intact; only the per-member amount is unknown until that member's next event.
+  //
+  // "Unknown" is where it stops. This is the one added field whose empty default is not harmless,
+  // because a missing per-member entry is indistinguishable from a zero one to anything that reads
+  // the map alone — and a zero here means "nothing is locked" about a member `queuedExits` says IS
+  // locked. So the absence is not filled in: `memberPosition` reads the pair (queued in the set,
+  // no entry in this book) as "locked, amount unknown" and reports null with a note, rather than a
+  // number it cannot support. That is why the missing map still does not need a VERSION bump — the
+  // gap is DETECTABLE in place, so the in-place upgrade is graceful rather than merely quiet.
+  for (const [k, book] of obj.queuedExitShares ?? []) {
+    s.queuedExitShares.set(k, new Map(book.map(([m, b]) => [m, BigInt(b)])));
+  }
   return s;
 }
 

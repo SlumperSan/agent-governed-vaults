@@ -10,15 +10,22 @@
  * WHY THIS EXISTS. `contracts/foundry.toml` sets no `bytecode_hash`, so solc's default `ipfs`
  * metadata mode applies, and the CBOR metadata trailer embeds an IPFS hash of the compiled
  * `sources` map, which is keyed by SOURCE PATH. Moving or renaming any file in a contract's
- * compiled dependency graph changes that trailer without changing a single opcode. Measured
- * 2026-09-01: on `protocol/main`, `ChainlinkOracle`'s compiled runtime bytecode diverges from
- * the deployed Base Sepolia bytecode (`0x6371E14C0682882e75E8382caf0216545B1f43C6`) in exactly
- * the 32-byte CBOR metadata hash — every other byte, including all four immutable-address
- * slots once masked, is identical. Building at the commit recorded as `sourceCommit` in the
- * deployment record (`5934ef22`) reproduces the deployed bytecode byte-for-byte, trailer
- * included. So HEAD reproducing a historical deployment is NOT guaranteed and must not be
+ * compiled dependency graph changes that trailer without changing a single opcode. And so does
+ * editing a COMMENT, since the trailer hashes the source text: the live Base Sepolia record
+ * pins `sourceCommit` `8a0e1155`, and the only `contracts/src/` change between that commit and
+ * `protocol/main` is a NatSpec-only edit to `VaultDeployer.sol` (#151), which leaves the
+ * deployed `VaultDeployer` differing from a HEAD build in its trailer bytes alone — same 938 B,
+ * same opcodes. So HEAD reproducing a historical deployment is NOT guaranteed and must not be
  * assumed — only the exact pinned commit is guaranteed to. See docs/DEPLOYMENT.md's "Source
  * verification" section for the full reproduction procedure this script exists to protect.
+ *
+ * The same divergence was measured directly on the PRIOR deployment and is kept here as the
+ * worked example: on 2026-09-01, `ChainlinkOracle` built at `protocol/main` diverged from the
+ * then-deployed bytecode at `0x6371E14C0682882e75E8382caf0216545B1f43C6` in exactly the 32-byte
+ * CBOR metadata hash — every other byte, including all four immutable-address slots once
+ * masked, identical — while a build at that record's pinned `5934ef22` reproduced it
+ * byte-for-byte, trailer included. That deployment has since been replaced; the measurement
+ * stands as evidence for the mechanism, not as a description of the current instance.
  *
  * WHAT THIS SCRIPT DOES NOT DO. It does not rebuild anything and it does not touch an RPC. It
  * cannot and does not detect metadata drift itself — that is EXPECTED any time `contracts/`

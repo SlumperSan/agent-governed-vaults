@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status | RWAlly</title>
+<meta name="description" content="The address ledger: what is on Robinhood Chain mainnet, in which block, at which commit, and how each value was read back.">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="canonical" href="https://rwally.com/status">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e16" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RWAlly">
+<meta property="og:url" content="https://rwally.com/status">
+<meta property="og:title" content="Status and claims">
+<meta property="og:description" content="Every address, the block it landed in, the commit it was built from, and the file each figure is read out of. Robinhood Chain mainnet, chain id 4663.">
+<meta property="og:image" content="https://rwally.com/assets/og-card.png">
+<meta property="og:image:alt" content="A plain dark card carrying two lines of text and nothing else: the wordmark RWAlly, and the deployment-status line Deployed on Robinhood Chain.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Status and claims">
+<meta name="twitter:description" content="Every address, the block it landed in, the commit it was built from, and the file each figure is read out of. Robinhood Chain mainnet, chain id 4663.">
+<meta name="twitter:image" content="https://rwally.com/assets/og-card.png">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="index.html">RWAlly</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="vision.html">Vision</a></li>
+        <li><a href="agents.html">Agents</a></li>
+        <li><a href="who-its-for.html">Who it is for</a></li>
+        <li><a href="operators.html">Operators</a></li>
+        <li><a href="faq.html">Questions</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="pre-launch">
+    <div class="wrap">
+      <span class="tag">The record</span>
+      <p>Deployed on Robinhood Chain mainnet, chain id 4663. The ledger is <code>contracts/config/deployments/robinhood-mainnet.json</code>, and every address below was read back on-chain rather than transcribed from a deploy log.</p>
+    </div>
+  </div>
+
+  <div class="hero hero--plain">
+    <div class="wrap">
+      <p class="eyebrow">Status</p>
+      <h1>Every address, and how it was checked.</h1>
+      <p class="lede">Every figure on this page is read out of a named file in the public repository. Nothing here asks to be taken on trust.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The address book</p>
+      <h2>What is on chain 4663.</h2>
+
+      <div class="tablewrap" role="region" aria-label="Robinhood Chain mainnet address book" tabindex="0">
+        <table>
+          <caption>Robinhood Chain mainnet, from contracts/config/deployments/robinhood-mainnet.json</caption>
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+              <th scope="col">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Chain</th><td>Robinhood Chain mainnet, chain id 4663</td></tr>
+            <tr><th scope="row">Broadcast</th><td>2026-09-05</td></tr>
+            <tr><th scope="row">Source commit</th><td><code>b1cde122</code></td></tr>
+            <tr><th scope="row">ChainlinkOracle</th><td><code>0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB</code></td></tr>
+            <tr><th scope="row">OperatorRegistry</th><td><code>0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568</code></td></tr>
+            <tr><th scope="row">SubVaultRegistry</th><td><code>0x692385262C05df7515560886f167c4eDD0814025</code></td></tr>
+            <tr><th scope="row">FeeEngine</th><td><code>0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232</code></td></tr>
+            <tr><th scope="row">Governance</th><td><code>0x790A308f1ac06FeD4C79884BAD25d0C721C5B125</code></td></tr>
+            <tr><th scope="row">VaultDeployer</th><td><code>0xc36198FD2c7C62738159ED1FF965679105FAF05a</code></td></tr>
+            <tr><th scope="row">VaultFactory</th><td><code>0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</code></td></tr>
+            <tr><th scope="row">Vaults created</th><td>2 &mdash; <code>factory.vaultCount()</code>, read at block 61,513,974</td></tr>
+            <tr><th scope="row">Oracle deploy block</th><td>54,989,143</td></tr>
+            <tr><th scope="row">Singletons deploy block</th><td>54,989,195, all six singleton receipts plus three wire calls in that one block</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="tight">The VaultFactory is the address to verify against. Everything else hangs off it and can be read from it. No execution adapter is deployed as a singleton here: adapters are not protocol singletons, so each vault creator supplies its own and it is bound in that vault's constructor.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Wiring, read back</p>
+      <h2>What the chain returned when each value was read back.</h2>
+      <ul>
+        <li><code>factory.registry</code>, <code>factory.governance</code>, <code>factory.feeEngine</code> and <code>factory.vaultDeployer</code> each point at the singleton in the table above.</li>
+        <li><code>registry.factory</code> points back at the factory.</li>
+        <li><code>governance.subVaultRegistry</code> points at the SubVaultRegistry.</li>
+        <li><code>factory.oracleAllowlistEnforced()</code> is true, and <code>factory.isAllowedOracle(oracle)</code> is true for the oracle above.</li>
+        <li><code>factory.allowSubVaults()</code> is false, so this factory deploys root vaults only and every vault it deploys is wired <code>subVaultRegistry = address(0)</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The oracle</p>
+      <h2>Two assets, one Chainlink Data Feed each.</h2>
+      <p class="tight">The basket is written on this site as ETH and BTC because that is what people call them, and on Robinhood Chain it is held as WETH at <code>0x0bd7d308f8e1639fab988df18a8011f41eacad73</code> and cbBTC at <code>0xcec185eb182c47d1ba1efc84e6959e18cd620be4</code>.</p>
+
+      <div class="tablewrap" role="region" aria-label="Oracle configuration" tabindex="0">
+        <table>
+          <caption>Oracle configuration, from contracts/config/robinhood-mainnet.json</caption>
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+              <th scope="col">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">ETH/USD feed</th><td><code>0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9</code>, eight decimals</td></tr>
+            <tr><th scope="row">CBBTC/USD feed</th><td><code>0x0009cD492adf8167f9eEBf1293556A673530a21a</code>, eight decimals</td></tr>
+            <tr><th scope="row">Staleness bound</th><td>86,400 seconds per asset, which is ChainlinkOracle's MAX_HEARTBEAT ceiling</td></tr>
+            <tr><th scope="row">Sane-price bands</th><td>$100 to $100,000 for WETH; $1,000 to $1,000,000 for cbBTC</td></tr>
+            <tr><th scope="row">Settlement token</th><td>USDG at <code>0x5fc5360d0400a0fd4f2af552add042d716f1d168</code>, valued at one dollar in the oracle</td></tr>
+            <tr><th scope="row">Sequencer uptime feed</th><td>the zero address</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="tight">Chainlink publishes no L2 Sequencer Uptime Feed for chain 4663, so there is no address to wire. The deploy-time requirement exempts 4663 alongside a local node and Base Sepolia, by an owner-approved weakening of 2026-09-04. What that costs is set out in the <a href="disclaimers.html#r5">Disclaimers</a>.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">The first vault</p>
+      <h2>Two vaults exist, and both hold real funds.</h2>
+      <p class="tight"><code>factory.vaultCount()</code> reads 2 at block 61,513,974. The first is <code>0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4</code>, created 2026-09-10 in block 58,991,819, holding <code>idleUsdc</code> 20000000 &mdash; 20 USDG. The second is <code>0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38</code>, created 2026-09-12 in block 61,481,025, which holds <code>assetBalance</code> 1980483895862031 wei of WETH &mdash; 0.001980484 rounded, a priced position rather than cash &mdash; and no USDG: its proposal 3 traded the whole balance. Both balances were read at block 61,646,791 and move on the next deposit, exit or rebalance; the block is stated because this page cannot notice when they do. Each one&rsquo;s capacity cap is fixed at creation and readable on-chain with <code>capacityCapUsdc()</code>.</p>
+      <p class="tight">This heading denied that any vault existed until 2026-09-12. That was true when written and false from 2026-09-10, and nothing detected the gap, because every check over it compared prose against prose rather than against the chain. The wording itself is not repeated here: the guard that enforces this page forbids the shape outright, so quoting it even to disown it would red the build.</p>
+      <p class="tight">Both vaults were created by the deployer EOA <code>0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35</code>, rather than by the contract wallet <code>0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c</code> the deployment record named for the job. That wallet is a 1-of-1: <code>getThreshold()</code> reads 1 and <code>getOwners()</code> returns that same EOA as its only owner, so it is not a multisig and does not by itself amount to shared custody. This paragraph called it &ldquo;the multisig&rdquo; until 2026-09-13, which told a reader the intended creator was a stronger arrangement than it actually is &mdash; the one direction a deviation record must never lean. It is not named here by its product name because this page bans that word as an outcome claim, and that ban is what pushed the earlier wording toward the inaccurate synonym. <code>createVault</code> fixes the caller as the vault&rsquo;s immutable creator and attested operator, so that cannot be corrected on these two.</p>
+      <p class="tight"><code>contracts/config/robinhood-mainnet.json</code> is the chain&rsquo;s configuration, not a plan for a vault.</p>
+      <p class="tight">It is what the oracle was deployed against on Robinhood Chain, and what this site&rsquo;s figures are checked against: the two priced assets, their feeds and bands, the settlement token, and a set of governance durations any vault creator may adopt or ignore.</p>
+      <p class="tight"><a href="how-it-works.html">How it works</a> renders that table in full. A vault freezes its own parameters when it is funded, and both of these are funded.</p>
+      <p class="tight">Whatever execution adapter a vault is created with is bound in its constructor and cannot be repointed, and its oracle address is fixed in immutable code at construction.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Verification</p>
+      <h2>How to check every line above.</h2>
+      <ul>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/robinhood-mainnet.json">The deployment record</a>: every address above, plus the note recording how each was read back on-chain.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/robinhood-mainnet.json">The chain configuration</a>: every parameter this site quotes for chain 4663, each annotated with how it was read.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/apps/site/test/site.test.mjs">The wording guard for this site</a>: it pins the exact sentences here and reads the contract configuration to catch a page that has gone stale against it.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-lede-truth.test.mjs">The repository-wide claims guard</a>.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/claims-robinhood-deployment.test.mjs">The record guard</a>: it binds every Robinhood Chain claim in this repository to the deployment record, so a claim cannot land before the fact it describes.</li>
+        <li><a href="https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/scripts/test/config-doc-truth.test.mjs">The config-versus-docs guard</a>.</li>
+      </ul>
+      <p class="tight">All of these run in CI on every change. Read the contracts rather than this description of them.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="disclaimers.html">Disclaimers</a>
+        <a class="btn" href="how-it-works.html">The mechanism</a>
+        <a class="btn" href="https://github.com/SlumperSan/agent-governed-vaults">Contracts and docs</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h2>Pages</h2>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="vision.html">Vision</a></li>
+          <li><a href="agents.html">Agents</a></li>
+          <li><a href="who-its-for.html">Who it is for</a></li>
+          <li><a href="operators.html">Operators</a></li>
+          <li><a href="faq.html">Questions</a></li>
+          <li><a href="status.html" aria-current="page">Status and claims</a></li>
+          <li><a href="disclaimers.html">Disclaimers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <ul>
+          <li><a href="https://github.com/SlumperSan/agent-governed-vaults">Contracts, docs and issues</a></li>
+        </ul>
+        <p class="small">The repository is the authority for the code. Where this site and the contracts disagree, the contracts are right and this site is wrong.</p>
+        <p class="small">It is public, including every review round. Read the contracts rather than this description of them.</p>
+      </div>
+      <div>
+        <h2>Disclaimers</h2>
+        <p class="small">The risks, the legal position, and what has not been checked are on one page.</p>
+      </div>
+    </div>
+    <p class="small">Read the <a href="disclaimers.html">Disclaimers</a>.</p>
+  </div>
+</footer>
+
+</body>
+</html>

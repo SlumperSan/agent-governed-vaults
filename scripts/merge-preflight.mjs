@@ -76,6 +76,107 @@ function rule(label) {
   return policy.rules.find((/** @type {any} */ r) => r.id === label);
 }
 
+/**
+ * THE FIELD CONTRACT BETWEEN `gh` AND THE EVALUATOR.
+ *
+ * Everything below this comment exists because of one asymmetry: `verdicts.mjs` is a PURE evaluator
+ * whose fixtures may legitimately omit an optional field, while THIS file is the only place where
+ * "the field came from `gh`" is knowable. In the evaluator an absent value is an honest limit; here
+ * it is contract drift, and the two must be answered differently.
+ *
+ * The drift that motivated this. #137 stopped the gate counting its own runs as CI evidence, with
+ * `runsForHead` filtering on `r.name !== SELF_WORKFLOW_NAME`. Nothing pinned where `r.name` comes
+ * from. Drop `workflowName` from the run request below and every `r.name` is `undefined`,
+ * `undefined !== 'merge-preflight'` is always true, the filter degrades to a no-op, and a head with
+ * NO CI AT ALL clears `ci-matches-head` again. Reproduced end to end on 2026-09-10 against a `gh`
+ * that honours the `--json` field list: the script printed CLEAR and exited 0 on a head carrying
+ * one preflight run and zero CI runs, while `scripts/test/merge-preflight.test.mjs` stayed 30/30
+ * green, because the suite imports `verdicts.mjs` and never executes this file.
+ *
+ * It is not one field. Twelve rule-bearing values reach `evaluate()` from `gh`. SEVEN fail CLOSED
+ * when absent — `state`, `headRefOid`, `headRefName`, `baseRefName`, `headSha`, `status` and
+ * `conclusion` each push a blocker, make the head match nothing, or make the `gh` call itself fail.
+ * FIVE fail OPEN: `workflowName` disarms the self-exclusion; `commits` silently retires Mode D;
+ * `comments` retires Modes A, D and E, which in the `--advisory` mode the workflow actually runs
+ * leaves nothing but `pr-open` and `ci-matches-head` standing; `isDraft` lets a draft through; and
+ * `.behind_by` retires Mode E, because `--jq` on a key that is not there prints `null` while `gh`
+ * still exits 0. So the check is on the SET, not on the field that was noticed.
+ *
+ * `number` is the thirteenth field and the only cosmetic one: it is required below because the
+ * printed header names the PR, and no rule reads it.
+ *
+ * DECLARED HERE, NOT DERIVED FROM THE `--json` STRINGS. A required set read back out of the request
+ * is self-referential: drop a field from the request and it drops out of the requirement too, so
+ * the check would pass exactly when it is needed. These constants and the literal `--json` strings
+ * are two independent statements of one list, pinned equal by a test in
+ * `scripts/test/merge-preflight.test.mjs` — which also names `workflowName` and `commits`
+ * literally, so deleting a field from BOTH statements is still red.
+ */
+export const PR_FIELDS = ['number', 'state', 'isDraft', 'headRefName', 'headRefOid', 'baseRefName', 'comments', 'commits'];
+
+/** Likewise for `gh run list`. `workflowName` is what `runsForHead` excludes this gate's own runs by. */
+export const RUN_FIELDS = ['headSha', 'status', 'conclusion', 'workflowName'];
+
+/**
+ * Which of `fields` the object does not carry.
+ *
+ * PRESENCE, never truthiness: `conclusion` comes back as `""` on an in-progress run and `isDraft`
+ * is `false` on most PRs. Both are answers. Only a missing KEY means the field never came back —
+ * verified against the live API on 2026-09-10, where `gh run list --json headSha,status,conclusion,
+ * workflowName` returned `{"conclusion":"","headSha":"479f0020…","status":"in_progress",
+ * "workflowName":"CI"}`.
+ *
+ * @param {any} obj
+ * @param {string[]} fields
+ * @returns {string[]}
+ */
+export function missingFields(obj, fields) {
+  if (obj === null || typeof obj !== 'object') return [...fields];
+  return fields.filter((f) => !Object.hasOwn(obj, f));
+}
+
+/**
+ * The payload `evaluate()` is about to judge, checked against the contract above.
+ *
+ * Returns the reason it cannot be trusted, or `null`. The caller turns a reason into exit 2 —
+ * "could not determine", which this file's header records is NOT a pass and which
+ * `.github/workflows/merge-preflight.yml` publishes as a `error` commit status. Blocking on a
+ * payload we cannot read is the safe direction to be wrong in; judging one is not.
+ *
+ * @param {any} prData    what `gh pr view --json …` returned
+ * @param {any} runsData  what `gh run list --json …` returned
+ * @param {any} behindBy  what `gh api …/compare/… --jq .behind_by` returned
+ * @returns {string|null}
+ */
+export function validateGhPayloads(prData, runsData, behindBy) {
+  const prMissing = missingFields(prData, PR_FIELDS);
+  if (prMissing.length > 0) return `'gh pr view' returned no ${prMissing.join(', ')}`;
+
+  // Nested, so no `--json` field name can ask for it directly: `commits[].committedDate` is Mode D's
+  // whole input. Every PR has at least one commit and every commit object carries `committedDate`
+  // (checked against the API on 2026-09-10), so an absent one is drift, not a PR without commits —
+  // and drift here retires `verdict-covers-head` without a word.
+  const headCommit = (Array.isArray(prData.commits) ? prData.commits : []).at(-1);
+  if (!headCommit || !Object.hasOwn(headCommit, 'committedDate')) {
+    return "'gh pr view' returned no commits[].committedDate, which is the only input to verdict-covers-head";
+  }
+
+  // Not "the array is non-empty": a branch with no runs at all is a legitimate state, and
+  // `ci-matches-head` already blocks on it correctly. The check is that every run PRESENT is whole.
+  if (!Array.isArray(runsData)) return "'gh run list' did not return an array";
+  for (const [i, r] of runsData.entries()) {
+    const m = missingFields(r, RUN_FIELDS);
+    if (m.length > 0) return `'gh run list' run #${i} carries no ${m.join(', ')}`;
+  }
+
+  // `--jq` on a key that is not there emits `null` and `gh` still exits 0, so this is the one case
+  // the JSON.parse failure path above cannot see. `behindBy` is not a number means Mode E is off.
+  if (typeof behindBy !== 'number') {
+    return `the compare API's .behind_by came back as ${JSON.stringify(behindBy)}, not a number`;
+  }
+  return null;
+}
+
 export function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
   if (!opts.pr) {
@@ -115,6 +216,19 @@ export function main(argv = process.argv.slice(2)) {
   if (!cmp.ok) {
     const where = `${pr.data.baseRefName}...${pr.data.headRefName}`;
     process.stderr.write(`merge-preflight: cannot compare ${where}: ${cmp.err}\n`);
+    return 2;
+  }
+
+  // Fail CLOSED on a payload that cannot answer the rules. See the field contract above: five of
+  // the twelve rule-bearing values silently DISARM a rule when absent rather than blocking, so a
+  // partial payload does not produce a wrong-looking answer — it produces a confident CLEAR.
+  const broken = validateGhPayloads(pr.data, runs.data, cmp.data);
+  if (broken) {
+    process.stderr.write(
+      `merge-preflight: ${broken}. Refusing to judge PR #${opts.pr} on a payload the rules cannot ` +
+      `read: the evaluator would see undefined there and quietly stop checking, which reads as ` +
+      `CLEAR. Exit 2 is 'could not determine', and could not determine is not a pass.\n`,
+    );
     return 2;
   }
 

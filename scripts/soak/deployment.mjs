@@ -16,8 +16,15 @@
  *
  * Pure: parsing and validation do no I/O, so they are unit-testable. The one I/O entry point
  * (`loadDeployment`) is a thin fs wrapper over `parseDeployment`.
+ *
+ * WHICH CHAIN A SOAK RUN TARGETS IS DECIDED HERE, ONCE. Every soak entrypoint used to name the
+ * address book and repeat `{ expectChainId: 84532 }` at its own `loadDeployment` call, so eight
+ * files had to agree before a run could point anywhere else. `deploymentPath` picks the record and
+ * `assertLiveChainId` proves the RPC is the chain that record describes; the expected chain id is
+ * the record's own `chainId` field and is not written down a second time.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
 
@@ -133,4 +140,45 @@ export function wiringExpectations(dep) {
 export function loadDeployment(pathname, opts = {}) {
   if (!fs.existsSync(pathname)) throw new Error(`deployment: address book not found at ${pathname}`);
   return parseDeployment(JSON.parse(fs.readFileSync(pathname, 'utf8')), opts);
+}
+
+/** Repo-relative location of the address book a soak run loads when nothing overrides it. */
+export const DEFAULT_DEPLOYMENT = ['contracts', 'config', 'deployments', 'base-sepolia.json'];
+
+/**
+ * The address book a soak entrypoint should load.
+ *
+ * `SOAK_DEPLOYMENT` overrides it — absolute, or relative to the repo root. The documented default
+ * is `contracts/config/deployments/base-sepolia.json`, which is the only address book committed
+ * under that directory. Callers pass no `expectChainId`: the record carries `chainId`, so handing
+ * that same number back to the parser is a comparison that cannot fail.
+ *
+ * @param {string} root repo root
+ * @param {Record<string, string|undefined>} [env]
+ */
+export function deploymentPath(root, env = process.env) {
+  const override = env.SOAK_DEPLOYMENT;
+  if (override) return path.isAbsolute(override) ? override : path.join(root, override);
+  return path.join(root, ...DEFAULT_DEPLOYMENT);
+}
+
+/**
+ * Refuse a run whose RPC is not the chain the address book describes.
+ *
+ * The message names BOTH numbers on purpose. Which half is wrong — the record or the endpoint — is
+ * the only thing the operator has to decide, and a bare "chain id mismatch" makes them guess.
+ *
+ * @param {{chainId: number, chainName: string}} dep
+ * @param {number} liveChainId chain id read from the RPC
+ * @returns {number} the record's chain id, once the live one has matched it
+ */
+export function assertLiveChainId(dep, liveChainId) {
+  const live = Number(liveChainId);
+  if (live !== dep.chainId) {
+    throw new Error(
+      `deployment: address book ${dep.chainName || '(unnamed)'} is chain ${dep.chainId}, `
+      + `but the RPC answers chain ${live} — point SOAK_DEPLOYMENT and SOAK_RPC at the same chain`,
+    );
+  }
+  return dep.chainId;
 }

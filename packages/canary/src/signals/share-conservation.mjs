@@ -43,6 +43,9 @@ export async function checkShareConservation({ reader, vault, projectedTotalShar
 
   if (!res.ok && pinned) {
     // Almost always "missing trie node" / "state unavailable" on a pruned node, not a real fault.
+    // DELIBERATELY NOT GATED ON `kind`. Those strings classify as 'transport' (call-error.mjs is
+    // explicit that the word means "not a confirmed revert", not "the node was unreachable"), so
+    // a `kind !== 'transport'` guard here would disable the archive fallback this retry exists for.
     pinned = false;
     res = await reader.tryRead(vault, VAULT_VIEWS, 'totalShares', []);
   }
@@ -50,7 +53,7 @@ export async function checkShareConservation({ reader, vault, projectedTotalShar
     return [skipped({
       signal: SIGNAL, vault,
       message: `share conservation skipped on vault ${shortAddr(vault)}: totalShares() is unreadable: ${res.error}`,
-      detail: { vault },
+      detail: { vault, kind: res.kind ?? null },
     })];
   }
 

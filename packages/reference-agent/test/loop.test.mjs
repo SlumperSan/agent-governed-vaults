@@ -165,7 +165,7 @@ test('DRY-RUN: the exit into a pending rebalance is reported as MODE F', async (
   const r = await agent.tick();
   const exit = r.intents.find((i) => i.kind === 'exit');
   assert.equal(exit.modeF, true);
-  assert.match(exit.reason, /POST-rebalance NAV/);
+  assert.match(exit.reason, /POST-execution NAV/);
   assert.ok(lines.some((l) => l.includes('MODE F')), 'the operator must be told the price they see is not the price they get');
 });
 

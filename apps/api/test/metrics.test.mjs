@@ -217,7 +217,8 @@ test('snapshot age is the lag signal, and it is named for what it measures', asy
     const text = (await built.handle('GET', '/metrics', {})).body;
     assert.match(text, /^vault_indexer_snapshot_age_seconds 60\d$/m);
     assert.match(text, /^vault_indexer_last_block 5$/m);
-    // The API has no RPC client by design, so it must never claim a blocks-behind figure.
+    // The API has no client for the indexed chain by design (`FACILITATOR=svm`'s Solana
+    // `Connection` is a node on a different chain), so it must never claim a blocks-behind figure.
     assert.doesNotMatch(text, /lag_blocks|blocks_behind/);
   } finally {
     await rm(dir, { recursive: true, force: true });

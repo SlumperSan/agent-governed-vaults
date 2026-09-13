@@ -37,14 +37,29 @@ too: replace the account flags with `--ledger` everywhere.
 ## 2. Environment
 
 ```bash
-export BASE_SEPOLIA_RPC="https://base-sepolia-rpc.publicnode.com"   # or your own endpoint
+export BASE_SEPOLIA_RPC="https://sepolia.base.org"                 # or your own FULL-HISTORY endpoint
 export ETHERSCAN_API_KEY="<your key>"                               # only needed for --verify
 export SMOKE_SIGNER_ARGS="--account deployer --password-file $HOME/.secrets/deployer.pw"
 ```
 
-The official `https://sepolia.base.org` endpoint intermittently returns 503s; publicnode has
-been reliable. Any Base Sepolia RPC works — the scripts assert `chainId == 84532` before
-sending anything.
+**Do not use `base-sepolia-rpc.publicnode.com`, which this section recommended until
+2026-09-09.** It is reliable for state reads and it **prunes logs and receipts**: `eth_call` and
+`eth_getBlockByNumber` answer correctly, so it looks healthy, while `eth_getLogs` over an older
+range returns `[]` and `eth_getTransactionReceipt` returns `null` for transactions that certainly
+landed. Measured across blocks 46,307,100–46,307,300 on the VaultFactory, `sepolia.base.org` and
+`base-sepolia.drpc.org` each returned the `VaultCreated` event and publicnode returned none — while
+all three agreed on `vaultCount()` and `allVaults(0)`. An absent log there cannot be told apart from
+an event that never happened, and reading it as the latter cost a round of wrong conclusions
+committed to this repository as chain readings.
+
+`sepolia.base.org` does intermittently 503, which is why publicnode was recommended in the first
+place, and that trade is the wrong way round: a flaky endpoint fails loudly and you retry, a pruning
+one answers confidently and wrong. If you need a fallback, use `base-sepolia.drpc.org` — it served
+the same event, with an occasional `code 19` retry.
+
+Any FULL-HISTORY Base Sepolia RPC works — the scripts assert `chainId == 84532` before sending
+anything, and `scripts/soak/lib.mjs`'s `assertLogsServed()` refuses to run a drill against an
+endpoint that cannot produce a log it can prove exists.
 
 ## 3. Deploy (one command)
 
@@ -159,13 +174,21 @@ Then check on [sepolia.basescan.org](https://sepolia.basescan.org): each address
 
 ## 6. Troubleshooting
 
-- **RPC 503 / “no backend healthy”** — the default `sepolia.base.org` endpoint is flaky; use
-  publicnode (§2) or a provider key. The smoke runner is resumable, so a mid-run RPC outage
-  costs nothing: re-run the same command.
+- **RPC 503 / “no backend healthy”** — `sepolia.base.org` is flaky. Retry, or use
+  `base-sepolia.drpc.org` or a provider key — **not publicnode, which prunes logs** (§2). The
+  smoke runner is resumable, so a mid-run RPC outage costs nothing: re-run the same command.
 - **`StaleOracle` warning in preflight** — the asset's single Chainlink feed idled past its
   configured heartbeat (86,400 s on this testnet). The breaker is working as designed (K-4), and
   with one feed per asset there is no second source to fall back to. The no-op lifecycle never prices a non-zero basket balance, so
   the run continues; the warning is still worth noting in the run record.
+- **`priceWad could not be read` warning, or a `registry.wire() could not be confirmed to revert`
+  FAIL, in preflight** — the call failed without a contract revert (a rate limit, a timeout, DNS,
+  `cast` itself, or wording the classifier does not recognise). Neither is a verdict on the
+  deployment: the oracle line is not a `StaleOracle` trip, and the wiring line means the lock was
+  not verified, not that it is broken. Preflight runs from the top on every start, so re-run the
+  same command once the RPC answers. Before this distinction existed the runner passed the wiring
+  check on any failed call, so a preflight line from an older runner is evidence of the lock only
+  if the RPC was answering at the time.
 - **`ChainIdMismatch` on deploy** — your `--rpc-url` points at the wrong chain. Nothing was
   sent.
 - **Proposal expired during a long pause** — the runner auto-expires it (`markExpired`) and
