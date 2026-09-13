@@ -38,6 +38,21 @@ const PLAIN_UINT_FIELDS = [
   'usdcScalar', 'basketLength', 'childVaultCount',
 ];
 
+/** Every field a fully-successful read could contribute, `pricingFrozen` included — it is a
+ * real answer, not a gap, the same way `unreadable` fields are gaps and value fields are not. */
+const DATA_FIELDS = [...PLAIN_UINT_FIELDS, 'locked', 'creator', ...PRICING_FIELDS, 'pricingFrozen'];
+
+/**
+ * Did this vault contribute NOTHING — no value, no recognised freeze, nothing but `label`,
+ * `address` and a pile of `unreadable` entries? That is the case a reader whose `headBlock`
+ * answers but whose every subsequent call fails produces, and it is meaningfully different from
+ * "some fields came back": nothing here was actually read, so nothing here should be sold.
+ * @param {object} vault a single entry of `readVaultsAtHead`'s `.vaults` array
+ */
+export function vaultYieldedNoData(vault) {
+  return !DATA_FIELDS.some((f) => f in vault);
+}
+
 /** First 4 bytes of a `0x`-prefixed hex blob, lowercased — a selector, not a value. */
 function selectorOf(hex) {
   return typeof hex === 'string' ? hex.slice(0, 10).toLowerCase() : null;
@@ -46,7 +61,14 @@ function selectorOf(hex) {
 /**
  * Read every field of one vault at a pinned block. Never throws: every failure is recorded on
  * the returned object rather than propagated, so one bad field cannot take down the other vault
- * or the fields around it.
+ * or the fields around it. "Never throws" is a claim this function is responsible for keeping
+ * true, not just documenting — it did not hold for one call until the `creator` block below was
+ * written: `getAddress` throws on a malformed value, and an uncaught throw here propagates all
+ * the way to `vaults.js`'s `readVaultsAtHead` try/catch, which reports it as `chain read failed`
+ * — mislabelling a LOCAL decode defect as a chain-level failure to a paying customer. Caught here
+ * instead and filed under `unreadable` with `kind: 'decode'`, a label distinct from `'revert'`
+ * and `'transport'` because it is neither: nothing about the chain failed, the bytes it returned
+ * just did not decode as an address.
  * @param {{headBlock():Promise<number>, tryRead: Function}} reader
  * @param {{label:string, address:string}} vault
  * @param {number} blockNumber
@@ -69,8 +91,12 @@ async function readOneVault(reader, { label, address }, blockNumber) {
   const creatorRead = await reader.tryRead(address, VAULT_VIEWS, 'creator', [], opts);
   if (creatorRead.ok) {
     // Checksummed, never the raw lowercase ABI decode — a decimal or lowercase address is not
-    // what this route promises to serve.
-    out.creator = getAddress(creatorRead.value);
+    // what this route promises to serve. Guarded: see the docstring above for why.
+    try {
+      out.creator = getAddress(creatorRead.value);
+    } catch (err) {
+      unreadable.creator = { reason: err?.message ?? String(err), kind: 'decode' };
+    }
   } else {
     unreadable.creator = { reason: creatorRead.error, kind: creatorRead.kind };
   }
@@ -123,12 +149,19 @@ async function readOneVault(reader, { label, address }, blockNumber) {
  * consistent — no field straddles a block boundary another field was read at. `reader.headBlock()`
  * is the one call in this function that is allowed to throw: if the chain cannot even tell us
  * what block it is on, there is no coherent height to pin the rest of the reads to, and the
- * caller (`vaults.js`) turns that into a 503 that settles no payment.
+ * caller (`vaults.js`) turns that into a 503 that settles no payment. A `headBlock()` that
+ * RESOLVES with something other than a real integer (`NaN`, a string, `undefined`) is the same
+ * failure by another shape — a reader that answers with garbage instead of throwing must not
+ * produce a response claiming `blockNumber: null` was a height anything was read at — so that
+ * case is turned into a throw here too, reaching `vaults.js`'s catch the same way.
  * @param {{headBlock():Promise<number>, tryRead: Function}} reader
  * @param {Array<{label:string, address:string}>} vaults
  */
 export async function readVaultsAtHead(reader, vaults) {
   const blockNumber = await reader.headBlock();
+  if (!Number.isInteger(blockNumber)) {
+    throw new Error(`reader.headBlock() resolved to a non-integer block number: ${blockNumber}`);
+  }
   const results = [];
   for (const v of vaults) {
     results.push(await readOneVault(reader, v, blockNumber));

@@ -21,16 +21,20 @@
  *   2. Header present but locally invalid (wrong amount, wrong asset, expired, ...) → 402. STILL
  *      NO RPC CALL — the envelope has to clear the same local check `gate()` runs before this
  *      route spends anything on it.
- *   3. Envelope locally valid → NOW read the chain. If the chain cannot even report a block
- *      number, there is no coherent height to serve data at, and this returns 503 — the caller is
- *      NOT charged, because `verifyAndSettle` is never called on this path. See `_vaultread.js`
- *      for what "read fails" does and does not mean at the per-field level: an oracle freeze or a
- *      transport hiccup on one field of one vault does NOT trip this 503; it degrades that one
- *      field (`pricingFrozen` or `unreadable`) inside a response that still has a real block
- *      number and can still be sold.
- *   4. Read produced a block number → settle with the facilitator, then serve the bytes already
- *      read. A caller is billed for what this route successfully read, at the block it read it,
- *      never for a read that could not establish where it was reading from.
+ *   3. Envelope locally valid → NOW read the chain. Two distinct ways this can still yield
+ *      nothing to sell, and both are 503 with `verifyAndSettle` never called:
+ *        (a) the chain cannot even report a block number — no coherent height to read anything
+ *            at, handled by `readVaultsAtHead` throwing;
+ *        (b) a block number came back but every field of every vault failed to read (a reader
+ *            that answers `eth_blockNumber` and then fails everything else) — a block number and
+ *            two addresses is not a read, and billing for it would be.
+ *      Neither case is tripped by an oracle freeze or a transport hiccup on ONE field of ONE
+ *      vault, which is not "nothing to sell" — it degrades that one field (`pricingFrozen` or
+ *      `unreadable`) inside a response that still has real data and can still be sold. See
+ *      `_vaultread.js` for that per-field distinction.
+ *   4. Read produced a block AND at least one readable field somewhere → settle with the
+ *      facilitator, then serve the bytes already read. A caller is billed for what this route
+ *      successfully read, at the block it read it, never for a read that came back empty.
  *
  * REPLAY. Unchanged from the pinned-snapshot version of this file: `seenNonces` is deliberately
  * NOT passed to anything here — an edge Worker has no memory shared across isolates or colos, so
@@ -46,7 +50,7 @@ import {
 import { createHttpFacilitator } from '../../../api/src/facilitator.mjs';
 import { resolvePrice, resolveFacilitatorUrl, configErrorResponse } from './_price.js';
 import { createChainReader } from '../../../../packages/canary/src/reader.mjs';
-import { readVaultsAtHead } from './_vaultread.js';
+import { readVaultsAtHead, vaultYieldedNoData } from './_vaultread.js';
 import { DATA_CHAIN_ID, DATA_CHAIN_NAME, DATA_RPC_URL, VAULTS } from './_chain.js';
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -122,7 +126,26 @@ export async function handle(context, deps = {}) {
     );
   }
 
-  // ── step 4: the read produced a block. Settle, then serve exactly what was read. ──
+  // A block number alone is not "a read that produced something to serve": a reader whose
+  // `headBlock()` answers but whose every subsequent `tryRead()` fails as transport (a bad RPC
+  // that answers one call and fails the rest) reaches this point with a block number and NOTHING
+  // else — every vault entirely `unreadable`. Billing for that is billing for two addresses and a
+  // number, which is not the read this route sells. Caught here, before the facilitator is asked
+  // to settle anything.
+  if (read.vaults.every(vaultYieldedNoData)) {
+    return json(
+      {
+        error: 'chain read failed',
+        detail: 'a block number was read, but every field of every vault failed to read',
+        chainId: DATA_CHAIN_ID,
+        chainName: DATA_CHAIN_NAME,
+        blockNumber: read.blockNumber,
+      },
+      503,
+    );
+  }
+
+  // ── step 4: the read produced a block AND at least some data. Settle, then serve what was read. ──
   const facilitator = deps.facilitator ?? createHttpFacilitator({ url: facilitatorUrl });
   const settled = await facilitator.verifyAndSettle({ price }, envelope);
   if (!settled.ok) {

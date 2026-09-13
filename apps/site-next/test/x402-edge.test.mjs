@@ -85,7 +85,7 @@ const okFacilitator = (receiptId = 'rcpt_live_1') => ({
  * Error for `headBlock`. Every `tryRead` call is recorded in `.calls` so a test can assert every
  * field was pinned to the same block.
  */
-function fakeReader({ block = 62006583, values = {}, errors = {} } = {}) {
+function fakeReader({ block = 1, values = {}, errors = {} } = {}) {
   const calls = [];
   return {
     calls,
@@ -254,27 +254,48 @@ test('VAULTS matches the deployment record exactly — no drift between the edge
 // ── the live read: success ──────────────────────────────────────────────────────────────────────
 
 test('a settled payment serves a live read: block number, chain identity, and the settled receipt', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator('rcpt_42') });
   assert.equal(res.status, 200);
   const body = await bodyOf(res);
   assert.equal(body.live, true);
   assert.equal(body.chainId, 4663);
-  assert.equal(body.blockNumber, 62006583);
+  assert.equal(body.blockNumber, 1);
   assert.equal(body.receiptId, 'rcpt_42');
   assert.equal(res.headers.get('payment-response'), JSON.stringify({ receiptId: 'rcpt_42', nonce: '0xnonce1' }));
+  assert.equal(res.headers.get('cache-control'), 'no-store', '`live: true` must not be cached and re-served stale');
+});
+
+test('a malformed creator value is a DECODE failure, not a "chain read failed" 503 — an encoding bug is not a chain fact', async () => {
+  const values = { ...SMOKE_VALUES, [`${SMOKE}:creator`]: '0xnot-an-address' };
+  const reader = fakeReader({ block: 1, values });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
+  assert.equal(res.status, 200, 'the read otherwise succeeded; one malformed field must not fail the whole request');
+  const body = await bodyOf(res);
+  const smoke = body.vaults.find((v) => v.address === SMOKE);
+  assert.equal('creator' in smoke, false);
+  assert.equal(smoke.unreadable.creator.kind, 'decode');
+});
+
+test('a headBlock() that resolves to a non-integer is treated as a failed read, not a null block number', async () => {
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
+  reader.headBlock = async () => NaN;
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: noFacilitator });
+  assert.equal(res.status, 503);
+  const body = await bodyOf(res);
+  assert.equal(body.vaults, undefined);
 });
 
 test('every field read succeeds is pinned to the SAME block — no field straddles a boundary another was read at', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   assert.equal(res.status, 200);
   assert.ok(reader.calls.length > 0);
-  for (const call of reader.calls) assert.equal(call.blockNumber, 62006583);
+  for (const call of reader.calls) assert.equal(call.blockNumber, 1);
 });
 
 test('amounts are decimal STRINGS, not numbers — this repo does not treat token amounts as floats', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -286,7 +307,7 @@ test('amounts are decimal STRINGS, not numbers — this repo does not treat toke
 });
 
 test('locked is served as a boolean, and creator as a CHECKSUMMED address, not the raw ABI decode', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -297,7 +318,7 @@ test('locked is served as a boolean, and creator as a CHECKSUMMED address, not t
 });
 
 test('capacity headroom is capacityCapUsdc minus (navWad/usdcScalar + totalPendingUsdc) — the deposit gate\'s own arithmetic', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -308,7 +329,7 @@ test('capacity headroom is capacityCapUsdc minus (navWad/usdcScalar + totalPendi
 
 test('capacity headroom is OMITTED (not zero) when the vault is uncapped', async () => {
   const values = { ...SMOKE_VALUES, [`${SMOKE}:capacityCapUsdc`]: 0n };
-  const reader = fakeReader({ block: 62006583, values });
+  const reader = fakeReader({ block: 1, values });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -319,7 +340,7 @@ test('a vault that could not be fully read has NO capacity headroom rather than 
   const values = { ...SMOKE_VALUES };
   delete values[`${SMOKE}:totalPendingUsdc`];
   const errors = { [`${SMOKE}:totalPendingUsdc`]: { message: 'HTTP request failed.', kind: 'transport' } };
-  const reader = fakeReader({ block: 62006583, values, errors });
+  const reader = fakeReader({ block: 1, values, errors });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -335,7 +356,7 @@ test('a genuine oracle freeze (StaleOracle revert) is reported as pricingFrozen,
     [`${SMOKE}:navWad`]: { message: 'execution reverted', kind: 'revert', revertData: '0xa2671f4b' },
     [`${SMOKE}:navPerShareWad`]: { message: 'execution reverted', kind: 'revert', revertData: '0xa2671f4b' },
   };
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES, errors });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES, errors });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   assert.equal(res.status, 200, 'a frozen oracle on one vault does not fail the whole read');
   const body = await bodyOf(res);
@@ -353,7 +374,7 @@ test('a TRANSPORT failure on the pricing read is NEVER reported as pricingFrozen
     [`${SMOKE}:navWad`]: { message: 'HTTP request failed.', kind: 'transport' },
     [`${SMOKE}:navPerShareWad`]: { message: 'HTTP request failed.', kind: 'transport' },
   };
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES, errors });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES, errors });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   assert.equal(res.status, 200);
   const body = await bodyOf(res);
@@ -368,7 +389,7 @@ test('an UNRECOGNISED revert on the pricing read is filed unreadable, not guesse
   const errors = {
     [`${SMOKE}:navWad`]: { message: 'execution reverted', kind: 'revert', revertData: '0xdeadbeef' },
   };
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES, errors });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES, errors });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   const smoke = body.vaults.find((v) => v.address === SMOKE);
@@ -377,22 +398,45 @@ test('an UNRECOGNISED revert on the pricing read is filed unreadable, not guesse
   assert.equal(smoke.unreadable.navWad.kind, 'revert');
 });
 
-test('a bad RPC (every field transport-fails) never reports ANY vault as pricingFrozen — write this test first', async () => {
+const ALL_VAULT_FIELDS = ['totalShares', 'idleUsdc', 'navWad', 'navPerShareWad', 'totalPendingUsdc', 'capacityCapUsdc', 'minDepositUsdc', 'usdcScalar', 'basketLength', 'childVaultCount', 'locked', 'creator'];
+
+test('a bad RPC (every field transport-fails on EVERY vault) settles nothing — a block number and two addresses is not a read', async () => {
+  // This is the exact case a review found billing $0.10 for: headBlock() answers, and every
+  // subsequent tryRead() fails. No vault contributed a single field, so there is nothing here
+  // that was actually read, and the route must not settle for it.
   const errors = {};
   for (const v of VAULTS) {
-    for (const fn of ['totalShares', 'idleUsdc', 'navWad', 'navPerShareWad', 'totalPendingUsdc', 'capacityCapUsdc', 'minDepositUsdc', 'usdcScalar', 'basketLength', 'childVaultCount', 'locked', 'creator']) {
+    for (const fn of ALL_VAULT_FIELDS) {
       errors[`${v.address}:${fn}`] = { message: 'getaddrinfo ENOTFOUND rpc.mainnet.chain.robinhood.com', kind: 'transport' };
     }
   }
-  const reader = fakeReader({ block: 62006583, errors });
-  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
-  assert.equal(res.status, 200, 'a block number was still obtained; only the field reads failed');
+  const reader = fakeReader({ block: 1, errors });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: noFacilitator });
+  assert.equal(res.status, 503, 'a block number alone, with zero readable fields on every vault, is not a sellable read');
   const body = await bodyOf(res);
-  for (const v of body.vaults) {
-    assert.notEqual(v.pricingFrozen, true, `${v.address} must never report pricingFrozen on a transport failure`);
-    assert.equal('navWad' in v, false);
-    assert.equal('navPerShareWad' in v, false);
+  assert.equal(body.vaults, undefined);
+  assert.equal(res.headers.get('payment-response'), null, 'no payment was settled — no receipt to echo');
+});
+
+test('a bad RPC on only ONE vault still settles and serves the vault that DID read — and still reports no pricingFrozen for the failed one', async () => {
+  const errors = {};
+  for (const fn of ALL_VAULT_FIELDS) {
+    errors[`${SMOKE}:${fn}`] = { message: 'getaddrinfo ENOTFOUND rpc.mainnet.chain.robinhood.com', kind: 'transport' };
   }
+  const values = {
+    [`${SECOND}:navWad`]: 4899602373219565415n,
+    [`${SECOND}:navPerShareWad`]: 979920474643913083n,
+  };
+  const reader = fakeReader({ block: 1, values, errors });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
+  assert.equal(res.status, 200, 'the second vault DID yield data, so this is a real (partial) read and can be sold');
+  const body = await bodyOf(res);
+  const smoke = body.vaults.find((v) => v.address === SMOKE);
+  const second = body.vaults.find((v) => v.address === SECOND);
+  assert.notEqual(smoke.pricingFrozen, true);
+  assert.equal('navWad' in smoke, false);
+  assert.equal(smoke.unreadable.navWad.kind, 'transport');
+  assert.equal(second.navPerShareWad, '979920474643913083');
 });
 
 test('when the chain cannot even report a block number, the route answers 503 and NEVER calls the facilitator', async () => {
@@ -415,7 +459,7 @@ test('a 503 (chain unreadable) reports no vault as pricingFrozen either, vacuous
 // ── settlement still gates the body ─────────────────────────────────────────────────────────────
 
 test('a chain read that succeeds but a facilitator that rejects still serves NO vault data', async () => {
-  const reader = fakeReader({ block: 62006583, values: SMOKE_VALUES });
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
   const rejecting = { async verifyAndSettle() { return { ok: false, reason: 'signature-invalid' }; } };
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: rejecting });
   assert.equal(res.status, 402);
@@ -432,7 +476,7 @@ test('both configured vaults are served, in order', async () => {
     [`${SECOND}:totalShares`]: 5000000000000000000n,
     [`${SECOND}:basketLength`]: 1n,
   };
-  const reader = fakeReader({ block: 62006583, values });
+  const reader = fakeReader({ block: 1, values });
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
   const body = await bodyOf(res);
   assert.equal(body.vaults.length, 2);

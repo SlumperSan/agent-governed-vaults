@@ -133,13 +133,21 @@ test('classified revert selectors correspond to errors the compiled VaultCore ca
   }
 });
 
-test('the views the signals read exist on the compiled VaultCore', { skip: !built && 'contracts/out absent' }, () => {
+test('the views the signals read exist on the compiled VaultCore, with the same return shape', { skip: !built && 'contracts/out absent' }, () => {
   const fns = new Map(vaultAbi.filter((i) => i.type === 'function').map((i) => [canonical(i), i]));
   for (const frag of VAULT_VIEWS) {
     const sig = signatureOf(frag);
     const onChain = fns.get(sig);
     assert.ok(onChain, `VaultCore has no ${sig} — the canary would read a reverting selector`);
     assert.equal(onChain.stateMutability, 'view', `${sig} is not a view on the compiled contract`);
+    // Existence and mutability alone would have let `locked()` drift from `bool` to something
+    // else and gone uncaught — a signature match says nothing about the DECODE shape, which is
+    // exactly what a caller downstream (apps/site-next/functions/api/_vaultread.js among them)
+    // trusts this table for.
+    assert.deepEqual(
+      onChain.outputs.map((o) => o.type), frag.outputs.map((o) => o.type),
+      `${sig} return shape drifted — a caller decoding by this table's declared type would mis-decode it`,
+    );
   }
 });
 

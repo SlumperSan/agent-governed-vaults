@@ -12,24 +12,33 @@ is **$0.00**.
 
 ## 1. What is being sold
 
-`GET /api/vaults` on `rwally.com` returns creation-time facts for every Agent-Governed Vault on
-Robinhood Chain mainnet (4663): address, creator, creation block and time, minimum deposit,
-capacity cap, runtime codesize. Two vaults today.
+`GET /api/vaults` on `rwally.com` reads Robinhood Chain mainnet (4663) **at request time** and
+returns, per vault: total shares, idle USDC, pending USDC, NAV and NAV-per-share, capacity cap and
+headroom, minimum deposit, basket length, child vault count, lock state and creator. Two vaults
+today. This used to be a pinned JSON snapshot restating creation-time facts only; it is not any
+more — see the history below.
 
 **The data chain and the payment chain are different, deliberately.** The data describes chain 4663.
 Payment settles in USDC on **Base mainnet** (8453). x402 metering is an API concern that touches no
 contract on either chain — `contracts/config/base-mainnet.json`'s `x402.unaffectedNote` records that
 no Solidity in this repository reads the switch.
 
-**It is a pinned snapshot, not a live chain read**, and every response says so in `live: false` and
-`asOf`. Balances, NAV, share supply and member positions are deliberately absent: they move block to
-block, and a pinned file carrying them would be wrong within minutes while still looking
-authoritative. `apps/site-next/test/x402-edge.test.mjs` fails if a balance-shaped field ever appears in
-the snapshot, and fails if any vault field drifts from
-`contracts/config/deployments/robinhood-mainnet.json`.
+**It is a live chain read, not a pinned snapshot**, and every response says so in `live: true` and
+carries `blockNumber` — the height every field in that response was read at. There is no fixed
+`asOf` to quote any more, because there is nothing pinned left to date.
 
-Serving live balances means a chain read per request at the edge. That is the honest next step and
-it is **not** what ships today.
+**A field can be absent instead of a number, and that is not the same as zero.** Two distinct
+reasons, both tested in `apps/site-next/test/x402-edge.test.mjs`: `pricingFrozen: true` means the
+oracle itself reverted the NAV read (`StaleOracle`) — a real product signal, not missing data; a
+field named under `unreadable` means this deployment could not read it this request (a transport
+failure, or a revert the route does not recognise) — missing evidence, and never presented as a
+value. A revert and a transport failure are kept structurally distinct on purpose: this repository
+has twice shipped a defect where the two collapsed into one field (issues #266, PR #185), so a test
+drives a reader whose every read fails as a transport error and asserts no vault ever reports
+`pricingFrozen` from that.
+
+This shipped as a live read on top of #267's pinned-snapshot version, which said explicitly that a
+chain read per request was the honest next step and not what shipped at the time. It is now.
 
 ## 2. Price
 
@@ -47,12 +56,30 @@ the truth rather than quoted a price it will never be charged".
 
 ## 3. How it is served, and why `FACILITATOR=http` holds no key
 
-`apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
-`apps/api/src/x402.mjs` and `createHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
-reimplementing the 402 handshake. Two implementations of one payment protocol drift, and the half
-that drifts at the edge is the half deciding whether a caller's USDC bought anything. The build
-inlines the real module: a `wrangler@4 pages functions build` on 2026-09-13 emitted a 31 KB bundle
-containing `gate`, `verifyAndSettle` and the Base USDC constant.
+`apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It does **not** call
+`x402.mjs`'s `gate()` any more — it did while the route served a pinned snapshot, but the live read
+needs the chain read wedged in BETWEEN the local envelope check and the facilitator call (so a
+caller who has not paid, or whose envelope is locally invalid, never costs this deployment an RPC
+call, and a chain read that fails costs the caller nothing rather than being billed anyway), and
+`gate()` settles as soon as the local check passes, with no seam at that point. So this route
+imports `gate()`'s pieces instead — `decodeSignatureHeader`, `checkEnvelopeAgainstPrice`,
+`challengeResponse`, `nonceOf` from `apps/api/src/x402.mjs`, and `createHttpFacilitator` from
+`apps/api/src/facilitator.mjs` — and composes them in that order, rather than reimplementing any of
+them. `challengeResponse` and `nonceOf` are used INSIDE `gate()` itself too (not duplicated beside
+it), so the edge route and `gate()` still share one implementation of the 402 shape and the
+nonce-selection logic; only the ORDER in which the pieces run differs between the two callers.
+
+The route's chain read reuses `packages/canary/src/reader.mjs`'s `createChainReader`, the same
+component the canary uses to tell a genuine on-chain revert apart from a transport failure — this
+repository has shipped that exact confusion twice (issues #266, PR #185), so the read path at the
+edge reuses the tested classifier rather than re-deriving it.
+
+The build inlines all of it. Measured 2026-09-13: `wrangler@4 pages functions build` reports
+"Compiled Worker successfully" and emits a bundle of 435,812 bytes minified (134,370 bytes gzip) —
+up substantially from the pinned-snapshot version's 31 KB, because this route now statically pulls
+in viem via `apps/site-next/functions/api/_vaultread.js` (`reader.mjs` itself still lazy-imports
+viem; the static import that pulls it into this bundle is in `_vaultread.js`, for `getAddress`).
+Still well inside Cloudflare Workers' size limits (3 MB free / 10 MB paid, both compressed).
 
 **This deployment cannot hold a private key.** `apps/api` has three SELECTABLE facilitator modes --
 `facilitatorFromConfig` builds exactly `stub`, `http` and `svm` -- and exactly one of those holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
@@ -65,7 +92,8 @@ any one answers 500, never the paid body for free. There is a test per setting, 
 `PRICE_PAYTO` would silently send a caller's USDC to whatever address the default named.
 
 **Replay protection on this route is the chain's, not the edge's.** `gate` accepts a `seenNonces`
-set, and this route deliberately does not pass one: an edge Worker has no shared memory between
+set, and neither `gate` (when `apps/api` calls it directly) nor this route's own composition of
+`gate`'s pieces is given one here: an edge Worker has no shared memory between
 isolates or colos, so an in-memory set would cover only the isolate that served the first request
 while reading like protection. EIP-3009 authorizations are single-use by nonce and the token
 contract rejects a reused one — the property the Sepolia run verified when a resubmitted envelope
@@ -80,8 +108,11 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid | **Proven** — 18 tests in `apps/site-next/test/x402-edge.test.mjs` |
-| The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
+| The edge route refuses to serve unpaid, and makes no RPC call while refusing | **Proven** — 32 tests in `apps/site-next/test/x402-edge.test.mjs`, including a reader/facilitator pair that fails the test outright if either is ever called on the unpaid/invalid-envelope paths |
+| The live read matches the deployed chain | **Proven** — every field of both vaults, read against `https://rpc.mainnet.chain.robinhood.com` with no payment involved, matched the values recorded in `contracts/config/deployments/robinhood-mainnet.json`, including the derived `capacityHeadroomUsdc` |
+| A revert (oracle freeze) and a transport failure never collapse into one field | **Proven** — tested against an injected reader whose every read fails as a transport error: no vault ever reports `pricingFrozen`, matching the requirement drawn from issues #266 and PR #185 |
+| A chain read that fails costs the caller nothing | **Proven for two distinct failure shapes**: the chain cannot report a block number at all, and a block number comes back but every field of every vault fails to read (a bad RPC that answers `eth_blockNumber` and fails everything after). Both are 503 with the facilitator never called. A read where at least one field of at least one vault succeeds still settles — a partial read is still a read. |
+| The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13, "Compiled Worker successfully" |
 | A mainnet payment has settled | **No.** Nothing has been deployed |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
@@ -136,8 +167,13 @@ that would have taken the live site down.** `apps/site` is the RETIRED nine-page
 zero `<script>` tags). Deploying `apps/site` to the `rwally` project would have replaced the live
 build with the retired one. Caught in review before any deploy; nothing was published.
 
-Wrangler **4 or newer**: wrangler 3's esbuild cannot parse the JSON import attribute that Node
-requires, and fails the build.
+The `wrangler@4` above is not a requirement any more — see `apps/site-next/wrangler.toml`'s own
+comment for why. It used to be: the pinned-snapshot version of this route imported a JSON file with
+an attribute wrangler 3's esbuild could not parse. That file is gone, and `wrangler@3 pages
+functions build` was re-measured 2026-09-13 against the live-read route and also reports "Compiled
+Worker successfully". `@4` is kept in the command above because nothing here has re-tested every
+other Pages feature this deployment uses against wrangler 3 — it is the version this whole runbook
+has been proven against, not a hard requirement of this one route.
 
 **5.4 — Confirm the gate is live before paying anything.** Discovery is free, so this costs nothing:
 
@@ -166,5 +202,6 @@ described as though it did: a payment you make to yourself is a working payment 
 
 The distribution hook already exists and is free to call: `/.well-known/x402` is the discovery
 document an agent reads to learn what this endpoint sells and what it costs, without paying to find
-out. Phase 2 is listing it where x402 clients look, publishing an integration snippet, and making the
-payload worth more than its price — which most likely means the live chain read described in §1.
+out. Phase 2 is listing it where x402 clients look and publishing an integration snippet — the
+payload itself (§1) is now the live chain read that used to be named here as the thing that would
+make it worth more than its price; what would make it worth more again is not yet decided.

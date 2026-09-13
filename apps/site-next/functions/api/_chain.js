@@ -24,7 +24,14 @@
 export const DATA_CHAIN_ID = 4663;
 export const DATA_CHAIN_NAME = 'robinhood-mainnet';
 
-/** Public RPC, reachable at 2026-09-13 (head block 62,006,583 when this was written). */
+// Public RPC. Deliberately no head-block figure in this comment: this chain's own measured block
+// time is ~0.1s, so any block number written here is stale before the commit lands, and a prior
+// draft of this file learned that the hard way — the figure it carried was wrong by tens of
+// thousands of blocks from the moment it was typed, having been hand-converted from a hex
+// `eth_blockNumber` reading rather than read straight, and it read as a measured fact because it
+// was phrased like one. Reachability is proven by every response `vaults.js` serves carrying the
+// `blockNumber` it read AT REQUEST TIME (see `_vaultread.js`); that is the only honest freshness
+// claim this route can make about itself, and it is a live one, not a comment.
 export const DATA_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com';
 
 /**

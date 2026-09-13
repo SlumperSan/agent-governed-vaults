@@ -16,23 +16,23 @@
 # `functions/api/vaults.js` imports `apps/api/src/x402.mjs` rather than reimplementing the 402
 # handshake, which is deliberate — one implementation of a payment protocol, not two that drift.
 # That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` to decode
-# the base64 payment envelope. Both are Node built-ins that the Workers runtime provides only under
-# this flag. Without it the bundle fails to build, which is the good failure; the flag is recorded
-# here rather than set in the dashboard so that the requirement travels with the code.
+# the base64 payment envelope. Both are Node built-ins the Workers runtime provides only under this
+# flag. Measured 2026-09-13: omitting the flag does NOT fail the build — `wrangler@4 pages functions
+# build` with no `--compatibility-flag` still reports "Compiled Worker successfully", but first
+# prints its own warning naming `node:crypto` and the exact import path that pulled it in, and says
+# the Worker "may throw errors at runtime" without the flag. So the failure this flag prevents is a
+# RUNTIME one, not a build one; the flag is recorded here rather than set in the dashboard so the
+# requirement travels with the code either way.
 
-# WRANGLER 4 OR NEWER IS REQUIRED, AND WRANGLER 3 FAILS LOUDLY RATHER THAN SUBTLY.
-# `functions/api/_snapshot.json` is imported with an import attribute — `with { type: 'json' }` —
-# because Node REQUIRES the attribute for JSON modules (without it `node --test` cannot even load
-# the route, which is how the site test suite exercises it). Wrangler 3 bundles with an esbuild old
-# enough to reject that syntax outright:
-#
-#   X [ERROR] Expected ";" but found "with"    functions/.well-known/x402.js:15:45
-#
-# Wrangler 4 compiles it. Measured on 2026-09-13: `wrangler@3 pages functions build` fails with the
-# error above and `wrangler@4 pages functions build` reports "Compiled Worker successfully" and
-# emits a 31 KB bundle containing the real `gate` from apps/api. Nothing about this is a preference:
-# Node needs the attribute and wrangler 3 cannot parse it, so there is no version of these files
-# that satisfies both.
+# WRANGLER 3 VS 4: NO VERSION IS REQUIRED BY THIS ROUTE ANY MORE, AND THAT IS A CHANGE.
+# This used to be pinned to wrangler 4 because `functions/api/_snapshot.json` was imported with a
+# JSON import attribute (`with { type: 'json' }`) that wrangler 3's older esbuild rejected outright
+# (`X [ERROR] Expected ";" but found "with"`). The live chain-read route that replaced the pinned
+# snapshot deleted that file and imports no JSON anywhere in `functions/`, so the one thing that
+# broke wrangler 3 is gone. Re-measured 2026-09-13: `wrangler@3 pages functions build` and
+# `wrangler@4 pages functions build` BOTH report "Compiled Worker successfully" against the current
+# tree. Nothing here recommends a version; it records that the previous requirement's basis no
+# longer exists, so a reader is not left trusting a rule this file can no longer justify.
 
 name = "rwally"
 pages_build_output_dir = "dist"

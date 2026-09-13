@@ -54,7 +54,7 @@ export const VAULT_VIEWS = Object.freeze([
   // The vault's immutable governance module — how `governance-watch` finds the Governance
   // contract without a second env var, exactly the way `oracle` locates the oracle.
   view('governance', [], ['address']),
-  // The four below were added for the x402 live-read edge route (apps/site/functions/api/), not
+  // The four below were added for the x402 live-read edge route (apps/site-next/functions/api/), not
   // by any canary signal — but VaultCore.sol declares no second copy of any of them to read
   // from, and this table is the one place VAULT_VIEWS-shaped ABI fragments are cross-checked
   // against the compiled contract (packages/canary/test/abis.test.mjs), so adding them here gets

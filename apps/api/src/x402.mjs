@@ -87,7 +87,7 @@ export function buildChallenge(price, opts) {
 
 /**
  * Build the `{status:402, headers, body}` shape `gate` returns three times over. Extracted
- * because `apps/site/functions/api/vaults.js` (the live-read edge route) needs it a FOURTH time,
+ * because `apps/site-next/functions/api/vaults.js` (the live-read edge route) needs it a FOURTH time,
  * outside `gate`, and could not call `gate` itself to get it — the route has to read the chain
  * BETWEEN the local envelope check and the facilitator call (so a chain read that fails costs the
  * caller nothing), and `gate` settles internally with no seam at that point. Restating this
