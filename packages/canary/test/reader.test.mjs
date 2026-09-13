@@ -52,7 +52,13 @@ test('ignores a too-short hex value that cannot be a selector', () => {
 
 test('the reader exposes reads only — there is no send/sign/write surface', () => {
   const reader = createChainReader({ client: {} });
-  assert.deepEqual(Object.keys(reader).sort(), ['chainNow', 'getLogs', 'headBlock', 'read', 'staticCall', 'tryRead']);
+  // `assertBoundToDeclaredChain` joined this list with #204. It is a READ (`eth_chainId`) that
+  // refuses when the RPC does not answer for the declared CHAIN_ID, so it belongs on a reads-only
+  // surface; it is listed explicitly rather than exempted by a pattern, because the point of this
+  // pin is that every addition is looked at.
+  assert.deepEqual(Object.keys(reader).sort(), [
+    'assertBoundToDeclaredChain', 'chainNow', 'getLogs', 'headBlock', 'read', 'staticCall', 'tryRead',
+  ]);
   for (const forbidden of ['sendTransaction', 'writeContract', 'signMessage', 'account', 'wallet']) {
     assert.equal(reader[forbidden], undefined, `the canary must expose no ${forbidden}`);
   }

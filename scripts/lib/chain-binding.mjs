@@ -1,59 +1,28 @@
 // @ts-check
 /**
  * Shared pure decision: does the RPC that answered belong to the chain something in THIS run
- * declared? PURE — no RPC call, no file read — so the decision table is unit-testable with no
- * network and no `cast`/`viem` stub.
+ * declared? Used by `scripts/verify-mainnet-config.mjs` and `scripts/live-x402-run.mjs` (#204).
  *
- * Reused by `scripts/verify-mainnet-config.mjs` and `scripts/live-x402-run.mjs` (issue #204: a
- * script that resolves an RPC by chain and never asks the RPC which chain it actually is prints a
- * verdict computed against a chain nobody named. A verdict about the wrong chain is worse than no
- * verdict — it looks authoritative).
+ * ## The implementation moved to `packages/chain-config/src/chain-binding.mjs`; this re-exports it
  *
- * ## Same shape as `chainBindingVerdict` in `scripts/verify-chainlink-oracle.mjs` (#205) —
- * deliberately NOT imported from there
+ * When #278 landed, both callers were under `scripts/`, so the decision lived here. Closing the
+ * rest of #204 added three more callers — `packages/indexer`, `packages/canary` and
+ * `packages/reference-agent` — and none of them can import this file: `Dockerfile` copies
+ * `packages` and `apps` and does NOT copy `scripts`, so a `../../../scripts/...` import resolves
+ * on a developer's checkout and throws MODULE_NOT_FOUND inside the container.
  *
- * That file is a script, not a library: its top level reads a config path off `process.env.CONFIG`
- * (default `contracts/config/base-mainnet.json`) and can `process.exit(1)` on `import` alone if no
- * default RPC resolves for THAT config's `chainId`. Importing it just to reach one pure function
- * would run side effects neither caller here wants, and a `CONFIG` left set in a shell from an
- * oracle-verification session would silently change which file the import reads. It is also a file
- * this change does not own — open PR #185 is mid-flight on it. A future cleanup that extracts one
- * shared module and points `verify-chainlink-oracle.mjs` at it too is left as a follow-up rather
- * than done here, since it would require editing that file.
+ * Rather than keep a second copy in sync by hand, the implementation moved to `packages/` — which
+ * both sides can reach — and this module re-exports it unchanged. The import path every existing
+ * caller uses is therefore untouched, and there is exactly one statement of the rule. Two
+ * statements of one rule drift, and then neither can be trusted.
  *
- * An unreadable chain id (`rpcChainId === null`) refuses exactly like a mismatch: "I could not
- * tell" is not "they match," and every caller of this function is about to read something —
- * an address, a domain separator — that means nothing on the wrong chain.
+ * `chainBindingVerdict` keeps its exact signature and behaviour. `assertChainBinding` and
+ * `ChainBindingError` are re-exported too, for any future script that wants the RPC-reading form
+ * rather than the pure one.
  *
- * @param {{declaredChainId:number|string, rpcChainId:number|null, rpc:string, declaredBy:string}} a
- * @returns {{ok:boolean, message:string}}
+ * Deliberately still NOT imported from `scripts/verify-chainlink-oracle.mjs`'s own copy: that file
+ * is a script, not a library — its top level reads a config path off `process.env.CONFIG` and can
+ * `process.exit(1)` on `import` alone. Folding its copy in as well means editing that file, which
+ * is a separate change.
  */
-export function chainBindingVerdict({ declaredChainId, rpcChainId, rpc, declaredBy }) {
-  const want = Number(declaredChainId);
-  if (!Number.isInteger(want) || want <= 0) {
-    return {
-      ok: false,
-      message:
-        `${declaredBy} declares no usable chain id (${JSON.stringify(declaredChainId)}), so there is ` +
-        'nothing to bind the RPC to.',
-    };
-  }
-  if (rpcChainId === null) {
-    return {
-      ok: false,
-      message:
-        `could not read the chain id of ${rpc}, so it is UNPROVEN that it is chain ${want} ` +
-        `(${declaredBy}). Refusing rather than proceeding: an unproven binding is not a binding.`,
-    };
-  }
-  if (Number(rpcChainId) !== want) {
-    return {
-      ok: false,
-      message:
-        `WRONG CHAIN: ${rpc} reports chain id ${rpcChainId}, but ${declaredBy} declares chain ${want}. ` +
-        'Refusing rather than proceeding — whatever this run is about to read next is chain-specific, ' +
-        'and a result computed against the wrong chain is not a partial answer, it is a meaningless one.',
-    };
-  }
-  return { ok: true, message: `${rpc} is chain ${rpcChainId}, matching ${declaredBy}` };
-}
+export { chainBindingVerdict, assertChainBinding, ChainBindingError } from '../../packages/chain-config/src/chain-binding.mjs';
