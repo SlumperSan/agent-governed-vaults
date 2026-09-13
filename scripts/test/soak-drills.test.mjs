@@ -1100,6 +1100,127 @@ test('assertLogsServed FAILS when the endpoint returns no logs for a range that 
   assert.match(said, /sepolia\.base\.org/, 'the message must name an endpoint that does serve it');
 });
 
+// ───────── send(): issue #214, retry the estimation preflight, never the broadcast ─────────
+
+// A stand-in for `cast`, answering only `send` and `block-number` — the two subcommands
+// `send()` invokes. Same technique as FAKE_CAST_SRC above: CAST is pointed at node itself and
+// this is preloaded with `--require`, so `cast <args>` becomes `node <args>` with this file
+// deciding the outcome before node can complain about the subcommand not being a script.
+//
+// `FAKE_SEND_FAIL_COUNT` invocations of `send` fail before the (fail_count + 1)th succeeds.
+// `FAKE_SEND_FAIL_KIND` picks the wording: 'estimate' reproduces the exact string from issue
+// #214 ("Failed to estimate gas: execution reverted, data: 0x"), 'timeout' is a plausible
+// POST-broadcast-shaped failure (a receipt-wait timeout) that must NEVER be retried by this
+// code path. `FAKE_SEND_COUNTER_FILE` persists the call count ACROSS process invocations —
+// each `cast()` call is a fresh child process — so a test can assert exactly how many times
+// `send` was actually invoked, which is the only way to prove a failure was retried the right
+// number of times, or not retried at all.
+const FAKE_CAST_SEND_SRC = `
+const a = process.argv.slice(1);
+// See FAKE_CAST_SRC's note above: node resolves argv[1] to an absolute path before the preload
+// sees it, so take the basename to recover the subcommand.
+const sub = String(a[0] || '').replace(/\\\\/g, '/').split('/').pop();
+if (a.length && !sub.startsWith('-')) {
+const fs = require('fs');
+if (sub === 'send') {
+  const counterFile = process.env.FAKE_SEND_COUNTER_FILE;
+  let n = 0;
+  try { n = Number(fs.readFileSync(counterFile, 'utf8')) || 0; } catch {}
+  n += 1;
+  fs.writeFileSync(counterFile, String(n));
+  const failCount = Number(process.env.FAKE_SEND_FAIL_COUNT || '0');
+  if (n <= failCount) {
+    const kind = process.env.FAKE_SEND_FAIL_KIND || 'estimate';
+    const msg = kind === 'estimate'
+      ? 'Error: Failed to estimate gas: execution reverted, data: 0x'
+      : 'Error: error sending request for url (http://stub.invalid/): operation timed out';
+    process.stderr.write(msg + '\\n');
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify({ status: '0x1', transactionHash: '0xabc123', blockNumber: '0x64' }) + '\\n');
+  process.exit(0);
+} else if (sub === 'block-number') {
+  process.stdout.write('100\\n');
+  process.exit(0);
+} else {
+  process.exit(3);
+}
+}
+`;
+
+/**
+ * @param {{failCount?: number, failKind?: 'estimate'|'timeout'}} opts
+ * @returns {{ok: boolean, status?: string, message?: string, calls: number, log: string}}
+ */
+function runSendProbe({ failCount = 0, failKind = 'estimate' } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soak-sendprobe-'));
+  const stub = path.join(dir, 'fake-cast-send.cjs');
+  fs.writeFileSync(stub, FAKE_CAST_SEND_SRC);
+  const counterFile = path.join(dir, 'send-count.txt');
+  const src = `
+    process.env.SOAK_SIGNER_ARGS = '--account test';
+    const { send } = await import(${JSON.stringify(new URL('../soak/lib.mjs', import.meta.url).href)});
+    try {
+      const r = send('probe', '0x0000000000000000000000000000000000000001', 'createVault(string)', 'soak-test');
+      console.log(JSON.stringify({ ok: true, status: r.status }));
+    } catch (e) {
+      console.log(JSON.stringify({ ok: false, message: e.message }));
+    }
+  `;
+  try {
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CAST: process.execPath,
+        NODE_OPTIONS: `--require ${JSON.stringify(stub)}`,
+        SOAK_RPC: 'http://stub.invalid',
+        FAKE_SEND_COUNTER_FILE: counterFile,
+        FAKE_SEND_FAIL_COUNT: String(failCount),
+        FAKE_SEND_FAIL_KIND: failKind,
+      },
+    });
+    const last = out.trim().split('\n').pop();
+    const calls = Number(fs.readFileSync(counterFile, 'utf8') || '0');
+    return { ...JSON.parse(last), calls, log: out };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('send() retries a gas-estimation preflight failure and succeeds once a later attempt is clean', () => {
+  // The exact wording from the 2026-09-05 soak: "Failed to estimate gas: execution reverted,
+  // data: 0x". Fails twice, succeeds on the third of SEND_ESTIMATE_MAX_ATTEMPTS (3).
+  const r = runSendProbe({ failCount: 2, failKind: 'estimate' });
+  assert.equal(r.ok, true, `send() must recover once a retry succeeds: ${r.message}`);
+  assert.equal(r.status, '0x1');
+  assert.equal(r.calls, 3, 'exactly two failed sends and one successful send must have run');
+  assert.match(r.log, /gas estimation failed on attempt 1\/3/);
+  assert.match(r.log, /gas estimation failed on attempt 2\/3/);
+  assert.match(r.log, /nothing has been\s+broadcast yet/);
+});
+
+test('send() gives up after its bounded retry budget on a persistent estimation failure', () => {
+  // Never-succeeding version of the same wording. The retry must be BOUNDED — this is the test
+  // that would fail if the loop above ever lost its `attempt >= SEND_ESTIMATE_MAX_ATTEMPTS` exit.
+  const r = runSendProbe({ failCount: 99, failKind: 'estimate' });
+  assert.equal(r.ok, false, 'a persistent estimation failure must eventually fail the drill');
+  assert.match(r.message, /Failed to estimate gas/);
+  assert.equal(r.calls, 3, 'must stop at SEND_ESTIMATE_MAX_ATTEMPTS, not retry forever');
+});
+
+test('send() does NOT retry a failure that is not the gas-estimation phase', () => {
+  // THE SAFETY PROPERTY. A receipt-wait timeout is exactly the shape of failure that can follow
+  // a transaction that WAS already broadcast — retrying it risks the double-send the brief
+  // warns about. `classifyCallError` cannot be the gate here either way (see the comment above
+  // `send()` in lib.mjs): this proves the code retries on the PHASE marker alone, and does
+  // nothing at all — not even one extra call — for wording that does not carry it.
+  const r = runSendProbe({ failCount: 99, failKind: 'timeout' });
+  assert.equal(r.ok, false, 'a non-estimation failure must still fail the drill');
+  assert.match(r.message, /operation timed out/);
+  assert.equal(r.calls, 1, 'a non-estimation failure must be reported on the FIRST attempt, never retried');
+});
+
 // ───────── votableNow: a pid is not a votable round (drill 5) ─────────
 
 test('votableNow rejects a settled proposal that activeProposalOf still names', () => {
