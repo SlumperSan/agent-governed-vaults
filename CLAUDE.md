@@ -46,30 +46,121 @@ where your change is, not in the shared checkout.
 
 ## Merge bar
 
-A pull request merges only when all four hold on the exact landing SHA:
+**The rule lives in `scripts/lib/merge-policy.json`,** the single machine-readable source of truth
+for when a PR may merge. `docs/reviews/MERGE-POLICY.md` embeds it verbatim and
+`scripts/test/merge-preflight.test.mjs` asserts the two are byte-identical, so the prose humans read
+cannot drift from what the program enforces. **Read it there, and run
+`node scripts/merge-preflight.mjs <n>` rather than reconstructing the bar from memory.**
 
-1. A fresh independent verdict: not the author, not the original reviewer, not the fixer. A fixer
-   saying "addressed" does not clear a REJECT.
-2. CI green **matched by `headSha`** via `gh run list`. Never `gh pr checks`, which reports a
-   different thing. Every job's step count must be greater than zero; `steps: 0` means the run never
-   executed.
-3. `behind_by 0`. Now also enforced by the `protocol-main` ruleset.
-4. No review still running.
+### One condition the JSON does not encode: who may cast the verdict
 
-Per PR, serialized: **rebase → CI green matched by `headSha` → fresh verdict → merge immediately.**
-Never rebase and review concurrently. A verdict that sits unused is a verdict that expires.
+**A verdict must come from someone who has not already graded this change** — not the author, not the
+fixer, and not the reviewer who wrote the verdict being cleared. `merge-policy.json` encodes
+`pr-open`, `no-standing-reject`, `verdict-covers-head`, `ci-matches-head`, `roster-declared`,
+`roster-resolved` and `base-current`, and **none of them says anything about who may write a
+verdict**; its only mention of the subject is `enforcement.nativeReviewsUnavailable`, recording that
+GitHub cannot enforce it here because the whole swarm is one identity. So this is not a restatement
+of the JSON — it is the only place the requirement is written down, and a draft of this section
+deleted it on the mistaken grounds that it duplicated something.
 
-Two mechanics that are easy to get wrong and cost a full CI round trip each:
+**It is in real tension with `docs/SWARM.md` §3 and `docs/reviews/MERGE-POLICY.md`, and the tension
+is worth naming rather than resolving silently.** Those say a fixer pass does not clear a verdict and
+that *only the reviewer* clears one — which is a rule about **token mechanics** under the two-reviewer
+roster: it stops a fixer self-certifying "all findings addressed". The independence rule here is
+about **who grades a new head**. They collide only when a fix lands: SWARM's wording points at the
+original reviewer, this points away from them.
+
+**In practice, and this is what the practice has bought:** each round of a rejected PR has gone to a
+reviewer who had not seen it before, and that is how eight consecutive rounds on one branch each
+found a real defect — several of them defects the previous reviewer had explicitly certified clean.
+A reviewer re-reading their own prior work is the weakest configuration available. Where the two
+readings disagree, prefer a fresh reviewer and say in the merge which you did.
+
+What is NOT in that JSON, because it is about the tools rather than the rule, and what each mistake
+costs:
 
 - **The base branch is `protocol/main`, not `main`.** Pass it rather than letting `gh` pick a
-  default: `gh pr create --base protocol/main`.
+  default: `gh pr create --base protocol/main`. A wrong base is a PR against the wrong tree.
 - **Dispatch the preflight from `protocol/main`, never from your own branch:**
   `gh workflow run merge-preflight --ref protocol/main -f pr=<number>`. `scripts/merge-preflight.mjs`
   finds the PR's CI with `gh run list --branch <headRefName>`, so a run dispatched from your own
   branch is stamped with that branch, appears in its own lookup as an in-flight run on the head, and
   blocks on itself under `ci-matches-head`. Dispatched from the default branch it is stamped
   `protocol/main`, so it cannot see itself. The automatic `pull_request` run has the same shape and
-  will show that blocker whenever it finishes before CI does; re-dispatch once CI is green.
+  will show that blocker whenever it finishes before CI does; re-dispatch once CI is green. Costs a
+  full CI round trip each time it is got wrong.
+- **Every job's step count must be greater than zero.** `steps: 0` means the run never executed,
+  which is what a billing wall looks like, not a passing job. (The rest of how to read CI — match
+  `headSha` yourself with
+  `gh run list --branch <headRefName> --json headSha,status,conclusion`, never `gh pr checks` — IS
+  in the JSON, under `ci-matches-head.why`. Read it there.)
+
+**Per PR, still serialized: rebase → CI green matched by `headSha` → fresh verdict → merge
+immediately. Never rebase and review concurrently.** A verdict that sits unused is a verdict that
+expires — that is the operational encoding of `verdict-covers-head` and `base-current`, and it is
+safety guidance rather than speed guidance, so turning `strict` off does not retire it. (A draft of
+this section deleted this paragraph without remarking on it. It exists in no other file: the JSON
+encodes the *rules*, not the order to apply them in.)
+
+### On making this faster — what was tried, and where the real lever is
+
+The owner asked on 2026-09-10 for merging to be faster. Two changes were drafted and an independent
+review rejected both on evidence from this repository. They are recorded because both look obviously
+correct until someone checks them:
+
+- **"A clean rebase should not expire a verdict, if the PR's own patch is byte-identical."** Fails
+  twice. It is unexecutable through this repo's own tooling — `verdict-covers-head`
+  (`scripts/lib/verdicts.mjs`) blocks when a verdict predates the head's `committedDate`, and a
+  rebase rewrites every committer date. And patch identity is not the property that matters: #119
+  held a valid ACCEPT, #121 then inverted canary tier semantics in a file #119 never touched, making
+  two sentences #119 *adds* false against merged main — with `merge-tree` clean and CI green. #119's
+  patch would have been byte-identical across a rebase.
+
+  It is also not sufficient on its own mechanics. Rebasing a branch from a **stale local ref** on
+  2026-09-10 silently dropped one of its two commits; only comparing the patches caught it. Any
+  future version of this idea must check the commit count as well as the patch, and must rebase from
+  `origin/<branch>`, not from whatever the local ref happens to point at.
+
+  The sound form, if revisited: byte-identical patch **and** unchanged commit count **and**
+  `git diff <old-base>..<new-base>` touches nothing the PR reads, calls, or makes a claim about.
+
+- **"Tier the verdict requirement — exempt docs, tests, scripts, tooling and fixtures."** Refuted by
+  its own evidence. The pruned-RPC defect (the `base-sepolia-rpc.publicnode.com` rule in
+  `docs/TESTNET-CHECKLIST.md` §2; the same window and provider error codes are in
+  `assertLogsServed()` in `scripts/soak/lib.mjs`) was a false claim about chain history in
+  `scripts/soak/soak-vaults.json` — a **fixture**, under **`scripts/soak/`**, both exempted
+  categories — and an independent verdict is what caught it, after it had shipped. The exempt set
+  also contains `scripts/lib/verdicts.mjs`, `scripts/lib/merge-policy.json` and every
+  `scripts/test/*.test.mjs` guard, so it would cover the machinery that enforces the bar.
+
+**The rebase treadmill is gone, by an owner decision on 2026-09-10, and this is what replaced it.**
+The `protocol-main` ruleset used to set `strict_required_status_checks_policy: true`, so merging any
+one PR advanced `protocol/main` and put every other at `behind_by 1`; each re-integration moved the
+head, tripped `verdict-covers-head`, and forced a fresh verdict and a fresh CI run.
+`merge-policy.json` calls that the rebase treadmill in as many words, and it was the single largest
+cost in the process — it charged two full re-confirmation cycles on the afternoon it was measured.
+
+**`strict` is now OFF.** An approved PR may merge without first re-integrating a base that moved
+under it. Nothing else changed: the ruleset still requires a pull request, still requires
+`contracts`, `backend` and `slither` green, and still blocks deletion and non-fast-forward pushes.
+
+**What that buys, and what it costs, stated together because the second half is real.** Batching is
+now genuinely cheap: rebase every ready branch onto the same `protocol/main`, let CI run once per
+branch, merge them in sequence, and the ones behind it do not have to be re-verified. What is no
+longer mechanically prevented is the #119/#121 shape — a PR merging against a base it was never
+tested against, whose own added sentences a *different* file's change has since made false. The
+setting used to catch that for free.
+
+**So it is now a judgement, and the judgement is yours to make on every merge where the base has
+moved:** read what the base changed and ask whether it touches anything the PR reads, calls, or
+makes a claim about. If it does, rebase and re-verify anyway. `merge-tree` staying clean and CI
+staying green is exactly what #119 looked like, and neither noticed.
+
+**GitHub no longer forces it; this repository still tells you about it.** `base-current` in
+`scripts/lib/merge-policy.json` raises a blocker whenever `behindBy > 0` **and a verdict already
+exists** (`scripts/lib/verdicts.mjs`), on the grounds that such a verdict was computed against a base
+that has since moved. So `merge-preflight` will keep reporting base drift with `strict` off. That is
+now advice rather than a gate — read it, decide, and say which you decided.
 
 ## Worktrees: do not create one unless you are going to commit
 
