@@ -1,4 +1,6 @@
 > **Status: ALL FINDINGS FIXED (Sprint 3 hardening commit).** H-1 → bounded module calls
+
+<!-- doc-claims: historical record. The `file:line` citations below describe the tree as reviewed at Sprint 1 and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
 > (`lib/BoundedCall.sol`, `MODULE_CALL_GAS`), Mode-I fallback on governance failure. H-2 →
 > assembly `tryTransfer`, gas-capped, returndata-bounded. M-1 → creator gate at queue time,
 > not re-checked for queued settlements. M-2 → fee withheld uniformly across cash + in-kind
