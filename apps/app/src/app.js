@@ -5,13 +5,40 @@
    'unsafe-inline', so an inline <script> would be blocked by the browser with
    no visible error. Every line of behaviour on this page is here.
 
-   WHAT IT DOES, AND WHAT IT DELIBERATELY DOES NOT DO. It sends four eth_call
-   requests and one eth_blockNumber to the public RPC, and it writes the answers
-   into the LIVE READS panel. It renders NOTHING ELSE on the page. The vault
-   table's empty state is static markup, because that sentence has to be true
-   whether or not this file runs: a claim produced by a fetch is a claim that
-   disappears when the fetch fails, and the honest version of a failed read is
-   an error, not a blank.
+   WHAT IT DOES. Two independent passes, and a failure in one must not blank the
+   other.
+
+   Pass 1, the LIVE READS panel: four eth_call requests and one eth_blockNumber.
+   index.html's "Four eth_call requests and one eth_blockNumber" sentence cites
+   THIS COMMENT as its authority, so if you change the calls there, change that
+   sentence too.
+
+   Pass 2, the VAULT ROWS: its OWN vaultCount() call (it does not reuse pass 1's
+   answer, so the two passes stay independent), then allVaults(i) for each index,
+   then four reads per vault (navWad, totalShares, holderCount, capacityCapUsdc).
+   That is 1 + n + 4n eth_calls, so the cost grows with the vault count and this
+   is the thing to change first if the table ever gets long: a multicall, or an
+   indexer, rather than a read per cell. It read idleUsdc as a fifth and
+   rendered it nowhere; an unrendered read is a call nobody can check, so it is
+   gone rather than displayed for symmetry.
+
+   WHAT A WRONG SELECTOR ACTUALLY DOES HERE, because an earlier version of this
+   comment asserted the opposite without probing it. It does NOT silently render
+   a zero. Chain 4663 answers an unknown selector with a JSON-RPC error,
+   `{"code":3,"message":"execution reverted"}`, which `rpc()` turns into a throw;
+   and even a bare `0x` result would throw, because `BigInt('0x')` is a
+   SyntaxError. Both probed against the live endpoint. So the real failure is
+   loud but WIDE: `Promise.all` means one bad read suppresses EVERY row, not
+   just its own, and the table reports a failure instead of a wrong number. That
+   is the tradeoff this shape makes, and it is the honest reason to pin the
+   selectors at build time: not to prevent a silent zero, but because a typo
+   takes the whole table down and the page cannot tell you which call broke.
+
+   WHAT IT STILL DELIBERATELY DOES NOT DO. It invents nothing. A failed row read
+   leaves the tbody empty and names the failure, because the honest version of a
+   failed read is an error, not a blank and not a zero. The fallback block under
+   the table is static markup for the same reason: it is what a reader sees when
+   this file does not run at all.
 
    REQUEST SHAPE IS LOAD-BEARING. The RPC's CORS preflight allows exactly one
    request header, content-type. Adding any other header, or any credential,
@@ -30,6 +57,20 @@ const SEL_VAULT_COUNT = '0xa7c6a100'; // vaultCount()
 const SEL_ALLOW_SUB = '0x1979d1fd'; // allowSubVaults()
 const SEL_USDC = '0x3e413bee'; // usdc()
 const SEL_SYMBOL = '0x95d89b41'; // symbol()
+
+// Vault-row selectors, same provenance as the four above: computed with viem's
+// toFunctionSelector and pinned, so this file carries no keccak implementation.
+// apps/app/test/claims.test.mjs recomputes all five and fails on a wrong pin.
+const SEL_ALL_VAULTS = '0x9094a91e'; // allVaults(uint256)
+const SEL_NAV_WAD = '0xd09074c0'; // navWad()
+const SEL_TOTAL_SHARES = '0x3a98ef39'; // totalShares()
+const SEL_HOLDER_COUNT = '0x1aab9a9f'; // holderCount()
+const SEL_CAPACITY_CAP = '0xb857d9b9'; // capacityCapUsdc()
+
+const EXPLORER = 'https://robinhoodchain.blockscout.com/address/';
+
+/** A uint256 argument, ABI-encoded as one 32-byte word. */
+const word = (n) => BigInt(n).toString(16).padStart(64, '0');
 
 const TIMEOUT_MS = 12000;
 
@@ -106,6 +147,122 @@ function stampNow() {
   return 'Read from chain just now, ' + hhmmss + ' ' + zone;
 }
 
+/**
+ * Format a fixed-point integer as a decimal string, without floating point.
+ *
+ * Number() on a uint256 loses precision above 2^53, and every figure here is
+ * wad or 6-decimal USDG, so the arithmetic stays in BigInt and only the
+ * formatting is string work.
+ */
+function fixed(value, decimals, places) {
+  const base = 10n ** BigInt(decimals);
+  const whole = value / base;
+  const frac = value % base;
+  const fracStr = frac.toString().padStart(decimals, '0').slice(0, places);
+  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return places > 0 ? grouped + '.' + fracStr : grouped;
+}
+
+/**
+ * One vault's row data.
+ *
+ * REJECTS rather than returning null, and the caller's Promise.all makes that
+ * wide: a single failed read on a single vault suppresses every row. Stated
+ * here because the alternative, catching per vault and rendering the rest, would
+ * show a partial table with no indication that a row is missing, which is the
+ * worse failure for a page whose whole claim is that it invents nothing.
+ */
+async function readVault(address) {
+  const [navWad, totalShares, holders, cap] = await Promise.all([
+    ethCall(address, SEL_NAV_WAD),
+    ethCall(address, SEL_TOTAL_SHARES),
+    ethCall(address, SEL_HOLDER_COUNT),
+    ethCall(address, SEL_CAPACITY_CAP),
+  ]);
+  return {
+    address,
+    navWad: BigInt(navWad.slice(0, 66)),
+    totalShares: BigInt(totalShares.slice(0, 66)),
+    holders: BigInt(holders.slice(0, 66)),
+    cap: BigInt(cap.slice(0, 66)),
+  };
+}
+
+function renderVaultRows(vaults) {
+  const body = document.getElementById('vault-rows');
+  if (!body) return;
+  for (const v of vaults) {
+    const tr = document.createElement('tr');
+
+    const name = document.createElement('td');
+    const link = document.createElement('a');
+    link.className = 'addr';
+    link.href = EXPLORER + v.address;
+    link.rel = 'noopener';
+    link.textContent = shorten(v.address);
+    name.appendChild(link);
+    tr.appendChild(name);
+
+    // NAV per share is navWad / totalShares, both 18-dp. A vault with no
+    // shares has no NAV per share -- it is 0/0, not 0 -- so it prints as
+    // absent rather than as a number nobody can act on.
+    const navPerShare = v.totalShares === 0n
+      ? null
+      : (v.navWad * 10n ** 18n) / v.totalShares;
+
+    for (const text of [
+      fixed(v.navWad, 18, 2),
+      navPerShare === null ? 'no shares' : fixed(navPerShare, 18, 6),
+      v.holders.toString(),
+      // VaultCore.sol:81 documents 0 as "uncapped (no limit)", and creation is
+      // permissionless, so a third party can make this render. Printed as `0`
+      // under a header reading Capacity it means the exact inverse: a full
+      // vault. Same sentinel problem as totalShares above, handled the same way.
+      v.cap === 0n ? 'uncapped' : fixed(v.cap, 6, 0),
+    ]) {
+      const td = document.createElement('td');
+      td.className = 'col-num';
+      td.textContent = text;
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+
+  // THE CHIP COUNTS ROWS, SO WHATEVER RENDERS ROWS MUST OWN IT. It ships as
+  // "0 listed here", which is true before this function runs and stays true if
+  // the read fails. It stopped being true the moment rows rendered, and nothing
+  // updated it, so the card head contradicted the table one line below it.
+  const chip = document.querySelector('.count-chip .num');
+  if (chip) chip.textContent = String(vaults.length);
+
+  // Only once a row actually exists does the fallback stop being the truth.
+  if (vaults.length > 0) {
+    const empty = document.getElementById('vault-empty');
+    if (empty) empty.hidden = true;
+  }
+}
+
+async function loadVaults() {
+  const fail = document.getElementById('vault-rows-fail');
+  try {
+    const count = Number(BigInt(await ethCall(FACTORY, SEL_VAULT_COUNT)));
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('vaultCount out of range');
+    if (count === 0) return; // nothing to render; the fallback block is already correct
+
+    const addresses = await Promise.all(
+      Array.from({ length: count }, (_, i) => ethCall(FACTORY, SEL_ALL_VAULTS + word(i))),
+    );
+    const vaults = await Promise.all(addresses.map((w) => readVault(wordToAddress(w))));
+    renderVaultRows(vaults);
+    if (fail) fail.hidden = true;
+  } catch {
+    // Deliberately silent about the cause here: the panel above already reports
+    // RPC errors in full, and a second copy of the same message reads as two
+    // failures. What matters is that no row is invented.
+    if (fail) fail.hidden = false;
+  }
+}
+
 async function run() {
   setStamp('Reading from the public RPC.');
   for (const id of ['read-vaultcount', 'read-allowsub', 'read-usdc']) setValue(id, 'reading');
@@ -149,4 +306,8 @@ async function run() {
   }
 }
 
+// The two passes are started separately and neither is awaited by the other:
+// a dead RPC should not let the panel's failure suppress the table's, nor the
+// reverse, and a slow vault read should not delay the block stamp.
 run();
+loadVaults();
