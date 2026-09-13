@@ -238,9 +238,25 @@ block 54,991,182, not from the config file that was passed in at deploy time.
   the sane-price band, and the heartbeat sits at its loosest allowed value (below).
 - **Robinhood Chain mainnet's heartbeat is `MAX_HEARTBEAT` (`86_400` s) on both assets, the ceiling
   the constructor accepts, not a mid-range choice.** Base mainnet has real headroom (`3600` against
-  a measured ~1200 s cadence); this chain does not — its feeds were measured publishing on the same
-  86,400 s cadence, so a price up to a full day old is accepted without reverting, by design, on the
-  owner's decision recorded in `docs/NOW.md`.
+  a measured ~1200 s cadence); this chain does not, so a price up to a full day old is accepted
+  without reverting, by design, on the owner's decision recorded in `docs/NOW.md`.
+
+  **Do not read that as "these feeds publish once a day".** An earlier version of this bullet said
+  4663's feeds "were measured publishing on the same 86,400 s cadence". That is wrong twice, and the
+  distinction is the whole point of the bound. 86,400 is the published HEARTBEAT tier, not a measured
+  cadence of these two feeds, and the measurement behind it was taken on the **USDG/USD** reference
+  feed (`usdgFeedCadenceNote`: rounds 81-92, gaps 86,403-86,427 s) — a stablecoin resting at 1.0000
+  that never trips a deviation threshold, so its publish cadence IS the bare heartbeat. The basket
+  feeds behave nothing like that: `contracts/config/robinhood-mainnet.json` records ETH/USD rounds
+  1995-2006 at gaps of 570, 150, 90, 90, 557, 2371, 660, 3451, 2521, 30, 210 s (median 557), and
+  CBBTC/USD rounds 293-304 similarly bursty. They publish on deviation and fall back to the heartbeat
+  only when price is flat — which is why the same record notes the latest ETH/USD round was 41,131 s
+  old at the read with nothing wrong. The bound is loose because the heartbeat tier is 86,400, not
+  because these feeds are slow.
+
+  Provenance note, since the row above is sourced from the read-back block deliberately: **no cadence
+  figure exists anywhere in that block.** The heartbeat `86_400` does, per asset, from `feedOf()`.
+  Cadence lives only in the input config, and that file is not evidence about what is deployed.
 - **The cbBTC feed on 4663 is named `CBBTC / USD`, not `BTC / USD`** — a different feed than the one
   Base mainnet wires to the same asset symbol. `_requireUsdQuote` only checks the USD-quote suffix,
   so this passes the same way Base's does; it is called out because a reader who assumes "the cbBTC
