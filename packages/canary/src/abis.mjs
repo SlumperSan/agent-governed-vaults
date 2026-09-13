@@ -62,7 +62,7 @@ export const VAULT_VIEWS = Object.freeze([
   // `operator-power` finds the contract it reads `configOf` from. TWO callers, ONE read.
   view('governance', [], ['address']),
   view('capacityCapUsdc', [], ['uint256']),
-  // `_deposit` requires `amountUsdc >= minDepositUsdc` (VaultCore.sol:369) BEFORE it checks the
+  // `_deposit` requires `amountUsdc >= minDepositUsdc` (`_deposit`, VaultCore.sol:404) BEFORE it checks the
   // capacity cap, so a vault with less cap headroom than one minimum deposit accepts no deposit at
   // all even though `committed < cap`. Without this read the "no top-up path" determination is
   // strictly narrower than the lockout it exists to name (Review115 F2a).
@@ -71,11 +71,11 @@ export const VAULT_VIEWS = Object.freeze([
   view('CREATOR_MIN_STAKE_BPS', [], ['uint256']),
   // VOTING-ELIGIBLE stake, which is what `Governance.propose` actually gates on: it reads
   // `pastVotingEligibleShares` / `pastTotalVotingEligibleShares` at `createdAt - 1`
-  // (Governance.sol:287-291), NOT the raw share book. Eligible = `sharesOf - queuedExitShares`,
-  // and a registered parent vault always reads 0 (VaultCore.sol:968-977). The live views below are
+  // (`propose`, Governance.sol:302-303), NOT the raw share book. Eligible = `sharesOf - queuedExitShares`,
+  // and a registered parent vault always reads 0 (`_snapshot`, VaultCore.sol:516). The live views below are
   // the present-tense form of the same quantity — the canary measures "could the operator propose
   // right now", so it wants now, not a historical checkpoint. A queued Mode-F exit removes weight
-  // IMMEDIATELY (VaultCore.sol:515-517), which is exactly the divergence from `sharesOf` that made
+  // IMMEDIATELY (`_snapshot`, VaultCore.sol:516), which is exactly the divergence from `sharesOf` that made
   // the raw-book reading of this gate wrong (Review115 F1).
   view('votingEligibleShares', ['address'], ['uint256']),
   view('totalVotingEligibleShares', [], ['uint256']),

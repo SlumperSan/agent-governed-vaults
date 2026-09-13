@@ -26,17 +26,17 @@
  * two DIFFERENT numbers that happen to start equal, and — the part the first cut of this file got
  * wrong (Review115 F1) — they are not even fractions of the same denominator:
  *   1. Governance's `configOf(vault).proposalThresholdBps` — gates the operator's own next
- *      `propose()` call (`Governance.sol:287-291`, `BelowProposalThreshold`). It compares
+ *      `propose()` call (`propose`, `Governance.sol:306`, `BelowProposalThreshold`). It compares
  *      `pastVotingEligibleShares` against `pastTotalVotingEligibleShares`, i.e. VOTING-ELIGIBLE
  *      stake: `sharesOf - queuedExitShares`, with a registered parent vault counted as 0
- *      (`VaultCore.sol:968-977`). A queued Mode-F exit removes weight the instant it is queued
- *      (`VaultCore.sol:515-517` — "locked shares leave eligible stake immediately"), so an operator
+ *      (`_snapshot`, `VaultCore.sol:516`). A queued Mode-F exit removes weight the instant it is queued
+ *      (`requestExit`, `VaultCore.sol:557` — "locked shares leave eligible stake immediately"), so an operator
  *      with an open exit request can be unable to propose RIGHT NOW while the raw book still shows
  *      them comfortably above the bar. Configurable per vault, and can even be 0 (M-6 again).
  *   2. VaultCore's `CREATOR_MIN_STAKE_BPS` — a protocol CONSTANT (500 bps everywhere) that gates the
  *      operator's own voluntary EXIT while non-creator members remain (`_checkCreatorGate`,
  *      `CreatorStakeGate`). That one genuinely uses the RAW book — `_checkCreatorGate` reads
- *      `sharesOf` and `totalShares` (`VaultCore.sol:555-560`) — so it is measured raw here. Only
+ *      `sharesOf` and `totalShares` (`_checkCreatorGate`, `VaultCore.sol:599`) — so it is measured raw here. Only
  *      live once `nonCreatorMemberCount > 0`.
  * Each leg carries its own `measuredBps` and says which book it was measured against; the signal
  * never collapses the two into one number.
@@ -68,8 +68,8 @@
  * TOP-UP PATH. `detail.noTopUpPath` is the operator's own side of the same arithmetic, and it is
  * deliberately WIDER than "the vault is literally full" (Review115 F2). Restoring the fraction to a
  * gate needs a deposit of at least `topUpDeficitUsdc`; `_deposit` will reject anything below
- * `minDepositUsdc` (`VaultCore.sol:369`) and anything that would push `navUsdc + totalPendingUsdc`
- * past `capacityCapUsdc` (`VaultCore.sol:374-375`). So the operator is locked out whenever
+ * `minDepositUsdc` (`_deposit`, `VaultCore.sol:404`) and anything that would push `navUsdc + totalPendingUsdc`
+ * past `capacityCapUsdc` (`_deposit`, `VaultCore.sol:410`). So the operator is locked out whenever
  * `max(deficit, minDeposit) > cap - committed`, which is the "the top-up must LEAD the fill, not
  * chase it" point of no return in Business/Finance/Operator Capital Requirement.md, not the much
  * later moment the vault reaches its cap. Worked case from that note: cap 50,000, operator 2,000,

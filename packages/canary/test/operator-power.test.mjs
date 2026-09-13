@@ -346,7 +346,7 @@ test('an ALERT with capacity headroom remaining does NOT claim there is no top-u
 test('less cap headroom than ONE minimum deposit is a lockout, though committed < cap', async () => {
   // Review115 F2a. Committed 7,000,000; cap 7,000,050 leaves 50 units of headroom against a
   // minDepositUsdc of 1,000,000 — _deposit reverts BelowMinDeposit before it ever reaches the cap
-  // check (VaultCore.sol:369), so no deposit at all can land. `atCapacity` is false.
+  // check (`_deposit`, VaultCore.sol:404), so no deposit at all can land. `atCapacity` is false.
   const { crit } = await run(holding(25_000000000000000000n, {
     capacityCapUsdc: () => 7_000050n,
     minDepositUsdc: () => 1_000000n,

@@ -122,6 +122,6 @@ every transition, same channel, no severity. Full env reference is in
 node --test packages/canary/test/*.test.mjs
 ```
 
-377 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
+381 tests, all mocked. `test/helpers.mjs` carries the shared fixtures: `healthyVault()` (retired
 multi-source oracle) and `chainlinkVault()` (the live single-feed one) are healthy on every signal,
 so each test perturbs exactly one thing and proves the signal reacts to that and nothing else.
