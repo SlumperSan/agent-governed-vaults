@@ -1,4 +1,30 @@
-# apps/site: public marketing site
+# apps/site: public marketing site (RETIRED — do not deploy this directory)
+
+> **This directory is retired. `rwally.com` is served by `apps/site-next`, not this one.**
+> `apps/site-next/README.md:4` states it plainly: "This is what rwally.com serves." Running a
+> Cloudflare Pages deploy of this directory against the `rwally` project — for example
+> `wrangler pages deploy . --project-name rwally` from here — **replaces the live site with this
+> retired nine-page build.** That is not hypothetical: it is exactly what a runbook shipped with
+> PR #267 would have done had review not caught it first (issue #268). If you are looking for the
+> directory to deploy, build, or edit copy in, it is `apps/site-next`, not this one.
+>
+> **Why the tests below still run in `npm run test:backend` despite that.** This is not an
+> oversight left over from before the retirement. `config-doc-truth.test.mjs` reads this file's
+> own source text and asserts a specific pattern is still present in it, and
+> `claims-lede-truth.test.mjs`'s docstring states outright that this file's own review-marker
+> absence test (`site.test.mjs:544`) is what reds if a retired review marker returns to this
+> directory.
+> `claims-token-absence.test.mjs` is different: it **replaced** the token-launch legs that used to
+> live in this file rather than depending on them, and now walks `apps/site` itself
+> (`CORPUS = apps/site`) to enforce the absence directly. `skills/rwally-claims-contract/SKILL.md`
+> names this file as the reference for the pinned wording rules, but that is documentation, not
+> enforcement.
+>
+> The two guards this file *is* depended on for run from `scripts/test/*.test.mjs`, a **separate**
+> glob on the same `test:backend` line, so dropping `apps/site/test/*.test.mjs` from that line
+> would not silence either of them. What it would silence is this file's own forty-one guards over
+> `apps/site/*.html`, the review-marker test above included — and that alone is reason enough to
+> keep the glob: this tree is a frozen, still-guarded historical record, not a live surface.
 
 Nine static HTML pages for RWAlly, the Agent-Governed Vaults protocol: `index.html`,
 `how-it-works.html`, `vision.html`, `agents.html`, `who-its-for.html`, `operators.html`,
