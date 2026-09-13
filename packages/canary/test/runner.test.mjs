@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { resolveCanaryConfig, collectSignals, buildCanary } from '../src/canary-runner.mjs';
+import { resolveCanaryConfig, collectSignals, buildCanary, EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
@@ -274,6 +274,62 @@ test('runOnce says so, loudly, when there is nothing to watch', async () => {
     assert.deepEqual(vaults, []);
     assert.match(err[0], /no vaults to watch/, 'an empty watch set must never look like a clean bill of health');
   });
+});
+
+test('EMITTABLE_SIGNALS names exactly the signals a sweep can produce, and nothing else', async () => {
+  await withTempDir(async (dir) => {
+    const statePath = await seedSnapshot(dir);
+    const cfg = resolveCanaryConfig({
+      RPC_URL: 'http://localhost:8545', STATE_PATH: statePath,
+      CANARY_STATE_PATH: join(dir, 'canary-state.json'), OPERATOR_REGISTRY_ADDRESS: REGISTRY,
+    });
+    const canary = await buildCanary(cfg, { log: () => {}, error: () => {}, client: {} });
+    canary.reader.headBlock = async () => 1000;
+    canary.reader.chainNow = async () => NOW;
+    const mock = mockReader({ contracts: healthyFixture(), nowSec: NOW });
+    Object.assign(canary.reader, { read: mock.read, tryRead: mock.tryRead, getLogs: mock.getLogs, staticCall: mock.staticCall });
+
+    const { results } = await canary.runOnce();
+    assert.ok(results.length > 0, 'the fixture produced no results, so this proves nothing');
+    for (const r of results) {
+      assert.ok(
+        EMITTABLE_SIGNALS.has(r.signal),
+        `a real sweep emitted '${r.signal}', which EMITTABLE_SIGNALS does not declare — sinks.mjs ` +
+        'would have no tier for it',
+      );
+    }
+  });
+});
+
+test('the undeclared-name guard actually THROWS on a real dispatch site — the sweep aborts, it does not route to LOG', async () => {
+  // Review126 F1: deleting the `run()` guard from `canary-runner.mjs` left the whole suite green,
+  // so the headline runtime protection of this PR was pinned by nothing. The forward test above
+  // iterates EMITTED RESULTS and is structurally blind to this: a signal that returns `[]` on the
+  // healthy fixture emits nothing to check.
+  //
+  // Removing a name from the declaration is the same thing to `run()` as adding an undeclared
+  // dispatch site, and it is the only one of the two a test can stage without editing the source
+  // under test. `nav-backing` is dispatched unconditionally for every vault.
+  assert.ok(EMITTABLE_SIGNALS.has('nav-backing'), 'the name this test undeclares must start declared');
+  EMITTABLE_SIGNALS.delete('nav-backing');
+  try {
+    await assert.rejects(
+      () => collectSignals({
+        reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
+        state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+      }),
+      /dispatched but not declared in EMITTABLE_SIGNALS/,
+      'an undeclared dispatch must abort the sweep loudly, never emit a signal nobody gave a tier',
+    );
+  } finally {
+    EMITTABLE_SIGNALS.add('nav-backing');
+  }
+  // And the guard is not a blanket refusal: the same call with the declaration restored succeeds.
+  const results = await collectSignals({
+    reader: mockReader({ contracts: healthyFixture(), nowSec: NOW }),
+    state: healthyState(), vaults: [VAULT], cfg: baseCfg, window: WINDOW,
+  });
+  assert.ok(results.some((r) => r.signal === 'nav-backing'), 'restoring the declaration restores the dispatch');
 });
 
 // ── the off-host dead-man's switch (Monitoring Gap Analysis G6) ──────────────
