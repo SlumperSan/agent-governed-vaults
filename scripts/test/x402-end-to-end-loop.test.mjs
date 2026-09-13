@@ -1,20 +1,29 @@
 // @ts-check
 /**
- * The whole x402 loop, in one process, over real sockets, with no stub anywhere on the money path.
+ * The FACILITATOR=http x402 loop (this repo's own bespoke wire contract), in one process, over
+ * real sockets, with no stub anywhere on the money path.
  *
- * WHY THIS FILE EXISTS. `apps/api/test/integration.test.mjs`'s "agent SDK drives the live HTTP
- * server through the x402 loop end to end" test is real for the client<->API leg, but its
+ * SCOPE, STATED PRECISELY BECAUSE A REVIEW CAUGHT THE TITLE OVER-REACHING. This drives the repo's
+ * own client (`createHttpFacilitator`) against the repo's own server (`createSettleHandler` /
+ * `checkChallengePrice`) — the two halves of ONE wire contract that only this repo speaks, and
+ * they agree with each other BY CONSTRUCTION. It does not exercise `FACILITATOR=standard`
+ * (`createStandardHttpFacilitator`, `apps/api/src/facilitator.mjs`) or `serve.mjs`'s mode
+ * selection at all — `bootApi` below constructs `createHttpFacilitator` directly. A defect where a
+ * route is wired to a facilitator CLIENT that the actual remote facilitator cannot parse (the
+ * `FACILITATOR=http` vs `FACILITATOR=standard` choice itself being wrong) is invisible to this
+ * file for exactly that reason, and is not claimed to be covered.
+ *
+ * WHY THIS FILE EXISTS ANYWAY. `apps/api/test/integration.test.mjs`'s "agent SDK drives the live
+ * HTTP server through the x402 loop end to end" test is real for the client<->API leg, but its
  * `facilitator` is `{ async verifyAndSettle() { return { ok: true, receiptId: 'wire_rcpt' } } }`
  * — an always-ok spy standing in for the ENTIRE API<->facilitator leg. `apps/api/test/
  * facilitator-server.test.mjs`'s "createHttpFacilitator and the handler agree on the wire, end to
  * end through gate()" drives the real `createHttpFacilitator` against the real `createSettleHandler`
  * — but in-process, with a `fetchImpl` that calls the handler function directly (no socket), a
  * canned `okFacilitator` (no real settlement logic), and a fixed garbage signature that is never
- * cryptographically checked. Nothing in the repository, as of this writing, boots the real API
- * (`server.mjs`'s `createApi`) AND the real bespoke facilitator process (`facilitator-server.mjs`'s
- * `startFacilitatorServer`) as two independent `node:http` servers on two real loopback ports,
- * and drives them with a real buyer (`packages/agent-sdk`) holding a real, freshly generated
- * EIP-712 signing key. This file is that composition.
+ * cryptographically checked. Neither puts both halves of the BESPOKE contract on real sockets with
+ * a signature that has to actually recover. This file does that composition, within the scope
+ * stated above.
  *
  * WHAT IS FAKED, and why each fake is the correct place to stop: the settling facilitator's
  * `publicClient`/`walletClient` (viem's *chain* clients — object literals with `readContract`/
@@ -30,6 +39,11 @@
  * struct, and the only "chain" involved is the two fake client objects above. See
  * `docs/X402-END-TO-END-SEAMS.md` for the no-network preload this suite was run under and the
  * seam findings this file's later tests pin down.
+ *
+ * RE-DERIVED AGAINST `feat/x402-v2-conformance` (#269), MERGED into `protocol/main` at `dded7cf7`
+ * partway through this PR's review. Every claim below was re-checked by reading the merged source,
+ * not carried over from a pre-merge draft — see `docs/X402-END-TO-END-SEAMS.md` for what changed
+ * and why three tests that used to pin an absent fix now pin the fix itself.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,8 +57,8 @@ import { createHttpFacilitator, createSettlingFacilitator } from '../../apps/api
 import {
   createSettleHandler, checkChallengePrice, startFacilitatorServer, CONSENT_ENV_VAR,
 } from '../../apps/api/src/facilitator-server.mjs';
-import { gate, decodeSignatureHeader, checkEnvelopeAgainstPrice } from '../../apps/api/src/x402.mjs';
-import { createProtocolClient } from '../../packages/agent-sdk/src/index.mjs';
+import { gate, decodeSignatureHeader, checkEnvelopeAgainstPrice, toCaip2 } from '../../apps/api/src/x402.mjs';
+import { createProtocolClient, buildTypedData } from '../../packages/agent-sdk/src/index.mjs';
 import { applyAll } from '../../packages/indexer/src/projections.mjs';
 
 // ── shared fixtures ──
@@ -203,6 +217,103 @@ test('the real loop over real sockets: unpaid -> 402, signed -> 200 + receipt, r
   }
 });
 
+test('MAJOR-1 regression, exercised on the real wire: a CAIP-2-spelled envelope settles against a price configured in this repo\'s short-name spelling', async () => {
+  // The loop test above cannot see this seam: `PRICE.network` is `'base-sepolia'` throughout, and
+  // the agent SDK's `buildEnvelope` (packages/agent-sdk/src/eip3009.mjs) echoes `challenge.network`
+  // verbatim, so both sides always agree by construction. To make the comparison mismatch, this
+  // test rewrites the ALREADY-SIGNED envelope's `network` field to the CAIP-2 spelling for the
+  // SAME chain (`eip155:84532`, via `toCaip2` — the exact function both `checkEnvelopeAgainstPrice`
+  // and `checkChallengePrice` now share) before it goes on the wire. `network` is not part of the
+  // signed EIP-712 struct (see `buildTypedData`: the message has no network field), so this does
+  // not invalidate the signature — it only changes what the two server-side checks compare.
+  //
+  // This exercises the MAJOR-1 fix (`apps/api/src/facilitator-server.mjs:149`) through the actual
+  // request path: `checkEnvelopeAgainstPrice` (x402.mjs) sees the mismatch first, then
+  // `checkChallengePrice` sees it again over the real HTTP hop to the facilitator. Both must now
+  // agree it is the same chain, or this test is red.
+  const chain = fakeChain();
+  const facSrv = await bootFacilitator(chain);
+  const facPort = facSrv.server.address().port;
+  const apiSrv = await bootApi(`http://127.0.0.1:${facPort}/settle`);
+  const apiPort = apiSrv.address().port;
+
+  try {
+    const payer = privateKeyToAccount(generatePrivateKey());
+    const rewriteNetworkToCaip2 = async (url, init) => {
+      if (init?.headers?.['payment-signature']) {
+        const env = JSON.parse(Buffer.from(init.headers['payment-signature'], 'base64').toString('utf8'));
+        assert.equal(env.network, 'base-sepolia', 'precondition: the SDK signed against the repo\'s own short name');
+        env.network = toCaip2(env.network);
+        assert.equal(env.network, 'eip155:84532', 'precondition: toCaip2 actually changed the spelling');
+        init = { ...init, headers: { ...init.headers, 'payment-signature': Buffer.from(JSON.stringify(env), 'utf8').toString('base64') } };
+      }
+      return fetch(url, init);
+    };
+    const client = createProtocolClient({
+      baseUrl: `http://127.0.0.1:${apiPort}`,
+      wallet: { address: payer.address, sign: signerFor(payer) },
+      domain: DOMAIN,
+      fetchImpl: rewriteNetworkToCaip2,
+    });
+
+    const list = await client.listVaults();
+    assert.equal(list.data.vaults.length, 1);
+    assert.match(list.receipt.receiptId, /^0x7{64}$/,
+      'settled even though the envelope on the wire named eip155:84532 while PRICE.network is base-sepolia');
+  } finally {
+    apiSrv.close();
+    await once(apiSrv, 'close');
+    await facSrv.close();
+  }
+});
+
+test('a genuine x402 v2 spec-nested payment payload (payload:{signature,authorization} under accepted/resource) settles through the real HTTP loop', async () => {
+  // packages/agent-sdk's client only ever emits the legacy flat envelope (eip3009.mjs's
+  // `buildEnvelope`) — nothing in this repo produces the spec-nested shape, so it is built by hand
+  // here to stand in for a real x402 v2 client. `decodeSignatureHeader` (apps/api/src/x402.mjs)
+  // now hoists `payload.signature`/`payload.authorization` to the top level before anything
+  // downstream sees the envelope (§5.2.1/§5.2.2, merged in #269) — this proves that hoist actually
+  // reaches all the way through a real settlement, not just through `decodeSignatureHeader` in
+  // isolation.
+  const chain = fakeChain();
+  const facSrv = await bootFacilitator(chain);
+  const facPort = facSrv.server.address().port;
+  const apiSrv = await bootApi(`http://127.0.0.1:${facPort}/settle`);
+  const apiPort = apiSrv.address().port;
+
+  try {
+    const unpaid = await fetch(`http://127.0.0.1:${apiPort}/vaults`);
+    const challenge = JSON.parse(unpaid.headers.get('payment-required'));
+
+    const payer = privateKeyToAccount(generatePrivateKey());
+    const authorization = {
+      from: payer.address, to: challenge.payTo, value: challenge.amount,
+      validAfter: String(Math.floor(Date.now() / 1000) - 60),
+      validBefore: String(Math.floor(Date.now() / 1000) + 300),
+      nonce: challenge.nonce, asset: challenge.asset,
+    };
+    const typedData = buildTypedData({ authorization, domain: DOMAIN });
+    const signature = await signerFor(payer)(typedData);
+
+    const nestedEnvelope = {
+      x402Version: 2,
+      accepted: { scheme: 'exact', network: challenge.network, asset: challenge.asset, amount: challenge.amount, payTo: challenge.payTo },
+      resource: { url: '/vaults' },
+      payload: { signature, authorization },
+    };
+    const b64 = Buffer.from(JSON.stringify(nestedEnvelope), 'utf8').toString('base64');
+    const paid = await fetch(`http://127.0.0.1:${apiPort}/vaults`, { headers: { 'payment-signature': b64 } });
+    const body = await paid.json();
+    assert.equal(paid.status, 200, `expected settlement, got ${JSON.stringify(body)}`);
+    const receipt = JSON.parse(paid.headers.get('payment-response'));
+    assert.match(receipt.receiptId, /^0x7{64}$/);
+  } finally {
+    apiSrv.close();
+    await once(apiSrv, 'close');
+    await facSrv.close();
+  }
+});
+
 test('a facilitator that verifies the signature fine but fails to broadcast surfaces as a 402, never a crash or a false 200', async () => {
   const chain = fakeChain({ failWrite: new Error('replacement transaction underpriced') });
   const facSrv = await bootFacilitator(chain);
@@ -264,16 +375,17 @@ test('a facilitator returning a malformed 200 (not JSON) degrades to a declined 
   }
 });
 
-// ── seam: the two envelope shapes ──
+// ── regression: the MAJOR-1 fix (networksEqual), both sides, both directions ──
+//
+// These three tests used to be characterization tests pinned to a pre-#269 world: they asserted
+// the DEFECT'S ABSENCE OF A FIX, so a reviewer who reverted `facilitator-server.mjs`'s
+// `networksEqual` call back to a bare string compare — reintroducing the exact defect this PR
+// exists to catch — got a GREENER suite, not a redder one. That is now inverted: every test below
+// pins the FIX, with both a positive case (genuinely-equivalent spellings must be accepted) and a
+// negative case (genuinely-different chains must still be refused), so reverting the fix in either
+// direction turns one of these red.
 
-test('CHARACTERIZATION (protocol/main today): a spec-nested payment payload is not decoded at all — the client just sees another 402', () => {
-  // The real x402 v2 spec nests the EIP-3009 payload as `payload:{signature,authorization}` under
-  // a top-level `accepted`/`resource` (confirmed by reading the diff of the OPEN #269
-  // `feat/x402-v2-conformance` PR against `apps/api/src/x402.mjs`, which teaches
-  // `decodeSignatureHeader` to unwrap exactly this shape — it does not exist on `protocol/main`
-  // yet). `decodeSignatureHeader` on `protocol/main` recognizes only a top-level
-  // `{signature, authorization}` (`evmShape`) or the SVM shape (`svmShape`); a spec-nested envelope
-  // satisfies neither.
+test('decodeSignatureHeader (apps/api/src/x402.mjs) now hoists a spec-nested payload to the flat shape everything downstream reads', () => {
   const nested = {
     x402Version: 2,
     accepted: { scheme: 'exact', network: 'eip155:84532', asset: USDC, amount: '10000', payTo: PAYTO },
@@ -283,38 +395,57 @@ test('CHARACTERIZATION (protocol/main today): a spec-nested payment payload is n
     },
   };
   const header = Buffer.from(JSON.stringify(nested), 'utf8').toString('base64');
-  assert.equal(decodeSignatureHeader(header), null,
-    'decodeSignatureHeader (apps/api/src/x402.mjs) returns null for a spec-nested envelope today; ' +
-    'gate() then treats the request as simply unpaid and issues a fresh 402 with the generic ' +
-    '"payment required" body — never a diagnosable reason, and never a crash.');
+  const decoded = decodeSignatureHeader(header);
+  assert.notEqual(decoded, null, 'a spec-nested envelope must decode, not silently degrade to "unpaid"');
+  assert.equal(decoded.signature, nested.payload.signature);
+  assert.equal(decoded.authorization.from, nested.payload.authorization.from);
+  assert.equal(decoded.authorization.asset, USDC, 'asset is backfilled from accepted.asset (the spec Authorization object has no asset field)');
+  assert.equal(decoded.network, 'eip155:84532', 'network is hoisted from accepted.network when the envelope has none of its own');
 });
 
-test('SEAM (present-day, present-code): checkChallengePrice does not know a CAIP-2 id and this repo\'s short network name can be the same chain', () => {
-  // `eip155:84532` (spec CAIP-2, docs/RESEARCH-SPRINT1.md:37-38) and `base-sepolia` (this repo's
-  // own PRICE_NETWORK spelling, apps/api/src/serve.mjs default is `base` / soak default is
-  // `base-sepolia`) name the SAME chain. `checkChallengePrice`
-  // (`apps/api/src/facilitator-server.mjs:137`) compares `envelope.network` to `price.network` by
-  // exact lowercase string equality and has no notion of that equivalence.
-  const challenge = { price: { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base-sepolia' } };
-  const envelope = { authorization: { to: PAYTO, asset: USDC, value: '10000' }, network: 'eip155:84532' };
-  assert.deepEqual(checkChallengePrice(challenge, envelope), { ok: false, reason: 'network-mismatch' });
-  // Symmetric in the other spelling direction too.
-  const challenge2 = { price: { asset: USDC, amount: '10000', payTo: PAYTO, network: 'eip155:84532' } };
-  const envelope2 = { authorization: { to: PAYTO, asset: USDC, value: '10000' }, network: 'base-sepolia' };
-  assert.deepEqual(checkChallengePrice(challenge2, envelope2), { ok: false, reason: 'network-mismatch' });
+test('checkChallengePrice (facilitator-server.mjs:149, the MAJOR-1 fix): accepts a CAIP-2/short-name pair naming the SAME chain, still refuses a genuinely different one', () => {
+  // eip155:84532 (spec CAIP-2, docs/RESEARCH-SPRINT1.md:37-38) and base-sepolia (this repo's own
+  // PRICE_NETWORK spelling) name the SAME chain — accepted, in both argument orders.
+  const same1 = checkChallengePrice(
+    { price: { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base-sepolia' } },
+    { authorization: { to: PAYTO, asset: USDC, value: '10000' }, network: 'eip155:84532' },
+  );
+  assert.deepEqual(same1, { ok: true });
+  const same2 = checkChallengePrice(
+    { price: { asset: USDC, amount: '10000', payTo: PAYTO, network: 'eip155:84532' } },
+    { authorization: { to: PAYTO, asset: USDC, value: '10000' }, network: 'base-sepolia' },
+  );
+  assert.deepEqual(same2, { ok: true });
+
+  // eip155:8453 is Base MAINNET — a genuinely different chain than base-sepolia. The fix is an
+  // equivalence check, not a bypass: this must still be refused.
+  const different = checkChallengePrice(
+    { price: { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base-sepolia' } },
+    { authorization: { to: PAYTO, asset: USDC, value: '10000' }, network: 'eip155:8453' },
+  );
+  assert.deepEqual(different, { ok: false, reason: 'network-mismatch' });
 });
 
-test('on protocol/main today, x402.mjs\'s OWN local check rejects the identical CAIP-2/short-name pair the same way — no asymmetry exists YET', () => {
-  // This is the other half of the seam above: as of this commit, `checkEnvelopeAgainstPrice`
-  // (apps/api/src/x402.mjs) and `checkChallengePrice` (apps/api/src/facilitator-server.mjs) are
-  // SYMMETRIC — both do a bare `.toLowerCase()` compare, so a client presenting `eip155:84532`
-  // against a `base-sepolia` price is rejected at the FIRST gate, and the facilitator is never
-  // reached. See docs/X402-END-TO-END-SEAMS.md for why this stops being true the moment
-  // `feat/x402-v2-conformance` (#269) merges without a matching change to facilitator-server.mjs.
+test('checkEnvelopeAgainstPrice (x402.mjs) and checkChallengePrice (facilitator-server.mjs) now AGREE on every case, using the same networksEqual', () => {
+  // The two checks import and call the identical function (apps/api/src/x402.mjs's toCaip2/
+  // networksEqual, imported by facilitator-server.mjs:56) rather than each hand-rolling its own —
+  // that is what #269's own review comment on `toCaip2` says this must hold, and it is what stops
+  // this specific defect from recurring by a future edit to only one side.
   const price = { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base-sepolia' };
-  const env = {
+  const envSameChain = {
     x402Version: 2, scheme: 'exact', network: 'eip155:84532', signature: '0x' + 'b'.repeat(130),
     authorization: { from: '0x' + '1'.repeat(40), to: PAYTO, asset: USDC, value: '10000', validBefore: '999999999999' },
   };
-  assert.deepEqual(checkEnvelopeAgainstPrice(price, env, 1_000_000), { ok: false, reason: 'network-mismatch' });
+  assert.deepEqual(checkEnvelopeAgainstPrice(price, envSameChain, 1_000_000), { ok: true });
+  assert.deepEqual(
+    checkChallengePrice({ price }, envSameChain),
+    { ok: true },
+    'the facilitator-side re-check must reach the same verdict as the API-side gate for the same pair',
+  );
+
+  const envDifferentChain = { ...envSameChain, network: 'eip155:8453' };
+  const local = checkEnvelopeAgainstPrice(price, envDifferentChain, 1_000_000);
+  const remote = checkChallengePrice({ price }, envDifferentChain);
+  assert.deepEqual(local, { ok: false, reason: 'network-mismatch' });
+  assert.deepEqual(remote, { ok: false, reason: 'network-mismatch' });
 });
