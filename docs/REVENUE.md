@@ -80,7 +80,7 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid | **Proven** — 18 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The edge route refuses to serve unpaid | **Proven** — 20 tests in `apps/site-next/test/x402-edge.test.mjs` |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
 | A mainnet payment has settled | **No.** Nothing has been deployed |
 | Anyone has paid anything | **No.** Revenue is $0.00 |

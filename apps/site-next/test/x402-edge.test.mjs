@@ -130,11 +130,28 @@ test('an unparseable FACILITATOR_URL is refused WITHOUT echoing it back', async 
   assert.equal(body.vaults, undefined);
 });
 
+test('a scheme-omitted FACILITATOR_URL is refused WITHOUT echoing the host', async () => {
+  // `host:443/path` PARSES -- WHATWG reads the host as the scheme -- so it reaches the non-https
+  // branch rather than the unparseable one. That branch used to print `parsed.protocol`, i.e. the
+  // hostname. Asserting on ABSENCE, so a reworded message cannot quietly reintroduce the leak.
+  const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'facilitator.example.com:443/settle?apiKey=SUPER_SECRET_KEY' }));
+  assert.equal(res.status, 500);
+  const body = await bodyOf(res);
+  assert.ok(!body.detail.includes('SUPER_SECRET_KEY'), 'the credential must not reach the response');
+  assert.ok(!body.detail.includes('facilitator.example.com'), 'the host must not reach the response');
+  assert.match(body.detail, /FACILITATOR_URL/, 'but it must still name the setting at fault');
+  assert.equal(body.vaults, undefined);
+});
+
 test('a non-https FACILITATOR_URL is refused — a signed envelope must not cross plain http', async () => {
   const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'http://facilitator.example/settle' }));
   assert.equal(res.status, 500);
   const body = await bodyOf(res);
-  assert.match(body.detail, /must be https/);
+  // Assert the SETTING is named and the VALUE is absent, not the exact wording -- an earlier
+  // version pinned /must be https/ and broke when the message was reworded to withhold the value.
+  assert.match(body.detail, /FACILITATOR_URL/);
+  assert.match(body.detail, /https/);
+  assert.ok(!body.detail.includes('facilitator.example'), 'the value must not be echoed');
 });
 
 test('PRICE_AMOUNT must be positive base units, so a free or malformed price cannot deploy', async () => {

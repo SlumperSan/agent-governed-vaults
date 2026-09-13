@@ -82,7 +82,10 @@ export function resolveFacilitatorUrl(env) {
   // A facilitator receives a signed payment authorization. Over plain http that envelope is
   // readable and replayable by anything on the path, so the scheme is checked rather than assumed.
   if (parsed.protocol !== 'https:') {
-    throw new ConfigError(`FACILITATOR_URL must be https, got: ${parsed.protocol}`);
+    // `parsed.protocol` is NOT safe to echo. When the scheme is omitted but a port is present
+    // -- `facilitator.example.com:443/settle?apiKey=...` -- WHATWG parses the HOST as the scheme,
+    // so echoing it prints the hostname of a setting published nowhere.
+    throw new ConfigError('FACILITATOR_URL must use https (value withheld: it may carry a credential)');
   }
   return parsed.toString();
 }
@@ -90,17 +93,27 @@ export function resolveFacilitatorUrl(env) {
 /**
  * A 500 that names the setting at fault, for the operator.
  *
- * It echoes a malformed value back for FOUR of the five -- `PRICE_PAYTO is not an address:
- * my-treasury.eth` -- because an operator debugging a typo needs to see the typo, and those four
- * carry nothing secret: `payTo` and `amount` are published on the free discovery document anyway,
- * and `asset` and `network` are public constants.
+ * WHICH BRANCHES ECHO A VALUE, enumerated per branch rather than asserted as a rule. Three earlier
+ * versions of this comment stated a rule and each was falsified by a branch it had not enumerated:
+ * "no values are echoed" (false), "all five are safe to echo" (false), "FACILITATOR_URL is not
+ * echoed" (false -- the non-https branch printed `parsed.protocol`, which for a scheme-omitted value
+ * like `host:443/path?key=...` is the HOST). So:
  *
- * `FACILITATOR_URL` is the exception and is NOT echoed. It is per-deployment operator configuration,
- * published nowhere (grep the discovery document -- it is absent), and a facilitator endpoint may
- * carry a key in its path or query. Two earlier versions of this comment were wrong about this file:
- * the first claimed no values were echoed at all, the second claimed all five were safe to echo
- * because "the other three are public constants". `FACILITATOR_URL` is neither published nor a
- * constant. Classify a setting before adding it here, and withhold it if it can carry a credential.
+ *   requireAddr   PRICE_ASSET, PRICE_PAYTO   ECHOES the bad value. Both are on the free discovery
+ *                                            document already, so there is nothing to withhold.
+ *   PRICE_AMOUNT                             ECHOES the bad value. Also on the discovery document.
+ *   requireEnv    all five, when BLANK       echoes nothing -- it reports only the key name. This is
+ *                                            why `PRICE_NETWORK` has no value-echoing branch at all.
+ *   FACILITATOR_URL                          WITHHELD in both of its branches, unparseable and
+ *                                            non-https. Published nowhere, and a facilitator
+ *                                            endpoint may carry a key in path or query.
+ *
+ * Before adding a setting here, find the branch that would print it and decide there. Note the 500
+ * answers an unauthenticated GET.
+ *
+ * One thing this file does NOT control: on a fetch rejection `createHttpFacilitator` returns
+ * `facilitator-unreachable: <err.message>`, which `gate` puts verbatim into the 402 body. Under Node
+ * that message is `fetch failed` with no URL; what the Workers runtime puts there is unverified.
  *
  * A misconfigured deployment must never fall through to serving the paid body for free.
  */
