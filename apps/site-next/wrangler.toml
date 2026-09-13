@@ -51,7 +51,9 @@ compatibility_flags = ["nodejs_compat"]
 # individually:
 #
 #   PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913   Circle-native USDC on Base, 6dp.
-#                                                                 NOT USDbC (0xd9aA...4CA2).
+#                                                                 NOT USDbC, which is
+#                                                                 0xd9aAEc86...10b6CA (read back as
+#                                                                 symbol() == "USDbC").
 #   PRICE_PAYTO      <the address that receives metered-read payments>
 #   PRICE_AMOUNT     100000                                       base units, 6dp = $0.10
 #   PRICE_NETWORK    base                                         what the 402 challenge ADVERTISES
