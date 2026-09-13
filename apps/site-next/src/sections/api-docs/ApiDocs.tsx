@@ -10,18 +10,32 @@
  * different reason than the redesign collapsed everything else to two pages.
  *
  * WHAT THIS PAGE DOES NOT DO: describe a payload shape, a price, or a header
- * name it cannot point at in `protocol/main`. Read on 2026-09-13 (`git log
- * origin/protocol/main`, `gh pr list --state open`), the base this page ships
- * from carries none of `apps/site-next/functions/api/vaults.js`,
- * `apps/site-next/functions/.well-known/x402.js`, or `docs/REVENUE.md`. Four
- * open pull requests build these — #267 (a pinned snapshot), #270 (a buyer
+ * name it cannot point at in `protocol/main`, AND IT DOES NOT ENUMERATE PR
+ * STATE IN ITS OWN SHIPPED COPY, because a PR's open/merged status goes stale
+ * on someone else's schedule and this file's own first version got that stale
+ * before it ever reached a reader: it said "four open pull requests ... none
+ * is merged" while #272 had already merged, 18 minutes before the commit that
+ * shipped that sentence (#272 merged 2026-09-13T14:06:34Z; that commit landed
+ * 14:24Z, and later merges from `protocol/main` pulled #272 into this
+ * branch's own history, so the claim was false when written, not merely
+ * stale by the time it was read). Caught in review on PR #274. The fix is not
+ * a bigger number, it is not naming a count at all: the shipped paragraph
+ * below states the dated absence of the three files and the live-vs-snapshot
+ * ambiguity as a design question, and leaves PR bookkeeping out of it.
+ *
+ * FOR A CONTRIBUTOR READING THIS COMMENT RATHER THAN THE RENDERED PAGE,
+ * re-checked 2026-09-13 after merging `protocol/main` into this branch:
+ * `apps/site-next/functions/api/vaults.js`, `functions/.well-known/x402.js`
+ * and `docs/REVENUE.md` are still absent from `protocol/main`. Three pull
+ * requests remain open toward them — #267 (a pinned snapshot), #270 (a buyer
  * client and integration doc), #271 (replaces #267's snapshot with a live
- * chain read), #272 (a standards-track facilitator) — and none is merged.
- * #267 and #271 disagree with each other on exactly the fact a buyer cares
- * about most: whether a purchased read is a live call or a periodically
- * refreshed snapshot. This page does not bet on which one lands, or in what
- * shape, or at what price — see the "Not shipped yet" section below, which is
- * the one this file is actually structured around.
+ * chain read) — and #272 (a standards-track facilitator) merged
+ * 2026-09-13T14:06:34Z; `git merge-base --is-ancestor` confirms it is an
+ * ancestor of this branch's head, and it does not touch any of the three
+ * files above. This paragraph will ALSO go stale; re-derive it with
+ * `gh pr list --state open --base protocol/main` and `gh pr view <n> --json
+ * state,mergedAt` rather than trusting the numbers above past the date on
+ * them.
  *
  * WHAT IT DOES INSTEAD: state what already exists on chain 4663, verified
  * directly against the chain with `cast call` on 2026-09-13 (commands
@@ -64,7 +78,7 @@ export default function ApiDocs(): JSX.Element {
           <h2>What exists on chain 4663 today</h2>
           <p>
             Two vaults exist, both created by VaultFactory <code className="mono">{FACTORY}</code>.
-            Read directly from the chain on 2026-09-13, at block 62,014,279:
+            Read directly from the chain on 2026-09-13, at block 62,072,887:
             <code className="mono"> factory.vaultCount()</code> returns 2, and{' '}
             <code className="mono">allVaults(0)</code> /<code className="mono"> allVaults(1)</code>{' '}
             return the two addresses below.
@@ -107,24 +121,19 @@ export default function ApiDocs(): JSX.Element {
             this domain.
           </p>
           <p>
-            Read on 2026-09-13 against <code className="mono">origin/protocol/main</code>: neither
-            file exists in this repository&apos;s default branch. No{' '}
+            Read on 2026-09-13 against <code className="mono">origin/protocol/main</code>: none of
+            these three files exists in this repository&apos;s default branch. No{' '}
             <code className="mono">functions/api/vaults.js</code>, no{' '}
             <code className="mono">functions/.well-known/x402.js</code>, no{' '}
-            <code className="mono">docs/REVENUE.md</code>. Four open pull requests build pieces of
-            this — a pinned-snapshot version, a buyer client and integration doc, a live-chain-read
-            version that replaces the snapshot, and a standards-track payment facilitator — and none
-            is merged. Two of them disagree on the fact a buyer cares about most: whether a purchased
-            read is a live call to the chain or a periodically refreshed snapshot. Which one lands,
-            and in what shape, is not decided by this page — read{' '}
+            <code className="mono">docs/REVENUE.md</code>. Work toward the endpoint is in progress,
+            and which design lands — a live call to the chain each time, or a periodically refreshed
+            snapshot — is not decided by this page or fixed by anything merged as of this date. Read{' '}
             <code className="mono">/.well-known/x402</code> yourself once it exists, and treat that
             document as the source of truth this page is not.
           </p>
           <p>
-            The price is not published here for the same reason: nothing on{' '}
-            <code className="mono">protocol/main</code> fixes a number yet, and the only place one is
-            written down is an unmerged pull request. The discovery document states the price that is
-            actually charged.
+            The price is not published here for the same reason: nothing merged as of this date fixes
+            a number. The discovery document states the price that is actually charged.
           </p>
         </div>
       </section>

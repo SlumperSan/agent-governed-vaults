@@ -715,7 +715,12 @@ const SITE_NEXT = 'apps/site-next';
 // does not exist, so its sentences are public surface with exactly the standing
 // of the homepage's. Being outside `PAGE_IDS` is precisely what would have made
 // it the silent omission this test's own comment warns about.
-const PRERENDERED = ['index.html', 'disclaimers.html', '404.html'].map(
+// 'api.html' ADDED 2026-09-13, caught in PR #274's review rather than by this test itself: adding a
+// third `PageId` to `apps/site-next/src/shell/pinned.ts` grew what `PAGE_IDS` publishes without
+// growing this list, so `dist/api.html` was already inside `publicSurfaces()`'s walk (coverage
+// happened) while this test kept asserting only the two names it was written with (the ASSERTION
+// that coverage happened did not) — exactly the silent-shrink failure mode the comment above names.
+const PRERENDERED = ['index.html', 'disclaimers.html', 'api.html', '404.html'].map(
   (page) => `${SITE_NEXT}/dist/${page}`,
 );
 
