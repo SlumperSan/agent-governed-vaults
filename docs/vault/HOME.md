@@ -20,6 +20,12 @@ off-chain access. **Base mainnet launch verdict:** NO-GO, for OPERATIONAL reason
 
 ## Clusters
 
+### Member-facing: what a member can check without trusting this project
+- [`docs/MEMBER-VERIFY.md`](../MEMBER-VERIFY.md), the self-service reads and the direct-to-contract
+  deposit, refund and exit recipes
+- [[agent-policy-vault-1]] · [[agent-policy-log]], the operator's rule set and the proposal
+  pre-images that make `keccak256(payload) == actionHash` a check a member can run unaided
+
 ### Architecture: [[architecture-overview]]
 - [[nav-and-shares]] · [[governance-commit-reveal]] · [[two-mode-exits]] · [[sub-vaults]] ·
   [[oracle-layer]] · [[fees-and-carry]] · [[x402-metering]] · [[off-chain-stack]]
