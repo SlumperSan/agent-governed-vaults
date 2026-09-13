@@ -68,12 +68,18 @@ test('the 402 challenge demands exactly the configured price, asset, payee and n
   assert.equal(challenge.x402Version, 2);
 });
 
-test('the challenge is echoed in the PAYMENT-REQUIRED header, which is where a client reads it', async () => {
+test('the challenge is echoed in the PAYMENT-REQUIRED header, base64 as the transport spec requires', async () => {
   const res = await vaults(ctx());
   const header = res.headers.get('payment-required');
   assert.ok(header, 'no PAYMENT-REQUIRED header');
+
+  // `specs/transports-v2/http.md:161-167` — base64-encoded JSON, not raw JSON. Decoded explicitly
+  // here rather than through any dual-accept helper, which would pass against raw JSON too.
+  assert.ok(!header.trimStart().startsWith('{'), 'must be base64, not raw JSON');
+  assert.equal(Buffer.from(header, 'base64').toString('base64'), header, 'canonical base64');
+
   const body = await bodyOf(res);
-  assert.deepEqual(JSON.parse(header), body.challenge);
+  assert.deepEqual(JSON.parse(Buffer.from(header, 'base64').toString('utf8')), body.challenge);
 });
 
 test('a garbage payment header is refused, and still does not serve the body', async () => {
