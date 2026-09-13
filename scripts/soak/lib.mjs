@@ -252,16 +252,67 @@ export function staticCallAs(from, to, sig, ...args) {
   }
 }
 
+// Issue #214: bounded retry for `send()`'s gas-estimation preflight, and ONLY that phase.
+//
+// `cast send` estimates gas (or honours ETH_GAS_LIMIT, skipping the estimate) BEFORE it ever
+// signs or broadcasts anything — that ordering is why this retry is safe. A failure here means
+// no transaction exists yet: nothing to double-send, no gas spent. That is a structural, phase
+// based fact, not a guess about whether the underlying call would truly revert.
+//
+// `classifyCallError` is deliberately NOT used to gate this. It answers "is this text evidence
+// about the contract", and for the exact string this issue measured —
+// "Failed to estimate gas: execution reverted, data: 0x" — it returns 'revert' (the `REVERTED`
+// regex matches "execution reverted" before the transport wording is even considered). Gating
+// on `kind === 'transport'` would therefore retry NOTHING in the observed case and leave #214
+// unfixed. The 2026-09-05 diagnosis is what this repo actually has: every precondition passed,
+// the identical call succeeded 35/35 times moments later on both public endpoints, and the
+// failure reproduced only when replayed against an artificially low --gas-limit (VaultDeployer
+// turning an out-of-gas inner CREATE into DeployFailed(), per the issue). One simulator's
+// transient, gas-short estimate is not the chain's answer, and there is no wording that
+// distinguishes that from a deterministic revert at the SAME preflight step — so this retries
+// on the PHASE marker `Failed to estimate gas`, not on a revert/transport verdict.
+//
+// What this does NOT retry: a MINED transaction that reverted on-chain. That failure surfaces
+// after `cast send` returns successfully with a JSON receipt, via the `receipt.status` assert
+// below — entirely outside this catch, and outside the retry loop. A genuine on-chain revert
+// already cost gas and a nonce; retrying it would only spend more gas re-attempting a call this
+// loop never even sees. Any other pre-receipt failure (a timeout, a dropped connection, an RPC
+// error unrelated to estimation) also falls through unretried, on purpose: this repo cannot
+// prove those happened before broadcast, and retrying without that proof is exactly the
+// double-send risk the brief warns about.
+const SEND_ESTIMATE_MAX_ATTEMPTS = 3;
+// Matches `pollUntil`'s default delay elsewhere in this file — long enough to give a
+// load-balanced RPC a real chance to route the retry to a different node, short enough that
+// three attempts add single-digit seconds to a soak measured in hours.
+const SEND_ESTIMATE_RETRY_DELAY_MS = 1500;
+const FAILED_TO_ESTIMATE_GAS = /Failed to estimate gas/i;
+
 /** State-changing call via the HUMAN's signer. Asserts success, returns the receipt. */
 export function send(label, to, sig, ...args) {
   assert(SIGNER_ARGS.length > 0,
     'SOAK_SIGNER_ARGS is required (e.g. "--account deployer --password-file .pw"); this script never handles the key itself');
   log(`tx: ${label}`);
-  // Serialized across drills — see withSendLock. The nonce is per account, not per vault.
-  const out = withSendLock(() => cast(
-    ['send', to, sig, ...args.map(String), '--rpc-url', RPC, '--json', ...SIGNER_ARGS],
-    { interactive: true },
-  ));
+  // Serialized across drills — see withSendLock. The nonce is per account, not per vault. The
+  // whole retry loop stays inside the lock: a few seconds of backoff is trivial against the
+  // lock's 5-minute staleness window and 10-minute acquire deadline, and holding it means no
+  // other drill's send can interleave with this one's retries.
+  const out = withSendLock(() => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return cast(
+          ['send', to, sig, ...args.map(String), '--rpc-url', RPC, '--json', ...SIGNER_ARGS],
+          { interactive: true },
+        );
+      } catch (e) {
+        const isEstimationFailure = FAILED_TO_ESTIMATE_GAS.test(e.message);
+        if (!isEstimationFailure || attempt >= SEND_ESTIMATE_MAX_ATTEMPTS) throw e;
+        log(`   WARNING: ${label}: gas estimation failed on attempt ${attempt}/`
+          + `${SEND_ESTIMATE_MAX_ATTEMPTS} (${e.message.split('\n')[0]}); nothing has been `
+          + `broadcast yet, retrying in ${SEND_ESTIMATE_RETRY_DELAY_MS / 1000}s — see issue #214`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SEND_ESTIMATE_RETRY_DELAY_MS);
+      }
+    }
+  });
   const receipt = JSON.parse(out.slice(out.indexOf('{')));
   assert(receipt.status === '0x1' || receipt.status === 1,
     `${label}: transaction reverted (${receipt.transactionHash})`);
