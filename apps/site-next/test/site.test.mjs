@@ -207,6 +207,12 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+// The page registry itself (#210): PAGES used to be a literal copied by hand from this constant,
+// so a page added to PAGE_IDS without a matching edit here would build, ship and go unguarded by
+// every check below. Node 24's default type-stripping loads `.ts` directly with no build step and
+// no flag -- verified against this exact file with a bare `node --test`, and CI pins Node 24
+// (`.github/workflows/ci.yml`) -- so the import is live, not a comment claiming a link that isn't.
+import { PAGE_IDS } from '../src/shell/pinned.ts';
 
 // Resolve from this module, not process.cwd(): the suite is run both from apps/site-next (npm test)
 // and from the repo root (npm run test:backend), and only one of those two has the pages under it.
@@ -234,7 +240,15 @@ const REPO = path.resolve(APP, '..', '..');
 const CONFIG_PATH = path.join(REPO, 'contracts', 'config', 'robinhood-mainnet.json');
 const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 
-// TWO, and the count is written down in exactly one place: this array's length, asserted below.
+// TWO today, and no longer a number typed twice. This used to be a literal
+// `['index.html', 'disclaimers.html']`, duplicating `PAGE_IDS` in `src/shell/pinned.ts` by hand.
+// That is the exact class of bug #210 was filed over: `apps/site/test/site.test.mjs`'s status-page
+// nav check tested only status.html's own markup, so a page added to the OTHER list (the header
+// nav) went unguarded, and a fresh reviewer had to catch it by hand. Here the failure mode was one
+// level up -- not a check reading the wrong page, but the page LIST itself drifting from the
+// registry that decides which pages this build actually has. FIXED by deriving from PAGE_IDS
+// instead of restating it, so a page added to the registry and never added here is now the
+// registry's own array, not a second copy that can fall out of step with it.
 //
 // IT WAS NINE UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site: "ONE
 // cinematic scroll page + the app button + a serious Disclaimers page." how-it-works, agents,
@@ -251,7 +265,7 @@ const CONFIG_NAME = 'contracts/config/robinhood-mainnet.json';
 //
 // Prose in this file says "every page" rather than a number wherever the number is not the thing
 // being asserted: a spelled-out count in a comment is a claim that goes stale silently.
-const PAGES = ['index.html', 'disclaimers.html'];
+const PAGES = [...PAGE_IDS];
 const DISCLAIMERS_PAGE = 'disclaimers.html';
 
 /**
@@ -517,7 +531,8 @@ function scrubPermitted(text) {
 const count = (haystack, needle) => haystack.split(needle).length - 1;
 
 t('every public page exists in the build', () => {
-  assert.equal(PAGES.length, 2, 'PAGES must list every public page; it is two since the v3 brief of 2026-09-05 collapsed the site to one scroll page plus Disclaimers');
+  assert.equal(PAGES.length, PAGE_IDS.length, 'PAGES must derive from PAGE_IDS (src/shell/pinned.ts) without dropping or adding an entry');
+  assert.equal(PAGES.length, 2, 'PAGE_IDS is two since the v3 brief of 2026-09-05 collapsed the site to one scroll page plus Disclaimers; if this is no longer two, every guard below now runs over a page count nobody updated the count comments for');
   for (const p of PAGES) assert.ok(existsSync(path.join(SITE, p)), `missing page: ${p}`);
 });
 
