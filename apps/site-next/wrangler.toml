@@ -15,8 +15,12 @@
 # WHY `nodejs_compat` IS REQUIRED AND IS NOT OPTIONAL.
 # `functions/api/vaults.js` imports `apps/api/src/x402.mjs` rather than reimplementing the 402
 # handshake, which is deliberate — one implementation of a payment protocol, not two that drift.
-# That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` to decode
-# the base64 payment envelope. Both are Node built-ins that the Workers runtime provides only under
+# That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` both to
+# decode the base64 payment envelope and, since 2026-09-13, to base64-ENCODE the PAYMENT-REQUIRED
+# and PAYMENT-RESPONSE headers the transport spec requires (`encodeHeaderJson`). So the flag now
+# carries an outbound dependency as well as an inbound one: without it this route could not answer
+# a 402 at all, not merely fail to read a payment.
+# Both are Node built-ins that the Workers runtime provides only under
 # this flag. Without it the bundle fails to build, which is the good failure; the flag is recorded
 # here rather than set in the dashboard so that the requirement travels with the code.
 

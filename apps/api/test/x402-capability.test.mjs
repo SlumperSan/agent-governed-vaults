@@ -32,7 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApi, FREE_ROUTES, METERED_ROUTES } from '../src/server.mjs';
 import { resolveApiConfig } from '../src/serve.mjs';
-import { HEADERS } from '../src/x402.mjs';
+import { HEADERS, decodeHeaderJson } from '../src/x402.mjs';
 import { createStubFacilitator } from '../src/facilitator.mjs';
 import { createRateLimiter } from '../src/ratelimit.mjs';
 import { x402Capability, DEFAULT_CONFIG_DIR, DEFAULT_NETWORK_DIR, loadNetworkCapabilities, loadChainCapabilities } from '../../../packages/chain-config/src/x402.mjs';
@@ -125,7 +125,7 @@ test('with the Base Sepolia capability the metered routes still gate on payment'
 
   const unpaid = await api.handle('GET', '/vaults', {});
   assert.equal(unpaid.status, 402);
-  const challenge = JSON.parse(unpaid.headers[HEADERS.REQUIRED]);
+  const challenge = decodeHeaderJson(unpaid.headers[HEADERS.REQUIRED]);
   assert.equal(challenge.x402Version, 2);
   assert.equal(challenge.asset, USDC);
   assert.equal(challenge.amount, '10000');
@@ -145,7 +145,7 @@ test('with the Base mainnet capability the metered routes gate on payment and se
 
   const unpaid = await api.handle('GET', '/vaults', {});
   assert.equal(unpaid.status, 402);
-  const challenge = JSON.parse(unpaid.headers[HEADERS.REQUIRED]);
+  const challenge = decodeHeaderJson(unpaid.headers[HEADERS.REQUIRED]);
   assert.equal(challenge.x402Version, 2);
   assert.equal(challenge.asset, USDC);
   assert.equal(challenge.amount, '10000');
