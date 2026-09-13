@@ -8,7 +8,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  reconstructTypedData, verifyEnvelopeShape, createStubFacilitator, createHttpFacilitator, recoverPayer,
+  reconstructTypedData, verifyEnvelopeShape, createStubFacilitator, createHttpFacilitator,
+  createStandardHttpFacilitator, recoverPayer,
 } from '../src/facilitator.mjs';
 import { buildTypedData } from '../../../packages/agent-sdk/src/eip3009.mjs';
 
@@ -96,6 +97,169 @@ test('createHttpFacilitator treats an unreachable facilitator as a settlement fa
   const r = await createHttpFacilitator({ url: 'x', fetchImpl }).verifyAndSettle({}, envelope());
   assert.equal(r.ok, false);
   assert.match(r.reason, /unreachable/);
+});
+
+// ── standard HTTP facilitator: speaks the ACTUAL x402 wire protocol (specs/x402-specification-v2.md §7) ──
+// Request/response shapes below match what facilitator.payai.network was observed to return live
+// on 2026-09-13 for equivalent (deliberately invalid) probes — see the PR description for the
+// verbatim bytes. These mocks exercise the SAME shape, not a re-guess of it.
+
+const price = () => ({ asset: USDC, amount: '10000', payTo: TO, network: 'base' });
+const challenge = () => ({ price: price() });
+
+test('createStandardHttpFacilitator posts spec-shaped bodies to {base}/verify then {base}/settle, in order', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) });
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    return { ok: true, json: async () => ({ success: true, transaction: '0xsettled123', network: 'eip155:8453', payer: FROM }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: true, receiptId: '0xsettled123' });
+
+  assert.equal(calls.length, 2, 'verify must be called before settle, never settle-only or verify-only');
+  assert.equal(calls[0].url, 'https://facilitator.example/verify');
+  assert.equal(calls[1].url, 'https://facilitator.example/settle');
+  for (const { body } of calls) {
+    assert.equal(body.x402Version, 2);
+    assert.equal(body.paymentRequirements.scheme, 'exact');
+    assert.equal(body.paymentRequirements.network, 'eip155:8453');
+    assert.equal(body.paymentRequirements.asset, USDC);
+    assert.equal(body.paymentRequirements.amount, '10000');
+    assert.equal(body.paymentRequirements.payTo, TO);
+    assert.equal(body.paymentPayload.x402Version, 2);
+    assert.deepEqual(body.paymentPayload.accepted, body.paymentRequirements);
+    assert.equal(body.paymentPayload.payload.signature, SIG);
+    assert.equal(body.paymentPayload.payload.authorization.from, FROM);
+  }
+});
+
+test('createStandardHttpFacilitator: base url trailing slash is tolerated (no double slash on the wire)', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    return { ok: true, json: async () => ({ isValid: false, invalidReason: 'invalid_exact_evm_signature' }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example/', network: 'eip155:8453', fetchImpl });
+  await fac.verifyAndSettle(challenge(), envelope());
+  assert.equal(urls[0], 'https://facilitator.example/verify');
+});
+
+test('createStandardHttpFacilitator: a rejected verify (isValid:false) never calls settle, and surfaces the real reason', async () => {
+  let settleCalled = false;
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/settle')) settleCalled = true;
+    return { ok: true, json: async () => ({ isValid: false, invalidReason: 'invalid_exact_evm_signature', payer: FROM }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'invalid_exact_evm_signature' });
+  assert.equal(settleCalled, false, 'settle must never be called after a rejected verify');
+});
+
+test('createStandardHttpFacilitator: /verify unreachable is a transport failure, never a payment verdict', async () => {
+  const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /^verify-unreachable:/);
+});
+
+test('createStandardHttpFacilitator: /settle unreachable after a successful verify is never reported as settled', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    throw new Error('ETIMEDOUT');
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.equal(r.ok, false, 'a network failure on /settle must never read as ok:true');
+  assert.match(r.reason, /^settle-unreachable:/);
+});
+
+test('createStandardHttpFacilitator: a malformed 200 on /verify (no isValid field) is ok:false, not a pass', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ weird: 'shape' }) });
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'verify-malformed-response' });
+});
+
+test('createStandardHttpFacilitator: a non-JSON /verify response is ok:false, not a pass', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'verify-malformed-response' });
+});
+
+test('createStandardHttpFacilitator: a non-2xx /verify with no verdict field is transport, not "invalid" — a rate limit or auth error must not read as a payment verdict', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 429, json: async () => ({ reason: 'rate_limited' }) });
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /^verify-http-429:/);
+});
+
+test('createStandardHttpFacilitator: a non-2xx /verify that DOES carry isValid is read as the real verdict (measured live: PayAI answers 400 + isValid:false for a shape it can parse)', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 400, json: async () => ({ isValid: false, invalidReason: 'invalid_exact_evm_signature' }) });
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'invalid_exact_evm_signature' });
+});
+
+test('createStandardHttpFacilitator: a malformed 200 on /settle (no success field) is a TRANSPORT-shaped miss, not a settlement verdict', async () => {
+  // Mirrors the /verify malformed-response test above. {weird:'shape'} must not be read as
+  // "the facilitator said no and gave no transaction" (settle-failed-no-transaction) — that
+  // reason asserts a verdict the facilitator never gave. This is the #266 misdiagnosis class
+  // one leg over: an unreadable answer is missing evidence, not a rejection.
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    return { ok: true, json: async () => ({ weird: 'shape' }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'settle-malformed-response' });
+});
+
+test('createStandardHttpFacilitator: settle success:true but an empty transaction is ok:false — no positive evidence, no pass', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    return { ok: true, json: async () => ({ success: true, transaction: '', network: 'eip155:8453', payer: FROM }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'settle-failed-no-transaction' });
+});
+
+test('createStandardHttpFacilitator: settle success:false surfaces the remote errorReason', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/verify')) return { ok: true, json: async () => ({ isValid: true, payer: FROM }) };
+    return { ok: true, json: async () => ({ success: false, errorReason: 'insufficient_funds', transaction: '', network: 'eip155:8453', payer: FROM }) };
+  };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope());
+  assert.deepEqual(r, { ok: false, reason: 'insufficient_funds' });
+});
+
+test('createStandardHttpFacilitator: no price on the challenge fails fast with no HTTP call at all', async () => {
+  let called = false;
+  const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle({}, envelope());
+  assert.deepEqual(r, { ok: false, reason: 'no-challenge-price' });
+  assert.equal(called, false);
+});
+
+test('createStandardHttpFacilitator: a malformed client envelope is rejected locally, no HTTP call spent on it', async () => {
+  let called = false;
+  const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  const fac = createStandardHttpFacilitator({ url: 'https://facilitator.example', network: 'eip155:8453', fetchImpl });
+  const r = await fac.verifyAndSettle(challenge(), envelope({ signature: '0x1234' }));
+  assert.deepEqual(r, { ok: false, reason: 'bad-signature-format' });
+  assert.equal(called, false);
+});
+
+test('createStandardHttpFacilitator requires a network at construction — no silent default that could target the wrong chain', () => {
+  assert.throws(() => createStandardHttpFacilitator({ url: 'https://facilitator.example' }), /network is required/);
 });
 
 // ── crypto round-trip: skips without viem, so CI stays dependency-free ──
