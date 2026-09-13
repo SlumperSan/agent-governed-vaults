@@ -7,13 +7,28 @@
  * THIS FILE STILL CONTAINS NO PAYMENT LOGIC OF ITS OWN, and that constraint got HARDER to hold
  * with a live read in the middle of it, not easier. It imports `decodeSignatureHeader`,
  * `checkEnvelopeAgainstPrice`, `challengeResponse` and `nonceOf` from `apps/api/src/x402.mjs` —
- * the same module `apps/api` serves from — and `createHttpFacilitator` from its facilitator
- * module, rather than reimplementing any of the 402 handshake. It CANNOT call that module's own
- * `gate()` directly, though, because `gate()` settles with the facilitator as soon as the local
- * envelope check passes, and this route needs a THIRD step in between: read the chain, and only
- * pay the facilitator if that read produced something to serve. `challengeResponse` and `nonceOf`
- * exist in `x402.mjs` precisely so this file does not have to restate the 402 shape or the
- * nonce-selection logic to get that ordering — see their doc comments there.
+ * the same module `apps/api` serves from — and `createStandardHttpFacilitator` from its
+ * facilitator module, rather than reimplementing any of the 402 handshake. It CANNOT call that
+ * module's own `gate()` directly, though, because `gate()` settles with the facilitator as soon
+ * as the local envelope check passes, and this route needs a THIRD step in between: read the
+ * chain, and only pay the facilitator if that read produced something to serve.
+ * `challengeResponse` and `nonceOf` exist in `x402.mjs` precisely so this file does not have to
+ * restate the 402 shape or the nonce-selection logic to get that ordering — see their doc
+ * comments there.
+ *
+ * NOT `createHttpFacilitator`: that one speaks this repo's own bespoke single-POST shape, which
+ * only `apps/api/src/facilitator-server.mjs` implements — no public facilitator speaks it, so a
+ * route wired to it and pointed at a real facilitator 402s every payment on a transport error,
+ * with nothing in the response explaining why. That is exactly what this file did until review
+ * round 6 caught it. `createStandardHttpFacilitator` needs a CAIP-2 chain id
+ * (`FACILITATOR_NETWORK`, e.g. `eip155:8453`) deliberately separate from `price.network` (the
+ * repo-shorthand label, e.g. `base`, the 402 challenge advertises to a paying client) — see
+ * `_price.js`'s `resolveFacilitatorNetwork`.
+ *
+ * A second implementation of the 402 handshake is the obvious way to write this and it is the
+ * wrong one: two implementations of one protocol drift, and the half that drifts here is the half
+ * that decides whether a caller's USDC bought anything. The bundler follows the relative import,
+ * so what deploys is the audited module, not a copy of it.
  *
  * THE ORDER, AND WHY IT IS THIS ORDER, NOT SOME OTHER ONE.
  *   1. No payment header → 402, challenge only. NO RPC CALL — an unpaid request must not cost
@@ -47,8 +62,8 @@
 import {
   HEADERS, decodeSignatureHeader, checkEnvelopeAgainstPrice, challengeResponse, nonceOf,
 } from '../../../api/src/x402.mjs';
-import { createHttpFacilitator } from '../../../api/src/facilitator.mjs';
-import { resolvePrice, resolveFacilitatorUrl, configErrorResponse } from './_price.js';
+import { createStandardHttpFacilitator } from '../../../api/src/facilitator.mjs';
+import { resolvePrice, resolveFacilitatorUrl, resolveFacilitatorNetwork, configErrorResponse } from './_price.js';
 import { createChainReader } from '../../../../packages/canary/src/reader.mjs';
 import { readVaultsAtHead, vaultYieldedNoData } from './_vaultread.js';
 import { DATA_CHAIN_ID, DATA_CHAIN_NAME, DATA_RPC_URL, VAULTS } from './_chain.js';
@@ -83,9 +98,11 @@ export async function handle(context, deps = {}) {
 
   let price;
   let facilitatorUrl;
+  let facilitatorNetwork;
   try {
     price = resolvePrice(env);
     facilitatorUrl = resolveFacilitatorUrl(env);
+    facilitatorNetwork = resolveFacilitatorNetwork(env);
   } catch (err) {
     // Fail CLOSED. A route that cannot resolve who gets paid must not serve the paid body.
     return configErrorResponse(err);
@@ -146,7 +163,9 @@ export async function handle(context, deps = {}) {
   }
 
   // ── step 4: the read produced a block AND at least some data. Settle, then serve what was read. ──
-  const facilitator = deps.facilitator ?? createHttpFacilitator({ url: facilitatorUrl });
+  // `network` is the CAIP-2 id the FACILITATOR expects, deliberately separate from
+  // `price.network`, which is the label the CHALLENGE advertises to the paying client.
+  const facilitator = deps.facilitator ?? createStandardHttpFacilitator({ url: facilitatorUrl, network: facilitatorNetwork });
   const settled = await facilitator.verifyAndSettle({ price }, envelope);
   if (!settled.ok) {
     return respond402(challengeResponse(price, nowMs, `settlement failed: ${settled.reason ?? 'unknown'}`));

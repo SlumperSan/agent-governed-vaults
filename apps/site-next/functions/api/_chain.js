@@ -3,7 +3,7 @@
  * as distinct from the PAYMENT chain resolved in `_price.js` (Base mainnet, 8453). The two are
  * unrelated on purpose (see `docs/REVENUE.md` §1) and this file only ever names the first one.
  *
- * WHY THESE ARE CONSTANTS AND NOT ENV, UNLIKE `_price.js`'s five settings.
+ * WHY THESE ARE CONSTANTS AND NOT ENV, UNLIKE `_price.js`'s six settings.
  * `_price.js`'s docstring draws the line correctly: an OPERATOR DECISION — who gets paid, what
  * facilitator settles, what the price is — is refused rather than defaulted, because a default
  * would silently pick one on the operator's behalf. Nothing here is that kind of value. The RPC

@@ -55,7 +55,11 @@ free discovery document resolve it from there. A test asserts the discovery docu
 price the gate will not charge, because `apps/api/src/server.mjs` requires that discovery be "told
 the truth rather than quoted a price it will never be charged".
 
-## 3. How it is served, and why `FACILITATOR=http` holds no key
+## 3. How it is served, and why `FACILITATOR=standard` holds no key
+
+Of the four selectable modes, `FACILITATOR=stub`, `FACILITATOR=http` and `FACILITATOR=standard`
+hold no key; `FACILITATOR=svm` DOES, because Solana's flow makes that process the fee payer and
+it loads `SVM_KEYPAIR`. This route is EVM-only and uses `standard`.
 
 `apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It does **not** call
 `x402.mjs`'s `gate()` any more — it did while the route served a pinned snapshot, but the live read
@@ -64,11 +68,13 @@ caller who has not paid, or whose envelope is locally invalid, never costs this 
 call, and a chain read that fails costs the caller nothing rather than being billed anyway), and
 `gate()` settles as soon as the local check passes, with no seam at that point. So this route
 imports `gate()`'s pieces instead — `decodeSignatureHeader`, `checkEnvelopeAgainstPrice`,
-`challengeResponse`, `nonceOf` from `apps/api/src/x402.mjs`, and `createHttpFacilitator` from
-`apps/api/src/facilitator.mjs` — and composes them in that order, rather than reimplementing any of
-them. `challengeResponse` and `nonceOf` are used INSIDE `gate()` itself too (not duplicated beside
-it), so the edge route and `gate()` still share one implementation of the 402 shape and the
-nonce-selection logic; only the ORDER in which the pieces run differs between the two callers.
+`challengeResponse`, `nonceOf` from `apps/api/src/x402.mjs`, and `createStandardHttpFacilitator`
+from `apps/api/src/facilitator.mjs` (why that one and not the bespoke `createHttpFacilitator` is
+below, under "This deployment cannot hold a private key") — and composes them in that order,
+rather than reimplementing any of them. `challengeResponse` and
+`nonceOf` are used INSIDE `gate()` itself too (not duplicated beside it), so the edge route and
+`gate()` still share one implementation of the 402 shape and the nonce-selection logic; only the
+ORDER in which the pieces run differs between the two callers.
 
 The route's chain read reuses `packages/canary/src/reader.mjs`'s `createChainReader`, the same
 component the canary uses to tell a genuine on-chain revert apart from a transport failure — this
@@ -76,19 +82,27 @@ repository has shipped that exact confusion twice (issues #266, PR #185), so the
 edge reuses the tested classifier rather than re-deriving it.
 
 The build inlines all of it. Measured 2026-09-13: `wrangler@4 pages functions build` reports
-"Compiled Worker successfully" and emits a bundle of 435,916 bytes minified (134,417 bytes gzip) —
+"Compiled Worker successfully" and emits a bundle of 439,370 bytes minified (135,684 bytes gzip) —
 up substantially from the pinned-snapshot version's 31 KB, because this route now statically pulls
 in viem via `apps/site-next/functions/api/_vaultread.js` (`reader.mjs` itself still lazy-imports
 viem; the static import that pulls it into this bundle is in `_vaultread.js`, for `getAddress`).
 Still well inside Cloudflare Workers' size limits (3 MB free / 10 MB paid, both compressed).
 
-**This deployment cannot hold a private key.** `apps/api` has three SELECTABLE facilitator modes --
-`facilitatorFromConfig` builds exactly `stub`, `http` and `svm` -- and exactly one of those holds a key — `svm`, where Solana's flow makes the server the fee payer and there is nothing to
-delegate. This route hard-wires the `http` mode: it POSTs a signed envelope to `FACILITATOR_URL` and
-reads back a receipt, using nothing but `fetch`. Grep `apps/site-next/functions/` for `KEYPAIR`,
+**This deployment cannot hold a private key.** `apps/api` has **four** selectable facilitator modes --
+`facilitatorFromConfig` builds `stub`, `http`, `standard` and `svm` -- and exactly one of those holds
+a key: `svm`, where Solana's flow makes the server the fee payer and there is nothing to delegate.
+This route uses **`createStandardHttpFacilitator`**, the `standard` client: it POSTs spec-shaped
+bodies to `{FACILITATOR_URL}/verify` and then `/settle` and reads back a receipt, using nothing but
+`fetch`.
+
+It deliberately does **not** use `createHttpFacilitator`, and that distinction is the difference
+between taking money and not. That client speaks this repository's own bespoke single-POST shape,
+which only `apps/api/src/facilitator-server.mjs` implements -- **no public facilitator speaks it**.
+This route was wired to it until review round 6, which means following §5 with a real facilitator URL
+would have 402'd every payment on a transport error. Grep `apps/site-next/functions/` for `KEYPAIR`,
 `PRIVATE_KEY` or `signer` and the result is empty.
 
-**It fails closed.** Each of the five settings is refused rather than defaulted; a deployment missing
+**It fails closed.** Each of the six settings is refused rather than defaulted; a deployment missing
 any one answers 500, never the paid body for free. There is a test per setting, because a default
 `PRICE_PAYTO` would silently send a caller's USDC to whatever address the default named.
 
@@ -109,7 +123,8 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid, makes no RPC call while refusing, and never echoes `FACILITATOR_URL` | **Proven** — 37 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The edge route refuses to serve unpaid, makes no RPC call while refusing, and never echoes `FACILITATOR_URL` | **Proven** — 40 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The route settles through a facilitator that speaks the standard wire protocol, not the repo's bespoke shape | **Proven** — wired to `createStandardHttpFacilitator`, not `createHttpFacilitator`; `FACILITATOR_NETWORK` (CAIP-2) is required and independently rejects six malformed shapes, and a test asserts it is allowed to differ from `PRICE_NETWORK` |
 | The live read's values are correct | **Proven against a live RPC read**, reproduced independently in review — NOT cross-checked against `contracts/config/deployments/robinhood-mainnet.json`, which records only `address`, `creator`, `minDepositUsdc` and `capacityCapUsdc` per vault (grep it: no `navWad`, `navPerShareWad`, `totalShares`, `usdcScalar`, `totalPendingUsdc`, or `childVaultCount` key exists there). Those four fields DO match the record. `capacityHeadroomUsdc` is derived at request time from live inputs and checks arithmetically against them, not against any recorded value. |
 | A revert (oracle freeze) and a transport failure never collapse into one field | **Proven** — tested against an injected reader whose every read fails as a transport error: no vault ever reports `pricingFrozen`, matching the requirement drawn from issues #266 and PR #185 |
 | A chain read that fails costs the caller nothing | **Proven for two distinct failure shapes**: the chain cannot report a block number at all, and a block number comes back but every field of every vault fails to read (a bad RPC that answers `eth_blockNumber` and fails everything after). Both are 503 with the facilitator never called. A read where at least one field of at least one vault succeeds still settles — a partial read is still a read. |
@@ -120,12 +135,15 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
 on Base mainnet costs gas, so somebody's funded key must broadcast it. This route delegates that over
 HTTPS to `FACILITATOR_URL`. Which facilitator to point at is an owner decision and is **not** made
-here. There are two real options, and an earlier version of this section named a third that does
-not exist — there is no `FACILITATOR` value that makes `apps/api` settle on an EVM chain.
-`facilitatorFromConfig` in `apps/api/src/serve.mjs` builds only `http`, `svm` and `stub`, and `svm`
-is Solana. The in-repo EVM path is `createSettlingFacilitator`, which its own definition in
+here. There are **three** real options, and this paragraph has now been wrong in both directions:
+an earlier version invented a `FACILITATOR=svm`-style EVM mode that did not exist, and its
+replacement then said flatly that **no** `FACILITATOR` value settles on an EVM chain — which #272
+falsified by adding one. `FACILITATOR=standard` (`apps/api/src/serve.mjs`, `facilitatorFromConfig`)
+settles on EVM through a real third-party facilitator, and is what this edge route uses.
+
+The second in-repo path is `createSettlingFacilitator`, which its own definition in
 `apps/api/src/facilitator.mjs` records as not wired into the API server and intended to run as a
-SEPARATE process — which is how the Sepolia run did it. The other option is a third-party
+SEPARATE process — which is how the Sepolia run did it. The third option is a third-party
 facilitator reached over HTTPS. Until that URL exists, the route answers 500 by design rather than
 serving reads for free.
 
@@ -137,7 +155,7 @@ account, the payee address, and real funds. `docs/SWARM.md` §10 puts all three 
 **5.1 — Choose the payee and the facilitator.** An address you control on Base mainnet to receive
 USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet.
 
-**5.2 — Set the five variables** on the Pages project (Settings → Environment variables →
+**5.2 — Set the six variables** on the Pages project (Settings → Environment variables →
 Production), then redeploy so they take effect:
 
 ```
@@ -145,7 +163,8 @@ PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 PRICE_PAYTO      <your Base mainnet address>
 PRICE_AMOUNT     100000
 PRICE_NETWORK    base
-FACILITATOR_URL  <https facilitator that settles on Base mainnet>
+FACILITATOR_URL  <https base URL of a facilitator that settles on Base mainnet>
+FACILITATOR_NETWORK  eip155:8453
 ```
 
 `PRICE_ASSET` is Circle-native USDC on Base. It is **not** USDbC (`0xd9aA…4CA2`), the bridged legacy

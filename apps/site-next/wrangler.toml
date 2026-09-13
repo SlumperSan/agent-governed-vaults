@@ -45,7 +45,7 @@ compatibility_flags = ["nodejs_compat"]
 # history where a reviewer reads it as documentation rather than as live configuration, and rotating
 # it would become a code change and a redeploy.
 #
-# The five settings the metered route needs are set on the Pages project itself (Settings ->
+# The SIX settings the metered route needs are set on the Pages project itself (Settings ->
 # Environment variables, Production), and `functions/api/_price.js` REFUSES to serve rather than
 # defaulting any of them — `apps/site-next/test/x402-edge.test.mjs` pins that behaviour for each one
 # individually:
@@ -54,10 +54,19 @@ compatibility_flags = ["nodejs_compat"]
 #                                                                 NOT USDbC (0xd9aA...4CA2).
 #   PRICE_PAYTO      <the address that receives metered-read payments>
 #   PRICE_AMOUNT     100000                                       base units, 6dp = $0.10
-#   PRICE_NETWORK    base
-#   FACILITATOR_URL  <https url of an x402 facilitator that settles on Base mainnet>
+#   PRICE_NETWORK    base                                         what the 402 challenge ADVERTISES
+#                                                                 to a paying client.
+#   FACILITATOR_URL  <https BASE url of a facilitator that settles on Base mainnet>
+#   FACILITATOR_NETWORK  eip155:8453                              CAIP-2, what /verify and /settle
+#                                                                 EXPECT. Deliberately not the same
+#                                                                 value as PRICE_NETWORK: one chain,
+#                                                                 two spellings, different audiences.
+#                                                                 Omit it and every request 500s.
 #
 # None of these is a private key, and this deployment cannot hold one. The only facilitator mode in
 # this repository that holds a key is `svm` (Solana, where this process would be the fee payer);
-# `functions/api/_price.js` hard-wires the `http` mode, which POSTs an envelope to FACILITATOR_URL
-# and reads back a receipt. See docs/REVENUE.md.
+# `functions/api/vaults.js` uses `createStandardHttpFacilitator`, the `standard` client, which POSTs
+# spec-shaped bodies to {FACILITATOR_URL}/verify then /settle. It is NOT the `http` client: that one
+# speaks this repository's own bespoke single-POST shape, which no public facilitator implements.
+# This comment said `http` until review round 7, which is the same disagreement-with-the-code that
+# round 6 rejected one file over. See docs/REVENUE.md.

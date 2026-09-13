@@ -41,7 +41,10 @@ const ENV = {
   PRICE_PAYTO: PAYTO,
   PRICE_AMOUNT: '100000',
   PRICE_NETWORK: 'base',
-  FACILITATOR_URL: 'https://facilitator.example/settle',
+  FACILITATOR_URL: 'https://facilitator.example',
+  // CAIP-2, and deliberately NOT the same value as PRICE_NETWORK above: that one is the label
+  // the challenge shows a paying client, this one is what the facilitator's /verify expects.
+  FACILITATOR_NETWORK: 'eip155:8453',
 };
 
 const ctx = (env = ENV, headers = {}) => ({
@@ -175,7 +178,7 @@ test('a well-formed envelope for the WRONG amount is refused before any RPC call
 
 // ── fail closed on misconfiguration (unchanged behaviour, still no RPC) ─────────────────────────
 
-for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETWORK', 'FACILITATOR_URL']) {
+for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETWORK', 'FACILITATOR_URL', 'FACILITATOR_NETWORK']) {
   test(`a deployment missing ${missing} refuses rather than serving the body free`, async () => {
     const env = { ...ENV };
     delete env[missing];
@@ -230,6 +233,28 @@ test('PRICE_AMOUNT must be positive base units, so a free or malformed price can
     const res = await handle(ctx({ ...ENV, PRICE_AMOUNT: bad }), { reader: noRpcReader });
     assert.equal(res.status, 500, `PRICE_AMOUNT=${JSON.stringify(bad)} should refuse`);
   }
+});
+
+test('FACILITATOR_NETWORK must be CAIP-2 — a wrong chain id rejects every payment forever', async () => {
+  // Not defaulted on purpose. The facilitator verifies against whatever chain this names, so a
+  // plausible-but-wrong value (the client-facing label, a bare chain number) would make every
+  // payment fail verification with nothing in the response explaining why.
+  for (const bad of ['base', '8453', 'eip155', ':8453', 'eip155:', '']) {
+    const res = await handle(ctx({ ...ENV, FACILITATOR_NETWORK: bad }), { reader: noRpcReader });
+    assert.equal(res.status, 500, `FACILITATOR_NETWORK=${JSON.stringify(bad)} should refuse`);
+    const body = await bodyOf(res);
+    assert.equal(body.vaults, undefined);
+  }
+});
+
+test('the facilitator network and the advertised network are allowed to differ', async () => {
+  // One chain, two spellings, different audiences: the challenge advertises `base` (what PayAI's
+  // /supported lists for its x402Version 1 Base-mainnet entry) while the facilitator is addressed
+  // as eip155:8453 (its v2 entry for the same chain). Merging them would break one side.
+  const res = await handle(ctx(), { reader: noRpcReader });
+  const { challenge } = await bodyOf(res);
+  assert.equal(challenge.network, 'base', 'the client sees the advertised label');
+  assert.notEqual(ENV.FACILITATOR_NETWORK, challenge.network, 'and the facilitator gets CAIP-2');
 });
 
 test('a PRICE_PAYTO that is not an address is refused — it decides who receives the money', async () => {
