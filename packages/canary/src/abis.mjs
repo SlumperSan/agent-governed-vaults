@@ -51,10 +51,36 @@ export const VAULT_VIEWS = Object.freeze([
   view('childVaults', ['uint256'], ['address']),
   view('sharesOf', ['address'], ['uint256']),
   view('totalPendingUsdc', [], ['uint256']),
-  // The vault's immutable governance module — how `governance-watch` finds the Governance
-  // contract without a second env var, exactly the way `oracle` locates the oracle.
+  // The reads `signals/operator-power.mjs` needs (G1): `governance` is the immutable Governance
+  // address to read `configOf` from; `capacityCapUsdc`/`minDepositUsdc`/`nonCreatorMemberCount`
+  // decide whether a further member deposit is even possible and whether the creator exit gate is
+  // live; `CREATOR_MIN_STAKE_BPS` is the protocol CONSTANT (public, so it has an auto-getter) that
+  // `_checkCreatorGate` enforces — a second, independent 5% gate from Governance's own
+  // `proposalThresholdBps`, which can be configured to a different value per vault.
+  // The vault's immutable governance module -- how `governance-watch` finds the Governance
+  // contract without a second env var, exactly the way `oracle` locates the oracle, and how
+  // `operator-power` finds the contract it reads `configOf` from. TWO callers, ONE read.
   view('governance', [], ['address']),
+  view('capacityCapUsdc', [], ['uint256']),
+  // `_deposit` requires `amountUsdc >= minDepositUsdc` (VaultCore.sol:369) BEFORE it checks the
+  // capacity cap, so a vault with less cap headroom than one minimum deposit accepts no deposit at
+  // all even though `committed < cap`. Without this read the "no top-up path" determination is
+  // strictly narrower than the lockout it exists to name (Review115 F2a).
+  view('minDepositUsdc', [], ['uint256']),
+  view('nonCreatorMemberCount', [], ['uint256']),
+  view('CREATOR_MIN_STAKE_BPS', [], ['uint256']),
+  // VOTING-ELIGIBLE stake, which is what `Governance.propose` actually gates on: it reads
+  // `pastVotingEligibleShares` / `pastTotalVotingEligibleShares` at `createdAt - 1`
+  // (Governance.sol:287-291), NOT the raw share book. Eligible = `sharesOf - queuedExitShares`,
+  // and a registered parent vault always reads 0 (VaultCore.sol:968-977). The live views below are
+  // the present-tense form of the same quantity — the canary measures "could the operator propose
+  // right now", so it wants now, not a historical checkpoint. A queued Mode-F exit removes weight
+  // IMMEDIATELY (VaultCore.sol:515-517), which is exactly the divergence from `sharesOf` that made
+  // the raw-book reading of this gate wrong (Review115 F1).
+  view('votingEligibleShares', ['address'], ['uint256']),
+  view('totalVotingEligibleShares', [], ['uint256']),
 ]);
+
 
 /**
  * OracleAggregator — RETIRED by the C-6 pivot (the contract now lives in contracts/test/retired/).
@@ -182,6 +208,10 @@ export const VAULT_WATCH_EVENTS = Object.freeze([
  * compiled ABI by test/abis.test.mjs. `Status` and `ProposalType` come back as uint8 enum indices.
  */
 export const GOVERNANCE_VIEWS = Object.freeze([
+  // `propose()` reverts `NotRegistered()` before it ever reads `proposalThresholdBps`, so an
+  // unregistered vault has no live propose-gate for `operator-power` to monitor, whatever
+  // `configOf` happens to hold (Review115).
+  view('vaultRegistered', ['address'], ['bool']),
   view('activeProposalOf', ['address'], ['uint256']),
   view('proposals', ['uint256'], [
     { name: 'vault', type: 'address' },

@@ -39,7 +39,24 @@ export function createConsoleSink({ log = console.log, error = console.error } =
  * file was renamed, the wire name was not, so standing transition state and this map both survive
  * the rename) — it is the "oracle-v2" the note refers to.
  *
- * `feed-identity` is not here because only SOME of its alerts page — see `CONDITIONAL_PAGE`.
+ * `feed-identity` and `operator-power` are not here because only SOME of their alerts page — see
+ * `CONDITIONAL_PAGE`.
+ *
+ * `depeg-reference` (G4, PR #115) IS here, and that is a deliberate disagreement with two peer
+ * recommendations (Review115 F3 and PR #121's body both proposed LOG, the latter holding it least
+ * firmly). The argument for LOG is that the signal is "purely informational": the contract pins
+ * USDC at $1.00 unconditionally, so there is no on-chain remedy and nothing the alert can make the
+ * code do. That is true of the CONTRACT's response and says nothing about the human's. What this
+ * signal reports is that every deposit, exit and NAV computation in the vault is pricing member
+ * capital at a par that no longer holds — the "member capital wrong-priced" category that is the
+ * definition of this set, and the reason `nav-backing` is in it. The remedy is a de-list-or-unwind
+ * decision only a human can take, it is time-ordered (whoever exits a mispriced vault first is paid
+ * at the stale par, out of everyone else's capital), and routing the one line that prompts it to a
+ * log nobody reads overnight makes the signal's entire purpose unreachable. It also cannot flap: a
+ * 50 bps band around a stablecoin, and the two ways this signal can be wrong about the world (a
+ * dead feed, a non-positive answer) are `detectorBroken` rather than ALERT and therefore stay LOG —
+ * a blind detector is not an incident. §3 item 4's PAGE list predates every one of these signals
+ * and never ruled on them.
  */
 export const PAGE_SIGNALS = new Set([
   'nav-backing', 'share-conservation', 'fee-routing', 'exit-liveness', 'oracle-freshness',
@@ -70,6 +87,7 @@ export const PAGE_SIGNALS = new Set([
   // durations: `_validateConfig` floors commit, reveal and executionWindow at 1 hour but only CAPS
   // `timelockDuration`, so a zero timelock is legal and that phase is skipped entirely.
   'governance-watch',
+  'depeg-reference',
 ]);
 
 /**
@@ -97,11 +115,50 @@ export const PAGE_SIGNALS = new Set([
  * 2026-09-01). Above that price `feed-identity` is the only detector there is, and nav-backing
  * cannot substitute because it recomputes through the same mis-scaled `priceWad`.
  *
+ * `operator-power` (G1, PR #115) is the second. It emits under two fixed transition keys because
+ * WARN and ALERT both ride this package's single `alert()` status:
+ *
+ *   - `key: 'critical'`      — the operator is within 1.1x of a gate they cannot propose (or exit)
+ *     below. That is the "decision needed now" line, and where the vault is also within one minimum
+ *     deposit of `capacityCapUsdc` it is unrecoverable: the operator cannot buy the margin back
+ *     because the vault cannot accept the deposit. PAGE.
+ *   - `key: 'early-warning'` — within 1.5x. Weeks of runway on ordinary dilution, and the action is
+ *     "schedule a deposit", not "wake someone". LOG.
+ *
+ * THE DISCRIMINATOR IS THE BAR, AND IT IS AN HONEST ONE. A predicate earns its place only if some
+ * axis readable AT ALERT TIME genuinely separates the two severities; a predicate written on an axis
+ * that does not separate them is worse than none, because it looks like a decision. Here the axis is
+ * the measurement the signal exists to make — `measuredBps` against `1.1x` vs `1.5x` of the gate the
+ * chain itself enforces. It is present on every alert (it is what produced the alert), it is derived
+ * from `sharesOf`/`votingEligibleShares` rather than from an optional payload field, and it cannot
+ * be absent or ambiguous the way an event-payload or actor-identity axis can. `detail.bar` is just
+ * that comparison's name.
+ *
+ * The predicate deliberately does NOT key on `noTopUpPath`, even though the lockout is the most
+ * page-worthy thing this signal reports. Two reasons. (1) Review115 rejected the first cut of this
+ * signal because its lockout test was strictly narrower than the lockout; a predicate written on
+ * that same condition moves the defect from the message into the ROUTING, where its consequence is
+ * silence rather than wrong words. (2) Even a CORRECT lockout predicate inherits an escalation hole:
+ * `transitions.mjs` tracks state per id by STATUS ALONE, so once the critical key sits in `alert` it
+ * emits nothing further — a vault that crosses 1.1x while a top-up path still exists (LOG) and only
+ * later fills to its cap would never page at all. Paging on the bar evaluates the predicate exactly
+ * once, at the crossing, which is the moment a human can still act cheaply. `detail.noTopUpPath`
+ * rides in the payload and in the alert text so the responder knows which situation they are in.
+ *
+ * PAGE VOLUME IS STRUCTURALLY BOUNDED, not merely expected to be low: ONE page per vault per
+ * crossing of the 1.1x bar. `transitions.mjs` emits only on a status CHANGE, so a standing alert
+ * re-pages never; the `detectorBroken` backoff re-assertion cannot page either, because those
+ * results are `skipped` and `tierOf` returns `log` for anything that is not an ALERT; and recovery
+ * lines are `to === 'ok'`, also LOG. Re-crossing requires an actual deposit or exit to move the
+ * fraction back above 1.1x and then below it again — passive dilution is monotone and cannot
+ * oscillate, so there is no flap path.
+ *
  * Each predicate takes the transition and returns true to PAGE. It is consulted only on an ALERT.
  * @type {Map<string, (t: import('./transitions.mjs').Transition) => boolean>}
  */
 export const CONDITIONAL_PAGE = new Map([
   ['feed-identity', (t) => t?.result?.detail?.harm != null],
+  ['operator-power', (t) => t?.result?.detail?.bar === 'critical'],
 ]);
 
 /**
