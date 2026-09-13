@@ -361,14 +361,20 @@ test('a facilitator returning a malformed 200 (not JSON) degrades to a declined 
     // No signature was posted, so this is just the free 402 path — confirms wiring, not the bug.
     assert.equal(verdict.status, 402);
 
-    // Post directly at the facilitator client to see the malformed-response path for real.
+    // Post directly at the facilitator client to see the malformed-response path for real. This
+    // asserts the OBSERVABLE CONTRACT ONLY: it settled to an object, without throwing, and that
+    // object declines the payment. It deliberately does NOT assert what `reason` equals — an
+    // earlier version pinned `reason === undefined`, which is round-1's mistake in miniature: a
+    // characterization of today's gap (`res.json().catch(() => ({}))`, facilitator.mjs:173, gives
+    // a malformed 200 no distinguishing reason) rather than a check of behavior that must hold
+    // regardless of whether that gap is ever closed. Mutation-proved both ways: this stays green
+    // if `createHttpFacilitator` is improved to set `reason: 'facilitator-malformed-response'` (the
+    // gap closing should not need this test rewritten), and goes red if the malformed response ever
+    // stops declining — e.g. a mutation that makes `!!body.ok` default to `true` instead of `false`.
     const direct = await facilitator.verifyAndSettle({ price: PRICE }, { authorization: { nonce: '0x' + 'b'.repeat(64) } });
-    assert.equal(direct.ok, false);
-    assert.equal(direct.reason, undefined,
-      'createHttpFacilitator (facilitator.mjs) has no branch for "200 but unparseable": ' +
-      '`res.json().catch(() => ({}))` silently becomes `{}`, so `!!body.ok` is false and `reason` ' +
-      'is `undefined` — a malformed facilitator response is indistinguishable, to the API and to ' +
-      'the payer, from a facilitator that understood the request and declined it with no reason.');
+    assert.equal(typeof direct, 'object', 'must resolve to a verdict object, never throw, on a malformed 200');
+    assert.notEqual(direct, null);
+    assert.equal(direct.ok, false, 'a malformed remote response must decline the payment, never silently accept it');
   } finally {
     badFacilitator.close();
     await once(badFacilitator, 'close');
