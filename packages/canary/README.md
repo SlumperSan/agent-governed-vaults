@@ -85,11 +85,18 @@ every transition, same channel, no severity. Full env reference is in
   `ALERT_WEBHOOK_URL` is the backwards-compatible
   fallback for whichever of the two is unset; set only that one and behaviour is exactly what it was
   before tiering existed.
-- **`feed-identity` pages on harm only.** Its `decimals` / `denomination` ALERTs LATCH (the oracle's
-  cached scale is immutable. Every price since is silently wrong, not frozen) and PAGE; its
-  aggregator-swap ALERT self-clears next sweep and LOGs. `sinks.mjs`'s `CONDITIONAL_PAGE` keys that
-  on `detail.harm != null`. Above BTC $100,000 the sane-price band stops catching a −2-decimal drift
-  (`Owner Decisions 2026-09-01.md` §1), and this is then the only detector.
+- **`feed-identity` pages unless the alert classified itself benign.** Its `decimals` /
+  `denomination` ALERTs LATCH (the oracle's cached scale is immutable. Every price since is
+  silently wrong, not frozen) and PAGE; its aggregator-swap ALERT self-clears next sweep and LOGs.
+  `sinks.mjs`'s `CONDITIONAL_PAGE` is a **default, not an enumeration**: it LOGs only when
+  `detail.harm` is explicitly `null`, which the aggregator-swap leg sets literally, and PAGEs
+  otherwise — covering `'decimals'`, `'denomination'` and equally any harm value that is absent or
+  unrecognised, so a future leg that forgets the field pages rather than logs. Until 2026-09-13 this
+  line read "pages on harm only" and spelled the predicate with a loose `!=`; the operator is `!==`,
+  and the loose form is exactly the mutation that drops `sinks.test.mjs` from 28 to 26. It was the
+  last place in the repository still carrying it. Above BTC $100,000 the sane-price band stops
+  catching a −2-decimal drift (`Owner Decisions 2026-09-01.md` §1), and this is then the only
+  detector.
 - **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep **that
   watched at least one vault**. An empty watch set is not "watching", so the ping is withheld and
   the external check goes red rather than reporting a canary that watches nothing. `ops-check`

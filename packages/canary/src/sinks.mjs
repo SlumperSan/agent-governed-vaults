@@ -106,7 +106,8 @@ export const PAGE_SIGNALS = new Set([
  *    an alert pages UNLESS it explicitly classified itself benign, which the aggregator-swap leg
  *    does literally (`harm: null`). An ALERT whose `harm` is ABSENT is a leg nobody has classified
  *    yet, and that is exactly the case that should page. This matters more than it reads: the
- *    `readdir` coverage test proves the signal NAME is classified, and NOTHING proves that every
+ *    tier-coverage test proves the signal NAME is classified — it enumerates `EMITTABLE_SIGNALS`,
+ *    a separate test cross-checks that against `readdir` — and NOTHING proves that every
  *    `alert()` inside a signal sets the field its predicate reads — so the fail-safe direction has
  *    to be the default, since the invariant does not reach the payload.
  * 2. **It fails OPEN if it throws.** `tierOf` catches and returns 'page'; see the catch there for

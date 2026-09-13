@@ -145,7 +145,7 @@ test('tierOf: a feed-identity ALERT that carries HARM pages; the self-clearing s
   // `result` at all. A restored state file therefore cannot produce a detail-less result; it only
   // decides `from`. That leaves "a future leg", which is the argument FOR paging, not against.
   assert.equal(tierOf(tr('alert', 'feed-identity')), 'page',
-    'an unclassified harm leg must page: the readdir invariant proves the signal NAME is classified and nothing proves every alert() sets the field its predicate reads');
+    'an unclassified harm leg must page: the tier-coverage invariant proves the signal NAME is classified (it enumerates EMITTABLE_SIGNALS; a separate test cross-checks that against readdir) and nothing proves every alert() sets the field its predicate reads');
   // And the predicate is only ever consulted on an ALERT.
   const degraded = tr('skipped', 'feed-identity');
   degraded.result.detail = { ...degraded.result.detail, harm: 'decimals' };
@@ -370,7 +370,7 @@ const dispatchProbe = () => {
   return { posted, sink };
 };
 
-// `CONDITIONAL_PAGE` decides whether an alert reaches a human, and the `readdir` coverage test
+// `CONDITIONAL_PAGE` decides whether an alert reaches a human, and the tier-coverage test
 // reaches only as far as the signal NAME. These two tests cover the payload the predicate reads and
 // the predicate itself failing — the two ways an alert can be lost that name-coverage cannot see.
 // Both assert by DISPATCH (which endpoint physically received the POST), never by set membership:
