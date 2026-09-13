@@ -139,8 +139,31 @@ committed — it has no place in `scripts/test/`, which is walked by
 `scripts/test/test-wiring-truth.test.mjs` as production test wiring) and the preload reported itself
 "armed for the whole run, never fired."
 
-Test count at this doc's own head, the full `npm run test:backend` run (every workspace's
-`test/*.test.mjs` plus `scripts/test/*.test.mjs`): **1351 tests, 1349 pass, 2 skipped, 0 fail.** The
-two skips are pre-existing and unrelated to this file: one SIGTERM test that cannot run on Windows
-(`kill()` there is `TerminateProcess`, not a deliverable signal), and one live-indexer-snapshot test
-that skips when no live snapshot fixture is present in the checkout.
+## Test count — a warning about this section, then the number
+
+An earlier version of this section stated a total re-derived at a commit two merges behind the one
+it shipped in (`c004b32f`, not the actual landing `b1adcacc`), because `protocol/main` moved twice
+more while this PR was in review and the figure was carried forward instead of re-checked. That is
+the exact failure this document's own methodology claims to guard against — a number attributed to
+"this doc's own head" that was true of an earlier head, made worse by "this doc's own head" being a
+self-referential phrase that cannot describe the commit containing the phrase itself. This section
+does not repeat that mistake: it cites a SPECIFIC, already-existing commit SHA rather than "this
+doc's own head", and notes plainly that no code changes after it, so the number cannot go stale
+underneath a doc-only follow-up commit the way the original did underneath two merges.
+
+At `2dd1e8dd` — the merge of `protocol/main` (through `#267`) that this PR's code last changed
+under; every commit after it, including the one that added this paragraph, touches only this
+document — the full `npm run test:backend` run (every workspace's `test/*.test.mjs` plus
+`scripts/test/*.test.mjs`), measured locally with `contracts/out` present (`npm run gate` builds it
+first; without it, six `contracts/out`-dependent guards fail closed rather than skip, which is a
+correct local artifact of this checkout and not a defect in the suite):
+
+**1366 tests, 1364 pass, 0 fail, 2 skipped.**
+
+Re-derive rather than trust this if `protocol/main` has moved again: `gh run list --branch
+test/x402-end-to-end-loop --json headSha,conclusion` for CI's figure at the actual landing SHA, or
+`node --test --test-reporter=tap` over the same file list locally. The skip count is expected to
+read one lower in CI than locally: one test (`SIGTERM to the real API entrypoint drains and exits
+0`) skips only on Windows, because `kill()` there is `TerminateProcess`, not a deliverable signal,
+and CI runs on Linux. The other skip — a live-indexer-snapshot test needing a fixture this checkout
+does not carry — is environment-independent and present either way.
