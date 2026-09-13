@@ -14,12 +14,15 @@ This pairs with [[continuous-autonomous-mode]]: parallel workers each own a find
 
 **Standing exceptions (security-ops §3, launch gate 10).** Two cases never auto-merge, however green the board:
 
-- **Any `viem` or `@noble/*` version bump gets a human review gate.** A human reads the diff, or at minimum the release provenance, before it lands. These are the signing-path dependencies; no agent merges them on CI alone. All three `@noble` packages are in the runtime closure below (`@noble/ciphers`, `@noble/curves`, `@noble/hashes`), so this is not a hypothetical class.
-- **No new runtime dependency without an explicit, recorded decision.** The runtime closure is an asset that each addition spends, and it is currently **99 non-dev packages** behind three direct dependencies. Re-derive rather than trusting that number, which has already gone stale once — it read 13 when this rule was drafted, and `@solana/web3.js` and `@solana/spl-token` multiplied it:
+- **Any `viem` or `@noble/*` version bump gets a human review gate.** A human reads the diff, or at minimum the release provenance, before it lands. These are the signing-path dependencies; no agent merges them on CI alone. `@noble/ciphers`, `@noble/curves` and `@noble/hashes` are all installed by `npm ci --omit=dev` against this lockfile, so this is not a hypothetical class.
+- **No new runtime dependency without an explicit, recorded decision.** There are three declared runtime dependencies — `viem`, `@solana/web3.js`, `@solana/spl-token` — and each one spends a budget measured in packages rather than in names. Do not take a figure from this paragraph; run one of these, which answer two different questions:
 
   ```
+  npm ci --omit=dev --no-audit --no-fund --dry-run
   node -e "const d=require('./package-lock.json');console.log(Object.entries(d.packages).filter(([k,v])=>k&&!v.dev&&!v.devOptional).length)"
   ```
+
+  The first is what the Dockerfile actually installs. The second counts every non-dev entry in the lockfile, which is a LARGER set: it includes the `apps/site-next` workspace and its tree (`react`, `framer-motion`, the `@fontsource/*` faces, and `typescript`), none of which is reachable from the three runtime roots. An earlier version of this bullet quoted the second number and described it as the closure "behind three direct dependencies", which is false — the two figures differ by roughly twenty packages, and a review that treats them as the same thing will wave through a dependency the image does install or block one it does not. The figure before that read 13 and was simply stale.
 
   A PR that grows `dependencies` in `package.json` waits for that decision; it is not a CI question.
 

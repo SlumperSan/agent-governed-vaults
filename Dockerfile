@@ -28,8 +28,11 @@ FROM node:24-slim
 WORKDIR /app
 
 # Install runtime deps first for layer caching. `npm ci` against the committed lockfile so the
-# image resolves exactly what CI tested (security-ops §3). --omit=dev pulls only viem (the sole
-# runtime dependency) and its transitive closure.
+# image resolves exactly what CI tested (security-ops §3). --omit=dev pulls the three declared
+# runtime dependencies — viem, @solana/web3.js, @solana/spl-token — and their transitive closure.
+# This comment said "only viem (the sole runtime dependency)" until 2026-09-13; the two Solana
+# packages landed on protocol/main after this file was last touched, and nothing walks a
+# Dockerfile, so the sentence went false with every guard green.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
