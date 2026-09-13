@@ -8,11 +8,12 @@
  * the same env the paid route resolves it from — not restated as a literal that could drift away
  * from what the gate actually demands.
  *
- * It also publishes the STALENESS of the data. A caller deciding whether $0.10 is worth paying needs
- * the age of the payload before they pay, not after.
+ * It also publishes what "live" means for this route NOW that `api/vaults.js` reads the chain at
+ * request time rather than serving a pinned file: there is no fixed `asOf` to quote any more, only
+ * the fact that every 200 carries the block it was read at.
  */
 import { resolvePrice, configErrorResponse, BASE_MAINNET_USDC } from '../api/_price.js';
-import snapshot from '../api/_snapshot.json' with { type: 'json' };
+import { DATA_CHAIN_ID, DATA_CHAIN_NAME, VAULTS } from '../api/_chain.js';
 
 export const onRequestGet = async (context) => {
   const { request, env } = context;
@@ -45,14 +46,23 @@ export const onRequestGet = async (context) => {
             url: `${origin}/api/vaults`,
             price: { amount: price.amount, asset: price.asset, decimals: 6 },
             description:
-              'Creation-time facts for every indexed Agent-Governed Vault on Robinhood Chain mainnet (4663): address, creator, creation block and time, minimum deposit, capacity cap, runtime codesize.',
+              'A chain read, taken at request time, of every Agent-Governed Vault on Robinhood Chain ' +
+              'mainnet (4663): NAV, NAV per share, total shares, idle USDC, pending USDC, capacity cap ' +
+              'and headroom, minimum deposit, basket length, child vault count, lock state and creator. ' +
+              'Two vaults today.',
             data: {
-              live: false,
-              asOf: snapshot.asOf,
-              chainId: snapshot.chainId,
-              vaultCount: snapshot.vaults.length,
-              staleness:
-                'Pinned snapshot, not a chain read at request time. Balances, NAV, share supply and member positions are NOT included — see `notIncluded` in the payload.',
+              live: true,
+              chainId: DATA_CHAIN_ID,
+              chainName: DATA_CHAIN_NAME,
+              vaultCount: VAULTS.length,
+              freshness:
+                'Read at request time, not pinned. There is no fixed age to quote here — every 200 ' +
+                'response carries the block number the read was taken at.',
+              perVaultCaveats:
+                'A field can be absent from a served vault instead of a number: `pricingFrozen: true` ' +
+                'means the oracle itself reverted the NAV read (a real signal), and `unreadable` names a ' +
+                'field this deployment could not read this request (a transport failure, or an ' +
+                'unrecognised revert) rather than a value of zero.',
             },
           },
         ],

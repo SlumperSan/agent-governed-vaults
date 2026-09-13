@@ -86,6 +86,46 @@ export function buildChallenge(price, opts) {
 }
 
 /**
+ * Build the `{status:402, headers, body}` shape `gate` returns three times over. Extracted
+ * because `apps/site/functions/api/vaults.js` (the live-read edge route) needs it a FOURTH time,
+ * outside `gate`, and could not call `gate` itself to get it — the route has to read the chain
+ * BETWEEN the local envelope check and the facilitator call (so a chain read that fails costs the
+ * caller nothing), and `gate` settles internally with no seam at that point. Restating this
+ * object's shape at the edge instead of importing it would be exactly the "second implementation
+ * of one protocol" #267's header comment warns against: a caller that built its own 402 and
+ * drifted from this one is the failure mode, not a hypothetical.
+ * @param {PriceSpec} price
+ * @param {number} nowMs
+ * @param {string} message  the `body.error` text (e.g. `'payment required'`, or
+ *   ``payment invalid: ${reason}``)
+ */
+export function challengeResponse(price, nowMs, message) {
+  const challenge = buildChallenge(price, { nowMs });
+  return {
+    status: 402,
+    headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
+    body: { error: message, challenge },
+  };
+}
+
+/**
+ * Which field of a decoded envelope is its replay-relevant identifier: an EIP-3009 `nonce` for
+ * EVM, or the raw transaction bytes for SVM (Solana's replay bound is the blockhash, not a nonce
+ * — see `svm-exact.mjs` — but the transaction bytes still de-dupe an identical payment).
+ *
+ * Selected from `price`, NEVER from `env.scheme`, because this exact line got that wrong once:
+ * see the long comment above `gate`'s use of this value for the five-presentations-five-200s
+ * defect a client-supplied `env.scheme` produced. Extracted so the edge route's success path
+ * — which also has to echo a nonce in `PAYMENT-RESPONSE`, outside `gate` — reuses the decision
+ * rather than restating it.
+ * @param {PriceSpec} price
+ * @param {object} env  decoded envelope
+ */
+export function nonceOf(price, env) {
+  return price.svm ? env.transaction : env.authorization?.nonce;
+}
+
+/**
  * Decode a client's PAYMENT-SIGNATURE header. Returns null on any malformation (→ 402 again).
  * @param {string|undefined} header
  */
@@ -194,22 +234,12 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces }) {
   const env = decodeSignatureHeader(sigHeader);
 
   if (!env) {
-    const challenge = buildChallenge(price, { nowMs });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      body: { error: 'payment required', challenge },
-    };
+    return challengeResponse(price, nowMs, 'payment required');
   }
 
   const localCheck = checkEnvelopeAgainstPrice(price, env, nowMs);
   if (!localCheck.ok) {
-    const challenge = buildChallenge(price, { nowMs });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      body: { error: `payment invalid: ${localCheck.reason}`, challenge },
-    };
+    return challengeResponse(price, nowMs, `payment invalid: ${localCheck.reason}`);
   }
 
   // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
@@ -226,26 +256,16 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces }) {
   // as it liked. Demonstrated: five presentations, five 200s. That is the SAME defect as the
   // `env.scheme` branch fixed above, one line beneath the comment explaining why it was a defect.
   // A client-supplied field must never select which server check runs, nor what it runs on.
-  const nonce = price.svm ? env.transaction : env.authorization?.nonce;
+  const nonce = nonceOf(price, env);
   if (seenNonces && nonce) {
     if (seenNonces.has(nonce)) {
-      const challenge = buildChallenge(price, { nowMs });
-      return {
-        status: 402,
-        headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-        body: { error: 'payment invalid: replayed-nonce', challenge },
-      };
+      return challengeResponse(price, nowMs, 'payment invalid: replayed-nonce');
     }
   }
 
   const settled = await facilitator.verifyAndSettle({ price }, env);
   if (!settled.ok) {
-    const challenge = buildChallenge(price, { nowMs });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      body: { error: `settlement failed: ${settled.reason ?? 'unknown'}`, challenge },
-    };
+    return challengeResponse(price, nowMs, `settlement failed: ${settled.reason ?? 'unknown'}`);
   }
 
   if (seenNonces && nonce) seenNonces.add(nonce);
