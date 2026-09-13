@@ -144,6 +144,17 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
     }),
   });
 
+  // BEFORE the first poll: prove the RPC is the chain CHAIN_ID names, or refuse to build at all
+  // (#204). Eager rather than lazy on purpose — every address in `cfg.addresses` and every log
+  // topic below is chain-specific, so an indexer pointed at the wrong chain does not produce a
+  // partial projection, it produces a confident wrong one that then gets written to STATE_PATH.
+  //
+  // Deliberately NOT inside a read: `fetchEvents`' callers treat a throw as one degraded poll and
+  // carry on, so a refusal raised down there would be logged as a warning and the daemon would keep
+  // indexing the wrong chain — the fix reintroducing the bug. This throws out of `buildIndexer`,
+  // which `main()` does not catch, so the process exits non-zero.
+  await source.assertBoundToDeclaredChain();
+
   const writer = createSnapshotWriter({
     path: cfg.statePath, backups: cfg.backups ?? 0, backupIntervalMs: cfg.backupIntervalMs ?? 0,
   });

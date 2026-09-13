@@ -279,7 +279,16 @@ export function compareAggregatorPin(pin, observed) {
       message: `no aggregatorPin recorded -- add {"implementation":"${obsImpl}","phaseId":${obsPhase}} so a future swap is detectable`,
     };
   }
-  const samePhase = pin.phaseId === undefined || obsPhase === null || String(pin.phaseId) === String(obsPhase);
+  // TWO DIFFERENT THINGS, and they used to be one term of the same `||`:
+  //   `pin.phaseId === undefined`  -- nothing was pinned, so there is nothing to disagree with;
+  //   `obsPhase === null`          -- a phaseId WAS pinned and the read did not answer.
+  // Only the first can leave the pin confirmed. Collapsing them made a dropped `phaseId()` satisfy
+  // `samePhase`, so a run that read one of the two pinned values returned `ok` with the message
+  // "unchanged since the pin" -- an assertion of confirmation produced by a transport failure
+  // (#266). A read that did not happen must never be reported as a read that matched.
+  const phasePinned = pin.phaseId !== undefined;
+  const phaseAnswered = obsPhase !== null;
+  const samePhase = !phasePinned || (phaseAnswered && String(pin.phaseId) === String(obsPhase));
   // A read that did not answer is NOT evidence of a swap. Saying "SWAPPED -> now null" is a false
   // alarm, and it is the one this notice produced on its very first live run (a rate-limited public
   // RPC dropped one `aggregator()` call). Only phaseId can convict on its own.
@@ -299,6 +308,26 @@ export function compareAggregatorPin(pin, observed) {
   }
   const sameImpl =
     typeof pin.implementation === 'string' && pin.implementation.toLowerCase() === obsImpl.toLowerCase();
+  // The MIRROR of the `aggregator()` branch above, and it was missing. `phaseId()` drops out of a
+  // rate-limited sweep exactly as `aggregator()` does, so the same disposition applies in reverse:
+  // a differing implementation is a real read and convicts on its own, while a match leaves the
+  // pin UNCONFIRMED rather than confirmed, because only one of the two pinned values was read.
+  if (phasePinned && !phaseAnswered) {
+    if (!sameImpl) {
+      return {
+        status: 'drift',
+        message:
+          `AGGREGATOR SWAPPED: pinned ${pin.implementation} -> now ${obsImpl} (phaseId() did not answer this run). ` +
+          'Legitimate Chainlink operation, NOT a failure. Confirm the decimals check above still passes, then update aggregatorPin.',
+      };
+    }
+    return {
+      status: 'unreadable',
+      message:
+        `phaseId() did not answer -- pin NOT confirmed. aggregator ${obsImpl} still matches the pin, so no swap is ` +
+        'evidenced; re-run before reading anything into it.',
+    };
+  }
   if (sameImpl && samePhase) {
     return { status: 'ok', message: `aggregator ${obsImpl} phaseId ${obsPhase} -- unchanged since the pin` };
   }

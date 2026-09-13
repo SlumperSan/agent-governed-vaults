@@ -166,6 +166,22 @@ const STEPS = [
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
+    id: 'deployment-currency',
+    title: 'verify-deployment-currency (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/verify-deployment-currency.mjs')],
+    cwd: REPO,
+    // ADVISORY ON PURPOSE, and narrowly so. Both recorded deployments are BEHIND the mainline
+    // today -- a BUSL-1.1 -> MIT relicense touched all 19 `contracts/src` files -- so a blocking
+    // step would red every contributor's gate over a fact no pull request can fix. The remedy is a
+    // redeploy, an owner action under docs/SWARM.md section 10. The script's own exit 1 is
+    // unchanged, so this becomes blocking by deleting the `advisory` line once the records are
+    // refreshed. The part of #261 that DOES block is scripts/test/deployment-currency.test.mjs,
+    // which `backend` already runs.
+    advisory: true,
+    why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
+  },
+  {
     id: 'site-test',
     title: 'npm test --workspace apps/site-next',
     cmd: WIN ? 'npm.cmd' : 'npm',
