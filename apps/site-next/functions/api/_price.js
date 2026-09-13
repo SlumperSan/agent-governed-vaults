@@ -74,7 +74,7 @@ export function resolveFacilitatorUrl(env) {
   try {
     parsed = new URL(url);
   } catch {
-    // NOT echoed. Unlike the other four, this value is operator configuration that is published
+    // NOT echoed. Unlike the other five, this value is operator configuration that is published
     // nowhere, and facilitator endpoints routinely carry a key in the path or query. Omitting the
     // scheme is the commonest URL typo, so the unparseable branch is exactly where a credential
     // would surface -- to an unauthenticated GET, since this becomes a 500 body.

@@ -121,7 +121,7 @@ for (const missing of ['PRICE_ASSET', 'PRICE_PAYTO', 'PRICE_AMOUNT', 'PRICE_NETW
 }
 
 test('an unparseable FACILITATOR_URL is refused WITHOUT echoing it back', async () => {
-  // Unlike the other four settings, this one is operator configuration published nowhere, and a
+  // Unlike the other five settings, this one is operator configuration published nowhere, and a
   // facilitator endpoint may carry a key in its path or query. Omitting the scheme is the commonest
   // URL typo, so this branch is exactly where a credential would reach an unauthenticated GET.
   const res = await vaults(ctx({ ...ENV, FACILITATOR_URL: 'facilitator.example/x?apiKey=SUPER_SECRET_KEY' }));

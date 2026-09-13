@@ -151,7 +151,7 @@ FACILITATOR_URL  <https base URL of a facilitator that settles on Base mainnet>
 FACILITATOR_NETWORK  eip155:8453
 ```
 
-`PRICE_ASSET` is Circle-native USDC on Base. It is **not** USDbC (`0xd9aA…4CA2`), the bridged legacy
+`PRICE_ASSET` is Circle-native USDC on Base. It is **not** USDbC (`0xd9aAEc86…10b6CA`, read back as `symbol() == "USDbC"` on Base mainnet), the bridged legacy
 token; getting that wrong prices the route against the wrong dollar.
 
 **5.3 — Publish the site with Functions.** Run from **`apps/site-next`**, and deploy its build
