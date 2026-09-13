@@ -1,5 +1,8 @@
 # Runtime stack: the indexer (writes the snapshot) and the API (reads it), sharing one volume.
-# Configure via a .env file (see .env.example). Neither service holds a key or moves funds.
+# Configure via a .env file (see .env.example). The indexer service holds no key and moves no funds
+# in any configuration; it has no FACILITATOR setting. The api service holds none either under
+# `FACILITATOR=stub` or `FACILITATOR=http` — the opt-in `FACILITATOR=svm` is the one exception
+# across both services, and it loads `SVM_KEYPAIR` into api and pays Solana fees from it.
 #
 #   cp .env.example .env   # fill in RPC_URL + deployed addresses + price
 #   docker compose up --build

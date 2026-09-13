@@ -1,4 +1,4 @@
-# Architecture — Agent-Governed Index Vault Protocol
+# Architecture: Agent-Governed Index Vault Protocol
 
 Sprint 1 artifact 1.1. Companion: [THREAT-MODEL.md](THREAT-MODEL.md). Decisions labeled
 **C-n** (commitments) and **K-n** (brief contradictions, resolved or accepted) trace back to
@@ -11,7 +11,7 @@ Sprint 1 artifact 1.1. Companion: [THREAT-MODEL.md](THREAT-MODEL.md). Decisions 
 Permissionless vaults in which members pool USDC into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds — nothing rebalances until a proposal passes. Settlement asset is USDC. Off-chain metered access (analytics,
+move member funds; nothing rebalances until a proposal passes. Settlement asset is USDC. Off-chain metered access (analytics,
 leaderboard, signal feeds) is paid via x402; **x402 never appears in the contract layer** (§9).
 
 ```
@@ -61,8 +61,8 @@ contract; VaultCore holds immutable references set at construction (C-3 for the 
 - No chain-specific precompiles or opcode assumptions beyond Cancun.
 - All venue contact goes through `IExecutionAdapter`. The Base aggregation router integration
   is *an adapter implementation*, not a dependency of VaultCore. No CEX integrations, ever.
-  **Proven, not asserted:** two structurally-different adapters — `AggregationRouterAdapter`
-  (off-chain-routed calldata) and `DirectPoolAdapter` (on-chain V2-pool math) — both drive
+  **Proven, not asserted:** two structurally-different adapters; `AggregationRouterAdapter`
+  (off-chain-routed calldata) and `DirectPoolAdapter` (on-chain V2-pool math); both drive
   `executeRebalance` identically behind the interface (`test/DirectPoolAdapter.t.sol`).
 - USDC is referenced as `IERC20 immutable settlementAsset` (6 decimals assumed **only** via a
   decimals read at construction; internal math is WAD 1e18).
@@ -83,10 +83,10 @@ NAV        = Σ_i balance_i × price_i  +  idleUSDC          (USDC terms, WAD in
 NAVps      = NAV × WAD / totalSupply                        (WAD; first deposit: 1e18)
 ```
 
-`price_i` comes from the vault's immutable `IOracleAggregator` — at launch `ChainlinkOracle`, one
+`price_i` comes from the vault's immutable `IOracleAggregator`; at launch `ChainlinkOracle`, one
 genuine Chainlink Data Feed per asset. Sequestered (pending) deposits
 are **excluded** from NAV and from `idleUSDC` until activation (§5). If the oracle breaker is
-tripped, every function that reads NAV reverts — deposits, redemptions, proposal execution —
+tripped, every function that reads NAV reverts (deposits, redemptions, proposal execution),
 by design (K-4).
 
 ### 4.3 Deposit
@@ -98,10 +98,10 @@ window-skipped, or repeat deposit):
 sharesMinted = amount × totalSupply / NAV        (amount × WAD / 1e18 if supply == 0)
 ```
 
-minted at the NAV of the activation transaction — forward pricing on entry, so a depositor can
+minted at the NAV of the activation transaction; forward pricing on entry, so a depositor can
 never mint against a stale valuation they observed 4 hours earlier.
 
-### 4.4 Redemption — two-mode settlement (C-4, resolves K-1)
+### 4.4 Redemption; two-mode settlement (C-4, resolves K-1)
 
 Shares burn at **settlement**, never at request.
 
@@ -111,7 +111,7 @@ Shares burn at **settlement**, never at request.
 - **Mode F (forward):** the vault has a pending execution → the request is
   queued and settles at **post-execution NAV**. The trigger is `Governance.hasPendingExecution`,
   which is true from the active proposal's **reveal start** (before any tally) and for **any**
-  proposal type — not only a passed rebalance. This closes the free option of exiting at
+  proposal type; not only a passed rebalance. This closes the free option of exiting at
   pre-execution prices while knowing the outcome. Queued requests are irrevocable and do **not**
   settle as a side effect of execution: `settleQueuedExit(member)` is an ordinary call that anyone
   can make once no execution is pending.
@@ -135,21 +135,21 @@ fee(t)  = feeMax × max(0, 1 − t / decayPeriod)      feeMax ≤ 1% (protocol c
 ```
 
 `feeMax` and `decayPeriod` are vault-configurable at creation (immutable after funding, K-2
-regime). The fee is retained **in the vault** — the redeemer's shares burn in full but the fee
+regime). The fee is retained **in the vault**; the redeemer's shares burn in full but the fee
 fraction of their pro-rata slice stays, mechanically accruing to remaining members' NAVps. It is
 never routed to the operator, and is waived when the redeemer is the last member (no one to
 accrue to; routing it anywhere else would violate the operator prohibition).
 
 Invariant: **NAVps for remaining members is non-decreasing across any redemption.**
 
-### 4.7 Swing pricing (cash redemptions only) — SPECIFIED, NOT IN v1
+### 4.7 Swing pricing (cash redemptions only); SPECIFIED, NOT IN v1
 
 > **Status: not implemented in v1, and deliberately so.** v1 ships **in-kind redemption only**
 > (§4.5): an exiter receives their pro-rata slice of every basket asset, so a large exit imposes
-> **no NAV dilution on remaining members** — the exiter carries their own execution cost when they
+> **no NAV dilution on remaining members**; the exiter carries their own execution cost when they
 > sell. Swing pricing exists solely to neutralise the first-mover dilution of *cash* redemptions,
 > and with no cash-redemption path there is nothing to swing (the §4.6 NAVps-non-decreasing
-> invariant already holds without it — proven by the invariant suites). The formula below is the
+> invariant already holds without it; proven by the invariant suites). The formula below is the
 > spec for the **future, optional** cash-redemption path (delivered via the execution adapter, so
 > the vault itself needs no venue liquidity). It is out of the audited surface. The brief's
 > "swing pricing on oversized redemptions" requirement is satisfied-by-omission in v1: in-kind
@@ -162,7 +162,7 @@ payout = s/T × NAV × (1 − σ(x)) ,   σ(x) = σmax × (x − θ) / (1 − θ
 ```
 
 `θ` (default 10%) and `σmax` are vault-configurable with protocol caps. The swing haircut, like
-the exit fee, stays in the vault. In-kind redemptions bypass swing pricing entirely — the
+the exit fee, stays in the vault. In-kind redemptions bypass swing pricing entirely; the
 redeemer carries their own execution cost.
 
 ## 5. Entry: observation window
@@ -171,28 +171,28 @@ redeemer carries their own execution cost.
   from NAV, zero shares, zero voting or proposal rights. After 4 hours the depositor (or anyone)
   calls `activate`, minting shares at activation NAV (§4.3). Pending deposits are cancellable
   before activation.
-- **Skip:** an agent may irrevocably opt in to skipping the window for a given vault — shares
+- **Skip:** an agent may irrevocably opt in to skipping the window for a given vault; shares
   mint immediately. The opt-in is once per agent per vault and cannot be undone. (Reading of the
   brief: "once per agent per vault" scopes the window/skip to first entry; repeat deposits by an
   existing member mint immediately. Flash-deposit governance attacks are defended by
-  proposal-time stake snapshots in Sprint 2, not by the window — the window is a social
+  proposal-time stake snapshots in Sprint 2, not by the window; the window is a social
   observation mechanism, not the Sybil defense.)
 
-## 6. Core mechanics — placement of each rule
+## 6. Core mechanics; placement of each rule
 
 | Rule | Where enforced |
 | --- | --- |
 | Creator locks ≥5% stake | VaultCore: **withdrawal gate**, not top-up obligation. Creator redemptions revert if they would take creator share below 5% while ≥1 non-creator member remains. Passive dilution below 5% by others' deposits is allowed and simply freezes creator withdrawals until restored. |
-| Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). HWM per `(member, operator)` — see §7. |
+| Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). HWM per `(member, operator)`; see §7. |
 | Proposal rights scale with stake | Governance, against the same voting-eligible stake measure as quorum. |
 | Quorum: participating stake, 25% protocol floor | Governance. Denominator = voting-eligible stake at the proposal snapshot (excludes pending deposits §5 and locked Mode-F shares §4.4). Standing defaults never count in the quorum numerator (K-3 accepted). |
-| <5 members: signer count plus stake | Below the threshold `finalize` passes on either a majority of the members-at-creation revealing FOR while the FOR stake also clears the quorum, or an outright FOR stake majority — both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface — threat model CM-7. |
+| <5 members: signer count plus stake | Below the threshold `finalize` passes on either a majority of the members-at-creation revealing FOR while the FOR stake also clears the quorum, or an outright FOR stake majority; both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface; threat model CM-7. |
 | Rules immutable after funding except full consensus + timelock | VaultCore config setters gated on a Governance flag reachable only by 100% of voting-eligible stake + timelock. One permanently offline member ⇒ rules frozen forever (K-2, accepted as intended). |
-| Per-vault capacity cap | VaultCore: deposits revert above cap. **Optional** — `capacityCapUsdc == 0` opts out (uncapped); `isCapped()` reports which. |
+| Per-vault capacity cap | VaultCore: deposits revert above cap. **Optional**; `capacityCapUsdc == 0` opts out (uncapped); `isCapped()` reports which. |
 
 ## 7. Fees and the operator registry (C-3)
 
-VaultCore takes an `IOperatorRegistry immutable` at construction — stubbed in Sprint 1,
+VaultCore takes an `IOperatorRegistry immutable` at construction; stubbed in Sprint 1,
 concrete in Sprint 3. The reference is load-bearing for three requirements at once: HWM
 portability, leaderboard integrity, and anti-Sybil (a mintable fresh identity sheds bad history,
 defeating "no cherry-picking").
@@ -214,10 +214,10 @@ must call into it from day one.)
 **Leaderboard.** Operator-level aggregate across **all** vaults sharing the registry;
 per-vault opt-out does not exist at the contract level.
 
-## 8. Governance (Sprint 2 — interface committed now)
+## 8. Governance (Sprint 2; interface committed now)
 
 - **Commit-reveal** on all proposals: commit hash(vote, salt); reveal after commit deadline.
-  Unrevealed commits are forfeit (count as abstain) — non-revealers grief only themselves.
+  Unrevealed commits are forfeit (count as abstain); non-revealers grief only themselves.
 - **Standing defaults:** count toward tally, never quorum; expire 72 h after being set; valid
   only for proposals tagged *routine rebalance*. Offline agents auto-abstain otherwise.
 - **Delegation:** permitted; a delegate's aggregate received weight is capped at a
@@ -235,7 +235,7 @@ Deposits are plain on-chain USDC transfers. If x402-initiated deposits are ever 
 compose externally (an agent pays itself into a wallet, then deposits); the vault does not
 special-case them.
 
-## 10. Sub-vaults (Sprint 5 — constraints recorded now)
+## 10. Sub-vaults (Sprint 5; constraints recorded now)
 
 - Parent allocates capital to child; child governs its own mandate. Depth hard-capped at 3.
 - **Recursive deposits blocked at contract level:** a vault cannot deposit into any vault whose
@@ -246,20 +246,20 @@ special-case them.
 
 ## 11. Safety systems
 
-- **`ChainlinkOracle`:** exactly one genuine Chainlink Data Feed per asset — WETH via ETH/USD,
+- **`ChainlinkOracle`:** exactly one genuine Chainlink Data Feed per asset; WETH via ETH/USD,
   cbBTC via BTC/USD, USDC pinned to $1.00, and no cbETH because Base has no cbETH/USD feed. Three
   guards, all fail-closed: an **L2 sequencer uptime gate** with a grace period after recovery, a
   per-feed **heartbeat**, and a **sane-price band**. On any of them `priceWad` reverts, and the
-  breaker **freezes everything including exits** (K-4 — accepted: an attacker who can induce
+  breaker **freezes everything including exits** (K-4; accepted: an attacker who can induce
   staleness can trap capital, and no escape hatch will be added, since any escape hatch is exactly
   the stale-price exit the breaker exists to prevent).
-  **Named residual — single-provider dependency:** those three guards are the only defences
+  **Named residual; single-provider dependency:** those three guards are the only defences
   against a wrong Chainlink answer, and a feed deprecation fails that asset **closed with no
   fallback**. The oracle is immutable per vault, so there is no rotation lever. See
   [LAUNCH-READINESS.md](LAUNCH-READINESS.md) gate 5 and residual 12.
 - **Capacity caps** per vault (§6).
 - **Pending capital is never frozen.** `cancelPending` reads no oracle, so a depositor can always
-  reclaim an un-activated (observation-window) deposit even while the breaker is tripped — the
+  reclaim an un-activated (observation-window) deposit even while the breaker is tripped; the
   freeze traps only *active* share capital, not capital still in the window (verified by
   `test_pendingDepositCancellableDuringOracleFreeze`; resolves consumer-UX open question OQ-1).
 - **Leaderboard integrity** via the shared registry (§7).
@@ -279,24 +279,24 @@ accrues to the vault, preserving the §4.6 invariant.
 ## 14. Open items feeding later sprints
 
 1. Sprint 2: proposal-time stake snapshot mechanism (checkpointing vs. per-proposal copy).
-2. Sprint 3: registry trust model — who may deploy vaults against the canonical registry
+2. Sprint 3: registry trust model; who may deploy vaults against the canonical registry
    (permissionless, but leaderboard only aggregates registry-attested vault deployments from
    the canonical factory, else scores are forgeable).
-3. Sprint 4: adapter calldata safety — off-chain-routed swap calldata must be constrained
+3. Sprint 4: adapter calldata safety; off-chain-routed swap calldata must be constrained
    (allow-listed routers, minOut enforced by the adapter itself, never by the router alone).
 4. Research findings ([RESEARCH-SPRINT1.md](RESEARCH-SPRINT1.md)) now folded in:
    - **C-4 has precedent**: ERC-7540's request/claim pattern maps directly onto Mode-F
      forward-priced exits (full 7540 compliance stays ruled out with C-1). Swing pricing has
-     **zero** on-chain precedent — we are first; extra Sprint 6 scrutiny.
+     **zero** on-chain precedent; we are first; extra Sprint 6 scrutiny.
    - **§14.3 confirmed and hardened**: a live Jan-2026 aggregator-adapter exploit class
-     (SwapNet/Aperture, ~$13–17M; earlier Dexible, Unizen, LI.FI) shares one root cause —
+     (SwapNet/Aperture, ~$13–17M; earlier Dexible, Unizen, LI.FI) shares one root cause:
      trusting off-chain-supplied call targets/calldata. `IExecutionAdapter` therefore carries a
      governance-controlled (router, selector) allowlist and balance-delta-enforced minOut; never
      a thin (target, calldata) pass-through.
    - **§9 confirmed**: x402 V2 (June 2026) uses dedicated PAYMENT-* headers and settles USDC via
-     EIP-3009 `transferWithAuthorization` executed by the facilitator — no contract-layer
+     EIP-3009 `transferWithAuthorization` executed by the facilitator; no contract-layer
      coupling, as designed.
-   - **§7 is novel**: no prior art for per-(member, operator) HWM — Enzyme/dHEDGE use global
+   - **§7 is novel**: no prior art for per-(member, operator) HWM; Enzyme/dHEDGE use global
      per-vault marks. Treated as an unvalidated mechanism: extra invariant weight in Sprint 3.
    - **§8 sizing input**: Kleros abandoned commit-reveal (2026) because voters *forget* to
      reveal, not only grief. Sprint 2 must size reveal windows and forfeiture accordingly.

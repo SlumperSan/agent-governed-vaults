@@ -1,13 +1,13 @@
-# AI Pre-Audit Report — Agent-Governed Vaults
+# AI Pre-Audit Report: Agent-Governed Vaults
 
 **Engagement reference:** tag `v0.3.0-audit` (annotated → commit `ad9396d7`)
 **Date:** 2026-08-25
-**Status:** Complete — all nine specialist passes ran to completion.
+**Status:** Complete, all nine specialist passes ran to completion.
 
 > **What this is, and what it is not.** This is a rigorous *pre-audit* pass performed by an AI
 > agent team. It carries **no liability, no insurance, no signed attestation, and none of the
 > reputational stake a firm provides**, and it does **not** satisfy any audit gate. Treat it as
-> findings to fix before a paid engagement — not as clearance to ship. §6 states plainly what this
+> findings to fix before a paid engagement, not as clearance to ship. §6 states plainly what this
 > method cannot attest.
 
 ---
@@ -19,22 +19,22 @@ Nine independent specialist passes over the 3,349 LoC contract surface produced 
 tests were authored and executed against the frozen sources; all pass, and they confirm four of
 the five Critical findings and five of the nine High ones (the fifth Critical, **C-1**, is
 established by source derivation rather than by a test). The protocol's own 189-test suite is fully green at
-this tag — and one finding (**H-3**) establishes that its green status on the oracle layer is
+this tag, and one finding (**H-3**) establishes that its green status on the oracle layer is
 *structurally incapable* of detecting **H-2**.
 
 Four results dominate.
 
-- **The oracle layer** — the post-freeze code the handoff itself flags as least-reviewed — lets a
+- **The oracle layer**, the post-freeze code the handoff itself flags as least-reviewed, lets a
   single price source permanently brick all pricing for every vault on that aggregator, with no
   recovery (**C-3**); and the documented mainnet configuration degrades the "median" into a
   *minimum* under its own documented expected operating conditions, handing one source unilateral
   downward control of price (**H-1**).
 - **Governance can be frozen permanently by a single `propose()` call** (**C-2**), because three
-  of four duration parameters have no upper bound — and the frozen vault cannot legislate its way
+  of four duration parameters have no upper bound, and the frozen vault cannot legislate its way
   out, because a stuck proposal also blocks every future proposal.
 - **Voting weight survives a full exit** (**C-5**): a member can hold stake across one block
   boundary, propose, withdraw all capital instantly, and then vote the proposal through with stake
-  they no longer own — bearing none of the price exposure the design's alignment rests on.
+  they no longer own, bearing none of the price exposure the design's alignment rests on.
 - **A funded sub-vault can be captured outright for one minimum deposit** (**C-1**), because the
   parent is excluded from its child's electorate entirely, leaving a vault that holds real money
   with an empty electorate.
@@ -42,7 +42,7 @@ Four results dominate.
 A pattern is more concerning than any single bug: **eight documented threat-model mitigations do
 not hold as written** (EX-2, CM-7, EE-10, VO-7, MO-1, MO-2, SF-1, PX-1), and several name the exact
 attack that defeats them. The threat model is unusually thorough, which makes the gap between the
-stated mitigation and the shipped code the most dangerous property of the package — a reviewer who
+stated mitigation and the shipped code the most dangerous property of the package, a reviewer who
 trusts the rows will not look. Four incorrect dispositions in `SLITHER-TRIAGE.md` are documented in
 §4.5.
 
@@ -50,7 +50,7 @@ The audit also **refuted one of its own findings** (**H-2**, *Corrected scope*):
 single-block TWAP manipulation did not survive adversarial verification. It is recorded as refuted
 rather than quietly dropped.
 
-| Severity | Count | CONFIRMED — executing test | CONFIRMED — source derivation / inspection | PLAUSIBLE — reasoning only |
+| Severity | Count | CONFIRMED: executing test | CONFIRMED: source derivation / inspection | PLAUSIBLE: reasoning only |
 |---|---|---|---|---|
 | **Critical** | 5 | 4 | 1 | 0 |
 | **High** | 9 | 5 | 2 | 2 |
@@ -70,19 +70,19 @@ loss or lock of member funds, and there is no proxy, pause, admin, or migration 
 mitigate any of them after deployment. `C-2` and `C-3` are each triggerable by a single
 transaction; `C-1` costs one minimum deposit; `C-5` costs one block of capital exposure. The
 remediation set touches `Governance`, `OracleAggregator`, `UniswapV3TwapSource`, `VaultCore`,
-`SafeTransferLib` and `VaultFactory` — most of the critical surface — so the corrected tree is
+`SafeTransferLib` and `VaultFactory`, most of the critical surface, so the corrected tree is
 materially different code requiring a **full** re-review, not a delta review.
 
 **Recommended sequence:** (1) remediate all Critical and High findings; (2) replace the oracle test
 mock per **H-3** and re-run the Sprint-11 suite against faithful semantics, treating every new
 failure as a finding; (3) commission the human audit against the corrected tree; (4) run the oracle
-sources against real Uniswap and Pyth contracts on a fork and on testnet — which has never been
+sources against real Uniswap and Pyth contracts on a fork and on testnet, which has never been
 done (§6).
 
-### Phase-2 remediation disposition (2026-08-28) — read this before the per-finding text
+### Phase-2 remediation disposition (2026-08-28): read this before the per-finding text
 
 The remediation reached the point where **launch was re-scoped to root vaults only** (C-1). That
-single decision — `VaultFactory.allowSubVaults = false`, enforced — makes an entire class of
+single decision, `VaultFactory.allowSubVaults = false`, enforced, makes an entire class of
 findings **dormant at launch**: they require a funded child vault, which cannot exist. They are not
 fixed in code; they are deferred *with the sub-vault feature*, to be resolved (with the
 parent-casts-child-vote mechanism) before sub-vaults are ever enabled. Disposition of every finding
@@ -90,29 +90,29 @@ for the **root-only launch configuration**:
 
 | Finding | Launch disposition |
 |---|---|
-| **C-1** | **Closed at launch** — sub-vaults disabled (root vaults only). No internal fix exists; deferred mechanism. |
+| **C-1** | **Closed at launch**: sub-vaults disabled (root vaults only). No internal fix exists; deferred mechanism. |
 | **C-2, C-3, C-5** | **Fixed** (earlier remediation) with regression tests. |
-| **C-4** | **Closed at `a ≤ 1`, RE-OPENED at `a ≥ 2`** — Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) found the "root cause closed" claim held only under a curation assumption the code cannot enforce. See **C-6**. DiD deferred, partially subsumed by M-15. |
-| **C-6** | **OPEN (new, Phase-2)** — the oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor (`quorum ≥ 2a+1`); two adversarial sources + one withholding leg re-open C-4's theft. Config/curation requirement + corrected prescription; **gate 0 does not clear while open**. |
+| **C-4** | **Closed at `a ≤ 1`, RE-OPENED at `a ≥ 2`**: Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) found the "root cause closed" claim held only under a curation assumption the code cannot enforce. See **C-6**. DiD deferred, partially subsumed by M-15. |
+| **C-6** | **OPEN (new, Phase-2)**: the oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor (`quorum ≥ 2a+1`); two adversarial sources + one withholding leg re-open C-4's theft. Config/curation requirement + corrected prescription; **gate 0 does not clear while open**. |
 | **H-1, H-2, H-3, H-4** | **Fixed** (earlier remediation). |
-| **H-5, H-6, H-7** | **Dormant at launch** — all require a funded child. Deferred with sub-vaults. |
+| **H-5, H-6, H-7** | **Dormant at launch**: all require a funded child. Deferred with sub-vaults. |
 | **H-9** | **Dormant at launch AND REMEDIATED 2026-09-01.** This row originally grouped it with the three above as "deferred with sub-vaults"; that is superseded by this report's own H-9 row, which records `REMEDIATED 2026-09-01`. The guard is unconditional, so H-9 is not waiting on the feature. |
 | **H-8** | **Partially fixed** (dust-lockout + zero-stake-sybil closed in `Governance.finalize`) **+ config-mitigated** (regime-flip: meaningful `minDepositUsdc`). |
 | **M-1..M-4, M-6, M-11, M-12** | **Fixed** (earlier remediation; M-6 partial + config, M-7 not mitigated). |
-| **M-15** | **Partially fixed** — deposit-side `minSharesOut` overload; exit-side deferred (byte budget). |
-| **M-5** | **Dormant at launch** — the 12M-gas fan-out needs sub-vaults; at launch `navWad` loops the basket only (≤10). |
-| **M-7** | **NOT mitigated** — the cooldown floor is per-proposer and sidesteppable; serial-proposal exit freeze stands. Accepted residual, documented; bounded by the ≥1h commit phase. |
-| **M-8** | **Accepted design tradeoff** — the opaque `actionHash` is deliberate front-running (MEV) protection: revealing the swap target at propose time would let anyone front-run the rebalance. The lapsed-`deadline` sub-part is bounded by H-4's 2% oracle slippage cap on execution. Documented, not changed. |
-| **M-9** | **Accepted** — settlement-timing option over the exit performance fee, bounded at `gain/10` and by permissionless-crank market timing. Removing it needs a mechanism change with its own tradeoffs. Documented. |
-| **M-10** | **Accepted (VO-7 residual)** — commit-reveal binds an address, not an actor; a whale splitting stake gets an informed last-mover choice at the cost of the forfeited half. Inherent to per-address commit-reveal; documented. |
-| **M-13** | **Deploy tooling** — no script consumes `base-mainnet.json`; not a contract defect. Blocking for a real mainnet deploy (tracked with #41, which already rebuilds that config), not for the contract security posture. |
-| **M-14** | **View-only, no funds at risk** — the report itself refutes every state-changing path (a starved-source deposit needs >block-gas-limit). Affects integrators/keepers/front-ends that gas-cap `view` calls; documented as an integration constraint (do not gas-cap NAV reads). |
+| **M-15** | **Partially fixed**: deposit-side `minSharesOut` overload; exit-side deferred (byte budget). |
+| **M-5** | **Dormant at launch**: the 12M-gas fan-out needs sub-vaults; at launch `navWad` loops the basket only (≤10). |
+| **M-7** | **NOT mitigated**: the cooldown floor is per-proposer and sidesteppable; serial-proposal exit freeze stands. Accepted residual, documented; bounded by the ≥1h commit phase. |
+| **M-8** | **Accepted design tradeoff**: the opaque `actionHash` is deliberate front-running (MEV) protection: revealing the swap target at propose time would let anyone front-run the rebalance. The lapsed-`deadline` sub-part is bounded by H-4's 2% oracle slippage cap on execution. Documented, not changed. |
+| **M-9** | **Accepted**: settlement-timing option over the exit performance fee, bounded at `gain/10` and by permissionless-crank market timing. Removing it needs a mechanism change with its own tradeoffs. Documented. |
+| **M-10** | **Accepted (VO-7 residual)**: commit-reveal binds an address, not an actor; a whale splitting stake gets an informed last-mover choice at the cost of the forfeited half. Inherent to per-address commit-reveal; documented. |
+| **M-13** | **Deploy tooling**: no script consumes `base-mainnet.json`; not a contract defect. Blocking for a real mainnet deploy (tracked with #41, which already rebuilds that config), not for the contract security posture. |
+| **M-14** | **View-only, no funds at risk**: the report itself refutes every state-changing path (a starved-source deposit needs >block-gas-limit). Affects integrators/keepers/front-ends that gas-cap `view` calls; documented as an integration constraint (do not gas-cap NAV reads). |
 | **L-1, L-2, L-3, L-4** | **Fixed** (earlier remediation). |
-| **L-5** | **Accepted (creator-disclosed)** — rebasing / double-entrypoint basket tokens break accounting; a per-vault creator choice, disclosed by inspection. Listing constraint, documented. |
-| **L-6** | **Dormant at launch** — SV-6 child quorum-floor re-check needs children. Deferred with sub-vaults. |
-| **L-7** | **Accepted asymmetry** — `clearStandingDefault` is revocable mid-reveal while `setDelegate` is locked; but the standing default is the WEAKER, tally-only instrument (never counts toward quorum), so a member opting out of their own absentee vote is defensible. Forcing a lock trades a minor asymmetry for reduced member agency; documented, not changed. |
+| **L-5** | **Accepted (creator-disclosed)**: rebasing / double-entrypoint basket tokens break accounting; a per-vault creator choice, disclosed by inspection. Listing constraint, documented. |
+| **L-6** | **Dormant at launch**: SV-6 child quorum-floor re-check needs children. Deferred with sub-vaults. |
+| **L-7** | **Accepted asymmetry**: `clearStandingDefault` is revocable mid-reveal while `setDelegate` is locked; but the standing default is the WEAKER, tally-only instrument (never counts toward quorum), so a member opting out of their own absentee vote is defensible. Forcing a lock trades a minor asymmetry for reduced member agency; documented, not changed. |
 
-The net launch-blocking set after Phase 2 is: **external audit (gate 1)**, plus **C-6** — the new Critical the re-verification pass surfaced (C-4 re-opens at `a ≥ 2` adversarial oracle sources; a config/curation requirement with no clean code fix at m=5). C-1/C-2/C-3/C-5 are closed with executed evidence; **C-4/C-6 keep gate 0 NO-GO** until the oracle-curation requirement (`quorum ≥ 2a+1`, independent sources) is settled and the external audit signs off. The re-verification did its job: it converted an *inferred* C-4 closure into an *executed* refutation. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)) — quote the "N passing tests" figure only with that qualifier.
+The net launch-blocking set after Phase 2 is: **external audit (gate 1)**, plus **C-6**, the new Critical the re-verification pass surfaced (C-4 re-opens at `a ≥ 2` adversarial oracle sources; a config/curation requirement with no clean code fix at m=5). C-1/C-2/C-3/C-5 are closed with executed evidence; **C-4/C-6 keep gate 0 NO-GO** until the oracle-curation requirement (`quorum ≥ 2a+1`, independent sources) is settled and the external audit signs off. The re-verification did its job: it converted an *inferred* C-4 closure into an *executed* refutation. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)), quote the "N passing tests" figure only with that qualifier.
 
 ---
 
@@ -122,7 +122,7 @@ The net launch-blocking set after Phase 2 is: **external audit (gate 1)**, plus 
 `ad9396d728229810058bf192f24b15cbae3af535`, reviewed in an isolated detached `git worktree`. The
 main working tree was never modified.
 
-**In scope — `contracts/src/`, 22 files, 3,349 LoC:**
+**In scope: `contracts/src/`, 22 files, 3,349 LoC:**
 
 | File | LoC | File | LoC |
 |---|---|---|---|
@@ -142,19 +142,18 @@ main working tree was never modified.
 `scripts/verify-mainnet-config.mjs`, `foundry.toml`, and the full `docs/` set.
 
 **Out of scope:** `packages/indexer`, `apps/api`, `apps/web`, `packages/canary`,
-`packages/reference-agent` — none custody funds.
+`packages/reference-agent`, none custody funds.
 
-**Baseline verified, not assumed.** The project's suite at this tag is **189 tests, 189 passing** —
-higher than the 128 quoted in `AUDIT-HANDOFF.md`, which predates the 58 Sprint-11 oracle tests.
+**Baseline verified, not assumed.** The project's suite at this tag is **189 tests, 189 passing**, higher than the 128 quoted in `AUDIT-HANDOFF.md`, which predates the 58 Sprint-11 oracle tests.
 Contract sizes were measured with `forge build --sizes`: `VaultCore` 23,016 B runtime, **1,560 B
-(6.3%) of EIP-170 margin** — the only contract meaningfully close to a cap; `VaultDeployer` initcode
+(6.3%) of EIP-170 margin**, the only contract meaningfully close to a cap; `VaultDeployer` initcode
 26,148 B against EIP-3860's 49,152 B.
 
-**What was NOT covered — stated so the gaps are visible.**
+**What was NOT covered, stated so the gaps are visible.**
 - **No live-chain verification.** No RPC was available. Every address, pool identity and Pyth price
   ID in `base-mainnet.json` remains unverified against Base mainnet. This audit's statements about
   that file concern its *internal consistency* and *what the verification script does and does not
-  check* — never what is deployed at those addresses.
+  check*, never what is deployed at those addresses.
 - **No fork testing.** Uniswap V3 and Pyth interface shapes were reproduced faithfully from
   upstream source but never executed against the real contracts. `slot0`'s three same-width
   `uint16` fields could be transposed without any decode failure, and `_meanTick:282` reads exactly
@@ -181,17 +180,17 @@ the rediscovery noted as corroboration.
 
 ## CRITICAL
 
-### C-1 — Any outsider takes unilateral governance control of a funded sub-vault for one minimum deposit, and drains it
+### C-1: Any outsider takes unilateral governance control of a funded sub-vault for one minimum deposit, and drains it
 
 | | |
 |---|---|
-| **Severity** | **CRITICAL** (already Critical — adjustment is a **no-op**) |
+| **Severity** | **CRITICAL** (already Critical: adjustment is a **no-op**) |
 | **Status** | **CONFIRMED by source re-derivation**; every link re-read by the lead auditor. No end-to-end test. |
 | **Corroboration** | Independently found by the access-control and reentrancy passes |
 | **Files** | `VaultCore.sol:421-431`, `:835-846`; `Governance.sol:236-239`, `:435-437`, `:443`, `:460-486`; `VaultCore.sol:752-795`; `AggregationRouterAdapter.sol:50-74` |
 
-**Description.** The GA-1 fix addressed a real problem — a parent holding child shares made
-full-consensus `RuleChange` unreachable — by excluding the parent from the child's voting-eligible
+**Description.** The GA-1 fix addressed a real problem, a parent holding child shares made
+full-consensus `RuleChange` unreachable, by excluding the parent from the child's voting-eligible
 stake **and** from its holder count:
 
 ```solidity
@@ -217,7 +216,7 @@ sole eligible voter, and every gate passes trivially:
 `Governance.execute` (`:460`) is permissionless, so the attacker also controls execution timing.
 
 **Why capture equals drain.** `executeRebalance` (`:752-795`) validates only caller, adapter
-allow-list, token membership, and `received >= o.minAmountOut` (`:778`) — where **`minAmountOut` is
+allow-list, token membership, and `received >= o.minAmountOut` (`:778`), where **`minAmountOut` is
 supplied by the proposer**. `AggregationRouterAdapter` (`:50-74`) requires only `minAmountOut > 0`
 (1 wei suffices) and allow-lists only the router **selector**; `routeData` is otherwise opaque and
 passed verbatim, so the swap *path* is attacker-chosen and may route through an attacker-seeded
@@ -227,14 +226,14 @@ pool. No oracle-derived bound exists anywhere on this path (**H-4**).
 1. Honest parent `V` creates child `C`; `V`'s governance passes `allocateToChild(C, 1_000_000e6)`.
    `C` now holds $1M with zero voting-eligible stake.
 2. Attacker calls `C.deposit(minDepositUsdc)`, then `C.activate(attacker)` (or `skipWindow()`).
-3. Attacker calls `propose(C, Rebalance, keccak256(payload))` — threshold passes because
+3. Attacker calls `propose(C, Rebalance, keccak256(payload))`, threshold passes because
    `own == total`.
 4. Attacker commits, reveals FOR, `finalize` → **Passed**, waits `C`'s timelock, calls `execute`.
 5. Payload: `SwapOrder{tokenIn: usdc, amountIn: 1_000_000e6, minAmountOut: 1, routeData: exactInput
    path through an attacker-seeded pool}`.
 6. `C` pays out $1M and books 1 wei.
 
-**Cost:** one `minDepositUsdc` — as low as 1 unit (`VaultCore.sol:215` requires only `> 0`) — plus
+**Cost:** one `minDepositUsdc`, as low as 1 unit (`VaultCore.sol:215` requires only `> 0`), plus
 gas. **Loss:** borne by `V`'s members via collapsed look-through NAV.
 
 **Scaling.** With `k` honest non-parent holders the attacker needs `k+1` sybils (`2n > k+n ⟺ n > k`)
@@ -243,7 +242,7 @@ the parent**. A sub-vault is therefore governed by whoever holds a majority of t
 of capital in it, never the largest.
 
 **Mitigations that exist, and why they are insufficient.** The child's timelock lets `V`'s members
-race a `redeemFromChild` proposal through `V`'s own ≥2 h commit/reveal cycle — a race, not a
+race a `redeemFromChild` proposal through `V`'s own ≥2 h commit/reveal cycle, a race, not a
 defence. If the attacker created the child themselves via `createChildVault`, which performs **no
 authorization on `parent`** (**L-1**), they are the child's `creator` and register its `GovConfig`
 themselves (`Governance.sol:182` gates only on `msg.sender == creator()`), so they set
@@ -265,10 +264,10 @@ re-verified against the change. Additionally gate `createChildVault` on the pare
 governance. **Requires redeploy + re-review of `VaultCore`'s snapshot logic, `Governance`'s quorum
 regimes, and `VaultFactory`.**
 
-> **REMEDIATION STATUS — FIXED at launch (2026-08-28, Phase 2, "root vaults only").** The
+> **REMEDIATION STATUS: FIXED at launch (2026-08-28, Phase 2, "root vaults only").** The
 > recommended in-contract fix above was evaluated and **rejected**: `pHeld = 0` breaks the
 > legitimate parent+1-member child (the absolute-signer regime needs `1*2 > 2`, false), and the
-> tension is structural — any voting denominator that excludes the parent lets a dust depositor
+> tension is structural, any voting denominator that excludes the parent lets a dust depositor
 > govern the parent's allocation, and including it makes the child ungovernable (the parent is a
 > contract with no vote path). There is **no purely-internal fix**; a correct fix needs a new
 > "parent casts the child's vote" governance mechanism, which is a product decision, new attack
@@ -280,22 +279,22 @@ regimes, and `VaultFactory`.**
 > registered edge, no vault can ever be funded as a child, so the empty-electorate precondition is
 > **unreachable**. This closes **C-1, H-5, H-6, H-7, H-9** and residual-risk row 9 as a class.
 > VaultCore bytes are **unchanged**. Regression: `contracts/test/audit/AuditRootVaultsOnly.t.sol`
-> — one test reproduces the live capture with sub-vaults enabled, one proves it unreachable at
+>, one test reproduces the live capture with sub-vaults enabled, one proves it unreachable at
 > launch. (L-1's `createChildVault` creator gate, already merged, is retained behind the new gate.)
 
 ---
 
-### C-2 — Governance duration parameters are unbounded above: a single `propose()` call can freeze every exit in a vault permanently
+### C-2: Governance duration parameters are unbounded above: a single `propose()` call can freeze every exit in a vault permanently
 
 | | |
 |---|---|
 | **Severity** | **CRITICAL** (base High × immutable → Critical) |
-| **Status** | **CONFIRMED** — 4 tests (`AuditExecutionWindowFreeze.t.sol`) plus 3 independent tests from the DoS pass |
+| **Status** | **CONFIRMED**: 4 tests (`AuditExecutionWindowFreeze.t.sol`) plus 3 independent tests from the DoS pass |
 | **Corroboration** | Independently found by the access-control, governance, DoS and standards passes |
 | **Files** | `Governance.sol:201-208`, `:428`, `:446-447`, `:465`, `:492`, `:504-506`, `:519-526`; `VaultCore.sol:445`, `:477` |
 
 **Description.** `_validateConfig` bounds durations on one side only. Of five parameters, **exactly
-one is capped above — and it is the only one that does not gate exits**:
+one is capped above, and it is the only one that does not gate exits**:
 
 | Parameter | Lower bound | Upper bound | Gates exits? |
 |---|---|---|---|
@@ -312,7 +311,7 @@ require(cfg.executionWindow >= 1 hours, BadGovConfig());              // floor o
 ```
 
 **The severest form needs no vote at all.** `hasPendingExecution`'s `Active` branch (`:519-521`)
-returns true for any proposal past its `commitDeadline` — **passage is irrelevant**:
+returns true for any proposal past its `commitDeadline`: **passage is irrelevant**:
 
 ```solidity
 if (p.status == Status.Active) {
@@ -322,23 +321,22 @@ if (p.status == Status.Active) {
 
 `finalize` requires `block.timestamp >= p.revealDeadline` (`:428`). So with an unbounded
 `revealDuration` the proposal is pinned in `Active` for ~136 years, and **a single `propose()` call
-by any holder freezes every exit forever** — no vote, no quorum, no collusion. With
-`proposalThresholdBps = 0` — the value shipped in `base-mainnet.json` (**M-6**) — the attacker needs
+by any holder freezes every exit forever**, no vote, no quorum, no collusion. With
+`proposalThresholdBps = 0`, the value shipped in `base-mainnet.json` (**M-6**), the attacker needs
 one `minDepositUsdc`.
 
 In `VaultCore` that flag *is* the Mode-F switch: `requestExit` queues instead of settling (`:445`)
-and `settleQueuedExit` reverts `ExecutionStillPending` (`:477`). **There is no cancel path** —
-`queuedExitShares` is written only at `:449` and zeroed only inside `settleQueuedExit`.
+and `settleQueuedExit` reverts `ExecutionStillPending` (`:477`). **There is no cancel path**. `queuedExitShares` is written only at `:449` and zeroed only inside `settleQueuedExit`.
 
 **And the vault cannot legislate its way out.** `_isSettled` counts only
 `Defeated | Executed | Expired` (`:504-506`), so a stuck proposal fails `propose`'s guard at
-`:223-226` — **no new proposal can be opened**, including the `RuleChange` that would repair the
+`:223-226`: **no new proposal can be opened**, including the `RuleChange` that would repair the
 config. `markExpired` and `_refreshStatus` both require `status == Passed`, so neither applies to a
 proposal pinned in `Active`.
 
 A second, equally permanent variant uses `executionWindow`: a `Passed` proposal whose payload
-preimage is never published can never execute — `propose` never validates that `actionHash`
-corresponds to any decodable payload (`:219`) — and `markExpired` requires
+preimage is never published can never execute: `propose` never validates that `actionHash`
+corresponds to any decodable payload (`:219`), and `markExpired` requires
 `block.timestamp > expiresAt`, 136 years away.
 
 **Measured** (`AuditExecutionWindowFreeze.t.sol`). The fixture is the project's own
@@ -355,14 +353,14 @@ The DoS pass independently reproduced this and added that **deposits keep workin
 capital continues to enter the trap.
 
 **This falsifies two documented guarantees.** **EE-10**: *"if a passed proposal expires unexecuted …
-queued exits settle at then-current NAV — no indefinite lock."* And **MO-1**: *"a broken governance
+queued exits settle at then-current NAV, no indefinite lock."* And **MO-1**: *"a broken governance
 loses forward pricing … never member liveness."* MO-1's `_pendingExecution` Mode-I fallback
 (`VaultCore.sol:462-468`) protects against a *broken* module; here governance functions correctly
 and truthfully answers `true` forever, so the fallback never fires. `VaultCore.sol:461` and `:472`
 repeat the claim in NatSpec.
 
 **Likelihood.** The creator picks these values unilaterally in `registerVault`, a separate
-transaction unordered relative to deposits and requiring no member consent — so the trap parameters
+transaction unordered relative to deposits and requiring no member consent, so the trap parameters
 can be chosen *after* capital has entered. An honest creator can also trip a partial version: even a
 well-intentioned 90-day `executionWindow` freezes all redemptions for 90 days on ordinary executor
 inaction.
@@ -385,12 +383,12 @@ Additionally decouple Mode F from proposals that have not passed, and allow a va
 
 ---
 
-### C-3 — A single price source returning malformed return data permanently bricks all pricing for every vault on that aggregator
+### C-3: A single price source returning malformed return data permanently bricks all pricing for every vault on that aggregator
 
 | | |
 |---|---|
 | **Severity** | **CRITICAL** (base High × immutable → Critical) |
-| **Status** | **CONFIRMED** — 5 tests (`AuditAggregatorDecodeBrick.t.sol`), independently reproduced by the lead auditor after the oracle pass raised it |
+| **Status** | **CONFIRMED**: 5 tests (`AuditAggregatorDecodeBrick.t.sol`), independently reproduced by the lead auditor after the oracle pass raised it |
 | **File** | `OracleAggregator.sol:88-90`; constructor `:60-72` |
 
 **Description.**
@@ -403,19 +401,19 @@ try IPriceSource(cfg.sources[i]).latestPrice() returns (uint256 p, uint256 updat
 
 Solidity decodes the returned buffer in the **caller's** frame *after* the callee returns
 successfully. A `catch` clause cannot absorb a decode failure. So a source returning anything other
-than ≥64 well-formed bytes makes `priceWad` revert **unconditionally — regardless of quorum** — and
+than ≥64 well-formed bytes makes `priceWad` revert **unconditionally, regardless of quorum**, and
 with **empty returndata**, not `StaleOracle`.
 
 This falsifies the contract's own stated contract at `:86-87`: *"A reverting source is simply not
-fresh — one broken feed must not trip the breaker while quorum still holds elsewhere."* True for a
+fresh, one broken feed must not trip the breaker while quorum still holds elsewhere."* True for a
 genuine `revert`; false for a malformed return.
 
-**Measured** (3 sources, quorum 2 — the shipped configuration):
+**Measured** (3 sources, quorum 2, the shipped configuration):
 
 | Third source behaviour | `priceWad` |
 |---|---|
 | well-formed `(uint256,uint256)` | ✓ returns the median |
-| **genuine `revert("boom")`** | **✓ absorbed — correctly not-fresh** (control) |
+| **genuine `revert("boom")`** | **✓ absorbed: correctly not-fresh** (control) |
 | returns 32 bytes | **revert, returndata `0x`** |
 | returns 0 bytes | **revert, returndata `0x`** |
 | **codeless address (a deploy typo)** | **revert, returndata `0x`** |
@@ -425,12 +423,12 @@ and fails for the adjacent one.
 
 **Two reachable paths.**
 
-*(a) Deploy-time typo — permanent brick.* `VaultFactory.sol:74,125` takes the aggregator as a
+*(a) Deploy-time typo, permanent brick.* `VaultFactory.sol:74,125` takes the aggregator as a
 creator-supplied, pre-deployed address, and the aggregator's constructor performs **no
 `code.length` check on any source**. One mistyped address makes the asset unpriceable forever, so
 every vault using that aggregator can never accept a deposit or settle an exit. Note the
 inconsistency within the same PR: `UniswapV3TwapSource.sol:178,204` and `PythSource.sol:102` both
-check `code.length > 0` on *their* dependencies — evidence this is an oversight, not a decision.
+check `code.length > 0` on *their* dependencies, evidence this is an oversight, not a decision.
 
 *(b) Creator-controlled hostage vector.* The creator is explicitly untrusted (`:42-44`: *"Floors are
 load-bearing (the creator is untrusted)"*). A creator-authored source can serve well-formed data
@@ -461,16 +459,16 @@ require(sources_[i][a].code.length > 0, BadOracleConfig());
 
 ---
 
-### C-4 — A depressed oracle price converts directly into theft of existing members' capital
+### C-4: A depressed oracle price converts directly into theft of existing members' capital
 
 | | |
 |---|---|
-| **Severity** | **CRITICAL** (already Critical — adjustment is a **no-op**) |
-| **Status** | **CONFIRMED** for the `VaultCore` half; the full chain is **composed, not executed in one transaction** — see *Scope of this confirmation* |
+| **Severity** | **CRITICAL** (already Critical: adjustment is a **no-op**) |
+| **Status** | **CONFIRMED** for the `VaultCore` half; the full chain is **composed, not executed in one transaction**: see *Scope of this confirmation* |
 | **File** | `VaultCore.sol:391` (`_mintShares`), `:335` (immediate mint) |
 
-**Description.** `_mintShares` mints `amountWad * totalShares / navWad()` — issuance is inversely
-proportional to reported NAV — and `deposit` (`:335`) mints **immediately, in the same transaction**,
+**Description.** `_mintShares` mints `amountWad * totalShares / navWad()`, issuance is inversely
+proportional to reported NAV, and `deposit` (`:335`) mints **immediately, in the same transaction**,
 for any member who has cleared the observation window (a one-time, per-member gate, so a returning
 depositor faces no delay). A depressed price is therefore convertible to excess shares atomically,
 and the excess is redeemable for real assets.
@@ -489,7 +487,7 @@ and the excess is redeemable for real assets.
 A second test confirms this is not a paper-NAV artifact: the attacker **withdraws** 733.33 wETH +
 916,667.71 USDC = 2,749,984.80 USD against 1,000,010 USD deposited.
 
-**Scope of this confirmation — stated precisely.** This test builds `VaultCore` over a `MockOracle`
+**Scope of this confirmation, stated precisely.** This test builds `VaultCore` over a `MockOracle`
 and sets the depressed price directly (the test's own header, lines 8-21, says so). It confirms the
 **`VaultCore` half** rigorously and takes the depressed price as given. The **oracle half** is
 confirmed separately: **C-3**, **H-1** and **M-1** each independently produce a wrong or
@@ -501,22 +499,22 @@ produces a 95.9% error under **H-2**'s conditions.
 
 **Note on direction.** The oracle findings bias **downward** (H-1's minimum, H-2's stale tick), and
 downward is exactly the exploitable direction here. The walkthrough's disposition of the even-`k`
-bias claims the opposite — see **H-1**.
+bias claims the opposite, see **H-1**.
 
 **Remediation.** This is the *consequence*; fixing C-3, H-1, H-2 and M-1 removes its trigger. As
-defence in depth, bound mint-time price movement — reject a deposit whose implied NAV per share
+defence in depth, bound mint-time price movement, reject a deposit whose implied NAV per share
 deviates from a recent reference beyond a tolerance. This is the "oracle-enforced mint-time
 freshness" option the threat model identifies under **E7/EE-5** and explicitly did not ship; C-4
 raises the cost of that omission considerably. **Requires redeploy + re-review of `VaultCore`'s
 deposit path.**
 
-> **REMEDIATION STATUS — CLOSED at `a ≤ 1`; RE-OPENED at `a ≥ 2` by C-6 (2026-08-28, Phase-2
-> re-verification).** The original claim here — "root cause closed by C-3/H-1/H-2/M-1" — was
+> **REMEDIATION STATUS: CLOSED at `a ≤ 1`; RE-OPENED at `a ≥ 2` by C-6 (2026-08-28, Phase-2
+> re-verification).** The original claim here, "root cause closed by C-3/H-1/H-2/M-1", was
 > **inference, and the Phase-2 end-to-end re-verification (`AuditC4EndToEnd.t.sol`) falsified it at
 > `a ≥ 2`.** Against a *correctly-curated* oracle (≥ 5 genuinely-independent sources, no single actor
 > controlling more than one), the trigger IS gone: a single adversarial source can never move the
 > lower median, verified at every fresh count down to quorum. BUT two adversarial sources (cheapest
-> case: a malicious vault creator listing two sources they control — passes every constructor check)
+> case: a malicious vault creator listing two sources they control, passes every constructor check)
 > seize the reported price the moment one honest leg withholds, re-opening C-4's measured 88.9%
 > theft through the real aggregator. This is **finding C-6** (the quorum prescription is a
 > fault-tolerance floor, silent on the Byzantine floor `quorum ≥ 2a+1`). C-4's VaultCore half is
@@ -527,28 +525,28 @@ deposit path.**
 > attacker-chosen price reaches `_mintShares` through real code [when at most one source is
 > adversarial], and the measured exploit's precondition no longer holds [under that assumption].
 > What remains is the *defence-in-depth* mint-time NAV-deviation bound only. It lands in
-> `VaultCore`, which currently has **1,014 B of EIP-170 headroom** — too tight to add it safely
-> alongside the other in-VaultCore fixes — so it is **deferred to the VaultCore-headroom sprint**
+> `VaultCore`, which currently has **1,014 B of EIP-170 headroom**, too tight to add it safely
+> alongside the other in-VaultCore fixes, so it is **deferred to the VaultCore-headroom sprint**
 > (see #40, #32) and tracked as the remaining, non-blocking half of #32. It is a second layer, not
 > the fix: the exploitable path is already closed. **Update:** M-15's deposit-side `minSharesOut`
 > overload has since shipped (Phase 2), giving a depositor a transaction-level bound against the
-> same anomaly — it **partially subsumes** this DiD at a fraction of the byte cost, so the stored-
+> same anomaly, it **partially subsumes** this DiD at a fraction of the byte cost, so the stored-
 > reference mint-time NAV band is now lower priority still.
 
 ---
 
-### C-5 — Voting weight survives a full exit: stake held for one block boundary can pass a proposal after the capital has been withdrawn
+### C-5: Voting weight survives a full exit: stake held for one block boundary can pass a proposal after the capital has been withdrawn
 
 | | |
 |---|---|
-| **Severity** | **CRITICAL** (base High × immutable → Critical). **Capital precondition, stated up front:** the attacker must actually acquire enough stake to carry the vote, and hold it across a deposit→exit round trip. That is not free — see *Cost, stated precisely* below. The rating rests on total impact plus the removal of the design's core alignment, not on the attack being cheap. |
-| **Status** | **CONFIRMED** — 2 tests (`AuditVoteAfterExit.t.sol`), including a passing control |
+| **Severity** | **CRITICAL** (base High × immutable → Critical). **Capital precondition, stated up front:** the attacker must actually acquire enough stake to carry the vote, and hold it across a deposit→exit round trip. That is not free: see *Cost, stated precisely* below. The rating rests on total impact plus the removal of the design's core alignment, not on the attack being cheap. |
+| **Status** | **CONFIRMED**: 2 tests (`AuditVoteAfterExit.t.sol`), including a passing control |
 | **Files** | `Governance.sol:269`, `:299`, `:326`, `:393`, `:519-521`; `VaultCore.sol:445`, `:453-455`, `:529`; `lib/Checkpoints.sol:36-45` |
 
 **Description.** Every weight read in `Governance` is
 `pastVotingEligibleShares(voter, p.createdAt - 1)`, and `Checkpoints.getAt` returns the last
 checkpoint **at or before** that timestamp. The checkpoint written when a member **exits** is
-stamped at the current block — strictly after `createdAt - 1` — so it is **invisible to a proposal
+stamped at the current block, strictly after `createdAt - 1`, so it is **invisible to a proposal
 already in flight**. There is no current-balance check at `commitVote`, `revealVote`,
 `revealDelegated`, `applyStandingDefault`, or `finalize`.
 
@@ -557,12 +555,12 @@ Critically, the exit also **settles instantly and in full**: `hasPendingExecutio
 entire commit phase**. So `requestExit` takes the Mode-I branch and pays the member out immediately,
 at pre-rebalance NAV.
 
-**Exploit path — confirmed end to end by test.**
+**Exploit path, confirmed end to end by test.**
 1. Attacker calls `skipWindow()` (permissionless, unconditional) and deposits a dominant position;
    it mints immediately.
 2. One block later (2 s on Base), attacker calls `propose(...)`. Snapshots read `createdAt - 1`, so
    the stake counts.
-3. Attacker immediately calls `requestExit(all)` — still inside the commit phase, so
+3. Attacker immediately calls `requestExit(all)`, still inside the commit phase, so
    `hasPendingExecution` is **false** and the exit **settles Mode I, instantly, in full**. Test
    asserts `sharesOf(attacker) == 0`, `queuedExitShares(attacker) == 0`, and capital returned.
 4. Attacker commits and reveals FOR with the full snapshot weight. `revealVote` **does not revert**
@@ -571,15 +569,15 @@ at pre-rebalance NAV.
 
 **Cost, stated precisely.** An earlier draft of this finding said "capital is exposed for one
 block." That was wrong and is corrected here. The attacker holds the position from the deposit
-until the exit lands — the deposit block, the boundary, and the propose/exit block, i.e. **at least
-two blocks** — and because `_mintShares` and `_settleExit` both price at current NAV, the real cost
+until the exit lands, the deposit block, the boundary, and the propose/exit block, i.e. **at least
+two blocks**, and because `_mintShares` and `_settleExit` both price at current NAV, the real cost
 is round-trip price risk on a dominant position across that window, plus the exit fee (capped at
 100 bps, and **zero** in any vault setting `exitFeeMaxBps == 0`, which `VaultCore.sol:213-216`
 permits and the test uses). On Base that window is a handful of seconds, so the risk is small in
 expectation but it is **not zero and not free**.
 
 What the attacker escapes is far larger: all price exposure across the **reveal phase, the
-timelock, and the execution window** — days at any sane configuration, and up to 30 days of
+timelock, and the execution window**, days at any sane configuration, and up to 30 days of
 timelock alone at the hard cap. That is precisely the alignment the timelock and forward-pricing
 design depend on: the design assumes whoever authorizes a rebalance still owns the position when it
 executes. Here they do not, and they never did after the snapshot block.
@@ -592,14 +590,14 @@ Composed with **H-4** (`minAmountOut` unbounded) this is a complete drain primit
 vault, not only sub-vaults; composed with **M-8** (opaque `actionHash`) voters cannot even see what
 they are approving.
 
-**Control test passes:** VO-9 is correctly implemented in the direction it claims — stake acquired
+**Control test passes:** VO-9 is correctly implemented in the direction it claims, stake acquired
 *after* proposal creation carries zero weight and `commitVote` reverts `NoWeight`. The defect is
 that VO-9 says nothing about the **withdrawal** direction, which is the profitable one.
 
 **This also subsumes EE-10's stated Mode-F mitigation.** EE-10 claims *"Mode-F-locked shares lose
 voting eligibility at queue time."* Tracing it: `requestExit`'s Mode-F path calls `_snapshot` at the
 *current* timestamp while Governance reads `createdAt - 1`, so the lock removes eligibility only
-from *future* proposals — never from the one that motivated the queue. And in the commit phase the
+from *future* proposals, never from the one that motivated the queue. And in the commit phase the
 member does not even need to queue; they simply exit.
 
 **Remediation.** Take the minimum of snapshot and current eligible weight at every read:
@@ -615,36 +613,36 @@ sites in `Governance`.**
 
 ---
 
-### C-6 — The oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor: two adversarial sources seize the reported price and re-open C-4
+### C-6: The oracle quorum prescription is a fault-tolerance floor, silent on the Byzantine floor: two adversarial sources seize the reported price and re-open C-4
 
 | | |
 |---|---|
 | **Severity** | **CRITICAL** (re-opens C-4's measured theft under a config that passes every check; tier is config/curation-conditional, so an auditor may re-rate to High) |
-| **Status** | **CONFIRMED — executed end-to-end** (`AuditC4EndToEnd.t.sol`, 7 tests), Phase-2 re-verification |
+| **Status** | **CONFIRMED: executed end-to-end** (`AuditC4EndToEnd.t.sol`, 7 tests), Phase-2 re-verification |
 | **Files** | `OracleAggregator.sol:73-76` (the prescription), `:117`, `:131` (lower-median selection) |
 
-**Discovery.** This finding was surfaced by the Phase-2 re-verification of C-4 — the pass that replaced the report's *inference* ("fixing C-3/H-1/H-2/M-1 removes C-4's trigger") with an executed end-to-end test driving a **real** `OracleAggregator` (not a directly-set `MockOracle`) into a `VaultCore` deposit.
+**Discovery.** This finding was surfaced by the Phase-2 re-verification of C-4, the pass that replaced the report's *inference* ("fixing C-3/H-1/H-2/M-1 removes C-4's trigger") with an executed end-to-end test driving a **real** `OracleAggregator` (not a directly-set `MockOracle`) into a `VaultCore` deposit.
 
-**The gap.** The H-1 remediation and the shipped NatSpec (`OracleAggregator.sol:73-75`) prescribe **"m ≥ 5, quorum ≥ 3"** and assert the lower median is "bounded by the honest set" (`:129-131`). That is the **fault-tolerance** floor — correct against *benign* withholdings (with `a = 0` controlled sources, `k` can fall to 3 and the median stays honest). It is **silent on the Byzantine floor.** With lower-median selection `fresh[(k-1)/2]` (`:131`, deliberately un-averaged to avoid even-`k` swing), an actor controlling `a` sources owns the reported price once the fresh count `k ≤ 2a`. Because `k` falls to the quorum via ordinary withholding, **at m=5 / quorum 3 a single honest leg withholding drops `k` to 4, and two adversarial sources then own `fresh[1]`.**
+**The gap.** The H-1 remediation and the shipped NatSpec (`OracleAggregator.sol:73-75`) prescribe **"m ≥ 5, quorum ≥ 3"** and assert the lower median is "bounded by the honest set" (`:129-131`). That is the **fault-tolerance** floor, correct against *benign* withholdings (with `a = 0` controlled sources, `k` can fall to 3 and the median stays honest). It is **silent on the Byzantine floor.** With lower-median selection `fresh[(k-1)/2]` (`:131`, deliberately un-averaged to avoid even-`k` swing), an actor controlling `a` sources owns the reported price once the fresh count `k ≤ 2a`. Because `k` falls to the quorum via ordinary withholding, **at m=5 / quorum 3 a single honest leg withholding drops `k` to 4, and two adversarial sources then own `fresh[1]`.**
 
 **Why the withholding is routine, not hypothetical.** The k-reducing leg is supplied by shipped code and documented steady state: the honest TWAP source going quiet **fails closed by the H-2 fix's own logic** (a pool quiet past `window/20` withholds), and `base-mainnet.json` records the cbETH Pyth leg observed live at **2549 s** stale. *Fail-closed at the source becomes fail-open at the aggregator.*
 
-**Measured** (`AuditC4EndToEnd.t.sol`, real aggregator → deposit): with two creator-controlled sources depressed to 4% and the honest TWAP quiet, the aggregator itself reports the depression; attacker turns 1,000,000 USDC into a **2,777,762 USD** claim; victim value **1,000,000 → 111,124 USD (−88.9%)**; in-kind exit realises **733.33 wETH + 916,668 USDC = 2,749,985 USD**. Identical to C-4's table — because it IS C-4, now driven through the real oracle.
+**Measured** (`AuditC4EndToEnd.t.sol`, real aggregator → deposit): with two creator-controlled sources depressed to 4% and the honest TWAP quiet, the aggregator itself reports the depression; attacker turns 1,000,000 USDC into a **2,777,762 USD** claim; victim value **1,000,000 → 111,124 USD (−88.9%)**; in-kind exit realises **733.33 wETH + 916,668 USDC = 2,749,985 USD**. Identical to C-4's table, because it IS C-4, now driven through the real oracle.
 
-**Cheapest instantiation: the vault creator.** The creator chooses the source list. Two sources they control pass **every** constructor check — `test_hostileConfigPassesEveryConstructorCheck` proves 5 distinct code-bearing addresses at quorum 3 satisfy `MIN_SOURCES`, `MIN_MEDIAN`, the strict-majority rule and M-1's distinctness loop. A member reading "5 sources, quorum 3" cannot tell it assumes ≤ 1 hostile.
+**Cheapest instantiation: the vault creator.** The creator chooses the source list. Two sources they control pass **every** constructor check: `test_hostileConfigPassesEveryConstructorCheck` proves 5 distinct code-bearing addresses at quorum 3 satisfy `MIN_SOURCES`, `MIN_MEDIAN`, the strict-majority rule and M-1's distinctness loop. A member reading "5 sources, quorum 3" cannot tell it assumes ≤ 1 hostile.
 
 **The boundary, derived and asserted.** An actor controlling `a` of the fresh `k` owns the lower median iff `k ≤ 2a`. Safety therefore requires **`quorum ≥ 2a + 1`** (Byzantine floor); to also tolerate `f` benign withholdings, **`m ≥ 2a + f + 1`**. At quorum 3 the config tolerates **exactly `a = 1`**. Executed evidence for both directions: `test_safe_oneControlledSource_medianHoldsAsHonestLegsWithhold` (a=1 holds at k=5,4,3) and `test_residual_twoControlledSources_oneHonestWithholds_k4_setsDepressedPrice` / `_k3_` (a=2 seizes the price).
 
 **No clean code fix at m=5.** The two floors pull against each other: tolerating `a=2` needs `quorum ≥ 5`, which at `m=5` is **zero** fault tolerance; genuine `a=2`-with-fault-tolerance needs `m ≥ 7`. So the code cannot both tolerate two adversarial sources and survive one benign withholding at five sources. A true (averaged) median would soften but not close it (two lows still halve the price) and re-introduces the even-`k` swing H-1's lower-median chose to avoid.
 
-**Remediation.** This is a **listing/curation requirement**, the same shape as C-1 (root-only) and H-8 (meaningful minDeposit): the code cannot see `a`. (1) **Corrected prescription** — `quorum ≥ 2a + 1` and `m ≥ 2a + f + 1` for the threat model's assumed adversarial-source count `a`; the shipped "m≥5/quorum≥3" is `a=1, f=2` only. Recorded in the `OracleAggregator` NatSpec (`:73-76`, `:129-131`), THREAT-MODEL SF-1 (now quantitative), `base-mainnet.json` `rebuildChecklist`, and this report. (2) **Curation** — sources must be genuinely independent (SF-1) *and* no single actor may control ≥ 2 of them; a permissionless creator listing their own sources is the adversary in the cheapest case, so a launch must either curate/attest oracle configs or raise `m`/quorum for the assumed `a`. (3) **Disclosure** — flag to the external auditor as a **new** finding and the mechanism decision they should settle. **Launch-blocking: gate 0 does not clear while this is open.**
+**Remediation.** This is a **listing/curation requirement**, the same shape as C-1 (root-only) and H-8 (meaningful minDeposit): the code cannot see `a`. (1) **Corrected prescription**, `quorum ≥ 2a + 1` and `m ≥ 2a + f + 1` for the threat model's assumed adversarial-source count `a`; the shipped "m≥5/quorum≥3" is `a=1, f=2` only. Recorded in the `OracleAggregator` NatSpec (`:73-76`, `:129-131`), THREAT-MODEL SF-1 (now quantitative), `base-mainnet.json` `rebuildChecklist`, and this report. (2) **Curation**, sources must be genuinely independent (SF-1) *and* no single actor may control ≥ 2 of them; a permissionless creator listing their own sources is the adversary in the cheapest case, so a launch must either curate/attest oracle configs or raise `m`/quorum for the assumed `a`. (3) **Disclosure**, flag to the external auditor as a **new** finding and the mechanism decision they should settle. **Launch-blocking: gate 0 does not clear while this is open.**
 
-> **Strongest candidate resolution — use Chainlink Data Feeds directly instead of the custom
-> aggregator (owner direction, 2026-08-28).** The entire oracle-finding class — C-3, C-4, C-6, H-1,
-> H-2, H-3, M-1, M-14 — lives in the *custom* multi-source median aggregation (`OracleAggregator` +
+> **Strongest candidate resolution, use Chainlink Data Feeds directly instead of the custom
+> aggregator (owner direction, 2026-08-28).** The entire oracle-finding class: C-3, C-4, C-6, H-1,
+> H-2, H-3, M-1, M-14, lives in the *custom* multi-source median aggregation (`OracleAggregator` +
 > the TWAP/Pyth source adapters this protocol wrote). A Chainlink Data Feed is itself a
 > decentralized aggregation of many independent, reputation-staked node operators with published
-> deviation-threshold + heartbeat guarantees and years of mainnet Byzantine-fault tolerance — i.e.
+> deviation-threshold + heartbeat guarantees and years of mainnet Byzantine-fault tolerance, i.e.
 > it already solves, at the network layer, the very `quorum ≥ 2a+1` problem C-6 is about, far beyond
 > what a per-vault 5-source median can. Consuming a Chainlink feed directly (with a thin staleness +
 > L2-sequencer-uptime check) would **delete the custom-aggregation attack surface and most of the
@@ -653,21 +651,21 @@ sites in `Governance`.**
 > the recommended direction over hardening the bespoke aggregator; the mechanism decision (Chainlink-
 > direct vs. curated custom aggregator with `quorum ≥ 2a+1`) is for the owner + external auditor.
 > This also reflects a standing owner principle: **prefer mature, audited external infrastructure
-> over bespoke re-implementations** — a bespoke oracle aggregator competing with Chainlink's
+> over bespoke re-implementations**, a bespoke oracle aggregator competing with Chainlink's
 > node-operator network is exactly the kind of surface to outsource rather than harden.
 >
 > **IMPLEMENTED (2026-08-28): `contracts/src/oracle/ChainlinkOracle.sol`.** An additive
 > `IOracleAggregator` (a VaultCore can be deployed with it in the `oracle_` slot, no VaultCore
-> change) that prices each asset from ONE Chainlink Data Feed — no median, no quorum, no per-vault
-> source set — so C-6's median-gaming has **no surface to exist**. Fail-closed on every bad read
+> change) that prices each asset from ONE Chainlink Data Feed, no median, no quorum, no per-vault
+> source set, so C-6's median-gaming has **no surface to exist**. Fail-closed on every bad read
 > (revert/zero/negative/unset/future/stale), a per-asset **sane-price band** (the depeg-clamp
 > defence, since Chainlink deprecated on-aggregator min/maxAnswer), the **Base L2 sequencer-uptime
 > guard** (down/grace), decimals→WAD normalization, and a USDC pin; construction decode-proves every
 > feed. 32 tests (`ChainlinkOracle.t.sol`), 1,532 B. Two adversarial reviews (via workflow) confirm
-> the logic is correct and it eliminates the finding class **by deletion** — the strongest form. The
+> the logic is correct and it eliminates the finding class **by deletion**, the strongest form. The
 > reviewers' recommendation: adopt Chainlink-direct as the **launch default** and make the custom
 > `OracleAggregator` **non-deployable** (leaving it user-selectable re-imports C-6 for any vault that
-> picks it — a factory-level oracle gate is the next step, an owner decision). Standard Chainlink
+> picks it, a factory-level oracle gate is the next step, an owner decision). Standard Chainlink
 > Data Feeds are **free to consume on-chain** (gas only; Data Streams/VRF/CCIP are the metered
 > products). Accepted tradeoffs, documented: single-provider dependency (feed freeze fails the asset
 > closed, no fallback), assets without a Chainlink feed cannot be listed, and the deviation-band NAV
@@ -679,31 +677,31 @@ sites in `Governance`.**
 > (`OracleNotAllowed`); an empty allowlist disables enforcement (local/tests / a deliberately
 > permissionless post-audit deployment). This is what actually CLOSES C-6 as a class for a launch:
 > a permissionless creator can otherwise supply a weak custom `OracleAggregator` OR a
-> `ChainlinkOracle` over a creator-controlled FAKE `AggregatorV3` — both pass their own constructor
+> `ChainlinkOracle` over a creator-controlled FAKE `AggregatorV3`, both pass their own constructor
 > checks, and the factory cannot tell a genuine feed from a fake on-chain, so **curation is the only
 > sound defence**. At launch the factory is deployed with the blessed `ChainlinkOracle` instance(s)
 > (over verified genuine Chainlink feeds); the custom aggregator is thereby non-selectable. Same
 > shape as `allowSubVaults` (C-1). Regression: `AuditOracleAllowlist.t.sol`. **Remaining to clear
 > gate 0: the mainnet deploy config must POPULATE the allowlist with real blessed-oracle addresses
-> (an empty allowlist ships enforcement OFF — `Deploy.s.sol` carries a loud warning), and the
+> (an empty allowlist ships enforcement OFF: `Deploy.s.sol` carries a loud warning), and the
 > external audit must sign off.**
 
 ---
 
 ## HIGH
 
-### H-1 — `OracleAggregator`'s lower median degenerates to `min()` at two fresh sources, in the documented mainnet configuration
+### H-1: `OracleAggregator`'s lower median degenerates to `min()` at two fresh sources, in the documented mainnet configuration
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **CONFIRMED** — 5 tests (`AuditAggregatorLowerMedian.t.sol`) |
+| **Status** | **CONFIRMED**: 5 tests (`AuditAggregatorLowerMedian.t.sol`) |
 | **File** | `OracleAggregator.sol:106`; constructor bound `:65` |
 
-The aggregator returns `fresh[(k-1)/2]`. At `k == 2` that is `fresh[0]` — the **minimum**. The
+The aggregator returns `fresh[(k-1)/2]`. At `k == 2` that is `fresh[0]`, the **minimum**. The
 constructor permits it: `quorum_[i] > m / 2` with `m == 3` yields `quorum >= 2`, and `k >= quorum`
-allows `k == 2`. The in-code claim at `:104-105` — *"Majority-fresh quorum guarantees the middle
-element is bounded by the honest set"* — is true for `k >= 3` and **false at `k == 2`**, as is
+allows `k == 2`. The in-code claim at `:104-105`, *"Majority-fresh quorum guarantees the middle
+element is bounded by the honest set"*, is true for `k >= 3` and **false at `k == 2`**, as is
 `:60-61`'s *"no single source can freeze **or move** an asset."*
 
 **This is the documented mainnet plan, in its own documented expected state.**
@@ -715,20 +713,20 @@ code comments. The project documented the `k == 2` state repeatedly **as a redun
 without noticing that at `k == 2` the aggregation function itself changes from median to minimum.
 
 **Measured:** at `k=3` with one source manipulated to 1 wei the median holds at 2490 (control passes
-— the design works at odd `k`); at `k=2` the same manipulation yields **1 wei**. A *reverting*
+, the design works at odd `k`); at `k=2` the same manipulation yields **1 wei**. A *reverting*
 source also produces the `k=2` regime, so any source can induce it by failing. Bias is
 one-directional: **downward**. Even with no attacker, at `k=4` a single quiet source moved the
 reported price 0.8%.
 
 **The prior disposition is not merely undocumented but inverted.**
 `walkthroughs/OracleAggregator.md` accepts the even-`k` bias because it *"mints fewer shares, pays
-exiters less — conservative for remainers."* Both halves are backwards: `VaultCore.sol:391` mints
+exiters less, conservative for remainers."* Both halves are backwards: `VaultCore.sol:391` mints
 `amountWad * ts / navWad()`, so a **lower** NAV mints **more** shares; and the exit payout (`:538`)
-is in-kind pro-rata and **price-independent**, so exiters are not paid less — a lower price only
+is in-kind pro-rata and **price-independent**, so exiters are not paid less, a lower price only
 reduces or zeroes their performance fee (`:582-605`). The bias runs toward profit in *both* consuming
 paths.
 
-**There is no inter-source deviation check anywhere** — no bound on `max(fresh)/min(fresh)`, no
+**There is no inter-source deviation check anywhere**, no bound on `max(fresh)/min(fresh)`, no
 per-asset floor/ceiling, no rate-of-change limit. The median is the only defence, and at `k = 2` it
 is not one.
 
@@ -746,12 +744,12 @@ re-review of every aggregator instance, plus revision of `DEPLOYMENT.md` §2 and
 
 ---
 
-### H-2 — `UniswapV3TwapSource` reports a stale tick as zero seconds old, and the constructor never requires `maxObservationAge < window`
+### H-2: `UniswapV3TwapSource` reports a stale tick as zero seconds old, and the constructor never requires `maxObservationAge < window`
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **CONFIRMED** — 10 tests across three files |
+| **Status** | **CONFIRMED**: 10 tests across three files |
 | **Files** | `UniswapV3TwapSource.sol:255`, `:165-239` (bounds validated independently at `:175`, `:177`), `:285-303` |
 
 **Description.** `_meanTick` calls `observe([window, 0])`. In Uniswap v3-core, `observeSingle`
@@ -763,40 +761,40 @@ synthesizes its endpoint from the newest stored observation using the **current 
 liveWeight = min(A, W) / W
 ```
 
-— continuous in `A`, reaching 1.0 once the pool has been quiet for `W`. Confirmed **exactly**
+, continuous in `A`, reaching 1.0 once the pool has been quiet for `W`. Confirmed **exactly**
 (`assertEq`, no tolerance): at `A = 900` on `W = 1800` the reported price equals a genuine TWAP of
 the 50/50-blended tick, monotone across `A ∈ {300, 600, 900, 1200}`.
 
 Guard 3 (`:286-291`) bounds `A` against `maxObservationAge`; guard 2 (`:295-303`) bounds only the
 *oldest* observation. **Neither compares the newest observation against `window`**, and the
-constructor validates `window` and `maxObservationAge` **independently** — it never requires
+constructor validates `window` and `maxObservationAge` **independently**, it never requires
 `maxObservationAge < window`. The shipped `base-mainnet.json` pins `1800 / 3600`, so `A` may reach
 **2× the window**; the ceilings permit `300 / 86400`, i.e. **288×** (confirmed by test).
 
 Throughout, `latestPrice` hardcodes `updatedAt = block.timestamp` (`:255`). **Confirmed:** with the
 newest observation 3400 s old the source votes and stamps itself zero seconds old. The aggregator's
-staleness bound — even a 60-second one — is *structurally incapable* of rejecting it. The contract's
+staleness bound, even a 60-second one, is *structurally incapable* of rejecting it. The contract's
 notice at `:96-97` claims guards (1)–(3) *"are what make the `updatedAt = block.timestamp`
 convention honest"*; they do not.
 
-**Corrected scope — a claim this audit refuted against itself.** An earlier draft asserted
+**Corrected scope, a claim this audit refuted against itself.** An earlier draft asserted
 single-block manipulability, measuring a 96% price collapse. **That claim is refuted and recorded
 here rather than quietly dropped.** The measurement used a harness that moved the tick *without
 writing an observation*, which is **not reachable on a real pool**: `slot0.tick` changes only inside
 `swap`, which calls `observations.write(...)` stamping the **pre-swap** tick at `block.timestamp`,
-resetting `A` to zero. A dedicated test now pins the refutation — on a pool quiet *longer* than the
+resetting `A` to zero. A dedicated test now pins the refutation, on a pool quiet *longer* than the
 window, a faithful manipulating swap moves the reported price by **exactly nothing** in that block.
 The oracle pass reached the same conclusion independently against its own transcription of upstream
 `Oracle.sol`.
 
 An attacker therefore cannot *manufacture* contamination; they can only inherit it from an
-already-quiet pool and must then hold an off-market tick, un-arbitraged, to accrue weight — the
+already-quiet pool and must then hold an off-market tick, un-arbitraged, to accrue weight, the
 standard, intended TWAP cost model.
 
 **What genuinely survives** is the freshness misreport, and it needs no attacker: an honest pool that
 simply stops trading yields an arithmetically-correct TWAP of a tick up to `maxObservationAge` old,
 presented as current. Combined with **H-1**, that stale leg can *be* the price whenever `k == 2`.
-Exposure is worst where least noticed — thin secondary pools, and shared pools
+Exposure is worst where least noticed, thin secondary pools, and shared pools
 (`base-mainnet.json` notes the WETH/USDC 0.05% pool is `poolA` for WETH and `poolB` for cbETH, so
 one quiet pool degrades both assets at once).
 
@@ -811,12 +809,12 @@ unchecked {
 and remove `maxObservationAge` as an independent knob, or at minimum
 `require(maxObservationAge_ < window_)`. Alternatively return `updatedAt = newestObservationTimestamp`
 so the aggregator's own bound applies. The naive fix `require(now - newestTs < window)` was tested
-and is **insufficient** — it caps live weight just below 1.0, still permitting a >90% error.
+and is **insufficient**, it caps live weight just below 1.0, still permitting a >90% error.
 **Requires redeploy + re-review of the source and every aggregator configured with it.**
 
 ---
 
-### H-3 — The repository's own V3 mock makes H-2's entire defect class undetectable by its own test suite
+### H-3: The repository's own V3 mock makes H-2's entire defect class undetectable by its own test suite
 
 | | |
 |---|---|
@@ -831,7 +829,7 @@ tc[i] = int56(tick) * int56(uint56(uint32(block.timestamp) - secondsAgos[i]));
 
 The mock backing every TWAP test generates cumulatives from a single current `tick`; no stored
 observation history drives `observe()`. Under this model a correct historical TWAP and a live-tick
-extrapolation are **numerically identical** — the mock's behaviour *is* the bug in H-2. The entire
+extrapolation are **numerically identical**, the mock's behaviour *is* the bug in H-2. The entire
 Sprint-11 oracle suite (`UniswapV3TwapSource.t.sol`, `MixedOracleSources.t.sol`, 58 tests) is
 structurally incapable of distinguishing a working TWAP from a spot price, and no assertion in it
 can fail for this class of defect.
@@ -846,12 +844,12 @@ cannot fail in the relevant way.
 **Remediation.** Replace the linear mock with an observation-ring mock reproducing
 `transform`-from-newest semantics; `FaithfulV3Pool` in
 `contracts/test/audit/AuditTwapSpotDegeneration.t.sol` is a working reference. Re-run the Sprint-11 suite
-against it and treat every newly failing test as a finding. **Test-only change — no redeploy, but it
+against it and treat every newly failing test as a finding. **Test-only change, no redeploy, but it
 must precede re-review of H-2's fix.**
 
 ---
 
-### H-4 — The threat model's EX-2 slippage mitigation is not implemented
+### H-4: The threat model's EX-2 slippage mitigation is not implemented
 
 | | |
 |---|---|
@@ -867,8 +865,8 @@ The measured-delta check is a genuine and well-implemented defence against EX-3 
 is frequently conflated with a slippage bound. It is not one: measuring honestly against a floor of
 1 wei still yields 1 wei.
 
-The selector allow-list constrains the call *target* — which genuinely defeats the
-SwapNet/Aperture target-substitution class — and the first four bytes of `routeData`, but **nothing
+The selector allow-list constrains the call *target*, which genuinely defeats the
+SwapNet/Aperture target-substitution class, and the first four bytes of `routeData`, but **nothing
 past byte 4**. For SwapRouter02 that leaves the entire `path` (any pool sequence, including a
 freshly created attacker-owned pool), `recipient`, `amountIn` and `sqrtPriceLimitX96` unconstrained,
 and the adapter never cross-checks them against `order.tokenIn/tokenOut/amountIn`. The header
@@ -879,7 +877,7 @@ does not.
 o.minAmountOut` on its own balance delta and `:788-794` refunds from this swap's own `spent`, so even
 a fully hostile allow-listed adapter cannot cost the vault more than the governance-set
 `amountIn − minAmountOut`. The residual is therefore exactly the size of the unbounded
-`minAmountOut` — which C-1 and C-5 show is attacker-chosen.
+`minAmountOut`, which C-1 and C-5 show is attacker-chosen.
 
 **Remediation.** Bound `minAmountOut` against the vault's own oracle inside `executeRebalance`, with
 `maxSlippageBps` as an immutable per-vault constructor parameter:
@@ -888,23 +886,23 @@ uint256 inValueWad  = o.amountIn * _priceOf(o.tokenIn) / _unitOf(o.tokenIn);
 uint256 floorOutWad = inValueWad * (BPS - maxSlippageBps) / BPS;
 require(o.minAmountOut * _priceOf(o.tokenOut) / _unitOf(o.tokenOut) >= floorOutWad, MinOutTooLow());
 ```
-This makes rebalancing depend on oracle liveness — consistent with the rest of the design, but it
+This makes rebalancing depend on oracle liveness, consistent with the rest of the design, but it
 should be stated. **Requires redeploy + re-review of `VaultCore`'s execution path.**
 
 ---
 
-### H-5 — Child positions are marked at gross look-through value; realization cost is never accrued, so the first exiter extracts it
+### H-5: Child positions are marked at gross look-through value; realization cost is never accrued, so the first exiter extracts it
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **CONFIRMED** — executing PoC from the accounting pass |
+| **Status** | **CONFIRMED**: executing PoC from the accounting pass |
 | **Files** | `VaultCore.sol:268-275`, `:281-297`, `:513-576` |
 
 `_childValueWad` values the parent's child position at the child's **gross** NAV fraction. Realizing
 any part of it always returns strictly less, because the child's `_settleExit` deducts its tenure
 exit fee (`:504-506`), its 10% performance fee on the parent's realized gain (`:583-605`), and
-in-kind slice truncation (`:538`). Nothing in the parent accrues that drag — `navWad`,
+in-kind slice truncation (`:538`). Nothing in the parent accrues that drag: `navWad`,
 `navPerShareWad` and `cashTargetWad` (`:517`) all use the gross mark.
 
 Because SV-5 satisfies the cash leg from `idleUsdc` first, an exiter whose target is covered by idle
@@ -913,7 +911,7 @@ realization drag with whoever stays.
 
 **Worked example (PoC passes).** Two equal 1,000 USDC deposits; 400 allocated to a child that
 doubles. Child marked $800, realizable $760. Fair 50/50 split of realizable = $1,180 each. Alice
-exits first at a $1,200 gross / $1,180 net cash target, covered by idle — child untouched
+exits first at a $1,200 gross / $1,180 net cash target, covered by idle, child untouched
 (asserted). The remaining member then receives $1,160 gross / $1,144 net. **$18 net moved from the
 remaining member to the first exiter** on identical deposits and identical share counts.
 
@@ -921,35 +919,34 @@ This violates ARCHITECTURE §4.6's unconditional *"NAVps for remaining members i
 across any redemption."* The PoC asserts `navPerShareWad` is **exactly unchanged** across the exit.
 
 **Why the suite cannot see it.** `SystemInvariant.t.sol:87` asserts
-`parent.navPerShareWad() + 2 >= psBefore` — it measures the very quantity that is mis-marked, so the
+`parent.navPerShareWad() + 2 >= psBefore`, it measures the very quantity that is mis-marked, so the
 leak is invisible to it by construction. `SubVaults.t.sol:231
 test_exitDrawsIdleFirst_childUntouched` asserts this exact behaviour **as correct**.
 
-**Remediation.** Mark child positions net of the realization cost the child would actually charge —
-its `keepBps` and expected `feeFrac` are readable — or accrue the drag to the exiting member rather
+**Remediation.** Mark child positions net of the realization cost the child would actually charge (its `keepBps` and expected `feeFrac` are readable), or accrue the drag to the exiting member rather
 than the remainers. **Requires redeploy + re-review of the look-through valuation and
 `_settleExit`'s cash-target computation.**
 
 ---
 
-### H-6 — The SV-5 child unwind is sized gross but repaid net, making `ExitNeedsChildSettlement` structurally unsatisfiable
+### H-6: The SV-5 child unwind is sized gross but repaid net, making `ExitNeedsChildSettlement` structurally unsatisfiable
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **CONFIRMED** — executing PoCs from the accounting and DoS passes independently |
+| **Status** | **CONFIRMED**: executing PoCs from the accounting and DoS passes independently |
 | **Files** | `VaultCore.sol:548-576`, esp. `:556-557`, `:559-571`, `:576` |
 
 The shortfall loop sizes `cs = childShares * takeWad / cv` from the **gross** child value, requesting
-`takeWad` gross — but the child pays `takeWad × keepBps/BPS × (1 − feeFrac)`. `:571` correctly
+`takeWad` gross, but the child pays `takeWad × keepBps/BPS × (1 − feeFrac)`. `:571` correctly
 reduces the shortfall by what *actually arrived* (the E5 fix), so a residual always survives; `++i`
 advances unconditionally so **no child is ever revisited**; and
 `require(shortfallWad <= SHORTFALL_DUST_WAD)` (`:576`, tolerance 1e-6 USD) reverts the whole exit.
 
 **Three independent triggers, all confirmed:**
-- **In-kind truncation alone** — no fee, no gain, no price move. An 8-decimal child asset leaves a
+- **In-kind truncation alone**, no fee, no gain, no price move. An 8-decimal child asset leaves a
   fraction-of-a-unit residue ≈ 5e14 WAD against a 1e12 tolerance (**500×** over).
-- **Any unrealized gain in the child** — the 10% performance fee leaves ~$25 residue on a $500
+- **Any unrealized gain in the child**, the 10% performance fee leaves ~$25 residue on a $500
   shortfall (**~2.5e19 WAD**, 7 orders over). This is the unconditional variant.
 - **Any child exit fee**, whenever the parent is not the child's sole holder (`:505` waiver does
   not apply).
@@ -960,7 +957,7 @@ $1,000 shortfall needs `k >= 9` children to fall under tolerance, and `MAX_CHILD
 **The honest statement of impact.** This is *not* a permanent vault-wide lock: a partial exit covered
 by parent idle succeeds, and governance can call `redeemFromChild` to top up idle. The accurate
 claim is that **a member cannot exit the child-backed fraction of their position without a passing
-governance vote** — converting an unconditional exit right into a governance-liveness dependency,
+governance vote**, converting an unconditional exit right into a governance-liveness dependency,
 precisely what SV-5 was written to avoid. Once idle is drained, every member is blocked at every
 size, including a one-share exit (asserted).
 
@@ -975,12 +972,12 @@ instead of reverting. **Requires redeploy + re-review of `_settleExit`'s shortfa
 
 ---
 
-### H-7 — A frozen child governance permanently strands the parent's exit path, and closes the governance rescue with it
+### H-7: A frozen child governance permanently strands the parent's exit path, and closes the governance rescue with it
 
 | | |
 |---|---|
 | **Severity** | **HIGH** |
-| **Status** | **CONFIRMED** — executing test from the DoS pass |
+| **Status** | **CONFIRMED**: executing test from the DoS pass |
 | **Files** | `VaultCore.sol:548-576`, `:553`, `:707-708`, `:722-728`; `Governance.sol:519-521` |
 
 Apply **C-2** to a *child*. `_childPendingExecution(child)` returns true forever, so the shortfall
@@ -994,8 +991,7 @@ Confirmed: a parent with 1,900 of 2,000 idle allocated to a child whose creator 
 `ExitNeedsChildSettlement`, still reverting after 100 years; `parent.redeemFromChild(...)` reverts
 `ChildSettlementPending`.
 
-**Why this is distinct from C-2.** The parent's members never chose the child's governance config —
-the *child's creator* did — and parent members have **no** governance action that helps, because
+**Why this is distinct from C-2.** The parent's members never chose the child's governance config (the *child's creator* did), and parent members have **no** governance action that helps, because
 their only lever is the path that reverts. This contradicts E4's *"clean rollback + bounded retry
 (child timelock)"*: there is no timelock bound when the child never leaves `Active`.
 
@@ -1005,19 +1001,19 @@ re-review.**
 
 ---
 
-### H-8 — The `<5`-member quorum regime is stake-blind and its boundary is purchasable for dust
+### H-8: The `<5`-member quorum regime is stake-blind and its boundary is purchasable for dust
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **PLAUSIBLE** — derived from source by two independent passes; no executing test |
+| **Status** | **PLAUSIBLE**: derived from source by two independent passes; no executing test |
 | **Files** | `Governance.sol:252`, `:435-441`, `:60`; `VaultCore.sol:369-378`, `:394-397` |
 
 The regime is selected solely by `p.memberCount` (`:435`), snapshotted as `pastHolderCount(nowTs-1)`
 (`:252`); `holderCount` increments for **any** address with `sharesOf > 0` regardless of size. The
 proposer chooses the block. Two distinct attacks follow.
 
-**(a) Buy your way into the stake regime.** A vault with 4 holders — A 40%, B/C/D 20% each — is in
+**(a) Buy your way into the stake regime.** A vault with 4 holders, A 40%, B/C/D 20% each, is in
 the signer regime, where A needs 3 of 4 revealers and cannot act alone. A deposits `minDepositUsdc`
 from a fresh address (`skipWindow()` is permissionless, so deposit+activate is one transaction),
 then proposes in the next block: `memberCount` = 5 → **stake regime** → A alone reveals FOR,
@@ -1025,13 +1021,13 @@ then proposes in the next block: `memberCount` = 5 → **stake regime** → A al
 config, fully recoverable.
 
 **(b) The signer regime has no stake floor at all.** In that branch `quorumBps` and `snapshotTotal`
-are never consulted — quorum is a **head count** of revealers, each needing only `weight > 0`.
+are never consulted, quorum is a **head count** of revealers, each needing only `weight > 0`.
 Against a single-holder vault, three dust sybils give `3 × 2 > 4` and pass an arbitrary Rebalance on
 approximately zero stake if the incumbent does not reveal AGAINST within the reveal window.
 
 **The inverse also works:** `k` permanently-held dust addresses raise the signer denominator, so
 `k >= n` blocks every proposal while `n + k <= 4`. For a new 1–2 member vault, **$1–$2 of dust makes
-it ungovernable forever** — and governance is the only route to `executeRebalance`.
+it ungovernable forever**, and governance is the only route to `executeRebalance`.
 
 **This refutes CM-7's disposition**, which names this exact attack (*"Sybil to 5 to switch regimes"*)
 and mitigates with *"regime is snapshotted per proposal at creation."* The snapshot binds changes
@@ -1043,15 +1039,15 @@ required real deposit is one dollar.
 minimum-stake threshold for `holderCount` membership; and give the signer regime a stake floor as
 well. **Requires redeploy + re-review of the quorum regime and holder accounting.**
 
-> **REMEDIATION STATUS — partially fixed in code; the regime-flip is config-mitigated (2026-08-28,
+> **REMEDIATION STATUS, partially fixed in code; the regime-flip is config-mitigated (2026-08-28,
 > Phase 2). Status was PLAUSIBLE → now CONFIRMED by test.** Reproduced end-to-end in
 > `contracts/test/audit/AuditQuorumRegimeDust.t.sol` (three directions), then addressed as follows.
 > The `<5`-member signer regime in `Governance.finalize` is no longer a pure head count. It now
 > passes on **either** (1) a member-count majority AND the FOR side clearing the stake quorum, or
 > (2) an outright FOR **stake** majority (`forWeight * 2 > snapshotTotal`) regardless of head count.
 > Branch (1)'s added stake gate kills the near-zero-stake **sybil** attack (3 dust addresses passing
-> an arbitrary rebalance via `3*2 > 4` against a silent incumbent — attack (c)). Branch (2) kills
-> the **dust-griefing lockout** — a >50% member now governs regardless of how many dust holders
+> an arbitrary rebalance via `3*2 > 4` against a silent incumbent, attack (c)). Branch (2) kills
+> the **dust-griefing lockout**, a >50% member now governs regardless of how many dust holders
 > inflate the denominator (attack (b)). Branch (2) is purely additive, so it introduces **no** M-6
 > liveness cliff (the naive "minimum-stake threshold for holderCount membership" the recommendation
 > above suggests is exactly M-6's shape and was NOT taken). `forWeight` (never `revealedWeight`) is
@@ -1069,12 +1065,12 @@ well. **Requires redeploy + re-review of the quorum regime and holder accounting
 
 ---
 
-### H-9 — Read-only cross-contract reentrancy: a parent's look-through NAV is readable mid-mutation
+### H-9: Read-only cross-contract reentrancy: a parent's look-through NAV is readable mid-mutation
 
 | | |
 |---|---|
 | **Severity** | **HIGH** (base Medium × immutable → High) |
-| **Status** | **REMEDIATED 2026-09-01** — and *confirmed* on the way there. Filed PLAUSIBLE with "no executing test"; it now has one. `test/audit/AuditLookThroughReadOnlyReentrancy.t.sol` reproduces the exploit at **2,000e18 shares minted for 1,000 USDC** (a 2× overmint) and fails when the guard is removed. Fix: a `VaultCore.locked()` view plus `require(!v.locked(), Reentrancy())` in `_fullNavWad` — which closes **both** windows described below, because it sits at the *read* rather than at either write. The windows themselves stay open by necessity: a leg's output is unknowable until the swap returns, and trusting the adapter's claimed amount instead is exactly EX-3. So the understatement is made **unobservable**, not eliminated. Cost: 169 B. **Depth-2 regression added 2026-09-01** (`AuditLookThroughDepth2Test`, same file): the guard is pinned at the *recursion*, not just the first hop — hoisting the `require` into `_childValueWad` passes all three depth-1 tests while a mid-swap grandchild still mints at **1.5×** and short-pays an exiter by **one third**, both measured. Depth 3 is unreachable by construction (`SubVaultRegistry.MAX_DEPTH = 3` caps `depthOf` at 2), so depths 1 and 2 are every reachable level. **And the invariant the guard rests on is now tested rather than assumed** — see `AuditReentrancyGuardCoverage.t.sol` and the `VaultCore.sol` row below. |
+| **Status** | **REMEDIATED 2026-09-01**: and *confirmed* on the way there. Filed PLAUSIBLE with "no executing test"; it now has one. `test/audit/AuditLookThroughReadOnlyReentrancy.t.sol` reproduces the exploit at **2,000e18 shares minted for 1,000 USDC** (a 2× overmint) and fails when the guard is removed. Fix: a `VaultCore.locked()` view plus `require(!v.locked(), Reentrancy())` in `_fullNavWad`: which closes **both** windows described below, because it sits at the *read* rather than at either write. The windows themselves stay open by necessity: a leg's output is unknowable until the swap returns, and trusting the adapter's claimed amount instead is exactly EX-3. So the understatement is made **unobservable**, not eliminated. Cost: 169 B. **Depth-2 regression added 2026-09-01** (`AuditLookThroughDepth2Test`, same file): the guard is pinned at the *recursion*, not just the first hop: hoisting the `require` into `_childValueWad` passes all three depth-1 tests while a mid-swap grandchild still mints at **1.5×** and short-pays an exiter by **one third**, both measured. Depth 3 is unreachable by construction (`SubVaultRegistry.MAX_DEPTH = 3` caps `depthOf` at 2), so depths 1 and 2 are every reachable level. **And the invariant the guard rests on is now tested rather than assumed**: see `AuditReentrancyGuardCoverage.t.sol` and the `VaultCore.sol` row below. |
 | **Files** | `VaultCore.sol:765-771` vs `:773`, `:776`; `:695-717` (`:707` vs `:711`/`:715`); readers `:274`, `:282`, `:286`; consumers `:324`, `:391`, `:515`, `:555` |
 
 Two windows exist where a `VaultCore`'s internal accounting is understated while an external call is
@@ -1088,17 +1084,16 @@ in flight:
 
 `nonReentrant` protects *that* vault. It does **not** protect an ancestor: vaults are different
 instances with independent `_lock` slots, and an ancestor reads the descendant's live state through
-**unguarded view functions** (`idleUsdc()`, `assetBalance()`) inside `_childValueWad`/`_fullNavWad` —
-which are consumed by the ancestor's *mutating* paths (`deposit` capacity `:324`, `_mintShares` price
+**unguarded view functions** (`idleUsdc()`, `assetBalance()`) inside `_childValueWad`/`_fullNavWad`, which are consumed by the ancestor's *mutating* paths (`deposit` capacity `:324`, `_mintShares` price
 `:391`, `_settleExit` `:515`/`:555`).
 
 **Exploit.** The attacker takes a child's governance per **C-1**, executes a rebalance routed through
 an attacker-controlled hop token, and from that token's hook calls `V.deposit(d)` while `V`'s NAV is
-understated by `h`. With `θ = h/N` and `x = d/N`, gain is `xN·θ/(1−θ+x)` — for `θ=0.5, x=0.1`,
+understated by `h`. With `θ = h/N` and `x = d/N`, gain is `xN·θ/(1−θ+x)`, for `θ=0.5, x=0.1`,
 roughly **+8.3% of N on a 10%-of-N outlay**, ~90% of that net of fees. A second victim path calls
 `V.settleQueuedExit(victim)` from the same hook, shorting the victim's cash leg. A variant requiring
 **no governance capture** exists if any basket token calls out on `approve`, which hits `:773`
-directly — hostile basket tokens are explicitly in the declared threat model.
+directly, hostile basket tokens are explicitly in the declared threat model.
 
 **Verified consistent** (not a finding): the member-exit path (`credit = false`) completes all
 internal accounting at `:523-543` before the first external call at `:587`, so CEI holds there.
@@ -1106,7 +1101,7 @@ internal accounting at `:523-543` before the first external call at `:587`, so C
 **Note on the prior disposition.** `SLITHER-TRIAGE.md:39` dismisses every reentrancy row because
 *"every flagged function carries the `nonReentrant` mutex."* That reasoning is sound for
 same-contract reentrancy and does **not** cover a different `VaultCore` instance being read through
-views — and Slither does not model that either, so the row's reasoning and the analyser's blind spot
+views, and Slither does not model that either, so the row's reasoning and the analyser's blind spot
 coincide. No prior treatment of read-only or cross-contract reentrancy appears anywhere in `docs/`.
 
 **Remediation.** Expose a reentrancy status the ancestor can read and have `_childValueWad`/
@@ -1120,21 +1115,21 @@ and look-through paths.**
 
 | ID | Finding | Status |
 |---|---|---|
-| **M-1** | **`OracleAggregator`'s constructor accepts the same source address repeated**, leaving SF-1 source-independence entirely unenforced (`:60-72` — the `:68` duplicate check is on *assets*, not sources). `[S,S,S]` satisfies "3 sources" and any quorum; its median is just `S`, and `assetConfig` shows a compliant-looking 3-source set only address-by-address comparison distinguishes. Combined with H-1, that one source both sets the price and can trip the breaker. This is distinct from the accepted SF-1 residual: correlated upstreams behind different addresses is genuinely out of code's reach, but literal address equality is trivially in reach and unchecked. Fix: an O(m²) distinctness loop (`m ≤ 15`). | **CONFIRMED** (test) |
-| **M-2** | **The USDC settlement legs have no EE-6 escrow isolation**, unlike every other transfer: `:611`, `:642` and `:363` use reverting `safeTransfer` while basket assets use `tryTransfer`+escrow (`:624`, `:629`). A blacklisted member cannot exit **at all** and loses their in-kind legs too — the precise outcome EE-6 exists to prevent; `cancelPending` (`:363`) is worse, being unconditional, so a member blacklisted after depositing has their pending escrow permanently stranded. **Systemically:** `feeEngine` is a factory-wired singleton shared by every vault (`VaultFactory.sol:63,126`) and is exactly the address class that attracts a blacklist — once listed, `:611` reverts and **every exit carrying a positive performance fee, in every vault, reverts permanently**. Precondition (stated honestly): `usdcPay > 0`, i.e. the vault holds idle USDC — the ordinary steady state, since deposits credit `idleUsdc` and SV-5 draws cash first. Falsifies PX-1's claim that in-kind redemption *"keeps non-USDC basket assets exitable."* Fix is mechanical and already designed: route both USDC legs through `tryTransfer` + `claimable`, which `claimEscrowed` already handles asset-agnostically. | CONFIRMED (reasoning) |
+| **M-1** | **`OracleAggregator`'s constructor accepts the same source address repeated**, leaving SF-1 source-independence entirely unenforced (`:60-72`: the `:68` duplicate check is on *assets*, not sources). `[S,S,S]` satisfies "3 sources" and any quorum; its median is just `S`, and `assetConfig` shows a compliant-looking 3-source set only address-by-address comparison distinguishes. Combined with H-1, that one source both sets the price and can trip the breaker. This is distinct from the accepted SF-1 residual: correlated upstreams behind different addresses is genuinely out of code's reach, but literal address equality is trivially in reach and unchecked. Fix: an O(m²) distinctness loop (`m ≤ 15`). | **CONFIRMED** (test) |
+| **M-2** | **The USDC settlement legs have no EE-6 escrow isolation**, unlike every other transfer: `:611`, `:642` and `:363` use reverting `safeTransfer` while basket assets use `tryTransfer`+escrow (`:624`, `:629`). A blacklisted member cannot exit **at all** and loses their in-kind legs too: the precise outcome EE-6 exists to prevent; `cancelPending` (`:363`) is worse, being unconditional, so a member blacklisted after depositing has their pending escrow permanently stranded. **Systemically:** `feeEngine` is a factory-wired singleton shared by every vault (`VaultFactory.sol:63,126`) and is exactly the address class that attracts a blacklist: once listed, `:611` reverts and **every exit carrying a positive performance fee, in every vault, reverts permanently**. Precondition (stated honestly): `usdcPay > 0`, i.e. the vault holds idle USDC: the ordinary steady state, since deposits credit `idleUsdc` and SV-5 draws cash first. Falsifies PX-1's claim that in-kind redemption *"keeps non-USDC basket assets exitable."* Fix is mechanical and already designed: route both USDC legs through `tryTransfer` + `claimable`, which `claimEscrowed` already handles asset-agnostically. | CONFIRMED (reasoning) |
 | **M-3** | **`FeeEngine.pullEscrowed` is unguarded and its balance delta straddles a full-gas external call** (`FeeEngine.sol:115-125`). `FeeEngine` has no mutex; nesting targets a *different* vault, so `VaultCore`'s guard does not help. The outer call measures `X+X2` while the inner correctly credits the victim `X` ⇒ `2X+X2` credited against `X+X2` delivered; the attacker claims first. The precondition is attacker-controlled: escrow at `VaultCore.sol:637` is populated only when `tryTransfer` returns false, which a hook token decides on demand. Caveat: ERC-777 specifically does **not** work (FeeEngine is not an ERC-1820 implementer). Fix: add a mutex, or credit from the callee's reported `claimable` read before the call. | PLAUSIBLE |
-| **M-4** | **A settlement token with fewer than 6 decimals bricks every redemption.** `:221` bounds only `dec <= 18`; `shortfallWad` is the sub-unit truncation residual, uniform in `[0, usdcScalar-1]`, and `:576` requires `<= 1e12`. So `dec >= 6` is required but unenforced: at `dec=5` ~90% of exits revert and at `dec=2` (e.g. GUSD, a real USD stablecoin) ~99.99%, from a vault with **no children at all** — and `ExitNeedsChildSettlement` is a misleading error for a pure truncation artifact. Requires a creator to choose such a token, but constructor validation is explicitly described as load-bearing against a hostile creator. Fix: `require(usdcScalar <= SHORTFALL_DUST_WAD)`. See also **L-2** for the zero-margin observation at the canonical 6 decimals. | CONFIRMED (derivation) |
-| **M-5** | **`navWad()` costs ~12.0M gas at the `MAX_CHILDREN` fan-out**, measured at 8×8 = 73 vaults with 10 assets each and the minimum 3 sources/asset; `deposit` 12.1M, a settled `requestExit` 12.9M. `NavGas.t.sol:146` asserts `< 600_000` against a single 1-child/1-grandchild, 3-asset config over stub sources — the reachable worst case is **20× its ceiling** on gas and **~122× on `priceWad` call count** (730 vs 6). `_settleExit` traverses the tree at least twice (`:514-516`, then `:555`) and that path is unmeasured. **There is no path to remove a child** — `childVaults` only ever grows (`:666`) — so once the tree crosses the block gas limit, capital is permanently locked. Each `ChildAllocation` looks reasonable in isolation; the cliff is invisible until crossed and irreversible after. | CONFIRMED (measured) |
-| **M-6** | **Every named CM-6/VO-5 defense is optional, and the repo's only worked config disables all three.** `proposalThresholdBps = 0`, `concentrationCapBps = 10000`, `proposalCooldown = 0` in both `base-mainnet.json:146-155` and `base-sepolia.json:43-51`; `proposalCooldown` is **not validated at all**. With the cap at 10000, one delegate can carry 100% of snapshot stake, so one live participant plus a permissionless cranker manufactures full quorum from offline delegators — defeating VO-2's "quorum measured against live participation" rationale. Fix: protective bounds in `_validateConfig`, plus a production reference config that does not disable its own defenses. | CONFIRMED (inspection) |
-| **M-7** | **Serial-proposal exit freeze.** `hasPendingExecution` is true for any `Active` proposal past `commitDeadline` — passage irrelevant. With `proposalCooldown = 0`, an attacker holding `minDepositUsdc` cycles `propose → wait → finalize(Defeated) → propose`, freezing exits on a ~50% duty cycle indefinitely for gas; members calling `requestExit` inside a frozen window are **irrevocably** queued. Even at a fully compliant config, a `Passed` proposal holds Mode F for `timelockDuration + executionWindow` — ~31 days at the hard cap, repeatable, which is not what EE-10's *"no indefinite lock"* conveys. Bounded only by the ≥1 h commit phase per cycle. | PLAUSIBLE |
-| **M-8** | **Voters approve an opaque 32-byte hash; no on-chain payload disclosure exists.** `propose` stores and emits only `actionHash` (`:98`, `:255`); the preimage surfaces only in `execute`'s calldata — *after* the vote, the finalize and the entire timelock. Voters have no on-chain means to verify what they are approving. `propose` never checks that `actionHash` decodes to anything, so a hash of random bytes yields an unexecutable `Passed` proposal (the state **C-2** makes permanent), and a malformed-but-matching payload reverts inside `execute` for the same effect. A lapsed `SwapOrder.deadline` — fixed at propose time, never compared against `executableAt` — does likewise. Fix: validate decodability at propose time and require `deadline >= executableAt + executionWindow`. | PLAUSIBLE |
-| **M-9** | **Settlement timing is a free option over the exit performance fee.** `finalize` (`:428`) and `settleQueuedExit` (`VaultCore.sol:476`) are both permissionless with no upper deadline and can be bundled atomically. Payout *quantities* are price-independent, but `payoutValueWad` drives `gain`/`perfFee`/`feeFracWad` (`:585-605`). A queued member waits for a block where `payoutValueUsdc <= basisRemoved`, takes the `else` branch at `:594`, and pays **zero** performance fee while receiving identical tokens — avoiding up to `gain/10`. Waiting is otherwise free, since the tenure exit fee only decays. The mirror is live too: a searcher can force a victim's settlement at a price peak. Whoever wins the ordering race sets the other party's fee. | PLAUSIBLE |
-| **M-10** | **Commit-reveal binds an address, not an economic actor.** The commitment is `keccak256(abi.encode(pid, msg.sender, support, salt))` (`:292`). A whale splits stake across two addresses, commits FOR from one and AGAINST from the other, reads the public mid-reveal tally, and reveals only the side it now wants — converting a blind commitment into an **informed last-mover choice** at the cost of the forfeited half. VO-7's reasoning (*"the commit binds `support`, so a late revealer cannot change direction"*) holds per address and fails per actor. Cheaper still in the signer regime, where quorum counts addresses rather than stake. | PLAUSIBLE |
-| **M-11** | **`SafeTransferLib`'s non-`try` helpers are returndata-unbounded, so the MO-2 hardening covers one of four call shapes.** `:11-26` copy the **entire** returndata into `bytes memory ret`; a returndata-bombing token OOGs every one of them — the exact failure MO-2 was written to close, on the paths it does not cover. A token returning 1–31 bytes also makes `abi.decode(ret,(bool))` revert with a decoder panic, so the intended `TransferFailed` error is unreachable for the malformed-return case. Reachable at `:611`, `:642`, `:363`, `:816` (`claimEscrowed` — so an asset that degraded to escrow can be permanently unclaimable), `:673/675`, `:773/779`, and both adapters. Confirmed correct: 0 bytes → success (USDT-compatible); `tryTransfer` (`:34-57`) is genuinely bounded. | CONFIRMED (inspection) |
-| **M-12** | **The `VERIFIED-ON-CHAIN` badge licenses less than it appears.** In `scripts/verify-mainnet-config.mjs`: the router-selector check (`:144-149`) returns a hard-coded `{pass:true}` — **1 of 22 checks cannot fail**; `maxObservationAgeSeconds` is **never checked at all** and `observations(uint256)` is called **zero** times anywhere in the repo, so the one pool tuple guards 2 and 3 actually read is never exercised; the `observe([1800,0])` check reports success as *"the full window is retained"* when success is equally consistent with *the pool having been dead for ≥30 minutes* — the two opposite conclusions it exists to separate; and pool tokens are matched by `symbol()` string while the constructor matches **addresses**. The gate therefore cannot observe the parameter behind **H-2**. | CONFIRMED (inspection) |
-| **M-13** | **No deploy script can consume `base-mainnet.json`.** `Deploy.s.sol` (the mainnet script) reads **no config file** and deploys only the five singletons — it constructs no `OracleAggregator`, no source adapter, no execution adapter. `DeployTestnet.s.sol` could be pointed at the file but its `_readAssets` requires an `.assets[i].feeds` address array that the mainnet schema does not have, and it only ever builds `ChainlinkSourceAdapter`s, so it cannot express the 3-class stack. **Every mainnet constructor argument is therefore hand-transcribed**, and every claim M-12 makes is evidence about a *document*, not about a deployment. Compounding: `Deploy.s.sol:63-75` performs the three irreversible `wire()` calls and then only `console2.log`s, while the throwaway `DeployTestnet.s.sol:119-129` asserts the full wiring — **the mainnet script has strictly weaker post-conditions than the testnet one**, and performs no chain-id assertion at all. | CONFIRMED (inspection) |
-| **M-14** | **Gas-capped `view` callers receive a silently different, successfully-returned, wrong NAV.** Because `catch {}` absorbs out-of-gas in the nested frame, a caller capping gas starves later sources while earlier ones succeed and `priceWad` **returns normally** with a smaller `k` — which, per H-1, is specifically the *minimum* of the surviving prefix. Measured: 2405.0 unlimited vs **2400.0** at ≤800k gas. **State-changing paths are refuted with a number:** a 225,560-gas post-price tail requires ≈14.4M gas inside a starved source, above the block limit, and a 100k→5M sweep found no level producing a successful deposit at a starved price. So this affects `navPerShareWad`, `previewDeposit`, `previewRedeem` and `totalAssets` consumers — integrators, keepers, front-ends, multicall aggregators — not deposits or exits. | CONFIRMED (measured) |
-| **M-15** | **No slippage or deadline protection on entry or exit.** `deposit(uint256)` takes no `minSharesOut` and no deadline; shares mint at whatever NAV the including block produces (`:391`). `requestExit(uint256)` takes no `minValueOut`. Every entry and exit is an unbounded market order — the user-side half of C-4/H-1/H-2, where a depositor who can *see* an anomaly still has no transaction-level defence. Note the asymmetry: `IExecutionAdapter.SwapOrder` carries both `minAmountOut` and `deadline`, so the protection exists for the operator's swaps and not for the member's principal. | CONFIRMED (inspection) — **PARTIALLY FIXED (Phase 2):** added `deposit(uint256 amountUsdc, uint256 minSharesOut)` as a backward-compatible OVERLOAD (the original `deposit(uint256)` is unchanged, so no ABI break; existing off-chain callers keep working). It reverts `SlippageExceeded` when the immediate-mint path would mint fewer than `minSharesOut` — the honest depositor's defence against an inflated NAV (H-1/H-2 direction). Scoped to the immediate path; a first-time deposit prices at activation and ignores it (documented). **Deadline dropped** (both settle in the including block on the paths that matter). **Exit-side `minValueOut` dropped for the byte budget** (VaultCore had 1,014 B; the deposit overload spent 731 → 283 B left; the exit check's `navWad()` did not fit) — documented residual: an exiter chooses to exit and can read NAV first. Regression `AuditDepositSlippage.t.sol`. This also **partially subsumes C-4's deferred defence-in-depth** (#32): a depositor now has a transaction-level bound against the same anomaly, at a fraction of the bytes a stored-reference mint-time NAV band would cost. |
+| **M-4** | **A settlement token with fewer than 6 decimals bricks every redemption.** `:221` bounds only `dec <= 18`; `shortfallWad` is the sub-unit truncation residual, uniform in `[0, usdcScalar-1]`, and `:576` requires `<= 1e12`. So `dec >= 6` is required but unenforced: at `dec=5` ~90% of exits revert and at `dec=2` (e.g. GUSD, a real USD stablecoin) ~99.99%, from a vault with **no children at all**: and `ExitNeedsChildSettlement` is a misleading error for a pure truncation artifact. Requires a creator to choose such a token, but constructor validation is explicitly described as load-bearing against a hostile creator. Fix: `require(usdcScalar <= SHORTFALL_DUST_WAD)`. See also **L-2** for the zero-margin observation at the canonical 6 decimals. | CONFIRMED (derivation) |
+| **M-5** | **`navWad()` costs ~12.0M gas at the `MAX_CHILDREN` fan-out**, measured at 8×8 = 73 vaults with 10 assets each and the minimum 3 sources/asset; `deposit` 12.1M, a settled `requestExit` 12.9M. `NavGas.t.sol:146` asserts `< 600_000` against a single 1-child/1-grandchild, 3-asset config over stub sources: the reachable worst case is **20× its ceiling** on gas and **~122× on `priceWad` call count** (730 vs 6). `_settleExit` traverses the tree at least twice (`:514-516`, then `:555`) and that path is unmeasured. **There is no path to remove a child**: `childVaults` only ever grows (`:666`): so once the tree crosses the block gas limit, capital is permanently locked. Each `ChildAllocation` looks reasonable in isolation; the cliff is invisible until crossed and irreversible after. | CONFIRMED (measured) |
+| **M-6** | **Every named CM-6/VO-5 defense is optional, and the repo's only worked config disables all three.** `proposalThresholdBps = 0`, `concentrationCapBps = 10000`, `proposalCooldown = 0` in both `base-mainnet.json:146-155` and `base-sepolia.json:43-51`; `proposalCooldown` is **not validated at all**. With the cap at 10000, one delegate can carry 100% of snapshot stake, so one live participant plus a permissionless cranker manufactures full quorum from offline delegators: defeating VO-2's "quorum measured against live participation" rationale. Fix: protective bounds in `_validateConfig`, plus a production reference config that does not disable its own defenses. | CONFIRMED (inspection) |
+| **M-7** | **Serial-proposal exit freeze.** `hasPendingExecution` is true for any `Active` proposal past `commitDeadline`: passage irrelevant. With `proposalCooldown = 0`, an attacker holding `minDepositUsdc` cycles `propose → wait → finalize(Defeated) → propose`, freezing exits on a ~50% duty cycle indefinitely for gas; members calling `requestExit` inside a frozen window are **irrevocably** queued. Even at a fully compliant config, a `Passed` proposal holds Mode F for `timelockDuration + executionWindow`: ~31 days at the hard cap, repeatable, which is not what EE-10's *"no indefinite lock"* conveys. Bounded only by the ≥1 h commit phase per cycle. | PLAUSIBLE |
+| **M-8** | **Voters approve an opaque 32-byte hash; no on-chain payload disclosure exists.** `propose` stores and emits only `actionHash` (`:98`, `:255`); the preimage surfaces only in `execute`'s calldata: *after* the vote, the finalize and the entire timelock. Voters have no on-chain means to verify what they are approving. `propose` never checks that `actionHash` decodes to anything, so a hash of random bytes yields an unexecutable `Passed` proposal (the state **C-2** makes permanent), and a malformed-but-matching payload reverts inside `execute` for the same effect. A lapsed `SwapOrder.deadline`: fixed at propose time, never compared against `executableAt`: does likewise. Fix: validate decodability at propose time and require `deadline >= executableAt + executionWindow`. | PLAUSIBLE |
+| **M-9** | **Settlement timing is a free option over the exit performance fee.** `finalize` (`:428`) and `settleQueuedExit` (`VaultCore.sol:476`) are both permissionless with no upper deadline and can be bundled atomically. Payout *quantities* are price-independent, but `payoutValueWad` drives `gain`/`perfFee`/`feeFracWad` (`:585-605`). A queued member waits for a block where `payoutValueUsdc <= basisRemoved`, takes the `else` branch at `:594`, and pays **zero** performance fee while receiving identical tokens: avoiding up to `gain/10`. Waiting is otherwise free, since the tenure exit fee only decays. The mirror is live too: a searcher can force a victim's settlement at a price peak. Whoever wins the ordering race sets the other party's fee. | PLAUSIBLE |
+| **M-10** | **Commit-reveal binds an address, not an economic actor.** The commitment is `keccak256(abi.encode(pid, msg.sender, support, salt))` (`:292`). A whale splits stake across two addresses, commits FOR from one and AGAINST from the other, reads the public mid-reveal tally, and reveals only the side it now wants: converting a blind commitment into an **informed last-mover choice** at the cost of the forfeited half. VO-7's reasoning (*"the commit binds `support`, so a late revealer cannot change direction"*) holds per address and fails per actor. Cheaper still in the signer regime, where quorum counts addresses rather than stake. | PLAUSIBLE |
+| **M-11** | **`SafeTransferLib`'s non-`try` helpers are returndata-unbounded, so the MO-2 hardening covers one of four call shapes.** `:11-26` copy the **entire** returndata into `bytes memory ret`; a returndata-bombing token OOGs every one of them: the exact failure MO-2 was written to close, on the paths it does not cover. A token returning 1–31 bytes also makes `abi.decode(ret,(bool))` revert with a decoder panic, so the intended `TransferFailed` error is unreachable for the malformed-return case. Reachable at `:611`, `:642`, `:363`, `:816` (`claimEscrowed`: so an asset that degraded to escrow can be permanently unclaimable), `:673/675`, `:773/779`, and both adapters. Confirmed correct: 0 bytes → success (USDT-compatible); `tryTransfer` (`:34-57`) is genuinely bounded. | CONFIRMED (inspection) |
+| **M-12** | **The `VERIFIED-ON-CHAIN` badge licenses less than it appears.** In `scripts/verify-mainnet-config.mjs`: the router-selector check (`:144-149`) returns a hard-coded `{pass:true}`: **1 of 22 checks cannot fail**; `maxObservationAgeSeconds` is **never checked at all** and `observations(uint256)` is called **zero** times anywhere in the repo, so the one pool tuple guards 2 and 3 actually read is never exercised; the `observe([1800,0])` check reports success as *"the full window is retained"* when success is equally consistent with *the pool having been dead for ≥30 minutes*: the two opposite conclusions it exists to separate; and pool tokens are matched by `symbol()` string while the constructor matches **addresses**. The gate therefore cannot observe the parameter behind **H-2**. | CONFIRMED (inspection) |
+| **M-13** | **No deploy script can consume `base-mainnet.json`.** `Deploy.s.sol` (the mainnet script) reads **no config file** and deploys only the five singletons: it constructs no `OracleAggregator`, no source adapter, no execution adapter. `DeployTestnet.s.sol` could be pointed at the file but its `_readAssets` requires an `.assets[i].feeds` address array that the mainnet schema does not have, and it only ever builds `ChainlinkSourceAdapter`s, so it cannot express the 3-class stack. **Every mainnet constructor argument is therefore hand-transcribed**, and every claim M-12 makes is evidence about a *document*, not about a deployment. Compounding: `Deploy.s.sol:63-75` performs the three irreversible `wire()` calls and then only `console2.log`s, while the throwaway `DeployTestnet.s.sol:119-129` asserts the full wiring: **the mainnet script has strictly weaker post-conditions than the testnet one**, and performs no chain-id assertion at all. | CONFIRMED (inspection) |
+| **M-14** | **Gas-capped `view` callers receive a silently different, successfully-returned, wrong NAV.** Because `catch {}` absorbs out-of-gas in the nested frame, a caller capping gas starves later sources while earlier ones succeed and `priceWad` **returns normally** with a smaller `k`: which, per H-1, is specifically the *minimum* of the surviving prefix. Measured: 2405.0 unlimited vs **2400.0** at ≤800k gas. **State-changing paths are refuted with a number:** a 225,560-gas post-price tail requires ≈14.4M gas inside a starved source, above the block limit, and a 100k→5M sweep found no level producing a successful deposit at a starved price. So this affects `navPerShareWad`, `previewDeposit`, `previewRedeem` and `totalAssets` consumers: integrators, keepers, front-ends, multicall aggregators: not deposits or exits. | CONFIRMED (measured) |
+| **M-15** | **No slippage or deadline protection on entry or exit.** `deposit(uint256)` takes no `minSharesOut` and no deadline; shares mint at whatever NAV the including block produces (`:391`). `requestExit(uint256)` takes no `minValueOut`. Every entry and exit is an unbounded market order: the user-side half of C-4/H-1/H-2, where a depositor who can *see* an anomaly still has no transaction-level defence. Note the asymmetry: `IExecutionAdapter.SwapOrder` carries both `minAmountOut` and `deadline`, so the protection exists for the operator's swaps and not for the member's principal. | CONFIRMED (inspection): **PARTIALLY FIXED (Phase 2):** added `deposit(uint256 amountUsdc, uint256 minSharesOut)` as a backward-compatible OVERLOAD (the original `deposit(uint256)` is unchanged, so no ABI break; existing off-chain callers keep working). It reverts `SlippageExceeded` when the immediate-mint path would mint fewer than `minSharesOut`: the honest depositor's defence against an inflated NAV (H-1/H-2 direction). Scoped to the immediate path; a first-time deposit prices at activation and ignores it (documented). **Deadline dropped** (both settle in the including block on the paths that matter). **Exit-side `minValueOut` dropped for the byte budget** (VaultCore had 1,014 B; the deposit overload spent 731 → 283 B left; the exit check's `navWad()` did not fit): documented residual: an exiter chooses to exit and can read NAV first. Regression `AuditDepositSlippage.t.sol`. This also **partially subsumes C-4's deferred defence-in-depth** (#32): a depositor now has a transaction-level bound against the same anomaly, at a fraction of the bytes a stored-reference mint-time NAV band would cost. |
 
 ---
 
@@ -1142,46 +1137,46 @@ and look-through paths.**
 
 | ID | Finding | Status |
 |---|---|---|
-| **L-1** | **`VaultFactory.createChildVault` performs no authorization on `parent`** (`:100-110`) — only `parent.usdc() == p.usdc` and the basket-subset rule. Anyone may permanently attach an arbitrary child under any vault; `registerChild` is creation-time-only with **no removal path**. Low standalone (moving funds still needs the parent's governance), but it is the enabler that removes the timelock race in **C-1**. Fix: require `msg.sender == VaultCore(parent).creator()`. | **FIXED** (merged, commit `b50f652a`): `VaultFactory.createChildVault` now requires `msg.sender == parent.creator()` (`NotParentCreator`); regression `SubVaults::test_remediated_onlyTheParentsCreatorMayAttachAChild`. Now moot at launch behind the C-1 `allowSubVaults` gate, but retained for the enabled path. |
-| **L-2** | **`SHORTFALL_DUST_WAD` passes at the canonical 6 decimals with exactly zero margin.** The maximum truncation residual is `usdcScalar − 1 = 1e12 − 1` against a `<= 1e12` bound — one unit of slack. Correct today, but there is no headroom for any future change to the residual's derivation, and the relationship is undocumented and unasserted. Fix: assert the invariant explicitly rather than relying on the coincidence. | CONFIRMED (derivation) |
+| **L-1** | **`VaultFactory.createChildVault` performs no authorization on `parent`** (`:100-110`): only `parent.usdc() == p.usdc` and the basket-subset rule. Anyone may permanently attach an arbitrary child under any vault; `registerChild` is creation-time-only with **no removal path**. Low standalone (moving funds still needs the parent's governance), but it is the enabler that removes the timelock race in **C-1**. Fix: require `msg.sender == VaultCore(parent).creator()`. | **FIXED** (merged, commit `b50f652a`): `VaultFactory.createChildVault` now requires `msg.sender == parent.creator()` (`NotParentCreator`); regression `SubVaults::test_remediated_onlyTheParentsCreatorMayAttachAChild`. Now moot at launch behind the C-1 `allowSubVaults` gate, but retained for the enabled path. |
+| **L-2** | **`SHORTFALL_DUST_WAD` passes at the canonical 6 decimals with exactly zero margin.** The maximum truncation residual is `usdcScalar − 1 = 1e12 − 1` against a `<= 1e12` bound: one unit of slack. Correct today, but there is no headroom for any future change to the residual's derivation, and the relationship is undocumented and unasserted. Fix: assert the invariant explicitly rather than relying on the coincidence. | CONFIRMED (derivation) |
 | **L-3** | **`BoundedCall` returns a word built from uninitialised memory** for 1–31-byte returndata (`:19-25`, `:34-43`). Two of five call sites gate on `retSize >= 32`; **`VaultCore.sol:588` (`perfFee = feeWord`) does not**. Bounded to Low by the `cap = gain/10` clamp at `:590-592` and by `feeEngine` being factory-pinned. Fix: zero `ptr` before the copy, or gate on `retSize`. | CONFIRMED |
-| **L-4** | **`minCardinality: 900` in `base-mainnet.json` is off by one.** A ring of `C` slots spans `(C−1) × blocktime`, so 900 slots cover 1798 s against an 1800 s window and the constructor **reverts**; 901 succeeds. Fails closed, and the deployed pools are at 5000/2000/5000, so it is not currently triggered — it would bite the next asset listing. | CONFIRMED (test) |
-| **L-5** | **Basket-asset admission validates only `decimals() <= 18`** (`:236-242`), while `assetBalance` is a fixed internal number. **Rebasing tokens** silently break: a negative rebase leaves `assetBalance` overstating real holdings, slices are sized from the overstated figure, `tryTransfer` fails, and value escrows into `claimable` where it can never be satisfied — with NAV overstated for the life of the vault. **Double-entrypoint tokens** double-credit: both entrypoints pass the `assetUnit[a] == 0` uniqueness check, and the per-address `balanceOf` snapshots at `:704`/`:713` both rise on a single transfer. Creator-chosen and disclosed by inspection, hence Low. | PLAUSIBLE |
-| **L-6** | **SV-6 quorum-floor inheritance is never re-checked on children.** `_requireParentQuorumFloor` (`:193-199`) walks *upward* only, so a parent that later raises its own quorum by RuleChange leaves children at the old, looser floor — *"a child may never be easier to pass than its parent"* silently fails. It also returns silently when the parent is not yet registered (`:196`), and `wireSubVaultRegistry` being un-called disables SV-6 entirely with no on-chain signal. | PLAUSIBLE |
+| **L-4** | **`minCardinality: 900` in `base-mainnet.json` is off by one.** A ring of `C` slots spans `(C−1) × blocktime`, so 900 slots cover 1798 s against an 1800 s window and the constructor **reverts**; 901 succeeds. Fails closed, and the deployed pools are at 5000/2000/5000, so it is not currently triggered: it would bite the next asset listing. | CONFIRMED (test) |
+| **L-5** | **Basket-asset admission validates only `decimals() <= 18`** (`:236-242`), while `assetBalance` is a fixed internal number. **Rebasing tokens** silently break: a negative rebase leaves `assetBalance` overstating real holdings, slices are sized from the overstated figure, `tryTransfer` fails, and value escrows into `claimable` where it can never be satisfied: with NAV overstated for the life of the vault. **Double-entrypoint tokens** double-credit: both entrypoints pass the `assetUnit[a] == 0` uniqueness check, and the per-address `balanceOf` snapshots at `:704`/`:713` both rise on a single transfer. Creator-chosen and disclosed by inspection, hence Low. | PLAUSIBLE |
+| **L-6** | **SV-6 quorum-floor inheritance is never re-checked on children.** `_requireParentQuorumFloor` (`:193-199`) walks *upward* only, so a parent that later raises its own quorum by RuleChange leaves children at the old, looser floor: *"a child may never be easier to pass than its parent"* silently fails. It also returns silently when the parent is not yet registered (`:196`), and `wireSubVaultRegistry` being un-called disables SV-6 entirely with no on-chain signal. | PLAUSIBLE |
 | **L-7** | **Asymmetric absentee recall.** `clearStandingDefault` (`:363-366`) has **no phase guard**, so a member watching the live tally can withdraw their default mid-reveal; `setDelegate` is locked for the whole proposal (`:412-415`), so a delegator has **no** way to recall delegated weight. The weaker, tally-only instrument is freely revocable; the stronger one, which counts toward quorum (`:333`), is not. | PLAUSIBLE |
 
 ---
 
 ## INFORMATIONAL
 
-- **I-1 — Pyth `conf` is validated at no layer before deploy.** `PythSource`'s constructor checks only
+- **I-1: Pyth `conf` is validated at no layer before deploy.** `PythSource`'s constructor checks only
   `expo` (`:107`); the verification script decodes `getPriceUnsafe` but never reads the `conf` field;
   `verification.checks` does not mention it. A feed whose confidence routinely exceeds 1% of price
-  deploys cleanly and then **withholds forever, invisibly** — undetectable in a 2-of-3 quorum until
+  deploys cleanly and then **withholds forever, invisibly**, undetectable in a 2-of-3 quorum until
   one of the other two fails, at which point **H-1** applies. Nothing bounds `pythMaxConfBps` from
   below either, so a creator can pin a value so tight the leg never votes.
-- **I-2 — `MODULE_CALL_GAS = 300_000` is a hardcoded gas amount on an immutable protocol**
+- **I-2: `MODULE_CALL_GAS = 300_000` is a hardcoded gas amount on an immutable protocol**
   (`VaultCore.sol:45`, used at nine sites). Any future repricing that pushes a bounded callee past
-  300k makes it fail *silently and permanently* — `_recordRealization` degrades to an event, so the
+  300k makes it fail *silently and permanently*: `_recordRealization` degrades to an event, so the
   loss carryforward stops accruing with no other on-chain signal; on `tryTransfer` sites, repricing
   pushes legitimate tokens into escrow. There is no way to raise the constant.
-- **I-3 — `base-mainnet.json` contradicts itself about its own status:** `status:
+- **I-3: `base-mainnet.json` contradicts itself about its own status:** `status:
   "VERIFIED-ON-CHAIN"` while `pythNote` still reads *"UNVERIFIED"* and `verification.note` still says
   *"Run every line … before flipping `status`."* Cosmetic, but it is the field a human reads to
   decide whether to deploy. (Structural checks did pass: all 12 addresses are valid EIP-55
   checksums, all three Pyth IDs are 64 hex chars, and every bound holds against its contract-level
   ceiling.)
-- **I-4 — Dead code and stale documentation.** `Checkpoints.latest`, `TickMath.MIN_SQRT_RATIO`/
+- **I-4: Dead code and stale documentation.** `Checkpoints.latest`, `TickMath.MIN_SQRT_RATIO`/
   `MAX_SQRT_RATIO`, and `IGovernance.isExecutor`/`Governance.isExecutor` (`:529-531`) have no
   consumers. `VaultCore.MAX_LOOKTHROUGH_DEPTH = 3` permits one level deeper than
   `SubVaultRegistry.MAX_DEPTH` can produce, so the deepest `_fullNavWad` branch is unreachable.
   Separately, **four** documentation sites (`Governance.sol:84`, `:119`, `:337-339`, and VO-5)
   state the concentration cap includes the delegate's own weight; the code caps **received** weight
-  only — the deliberate G1 fix documented at `:296-298`. The shipped property is `own + cap`, not
+  only, the deliberate G1 fix documented at `:296-298`. The shipped property is `own + cap`, not
   `cap`. The code is correct; the documentation is not.
-- **I-5 — Fees can be stranded in `FeeEngine`.** `:611`/`:629` transfer **before** the bounded
+- **I-5: Fees can be stranded in `FeeEngine`.** `:611`/`:629` transfer **before** the bounded
   accounting callbacks at `:612`/`:630`. If a callback fails, tokens sit in `FeeEngine` with no
-  `claimableFees` credit and no sweep function — permanently unclaimable. Unlikely at 300k gas.
+  `claimableFees` credit and no sweep function, permanently unclaimable. Unlikely at 300k gas.
 
 ---
 
@@ -1194,18 +1189,18 @@ with a verdict. **No line is left implicitly passed.**
 
 | File | LoC | Lenses | Verdict |
 |---|---|---|---|
-| `VaultCore.sol` | 906 | 1,2,3,5,6,7,9 | **Defects:** C-4, C-5, H-5, H-6, H-7, H-9, M-2, M-4, M-5, M-15, L-2, L-3, L-5. Reentrancy-guard coverage on all mutating externals verified **complete**; CEI on the member-exit path verified correct. *(The count read **11** at audit time and is now **12** — M-15 added the `deposit(uint256,uint256)` overload afterwards, which is exactly why a hand-written number was the wrong way to hold this. Since 2026-09-01 it is enforced instead of asserted: `test/audit/AuditReentrancyGuardCoverage.t.sol` enumerates the compiled ABI and fails when a mutating external appears outside its register, because H-9's `require(!v.locked())` is only sufficient while this property holds.)* |
+| `VaultCore.sol` | 906 | 1,2,3,5,6,7,9 | **Defects:** C-4, C-5, H-5, H-6, H-7, H-9, M-2, M-4, M-5, M-15, L-2, L-3, L-5. Reentrancy-guard coverage on all mutating externals verified **complete**; CEI on the member-exit path verified correct. *(The count read **11** at audit time and is now **12**: M-15 added the `deposit(uint256,uint256)` overload afterwards, which is exactly why a hand-written number was the wrong way to hold this. Since 2026-09-01 it is enforced instead of asserted: `test/audit/AuditReentrancyGuardCoverage.t.sol` enumerates the compiled ABI and fails when a mutating external appears outside its register, because H-9's `require(!v.locked())` is only sufficient while this property holds.)* |
 | `Governance.sol` | 532 | 1,2,5,7,9 | **Defects:** C-1, C-2, C-5, H-8, M-6..M-10, L-6, L-7, I-4. Every function and every branch walked; quorum enumerated for `memberCount` 0–6. |
 | `OracleAggregator.sol` | 158 | 3,4,9 | **Defects:** C-3, H-1, M-1, M-14. Every line walked; median enumerated for k=0..5. |
 | `oracle/UniswapV3TwapSource.sol` | 369 | 3,4,8 | **Defects:** H-2, L-4. Guards, both quote branches, both token orderings and two-hop composition walked. One self-refuted claim recorded. |
 | `oracle/PythSource.sol` | 148 | 3,4,8,9 | **No exploitable defect.** expo/conf math re-derived correct, including the load-bearing `MIN_EXPO` guard ordering (a `try/catch` cannot absorb a panic in the success block). Deploy-time gap → I-1. |
 | `oracle/vendor/TickMath.sol` | 81 | 3,8 | **Clean.** All 20 constants verified at **0 ulp** against independent 200-digit computation; bit-pairing confirmed by permutation search; both endpoints exact; max deviation 2.328e-10 matches the file's own claim. |
-| `oracle/vendor/FullMath.sol` | 89 | 3,8 | **Clean.** Faithful port; fuzzed 200,012 cases, **0 mismatches**. The `prod1 == 0` fast path IS canonical upstream (a suspected port addition — refuted). |
+| `oracle/vendor/FullMath.sol` | 89 | 3,8 | **Clean.** Faithful port; fuzzed 200,012 cases, **0 mismatches**. The `prod1 == 0` fast path IS canonical upstream (a suspected port addition: refuted). |
 | `FeeEngine.sol` | 136 | 1,2,3,6,9 | **Defects:** M-2, M-3, I-5. Fee/carry math re-derived correct and complementary. |
 | `OperatorRegistry.sol` | 162 | 1,3,6 | **No exploitable defect.** Carry cannot be double-consumed. Manufactured-loss-carry probed; self-corrects. |
 | `AggregationRouterAdapter.sol` | 78 | 1,2,3,8,9 | **Defects:** H-4. Full-balance sweep and missing guard noted; approvals verified correct; bounded by the vault's own delta re-check. |
 | `DirectPoolAdapter.sol` | 95 | 1,2,3,8 | **No defect.** V2 formula canonical; swap direction verified both ways. Not deployed by any config. |
-| `SubVaultRegistry.sol` | 105 | 1,3,5,7 | **No exploitable defect.** Fee stacking exact; depth cap matches; cycles structurally impossible (though the guard relies on the factory, not itself — noted). |
+| `SubVaultRegistry.sol` | 105 | 1,3,5,7 | **No exploitable defect.** Fee stacking exact; depth cap matches; cycles structurally impossible (though the guard relies on the factory, not itself: noted). |
 | `VaultFactory.sol` | 140 | 1,2,8 | **Defects:** L-1; PX-4 residual challenged (§5). |
 | `VaultDeployer.sol` | 106 | 1,2,8 | **Clean.** CREATE uses a compile-time-pinned blob; holds no authority; attestation stays factory-gated. Refuted as an attack path. |
 | `lib/BoundedCall.sol` | 46 | 2,7,9 | **Defect:** L-3. |
@@ -1219,53 +1214,52 @@ All 45 coded rows reviewed. **Eight documented mitigations do not hold as writte
 
 | Row | Verdict |
 |---|---|
-| **EX-2** | **NOT IMPLEMENTED** — H-4. |
-| **CM-7** | **DOES NOT HOLD** — H-8; the snapshot binds the wrong side of proposal creation. **PARTIALLY REMEDIATED (Phase 2):** the signer regime now also requires FOR-stake quorum (kills zero-stake sybils) and passes on an outright FOR-stake majority (kills dust-griefing lockout); the regime-flip residual is config-mitigated (meaningful `minDepositUsdc`). See H-8 remediation status. |
-| **EE-10** | **DOES NOT HOLD**, on three independent counts — **C-2** (no bounded deadline), **C-5** (exited *and* Mode-F-queued shares both retain full weight on the in-flight proposal), **M-7** (~31-day repeatable lock even at a fully compliant config). |
-| **VO-7** | **RESIDUAL MATERIALLY LARGER** — M-10; direction-binding is per address, not per actor. |
-| **MO-1** | **SCOPE CLAIM FALSIFIED** — C-2; the Mode-I fallback covers a *broken* module, not a correct governance answering `true` forever. |
-| **MO-2** | **PARTIALLY FALSIFIED** — M-11; returndata bounding covers `tryTransfer` only, one of four call shapes. |
-| **SF-1** | **NOT UPHELD** — M-1 (independence unenforced) and H-1 (median robustness fails at the documented quorum). |
-| **PX-1** | **PARTIALLY FALSE** — M-2; the reverting USDC leg takes the whole settlement down, so in-kind assets are *not* kept exitable. |
-| **SV-1 / SV-7** | **GOVERNANCE NOT UPHELD** — C-1. Look-through *pricing* is correct (verified); child *governance* is not. |
-| EE-1 | **UPHELD** — NAV never reads `balanceOf`; verified across all paths. Donation defence holds. |
-| VO-9 | **UPHELD in the deposit direction** (control test passes); silent on withdrawal — C-5. |
+| **EX-2** | **NOT IMPLEMENTED**: H-4. |
+| **CM-7** | **DOES NOT HOLD**: H-8; the snapshot binds the wrong side of proposal creation. **PARTIALLY REMEDIATED (Phase 2):** the signer regime now also requires FOR-stake quorum (kills zero-stake sybils) and passes on an outright FOR-stake majority (kills dust-griefing lockout); the regime-flip residual is config-mitigated (meaningful `minDepositUsdc`). See H-8 remediation status. |
+| **EE-10** | **DOES NOT HOLD**, on three independent counts: **C-2** (no bounded deadline), **C-5** (exited *and* Mode-F-queued shares both retain full weight on the in-flight proposal), **M-7** (~31-day repeatable lock even at a fully compliant config). |
+| **VO-7** | **RESIDUAL MATERIALLY LARGER**: M-10; direction-binding is per address, not per actor. |
+| **MO-1** | **SCOPE CLAIM FALSIFIED**: C-2; the Mode-I fallback covers a *broken* module, not a correct governance answering `true` forever. |
+| **MO-2** | **PARTIALLY FALSIFIED**: M-11; returndata bounding covers `tryTransfer` only, one of four call shapes. |
+| **SF-1** | **NOT UPHELD**: M-1 (independence unenforced) and H-1 (median robustness fails at the documented quorum). |
+| **PX-1** | **PARTIALLY FALSE**: M-2; the reverting USDC leg takes the whole settlement down, so in-kind assets are *not* kept exitable. |
+| **SV-1 / SV-7** | **GOVERNANCE NOT UPHELD**: C-1. Look-through *pricing* is correct (verified); child *governance* is not. |
+| EE-1 | **UPHELD**: NAV never reads `balanceOf`; verified across all paths. Donation defence holds. |
+| VO-9 | **UPHELD in the deposit direction** (control test passes); silent on withdrawal: C-5. |
 | PX-4 | **UPHELD as to authority** (see §5 for the challenge to its accepted residual). |
-| EE-7 | **UPHELD** — shares are non-transferable; no `transfer`/`approve`/`transferFrom` exists. |
-| MO-3, MO-4 | **UPHELD** — queue-time gate and uniform fee withholding verified. |
+| EE-7 | **UPHELD**: shares are non-transferable; no `transfer`/`approve`/`transferFrom` exists. |
+| MO-3, MO-4 | **UPHELD**: queue-time gate and uniform fee withholding verified. |
 | CM-1..CM-6, CM-8, EE-2..EE-6, EE-8, EE-9, EE-11, EX-1, EX-3, EX-4, SF-3..SF-5, SV-2..SV-6, VO-1..VO-6, VO-8, PX-2, PX-3 | Reviewed; no new defect beyond those reported above. |
 
 ### 4.3 Standards sweep (SWC-100…136)
 
 All 37 entries walked. **Not present / not applicable (24):** SWC-100, 103, 105, 106, 108, 109, 110,
-111, 112 (no `delegatecall` anywhere — verified by grep), 115 (no `tx.origin`), 117, 118, 119, 120
+111, 112 (no `delegatecall` anywhere, verified by grep), 115 (no `tx.origin`), 117, 118, 119, 120
 (no randomness consumed), 121, 122, 124 (no `sstore` in any assembly block; all six sites
 `memory-safe`), 125, 127, 129, 130, 132, 133 (no `abi.encodePacked` anywhere).
 
-**Applicable — defended:** SWC-101 (0.8 checked math; all five `unchecked` blocks individually
+**Applicable, defended:** SWC-101 (0.8 checked math; all five `unchecked` blocks individually
 verified, all failing closed), SWC-104 (return values checked at every site), SWC-107 (mutex complete
 for same-contract; see H-9 for the cross-contract case), SWC-116 (`block.timestamp` deliberate per
-C-2 — but see H-2 for the one unsound use), SWC-126 (`BoundedCall`; the inverse gas-starvation attack
+C-2, but see H-2 for the one unsound use), SWC-126 (`BoundedCall`; the inverse gas-starvation attack
 refuted with numbers).
 
-**Applicable — PRESENT:** SWC-113 (DoS with failed call — M-2, M-11, H-6), SWC-114 (transaction-order
-dependence — M-9, M-10, M-15), SWC-128 (block gas limit — M-5), SWC-123 (requirement violation —
-M-8), SWC-131/135 (unused code — I-4), SWC-134 (hardcoded gas — I-2), SWC-136 (unencrypted on-chain
-data — VO-7 residual, plus unenforced salt entropy).
+**Applicable, PRESENT:** SWC-113 (DoS with failed call, M-2, M-11, H-6), SWC-114 (transaction-order
+dependence, M-9, M-10, M-15), SWC-128 (block gas limit, M-5), SWC-123 (requirement violation,
+M-8), SWC-131/135 (unused code, I-4), SWC-134 (hardcoded gas, I-2), SWC-136 (unencrypted on-chain
+data: VO-7 residual, plus unenforced salt entropy).
 
 **Recent DeFi exploit classes.** Share inflation / first-depositor / donation: **refuted** (internal
 accounting, `minted > 0` required, smallest first mint 1e12 share-wei, exit-fee pump bounded to
-100 bps). Price-of-share manipulation via donation: **defended** — this one could not be broken.
-Oracle manipulation: **present** (C-3, C-4, H-1, H-2). Read-only reentrancy: **present** (H-9) —
-*as found*; H-9 is recorded `REMEDIATED 2026-09-01` in its own row above, so this line is the
+100 bps). Price-of-share manipulation via donation: **defended**; this one could not be broken.
+Oracle manipulation: **present** (C-3, C-4, H-1, H-2). Read-only reentrancy: **present** (H-9), *as found*; H-9 is recorded `REMEDIATED 2026-09-01` in its own row above, so this line is the
 finding-time state, not the current one.
 Callback/hook tokens: **partially present** (M-3, L-5). Fee-on-transfer: defended on the vault
 (measured deltas everywhere), **not** on `FeeEngine`'s vault-reported credit paths. Signature replay
-/ domain separation: **not applicable** — no signature scheme exists anywhere in the tree (verified
-by grep for `ecrecover`, `_TYPEHASH`, `permit`, EIP-712 domain — zero hits), so the
+/ domain separation: **not applicable**, no signature scheme exists anywhere in the tree (verified
+by grep for `ecrecover`, `_TYPEHASH`, `permit`, EIP-712 domain, zero hits), so the
 "USDC EIP-712 domain varies per chain" hazard does not arise. Approval race: **refuted** (0→amt→0 at
 all three sites, so the USDT nonzero-approval revert never triggers). Dust-loop extraction:
-**refuted with numbers** (~$1e-6 per exit against ≥150k gas — ~3,400:1 against the attacker; and
+**refuted with numbers** (~$1e-6 per exit against ≥150k gas, ~3,400:1 against the attacker; and
 `:538`'s truncation loss exceeds `:621`'s gain by construction). Arbitrary-calldata router class:
 **partially present** (H-4), materially bounded by the vault's independent delta re-check.
 Flash-loan governance capture: **present in the withdrawal direction** (C-5); the deposit direction
@@ -1274,7 +1268,7 @@ is correctly defended.
 ### 4.4 Audit test artifacts
 
 All under `contracts/test/audit/`; `contracts/src` never modified. (They were authored under
-`docs/audit/tests/` and moved when they landed in PR #36 — that path is not in the tree.)
+`docs/audit/tests/` and moved when they landed in PR #36, that path is not in the tree.)
 
 | File | Tests | Covers |
 |---|---|---|
@@ -1291,7 +1285,7 @@ All under `contracts/test/audit/`; `contracts/src` never modified. (They were au
 
 The table above is the count **as audited**, against the pre-remediation tree. **30 are in the
 tree today:** the three C-2 cases in `AuditExecutionWindowFreeze.t.sol` were removed when the C-2
-hard caps landed (PR #36) — they asserted the *unfixed* behaviour, so keeping them would mean a
+hard caps landed (PR #36), they asserted the *unfixed* behaviour, so keeping them would mean a
 permanently-red suite, which is noise rather than evidence. That file's header records the removal
 and the exploits survive in git history; the fix is pinned by
 `Governance.t.sol::test_phaseDurationHardCapsEnforced`. Verified 2026-08-27: the command below
@@ -1304,40 +1298,40 @@ cd contracts && forge test --match-path "test/audit/Audit*.t.sol" -vv
 **Remediation-era additions (post-`v0.3.0-audit`, same directory).** Later fixes added their own
 regression suites under `contracts/test/audit/`, referenced per-finding above:
 `AuditProposalThresholdFloor.t.sol`, `AuditSafeTransferBounded.t.sol`,
-`AuditFeeEngineReentrancy.t.sol`, `AuditUsdcLegEscrow.t.sol`, and — Phase 2 —
+`AuditFeeEngineReentrancy.t.sol`, `AuditUsdcLegEscrow.t.sol`, and, Phase 2,
 `AuditRootVaultsOnly.t.sol` (2 tests, C-1: one reproduces the funded-child capture with sub-vaults
 enabled, one proves it unreachable under the launch "root vaults only" gate),
 `AuditQuorumRegimeDust.t.sol` (3 tests, H-8), `AuditDepositSlippage.t.sol` (2 tests, M-15), and the
-Phase-2 **re-verification** suites: `AuditC4EndToEnd.t.sol` (7 tests — drives the REAL
+Phase-2 **re-verification** suites: `AuditC4EndToEnd.t.sol` (7 tests, drives the REAL
 `OracleAggregator` into a deposit; `test_safe_*` establish the a≤1 safe boundary, `test_residual_*`
 + `test_c4EndToEnd_*` demonstrate C-6's a≥2 theft) and `AuditTwapFaithfulMock.t.sol` (8 tests +
 `FaithfulUniV3Pool.sol`, an independent v3-core `Oracle.sol` port confirming the H-2 fix holds
 against faithful observation-ring semantics, closing H-3's test-blindness for the reachable
 dimensions). The `test_finding_*` / `test_residual_*` cases that pass by executing an exploit now
-span three buckets — unreachable-at-launch-by-config (sub-vaults off), config-mitigated residual
-(H-8a), and **live open finding (C-6)** — so quote any "N passing" figure only with that qualifier.
+span three buckets, unreachable-at-launch-by-config (sub-vaults off), config-mitigated residual
+(H-8a), and **live open finding (C-6)**, so quote any "N passing" figure only with that qualifier.
 
-### 4.5 `SLITHER-TRIAGE.md` — incorrect dispositions
+### 4.5 `SLITHER-TRIAGE.md`: incorrect dispositions
 
-- **`calls-loop` / `costly-loop`** — the cited evidence does not support the claim. The row bounds
+- **`calls-loop` / `costly-loop`**, the cited evidence does not support the claim. The row bounds
   `navWad` at *"~237k gas (`NavGas.t.sol`)"*, but that fixture builds **one** child and **one**
-  grandchild with 3/2/1-asset baskets over stub sources — 6 `priceWad` calls. The caps the row
+  grandchild with 3/2/1-asset baskets over stub sources, 6 `priceWad` calls. The caps the row
   invokes permit **730** calls over source sets of up to 15. The loops are bounded in *shape* and
   unbounded in *cost* (**M-5**).
-- **`reentrancy-*`** — accurate for same-contract reentrancy and incomplete: a `VaultCore`'s public
+- **`reentrancy-*`**, accurate for same-contract reentrancy and incomplete: a `VaultCore`'s public
   views *are* consumed as an oracle by its parent, and a per-contract mutex is definitionally not a
   defence against a different contract reading mid-mutation. Slither does not model this either, so
   the row's reasoning and the analyser's blind spot coincide (**H-9**).
-- **`timestamp`** — sound for `Governance` and `Checkpoints`, but omits `UniswapV3TwapSource.sol:255`,
+- **`timestamp`**, sound for `Governance` and `Checkpoints`, but omits `UniswapV3TwapSource.sol:255`,
   which is the one timestamp use with security consequence (**H-2**). The row predates Sprint 11 and
   was not updated.
-- **`divide-before-multiply`** — correct for the payout legs, but generalizes "rounds in the vault's
+- **`divide-before-multiply`**, correct for the payout legs, but generalizes "rounds in the vault's
   favour" to "is safe." The same pattern at `:557` is exactly what makes `:576` unsatisfiable and
   reverts a member's exit (**H-6**). Those are different propositions.
-- **`missing-zero-check` ("Fixed")** — scope statement incomplete but benign: `VaultCore`'s
+- **`missing-zero-check` ("Fixed")**, scope statement incomplete but benign: `VaultCore`'s
   constructor also zero-checks none of `operatorRegistry_`, `governance_`, `feeEngine_`, `oracle_`.
   Worth recording the specific silent failure mode: a zero `governance` makes `boundedStaticCall`
-  succeed with `retSize == 0`, so `_pendingExecution` returns `false` permanently — the H-1 fallback
+  succeed with `retSize == 0`, so `_pendingExecution` returns `false` permanently, the H-1 fallback
   silently masks a mis-wired vault as "always Mode I."
 
 Rows checked and found **correct**: `unused-return`, `incorrect-equality` (including the load-bearing
@@ -1347,34 +1341,34 @@ regex is genuinely good work and the corrected form is right.
 
 ---
 
-## 5. Threat-model challenge — the accepted rows
+## 5. Threat-model challenge: the accepted rows
 
 The brief asked that accepted-risk rows be challenged rather than rubber-stamped.
 
 | Row | Accepted rationale | Verdict |
 |---|---|---|
-| **K-4 / SF-2** — staleness breaker freezes exits, no hatch | *"Any exit hatch during staleness IS the stale-price exit the breaker prevents."* | **Agree with the tradeoff; its premise is broken.** K-4 accepts a freeze requiring a *quorum failure*. **C-3** shows **one** source can force it permanently and unilaterally, and **M-1** shows the "≥3 independent sources" bounding the risk are unenforced. Fix C-3 and M-1 and we would accept K-4 as written. |
-| **K-2** — one offline member freezes rule changes | *"Near-immutability is the intent."* | **Agree.** Deliberate, clearly documented, and the cost falls on the vault that chose the config. Note it compounds C-2: a vault frozen by C-2 cannot RuleChange out even with full participation. |
-| **E7 / EE-5** — latency arb on repeat deposits | *"Bounded by the 1-day staleness ceiling + non-zero exit fee."* | **Disagree — materially understated.** The bound assumes a correct price within a drift band. **H-1**, **H-2** and **M-14** each break the band itself, **M-15** removes any user-side defence, and **C-4** measures the result at 88.9% of a victim's stake. The stated mitigation is the right one; the code does not deliver its precondition. |
-| **G3 / CM-5** — single-vault carry farming | *"1% exit-fee cap forces ~100:1 capital fronting + leaderboard drag."* | **Agree.** Independently probed: the cycle self-corrects because `costBasisUsdc` falls by exactly the carry gained. No net-positive path after gas was constructible. |
-| **PX-1** — USDC blacklist on a vault address | *"In-kind escrow keeps non-USDC assets exitable."* | **Disagree — the claim is false as written.** See **M-2**: the USDC leg uses reverting `safeTransfer`, so a blacklisted member loses the in-kind legs too, and the shared `FeeEngine` is a single blacklist target that would brick every fee-paying exit protocol-wide. The *risk* is inherent to USDC; the *stated mitigation* does not function. |
-| **E4** — parent exit reverts while the only covering child is mid-rebalance | *"Clean rollback + bounded retry (child timelock)."* | **Disagree — the bound does not exist.** **H-7**: a child pinned in `Active` by C-2 never settles, so there is no timelock to bound the retry, and the governance rescue reverts on the same path. |
-| **E5** — persistently-escrowing child makes the parent exit revert | *"Known residual (EE-6 asymmetry for child-held slices)."* | **Disagree — far broader than documented.** **H-6**: the residual is scoped to a *failing token transfer*, but ordinary child fees and ordinary in-kind truncation hit the identical `require` on the **default** configuration, and retrying cannot help because the shortfall is a fee. |
-| **GA-2 / VO-7** — mid-reveal tally readable | *"Commit binds direction, so no last-mover advantage."* | **Disagree — residual is larger.** **M-10**: binding is per address, and one actor may hold many. |
-| **EE-8** — last-two-member exit-fee endgame | *"Bounded at 1%, self-limiting."* | **Agree.** Verified: the sole-holder waiver fires correctly and the effect is bounded. |
-| **EE-9** — operator receives exit fee as a member | *"Routing is to shares, not identity."* | **Agree.** Verified: no identity-based routing exists. |
-| **SF-3** — cap-squatting on an opt-in capacity cap | *"Squatter's capital is at risk like anyone's."* | **Agree**, with a note: the cap is **not re-checked at activation** (`:379-385` vs `:325-327`), so NAV growth during the observation window can carry a vault past its cap. Informational. |
-| **CM-4** — operator sheds carry via a fresh identity | *"Reputation, not funds, is the enforcement."* | **Agree.** Verified the carry is keyed per `(member, opId)` and a fresh identity genuinely starts empty; the accepted residual is stated accurately. |
-| **PX-4 / S10 F-1** — `VaultFactory`'s five unvalidated immutables | *"A typo fails loudly; a hostile deployer is unanswerable."* | **Partially disagree.** The five do **not** fail alike. `registry` fails closed and loudly. But a factory pinned to a *valid* `VaultDeployer` holding a different creation-code blob mints **attested, registry-canonical vaults whose code is not `VaultCore`** — exactly the guarantee `VaultFactory.sol:27-30` claims. `VaultDeployer.creationCode()` exists as a verification aid and **nothing consumes it** outside a unit test. Compounding: see **M-13** — the mainnet deploy script has strictly weaker post-conditions than the testnet one. Recommend `require(keccak256(vaultDeployer.creationCode()) == keccak256(type(VaultCore).creationCode))` in `Deploy.s.sol`, plus a `code.length` check in the factory constructor. |
+| **K-4 / SF-2**: staleness breaker freezes exits, no hatch | *"Any exit hatch during staleness IS the stale-price exit the breaker prevents."* | **Agree with the tradeoff; its premise is broken.** K-4 accepts a freeze requiring a *quorum failure*. **C-3** shows **one** source can force it permanently and unilaterally, and **M-1** shows the "≥3 independent sources" bounding the risk are unenforced. Fix C-3 and M-1 and we would accept K-4 as written. |
+| **K-2**: one offline member freezes rule changes | *"Near-immutability is the intent."* | **Agree.** Deliberate, clearly documented, and the cost falls on the vault that chose the config. Note it compounds C-2: a vault frozen by C-2 cannot RuleChange out even with full participation. |
+| **E7 / EE-5**: latency arb on repeat deposits | *"Bounded by the 1-day staleness ceiling + non-zero exit fee."* | **Disagree: materially understated.** The bound assumes a correct price within a drift band. **H-1**, **H-2** and **M-14** each break the band itself, **M-15** removes any user-side defence, and **C-4** measures the result at 88.9% of a victim's stake. The stated mitigation is the right one; the code does not deliver its precondition. |
+| **G3 / CM-5**: single-vault carry farming | *"1% exit-fee cap forces ~100:1 capital fronting + leaderboard drag."* | **Agree.** Independently probed: the cycle self-corrects because `costBasisUsdc` falls by exactly the carry gained. No net-positive path after gas was constructible. |
+| **PX-1**: USDC blacklist on a vault address | *"In-kind escrow keeps non-USDC assets exitable."* | **Disagree: the claim is false as written.** See **M-2**: the USDC leg uses reverting `safeTransfer`, so a blacklisted member loses the in-kind legs too, and the shared `FeeEngine` is a single blacklist target that would brick every fee-paying exit protocol-wide. The *risk* is inherent to USDC; the *stated mitigation* does not function. |
+| **E4**: parent exit reverts while the only covering child is mid-rebalance | *"Clean rollback + bounded retry (child timelock)."* | **Disagree: the bound does not exist.** **H-7**: a child pinned in `Active` by C-2 never settles, so there is no timelock to bound the retry, and the governance rescue reverts on the same path. |
+| **E5**: persistently-escrowing child makes the parent exit revert | *"Known residual (EE-6 asymmetry for child-held slices)."* | **Disagree: far broader than documented.** **H-6**: the residual is scoped to a *failing token transfer*, but ordinary child fees and ordinary in-kind truncation hit the identical `require` on the **default** configuration, and retrying cannot help because the shortfall is a fee. |
+| **GA-2 / VO-7**: mid-reveal tally readable | *"Commit binds direction, so no last-mover advantage."* | **Disagree: residual is larger.** **M-10**: binding is per address, and one actor may hold many. |
+| **EE-8**: last-two-member exit-fee endgame | *"Bounded at 1%, self-limiting."* | **Agree.** Verified: the sole-holder waiver fires correctly and the effect is bounded. |
+| **EE-9**: operator receives exit fee as a member | *"Routing is to shares, not identity."* | **Agree.** Verified: no identity-based routing exists. |
+| **SF-3**: cap-squatting on an opt-in capacity cap | *"Squatter's capital is at risk like anyone's."* | **Agree**, with a note: the cap is **not re-checked at activation** (`:379-385` vs `:325-327`), so NAV growth during the observation window can carry a vault past its cap. Informational. |
+| **CM-4**: operator sheds carry via a fresh identity | *"Reputation, not funds, is the enforcement."* | **Agree.** Verified the carry is keyed per `(member, opId)` and a fresh identity genuinely starts empty; the accepted residual is stated accurately. |
+| **PX-4 / S10 F-1**: `VaultFactory`'s five unvalidated immutables | *"A typo fails loudly; a hostile deployer is unanswerable."* | **Partially disagree.** The five do **not** fail alike. `registry` fails closed and loudly. But a factory pinned to a *valid* `VaultDeployer` holding a different creation-code blob mints **attested, registry-canonical vaults whose code is not `VaultCore`**: exactly the guarantee `VaultFactory.sol:27-30` claims. `VaultDeployer.creationCode()` exists as a verification aid and **nothing consumes it** outside a unit test. Compounding: see **M-13**: the mainnet deploy script has strictly weaker post-conditions than the testnet one. Recommend `require(keccak256(vaultDeployer.creationCode()) == keccak256(type(VaultCore).creationCode))` in `Deploy.s.sol`, plus a `code.length` check in the factory constructor. |
 
 ---
 
 ## 6. Methodology and limitations
 
-**Passes run.** Nine specialist reviews — access control; reentrancy and external-call safety;
+**Passes run.** Nine specialist reviews, access control; reentrancy and external-call safety;
 arithmetic; oracle and price manipulation; governance and MEV; accounting and fund-flow invariants;
 denial of service and griefing; external integrations and deployment; standards and known CVE
-classes — each walking every in-scope function rather than sampling, with deliberate overlap. Every
+classes, each walking every in-scope function rather than sampling, with deliberate overlap. Every
 candidate was then subjected to a separate adversarial pass whose objective was to **refute** it;
 candidates without a concrete, reproducible path were downgraded or dropped, and notable refutations
 are recorded so they are not re-reported.
@@ -1396,7 +1390,7 @@ should weight this as evidence about the process, in both directions.
 **What an AI pre-audit cannot attest.**
 - **No liability, insurance, or signed attestation**, and no reputational stake. This does not
   satisfy an audit gate.
-- **No formal verification** — no symbolic execution, model checking, or machine-checked proof. The
+- **No formal verification**, no symbolic execution, model checking, or machine-checked proof. The
   project's own invariant suites were read but not re-derived. Note that `foundry.toml` sets
   `fail_on_revert = false` and `SystemInvariant.t.sol:82-88` wraps `requestExit` in `try/catch {}`,
   so H-6's reverts are silently discarded by those runs; its handler also holds prices static and
@@ -1413,12 +1407,12 @@ should weight this as evidence about the process, in both directions.
 
 **What a human firm should still do.**
 1. Re-derive the oracle findings against live Base state, on a fork.
-2. Verify every address, pool identity and Pyth price ID in `base-mainnet.json` on-chain — including
+2. Verify every address, pool identity and Pyth price ID in `base-mainnet.json` on-chain, including
    `cast call <pool> 'observations(uint256)(uint32,int56,uint160,bool)' 0` on each pool, which
    nothing in this repository exercises (**M-12**), and confirm `slot0`'s three same-width `uint16`
    fields are in the assumed order.
 3. Measure each Chainlink feed's heartbeat and any `minAnswer`/`maxAnswer` bounds, and each Pyth
-   feed's typical `conf` — all three feed into H-1's reachability and I-1.
+   feed's typical `conf`, all three feed into H-1's reachability and I-1.
 4. Run symbolic execution over `_settleExit` and the `_fullNavWad` recursion.
 5. Model the sub-vault and one-block-stake governance economics adversarially (C-1, C-5, H-8).
 6. **Independently re-audit the corrected tree in full.** The remediation set touches most of the

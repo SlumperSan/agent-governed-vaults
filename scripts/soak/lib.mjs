@@ -16,19 +16,51 @@
  *      from it: every assertion re-reads state with `cast call`. The runner's own output is
  *      not evidence about the chain.
  *
- * Env: BASE_SEPOLIA_RPC, SOAK_SIGNER_ARGS, CAST, and per-drill state paths.
+ * Env: SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_SIGNER_ARGS, CAST, and per-drill
+ *      state paths.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { classifyCallError } from '../../packages/canary/src/call-error.mjs';
 
-export const ROOT = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..',
-);
-export const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+// fileURLToPath, not `new URL(...).pathname`: a checkout path containing a space arrives here
+// percent-encoded, so the raw pathname yields a directory that does not exist and every drill
+// dies at load resolving the address book under it.
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+// SOAK_RPC is the chain-neutral name; BASE_SEPOLIA_RPC is read after it so an operator's existing
+// environment keeps working unchanged. The documented default is a Base Sepolia public node, which
+// is the chain `deploymentPath`'s default address book describes. A run elsewhere sets SOAK_RPC and
+// SOAK_DEPLOYMENT together, and `assertLiveChainId` refuses the pair when they disagree.
+//
+// `||`, not `??`, because agent-policy.mjs resolves the same two names with `||`. A shell that
+// exports SOAK_RPC empty would otherwise leave this at '' while drill 5's viem client fell through
+// to the default — the drill's cast reads and its writes on two endpoints, which no chain-id check
+// can see, since drill 5 reads the id through the viem side's url.
+// THE DEFAULT IS NOT publicnode, DELIBERATELY, AND THIS IS THE REASON. It was
+// `https://base-sepolia-rpc.publicnode.com` until 2026-09-09, and that endpoint PRUNES LOGS AND
+// RECEIPTS. It answers `eth_call`, `eth_blockNumber` and `eth_getBlockByNumber` correctly — so it
+// looks entirely healthy — while `eth_getLogs` over an old range returns `[]` and
+// `eth_getTransactionReceipt` returns `null` for transactions that certainly landed. Measured that
+// day on factory 0xc1cb7824…9743 over blocks 46,307,100–46,307,300:
+//
+//     sepolia.base.org        -> 1 log  (VaultCreated, topics[1] = 0xb940d71b…)
+//     base-sepolia.drpc.org   -> 1 log  (the same one)
+//     publicnode              -> 0 logs
+//
+// while `vaultCount()` returned 7 and `allVaults[0]` returned that vault on ALL THREE. State reads
+// agree; log reads do not. An absent log on a pruning endpoint is indistinguishable from an event
+// that never happened, and it cost a full round of wrong conclusions written into this repo as
+// fact — see the smokeVault note in `soak-vaults.json`. `assertLogsServed()` below exists so it
+// cannot happen silently again.
+export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 
-/** Tokenize SOAK_SIGNER_ARGS respecting double quotes (Windows paths contain spaces). */
+/**
+ * Tokenize SOAK_SIGNER_ARGS respecting double quotes, so a quoted argument containing spaces —
+ * a `--keystore` or `--password-file` path, say — survives as one token instead of splitting.
+ */
 export function tokenize(s) {
   const out = [];
   const re = /"([^"]*)"|(\S+)/g;
@@ -125,37 +157,24 @@ export function call(to, sig, ...args) {
 }
 export const callU = (to, sig, ...args) => BigInt(call(to, sig, ...args)[0]);
 
-// REDUNDANT WITH THE TERNARY BELOW, and kept only as documentation of what "transport" means in
-// practice. Trace it: if REVERTED matches, this cannot fire; if it does not, both paths already
-// return 'transport'. Deleting it changes no behaviour and no test. It is labelled rather than
-// removed because in a file whose whole subject is that this classification is security-relevant,
-// a decorative regex reading as load-bearing logic is its own hazard.
-const TRANSPORT_ERR = /429|rate.?limit|max retries exceeded|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|connection|dns|502|503|504|521/i;
-/** cast's wording for a contract-level revert, in both the JSON-RPC and the local-decode spellings. */
-const REVERTED = /execution reverted|revert(ed)?:/i;
-
-/**
- * Classify a failed `cast` call. ONLY a recognised revert is evidence about the contract; anything
- * else is missing evidence and must be recorded as such.
- *
- * This exists because a drill asserted `!result.ok` to prove a call was REFUSED, and `ok:false` is
- * also what a rate limit produces — so a 429 satisfied a security assertion. "It failed" and "the
- * contract refused it" are different claims, and only one of them is a finding.
- *
- * @param {string} err
- * @returns {'revert'|'transport'}
- */
-export function classifyCallError(err) {
-  if (TRANSPORT_ERR.test(err) && !REVERTED.test(err)) return 'transport';
-  return REVERTED.test(err) ? 'revert' : 'transport';
-}
+// ONE DEFINITION, TWO HARNESSES. `classifyCallError` moved to packages/canary/src/call-error.mjs
+// when the canary needed the same rule: "it failed" and "the contract refused it" are different
+// claims there too, and a second copy of a security-relevant classifier is a copy that drifts.
+// It lives under packages/ rather than here because the Dockerfile copies only `packages` and
+// `apps` into the runtime image, so a canary importing this file would fail in production.
+// Re-exported so every `import { classifyCallError } from './lib.mjs'` in scripts/soak and
+// scripts/test keeps working — the same shape oracle-sampler.mjs already uses to re-export it.
+export { classifyCallError };
 
 /**
  * Is a paid-perception agent permanently blind, and if so what should the operator be told?
  *
- * The reference agent perceives through PAID x402 reads. Once its session spend cap is exhausted
- * it can no longer read the vault list or the leaderboard, so it reports "perception gaps" and
- * "no action warranted" on every subsequent tick — forever. No later tick can satisfy the goal.
+ * The reference agent perceives through PAID x402 reads. Once its session spend cap can no longer
+ * fund one, it can no longer read the vault list or the leaderboard, so it reports "perception
+ * gaps" and "no action warranted" on every subsequent tick — forever. No later tick can satisfy
+ * the goal. "Can no longer fund one" is not the same as "spent to zero": the budget refuses a read
+ * when `spent + price > cap`, so a positive remainder smaller than the next read's price is
+ * already terminal.
  *
  * On 2026-09-04 drill 5 hit the cap at tick 5 of 40 and then polled a blind agent for the
  * remaining 35 ticks — 17.5 minutes — before failing with "vote:commit: not satisfied after 40
@@ -164,6 +183,11 @@ export function classifyCallError(err) {
  *
  * Pure, and in lib.mjs rather than in the drill, because the drill executes at import and so
  * anything defined there cannot be tested.
+ *
+ * The NAME is narrower than the predicate — it also fires below exhaustion, on the
+ * cannot-fund-one-more case above. Kept because renaming it touches sixteen occurrences across
+ * this file, drill5-agent-execute.mjs and soak-drills.test.mjs, which is a different change from
+ * this one; the JSDoc and the message it returns both state the wider rule.
  *
  * @param {{enabled:boolean,spentUsdc:string,capUsdc:string,remainingUsdc:string,paidReads:number}|undefined} spend
  * @param {number} tick 1-based tick just completed
@@ -180,15 +204,24 @@ export function budgetExhaustedFailure(spend, tick, maxTicks, label) {
   // the misleading failure this function exists to replace; the 2026-09-04 run landed on exactly
   // zero only because its reads happened to divide the cap evenly.
   //
-  // The average price paid so far is the best floor available from `summary()` — it exposes no
-  // per-read price — and it is the right shape: if what remains cannot buy an average read, the
-  // next perception is already refused.
+  // THE THRESHOLD IS A MEAN, NOT A BOUND. `summary()` exposes no per-read price, so the only
+  // price this can compute is `spentUsdc / paidReads` — the average of the reads already paid
+  // for. An average is not a floor on the next read's price, and it is wrong in both directions:
+  // if the next read is cheaper than the mean, this aborts a run that could still have perceived;
+  // if it is dearer and `remaining >= avgRead`, this keeps polling an agent that is already
+  // blind. Erring toward the early abort is the deliberate choice, because that direction names
+  // the cause, while waiting produces the governance-shaped failure this function exists to
+  // replace.
   const remaining = Number(spend.remainingUsdc);
   const avgRead = spend.paidReads > 0 ? Number(spend.spentUsdc) / spend.paidReads : 0;
   if (remaining > 0 && !(avgRead > 0 && remaining < avgRead)) return null;
 
   const perTick = Number(spend.spentUsdc) / Math.max(tick, 1);
-  return `${label}: the agent exhausted its x402 session spend cap at tick ${tick}/${maxTicks} `
+  // "can no longer fund" rather than "exhausted": this fires on a zero remainder AND on a
+  // positive remainder too small to buy one average read, and only the first of those is
+  // exhaustion. The parenthetical prints the remainder, so the operator sees which case it is.
+  return `${label}: the agent can no longer fund an x402 read from its session spend cap at `
+    + `tick ${tick}/${maxTicks} `
     + `($${spend.spentUsdc} of $${spend.capUsdc} spent, $${spend.remainingUsdc} left, `
     + `${spend.paidReads} paid reads averaging $${avgRead.toFixed(3)}). It perceives through `
     + `paid reads, so from here it is BLIND and no further tick can satisfy the goal — this is a `
@@ -396,18 +429,36 @@ export const PTYPE = { Rebalance: 0, RuleChange: 1, ChildAllocation: 2 };
  * "vote:commit: not satisfied after 40 ticks", a GOVERNANCE-shaped message for a
  * NO-VOTABLE-PROPOSAL cause. The guard was not too weak; it asked the wrong question.
  *
- * Four conjuncts, and the fourth is not theoretical: proposal 3 was raised BEFORE the agent
- * activated, so the agent's snapshot weight reads zero and `commitVote` would revert `NoWeight`.
- * A predicate that checked only status and deadline would attach to it and reproduce the same
- * forty-tick stall wearing a different costume.
+ * Five conjuncts, and the last two are not theoretical: proposal 3 was raised BEFORE the agent
+ * activated, so the agent's snapshot weight reads zero and `commitVote` would revert `NoWeight`;
+ * and drill 5 queues an exit in its own next phase, so a re-run reaches a state where the
+ * snapshot weight is positive and the CURRENT weight is zero. A predicate that checked only
+ * status and deadline would attach to either and reproduce the same forty-tick stall wearing a
+ * different costume.
  *
  * Pure so it can be tested: the drill executes at import, so a predicate defined there could not be.
  *
+ * BOTH WEIGHT TERMS, TESTED SEPARATELY. `commitVote` (Governance.sol:365) gates on
+ * `_boundedWeight` (Governance.sol:352-356), which is `min(pastVotingEligibleShares(member,
+ * createdAt-1), votingEligibleShares(member))`. For the verdict, "either term is zero" and
+ * "the minimum is zero" are the same test — but they are not the same EXPLANATION, so the two
+ * terms are taken as separate arguments and checked one at a time. A voter who has queued an
+ * exit has snapshot weight and zero current weight, because `votingEligibleShares` is
+ * `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028); handed only the already-minimised
+ * weight, this function cannot tell that apart from "the proposal predates this account" and
+ * would state the wrong cause with full confidence. BOTH terms are REQUIRED, not defaulted: a
+ * caller that omits either gets a refusal naming the missing one, never a silent fallback to a
+ * one-term story. `undefined <= 0n` is `false`, so a missing term left unchecked would skip its
+ * branch and be read as a healthy weight — the fail-OPEN direction, and the reason the null test
+ * is separate from the zero test rather than folded into it.
+ *
  * @param {{status: string, ptype: number, commitDeadline: number}} p a `readProposal` result
- * @param {{now: number, snapshotWeight: bigint, wantPtype?: number}} ctx
+ * @param {{now: number, snapshotWeight: bigint, currentWeight: bigint, wantPtype?: number}} ctx
+ *   `snapshotWeight` is `pastVotingEligibleShares(voter, createdAt-1)` and `currentWeight` is
+ *   `votingEligibleShares(voter)` — the two terms unbounded, not their minimum.
  * @returns {{votable: boolean, reason: string}} reason is '' when votable
  */
-export function votableNow(p, { now, snapshotWeight, wantPtype }) {
+export function votableNow(p, { now, snapshotWeight, currentWeight, wantPtype }) {
   if (!p) return { votable: false, reason: 'no proposal was read' };
   if (p.status !== 'Active') {
     return { votable: false, reason: `status is ${p.status}, not Active — activeProposalOf still names it because Governance never clears that mapping on settlement` };
@@ -419,15 +470,36 @@ export function votableNow(p, { now, snapshotWeight, wantPtype }) {
   if (wantPtype != null && p.ptype !== wantPtype) {
     return { votable: false, reason: `ptype is ${p.ptype}, not the expected ${wantPtype}` };
   }
+  if (snapshotWeight == null || currentWeight == null) {
+    const missing = snapshotWeight == null
+      ? (currentWeight == null ? 'snapshotWeight and currentWeight were' : 'snapshotWeight was')
+      : 'currentWeight was';
+    return { votable: false, reason: `${missing} not supplied — commitVote gates on min(snapshot, current) (Governance.sol:352-356, :365), so a one-term answer cannot be given` };
+  }
   if (snapshotWeight <= 0n) {
     return { votable: false, reason: 'the voter had zero voting-eligible stake at the proposal\'s snapshot — it was raised before this account held shares, so commitVote would revert NoWeight' };
+  }
+  if (currentWeight <= 0n) {
+    return { votable: false, reason: `the voter holds no voting-eligible shares NOW (snapshot weight ${snapshotWeight}, current ${currentWeight}) — votingEligibleShares returns 0 for the parent vault and otherwise sharesOf minus queuedExitShares (VaultCore.sol:1026-1027), so a queued exit zeroes it, and commitVote gates on min(snapshot, current) (Governance.sol:352-356) and would revert NoWeight` };
   }
   return { votable: true, reason: '' };
 }
 
-/** Read a proposal into a named object. */
-export function readProposal(governance, pid) {
-  const p = call(governance, PROPOSAL_SIG, pid);
+/**
+ * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
+ *
+ * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through
+ * `call()`, i.e. a live `cast` subprocess, so nothing in the suite could reach this arithmetic:
+ * `status` is `STATUS[Number(p[P.STATUS])]`, and `votableNow` compares that string against
+ * `'Active'`. Respell an entry in `STATUS`, or shift one index in `P`, and `votableNow` rejects
+ * every proposal for a reason it states confidently and wrongly, while the whole suite stays
+ * green — the same silent-failure shape PR #177 closed for the budget guard (issue #178).
+ *
+ * @param {string[]} p one decoded `cast call` output line per tuple member, in `P` order —
+ *   exactly what `call()` returns (its `.map(clean)` has already run)
+ * @returns {object} the named proposal, with `raw` carrying the input lines unchanged
+ */
+export function decodeProposal(p) {
   return {
     raw: p,
     vault: p[P.VAULT], ptype: Number(p[P.PTYPE]), proposer: p[P.PROPOSER],
@@ -442,6 +514,11 @@ export function readProposal(governance, pid) {
   };
 }
 
+/** Read a proposal into a named object. The decode is `decodeProposal`; this adds only the call. */
+export function readProposal(governance, pid) {
+  return decodeProposal(call(governance, PROPOSAL_SIG, pid));
+}
+
 /** Event topics, computed from the Solidity signatures rather than hardcoded. */
 export const TOPIC = {
   VaultCreated: () => keccakOf('VaultCreated(address,address,address,uint256)'),
@@ -454,4 +531,75 @@ export const TOPIC = {
   DepositPending: () => keccakOf('DepositPending(address,uint256,uint64)'),
   DepositActivated: () => keccakOf('DepositActivated(address,uint256,uint256)'),
 };
+
+/**
+ * Refuse to run against an RPC that cannot serve historical logs.
+ *
+ * A pruning endpoint does not error and does not warn — it returns an empty array, which is exactly
+ * what a range containing no events returns. Every conclusion of the form "the chain has no record
+ * of X" is therefore unsound on an endpoint nobody checked, and on 2026-09-09 one such conclusion
+ * was written into this repository as fact and had to be retracted (see the `smokeVault` note in
+ * `soak-vaults.json`, and the `RPC` comment above for the measurements).
+ *
+ * The probe is a POSITIVE CONTROL: ask for a range that is KNOWN to contain at least one log from
+ * a contract this deployment owns, and require at least one back. It cannot prove the endpoint
+ * serves every range, but it turns the silent failure into a loud one, which is the whole gap.
+ *
+ * The known-good range is derived, not hardcoded: `allVaults(0)` is the factory's first vault, and
+ * a factory that has created a vault has necessarily emitted the event announcing it. `fromBlock`
+ * is the earliest block the caller is willing to scan.
+ *
+ * @param {string} factory   the deployment's VaultFactory address
+ * @param {number} fromBlock earliest block to scan (the deployment block is the right value)
+ */
+export function assertLogsServed(factory, fromBlock, { chunk = 10_000, maxChunks = 100 } = {}) {
+  const count = callU(factory, 'vaultCount()(uint256)');
+  if (count === 0n) {
+    log('assertLogsServed: the factory has created no vaults, so there is no positive control — skipped');
+    return;
+  }
+  const first = call(factory, 'allVaults(uint256)(address)', '0')[0].trim().toLowerCase();
+  const needle = first.slice(2);
+  const head = Number(cast(['block-number', '--rpc-url', RPC]));
+  const topic = TOPIC.VaultCreated();
+
+  // Scanned in bounded windows rather than one open range: providers cap `eth_getLogs` spans, and a
+  // refused range would look like a pruned one, which is the exact confusion this function exists to
+  // remove. Stops at the first window that contains the control.
+  //
+  // THE WINDOW IS 10,000 BECAUSE THAT IS THE CAP BOTH RECOMMENDED PROVIDERS ENFORCE, measured
+  // 2026-09-10 with a raw `eth_getLogs` over 46,307,100-46,357,100:
+  //
+  //     sepolia.base.org       -> {"code":-32614,"message":"eth_getLogs is limited to a 10,000 range"}
+  //     base-sepolia.drpc.org  -> {"code":35,"message":"ranges over 10000 blocks are not supported on free plan"}
+  //
+  // It was 50,000, and it worked -- but only because `cast logs` silently paginates a span the
+  // endpoint would refuse. This function's whole job is to tell "the endpoint will not serve it"
+  // apart from "the chain does not have it", so resting its own default on an undocumented
+  // pagination behaviour in a different tool is the wrong shape for it. `maxChunks` goes 20 -> 100
+  // so the reachable span is unchanged at 1,000,000 blocks.
+  let scanned = 0;
+  for (let from = fromBlock; from <= head && scanned < maxChunks; from += chunk, scanned += 1) {
+    const to = Math.min(from + chunk - 1, head);
+    const out = cast([
+      'logs', '--rpc-url', RPC,
+      '--from-block', String(from), '--to-block', String(to),
+      topic, '--address', factory,
+    ]);
+    if (out.toLowerCase().includes(needle)) {
+      log(`assertLogsServed: ${RPC} serves historical logs (positive control ${first} found in `
+        + `blocks ${from}-${to})`);
+      return;
+    }
+  }
+
+  fail(`RPC ${RPC} SERVED NO LOG FOR A RANGE THAT PROVABLY CONTAINS ONE. The factory's own `
+    + `allVaults[0] is ${first}, so the VaultCreated announcing it exists at or after block `
+    + `${fromBlock} — and ${scanned} window(s) of ${chunk} blocks from there returned nothing that `
+    + `names it. This endpoint is pruning history, or refusing these ranges. Either way every `
+    + `"the chain has no record of X" conclusion drawn against it is worthless — that mistake was `
+    + `made on 2026-09-09 and written into this repository as fact. Set SOAK_RPC to a full-history `
+    + `provider (https://sepolia.base.org and https://base-sepolia.drpc.org both served this event; `
+    + `https://base-sepolia-rpc.publicnode.com did not) and re-run.`);
+}
 

@@ -55,6 +55,16 @@
  * exact defects fixed here plus a §4-forbidden exit claim — in the document that seeds the
  * securities memo. Two peers found it by hand. This file structurally could not have.
  *
+ * The two names above are a CITATION AND AN INVENTORY, not a live process, and after 2026-09-04
+ * they are the only reason the word survives in this file. On that date the owner removed the
+ * review-marker workflow outright — "The audit counsel is now becoming an issue with
+ * repetitiveness. Remove them entirely so that we can work faster." — so the eighty `apps/site`
+ * markers are gone and `apps/site/test/site.test.mjs` reds if one returns. Neither line here was a
+ * rule: nothing in this file has ever exempted a marked block from a guard, and there is nothing
+ * to delete. They were left standing deliberately, because renaming a document that exists and a
+ * historical sweep that happened would make this comment point at nothing, which is a worse
+ * outcome than a stale-looking word.
+ *
  * DO NOT "FIX" THIS BY POINTING THE WALK AT THE VAULT. That was tried: an Ops5 sweep of the vault's
  * claim-bearing stores returned **181 hits**, and the large majority were not defects at all — they
  * were guardrails quoting a banned phrase IN ORDER TO BAN IT (`core-claims-doc` §4's forbidden
@@ -84,6 +94,12 @@
  * person to hit that weakens the gate instead of the copy. So these guards target the ATTRIBUTION
  * CONSTRUCTIONS (an agent *pooling*, an agent *governing*, a *universal* weighting claim), never the
  * product name.
+ *
+ * Since 2026-09-05 the same applies to the positioning phrase `the AI agent trading index`, which is
+ * masked by name in `PRODUCT_PHRASES` before guard 1 runs, and whose exemption has its own probe
+ * immediately after that guard. It used to pass by accident — the verb alternation carried
+ * `trade|trades` and not `trading` — and an accident is not an exemption: the participles are banned
+ * now, and the phrase is permitted deliberately.
  *
  * Likewise "stake-weighted" is not banned outright — it is TRUE at five or more members, and
  * `THREAT-MODEL.md` AG-3/SV-1 use it correctly as analysis. Guard 3 is a CO-OCCURRENCE rule: a file
@@ -124,7 +140,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -189,8 +205,16 @@ const report = (hits) =>
 // "agent identity that proposes rebalances" match as agent + <gap> + `rebalances`, reading a NOUN
 // object as the verb and reddening `operators.html`, which describes the operator role correctly.
 const AGENT_ACTS = [
-  // "AI agents pool ...", "agents govern ...", "the agent manages ..."
-  /\b(?:AI\s+)?agents?\b(?:\s+(?:also|only|then|now|actually|jointly|collectively|therefore))*\s+\b(?:pool|pools|govern|governs|manage|manages|trade|trades|rebalance|rebalances)\b/gi,
+  // "AI agents pool ...", "agents govern ...", "the agent manages ...", "agents trading ..."
+  //
+  // THE -ING FORMS WERE ADDED 2026-09-05, and the reason is worth recording because it was luck
+  // rather than design that the gap did no damage. The owner's positioning phrase is "the AI agent
+  // trading index", and this alternation carried `trade|trades` but not `trading` — so the phrase
+  // passed a guard that would have reddened "agents trade" one letter away. A guard that permits a
+  // phrase by oversight permits everything else the oversight covers, and the next editor closes it
+  // without knowing the product name depends on the hole. So: the participles are banned like every
+  // other form, and the product phrase is permitted BY NAME in PRODUCT_PHRASES below.
+  /\b(?:AI\s+)?agents?\b(?:\s+(?:also|only|then|now|actually|jointly|collectively|therefore))*\s+\b(?:pool|pools|pooling|govern|governs|governing|manage|manages|managing|trade|trades|trading|rebalance|rebalances|rebalancing)\b/gi,
   // "... governed by AI agents", "... pooled by agents"
   /\b(?:governed|pooled|managed|traded|controlled)\s+by\s+(?:\w+\s+){0,2}(?:AI\s+)?agents?\b/gi,
   // "agent-governed index baskets" used as a MECHANIC (a basket the agent governs), as distinct
@@ -198,10 +222,28 @@ const AGENT_ACTS = [
   /\bagent-governed\s+(?:\w+\s+){0,2}baskets?\b/gi,
 ];
 
+/**
+ * Product names, permitted BY NAME rather than by an accident of the alternation above.
+ *
+ * `the AI agent trading index` is the owner's positioning phrase of 2026-09-05 and it names WHAT
+ * THE INDEX IS ABOUT — what autonomous agents would hold if they had to argue for it and win a vote
+ * — not who executes. It is not the banned shape, which is an agent as the SUBJECT of pooling or
+ * governing: `Governance.propose` gates on stake, and `Governance.sol` contains zero occurrences of
+ * "operator". The two read alike to a regex and differ entirely to a reader, so the phrase is masked
+ * character-for-character before the scan, the way this repository's other guards mask a legal form.
+ *
+ * Keep this list to exact product phrases. It is not a place to park a sentence that is merely
+ * inconvenient: anything added here stops being checked, everywhere, forever.
+ */
+const PRODUCT_PHRASES = /\bAI agent trading index\b/gi;
+
+/** The text with every permitted product phrase blanked to the same length, so offsets survive. */
+const maskProductPhrases = (s) => s.replace(PRODUCT_PHRASES, (m) => ' '.repeat(m.length));
+
 test('no public surface says an AI agent pools capital or governs a vault', () => {
   const hits = [];
   for (const { file, text } of surfacesWithText()) {
-    const hay = flat(text);
+    const hay = maskProductPhrases(flat(text));
     for (const re of AGENT_ACTS) {
       for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
     }
@@ -217,6 +259,42 @@ test('no public surface says an AI agent pools capital or governs a vault', () =
       'to STAKE ("proposal rights follow stake, not operatorship"), never to operatorship.\n' +
       `Offending text:\n${report(hits)}`,
   );
+});
+
+test('probe: the product-phrase exemption covers the phrase and nothing around it', () => {
+  const caught = (s) => {
+    const hay = maskProductPhrases(flat(s));
+    return AGENT_ACTS.some((re) => {
+      re.lastIndex = 0;
+      return re.test(hay);
+    });
+  };
+  // The permitted phrase, in the shapes it actually ships in.
+  //
+  // THE SHORT FORM IS THE ONE THAT SHIPS NOW. On 2026-09-09 the owner asked the site to stop
+  // reading as a one-chain site, and the positioning line lost its chain: the hero, the README and
+  // the three llms.txt copies all say "RWAlly is the AI agent trading index." The long form stays
+  // listed beside it because it is still in the history and a reader who finds it there should not
+  // have to wonder whether it was ever permitted -- and because a permit list that only accepts the
+  // current wording turns every future copy edit into a guard edit made under deadline.
+  for (const ok of [
+    'Rwally is the AI agent trading index.',
+    'Rwally is the AI agent trading index on Robinhood Chain.',
+    'An AI agent trading index, made checkable.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds the owner's own product phrase: ${ok}`);
+  }
+  // …and the banned shapes must still be caught, including the participles added with it and a
+  // sentence that opens with the permitted phrase and then makes the false claim anyway.
+  for (const bad of [
+    'AI agents pool USDC into spot crypto index baskets.',
+    'Agents trading the basket decide what it holds.',
+    'The AI agent trading index is governed by AI agents.',
+    'Rwally is the AI agent trading index, and its agents govern every rebalance.',
+    'agent-governed index baskets rebalance on a schedule',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -438,5 +516,229 @@ test('no public surface claims the contracts screen who may deposit', () => {
       'allowlists in contracts/src are for ADAPTERS and ORACLES. Vault #1\'s member allowlist is\n' +
       'frontend-only, the same class as the geofence: never imply the contracts enforce it.\n' +
       `Offending text:\n${report(hits)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// Guard 7 — RWLY is never the object of a protocol transfer verb, and never a governance or
+// entitlement subject. Legs 47/48 of the 2026-09-05 copy deck v2 (its own legs D and E).
+//
+// Landed NOW, before RWLY exists, on the same reasoning `claims-robinhood-deployment.test.mjs`
+// applies to the record it guards: landing the ban before the false sentence can be written stops
+// it being written at all, rather than being caught the day of a token launch when everyone is
+// busy. `vision.html` is a whole page of sentences about fees, treasuries and a token — precisely
+// where "the protocol routes fees to RWLY" gets written by accident — which is why this deck is the
+// occasion for it.
+//
+// Matched by SHAPE, permanently, exempting nothing (unlike guard 4's dated-record exemption): this
+// is the claim a well-meaning editor writes by accident once RWLY is on the page, and no register —
+// design intent included — makes it true. `grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol
+// and VaultCore.sol; `FeeEngine.claimFees` pays `claimableFees[msg.sender]` to the CALLER, and the
+// caller is the operator address, not a token. Approved register: "the treasury intends to",
+// "is designed to", "a multisig moves" — all SUBJECT-first with RWLY or the treasury as the actor,
+// never the protocol/contracts/vault/governance/FeeEngine as the actor moving something TO RWLY.
+// ---------------------------------------------------------------------------------------------
+/**
+ * Sentence-scoped, on the same rule `flat` applies elsewhere in this file: a mention and its status
+ * split across a line break still count as one sentence.
+ */
+const sentencesOf = (text) => text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
+
+const RWLY_ATTRIBUTION = [
+  // A protocol-ish subject, a transfer verb, then RWLY as the object -- in either order the deck's
+  // leg D regex was written for. The subject/verb gap and the verb/RWLY gap are both capped so an
+  // unrelated RWLY three sentences later cannot complete the shape.
+  /\b(?:the\s+)?(?:contracts?|protocol|vault|governance|feeengine|fee\s+engine)\b[^.;:!?]{0,60}\b(?:routes?|pays?|distributes?|accrues?|credits?|sends?|allocates?)\b[^.;:!?]{0,40}\bRWLY\b/gi,
+  // RWLY holders as the subject of a governance or entitlement verb.
+  /\bRWLY\s+holders?\s+(?:votes?|governs?|decides?|receives?|earns?|claims?)\b/gi,
+  // RWLY as a weighting term, or as something staked/locked/required to participate.
+  /\bRWLY-weighted\b/gi,
+  /\bstake\s+RWLY\b/gi,
+];
+
+// "backed by the vault(s)" as a description of RWLY -- sentence-scoped, on the deck's own
+// instruction ("near RWLY" rather than a fixed-shape regex), the same scoping `sentencesOf` already
+// gives guard 6's neighbours in `site.test.mjs`.
+const RWLY_BACKED_BY_VAULT = /\bbacked\s+by\s+the\s+vaults?\b/i;
+
+test('no public surface says the protocol pays, routes or accrues anything to RWLY, or makes RWLY a governance or entitlement subject', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of RWLY_ATTRIBUTION) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+    for (const s of sentencesOf(text)) {
+      if (/\bRWLY\b/.test(s) && RWLY_BACKED_BY_VAULT.test(s)) hits.push({ file, quote: s.trim().slice(0, 160) });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    '`grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol and VaultCore.sol. `FeeEngine.claimFees`\n' +
+      'pays `claimableFees[msg.sender]` to the CALLER, which is the operator address, not a token.\n' +
+      'RWLY is design intent only: say "the treasury intends to", "is designed to" or "a multisig\n' +
+      'moves" with RWLY or the treasury as the actor — never that the protocol, the contracts, the\n' +
+      'vault, Governance or FeeEngine routes, pays, distributes, accrues, credits, sends or allocates\n' +
+      'anything TO RWLY; never RWLY holders as a governance or entitlement subject; never RWLY as a\n' +
+      'weighting term or as something staked to participate; never RWLY described as backed by a vault.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the RWLY attribution ban catches the shape and spares the approved register', () => {
+  const caught = (s) => {
+    const hay = flat(s);
+    const shapeHit = RWLY_ATTRIBUTION.some((re) => {
+      re.lastIndex = 0; // these patterns carry /g and are reused across probe cases
+      return re.test(hay);
+    });
+    if (shapeHit) return true;
+    return sentencesOf(s).some((sentence) => /\bRWLY\b/.test(sentence) && RWLY_BACKED_BY_VAULT.test(sentence));
+  };
+  // The banned shape, in the forms an editor reaches for once RWLY is on the page.
+  for (const bad of [
+    'The protocol routes fees to RWLY.',
+    'FeeEngine accrues the performance fee to RWLY holders.',
+    'RWLY holders vote on every rebalance.',
+    'Governance is RWLY-weighted.',
+    'You have to stake RWLY to participate.',
+    'RWLY is backed by the vaults.',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
+  // The deck's own approved register, subject-first with RWLY or the treasury as the actor —
+  // this is the register guard 7 exists to leave alone, not the shape it exists to catch.
+  for (const ok of [
+    'RWLY is designed to pair with stock tokens on the chain’s Uniswap.',
+    '10% is designed to buy RWLY back, hourly, as a TWAP rather than in one order.',
+    'The fees those pools generate are designed to flow to the treasury and buy stock into vault 1.',
+    'The treasury intends to use the protocol’s fees to acquire official Robinhood Stock Tokens.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds the deck's own approved copy: ${ok}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Guard 8 — RWLY stays absent from contracts/src, permanently. Leg 48 (v1 leg E).
+//
+// Cheap, and it is the fact every "is designed to" / "does not exist yet" sentence about RWLY
+// across the whole site rests on. If this ever goes red, every one of those sentences is false and
+// has to be rewritten — which is the correct outcome for a guard to force, not a nuisance.
+// ---------------------------------------------------------------------------------------------
+const RWLY_ABSENT_FROM = ['contracts/src/Governance.sol', 'contracts/src/FeeEngine.sol', 'contracts/src/VaultCore.sol'];
+
+test('RWLY is absent from contracts/src entirely', () => {
+  for (const f of RWLY_ABSENT_FROM) {
+    const text = readFileSync(path.join(REPO, f), 'utf8');
+    assert.equal(
+      (text.match(/rwly/gi) ?? []).length,
+      0,
+      `${f}: contains "RWLY" — every design-intent sentence about RWLY on every public surface assumes ` +
+        'grep -ci rwly returns 0 here. If a future design wires the token into a contract, this leg is ' +
+        'meant to go red and every RWLY sentence in the repository has to be rewritten to match.',
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// COVERAGE, NOT A GUARD — the walk must actually REACH the redesign's prerendered pages.
+//
+// The header draws this file's scope on two axes, the STORE (repo vs vault) and the FILE TYPE
+// (`PUBLIC_EXT`). There is a third, and it is the one that made every guard above vacuous over the
+// redesign: TIME. The walk enumerates from disk, and `apps/site-next/.gitignore` line 11 ignores
+// `dist`, so `apps/site-next`'s prerendered pages exist only after
+// `npm run build --workspace apps/site-next` has run. Order that build AFTER `npm run test:backend`
+// — which is where `.github/workflows/ci.yml` had it until this test was written — and on a fresh
+// checkout every guard above walks zero rendered redesign pages and reports a pass. A pass over
+// nothing is indistinguishable from a pass over everything, which is the failure this whole file
+// exists to refuse; the header makes the same point about the vault, for the same reason.
+//
+// `dist` IS WALKED AND `dist-ssr` IS NOT A SECOND CASE OF IT, so do not read this as "build outputs
+// are walked here". `dist` is walked because the redesign publishes its prose ONLY as build output:
+// skip it and the pages a reader receives are guarded by nothing. `dist-ssr` is the SSR
+// bundle, which `apps/site-next/README.md` records as never deployed (grep `vite build --ssr`, on
+// the line that ends `into dist-ssr/ (never deployed)`); its only two prose files,
+// `llms.txt` and `robots.txt`, are byte-identical copies of `apps/site-next/public/`'s, which are
+// walked whether or not anything has been built (checked 2026-09-04 with `diff`). So it is walked
+// today, it costs no coverage either way, and neither `SKIP_DIRS` here nor the near-identical one
+// in `config-doc-truth.test.mjs` lists it. Adding it belongs in a change that edits both, since a
+// skip list that two sibling guards disagree on is its own drift.
+//
+// So the ordering is ASSERTED here rather than only documented there. This is the one test in this
+// file that MAY name its files: it is a POSITIVE requirement, and by the rule quoted in the header,
+// requiring too little never lets a falsehood through. The names below are `PAGE_IDS`, declared
+// in `apps/site-next/src/shell/pinned.ts` (grep `export const PAGE_IDS`), re-exported as `pages`
+// by `apps/site-next/src/entry-server.tsx` (grep `export const pages`) and looped over by
+// `apps/site-next/scripts/prerender.mjs` (grep `for (const page of pages)`), which writes one
+// `dist/<page>` per entry. Those citations are grep-able phrases rather than line numbers: a line
+// number in a comment goes stale silently, and this one already had.
+//
+// IT DOES NOT SKIP WHEN THE BUILD IS MISSING, and that is the deliberate break with the two
+// neighbouring suites that read build artefacts: `apps/site-next/test/site.test.mjs` skips its
+// dist-reading tests (its `BUILT`/`SKIP` pair), and `packages/indexer/test/abis.test.mjs` skips on
+// `contracts/out` absent. Both are right to — they have nothing to say without their input. This
+// test's whole subject IS the missing input, so a skip would reproduce the defect it catches.
+// ---------------------------------------------------------------------------------------------
+const SITE_NEXT = 'apps/site-next';
+
+/**
+ * Every prerendered page, in the build order of `PAGE_IDS`. This list is the count, and the test
+ * name deliberately does not repeat it as a word: a page added to `PAGE_IDS` and not added here is
+ * a page this test silently stops covering, and a number in the name is a second place to edit.
+ */
+//
+// IT WAS NINE PAGES UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site to
+// "ONE cinematic scroll page + the app button + a serious Disclaimers page", and how-it-works,
+// agents, who-its-for, operators, faq, vision and status were retired. `apps/site-next/public/
+// _redirects` 301s every one of their URLs, and `PAGE_IDS` in `apps/site-next/src/shell/pinned.ts`
+// is the two entries below.
+//
+// SHRINKING THIS LIST DOES NOT SHRINK WHAT IS WALKED, which is the thing to understand before
+// editing it. `publicSurfaces()` enumerates the filesystem; it walks whatever `.md`, `.html`,
+// `.txt` and `.json` files exist. This list is not the walk, it is the ASSERTION that the walk
+// reached the pages the redesign actually publishes. Its only failure mode is being longer than
+// reality, which reds honestly, or shorter, which is the silent one. The two names below come from
+// `PAGE_IDS`, so the way to keep it in step is to keep reading them from there.
+//
+// THE THIRD NAME IS NOT A PAGE, AND IT IS HERE ANYWAY. `404.html` is not in
+// `PAGE_IDS` — it is in no nav, no sitemap and none of the per-page guards in
+// `apps/site-next/test/site.test.mjs`, because it is a document the site is
+// never navigated TO. `src/shell/pinned.ts` carries the reason under
+// `NOT_FOUND_ID`: without it in the build output, Cloudflare Pages serves
+// `/index.html` with a 200 for every path that matches no asset, which is the
+// soft-404 measured on the live site on 2026-09-09.
+//
+// It is listed here because THIS test asks a different question from that one.
+// Not "is it a page of the site" but "did the guards above read the prose a
+// reader receives" — and a reader receives this document at every address that
+// does not exist, so its sentences are public surface with exactly the standing
+// of the homepage's. Being outside `PAGE_IDS` is precisely what would have made
+// it the silent omission this test's own comment warns about.
+const PRERENDERED = ['index.html', 'disclaimers.html', '404.html'].map(
+  (page) => `${SITE_NEXT}/dist/${page}`,
+);
+
+test('every prerendered redesign page is inside the walk', () => {
+  // A checkout with no redesign owes nothing. `dist` alone is not the condition to test on: it is
+  // the very thing that goes missing, so gating on it would make this test disappear exactly when
+  // it is needed.
+  if (!existsSync(path.join(REPO, SITE_NEXT))) return;
+
+  const walked = new Set(publicSurfaces());
+  const missing = PRERENDERED.filter((f) => !walked.has(f));
+  assert.deepEqual(
+    missing,
+    [],
+    'The guards above walked none of these pages, so they reported a pass over prose they never\n' +
+      'read. Two things cause that, and both are silent:\n' +
+      '  1. THE BUILD HAS NOT RUN. `apps/site-next/.gitignore` ignores `dist`, so the pages exist\n' +
+      '     only after:  npm run build --workspace apps/site-next\n' +
+      '     `.github/workflows/ci.yml` and `scripts/gate.mjs` both run that step BEFORE\n' +
+      '     `npm run test:backend`, and each carries the reason at the step. Keep it there.\n' +
+      '  2. `dist` WAS ADDED TO SKIP_DIRS. It is deliberately not on that list. The redesign\n' +
+      '     publishes its prose only as build output, so skipping build outputs wholesale would\n' +
+      '     exempt the pages the reader actually receives.\n' +
+      `Not walked:\n  ${missing.join('\n  ')}`,
   );
 });

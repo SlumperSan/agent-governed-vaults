@@ -335,9 +335,13 @@ export function summarizeFreezeSafety(samples) {
  * (`oracle-freshness|<vault>|<asset>`). The live flavor also emits two per-vault rows under the
  * same signal name — `sequencer` and `flavor` — and NEITHER may stand in for asset coverage:
  *
- *  - `sequencer` is permanently `skipped` on Base Sepolia, where the oracle leaves
- *    `sequencerUptimeFeed` at `address(0)` by design. A `status !== 'ok'` test that counted it
- *    would be satisfied on every run whether or not any asset row ever left OK.
+ *  - `sequencer` reports on the L2 uptime gate, which is a fact about the vault's oracle and not
+ *    about any asset. Where the oracle leaves `sequencerUptimeFeed` at `address(0)` that row used
+ *    to be permanently `skipped`, and a `status !== 'ok'` test that counted it was satisfied on
+ *    every such run whether or not any asset row ever left OK. It now reports `ok` (not-applicable
+ *    — `notApplicable()` in packages/canary/src/signal.mjs), which retires that particular false
+ *    green without retiring the reason for the allowlist below: the row still evidences nothing
+ *    about an asset either way.
  *  - `flavor` is the `DETECTOR BROKEN` row emitted when the oracle answers neither known ABI. It is
  *    `skipped` too, and counting it would be strictly worse: a BLIND detector would certify that
  *    the canary tracked the freeze.

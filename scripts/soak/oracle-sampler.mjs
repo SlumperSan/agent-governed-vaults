@@ -53,16 +53,19 @@
  * Output: one JSON line per sample to the series file, so a gap in the series is visible as a
  * timestamp jump rather than being silently interpolated.
  *
- * Env: BASE_SEPOLIA_RPC, SOAK_SERIES (default data/oracle-series.jsonl),
+ * Env: SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_SERIES (default data/oracle-series.jsonl),
  *      SOAK_SAMPLE_MS (default 120000), SOAK_PROBE_MEMBER (address to probe cancelPending as)
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadDeployment } from './deployment.mjs';
+import { fileURLToPath } from 'node:url';
+import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
-const RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia-rpc.publicnode.com';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+// Same default as `lib.mjs`: publicnode prunes logs, and a sampler on a different endpoint
+// from the drills it feeds is a second opinion nobody asked for.
+const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 const SERIES = process.env.SOAK_SERIES ?? path.join(ROOT, 'data', 'oracle-series.jsonl');
 const SAMPLE_MS = Number(process.env.SOAK_SAMPLE_MS ?? 120_000);
@@ -98,10 +101,7 @@ function resolveProbeVaults() {
   }
 }
 
-const dep = loadDeployment(
-  path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json'),
-  { expectChainId: 84532 },
-);
+const dep = loadDeployment(deploymentPath(ROOT));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clean = (s) => s.replace(/\s+\[[^\]]*\]$/, '').trim();
@@ -215,9 +215,12 @@ export function sequencerState({ feed, round, chainNow, grace }) {
     unreadable: false, answer: null, startedAtSec: null, upForSec: null, resumesAtSec: null,
     gracePeriodSec: grace,
   };
-  // Not a fault and not health: off a sequencer L2 (Base Sepolia leaves this at address(0) by
-  // design) `_requireSequencerUp` is a no-op, so there is nothing to observe. On Base MAINNET the
-  // same reading means the deployment shipped with no sequencer guard at all.
+  // Not a fault and not health: `_requireSequencerUp` returns without reading a feed when this is
+  // address(0) (ChainlinkOracle.sol:314), so there is nothing to observe. This sampler cannot tell
+  // WHY a deployment has no feed and does not guess — the two guesses it used to print (off a
+  // sequencer L2; on Base mainnet) are both wrong at once on a sequencer L2 whose vendor publishes
+  // no uptime feed. Which chains may ship without one is settled at deploy time by
+  // DeployChainlinkOracle.requiresSequencerUptimeFeed.
   if (!base.configured || round == null) return base;
 
   if (!round.ok) {
@@ -381,11 +384,11 @@ function readFeedConfig(asset) {
 /**
  * Prove the deployed oracle is the one this sampler models, ONCE, before any series line exists.
  *
- * There is deliberately no fall-back to the retired quorum sampler: nothing points this script at a
- * pre-pivot address book (`loadDeployment` is pinned to `base-sepolia.json` / chain 84532), so a
- * legacy path here would be untested dead code. If the probe fails the sampler REFUSES rather than
- * writing a series nobody can trust — a soak that produces no evidence is recoverable, one that
- * produces wrong evidence is what this rewrite is fixing.
+ * There is deliberately no fall-back to the retired quorum sampler. `SOAK_DEPLOYMENT` now chooses
+ * the address book, so this probe — not a pin on the filename — is what establishes that the oracle
+ * answering is a ChainlinkOracle. If it fails the sampler REFUSES rather than writing a series
+ * nobody can trust: a soak that produces no evidence is recoverable, one that produces wrong
+ * evidence is what this rewrite is fixing.
  */
 function probeOracle() {
   const seq = callRaw(dep.aggregator, 'sequencerUptimeFeed()(address)');
@@ -499,9 +502,16 @@ function sample(env) {
 // Runner guard: the pure classifiers above are unit-tested, and an infinite sampling loop at
 // import time would hang the test process. Only sample when invoked as a script.
 const invokedDirectly = process.argv[1]
-  && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
+  // Before the first series line exists, prove the endpoint is the chain the address book
+  // describes. Everything downstream — the oracle probe, every price age, drill 4's whole verdict —
+  // is attributed to `dep`, so sampling the wrong chain writes a series that reads as evidence.
+  const idRead = tryCast(['chain-id', '--rpc-url', RPC]);
+  if (!idRead.ok) throw new Error(`oracle-sampler: could not read the chain id from ${RPC}: ${idRead.err}`);
+  assertLiveChainId(dep, Number(clean(idRead.out)));
+
   const { sequencerFeed } = probeOracle();
   const graceRead = callRaw(dep.aggregator, 'GRACE_PERIOD()(uint256)');
   const pinRead = callRaw(dep.aggregator, 'usdc()(address)');

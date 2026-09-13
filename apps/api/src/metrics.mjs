@@ -11,8 +11,11 @@
  * evaluated at scrape time, so a value like snapshot age is computed when asked rather than by a
  * timer that could itself be the thing that died.
  *
- * ON "INDEXER LAG": the API deliberately has no RPC client — it serves the snapshot and nothing
- * else — so it cannot know the chain head and MUST NOT claim a blocks-behind figure. What it can
+ * ON "INDEXER LAG": the API deliberately has no client for the indexed chain — it serves the
+ * snapshot and nothing else — so it cannot know the chain head and MUST NOT claim a blocks-behind
+ * figure. (`FACILITATOR=svm` constructs a Solana `Connection` in `serve.mjs`, which is a node on a
+ * different chain and answers nothing about this one. Said out loud because "no RPC client" was
+ * written here unqualified, and that is now false.) What it can
  * measure exactly is how long ago the indexer last wrote the snapshot, which is the number that
  * actually tells you the indexer stopped. The metric is named for what it measures:
  * `vault_indexer_snapshot_age_seconds`.

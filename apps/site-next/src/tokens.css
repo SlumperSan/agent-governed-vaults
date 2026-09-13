@@ -1,0 +1,482 @@
+/* ===========================================================================
+   DESIGN TOKENS — the interface between the design system and every component
+   ---------------------------------------------------------------------------
+   OWNED BY SHELL. A section builder reads these names and never edits this
+   file. If a section needs a token that is not here, it asks for one.
+
+   THE CONTRACT, in three clauses:
+
+     1. The custom-property NAMES are the interface. SEVENTY-SIX are defined
+        below, counted by stripping the comments and matching declarations on
+        2026-09-05. Fifteen of them, --ground, --surface, --surface-2, --line,
+        --ink, --muted, --faint, --accent, --accent-ink, --good, --warn, --crit,
+        --display, --sans and --mono, are names apps/site/assets/tokens.css and
+        apps/web/index.html both already define; the rest occur in neither of
+        those two files and are new here.
+
+        THE COUNT IN THIS CLAUSE HAS BEEN WRONG BEFORE, which is the reason it
+        now says how it was taken. It read "fifty-nine" and then listed the
+        names, and the list was a full inventory on 2026-09-04 and stale by
+        three the same week, when the secondary hue arrived as --teal,
+        --teal-bright and --teal-wash and nobody came back to the paragraph. It
+        is stale by fourteen more today: the comic layer added --panel,
+        --panel-2, --panel-line, --panel-rule, --panel-offset, --block-violet,
+        --block-teal, --halftone-accent, --halftone-teal, --halftone-ink,
+        --halftone-pitch, --accent-deep, --ink-outline and --ink-drop. A
+        hand-kept inventory of a growing set is a figure that goes wrong
+        silently, so the enumeration is dropped and the number is stated with
+        the method that produces it.
+
+     2. No component stylesheet contains a raw colour literal. Every colour
+        reaches the page as var(--token). That is what makes a re-theme a
+        one-file change, and it is checkable by grepping the built CSS.
+
+     3. Every ink-on-surface pair used for text meets WCAG 2.2 AA — 4.5:1 for
+        body text, 3:1 for large text. Measured ratios are recorded beside the
+        values, and HERE ONLY: a section stylesheet carries a pointer to this
+        file rather than a copy of the figure. A copied figure is a figure
+        nobody recomputes, and on 2026-09-04 twenty-eight of them across ten
+        section stylesheets were stale against the values below. A replacement
+        palette inherits that obligation.
+
+   ONE GROUND, NOT TWO. The current site ships three theme states (light,
+   media-dark, forced-dark). This one is dark, deliberately and only, and a
+   second palette would be a second set of contrast ratios nobody re-measures.
+   There is therefore no prefers-color-scheme block and no [data-theme] switch.
+
+   THE LOOK THAT GROUND SERVES CHANGED ON 2026-09-05. The decision of the day
+   before was "dark cinematic" and this file was built for it. The owner's
+   direction now is the comic look, everywhere, on the site as much as on the
+   artwork: heavy ink outlines, flat cel fills, a halftone screen, saturated
+   blocks against deep shadow. The ground did not have to move for that, and it
+   has not; what the comic layer lower down adds is the frame, the keyline, the
+   offset block, the screen and the two deep colour grounds that a drawn page
+   needs and a cinematic one did not.
+
+   A NOTE ON WORDING IN THIS FILE. tokens.css is scanned as prose by the claims
+   suite, exactly like a page is. Reassurance vocabulary — outcome words,
+   funnel words, discretionary-manager words — reds the gate from a stylesheet.
+   Describe what a value IS and what it measures, never what it promises.
+   =========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces and rules -------------------------------------------------
+     Near-black, never #000: pure black bands visibly on OLED gradients, and
+     the hero is a gradient field. */
+  --ground: #07070b;
+  --surface: #0e0e16;
+  --surface-2: #16161f;
+  --surface-3: #1e1e2a;
+
+  --line: rgba(255, 255, 255, 0.08); /* hairlines only, never a text colour */
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* --- text ---------------------------------------------------------------
+     EVERY RATIO BELOW IS COMPUTED, NOT ESTIMATED. Each one is the WCAG 2.2
+     contrast ratio (L1 + 0.05) / (L2 + 0.05) over the sRGB relative luminance
+     of the two hex values on this page, to two decimal places. The set that
+     stood here until 2026-09-04 was written by hand, and all eleven figures in
+     it disagreed with the computation: --ink on --surface was recorded 14.0
+     and is 16.07, --accent-ink on --accent was recorded 8.4 and is 7.65, and
+     --accent-dim was recorded 3.5 and is 4.21. Four of the eleven ran the
+     dangerous way, overstating the real ratio: --accent, --accent-ink, --good
+     and --warn. None of the four crossed a threshold, which is luck rather
+     than design — an overstated ratio is what licenses a pairing that does not
+     in fact clear its floor. If you change a hex value, recompute rather than
+     adjust; the arithmetic is eight lines.
+
+     Both grounds are recorded where a token is used on both. --faint is the
+     case that matters: it renders on --surface in the footer (.footer-legal,
+     .footer-grid h2 in index.css), where it is 4.72:1, not the 4.94:1 it
+     measures on --ground. The lower number is the one that has to clear 4.5. */
+  --ink: #eaeaf3; /* 16.82:1 on --ground, 16.07:1 on --surface */
+  --muted: #a8a8bd; /*  8.62:1 on --ground,  8.23:1 on --surface */
+  --faint: #7c7c93; /*  4.94:1 on --ground,  4.72:1 on --surface — the floor for
+                        body text; both are above 4.5, and nothing lower is */
+
+  /* --- accent -------------------------------------------------------------
+     ONE accent, the Atlas violet at its dark-mode value. It carries data,
+     links and focus. It is never used to decorate. */
+  --accent: #a094ff; /*  7.83:1 on --ground,  7.48:1 on --surface */
+  /* REPLACED 2026-09-05, and the value it replaces is why. This token was
+     #6f62d6, which measures 4.21:1 on --ground: over the 3:1 non-text floor and
+     UNDER 4.5:1, so it was restricted by comment to rules, borders and
+     underlines. The brand token set of that date (Rwally Brand/brand/tokens.json,
+     version 3.0.0) retires #6f62d6 from every UI role for exactly that reading —
+     its own note records "the 1.x palette shipped #6f62d6 as a UI accent; it
+     measures 4.21:1 and fails the 4.5:1 floor" — and raises the same hue in
+     lightness to #8577e4, which measures 5.51:1 on --ground and 5.27:1 on
+     --surface. Both figures computed here from the WCAG 2.x formulas, not taken
+     from that file. The restriction above is therefore lifted: this value clears
+     the 4.5 floor and needs no comment fencing it off. #6f62d6 survives in the
+     brand set as an illustration fill only and appears nowhere in this
+     stylesheet. */
+  --accent-dim: #8577e4; /*  5.51:1 on --ground,  5.27:1 on --surface */
+  --accent-wash: rgba(160, 148, 255, 0.1);
+
+  /* --- the secondary hue ---------------------------------------------------
+     ADOPTED 2026-09-05 from the brand token set (Rwally Brand/brand/tokens.json
+     version 3.0.0), which takes it from the comic look's cold rim light and
+     gives it ONE job: "the second state in any pair — revealed against
+     committed, built against unbuilt, the next iteration against this one".
+     That is a rule about meaning, not a spare colour. It is not a status
+     colour: --good, --warn and --crit are, and a second hue used as a fourth
+     status makes all four unreadable.
+
+     Both ratios are computed here from the WCAG 2.x formulas and the hex values
+     on this page, not copied from that file. The brand file records 8.30 and
+     12.72 against the ground and the two agree. */
+  --teal: #3fb8ad; /*  8.30:1 on --ground,  7.93:1 on --surface */
+  --teal-bright: #7fded2; /* 12.72:1 on --ground, 12.15:1 on --surface — the
+                             heading-weight value, and rim light in artwork */
+  --teal-wash: rgba(63, 184, 173, 0.09);
+  --accent-ink: #0b0a16; /* on --accent: 7.65:1 — the pairing used by .skip */
+
+  /* --- status -------------------------------------------------------------
+     Status only. A status colour used as decoration makes every real status
+     unreadable. */
+  --good: #5fd89a; /* 11.28:1 on --ground, 10.77:1 on --surface */
+  --warn: #f2c14e; /* 11.98:1 on --ground, 11.45:1 on --surface */
+  --crit: #ff8b83; /*  8.88:1 on --ground,  8.48:1 on --surface */
+  --good-wash: rgba(95, 216, 154, 0.09);
+  --warn-wash: rgba(242, 193, 78, 0.09);
+  --crit-wash: rgba(255, 139, 131, 0.09);
+
+  /* --- type ---------------------------------------------------------------
+     Three families, all bundled from this origin. See fonts.css for the
+     @font-face rules and why they are hand-written rather than imported. */
+  /* THE DISPLAY FACE IS ANTON SINCE 2026-09-05, and the face it replaced is
+     why the change is recorded here rather than only in fonts.css. This stack
+     read 'Newsreader Variable' first, a high-contrast reading serif, and the
+     owner's direction for the brand is the comic look everywhere (see
+     Rwally Brand/DIRECTION.md). A serif headline is the loudest single thing
+     on a page saying the opposite of that, so the display face is now heavy,
+     condensed and flat-sided: a poster letter rather than a book letter.
+
+     THE STAND-INS AFTER IT ARE NOT METRIC-ADJUSTED, deliberately. Impact ships
+     with Windows and macOS, Haettenschweiler with Windows, Arial Narrow with
+     both, and a set of size-adjust percentages is exact for one family and
+     wrong for the other two. fonts.css sets out why an invented number there
+     would be worse than none. The second entry in the --sans stack below IS
+     adjusted, because that stack has exactly one stand-in to fit. */
+  --display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --sans: 'IBM Plex Sans Variable', 'IBM Plex Sans fallback', system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
+
+  /* Fluid display scale. clamp() rather than breakpoints so a headline never
+     steps. The tracking token below is the serif's, and index.css no longer
+     reads it for h1 and h2: see the note on that rule for why the display face
+     now needs positive tracking rather than negative.
+
+     THE CEILING CAME DOWN FROM 6rem TO 4.5rem WITH THE FACE. 6rem was a
+     reading serif's display size, and at that size Newsreader set an
+     uncapped headline like how-it-works.html's over three lines of thin
+     strokes. Anton is a condensed poster face with no thin strokes at all, so
+     the same 6rem is not the same amount of ink: measured at 1440, that
+     headline filled 300px of a 900px viewport and left the section under it
+     entirely below the fold. 4.5rem is where a three-line headline still
+     reads as a poster and the page under it still exists. The four heroes
+     that cap this token with min() are unaffected; their caps are all under
+     the new ceiling already. */
+  --step-display: clamp(2.5rem, 1.55rem + 4.2vw, 4.5rem);
+  --step-h2: clamp(1.9rem, 1.35rem + 2.2vw, 3rem);
+  --step-h3: clamp(1.2rem, 1.05rem + 0.6vw, 1.5rem);
+  --step-body: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --step-small: 0.875rem;
+  --step-eyebrow: 0.78rem;
+
+  /* The row label — the mono, uppercase term that opens a definition row. It
+     is a step under the eyebrow rather than the same size, which is why it is
+     a second pair of tokens and not a reuse of the eyebrow's. The two values
+     stood as the literals 0.72rem and 0.08em in seven section stylesheets on
+     2026-09-04 (six carried both; hiw-corrections carried the tracking on its
+     own), and are named here so a change to the row label is one edit. */
+  --step-label: 0.72rem;
+
+  --track-display: -0.02em;
+  --track-eyebrow: 0.14em;
+  --track-label: 0.08em;
+  --leading-display: 1.04;
+  --leading-body: 1.6;
+
+  /* --- rhythm -------------------------------------------------------------
+     One scale, used for every margin, gap and pad. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+  --s7: 3rem;
+  --s8: 4.5rem;
+  --s9: 7rem;
+  --s10: 10rem;
+
+  /* THE GUTTER BETWEEN TWO PANELS, which is what this token became on
+     2026-09-05. It was the seam: half of the interior gap where two sections
+     met, 1.75rem rising to 3rem, applied as padding to both facing edges. Once
+     every section is a drawn panel that gap stops being air inside two
+     sections and becomes ink between two frames, and ink between frames on a
+     comic page is a few millimetres, not an inch. The name is kept because it
+     is still the same idea, one gap owned by the page rather than negotiated
+     between whichever two sections happen to be adjacent; index.css carries
+     the rest of the reasoning and applies it as margin now. Fluid rather than
+     stepped: 12px below a 640px viewport, 20px from 1080px up. */
+  --seam: clamp(0.75rem, 0.5rem + 0.9vw, 1.25rem);
+
+  --wrap: 68rem; /* the reading column's outer bound */
+  --measure: 38rem; /* prose line length, ~72 characters at --step-body */
+  --gutter: clamp(1.25rem, 0.6rem + 2.6vw, 3rem);
+
+  /* ZERO, BOTH OF THEM, SINCE 2026-09-05. They were 4px and 10px. The brand
+     token set states the rule the comic look imposes and states it as a rule
+     rather than as a taste: "Near-square by rule. The mark is a hard-edged
+     comic block letter with straight sides and mitred corners, and the brand's
+     subject is a ledger; rounded UI would fight both." Twenty-seven radius
+     declarations across the section stylesheets read these two names, so this
+     is the one edit that squares every card, tile, button and chip on all nine
+     pages at once. The names are kept rather than removed: deleting the two
+     tokens would mean editing twenty-seven files to say the same thing, and
+     leaving them here keeps the corner radius a one-line decision if a later
+     round wants any of it back. */
+  --radius: 0;
+  --radius-lg: 0;
+
+  /* --- the comic layer ----------------------------------------------------
+     ADDED 2026-09-05. The site read as dark cinematic while only its
+     photographs read as comic, which is the gap the owner named. These are the
+     names the comic structure is built from: the panel, its ink keyline, its
+     hard offset block, the two deep colour grounds and the halftone.
+
+     EVERY RATIO BELOW IS COMPUTED from the sRGB relative-luminance formula and
+     the hex values on this page, to two decimal places, exactly as the block
+     above computes its own. Nothing here is estimated.
+
+     THE TWO PANEL FILLS ARE DARKER THAN --surface, NOT LIGHTER, and the first
+     pair tried were lighter, which is why this is written down. #12121c and
+     #171724 read as panels at a glance and measured 4.57:1 and 4.36:1 for
+     --faint, against 4.72:1 for the same token on --surface today. The second
+     is under the 4.5 floor outright and the first is a regression on a ratio
+     the site had already spent down to two decimal places. A panel does not
+     need a lighter fill to read as a panel: on a comic page it is the keyline,
+     the gutter and the offset block that draw the frame, and the fill is only
+     the paper. So the fills go the other way, and each carries a hue cast
+     instead of a lightness step, which separates two adjacent frames without
+     touching luminance at all. Every text token measures HIGHER on both of
+     these than it does on --surface. */
+  --panel: #0b0a14; /* the violet-cast paper: --ink 16.45:1, --muted 8.43:1,
+                       --faint 4.83:1, --accent 7.66:1, --teal 8.12:1 */
+  --panel-2: #07100f; /* the teal-cast paper, for every second frame: --ink
+                         16.11:1, --muted 8.26:1, --faint 4.74:1, --accent
+                         7.50:1, --teal-bright 12.18:1 */
+
+  /* THE KEYLINE. A comic panel is defined by its outline, not by its fill, and
+     on a near-black page a black outline is invisible: what reads as the heavy
+     black ink of the reference is the GUTTER between panels, which is the
+     ground showing through. So the drawn line is bone, and it is bright enough
+     to be read as an interface element rather than as a hairline. */
+  --panel-line: #7d7d9e; /* 5.07:1 on --ground, 4.96:1 on --panel and 4.86:1 on
+                            --panel-2; every one of the three is above the 4.5
+                            interface floor, so the line holds on either side of
+                            itself wherever a frame meets the gutter */
+  --panel-rule: 3px; /* the panel outline: three times the ledger hairline */
+  --panel-offset: 10px; /* the hard offset block, no blur, never a soft shadow */
+
+  /* THE TWO DEEP COLOUR GROUNDS. Saturated blocks that still take text.
+     --accent-dim and --teal are far too light to carry body copy: the darkest
+     usable ink measures 5.07:1 on the first and 5.51 on the second, both under
+     the 7:1 body floor, so a bright violet panel with words on it is not
+     available at any ink value. These two are the same hues taken down until
+     --ink clears 7:1 on them with room to spare.
+
+     ONE OF THEM TAKES --muted AND ONE DOES NOT, and the difference is written
+     here so nobody has to rediscover it: --muted is 7.36:1 on --block-violet
+     and 6.16:1 on --block-teal. The teal block therefore carries --ink,
+     --teal-bright (9.10:1) and --accent (5.60:1, interface only) and never a
+     --muted paragraph. */
+  --block-violet: #1c1440; /* --ink 14.35:1, --muted 7.36:1 */
+  --block-teal: #0b2f2e; /* --ink 12.03:1, --teal-bright 9.10:1, --muted 6.16:1 */
+
+  /* THE HALFTONE. A dot screen, drawn as a repeating radial-gradient rather
+     than shipped as an image: it is four declarations, it costs no request,
+     and it scales with the element instead of tiling a fixed raster. The three
+     values are ink colours for the dots, kept here because a section
+     stylesheet may carry no colour literal. The transparency in each value is
+     doing the work, so the dots read as texture over whatever they sit on
+     rather than as a colour of their own. */
+  /* THERE ARE TWO STRENGTHS AND THE SPLIT IS A CONTRAST DECISION. A dot screen
+     raises the local ground under a glyph by its own transparency, and the
+     ratio that has to hold is the one at a DOT CENTRE, not the one over the
+     flat fill: that is the worst pixel a letter can sit on. The first pass
+     used one value, 0.34, everywhere, and measured 8.71:1 for --ink over the
+     violet door and 6.83:1 over the teal one, so the teal door's own body copy
+     was under the 7:1 floor at every dot it crossed. The screens that lie
+     under text are therefore weaker than the one that does not.
+
+     --halftone-page IS THE LAYER NOTHING IS EVER SET ON. index.css puts it on
+     main, under every panel, so it shows in the gutters between frames and in
+     the margins either side of the column, and both are empty by construction.
+     It keeps the full 0.34.
+
+     THE TWO BLOCK SCREENS ARE 0.18, computed rather than eased down until it
+     looked right. At a dot centre the violet screen composites to #2f265e,
+     where --ink is 11.26:1, and the teal screen to #144845, where --ink is
+     8.60:1. Both clear the body floor with headroom, and 0.18 of a bright hue
+     over a deep block is still a screen a reader can see.
+
+     --halftone-ink IS THE HERO'S, and it is the one case where the answer is
+     placement rather than strength: index-hero masks it out of the copy column
+     entirely, so its 0.14 never lands under a word. That file carries the
+     arithmetic for the mask. */
+  --halftone-page: rgba(133, 119, 228, 0.34);
+  --halftone-accent: rgba(133, 119, 228, 0.18);
+  --halftone-teal: rgba(63, 184, 173, 0.18);
+  --halftone-ink: rgba(234, 234, 243, 0.14);
+  --halftone-pitch: 7px; /* centre to centre; the dot itself is set per use */
+
+  /* THE INK OUTLINE ON DISPLAY TYPE. Four offsets of the ground colour ring
+     the letter, and one large offset of the illustration violet drops behind
+     it. --accent-deep is the brand set's illustration fill, ruled out for
+     text, borders, icon strokes and focus rings at 4.21:1 and correct here
+     because a drop block behind a letter is none of those: it is a filled
+     shape, and 4.21:1 clears the 3:1 floor a non-text graphic has to meet. */
+  --accent-deep: #6f62d6; /* 4.21:1 on --ground; ILLUSTRATION FILL ONLY */
+
+  /* BOTH ARE RELATIVE TO THE LETTER, and the first pair were not. They stood
+     at a flat 2px and 5px, which is right on a 48px headline and wrong twice
+     over anywhere else: the fifteen risk headings on disclaimers.html are 34px
+     and took the same 5px block, 15% of the cap height, which does not read as
+     a deliberate drop but as a print out of register. In em the ring and the
+     block are a constant fraction of whatever they ring, so one declaration in
+     index.css is correct at 48px, at 34px and at 30px.
+
+     THE max() FLOOR IS THERE FOR THE OTHER END. Below about 30px, 0.04em is
+     under a pixel and a sub-pixel ring is a grey haze rather than a line. The
+     floors keep it drawn. */
+  --ink-outline: max(1.5px, 0.04em); /* the ring around a display letter */
+  --ink-drop: max(2.5px, 0.095em); /* how far the violet block sits behind it */
+
+  /* --- motion -------------------------------------------------------------
+     Two curves and three durations. Nothing bounces, nothing overshoots.
+     Mirrored in src/motion/easings.ts, which is where JS reads them. */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --dur-fast: 0.24s;
+  --dur-mid: 0.5s;
+  --dur-slow: 0.8s;
+  --dur-hero: 1.2s;
+
+  /* ADDED 2026-09-05 with the v3 brief, which asks for two things the comic
+     round had no use for: "buttons and the two beat panels respond to hover
+     with restrained transform and glow", and headline copy legible over moving
+     video.
+
+     --glow-accent IS A LIGHT, NOT A SHADOW, and that is why it is the accent at
+     low opacity rather than black. It is only ever used spread and unoffset, so it
+     reads as the element being lit from behind. The brand token set's rule that
+     light here is a rim and not a glow was written about ARTWORK, where a
+     blurred edge destroys a cel-shaded fill; an interface element lifting under
+     the cursor is the other case, and the brief asks for it by name.
+
+     THE TWO SCRIMS ARE CONTRAST FLOORS, NOT MOOD, AND THE FIGURES BELOW WERE
+     MEASURED OFF THE THREE CLIPS RATHER THAN ESTIMATED. A headline over video
+     has no fixed background to measure against, so the worst frame governs, and
+     the worst frame is not the brightest PIXEL: a single hot pixel is smaller
+     than a stroke. Each clip was decoded at 2 fps and area-averaged to 32x18,
+     so one sample is a 40x40 block of the 1280-wide frame, about the size of
+     the local background under a run of glyphs, and the brightest block over
+     every sampled frame is the value taken. Method and numbers, 2026-09-05:
+
+       loop-1280.mp4    brightest block #b9b3e5
+       beat-1-1280.mp4  brightest block #ada8a9
+       beat-2-1280.mp4  brightest block #faf6f0
+
+     beat-2 is why there are two values here rather than one. Its brightest
+     block is very nearly white, and --scrim over it composites to #636262 where
+     --ink is 5.08:1: over the 4.5 floor and well under the 7:1 this file holds
+     body copy to. So no word on this site sits on --scrim alone. Every headline
+     over video sits on --scrim-deep, which composites the three worst blocks to
+     #201f2a, #1e1e21 and #29282b, where --ink measures 13.60:1, 13.91:1 and
+     12.26:1 and --muted measures 6.97:1, 7.13:1 and 6.28:1.
+
+     THE CONSEQUENCE, AND IT IS A RULE THE BEAT SECTIONS FOLLOW: --muted is not
+     available over beat-2 at any of these values, so the two beat headlines are
+     --ink and carry no secondary line. The hero's quiet link is --muted over the
+     loop at 6.97:1, which clears the 4.5 floor for the interface text it is.
+
+     --scrim is what remains for the parts of a frame with no words on them,
+     which is what the beat sections ramp their gradient from. Recompute all of
+     this if a clip is replaced: a scrim is only as good as the frame under it,
+     and the arithmetic is the same eight lines the block at the top of this
+     file describes. */
+  --glow-accent: rgba(160, 148, 255, 0.45);
+  --scrim: rgba(7, 7, 11, 0.62);
+  --scrim-deep: rgba(7, 7, 11, 0.86);
+
+  --z-banner: 20;
+  --z-masthead: 30;
+  --z-skip: 40;
+
+  /* -------------------------------------------------------------------------
+     THE V3 CHROME, added 2026-09-05 with revision 2 of the website brief.
+
+     WHY --radius IS STILL 0 AND THESE EXIST BESIDE IT. The comic pass set every
+     corner square on purpose: a drawn panel has a hard edge, and rounding it
+     turns an ink frame into a card. That is still true of PANELS, and --radius
+     is still 0 for them. It is not true of CHROME. The owner named
+     artificialinu.com as the reference and asked that the header, the footer and
+     the tab icon be the same across rwally.com and app.rwally.com, and the
+     reference's chrome is pill-shaped throughout: the header itself, the nav
+     capsule inside it, the price chip, the buttons. So the two geometries are
+     two tokens rather than one token with exceptions, and a component picks the
+     one that matches what it is. Square for panels, round for chrome.
+     ------------------------------------------------------------------------- */
+
+  /* A true pill: any half-height larger than the tallest chrome element. */
+  --radius-pill: 999px;
+
+  /* The floating header's own corner. Not a pill: the bar is wide and a wide
+     pill reads as a lozenge rather than as a bar. This is the reference's own
+     proportion, a soft rectangle whose corner is about a third of its height. */
+  --radius-bar: 1.25rem;
+
+  /* How far the floating header sits from the top of the viewport, and how much
+     room the first section has to leave for it. Two names for one measurement
+     because the header is fixed: nothing below it can ask it how tall it is. */
+  --masthead-inset: clamp(0.625rem, 0.35rem + 1.1vw, 1rem);
+  --masthead-clear: 5.5rem;
+
+  /* -------------------------------------------------------------------------
+     THE PARTICLE FIELD. A star drift behind the hero and the live panel.
+
+     THE COUNT IS A TOKEN BECAUSE IT IS A BUDGET, not a style. Each particle is
+     one absolutely positioned span animated on transform and opacity only, so
+     the cost is compositor work rather than layout, but forty of them at 60fps
+     is still forty. This is the number the section renders at every width; the
+     field is decorative, `aria-hidden`, and removed entirely under
+     prefers-reduced-motion rather than slowed down.
+     ------------------------------------------------------------------------- */
+  --particle-count: 40;
+  --particle-dim: rgba(234, 234, 243, 0.22);
+  --particle-lit: rgba(160, 148, 255, 0.55);
+
+  /* -------------------------------------------------------------------------
+     THE DISPLAY SCALE THE V3 PAGE ADDS.
+
+     --step-hero and --step-figure are both larger than --step-display, and they
+     are separate names because they are set in different faces at different
+     tracking. --step-hero is the h1: Space Grotesk 700, tight, four words that
+     have to survive 375px without hyphenating. --step-figure is the live block
+     height and the giant numerals: tabular figures, so it must never be set at
+     a size where a digit changing width would reflow the line. Both use clamp
+     with a vw middle term so the jump between 375 and 1440 is continuous rather
+     than stepped at a breakpoint.
+     ------------------------------------------------------------------------- */
+  --step-hero: clamp(2.75rem, 1.1rem + 7vw, 6.5rem);
+  --step-figure: clamp(3rem, 0.6rem + 10vw, 9rem);
+  --track-hero: -0.035em;
+  --leading-hero: 0.92;
+}

@@ -4,7 +4,7 @@ The GitHub ledger for the Phase-2 remediation: which PRs landed which fixes on `
 
 ## Why it matters
 
-In [[continuous-autonomous-mode]] with [[auto-merge]], the PR list *is* the change history — each finding is one branch, one PR, one merge. This note maps PR/issue numbers to findings so the audit prose and the git log line up.
+In [[continuous-autonomous-mode]] with [[auto-merge]], the PR list *is* the change history: each finding is one branch, one PR, one merge. This note maps PR/issue numbers to findings so the audit prose and the git log line up.
 
 ## Merged PRs (Phase 2)
 
@@ -16,7 +16,7 @@ In [[continuous-autonomous-mode]] with [[auto-merge]], the PR list *is* the chan
 | **#46** | `security/sprint20-dispositions` | disposition remaining findings; correct SLITHER-TRIAGE | Medium/Low tier |
 | **#47** | `security/oracle-reverification-c6` | `AuditC4EndToEnd.t.sol`; C-4 re-verification | surfaced C-6 ([[c6-oracle-byzantine]]) |
 | **#49** | `security/chainlink-oracle` | additive `ChainlinkOracle.sol` (Chainlink Data Feeds direct) | C-6 resolution ([[chainlink-direct-pivot]]) |
-| **#50** | `security/c6-factory-oracle-gate` | [[vaultfactory]] immutable `allowedOracles_` allowlist; `createVault`/`createChildVault` revert `OracleNotAllowed` when enforced; `AuditOracleAllowlist.t.sol` | C-6 factory oracle-gate — completes the mechanism ([[c6-oracle-byzantine]]) |
+| **#50** | `security/c6-factory-oracle-gate` | [[vaultfactory]] immutable `allowedOracles_` allowlist; `createVault`/`createChildVault` revert `OracleNotAllowed` when enforced; `AuditOracleAllowlist.t.sol` | C-6 factory oracle-gate: completes the mechanism ([[c6-oracle-byzantine]]) |
 | **#51** | `security/c6-vault` | the vault itself | C-6 ([[chainlink-direct-pivot]]) |
 | **#53** | `security/deploy-guard` | `Deploy.s.sol` guard reverts if `BLESSED_ORACLES` allowlist empty on Base-mainnet | Deploy-time safety for C-6 oracle gate ([[vaultfactory]]) |
 | **#54** | `security/c6-integration-tests` | `ChainlinkOracle` × `VaultCore` integration test suite | C-6 end-to-end ([[chainlinkoracle]]) |
@@ -30,9 +30,9 @@ Earlier (Phase 1): **#39** (`security/critical-remediation`) closed the twelve f
 
 | Issue | Subject |
 | --- | --- |
-| **#40** | VaultCore-headroom sprint — the EIP-170 budget that blocked H-5/H-6 and M-15 exit-side (reclaimed by #90; H-9 fixed separately by #98) |
-| **#41** | Rebuild `base-mainnet.json` — 5 sources/asset at quorum 3, `maxObservationAge ≤ window/20`; human-supplied addresses |
-| **#48** | C-6 tracking — remediation **complete in code** (safe oracle #49 + factory gate #50) and the external audit (gate 1) is complete on owner attestation, so **gate 0 is GO (root-only)**. The only remaining item is a mainnet DEPLOY step: populate `allowedOracles_` with the real blessed-oracle addresses — not an open Critical |
+| **#40** | VaultCore-headroom sprint: the EIP-170 budget that blocked H-5/H-6 and M-15 exit-side (reclaimed by #90; H-9 fixed separately by #98) |
+| **#41** | Rebuild `base-mainnet.json`: 5 sources/asset at quorum 3, `maxObservationAge ≤ window/20`; human-supplied addresses |
+| **#48** | C-6 tracking: remediation **complete in code** (safe oracle #49 + factory gate #50) and the external audit (gate 1) is complete on owner attestation, so **gate 0 is GO (root-only)**. The only remaining item is a mainnet DEPLOY step: populate `allowedOracles_` with the real blessed-oracle addresses, not an open Critical |
 
 Referenced audit issues from the pre-audit engagement: #31–#35 (the Critical filings), #32 (C-4 DiD), #33 (C-1), #34 (C-5), #24 (evidence-based launch readiness).
 

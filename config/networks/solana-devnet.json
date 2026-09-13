@@ -1,0 +1,15 @@
+{
+  "network": "solana-devnet",
+  "chainName": "Solana devnet",
+  "scheme": "exact-svm",
+  "x402": {
+    "enabled": true,
+    "note": "The devnet twin of solana-mainnet, and the only Solana network anything should be pointed at until a facilitator exists. Declared explicitly for the same reason the mainnet file is."
+  },
+  "settlement": {
+    "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "assetNote": "Circle's USDC devnet mint, 6 decimals. Same caveat as the mainnet file: recorded, NOT read back from chain.",
+    "decimals": 6,
+    "schemeNote": "Devnet SOL is free, so a facilitator keypair here costs nothing to fund and is the right place to prove the fee-payer half of the scheme before any mainnet key exists."
+  }
+}
