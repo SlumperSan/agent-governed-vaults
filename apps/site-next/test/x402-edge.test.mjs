@@ -31,7 +31,7 @@ import { getAddress } from 'viem';
 import { handle } from '../functions/api/vaults.js';
 import { onRequestGet as discovery } from '../functions/.well-known/x402.js';
 import { BASE_MAINNET_USDC } from '../functions/api/_price.js';
-import { VAULTS } from '../functions/api/_chain.js';
+import { VAULTS, DATA_CHAIN_ID } from '../functions/api/_chain.js';
 
 const PAYTO = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
 
@@ -66,10 +66,16 @@ function paidEnvelope({ value = '100000', to = PAYTO, asset = BASE_MAINNET_USDC,
 }
 const paidHeaders = (overrides) => ({ 'payment-signature': paidEnvelope(overrides) });
 
-/** A reader that fails the test outright if the route ever calls it — proves steps 1/2 make no RPC call. */
+/**
+ * A reader that fails the test outright if the route ever calls it — proves steps 1/2 make no RPC
+ * call. `assertBoundToDeclaredChain` is in here for the same reason as the other two and not as a
+ * formality: the binding is itself an `eth_chainId` round trip, so "no RPC before the envelope
+ * clears locally" is only true if the BINDING is also after that point.
+ */
 const noRpcReader = {
   async headBlock() { throw new Error('MUST NOT BE CALLED: no payment was settled yet'); },
   async tryRead() { throw new Error('MUST NOT BE CALLED: no payment was settled yet'); },
+  async assertBoundToDeclaredChain() { throw new Error('MUST NOT BE CALLED: no payment was settled yet'); },
 };
 
 /** A facilitator that fails the test outright if it is ever called — proves a 503 charges nobody. */
@@ -87,16 +93,30 @@ const okFacilitator = (receiptId = 'rcpt_live_1') => ({
  * way `reader.mjs`'s real `tryRead`/`headBlock` fail — `{kind, revertData}` for a read, a thrown
  * Error for `headBlock`. Every `tryRead` call is recorded in `.calls` so a test can assert every
  * field was pinned to the same block.
+ *
+ * `errors.binding` makes `assertBoundToDeclaredChain` reject with that error, standing in for the
+ * real reader refusing a wrong or unreadable chain id. `.order` records the sequence of `bind` /
+ * `headBlock` / `read` so a test can assert the binding happened FIRST rather than merely happening
+ * — a binding that runs after the addresses have been read has proven nothing.
  */
 function fakeReader({ block = 1, values = {}, errors = {} } = {}) {
   const calls = [];
+  const order = [];
   return {
     calls,
+    order,
+    async assertBoundToDeclaredChain() {
+      order.push('bind');
+      if (errors.binding) throw errors.binding;
+      return { ok: true, message: 'fake reader: bound by fixture' };
+    },
     async headBlock() {
+      order.push('headBlock');
       if (errors.headBlock) throw errors.headBlock;
       return block;
     },
     async tryRead(address, _abi, functionName, _args, opts) {
+      order.push('read');
       calls.push({ address, functionName, blockNumber: opts?.blockNumber });
       const key = `${address}:${functionName}`;
       if (errors[key]) {
@@ -509,6 +529,76 @@ test('a 503 (chain unreadable) reports no vault as pricingFrozen either, vacuous
   const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: noFacilitator });
   const text = await res.text();
   assert.ok(!text.includes('"pricingFrozen":true'));
+});
+
+// ── chain binding: the RPC must BE the chain this route says it is ──────────────────────────────
+
+/**
+ * Produce a real `ChainBindingError` by driving the real `assertChainBinding` against a client that
+ * reports `reportedId`, rather than hand-typing a message. A literal `/WRONG CHAIN/` would keep
+ * passing if `chain-binding.mjs` changed its wording, which is the failure mode where a test agrees
+ * with itself instead of with the module.
+ */
+async function realBindingError(reportedId, declaredChainId = DATA_CHAIN_ID) {
+  const { assertChainBinding } = await import('../../../packages/chain-config/src/chain-binding.mjs');
+  const client = {
+    async getChainId() {
+      if (reportedId === null) throw new Error('method eth_chainId not supported');
+      return reportedId;
+    },
+  };
+  try {
+    await assertChainBinding({
+      client, declaredChainId, rpc: 'https://rpc.example.invalid', declaredBy: "the route's DATA_CHAIN_ID",
+    });
+  } catch (err) {
+    return err;
+  }
+  throw new Error('expected assertChainBinding to refuse, but it did not');
+}
+
+test('the binding runs BEFORE any address is read — a check after the reads proves nothing', async () => {
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator() });
+  assert.equal(res.status, 200);
+  assert.equal(reader.order[0], 'bind', `first chain interaction was ${reader.order[0]}, not the binding`);
+  assert.equal(reader.order.filter((o) => o === 'bind').length, 1, 'bound exactly once per request');
+  assert.ok(reader.order.includes('read'), 'the fixture did record reads, so "bind first" is not vacuous');
+});
+
+test('a WRONG CHAIN rpc is a 503 and the facilitator is NEVER called — nobody pays for another chain', async () => {
+  // 4664 stands in for the trap that makes "the reads would just fail" false: the same deployer
+  // running the same script on another Robinhood chain yields IDENTICAL CREATE addresses holding
+  // different state, so an unbound route would have served a paid 200 of the wrong chain's numbers.
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES, errors: { binding: await realBindingError(4664) } });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: noFacilitator });
+  assert.equal(res.status, 503);
+  const body = await bodyOf(res);
+  assert.equal(body.vaults, undefined, 'no vault data may leave this route on an unproven chain');
+  assert.match(body.detail, /4664/, 'the refusal names the chain the RPC actually reported');
+  assert.match(body.detail, new RegExp(String(DATA_CHAIN_ID)), 'and the chain this route declares');
+  assert.equal(res.headers.get('payment-response'), null, 'no settlement, so no receipt to echo');
+  assert.equal(reader.order.includes('read'), false, 'refused before reading a single address');
+  assert.equal(reader.order.includes('headBlock'), false, 'refused before asking for a block height');
+});
+
+test('an UNREADABLE chain id refuses exactly like a mismatch — "I could not tell" is not "they match"', async () => {
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES, errors: { binding: await realBindingError(null) } });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: noFacilitator });
+  assert.equal(res.status, 503);
+  const body = await bodyOf(res);
+  assert.equal(body.vaults, undefined);
+  assert.match(body.detail, /UNPROVEN/);
+  assert.equal(reader.order.includes('read'), false);
+});
+
+test('a matching chain binds and the route still sells — the refusal is not indiscriminate', async () => {
+  const reader = fakeReader({ block: 1, values: SMOKE_VALUES });
+  const res = await handle(ctx(ENV, paidHeaders()), { reader, facilitator: okFacilitator('rcpt_bound') });
+  assert.equal(res.status, 200);
+  const body = await bodyOf(res);
+  assert.equal(body.chainId, DATA_CHAIN_ID);
+  assert.equal(body.receiptId, 'rcpt_bound');
 });
 
 // ── settlement still gates the body ─────────────────────────────────────────────────────────────

@@ -36,20 +36,42 @@
  *   2. Header present but locally invalid (wrong amount, wrong asset, expired, ...) → 402. STILL
  *      NO RPC CALL — the envelope has to clear the same local check `gate()` runs before this
  *      route spends anything on it.
- *   3. Envelope locally valid → NOW read the chain. Two distinct ways this can still yield
- *      nothing to sell, and both are 503 with `verifyAndSettle` never called:
- *        (a) the chain cannot even report a block number — no coherent height to read anything
+ *   3. Envelope locally valid → NOW touch the chain, binding FIRST. Three distinct ways this can
+ *      still yield nothing to sell, and all three are 503 with `verifyAndSettle` never called:
+ *        (a) the RPC does not answer for the chain this route DECLARES — see CHAIN BINDING below;
+ *        (b) the chain cannot even report a block number — no coherent height to read anything
  *            at, handled by `readVaultsAtHead` throwing;
- *        (b) a block number came back but every field of every vault failed to read (a reader
+ *        (c) a block number came back but every field of every vault failed to read (a reader
  *            that answers `eth_blockNumber` and then fails everything else) — a block number and
  *            two addresses is not a read, and billing for it would be.
- *      Neither case is tripped by an oracle freeze or a transport hiccup on ONE field of ONE
+ *      None of the three is tripped by an oracle freeze or a transport hiccup on ONE field of ONE
  *      vault, which is not "nothing to sell" — it degrades that one field (`pricingFrozen` or
  *      `unreadable`) inside a response that still has real data and can still be sold. See
  *      `_vaultread.js` for that per-field distinction.
  *   4. Read produced a block AND at least one readable field somewhere → settle with the
  *      facilitator, then serve the bytes already read. A caller is billed for what this route
  *      successfully read, at the block it read it, never for a read that came back empty.
+ *
+ * CHAIN BINDING, AND WHY A 503 IS NOT "SWALLOWING" IT.
+ * `createChainReader({rpcUrl, chainId})` builds a viem client that asserts the declared id ONTO an
+ * arbitrary URL; it never checks it AGAINST the chain that URL answers for (`reader.mjs`'s own
+ * words above `assertBoundToDeclaredChain`, and `packages/chain-config/src/chain-binding.mjs` for
+ * the general shape, issue #204). Production takes exactly that path here — `deps.reader` is
+ * undefined outside tests — so without the call below, every 200 this route serves would assert
+ * `chainId: 4663, chainName: 'robinhood-mainnet'` about data whose provenance was never checked.
+ * "Wrong chain → the addresses have no code → reads fail → 503" is NOT the mitigation it looks
+ * like: the same deployer running the same script against Robinhood testnet produces IDENTICAL
+ * CREATE addresses holding different state, so a misconfigured `DATA_RPC_URL` sells a paid 200
+ * full of another chain's numbers. The binding check exists so nobody has to enumerate vectors.
+ *
+ * `chain-binding.mjs` instructs callers that catch broadly to RE-THROW `ChainBindingError`, because
+ * the indexer's and canary's per-read handlers are fault-tolerant and would log it as one degraded
+ * field and keep polling the wrong chain. Routing it into the 503 below is not that mistake and is
+ * the same refusal in HTTP form: this request serves no body, the facilitator is never called, and
+ * the caller is not charged. There is no loop here to keep running — a Worker invocation ends at
+ * the `return`. The refusal message reaches the caller in `detail`, which is safe precisely because
+ * `DATA_RPC_URL` is a public constant in this repository (contrast `_price.js`'s `FACILITATOR_URL`,
+ * operator configuration published nowhere, which is withheld from its own error bodies).
  *
  * REPLAY. Unchanged from the pinned-snapshot version of this file: `seenNonces` is deliberately
  * NOT passed to anything here — an edge Worker has no memory shared across isolates or colos, so
@@ -127,11 +149,19 @@ export async function handle(context, deps = {}) {
   });
   let read;
   try {
+    // BEFORE any address is read: prove the RPC answers for the chain this route declares, or
+    // refuse. `ChainBindingError` lands in the `catch` below as a 503 — see CHAIN BINDING in the
+    // header for why that is the refusal and not a swallow. Kept inside the same `try` as the read
+    // on purpose: both mean "this deployment has nothing it can honestly sell right now", and one
+    // exit is harder to route a paid 200 past than two.
+    await reader.assertBoundToDeclaredChain();
     read = await readVaultsAtHead(reader, VAULTS);
   } catch (err) {
-    // The chain never told us what block it is on — there is nothing coherent to sell. 503, and
-    // the facilitator is never called below this line: the caller is not charged for a read this
-    // deployment could not perform.
+    // Either the RPC is not the chain this route declares, or the chain never told us what block
+    // it is on. Both mean there is nothing coherent to sell. 503, and the facilitator is never
+    // called below this line: the caller is not charged for a read this deployment could not
+    // perform, nor for one it could not prove was of the right chain. `detail` carries the
+    // refusal verbatim, which for a binding failure names both chain ids.
     return json(
       {
         error: 'chain read failed',
