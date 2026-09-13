@@ -62,22 +62,45 @@ const b64 = (obj) => {
  *   audited, or re-verified against the chain, but the envelope can. Purely passive: the return
  *   value is ignored and a throw is not caught, so a buggy hook fails loudly rather than silently
  *   dropping a payment that has already been signed.
+ * @param {{scheme:string, buildEnvelope:(p:{challenge:object}) => Promise<object>}} [cfg.payer]
+ *   A non-EVM payer. `createSvmPayer` from `./svm-exact.mjs` returns one. When supplied it takes
+ *   the 402 whose challenge names its scheme, and `wallet`/`domain` take every other one — so one
+ *   client can speak both, which is the point of the challenge carrying `scheme` at all.
+ *
+ *   THIS PARAMETER DID NOT EXIST while `svm-exact.mjs` documented it as "the injection point for
+ *   `createProtocolClient({ payer })`". The module was also missing from this file's exports, so
+ *   nothing outside the package could reach it either. Both are the same defect: a path described
+ *   as finished with no way for a caller to walk it.
  */
-export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetch, nowSec = () => Math.floor(Date.now() / 1000), skewSec, onPayment }) {
+export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetch, nowSec = () => Math.floor(Date.now() / 1000), skewSec, onPayment, payer }) {
   async function request(path) {
     const url = `${baseUrl}${path}`;
     let res = await fetchImpl(url);
     if (res.status === 402) {
       const challenge = JSON.parse(res.headers.get('payment-required') ?? 'null');
       if (!challenge) throw new ProtocolError('402 without a challenge', 402);
-      const envelope = await authorizeFromChallenge({
-        challenge,
-        walletAddress: wallet.address,
-        domain,
-        sign: wallet.sign,
-        nowSec: nowSec(),
-        ...(skewSec === undefined ? {} : { skewSec }),
-      });
+      // The SERVER's challenge picks the scheme; the client only decides whether it can speak it.
+      // A challenge naming a scheme this client has no payer for is an error rather than an
+      // attempt to sign the wrong shape — which is what produced a 402 loop with no diagnosis.
+      let envelope;
+      if (payer && challenge.scheme === payer.scheme) {
+        envelope = await payer.buildEnvelope({ challenge });
+      } else if (challenge.scheme && challenge.scheme !== 'exact') {
+        throw new ProtocolError(
+          `402 asks for scheme "${challenge.scheme}" and this client has no payer for it. `
+          + `Pass one — createSvmPayer() for exact-svm — or point at a server whose price is EVM.`,
+          402,
+        );
+      } else {
+        envelope = await authorizeFromChallenge({
+          challenge,
+          walletAddress: wallet.address,
+          domain,
+          sign: wallet.sign,
+          nowSec: nowSec(),
+          ...(skewSec === undefined ? {} : { skewSec }),
+        });
+      }
       onPayment?.({ path, challenge, envelope });
       res = await fetchImpl(url, { headers: { 'payment-signature': b64(envelope) } });
     }
@@ -128,3 +151,12 @@ export class ProtocolError extends Error {
 }
 
 export { authorizeFromChallenge, buildTypedData, buildEnvelope } from './eip3009.mjs';
+// The SVM half. It lives in its own module because it pulls @solana/web3.js and @solana/spl-token,
+// and it is re-exported here because a module nothing exports is a module nothing can use.
+//
+// NOTE WHAT THIS RE-EXPORT COSTS, since an earlier version of this comment claimed the opposite: it
+// is STATIC, so importing anything from this index loads both Solana packages, EVM-only consumer
+// included. The separate module buys navigability, not lazy loading. Making that true would mean a
+// dynamic import behind an async factory, which changes this package's shape for every caller —
+// a trade worth making deliberately if it is ever made, and not worth describing as already made.
+export { buildSvmEnvelope, createSvmPayer } from './svm-exact.mjs';

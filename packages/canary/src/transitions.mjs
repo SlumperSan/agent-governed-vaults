@@ -13,6 +13,10 @@
  *    starting up against a healthy chain must not announce every signal it is watching.
  *  - `skipped` is its own state, not a silent `ok`. OK→SKIPPED emits, because a sentinel that has
  *    stopped being able to run is exactly the thing you would otherwise never notice.
+ *  - `notApplicable` (carried on a result's `detail`) is the mirror image of that rule. It rides on an `ok`
+ *    result whose check has no subject in this deployment, and it is the ONE case where a
+ *    first-sighting `ok` emits: exactly one NOTICE line, so the fact is stated once instead of
+ *    never. Every later sweep matches the tracked status and emits nothing.
  *  - `minConsecutive` (carried on a result's `detail`) requires N consecutive same-status
  *    observations before a transition is emitted. Used by share-conservation when it cannot pin
  *    its chain read to the indexer's height, where a one-poll mismatch is ordinary lag.
@@ -62,6 +66,10 @@ function markFor(to, r, repeat) {
   if (r?.detail?.detectorBroken) {
     return repeat > 0 ? `DETECTOR BROKEN (still blind after ${repeat} consecutive sweeps)` : 'DETECTOR BROKEN';
   }
+  // A not-applicable check is `ok`, but `MARK.ok` is "RECOVERED" and nothing recovered: there was
+  // never a fault to come back from. NOTICE says what the line actually is — a statement of fact
+  // about how this deployment is wired, made once.
+  if (to === 'ok' && r?.detail?.notApplicable) return 'NOTICE';
   return MARK[to] ?? to.toUpperCase();
 }
 
@@ -117,7 +125,10 @@ export function createTransitionTracker({ initial = {} } = {}) {
           status: r.status, since: poll, pendingStatus: null, pendingCount: 0,
           brokenPolls: blind ? 1 : 0, brokenNext: blind ? 2 : 0,
         });
-        if (r.status !== 'ok') out.push(emit(r, 'ok'));
+        // A healthy first sighting stays silent; a not-applicable one does not. Left silent it
+        // would never be said at all, and "this check has no subject here" is precisely the fact an
+        // operator cannot infer from silence — silence is what a passing check looks like.
+        if (r.status !== 'ok' || r.detail?.notApplicable === true) out.push(emit(r, 'ok'));
         continue;
       }
 

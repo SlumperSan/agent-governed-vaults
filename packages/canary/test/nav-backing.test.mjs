@@ -144,3 +144,16 @@ test('custody ALERTS on a basket-asset shortfall and names the token', async () 
   assert.equal(c.detail.shortfalls[0].token, ASSET);
   assert.ok(c.message.includes(ASSET.slice(0, 6)), 'alert line must name the token');
 });
+
+test('a 429 on priceWad mid-recompute is worded as an unread call, not as a revert', async () => {
+  // memoPrice's Error text is not swallowed: nav-backing.mjs:92 puts it verbatim into the
+  // operator's "NAV recompute failed …" line, so an unconditional "reverted" there reported a
+  // network failure as a claim about priceWad. Non-paging either way — the result is `skipped`,
+  // and `isFrozen(null)` is false because the reader nulls returndata on a transport failure.
+  const contracts = healthyVault({ [ORACLE]: { priceWad: () => ({ transport: 'HTTP request failed.' }) } });
+  const c = composition(await checkNavBacking({ reader: mockReader({ contracts }), vault: VAULT, atBlock: 900 }));
+  assert.equal(c.status, 'skipped');
+  assert.equal(c.detail.attributedTo, null);
+  assert.match(c.message, /priceWad\(0x\w+\) could not be read: HTTP request failed\./);
+  assert.doesNotMatch(c.message, /revert/);
+});

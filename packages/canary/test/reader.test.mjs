@@ -11,7 +11,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractRevertData, createChainReader } from '../src/reader.mjs';
+import { extractRevertData, structuredRevertData, createChainReader } from '../src/reader.mjs';
+import { classifyCallError } from '../src/call-error.mjs';
 
 test('pulls returndata off a flat error', () => {
   assert.equal(extractRevertData({ data: '0xAB143C06' }), '0xab143c06');
@@ -91,4 +92,72 @@ test('staticCall passes no explicit gas — a low cap would manufacture failures
   const reader = createChainReader({ client: { call: async (args) => { seen.push(args); return { data: '0x' }; } } });
   await reader.staticCall({ to: '0x1', from: '0x2', data: '0x3' });
   assert.equal('gas' in seen[0], false, 'VaultCore gas-caps its own module calls; the probe must not add a second cap');
+});
+
+// ── `kind`: was a failed read evidence about the contract, or did it never get there? ──
+
+test('classifyCallError: a revert whose text also carries a transport-ish token is still a revert', () => {
+  assert.equal(classifyCallError('execution reverted, data: "0x429" timeout'), 'revert');
+  assert.equal(classifyCallError('reverted: DeadlineTimeout()'), 'revert');
+  // The wording viem 2.x actually produces for a revert with no decodable reason.
+  assert.equal(classifyCallError('Execution reverted for an unknown reason.'), 'revert');
+});
+
+test('classifyCallError: transport wording is never a contract verdict, and neither is an unknown string', () => {
+  // The wordings measured out of viem 2.x for an HTTP 429 and a JSON-RPC rate limit respectively.
+  assert.equal(classifyCallError('HTTP request failed.'), 'transport');
+  assert.equal(classifyCallError('Request exceeds defined limit.'), 'transport');
+  assert.equal(classifyCallError('ECONNRESET'), 'transport');
+  // Fail-safe: an unrecognised failure is missing evidence, not a finding.
+  assert.equal(classifyCallError('something nobody has seen before'), 'transport');
+});
+
+test('a transport failure carries kind:transport and NO returndata — the scrape would return our OWN calldata', async () => {
+  // Measured shape: viem quotes the failing request back in the message, so `extractRevertData`'s
+  // hex fallback recovers the calldata the canary just sent. Its first four bytes then read as an
+  // unrecognized revert selector, which is how a 429 used to page "EXIT LIVENESS BROKEN".
+  const calldata = `0x721c6513${'0'.repeat(63)}1`;
+  const client = {
+    call: async () => {
+      const e = new Error(`HTTP request failed.\n\nRaw Call Arguments:\n  data: ${calldata}`);
+      // @ts-ignore — viem sets this
+      e.shortMessage = 'HTTP request failed.';
+      throw e;
+    },
+  };
+  const res = await createChainReader({ client }).staticCall({ to: '0x1', from: '0x2', data: calldata });
+  assert.equal(res.ok, false);
+  assert.equal(res.kind, 'transport');
+  assert.equal(res.data, null, 'a call that never reached the chain produced no returndata');
+});
+
+test('tryRead tags a transport failure the same way, and drops the scraped returndata with it', async () => {
+  const client = {
+    readContract: async () => {
+      const e = new Error('The request took too long to respond. Raw Call Arguments: data: 0xa2671f4b');
+      // @ts-ignore — viem sets this
+      e.shortMessage = 'The request took too long to respond.';
+      throw e;
+    },
+  };
+  const res = await createChainReader({ client }).tryRead('0x1', [], 'navWad', []);
+  assert.equal(res.kind, 'transport');
+  assert.equal(res.revertData, null,
+    'scraping StaleOracle out of a timeout would attribute a network fault to the oracle breaker');
+});
+
+test('structured returndata outranks the wording: a revert no pattern recognises is still a revert', () => {
+  // `structuredRevertData` only answers for returndata viem handed over in a FIELD, which cannot
+  // exist unless the EVM executed and reverted. It is what keeps an odd-worded provider's genuine
+  // revert out of the blind channel.
+  assert.equal(structuredRevertData({ data: '0xab143c06' }), '0xab143c06');
+  assert.equal(structuredRevertData({ message: 'reverted 0xab143c06' }), null,
+    'hex found in prose is not structured returndata and must not decide kind');
+});
+
+test('a revert reported only in a field, with wording that matches nothing, is classified revert', async () => {
+  const client = { call: async () => { throw { data: '0xab143c06', shortMessage: 'provider said something new' }; } };
+  const res = await createChainReader({ client }).staticCall({ to: '0x1', from: '0x2', data: '0x3' });
+  assert.equal(res.kind, 'revert');
+  assert.equal(res.data, '0xab143c06');
 });

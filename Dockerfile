@@ -1,6 +1,10 @@
 # Single image for all three runtime processes (indexer + API + canary). Pick which to run via
-# the compose service command or a `docker run` override. All three are non-custodial: no keys,
+# the compose service command or a `docker run` override. The indexer and the canary are
+# non-custodial without qualification -- no keys,
 # no fund movement. The canary is additionally read-only against the chain — it never sends.
+# The API is the one that has a qualification: no key under `FACILITATOR=stub` and
+# `FACILITATOR=http`, and a Solana fee-payer keypair read from `SVM_KEYPAIR` under the opt-in
+# `FACILITATOR=svm`. Pass that env var only into the api container, and only when you mean to.
 #
 #   docker build -t vault-runtime .
 #   docker run --env-file .env vault-runtime node packages/indexer/src/index-runner.mjs
@@ -31,6 +35,19 @@ RUN npm install --omit=dev --no-audit --no-fund
 # App source (contracts/ and other heavy dirs excluded via .dockerignore).
 COPY packages ./packages
 COPY apps ./apps
+
+# The per-chain configuration is runtime data, not only deploy input: the API resolves whether this
+# chain meters reads over x402 from `contracts/config/<chain>.json` (packages/chain-config). Data
+# only — no Solidity, no artifacts; .dockerignore re-includes exactly this subtree. Omit it and the
+# lookup degrades to "x402 enabled", leaving the payment gate on for a chain that switched it off.
+COPY contracts/config ./contracts/config
+
+# The same argument, for the networks that have no EVM chain id. `config/networks/*.json` is where a
+# payment network such as Solana declares whether it meters, and the resolver reads it at boot from
+# the same process. Omit this line and the lookup degrades to "x402 enabled" for every one of them --
+# the identical failure the paragraph above describes, on the identical code path, and just as silent.
+# A review of the change that added the directory caught exactly this line missing.
+COPY config ./config
 
 # Snapshot lives on a mounted volume so indexer (writer) and API (reader) share it.
 ENV STATE_PATH=/data/indexer-state.json

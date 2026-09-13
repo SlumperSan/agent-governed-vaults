@@ -1,0 +1,87 @@
+/* ===========================================================================
+   THE MARQUEE STRIP.
+
+   IT IS THE ONE FULL-BLEED BAND OF SOLID ACCENT ON THE PAGE, and it is the seam
+   between the hero and the live panel. Two near-black sections meeting at a
+   hairline is a page that scrolls without landmarks; a band of colour is where
+   the reader knows the first movement ended.
+
+   --accent-ink ON --accent IS 7.65:1, the pairing tokens.css records. This is
+   the only place on the site where a whole strip of text sits on the accent
+   rather than the other way round, which is exactly why the pairing has to be
+   the checked one rather than a lighter violet that looked better against the
+   ground.
+
+   THE ANIMATION IS A HALF-WIDTH TRANSLATE, WHICH IS WHY THERE ARE TWO TRACKS.
+   The rail holds two identical tracks side by side and moves left by exactly
+   50% of itself. At -50% the second track is where the first one started, so
+   resetting to 0 is invisible. Translating a rail with ONE track would show the
+   ground behind it before the loop point.
+   =========================================================================== */
+
+.strip {
+  overflow: hidden;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-block: 1px solid var(--accent);
+}
+
+.rail {
+  display: flex;
+  width: max-content;
+}
+
+.moving {
+  animation: marquee-slide 42s linear infinite;
+}
+
+.track {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+/* The separator is drawn rather than typed. A bullet or a slash between phrases
+   is a character a screen reader announces and the sentence-source guard has to
+   strip; a pseudo-element diamond is neither. */
+.phrase {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding-block: 0.8125rem;
+  padding-inline: 0 var(--s5);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.phrase::after {
+  content: '';
+  width: 0.3125rem;
+  height: 0.3125rem;
+  flex: none;
+  background: currentColor;
+  transform: rotate(45deg);
+  opacity: 0.55;
+}
+
+@keyframes marquee-slide {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* STOPPED, NOT SLOWED, and the strip stays. The four phrases are content: they
+   are legible standing still, and a reader who has asked for reduced motion
+   should get the claims without the movement rather than lose both. */
+@media (prefers-reduced-motion: reduce) {
+  .moving {
+    animation: none;
+  }
+}

@@ -60,7 +60,10 @@ export async function checkNavBacking({ reader, vault, atBlock, thresholdBps = 5
       message: frozen
         ? `NAV check skipped on vault ${shortAddr(vault)}: navWad() reverts StaleOracle — the oracle breaker is tripped (see the oracle-freshness signal for the asset)`
         : `NAV check skipped on vault ${shortAddr(vault)}: navWad() is unreadable: ${reportedRes.error}`,
-      detail: { vault, revertData: reportedRes.revertData, attributedTo: frozen ? 'oracle-freshness' : null },
+      // `isFrozen` reads `revertData`, which the reader nulls on a transport failure, so a 429 can
+      // no longer be attributed to the oracle breaker by a scraped selector. Both branches already
+      // said "skipped"; `kind` records which one it was.
+      detail: { vault, revertData: reportedRes.revertData, kind: reportedRes.kind ?? null, attributedTo: frozen ? 'oracle-freshness' : null },
     }));
     return results;
   }
@@ -211,7 +214,10 @@ function memoPrice(reader, oracle, at) {
     if (cache.has(k)) return cache.get(k);
     const res = await reader.tryRead(oracle, ORACLE_VIEWS, 'priceWad', [asset], at);
     if (!res.ok) {
-      const err = new Error(`priceWad(${asset}) reverted: ${res.error}`);
+      // Only a CONFIRMED revert may be worded as one. This message is not swallowed — `:92` puts
+      // it verbatim into the operator's `NAV recompute failed …` line — so the unconditional
+      // "reverted" it used to carry reported an HTTP 429 as a claim about priceWad.
+      const err = new Error(`priceWad(${asset}) ${res.kind === 'revert' ? 'reverted' : 'could not be read'}: ${res.error}`);
       // @ts-ignore — carried so the caller can attribute a StaleOracle revert to the oracle signal
       err.revertData = res.revertData;
       throw err;

@@ -1,4 +1,4 @@
-# Standards Research — EVM Standards, Testnet Targets, Solana Compatibility
+# Standards Research: EVM Standards, Testnet Targets, Solana Compatibility
 
 Scope: which published standards this protocol can leverage; which testnet to deploy to; what
 "Solana compatibility" can and cannot mean. Research only — no code changes in this document.
@@ -31,18 +31,18 @@ search space before evaluation, and are quoted here so they don't get re-litigat
 
 ---
 
-## 1. Tier 1 — adopt
+## 1. Tier 1: adopt
 
 Seven items that are buildable now, fight no commitment, and change code.
 
-### 1.1 EIP-3009 `receiveWithAuthorization` — one-transaction gasless deposit
+### 1.1 EIP-3009 `receiveWithAuthorization`: one-transaction gasless deposit
 
 **Status:** Draft, Standards Track ERC ([EIP-3009](https://eips.ethereum.org/EIPS/eip-3009)).
 Circle's USDC implements it (established in RESEARCH-SPRINT1 §1 from Circle/PayIn sources).
 
 **The gap.** `VaultCore.deposit()` (VaultCore.sol:296) takes `amountUsdc` and pulls via
 `transferFrom`, measuring the balance delta. That obliges every depositor to send an `approve()`
-first — **two transactions, two gas payments, and a standing allowance** on a vault contract. Our
+first: **two transactions, two gas payments, and a standing allowance** on a vault contract. Our
 depositors are AI agents. The agent-facing surface we already shipped (`GET /vaults`,
 `/.well-known/x402`, the agent SDK) is undercut by an entry path that needs a two-step ERC-20
 dance.
@@ -54,13 +54,13 @@ authorization primitive the facilitator already uses for metered API access, now
 vault. Note this does **not** breach §9 — it is a plain EIP-3009 token transfer, not an HTTP
 payment; the vault gains no x402 dependency.
 
-**The detail that matters — use `receiveWithAuthorization`, not `transferWithAuthorization`.**
+**The detail that matters: use `receiveWithAuthorization`, not `transferWithAuthorization`.**
 The EIP is explicit: *"It is possible for an attacker watching the transaction pool to extract the
 transfer authorization and front-run the `transferWithAuthorization` call to execute the transfer
 without invoking the wrapper function."* An attacker who front-runs our deposit wrapper lands the
-USDC on the vault with **no `deposit()` call attached** — the funds arrive as an unaccounted
+USDC on the vault with **no `deposit()` call attached**: the funds arrive as an unaccounted
 donation, the depositor mints nothing, and (because NAV reads internal accounting, not
-`balanceOf` — VaultCore.sol:79, the EE-1 donation defense) the money is simply stranded. The EIP's
+`balanceOf` (VaultCore.sol:79, the EE-1 donation defense)) the money is simply stranded. The EIP's
 own recommendation: *"Use `receiveWithAuthorization` instead of `transferWithAuthorization` when
 calling from other smart contracts"* to prevent deposits *"becoming locked up."*
 `receiveWithAuthorization` enforces `msg.sender == to`, so only the vault can execute it.
@@ -72,7 +72,7 @@ functions is a live bug class, not a style preference.
 > `receiveWithAuthorization` (bridged/wrapped USDC variants sometimes ship only a subset). Read
 > the deployed FiatTokenV2 source per chain — do not assume from this brief.
 
-### 1.2 ERC-1271 — smart-account members (a gap, not a nicety)
+### 1.2 ERC-1271: smart-account members (a gap, not a nicety)
 
 **ERC-1271** (`isValidSignature`) is the contract-signature standard; **ERC-6492** extends it to
 counterfactual (not-yet-deployed) accounts; **ERC-7597** ("Signature Validation Extension for
@@ -80,14 +80,14 @@ Permit", Draft, created 2024-01-15) extends ERC-2612 `permit` to accept bytes-fo
 ERC-1271 contract wallets can use gasless approvals.
 
 **Why this is load-bearing here.** Our members are agents. Agents increasingly *are* smart
-accounts — ERC-4337 bundled accounts, or EOAs temporarily carrying code via **EIP-7702** (Final,
+accounts: ERC-4337 bundled accounts, or EOAs temporarily carrying code via **EIP-7702** (Final,
 Core; activated on Ethereum mainnet with the **Pectra** hard fork on 2025-05-07, introducing the
 `0x04` SetCode transaction type). A smart-account member cannot produce a raw
 secp256k1 signature. So **every signature-accepting path we add must validate through ERC-1271**,
 or it silently excludes exactly the users the protocol is built for.
 
 **Current exposure is zero, and that's worth stating precisely:** commit-reveal (Governance.sol)
-is hash-based — `commitVote(pid, keccak256(...))` is an ordinary transaction from the member, no
+is hash-based: `commitVote(pid, keccak256(...))` is an ordinary transaction from the member, no
 signature recovery anywhere. Delegation via `setDelegate` is likewise a direct call. **We have no
 `ecrecover` in the contract layer today.** The gap opens the moment §1.1 lands: an EIP-3009
 authorization is a signature, and a smart-account agent's authorization will not validate unless
@@ -95,7 +95,7 @@ the path routes through ERC-1271.
 
 Sequencing follows from that: 1.1 and 1.2 are one work item, not two.
 
-### 1.3 ERC-165 — and the value is the *negative* signal
+### 1.3 ERC-165: and the value is the *negative* signal
 
 `supportsInterface` appears nowhere in `contracts/src` (verified by grep). Adding it is nearly
 free.
@@ -112,7 +112,7 @@ An explicit ERC-165 that returns **`false` for the ERC-4626 interface id** while
 for our own published vault interface id turns C-1 from a prose disclaimer into a machine-readable
 fact. It pairs directly with the agent-discovery surface already shipped.
 
-### 1.4 ERC-5805 + ERC-6372 — conform the reads, declare the clock
+### 1.4 ERC-5805 + ERC-6372: conform the reads, declare the clock
 
 - **ERC-5805** "Voting with delegation" — **Stagnant**. Requires `getVotes`, `getPastVotes`,
   `delegates`, `delegate`, plus `delegateBySig` and `nonces`.
@@ -122,15 +122,15 @@ fact. It pairs directly with the agent-discovery surface already shipped.
 
 **We are already 5805-shaped without having tried.** `pastVotingEligibleShares(address member,
 uint64 ts)` and `pastTotalVotingEligibleShares(uint64 ts)` (VaultCore.sol:810-818) are
-`getPastVotes`/`getPastTotalSupply` with a timestamp timepoint — which is precisely ERC-6372's
+`getPastVotes`/`getPastTotalSupply` with a timestamp timepoint; which is precisely ERC-6372's
 `mode=timestamp`, and it falls out of C-2's "`block.timestamp` is the only clock" rule. This is
 convergent design, not coincidence.
 
-**Recommendation: conform the checkpoint reads and declare the clock — do not adopt ERC-5805.**
+**Recommendation: conform the checkpoint reads and declare the clock. Do not adopt ERC-5805.**
 Two reasons full adoption fails:
 
 1. 5805 assumes delegation semantics live on a **transferable voting token**. Ours are
-   non-transferable (EE-7), and delegation lives in a *separate* contract keyed per-vault —
+   non-transferable (EE-7), and delegation lives in a *separate* contract keyed per-vault:
    `delegateOf[vault][member]` (Governance.sol:120). 5805's `delegates(address)` is single-scope
    and has nowhere to put the vault dimension.
 2. 5805 is **Stagnant**, so conformance buys standing, not a maintained spec.
@@ -157,7 +157,7 @@ L1s/L2s. On a chain that has not shipped Cancun, `TSTORE` reverts. This interact
 below — it is a *reason to confirm the Cancun status of each target chain*, not a reason to skip
 the change on our primary targets.
 
-### 1.6 CREATE2 deterministic deployment — direct service to C-2
+### 1.6 CREATE2 deterministic deployment: direct service to C-2
 
 `VaultFactory._deploy` uses plain `new VaultCore(...)` (VaultFactory.sol:93) — **CREATE, not
 CREATE2**. Vault addresses therefore depend on the factory's nonce, so the same vault deployed to
@@ -179,7 +179,7 @@ One consequence to design for deliberately: CREATE2 addresses are only stable wh
 constructor arguments and bytecode are stable. A compiler-version bump changes every future vault
 address. Salt derivation must therefore include a version tag.
 
-### 1.7 ERC-8004 "Trustless Agents" — precedent for OperatorRegistry
+### 1.7 ERC-8004 "Trustless Agents": precedent for OperatorRegistry
 
 **Status: Draft, Standards Track ERC, created 2025-08-13.** Specifies three registries:
 
@@ -216,7 +216,7 @@ compatibility note in AUDIT-HANDOFF.md, not a rewrite.
 
 ---
 
-## 2. Tier 2 — evaluate, don't adopt yet
+## 2. Tier 2: evaluate, don't adopt yet
 
 | Standard | Status (verified) | Relevance | Why not now |
 | --- | --- | --- | --- |
@@ -256,7 +256,7 @@ One line each, so they stay rejected:
 
 ---
 
-## 4. Flagged decision — pull oracles reframe K-4's cost, they don't dissolve it
+## 4. Flagged decision: pull oracles reframe K-4's cost, they don't dissolve it
 
 **This is not a recommendation. It is a K-decision the standing directive says to surface.**
 
@@ -269,7 +269,7 @@ prevent."* The accepted cost (K-4) is that an attacker who can induce staleness 
 they stop, we freeze and there is nothing a user can do. Pull oracles (Pyth, RedStone and similar)
 distribute *signed price messages off-chain*, and any caller can submit a fresh signed price **in
 the same transaction** as their action. A frozen member could then attach a current, publisher-
-signed price to their own exit transaction and leave — **without any escape hatch, because the
+signed price to their own exit transaction and leave: **without any escape hatch, because the
 price is not stale**. The breaker's invariant is untouched: we still never price off a stale
 value.
 
@@ -284,10 +284,10 @@ pattern working as designed.
    there is no fresh message to submit. K-4's failure mode is reduced in *likelihood*, not
    eliminated.
 2. **It hands the caller an option on timing.** With push feeds, the price at any block is
-   whatever the publisher last wrote — the same for everyone. With pull feeds, the *actor chooses
+   whatever the publisher last wrote; the same for everyone. With pull feeds, the *actor chooses
    which signed price to submit*, within the staleness bound. A member exiting can wait for a
-   favorable signed price and submit that one. That is a new trust surface — a latency-arbitrage
-   option granted to whoever transacts — and the existing security review already tracks a
+   favorable signed price and submit that one. That is a new trust surface: a latency-arbitrage
+   option granted to whoever transacts. The existing security review already tracks a
    "finding-7 latency-arb drift window" (OracleAggregator.sol:32) that this would widen.
 3. **Freshness quorum interacts awkwardly.** `MIN_SOURCES = 3` with a strict-majority freshness
    quorum assumes sources update independently. A caller submitting fresh prices to two pull
@@ -300,7 +300,7 @@ and this is precisely the class of change the directive says not to make unilate
 
 ---
 
-## 5. Testnet target — and a real blocker on BNB testnet
+## 5. Testnet target: and a real blocker on BNB testnet
 
 Addressing the mid-session inputs: *BNB testnet usually has pricing data from Binance*, and
 *testnet*.
@@ -377,7 +377,7 @@ is still gated on your key; I will not deploy on your behalf.
 
 ---
 
-## 6. Solana compatibility — four options, and only one is cheap
+## 6. Solana compatibility: four options, and only one is cheap
 
 Addressing the third mid-session input. "Compatible with Solana" resolves to four materially
 different projects, and the difference between them is roughly two orders of magnitude of work.
@@ -433,7 +433,7 @@ buys us EVM-chain portability, and it does not extend across VMs.
 
 ---
 
-## 7. Summary — what changes, what's asked
+## 7. Summary: what changes, what's asked
 
 **Adopt (no decision needed, fits every commitment):**
 
