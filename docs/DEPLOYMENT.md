@@ -201,7 +201,7 @@ and on `SEQUENCER_EXEMPT_REASONS` in
 `ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
 
 **One signal this switches off, and what already stops it mattering.** `SEQUENCER_REQUIRED` is
-computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:137`) and never from the RPC,
+computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:140`) and never from the RPC,
 while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:110`) — so a
 `BASE_MAINNET_RPC` left exported from a Base session still decides which endpoint a run launched
 with the 4663 config queries. Before this change that misdirected run **failed** the sequencer row,
