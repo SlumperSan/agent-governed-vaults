@@ -29,8 +29,12 @@
  * ## The vault is TWO states, and the guard asserts which one the prose is written for
  *
  * The singletons and vault #1 are different events with a gap between them: `VaultFactory` went in
- * on 2026-09-05 and `factory.vaultCount()` read 0 at the record's read block, because the vault has
- * to be created BY THE CREATOR SAFE and that transaction had not happened. The first version of
+ * on 2026-09-05 and `factory.vaultCount()` read 0 at the record's read block, because the vault was
+ * INTENDED to be created by the creator Safe and that transaction had not happened. The tense
+ * matters: that was the plan of record, not a rule the factory enforces. `createVault` is
+ * permissionless, and both vaults were in the end created by the deployer EOA — see
+ * `creatorDeviationNote`. This sentence read "has to be created BY THE CREATOR SAFE" until
+ * 2026-09-13, which stated an intention as a mechanism. The first version of
  * this file required `smokeVault.address` to be a 20-byte address unconditionally, which would have
  * held #211 red until the Safe acted — and, worse, invited whoever got tired of that to write a
  * first-vault address into prose ahead of the chain.
@@ -48,10 +52,17 @@
  * copy surviving the event it denies. Neither branch can be satisfied by a file that hedges: the
  * record says null or it says an address, and the prose says one thing or the other.
  *
- * `contracts/config/deployments/robinhood-mainnet.json`'s own `smokeVaultNote` still describes the
- * unconditional version of this leg and says #211 cannot go green until vault #1 exists. That
- * paragraph is stale as of this change. It is not edited here, because a claims guard does not get
- * to rewrite the record it checks — whoever next updates that file for the vault owns it.
+ * This paragraph used to say that the record's own `smokeVaultNote` still described the
+ * unconditional version of this leg, that it was stale, and that it was deliberately not edited
+ * here because a claims guard does not get to rewrite the record it checks — whoever next updated
+ * that file for the vault owned it. ALL OF THAT IS NOW SPENT. That update happened: `smokeVaultNote`
+ * opens "TWO VAULTS EXIST ON THIS DEPLOYMENT" and records that the #211 leg never failed because it
+ * never ran. A reader sent here for the unconditional description would find its opposite.
+ *
+ * Worth keeping as a pattern rather than deleting: this comment went false the moment the record it
+ * describes was corrected, and nothing caught it. The tree-wide denial sweep skips `GUARD_SELF`, and
+ * the sentence carries no banned literal, so the only thing that could have found it was a reader.
+ * A guard's prose about another file is a claim like any other, and it rots the same way.
  *
  * ## What it deliberately does NOT do
  *
@@ -228,7 +239,9 @@ const HOWTO =
   `\n  chainId                        ${CHAIN_ID}` +
   `\n  deployedAt                     ISO-8601 instant of the deploy block` +
   `\n  singletons.VaultFactory        20-byte address` +
-  `\n  smokeVault                     the first vault (created by the Safe), or null if none exists` +
+  `\n  smokeVault                     the first vault, or null if none exists. The parenthetical here` +
+  `\n                                 used to read "created by the Safe"; that was the INTENT in` +
+  `\n                                 intendedCreator.why, and both vaults record createdByTheSafe false` +
   `\n  verifiedWiring["${VAULT_COUNT_KEY}"]  0 while smokeVault is null — the read that proves it` +
   `\n  oracle.sequencerUptimeFeed     ${ZERO} — no Chainlink uptime feed exists for this chain` +
   `\n  oracle.maxStalenessSeconds     ${MAX_HEARTBEAT} — the feeds' heartbeat, and ChainlinkOracle's` +

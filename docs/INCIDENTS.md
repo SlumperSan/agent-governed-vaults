@@ -46,14 +46,28 @@ reader can run. Never state a recovery time you cannot evidence.
 > `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp), address book
 > [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json).
 >
-> **What that does and does not put in scope.** No vault has been created on it yet: `smokeVault`
-> is null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain
-> 4663 at block 54,991,182, so no member funds are at stake there and every incident below that
-> begins with a deposit, a proposal or an exit is still hypothetical on that chain. What is already
-> live there is the deployment itself: the factory, the registries, the fee engine, governance and
+> **What that does and does not put in scope. THIS PARAGRAPH INVERTED ON 2026-09-12.** It used to
+> say no vault had been created and that every incident below beginning with a deposit, a proposal
+> or an exit was therefore hypothetical on this chain. **They are no longer hypothetical.**
+> `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974:
+> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holds `idleUsdc` 20000000 — 20 USDG — at block 61,646,791 and
+> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash after trading its
+> USDG away, so funds ARE at stake on 4663 and the
+> deposit, proposal and exit sections apply to a live vault from today. Both vaults have also
+> already run governance rounds, but read what that means before trusting it: `holderCount()` is 1
+> on both, and `proposals(1)`, `proposals(2)` and `proposals(3)` each carry `memberCount` 1 with the
+> same address, `0x0f80606a…`, as proposer. One address proposed, voted and was the whole electorate,
+> three times. The mechanics have run end to end; nothing contested has — no quorum contest, no
+> adversarial commit-reveal, no second voter. An earlier draft of this line said the proposal
+> sections were "exercised rather than theoretical", which is the comforting half of that.
+> What was already live remains live: the factory, the registries, the fee engine, governance and
 > the oracle are on-chain and immutable, so §§ about a wrong or unwired singleton, a bad oracle
-> configuration or an unusable address book apply from today. Vault #1 is the creator Safe
-> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create, and this banner is what has to be
+> configuration or an unusable address book apply as before. **One standing incident-relevant
+> fact:** both vaults were created by the deployer EOA rather than the creator Safe
+> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, against the deployment record's own
+> `intendedCreator`, and `creator` is immutable — so a compromise of that EOA is a compromise of
+> the creator and attested-operator identity of every vault on this chain, with no rotation path.
+> This banner is what has to be
 > rewritten on the day it does.
 >
 > Two of that chain's properties change what an on-call reader should expect once a vault exists:

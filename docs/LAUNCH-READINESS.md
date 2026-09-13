@@ -106,18 +106,48 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json):
 `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG at 6 decimals.
 
-**No vault has been created on it yet.** `smokeVault` is null in that record and
-`verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block 54,991,182 rather
-than inferred from the absence of a broadcast. Vault #1 is the creator Safe
-`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create (Safe v1.4.1, threshold 1, single owner =
-the deployer, a 1-of-1, not a multisig, and not by itself shared custody), because
-`VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and attested
-operator and no later transaction can correct it. No member funds are at stake on that chain.
+**Two vaults exist on it and both hold real funds.** `verifiedWiring["factory.vaultCount()"]` reads
+2 at block 61,513,974, read from chain 4663 rather than inferred from a broadcast:
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (created 2026-09-10 in block 58,991,819; `idleUsdc` 20000000 read at block 61,646,791) and
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025), which after
+proposal 3 holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash and `idleUsdc()` 0.
 
-**What it proves:** the contracts deploy and wire on that chain. It does not prove that a vault can
-be created there, because none has been; that a Safe rather than an EOA must be the creator is what
-`operatorPayoutNote` in the Base Sepolia record requires of a production vault, and it is a
-constraint on the transaction that has not happened yet rather than evidence from one that has.
+**Neither was created by the creator Safe, and this document said the first one would be.** Both
+carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
+`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c` (Safe v1.4.1, threshold 1, single owner = the
+deployer, a 1-of-1, not a multisig, and not by itself shared custody) holds 0 ETH, **and that did
+not stop it: it could have created either vault.** A Safe's `execTransaction` is paid for by the
+submitting owner's EOA, not out of the Safe's own balance, and this one has executed **65**
+transactions on chain 4663 (`nonce()` reads 65, the last long before vault #1) while holding
+nothing. So this was a choice, not an impossibility, and an earlier draft of this paragraph said
+the opposite. `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and
+attested operator and no later transaction can correct it, so the choice is now permanent on both
+vaults. **Member funds ARE at stake on that chain**, and NOT as USDG on both: vault one reads
+`idleUsdc()` 20000000, vault two reads `idleUsdc()` 0 and holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash instead,
+because proposal 3 traded its whole balance sixteen minutes before this paragraph was first
+written. An earlier draft said "20 USDG and 5 USDG, `idleUsdc()` on each" and contradicted its own
+next paragraph seven lines below.
+
+**What it proves:** the contracts deploy and wire on that chain, and that a vault can be created,
+funded, governed and rebalanced there. Stated precisely, because an earlier draft of this line
+over-claimed while proposal 3 was still mid-round: three Rebalance proposals have been opened, two
+have executed, and exactly one has moved funds. Proposal 3 on vault two took 5 USDG of `idleUsdc`
+to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96 bps above its own
+`minAmountOut`**, which is NOT the same as the H-4 floor and an earlier draft conflated the two:
+`minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
+171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
+(`VaultCore.sol:908-912`), not the measured delta. Proposal 1 executed carrying no orders.
+Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
+**but it can never execute**, and an earlier draft of this line said "still executable" and
+contradicted this repository's own address book six files away. `Governance.execute` requires
+`keccak256(payload) == p.actionHash` (`Governance.sol:599`) and the committed payload carries a
+`SwapOrder.deadline` that `AggregationRouterAdapter` compares against `block.timestamp`. That
+deadline has passed and the payload cannot be re-dated without changing its hash, so the proposal is
+permanently unexecutable and simply waits out its window. That is precisely why vault two exists
+with `executionWindow` 3600 instead of 86400: to make the same loss cost an hour rather than a day. What it does NOT
+prove is the custody shape: `operatorPayoutNote` in the Base Sepolia record requires a Safe rather
+than an EOA as the creator of a production vault, and that requirement was not met here, so the
+evidence is of the mechanism working, not of the intended operator model.
 
 **Which of the gates below were NOT run on that chain, stated so the board stays literally true:**
 
