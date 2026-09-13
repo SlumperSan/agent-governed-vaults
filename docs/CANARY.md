@@ -724,8 +724,8 @@ silently. For the same reason the predicate is wrapped: if it throws, `tierOf` d
 reports the throw, because an unguarded throw escapes the sink's `emit` and `emitAll` skips that
 sink, so neither webhook receives the transition. `createConsoleSink` never calls `tierOf`, so the
 line still reaches stderr; nothing pages and nothing reaches the log webhook. The two harm cases
-LATCH: `ChainlinkOracle`'s cached
-scale and its USD-quoted proof are fixed at construction and its config is immutable, so a drift there is not a
+LATCH: `ChainlinkOracle`'s cached scale and its USD-quoted proof are fixed at construction and its
+config is immutable, so a drift there is not a
 freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
 legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
 Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
