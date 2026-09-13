@@ -26,10 +26,13 @@ work it describes.
   not put to it. Record:
   [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json)
   `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp).
-  **No vault has been created on it yet:** `smokeVault` is null in that record and
-  `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block 54,991,182.
-  Vault #1 is the creator Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create, and until
-  it does there is nothing to deposit into there. Gates 3 (soak) and 6
+  **Two vaults exist there and both hold real funds:** `verifiedWiring["factory.vaultCount()"]`
+  reads 2 at block 61,513,974. `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, 20 USDG)
+  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, 5 USDG), both capped at 50,000
+  USDG. **Both were created by the deployer EOA, not by the creator Safe, which the record's
+  `intendedCreator` said must not happen** and which `createVault` makes permanent. See
+  `creatorDeviationNote` in the address book; the remedy is a new vault created by the Safe, not a
+  correction to these two. Gates 3 (soak) and 6
   (canary) have not been run on that chain, and have no current evidence on any chain. The 5/5
   soak and the canary observation alongside it predate the current bytecode and have not been
   re-run; gate 5's oracle verification covers Base feeds and not that chain's. Two chain facts that belong with every claim about it: Chainlink

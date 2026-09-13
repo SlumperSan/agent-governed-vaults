@@ -31,14 +31,21 @@
   contracts/config/deployments/robinhood-mainnet.json: VaultFactory
   0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1. Read that file rather than this one for anything you
   intend to send a transaction to.
-- THERE IS NOTHING TO DEPOSIT INTO ON 4663. The singletons are deployed and wired, and no vault
-  has been created on it yet: smokeVault is null in that record and
-  verifiedWiring["factory.vaultCount()"] is 0, both read from chain 4663 at block 54,991,182. No
-  member funds are at stake there. Vault #1 is the creator Safe
-  0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c's to create, because VaultFactory.createVault fixes
-  msg.sender as the vault's immutable creator and attested operator and nothing can correct that
-  afterwards. A Base Sepolia deployment of the same code also exists and is a testnet trial with no
-  real value at stake. The go/no-go verdict on the board is still NO-GO
+- TWO VAULTS EXIST ON 4663 AND BOTH HOLD REAL FUNDS. verifiedWiring["factory.vaultCount()"]
+  reads 2 at block 61,513,974. The first is 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4, created
+  2026-09-10 in block 58,991,819, holding 20 USDG; the second is
+  0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, created 2026-09-12 in block 61,481,025, holding
+  5 USDG. Both are capped at 50,000 USDG by capacityCapUsdc(). This bullet said the opposite until
+  2026-09-12 -- "THERE IS NOTHING TO DEPOSIT INTO ON 4663" -- which was true when written on
+  2026-09-05 and false from 2026-09-10.
+- BOTH VAULTS WERE CREATED BY THE DEPLOYER EOA 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35, NOT
+  BY THE SAFE, and the deployment record said they must not be: intendedCreator.why reads "the
+  first vault here must be created BY THE SAFE, not by a script from the EOA". That was not
+  followed, and it cannot be corrected on these two vaults, because VaultFactory.createVault fixes
+  msg.sender as the immutable creator and attested operator and nothing can change it afterwards.
+  The Safe 0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c held 0 ETH when both were created. See
+  creatorDeviationNote in the address book. A Base Sepolia deployment of the same code also exists
+  and is a testnet trial with no real value at stake. The go/no-go verdict on the board is still NO-GO
   (docs/LAUNCH-READINESS.md, docs/NOW.md): gates 3 and 6 (the soak drills and the canary) have
   no current evidence on any chain, because the 5/5 soak run and the canary observation that
   accompanied it predate the current bytecode and have not been re-run, and the deployment did not

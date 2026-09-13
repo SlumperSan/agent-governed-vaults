@@ -130,7 +130,8 @@
   },
 
   "verifiedWiring": {
-    "note": "Every row read from chain 4663 with `cast call --block 54991182` against the addresses in `singletons`. The four REVERSE-direction edges are listed first and deliberately: a forward read can agree with an address book that is itself wrong, and only the reverse edges catch that. Together the eleven rows close the loop in both directions between all six singletons.",
+    "note": "Every row read from chain 4663 with `cast call --block 54991182` against the addresses in `singletons`, EXCEPT `factory.vaultCount()` — see the next key. The four REVERSE-direction edges are listed first and deliberately: a forward read can agree with an address book that is itself wrong, and only the reverse edges catch that. Together the eleven rows close the loop in both directions between all six singletons.",
+    "vaultCountNote": "`factory.vaultCount()` is the one row that is NOT a block-54,991,182 read, because it is the one row that changes. It read 0 at that block and reads 2 at block 61,513,974 (2026-09-12). Every other row above is a wiring edge between immutable singletons and cannot move; this row is a counter, so pinning it to the deploy block would have frozen a number whose whole purpose is to go up. It is re-read, not re-derived: `cast call 0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1 'vaultCount()(uint256)'`.",
     "registry.factory()": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1",
     "registry.feeEngine()": "0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232",
     "subReg.factory()": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1",
@@ -144,7 +145,7 @@
     "factory.oracleAllowlistEnforced()": true,
     "factory.isAllowedOracle(ChainlinkOracle)": true,
     "factory.allowSubVaults()": false,
-    "factory.vaultCount()": 0
+    "factory.vaultCount()": 2
   },
 
   "allowSubVaultsNote": "`factory.allowSubVaults()` RETURNS FALSE — read from chain 4663 at block 54,991,182, and corroborated independently by the constructor arguments recovered from `cast tx 0x655991c7… input`, whose sixth word is zero. This is the launch parameter, and it is the observed state of a live deployment rather than an intention: sub-vaults are off, so this deployment is root-vaults-only, which is what closes C-1 (docs/LAUNCH-READINESS.md gate 0). It is the opposite of the Base Sepolia record's TRUE, and that asymmetry is deliberate there — that testnet keeps sub-vaults enabled because the SV-7 look-through soak drill needs a child vault to exercise. Do not read either value as drift from the other. The factory constructor takes this flag once and the factory is immutable, so it cannot be changed on this deployment.",
@@ -158,8 +159,26 @@
     "note": "The deployer EOA 0x0f80606a… broadcast all ten transactions above and has zero bytes of code. Deploying the singletons is not creating a vault; nothing in this deployment binds the EOA to any vault identity."
   },
 
-  "smokeVault": null,
-  "smokeVaultNote": "NO VAULT EXISTS ON THIS DEPLOYMENT YET. `factory.vaultCount()` returns 0 at block 54,991,182 — this is a chain read, not an inference from the absence of a broadcast. `smokeVault` is null rather than omitted so that a reader who came here for it is told the fact instead of finding a gap. WHAT MUST HAPPEN NEXT, and by whom: vault #1 is the Safe 0xC73Bd587…'s to create, for the immutability reasons in `intendedCreator`, and once it exists this record should be updated with its address, its creation block and its runtime code size. WHAT IS BLOCKED UNTIL THEN: `scripts/test/claims-robinhood-deployment.test.mjs`, introduced by PR #211, asserts that `smokeVault.address` is a 20-byte address and that no unsubstituted RH_SMOKE_VAULT placeholder — in that guard's own doubled-brace form, which is deliberately not written out here because the guard sweeps this file too — survives anywhere in the tree. Both fail while this field is null, so #211 does not go green when this record lands — it goes green when vault #1 is created and this file records it. That is the test working as designed, not a defect in it.",
+  "smokeVault": {
+    "address": "0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4",
+    "createdInBlock": 58991819,
+    "createdAt": "2026-09-10T00:56:29Z",
+    "runtimeCodesize": 20650,
+    "creator": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "createdByTheSafe": false,
+    "note": "The first vault on chain 4663, read back with `cast call` on 2026-09-12: `creator()` is the EOA above, `usdc()` is 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168, `capacityCapUsdc()` 50000000000, `idleUsdc()` 20000000. Its runtime is the same 20,650 bytes as the Base Sepolia smoke vault, which is the expected figure for this VaultCore. The creation block comes from the factory's own VaultCreated log, topic0 0x4dda9a6d0ba03769e9813c47681795a7210f951e6ef31e64772e13b9ea0f1406, not from a broadcast file."
+  },
+  "secondVault": {
+    "address": "0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38",
+    "createdInBlock": 61481025,
+    "createdAt": "2026-09-12T23:04:42Z",
+    "runtimeCodesize": 20650,
+    "creator": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+    "createdByTheSafe": false,
+    "note": "Created 2026-09-12 to run a governance round whose execution window is recoverable in an hour instead of a day. It clones the first vault's economics exactly (same USDG, same blessed oracle, basket [WETH], adapter 0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E, capacityCapUsdc 50000000000) and differs only in its GovConfig: executionWindow 3600 rather than 86400, and proposalCooldown 3600 rather than 21600, both at the protocol floor. The first vault's 86400-second window is why a round whose execute reverted could not be retried for a day. This key is NOT read by scripts/test/claims-robinhood-deployment.test.mjs, which tracks the FIRST vault only; it is recorded because a reader counting vaults against `factory.vaultCount()` would otherwise find 2 and an address book listing 1."
+  },
+  "creatorDeviationNote": "BOTH VAULTS WERE CREATED BY THE DEPLOYER EOA, NOT BY THE SAFE, AND `intendedCreator.why` IN THIS FILE SAID THEY MUST NOT BE. That entry reads: 'the first vault here must be created BY THE SAFE, not by a script from the EOA.' It was not followed, for the first vault on 2026-09-10 and again for the second on 2026-09-12. This is recorded rather than quietly reconciled because `VaultCore.creator` is immutable and the factory attests `msg.sender` as the operator at creation, so neither identity can be corrected on these two vaults: the only remedy is a new vault created by the Safe. The Safe 0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c held 0 ETH when both were created and so could not have sent either transaction without being funded first. WHAT IS AT STAKE, stated plainly rather than implied: the EOA is the permanent creator, the 5% withdrawal-gate identity, and the attested operator of every vault currently on this chain. `intendedCreator` is left unchanged above, as the decision that was made, against which this note is the deviation.",
+  "smokeVaultNote": "TWO VAULTS EXIST ON THIS DEPLOYMENT. `factory.vaultCount()` reads 2 at block 61,513,974 and `allVaults(0)`/`allVaults(1)` return the two addresses recorded above — chain reads, not inferences from a broadcast file. THIS KEY USED TO SAY THE OPPOSITE, and the shape of that is worth keeping: it opened 'NO VAULT EXISTS ON THIS DEPLOYMENT YET', which was true when written on 2026-09-05 and false from 2026-09-10, when the first vault was created. Nothing detected the change, because every guard over it was a string match against prose rather than a read of the chain. WHAT THIS UNBLOCKS: `scripts/test/claims-robinhood-deployment.test.mjs`, introduced by PR #211, asserts that `smokeVault.address` is a 20-byte address; that leg failed for as long as this field was null, and the note here predicted it would go green 'when vault #1 is created and this file records it'. This is that commit. WHAT IT FLIPS: the same guard is a two-state machine, so every surface listed under `vault` in its CITES table must now carry the first vault's address and must NOT carry the sentence 'no vault has been created' — the requirement that held while this was null is now the prohibition. See `creatorDeviationNote` for the one thing this record does NOT reconcile.",
 
   "lifecycleNote": "NO LIFECYCLE RUN HAS BEEN EXECUTED AGAINST THIS DEPLOYMENT. The ten-phase lifecycle evidence in docs/evidence/testnet-lifecycle-run.json belongs to the Base Sepolia deployment and to no other. With no vault and no adapter here, no deposit, rebalance, fee accrual or exit has been exercised on chain 4663 by this repository's code.",
 

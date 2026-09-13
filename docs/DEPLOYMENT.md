@@ -489,7 +489,9 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
 > holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
-> no vault has been created on it yet and so nothing there holds anyone's money. Confirm
+> two vaults now hold real money on it: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 with 20 USDG
+> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 5 USDG, so the constraint applies there in
+> full rather than in principle. Confirm
 > `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
 > the value read back at deployment is in that chain's address book under
 > `verifiedWiring["factory.allowSubVaults()"]`.
@@ -644,9 +646,10 @@ remediated and re-reviewed on that same tree; (c) a staged-value guardrail perio
 **NOT** completed — gates 3 and 6 have no current evidence on any chain: the five drills and the
 canary alongside them ran on Base Sepolia on 2026-08-24/25 and passed 5/5
 ([SOAK-REPORT.md](SOAK-REPORT.md)), but against bytecode that has since changed, and they have not
-been re-run; (d) no vault has been created on chain 4663, so no `capacityCapUsdc` has been fixed
-there yet — the cap vault #1 is created with will be immutable and readable on-chain from the
-moment the creator Safe creates it. The deployment proceeded on the owner's decision of
+been re-run; (d) two vaults now exist on chain 4663 and both fixed `capacityCapUsdc` at creation,
+at 50,000 USDG each, immutable and readable on-chain today. Neither was created by the creator
+Safe: both carry the deployer EOA as `creator()`, against this document's own instruction, and
+that cannot be corrected on either. The deployment proceeded on the owner's decision of
 2026-09-04 with (c) outstanding.
 
 ## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)

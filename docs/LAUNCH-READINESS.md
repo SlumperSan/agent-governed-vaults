@@ -106,11 +106,16 @@ an Arbitrum-Nitro Orbit chain at Stage 0) and broadcast it on 2026-09-05. The re
 [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json):
 `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG at 6 decimals.
 
-**No vault has been created on it yet.** `smokeVault` is null in that record and
-`verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block 54,991,182 rather
-than inferred from the absence of a broadcast. Vault #1 is the creator Safe
-`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create (Safe v1.4.1, threshold 1, single owner =
-the deployer, a 1-of-1, not a multisig, and not by itself shared custody), because
+**Two vaults exist on it and both hold real funds.** `verifiedWiring["factory.vaultCount()"]` reads
+2 at block 61,513,974, read from chain 4663 rather than inferred from a broadcast:
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10, block 58,991,819, 20 USDG) and
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, block 61,481,025, 5 USDG).
+
+**Neither was created by the creator Safe, and this document said the first one would be.** Both
+carry `creator()` `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA. The Safe
+`0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c` (Safe v1.4.1, threshold 1, single owner = the
+deployer, a 1-of-1, not a multisig, and not by itself shared custody) held 0 ETH at both creations
+and could not have sent either transaction. This is not correctable, because
 `VaultFactory.createVault` fixes `msg.sender` as the vault's immutable creator and attested
 operator and no later transaction can correct it. No member funds are at stake on that chain.
 

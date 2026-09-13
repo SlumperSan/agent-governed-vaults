@@ -43,12 +43,19 @@ of 2026-09-04, and on no other mainnet.** The address book is
 `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. That file is written from what
 the chain returned and is the authority for every address in it; nothing in this README is.
 
-**The singletons are deployed and wired, and no vault has been created on it yet.** `smokeVault` is
-null in that record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at
-block 54,991,182. So there is nothing to deposit into there and no member funds are at stake. Vault
-#1 is the creator Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create: `createVault` fixes
-`msg.sender` as the vault's immutable creator and attested operator, and no later transaction can
-correct that. Two
+**The singletons are deployed and wired, and two vaults now hold real funds there.**
+`verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974. The first is
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created 2026-09-10, holding 20 USDG; the second is
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38`, created 2026-09-12, holding 5 USDG. Both are capped
+at 50,000 USDG. This paragraph said there was nothing to deposit into until 2026-09-12, which was
+true when written and false from the day the first vault was created.
+
+**Both were created by the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, and the
+deployment record said they must not be.** Its `intendedCreator.why` reads: "the first vault here
+must be created BY THE SAFE, not by a script from the EOA." `createVault` fixes `msg.sender` as the
+vault's immutable creator and attested operator, and no later transaction can correct that, so this
+cannot be fixed on these two vaults, only avoided on the next one. See `creatorDeviationNote` in
+the address book. Two
 limits apply there and are stated wherever the chain is named: Chainlink publishes no L2 Sequencer
 Uptime Feed for 4663 and has said it will not add one, so `oracle.sequencerUptimeFeed` is the zero
 address and the gate returns early rather than reverting; and the feeds publish on an 86,400 s

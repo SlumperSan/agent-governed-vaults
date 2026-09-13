@@ -3,7 +3,9 @@
 What is true right now. The **Base mainnet** launch verdict is **NO-GO** (but no longer for
 security reasons). Since 2026-09-05 the protocol is deployed on **Robinhood Chain
 mainnet (chain 4663)**, on the owner's decision of 2026-09-04 and without that board's soak and
-canary gates. No vault has been created on it yet, so nothing there holds member money.
+canary gates. Two vaults exist on it and both hold real money:
+`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (20 USDG) and
+`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (5 USDG).
 
 > **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
 > [docs/NOW.md](../NOW.md); the argued go/no-go board is
@@ -77,10 +79,13 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 - **Deployed on Robinhood Chain mainnet (chain 4663) on 2026-09-05**: record
   at `contracts/config/deployments/robinhood-mainnet.json`, `VaultFactory`
   `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp). The singletons are
-  deployed and wired; **no vault has been created on it yet**: `smokeVault` is null in that
-  record and `verifiedWiring["factory.vaultCount()"]` is 0, both read from chain 4663 at block
-  54,991,182, so no member funds are at stake there. Vault #1 is the creator Safe
-  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to create.
+  deployed and wired, and **two vaults now hold real funds there**:
+  `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974, with
+  `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10) holding 20 USDG and
+  `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12) holding 5 USDG. Both were created by
+  the deployer EOA rather than by the creator Safe
+  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, against the record's own `intendedCreator`, and
+  `creator` is immutable so it cannot be corrected on these two.
   **No Base mainnet deployment exists.** This line previously read
   "testnet only; nothing has ever been broadcast to mainnet", which one transaction falsified.
 - **Deployed on Base Sepolia** (a testnet trial, no real value at stake).
