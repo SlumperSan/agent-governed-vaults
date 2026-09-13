@@ -108,8 +108,15 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    CARD_1_BODY is also why this section is the one that must not be
    summarised. Every clause in it is a scope limit on the clause before it. */
 
+/* CARD_1_BODY's CONCLUSION is unchanged and its PREMISE was replaced on
+   2026-09-12. It used to reach "no cap for a treasury to check against" from
+   "no vault exists yet". Two vaults exist on chain 4663 now, both with
+   capacityCapUsdc() reading 50000000000, which is 50,000 USDG at 6 decimals.
+   So there IS a cap to check against, and it happens to make the same point
+   more sharply than its absence did: 50,000 USDG is not a treasury-scale
+   venue, and now a reader can verify that rather than take it on trust. */
 export const CARD_1_BODY =
-  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no cap sized for a treasury to check against, and no vault this site can point to as able to absorb one.';
+  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. The two vaults on chain 4663 are capped at 50,000 USDG each, so there is a figure to check against, and it is nowhere near large enough to absorb a treasury allocation.';
 
 export const CARD_2_BODY =
   'There is no autopilot. Skipping votes does not park your position neutrally: it moves quorum and wastes your commit; it hands the outcome to whoever did turn up.';

@@ -1,8 +1,19 @@
 # `apps/site-next` — the public site, rebuilt
 
 Eight pages, built from React to static HTML, serving from one origin with no third party in the
-path. It replaces `apps/site` when it is finished; until then `apps/site` is what rwally.com serves
-and this directory is not deployed.
+path. **This is what rwally.com serves.**
+
+That last sentence used to read the other way round: "it replaces `apps/site` when it is finished;
+until then `apps/site` is what rwally.com serves and this directory is not deployed." That stopped
+being true at some point before 2026-09-12 and nothing here was updated. Checked that day against
+the live site: `https://rwally.com` returns this build's markup, and its live-from-chain panel
+reports `factory.vaultCount()` as 2. The old nine-page URLs (`/status.html`, `/vision.html`,
+`/faq.html`) all return 200 but serve THIS build's index, not `apps/site`'s pages, so nothing under
+`apps/site` reaches a reader today.
+
+`scripts/test/claims-token-absence.test.mjs` already labelled `apps/site-next/dist` "the pages
+rwally.com serves", so the guard and this README had been contradicting each other. The guard was
+right.
 
 Four owner decisions of 2026-09-04 shape everything here: **self-hosted React**, **dark
 cinematic**, **no per-claim review markers**, and **the status block is a footer link rather than a
