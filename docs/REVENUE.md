@@ -4,9 +4,10 @@
 paid HTTP reads settled in USDC over x402. It records what is done, what is not, and the exact steps
 only the owner can run. It is not a business plan and it does not forecast anything.
 
-**Status: the rail is built and unpublished.** Every step below up to "What the owner runs" is
-landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
-is **$0.00**.
+**Status: the rail is built and LIVE, and nobody has paid yet.** The route was deployed to the
+`rwally` Cloudflare Pages project on 2026-09-13 and answers `402 Payment Required`; §5.6 records the
+measurement. No mainnet payment has been taken and revenue to date is **$0.00**. Those two facts sit
+together deliberately: a rail that answers 402 is plumbing, not a customer.
 
 ---
 
@@ -93,7 +94,10 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
 | The edge route refuses to serve unpaid | **Proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs` |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
-| A mainnet payment has settled | **No.** Nothing has been deployed |
+| The route is deployed and refuses unpaid requests in production | **Proven** — `rwally.com/api/vaults` answers 402, 2026-09-13 (§5.6) |
+| A mainnet payment has settled | **No.** Settlement has never been exercised on mainnet. A 402 is the gate refusing; it says nothing about settlement |
+| The headers are the encoding the transport spec requires | **Proven** — `PAYMENT-REQUIRED` is base64 live since #287, read back and decoded from the production host |
+| A conformant third-party client can pay | **Not yet.** The encoding is fixed; `accepts[]` still carries no `extra`, so a client has no EIP-712 domain to sign against (#290) |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
@@ -128,19 +132,60 @@ Every payment, forever. Choosing it needs a spec-shaped `/verify` + `/settle` wr
 repository does not have yet. Listing it as an available option was the same harm review round 6
 rejected — the runbook naming a facilitator the route cannot talk to — with the direction reversed.
 
-Until a working `FACILITATOR_URL` exists, the route answers 500 by design rather than serving reads
-for free.
+`FACILITATOR_URL` is now set to a facilitator that does speak the standard contract (§5.1), so the
+route answers 402 rather than 500 — 500 is what a MISSING setting produces, not a non-working one.
+The distinction matters for debugging: a `FACILITATOR_URL` that is present but points somewhere that
+cannot answer `/verify` yields the `402 settlement failed: verify-http-404` above, at settlement
+time, on a request that got all the way through the gate.
 
-## 5. What the owner runs
+## 5. Deploying it, and the one step that is still the owner's
 
-Everything above is landed. These are the steps an agent cannot take — they need the Cloudflare
-account, the payee address, and real funds. `docs/SWARM.md` §10 puts all three out of bounds.
+**5.1 through 5.4 are DONE.** They are kept because they are the procedure for the next deploy, and
+because two of them carry traps that cost real time the first time. §5.6 records what was measured
+afterwards. **5.5 — the first purchase — moves real funds and remains the owner's alone**, under
+`docs/SWARM.md` §10.
 
 **5.1 — Choose the payee and the facilitator.** An address you control on Base mainnet to receive
-USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet.
+USDC, and the HTTPS URL of an x402 facilitator that settles on Base mainnet. Settled on 2026-09-13:
+the payee is the address the owner supplied, and the facilitator is `https://facilitator.payai.network`,
+which settles on Base mainnet and needs no API key.
 
-**5.2 — Set the six variables** on the Pages project (Settings → Environment variables →
-Production), then redeploy so they take effect:
+**5.2 — Set the six settings, and set them as SECRETS, not as environment variables.** This is the
+trap, and what follows is what was observed rather than a general account of how wrangler behaves.
+
+**Measured on 2026-09-13.** All six environment variables read back from the Cloudflare API with
+correct values at 16:41. `npx wrangler@4 pages deploy` was run. At 17:02 the same API read returned
+`env_vars: []` for **both** production and preview. The deploy output never mentioned variables and
+reported success. The live route then answered:
+
+```
+500 {"error":"route misconfigured","detail":"PRICE_AMOUNT is not set on this deployment"}
+```
+
+Fail-closed, so no vault data was served for free — but the route was down, and nothing in the deploy
+said why.
+
+The likely mechanism, stated as the inference it is: `apps/site-next/wrangler.toml` declares
+`pages_build_output_dir`, which makes wrangler treat it as the project's configuration, and the file
+has no `[vars]` section. That was not verified against wrangler's source or its documentation. What
+IS verified is the before/after above, and that is enough to act on.
+
+Upload them as secrets instead. The six were re-uploaded this way and survived the redeploy that
+followed:
+
+```bash
+npx wrangler@4 pages secret bulk <path-to-json> --project-name rwally
+```
+
+The JSON is a flat `{"KEY": "value"}` object with these six keys. Write it outside the repository.
+Secrets are expected to survive later deploys, because the configuration file carries no secrets for
+wrangler to sync over them — but only one redeploy has been observed, so treat that as the working
+assumption and re-read the settings after any deploy that changes `wrangler.toml`.
+A Pages Function reads a secret through the same `env[KEY]` binding, so no code changes.
+
+**Secrets bind at deployment time, not at read time.** Uploading them changes nothing until you
+redeploy; the route kept answering the same 500 for four minutes until it was redeployed. Always:
+upload, then redeploy, then probe.
 
 ```
 PRICE_ASSET      0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
@@ -174,6 +219,12 @@ build with the retired one. Caught in review before any deploy; nothing was publ
 Wrangler **4 or newer**: wrangler 3's esbuild cannot parse the JSON import attribute that Node
 requires, and fails the build.
 
+**A preview deploy cannot be used to test the route.** `functions/_middleware.js` redirects every
+hostname that is not literally `rwally.com`, so `https://<hash>.rwally.pages.dev/api/vaults` answers
+`301` and never reaches the route; preview secrets are empty anyway. The 301 is still worth having as
+a smoke test, because it proves the Functions bundle compiled and is executing — a deploy with no
+Functions serves the SPA HTML instead. Real verification has to happen on the production host.
+
 **5.4 — Confirm the gate is live before paying anything.** Discovery is free, so this costs nothing:
 
 ```bash
@@ -189,10 +240,41 @@ curl -s -i https://rwally.com/api/vaults
 
 If either returns 500, a variable from 5.2 is missing; the body names which one.
 
-**5.5 — Make the first purchase.** Ten reads at $0.10 is the first dollar.
+**5.5 — Make the first purchase.** Ten reads at $0.10 is the first dollar. **Not done.**
 
 This is the step that moves real funds, and it is yours alone. Nothing in this repository will do it,
 and no agent here should be asked to.
+
+## 5.6 — What the deploy measured
+
+**Two deploys, both on 2026-09-13, both from `apps/site-next`.** The first was at `90e84991`, the
+squash of #267, and is what put the route on the live host at all. The second followed #287
+(`805f751a`) and is what made `PAYMENT-REQUIRED` base64. Everything below was read back from the
+production host after the second, not from either deploy's output:
+
+`GET https://rwally.com/api/vaults` answers **402 Payment Required** with a `payment-required` header
+carrying `scheme: exact`, `x402Version: 2`, `asset: 0x833589fC…A02913`, `amount: "100000"`, the payee,
+flat `network: "base"`, and an `accepts[]` entry with `network: "eip155:8453"` and
+`maxTimeoutSeconds: 300`. The body carries no vault data.
+
+`GET https://rwally.com/.well-known/x402` answers **200**, free, quoting the same price.
+
+The site itself was unchanged by the deploy: `/` and `/disclaimers` both answer 200 on the same
+hashed entry bundle each — `index-Dswh-tMk.js` and `disclaimers-Bny7kgXy.js`, sharing
+`main-CAxB7eBr.js` and `pageBody-CH-Y7cxl.js` — and the built page set matched the live sitemap
+before the deploy was run.
+
+**The header encoding is now conformant, and a conformant client still cannot pay.** Those are two
+different things and #287 closed only the first. `PAYMENT-REQUIRED` is base64 as
+`specs/transports-v2/http.md:161-167` requires — read back from the production host and decoded, not
+inferred — which closed #279. What remains is the challenge's contents, tracked in #290 and measured
+against PayAI rather than reasoned about: `accepts[]` carries no `extra`, and omitting it yields
+`invalid_exact_evm_missing_eip712_domain`, so a third-party client has no EIP-712 domain to sign
+against and cannot produce a valid signature at all. Two smaller gaps sit beside it, both still true
+of the live challenge at the time of writing: `extensions` is `{}`, and `resource.url` is `""` — the
+latter being the key a Bazaar catalogues a resource under.
+Settlement itself has never been exercised on mainnet — the 402 proves the gate refuses unpaid
+requests, and proves nothing whatever about settlement.
 
 ## 6. Phase 2 — demand
 
