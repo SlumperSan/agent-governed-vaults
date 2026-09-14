@@ -14,10 +14,12 @@ that first if you haven't. This file starts after discovery, at "I have a URL an
 ## 1. The handshake, as this endpoint actually runs it
 
 1. `GET https://rwally.com/api/vaults` with no payment header.
-2. The route answers `402` with a `PAYMENT-REQUIRED` header: **plain JSON** (not base64 — see §5),
-   built by `buildChallenge` (`apps/api/src/x402.mjs:130-181`; served by
-   `apps/site-next/functions/api/vaults.js`, which imports `gate` from that module rather than
-   reimplementing it). As of `docs/X402-V2-CONFORMANCE.md` the challenge is a **superset**: every
+2. The route answers `402` with a `PAYMENT-REQUIRED` header: **base64-encoded JSON**, as
+   `specs/transports-v2/http.md`'s "Header Summary" requires. Decode it before parsing — a bare
+   `JSON.parse` of the header throws. Built by `buildChallenge` (`apps/api/src/x402.mjs:199-250`)
+   and encoded by `encodeHeaderJson` (`:118`); served by
+   `apps/site-next/functions/api/vaults.js`, which imports from that module rather than
+   reimplementing it. As of `docs/X402-V2-CONFORMANCE.md` the challenge is a **superset**: every
    field this doc uses — `{scheme, x402Version, asset, amount, payTo, network, nonce, expiresAt}` —
    stays exactly where it was, and the spec's own `resource`/`accepts[]`/`extensions` fields (§5.1.1)
    are now present alongside them. This doc's buyer reads only the flat fields; see §5 for what the
@@ -27,28 +29,31 @@ that first if you haven't. This file starts after discovery, at "I have a URL an
    them. §2 lists what each field means; §6 (the security property) is why this step exists.
 4. Sign an EIP-3009 `transferWithAuthorization` authorization over the challenge's `asset`, `amount`
    and `payTo` (`packages/agent-sdk/src/eip3009.mjs:92-113`, `authorizeFromChallenge`).
-5. Base64 the envelope — **plain JSON**, `{x402Version, scheme, network, signature, authorization}`
+5. Base64 the envelope — **flat** JSON, `{x402Version, scheme, network, signature, authorization}`
    (`packages/agent-sdk/src/eip3009.mjs:67-75`, `buildEnvelope`) — into a `PAYMENT-SIGNATURE` header
    and repeat the GET. (The server now also accepts the spec's nested payload shape from other
    clients — §5.2 — but this repo's own buyer sends, and the server has always accepted, the flat
    one above.)
-6. A `200` carries the data plus a `PAYMENT-RESPONSE` header, **plain JSON**,
-   `{receiptId, nonce}` (`apps/api/src/x402.mjs:388`, inside `gate`). The body itself also
-   repeats `receiptId` (`apps/site-next/functions/api/vaults.js:93`).
+6. A `200` carries the data plus a `PAYMENT-RESPONSE` header, **base64-encoded JSON** like the
+   challenge, holding a spec §5.3.2 `SettlementResponse` —
+   `{success, transaction, network, payer?}` plus this repo's own `receiptId` and `nonce`, kept as
+   a superset so existing readers do not break (`buildSettlementResponse`,
+   `apps/api/src/x402.mjs:472-484`; encoded by `gate` at `apps/api/src/x402.mjs:448`). The body itself also repeats `receiptId`
+   (`apps/site-next/functions/api/vaults.js:93`).
 
 ## 2. Challenge fields
 
 | Field | Meaning |
 |---|---|
-| `scheme` | Payment scheme. This route only ever issues `"exact"` (EIP-3009 on EVM) — never `"exact-svm"`, since `apps/site-next/functions/api/vaults.js` never sets `price.svm` (`buildChallenge`'s own `scheme: price.svm ? 'exact-svm' : 'exact'`, `apps/api/src/x402.mjs:134` — server-side config only, never on anything a client sends). |
+| `scheme` | Payment scheme. This route only ever issues `"exact"` (EIP-3009 on EVM) — never `"exact-svm"`, since `apps/site-next/functions/api/vaults.js` never sets `price.svm` (`buildChallenge`'s own `scheme: price.svm ? 'exact-svm' : 'exact'`, `apps/api/src/x402.mjs:203` — server-side config only, never on anything a client sends). |
 | `asset` | The USDC contract address you're being asked to pay with. On this deployment it should be Circle-native USDC on Base mainnet, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (`apps/site-next/functions/api/_price.js:29`, `BASE_MAINNET_USDC`) — **check it against that constant yourself**; a challenge naming anything else is not this deployment behaving correctly. |
 | `amount` | Integer string, USDC base units (6dp). `docs/REVENUE.md` §2 prices this route at $0.10 = `"100000"`, but the price is operator-configured (`PRICE_AMOUNT`) and can change — treat the challenge's `amount` as authoritative for what you'll actually be charged, and your own maximum as the thing that must never be exceeded. |
 | `payTo` | The recipient address. This is an operator-controlled value with no repo-side default — `resolvePrice` (`apps/site-next/functions/api/_price.js:58-69`) reads it with `requireAddr(env, 'PRICE_PAYTO')` at `:65`, refused rather than defaulted, so a misconfigured deployment answers 500, never silently pays the wrong address. You must know in advance who you expect to be paying. |
-| `network` | A bare string, e.g. `"base"` (`docs/REVENUE.md:149`, the `PRICE_NETWORK` setting) — this flat field is **not** CAIP-2. The challenge's `accepts[0].network` field, added since, carries the CAIP-2 form (`eip155:8453`) of the same chain (`apps/api/src/x402.mjs:157`, `toCaip2(price.network)`) — see §5.5. |
+| `network` | A bare string, e.g. `"base"` (`docs/REVENUE.md:149`, the `PRICE_NETWORK` setting) — this flat field is **not** CAIP-2. The challenge's `accepts[0].network` field, added since, carries the CAIP-2 form (`eip155:8453`) of the same chain (`apps/api/src/x402.mjs:226`, `toCaip2(price.network)`) — see §5.5. |
 | `nonce` | 32-byte hex, fresh per challenge, reused verbatim as the EIP-3009 authorization's on-chain nonce — the doc comment directly above `buildChallenge` in `apps/api/src/x402.mjs` explains why it must be unpredictable, not a counter. |
 | `expiresAt` | Unix milliseconds. This repo's own `authorizeFromChallenge` does **not** read it to set the authorization's `validBefore` — it uses a fixed 300s TTL from your signing time regardless (`packages/agent-sdk/src/eip3009.mjs:92-113`). Check it anyway: a stale or implausibly long-lived challenge is a signal something is wrong upstream of you (a caching proxy, or a server not generating fresh challenges). |
 
-The raw JSON also carries `resource`, `accepts` (an array, containing the CAIP-2 network form and,
+The DECODED challenge also carries `resource`, `accepts` (an array, containing the CAIP-2 network form and,
 sometimes, an `extra` domain hint) and `extensions` — added by the v2-conformance work referenced in
 §5. This buyer does not read them; `docs/X402-V2-CONFORMANCE.md`'s "Field-by-field" section has the
 complete shape.
@@ -134,7 +139,7 @@ rule in detail.
 
 **`402` — payment invalid.** The route re-issues a fresh challenge alongside one of these reasons in
 the body's `error` field, all returned by `checkEnvelopeAgainstPrice`
-(`apps/api/src/x402.mjs:254-298`) — since this route's EVM-only price never sets `price.svm`, only
+(`apps/api/src/x402.mjs:323-367`) — since this route's EVM-only price never sets `price.svm`, only
 the non-SVM branch of that function is reachable:
 
 | Reason | Meaning |
@@ -145,11 +150,11 @@ the non-SVM branch of that function is reachable:
 | `bad-value` | `authorization.value` isn't parseable as an integer |
 | `underpaid` | `authorization.value` is less than the price |
 | `authorization-expired` | `authorization.validBefore` is already in the past |
-| `scheme-mismatch` | Your envelope declared `scheme: "exact-svm"` (`apps/api/src/x402.mjs:280`) against this EVM-only route — send `scheme: "exact"` |
+| `scheme-mismatch` | Your envelope declared `scheme: "exact-svm"` (`checkEnvelopeAgainstPrice`, `apps/api/src/x402.mjs:349`) against this EVM-only route — send `scheme: "exact"` |
 
 A settlement attempt that the facilitator refuses also comes back as `402`, body
 `{error: "settlement failed: <reason>", challenge}` — that shape is `gate`'s own
-(`apps/api/src/x402.mjs:321-392`; the settlement-failed branch specifically is `:374-382`). This
+(`apps/api/src/x402.mjs:390-452`; the settlement-failed branch specifically is `:374-382`). This
 route's facilitator client is `createStandardHttpFacilitator` (`apps/api/src/facilitator.mjs:262-327`),
 which speaks the real two-endpoint `POST /verify` then `POST /settle` protocol (spec §7.1/§7.2) to
 whatever URL `FACILITATOR_URL` names — **not** the bespoke single-POST client
@@ -193,12 +198,19 @@ as a rejected payment.
 
 ## 5. Known gap: this endpoint diverges from the published x402 v2 spec
 
-**Status, updated:** a separate change in this repository (`docs/X402-V2-CONFORMANCE.md`, landed
-after this doc's first draft) fixed the two shape divergences 5.1 and 5.2 originally described here.
-**An off-the-shelf x402 v2 client still cannot pay this endpoint end to end today** — that document
-says so itself — but for a narrower reason now: header **encoding** (5.3) and the `PAYMENT-RESPONSE`
-**field shape** (5.4), not body/payload shape. Everything below is re-verified against the merged
-tree rather than left as it read before that change landed.
+**Status, updated again — and the gap this section was written about is now CLOSED.** This section
+has twice described a live divergence and been overtaken by a fix. `docs/X402-V2-CONFORMANCE.md`
+closed the two *shape* divergences (5.1, 5.2). #287 then closed the last two: the outbound headers
+are base64 (5.3) and `PAYMENT-RESPONSE` is a `SettlementResponse` superset (5.4). Both are live —
+measured against the production host on 2026-09-13, `curl -i https://rwally.com/api/vaults` returns
+`payment-required: eyJzY2hlbWUiOiJleGFjdCIsIng0MDJWZXJzaW9uIjoyLCJhc3NldCI6IjB4…`, which
+base64-decodes to the challenge with `accepts[0].network = eip155:8453`.
+
+So the sentence this section carried until now — *"an off-the-shelf x402 v2 client still cannot pay
+this endpoint end to end today"* — is **no longer true**, and it is left visible here rather than
+quietly deleted because a reader who saw an earlier revision needs to know which way it moved. What
+remains below is a record of what each divergence was and what closed it; 5.5 and 5.6 are the only
+two still carrying a live caveat, and neither prevents payment.
 
 `docs/RESEARCH-SPRINT1.md:28-33` originally flagged the V2 field-level schema as **"Unverified"**
 and told whoever implemented this to pull the raw spec files "before implementation rather than
@@ -210,7 +222,7 @@ against `specs/x402-specification-v2.md` and `specs/transports-v2/http.md` fetch
 **5.1 — FIXED: the `402` challenge body is now a superset, not merely flat.** Spec §5.1.1
 (`x402-specification-v2.md:74-99`) defines `PaymentRequired` as
 `{x402Version, error?, resource:{url,description?,mimeType?}, accepts:[{scheme,network,amount,asset,payTo,maxTimeoutSeconds,extra?}], extensions?}`.
-`buildChallenge` (`apps/api/src/x402.mjs:130-181`) now emits every legacy flat field this doc's buyer
+`buildChallenge` (`apps/api/src/x402.mjs:199-250`) now emits every legacy flat field this doc's buyer
 reads (`scheme,asset,amount,payTo,network,nonce,expiresAt`, unchanged) **and** the spec's
 `resource`/`accepts[]`/`extensions` fields alongside them — `accepts[0].network` in CAIP-2, and
 `accepts[0].extra` when the caller supplies `price.extra` (§5.6 below is about whether *this* route's
@@ -219,7 +231,7 @@ price object does). `docs/X402-V2-CONFORMANCE.md`'s "Field-by-field" table has t
 **5.2 — FIXED: `decodeSignatureHeader` now accepts the spec's nested payload too.** Spec §5.2.1
 (`x402-specification-v2.md:144-181`) defines `PaymentPayload` as
 `{x402Version, resource?, accepted:{...PaymentRequirements}, payload:{signature,authorization}, extensions?}`.
-`decodeSignatureHeader` (`apps/api/src/x402.mjs:187-242`) now reads `payload.signature`/
+`decodeSignatureHeader` (`apps/api/src/x402.mjs:256-311`) now reads `payload.signature`/
 `payload.authorization` when present (`:210-212`) and normalizes them onto the same flat shape
 `checkEnvelopeAgainstPrice` and `gate()` have always read (`:233-238`) — a spec-nested envelope is
 accepted, not rejected as malformed. This repo's own buyer (`scripts/lib/x402-buyer.mjs`) still
@@ -227,36 +239,47 @@ builds and sends the flat legacy shape via `buildEnvelope`
 (`packages/agent-sdk/src/eip3009.mjs:67-75`) — unchanged, and still accepted, since decoding never
 stopped reading the flat top level.
 
-**5.3 — STILL OPEN: two of the three headers are the wrong encoding.** The spec's HTTP transport
+**5.3 — FIXED by #287: all three headers are now base64.** The spec's HTTP transport
 (`specs/transports-v2/http.md`, "Header Summary") requires **all three** protocol headers —
-`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE` — to carry base64-encoded JSON. Inside
-`gate` (`apps/api/src/x402.mjs:321-392`), every 402 branch emits `PAYMENT-REQUIRED` as plain
-`JSON.stringify` (e.g. `:329`) and the success branch emits `PAYMENT-RESPONSE` the same way (`:388`)
-— neither is base64. Only `PAYMENT-SIGNATURE`, built by the client
-(`packages/agent-sdk/src/index.mjs`'s `b64` helper, and this doc's own `scripts/lib/x402-buyer.mjs`),
-is base64, matching the spec on that one header only. `docs/X402-V2-CONFORMANCE.md`'s "Header names
-AND encoding" section names this **MAJOR 2, disclosed but deliberately not fixed there**: fixing it
-would require a coordinated change across the five other non-test files that still read
-`PAYMENT-REQUIRED`/`PAYMENT-RESPONSE` as raw JSON (that document names all five, including this
-repo's own agent SDK and live-run scripts), not a change inside `apps/api/src/x402.mjs` alone.
+`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE` — to carry base64-encoded JSON. Until
+#287 only `PAYMENT-SIGNATURE` was, because the client built it; `gate` emitted the two outbound
+headers as raw `JSON.stringify`, so a client that followed the transport spec base64-decoded
+`PAYMENT-REQUIRED`, got bytes that are not JSON, and could not form a payment at all.
+`encodeHeaderJson` (`apps/api/src/x402.mjs:118`) now encodes both, at `:409` and `:448`.
 
-**5.4 — STILL OPEN: `PAYMENT-RESPONSE`'s field names are this repo's own, not the spec's.** Spec
-§5.3.1 (`x402-specification-v2.md:217-228`) defines `SettlementResponse` as
-`{success, transaction, network, payer, errorReason?, amount?}`. This repo's `PAYMENT-RESPONSE`
-payload is still `{receiptId, nonce}` (`apps/api/src/x402.mjs:388`) — no `success`, `transaction`,
-`network` or `payer` field exists. `receiptId` is this repo's own name for what the spec calls
-`transaction` — and, since the facilitator rewire, it is genuinely SOURCED from a spec-shaped
-`/settle` response's own `transaction` field (`apps/api/src/facilitator.mjs:322-323`,
-`createStandardHttpFacilitator`), even though the header that carries it back to the client is not
-spec-shaped. In the one real settlement this repo has recorded (via the OLD facilitator client,
-before the rewire), its value was the settlement transaction hash (`docs/X402-LIVE-REPORT.md` §1,
-"Receipt id | the settlement tx hash") — see §8 below and §4 above for how that client differs from
-what this route uses today.
+**The readers moved in the same change, in both directions.** `decodeHeaderJson`
+(`packages/agent-sdk/src/header-codec.mjs`) accepts base64 **or** raw JSON, and this doc's own buyer
+uses it (`scripts/lib/x402-buyer.mjs`, `parseChallengeHeader` / `parseReceiptHeader`). That
+two-way tolerance is not decoration: a header whose first non-space character is `{` cannot be
+base64, so the two cases are distinguishable with certainty, and a buyer that understood only the
+new encoding would break against any server that has not taken #287. Sniffing the other way round
+does not work — Node's base64 decoder silently drops characters outside the alphabet instead of
+throwing, so "try base64, fall back on throw" never reaches its fallback.
+
+**5.4 — FIXED by #287: `PAYMENT-RESPONSE` is a `SettlementResponse` superset.** Spec §5.3.2
+(`x402-specification-v2.md:217-228`) defines `SettlementResponse` as
+`{success, transaction, network, payer, errorReason?, amount?}`. The header used to carry
+`{receiptId, nonce}` — this repo's own names, with no `success`, `transaction`, `network` or
+`payer`. `buildSettlementResponse` (`apps/api/src/x402.mjs:472-484`) now emits `success`,
+`transaction`, CAIP-2 `network` and, when the envelope carries an authorization, `payer` — while
+KEEPING `receiptId` and `nonce`, because `scripts/live-x402-run.mjs` fails closed on
+`receipt.receiptId` and neither live-run script can execute in `npm run gate`. `transaction` takes
+the same value `receiptId` always held, sourced from a spec-shaped `/settle` response's own
+`transaction` field (`apps/api/src/facilitator.mjs:322-323`, `createStandardHttpFacilitator`). In
+the one real settlement this repo has recorded (via the OLD facilitator client, before the rewire),
+that value was the settlement transaction hash (`docs/X402-LIVE-REPORT.md` §1, "Receipt id | the
+settlement tx hash") — see §8 below and §4 above for how that client differs from what this route
+uses today.
+
+Two things #287 deliberately did NOT do, named rather than implied: `network` passes an SVM network
+string through unchanged, because no CAIP-2 mapping for this repo's Solana names exists and one was
+not invented; and a FAILED settlement returns a 402 with no `PAYMENT-RESPONSE` at all, where the
+transport spec shows a `{success:false, errorReason}` body.
 
 **5.5 — PARTIALLY FIXED: network identifiers are CAIP-2 in the new `accepts[]` array, still bare
 strings in the flat field.** Spec §11.1 (`x402-specification-v2.md:617-633`) specifies
 `namespace:reference` — `eip155:8453` for Base mainnet, `eip155:84532` for Base Sepolia.
-`buildChallenge`'s `accepts[0].network` now carries exactly that (`apps/api/src/x402.mjs:157`,
+`buildChallenge`'s `accepts[0].network` now carries exactly that (`apps/api/src/x402.mjs:226`,
 `toCaip2(price.network)`) — but the challenge's top-level flat `network` field, which this doc's
 buyer reads (§2), is still the repo's bare shorthand, `"base"` / `"base-sepolia"`
 (`docs/REVENUE.md:149`, `PRICE_NETWORK base`), because the legacy consumers listed in 5.2 read that
@@ -266,7 +289,7 @@ field directly and removing it would break them.
 this route's own price object doesn't supply it.** Spec §5.1.2 (`x402-specification-v2.md:123`)
 documents `extra` as an optional bag on each `accepts[]` entry, and the spec's own worked example
 fills it with `{name:"USDC", version:"2"}` — precisely the asset's EIP-712 domain name and version.
-`buildChallenge` can now populate `accepts[0].extra` (`apps/api/src/x402.mjs:162`,
+`buildChallenge` can now populate `accepts[0].extra` (`apps/api/src/x402.mjs:231`,
 `...(price.extra ? { extra: price.extra } : {})`) — **when the caller supplies `price.extra`**.
 `resolvePrice` (`apps/site-next/functions/api/_price.js:58-69`) does not: it returns
 `{asset, payTo, amount, network}`, with no `.extra` field at all, so this specific route's challenge

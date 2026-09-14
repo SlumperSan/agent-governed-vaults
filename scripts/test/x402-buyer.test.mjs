@@ -48,21 +48,41 @@ function challenge(overrides = {}) {
 }
 
 /**
+ * How a fake server encodes its two outbound headers.
+ *
+ * `'json'` is what `apps/api/src/x402.mjs` emitted before #287 and what every test here used;
+ * `'base64'` is what `specs/transports-v2/http.md:161-167` specifies, what the API emits now, and
+ * what `rwally.com` has served since its 2026-09-13 redeploy. BOTH are exercised, because the
+ * buyer has to keep working against a server that has not taken #287 yet — a client that only
+ * understands the new encoding is the same break as one that only understands the old, pointed the
+ * other way.
+ */
+const encodeHeader = (mode, value) =>
+  mode === 'base64' ? Buffer.from(JSON.stringify(value), 'utf8').toString('base64') : JSON.stringify(value);
+
+/**
  * Start a fake x402 server on loopback. `behavior(req)` returns the response for the FIRST
  * (unpaid) request; the second (paid) request is answered by `onPaid`, defaulting to a 200 with a
- * receipt. Returns { url, close }.
+ * receipt. `headerEncoding` picks the wire encoding of the two outbound headers. Returns
+ * { url, close }.
  */
-async function startFakeServer({ firstChallenge = challenge(), onPaid } = {}) {
+async function startFakeServer({ firstChallenge = challenge(), onPaid, headerEncoding = 'json' } = {}) {
   const paidHandler =
     onPaid ??
     ((req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json', 'payment-response': JSON.stringify({ receiptId: '0xreceipt' }) });
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'payment-response': encodeHeader(headerEncoding, { receiptId: '0xreceipt' }),
+      });
       res.end(JSON.stringify({ vaults: [] }));
     });
   const server = createServer((req, res) => {
     const sig = req.headers['payment-signature'];
     if (!sig) {
-      res.writeHead(402, { 'content-type': 'application/json', 'payment-required': JSON.stringify(firstChallenge) });
+      res.writeHead(402, {
+        'content-type': 'application/json',
+        'payment-required': encodeHeader(headerEncoding, firstChallenge),
+      });
       res.end(JSON.stringify({ error: 'payment required', challenge: firstChallenge }));
       return;
     }
@@ -382,6 +402,61 @@ test('parseChallengeHeader returns null rather than throwing on anything malform
   assert.equal(parseChallengeHeader('not json'), null);
   assert.equal(parseChallengeHeader('"a string, not an object"'), null);
   assert.deepEqual(parseChallengeHeader(JSON.stringify(challenge())).asset, ASSET);
+});
+
+// ── header encoding: base64 per the transport spec, raw JSON for a server that has not moved ──
+
+test('parseChallengeHeader reads the BASE64 the transport spec requires, which is what rwally.com serves', () => {
+  // Measured 2026-09-13 against the production host: the live PAYMENT-REQUIRED header begins
+  // `eyJzY2hlbWUi…` and a bare JSON.parse of it throws `Unexpected token 'e'`. Before this,
+  // `parseChallengeHeader` WAS a bare JSON.parse, so the worked example in the integration doc
+  // could not have completed a single purchase against the live endpoint.
+  const c = challenge();
+  const b64 = Buffer.from(JSON.stringify(c), 'utf8').toString('base64');
+  assert.ok(!b64.startsWith('{'), 'fixture sanity: this is really base64, not JSON');
+  assert.equal(parseChallengeHeader(b64).asset, ASSET);
+  assert.equal(parseChallengeHeader(b64).nonce, c.nonce);
+});
+
+test('parseReceiptHeader reads base64 too, including the §5.3.2 SettlementResponse superset', () => {
+  const settlement = { success: true, transaction: '0xreceipt', network: 'eip155:8453', receiptId: '0xreceipt', nonce: '0xn' };
+  const b64 = Buffer.from(JSON.stringify(settlement), 'utf8').toString('base64');
+  assert.equal(parseReceiptHeader(b64).receiptId, '0xreceipt', 'the key buyResource actually reads');
+  assert.equal(parseReceiptHeader(b64).success, true);
+  // And still raw JSON, for a server that has not taken #287.
+  assert.equal(parseReceiptHeader(JSON.stringify(settlement)).receiptId, '0xreceipt');
+});
+
+test('buyResource completes a purchase against a BASE64 server, end to end', async () => {
+  const server = await startFakeServer({ headerEncoding: 'base64' });
+  try {
+    const { sign, calls } = spySign();
+    const result = await buyResource({
+      url: server.url, expected: EXPECTED, walletAddress: WALLET, domain: DOMAIN, sign,
+    });
+    assert.equal(calls.length, 1, 'exactly one signature, over a challenge it could actually read');
+    assert.equal(result.paid, true);
+    assert.equal(result.receipt.receiptId, '0xreceipt');
+    assert.deepEqual(result.data, { vaults: [] });
+  } finally {
+    await server.close();
+  }
+});
+
+test('buyResource still completes against a RAW-JSON server — the old encoding is not dropped', async () => {
+  // The reverse break is as real as the forward one: this repo's own API emitted raw JSON until
+  // #287, and a buyer that understood only base64 could not talk to a server mid-upgrade.
+  const server = await startFakeServer({ headerEncoding: 'json' });
+  try {
+    const { sign } = spySign();
+    const result = await buyResource({
+      url: server.url, expected: EXPECTED, walletAddress: WALLET, domain: DOMAIN, sign,
+    });
+    assert.equal(result.paid, true);
+    assert.equal(result.receipt.receiptId, '0xreceipt');
+  } finally {
+    await server.close();
+  }
 });
 
 // ── signerFromAccount ──

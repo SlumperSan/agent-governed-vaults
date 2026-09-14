@@ -40,6 +40,7 @@
  */
 
 import { authorizeFromChallenge, buildTypedData } from '../../packages/agent-sdk/src/eip3009.mjs';
+import { decodeHeaderJson } from '../../packages/agent-sdk/src/header-codec.mjs';
 
 /** Thrown when a 402 challenge does not match what the caller told us to expect. Nothing is signed. */
 export class ChallengeMismatchError extends Error {
@@ -74,18 +75,27 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /**
  * Parse the `PAYMENT-REQUIRED` header value into a challenge object. Returns null on anything
- * malformed — absent, not JSON, not an object — rather than throwing, so callers can turn it into
- * one clear `PaymentFailedError` instead of an unhandled JSON.parse exception.
+ * malformed — absent, not decodable, not an object — rather than throwing, so callers can turn it
+ * into one clear `PaymentFailedError` instead of an unhandled JSON.parse exception.
+ *
+ * BASE64 OR RAW JSON, AND THIS IS NOT A NICETY. `specs/transports-v2/http.md:161-167` specifies
+ * base64, this repository's API emitted raw JSON until #287, and `rwally.com` was redeployed on
+ * base64 on 2026-09-13. Until #287 this function called `JSON.parse` on the header directly, which
+ * was correct against the server as it then was and is now a hard failure against the live
+ * endpoint: measured, `JSON.parse('eyJzY2hlbWUi…')` throws `Unexpected token 'e'`, this returns
+ * null, and the buyer aborts with `no-challenge` before signing anything. The worked example in
+ * `docs/X402-INTEGRATION.md` §3 would not have completed a single purchase.
+ *
+ * `decodeHeaderJson` takes either, and it is IMPORTED rather than reimplemented here for the same
+ * reason the rest of this file defers to `apps/api`: a private copy of a wire-format decision is a
+ * copy that drifts, and the sniff is subtler than it looks — Node's base64 decoder silently drops
+ * characters outside the alphabet instead of throwing, so the obvious "try base64, fall back to
+ * JSON on throw" never reaches its fallback. See that module for the discriminator's proof.
  * @param {string|null|undefined} headerValue
  */
 export function parseChallengeHeader(headerValue) {
-  if (!headerValue) return null;
-  try {
-    const parsed = JSON.parse(headerValue);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = decodeHeaderJson(headerValue);
+  return parsed && typeof parsed === 'object' ? parsed : null;
 }
 
 /**
@@ -96,16 +106,20 @@ export function parseChallengeHeader(headerValue) {
  * failure than serving the data with no receipt. Losing the receipt is a real loss (nothing to
  * reconcile against the chain later, see the integration doc's "what the receipt id is good for"),
  * but it must never cost the caller the thing they already paid for.
+ *
+ * Base64 or raw JSON, via the same shared `decodeHeaderJson` — see `parseChallengeHeader`. The
+ * consequence of getting this one wrong is milder than the challenge header by exactly the
+ * reasoning above (a lost receipt, not a failed purchase), which is precisely why it would have
+ * been the one to rot unnoticed if the two had been fixed separately.
+ *
+ * #287 also widened what this header CONTAINS: it is now a spec §5.3.2 `SettlementResponse`
+ * (`{success, transaction, network, payer?}`) that keeps `receiptId` and `nonce` as a superset.
+ * `buyResource` reads `.receiptId`, which is still there, so nothing downstream changes.
  * @param {string|null|undefined} headerValue
  */
 export function parseReceiptHeader(headerValue) {
-  if (!headerValue) return null;
-  try {
-    const parsed = JSON.parse(headerValue);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = decodeHeaderJson(headerValue);
+  return parsed && typeof parsed === 'object' ? parsed : null;
 }
 
 /**
