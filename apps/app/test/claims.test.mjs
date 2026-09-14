@@ -55,6 +55,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { toFunctionSelector } from 'viem';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(APP, 'dist');
@@ -78,12 +79,18 @@ const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 // static string match against the built HTML and reads no chain, so it can
 // only tell you the sentence is PRESENT, never that it is TRUE.
 //
-// The replacement is a claim about this table rather than about the chain. No
-// createVault call can falsify "this table lists no vaults"; only writing the
-// row-rendering code can, and whoever writes it will be editing this line
-// anyway. That is the property to preserve when changing this string: pin
-// something the deployment controls, not something the world does.
-const EMPTY_STATE = 'This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.';
+// The replacement was a claim about this table rather than about the chain. No
+// createVault call could falsify "this table lists no vaults"; only writing the
+// row-rendering code could, and that is what happened: the rows are now built,
+// so that sentence went false by being fixed. This is the third wording, and it
+// holds in BOTH states, which the previous two did not:
+//   - script never runs, or the RPC fails  -> no rows, sentence true
+//   - rows render                          -> the fallback block is hidden, and
+//                                             the sentence is still true of it
+// The property to preserve when changing this string has not changed: pin
+// something the deployment controls, not something the world does, and prefer a
+// sentence that describes WHERE a figure comes from over one that states it.
+const EMPTY_STATE = 'Vault rows are read from chain 4663 when this page loads. None are listed here until that read returns, and none are invented if it fails.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -110,6 +117,143 @@ test('the built page carries the empty-state sentence verbatim', () => {
       'If it is written by app.js from the fetch result then it vanishes whenever the RPC is\n' +
       'unreachable, which is precisely when a reader most needs to be told what is true.\n' +
       `Expected to find: "${EMPTY_STATE}"`,
+  );
+});
+
+test('the row container app.js writes into exists in the built markup', () => {
+  const html = read('index.html');
+  // app.js does getElementById('vault-rows').appendChild(...). If this id is
+  // renamed or the tbody dropped, every read still succeeds, the loop still
+  // runs, and the table silently stays empty: a failure with no error anywhere.
+  assert.match(
+    html,
+    /<tbody id="vault-rows">\s*<\/tbody>/,
+    'index.html must carry an empty <tbody id="vault-rows"> for app.js to fill. '
+      + 'It is empty in the markup on purpose: no row is shipped that was not read from chain.',
+  );
+  assert.ok(
+    html.includes('id="vault-empty"'),
+    'The fallback block needs id="vault-empty" so app.js can hide it once a row renders. '
+      + 'Without it the page shows rows AND the sentence saying none are listed.',
+  );
+  assert.ok(
+    html.includes('id="vault-rows-fail"'),
+    'A failed row read must have somewhere to say so. Without this element the catch '
+      + 'branch is silent and an RPC failure is indistinguishable from a factory with no vaults.',
+  );
+});
+
+test('no column header promises a figure this page cannot read', () => {
+  const html = read('index.html');
+  // VaultCore exposes no createdAt() and no name(), and per-vault performance
+  // against an index needs history this page does not have. Columns for those
+  // could only ever be filled by inventing them, which is the same defect as a
+  // false sentence, in table form. They were removed rather than left blank.
+  for (const [header, why] of [
+    ['Age', 'VaultCore has no createdAt(); age can only come from a creation-log scan this page does not do'],
+    ['Performance vs SPY', 'per-vault performance needs price history this page does not hold'],
+  ]) {
+    assert.ok(
+      !html.includes('>' + header + '</th>'),
+      `index.html restores the "${header}" column. ${why}. `
+        + 'Add the column back only together with the read that fills it.',
+    );
+  }
+});
+
+test('every vault-row selector app.js pins is the real 4-byte selector', () => {
+  // COMPUTED, NOT TRANSCRIBED. An earlier version of this test compared a hex
+  // literal here against a hex literal in app.js and its comment claimed the
+  // selector was "recomputed from the signature text". It was not: two copies of
+  // the same constant agreeing proves only that nobody edited one of them. viem
+  // is already a root dependency, so the keccak is free and the claim can simply
+  // be made true.
+  const js = read('app.js');
+  for (const [name, sig] of [
+    ['SEL_ALL_VAULTS', 'allVaults(uint256)'],
+    ['SEL_NAV_WAD', 'navWad()'],
+    ['SEL_TOTAL_SHARES', 'totalShares()'],
+    ['SEL_HOLDER_COUNT', 'holderCount()'],
+    ['SEL_CAPACITY_CAP', 'capacityCapUsdc()'],
+  ]) {
+    const m = js.match(new RegExp(`const ${name} = '(0x[0-9a-f]{8})';`));
+    assert.ok(m, `app.js no longer pins ${name}`);
+    assert.equal(
+      m[1],
+      toFunctionSelector(sig),
+      `${name} is pinned as ${m[1]} but ${sig} hashes to ${toFunctionSelector(sig)}. `
+        + 'A wrong selector reverts on chain 4663, and Promise.all means that takes down '
+        + 'every row, not just this column.',
+    );
+  }
+});
+
+test('the columns, their order, and their decimals are all pinned', () => {
+  const html = read('index.html');
+  const headers = [...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => m[1]);
+  assert.deepEqual(
+    headers,
+    ['Vault', 'TVL', 'NAV per share', 'Members', 'Capacity'],
+    'The header row changed. renderVaultRows appends cells positionally, so a reordered or '
+      + 'renamed header silently relabels real numbers.',
+  );
+
+  const js = read('app.js');
+  // THE WINDOW IS ASSERTED BEFORE IT IS USED, because the first version of this
+  // test was not. It sliced to `])) {`, which does not occur in app.js, so
+  // indexOf returned -1, the slice ran to the end of the file, and every needle
+  // below matched somewhere unrelated. A guard whose search window is silently
+  // the whole file passes for the wrong reason, which is the exact defect class
+  // this file exists to catch, committed inside it.
+  const open = js.indexOf('for (const text of [');
+  const close = js.indexOf('    ]) {', open);
+  assert.ok(open > 0, 'renderVaultRows no longer builds its cells from a literal array');
+  assert.ok(close > open, 'could not find the end of the cell array; this window must not silently become the whole file');
+  const cells = js.slice(open, close);
+  assert.ok(cells.length < 900, `the cell-array window is ${cells.length} chars, which is too large to be just the array`);
+
+  // EVERY cell is pinned, IN ORDER, and the order is checked by INDEX rather
+  // than by a chain of comparisons. The previous version chained only
+  // navWad -> holders -> cap and left NAV per share unconstrained, so swapping
+  // the first two cells rendered NAV per share under the TVL header and passed
+  // all ten checks. That counterexample is the reason this is an index list.
+  const expected = [
+    ['fixed(v.navWad, 18, 2)', 'TVL is navWad at 18 decimals'],
+    ["navPerShare === null ? 'no shares' : fixed(navPerShare, 18, 6)", 'NAV per share is 18 decimals, and 0 shares is not 0.000000'],
+    ['v.holders.toString()', 'Members is a plain count'],
+    ["v.cap === 0n ? 'uncapped' : fixed(v.cap, 6, 0)", 'Capacity is USDG at 6 decimals, and 0 means uncapped, not full'],
+  ];
+  const positions = expected.map(([needle, why]) => {
+    const at = cells.indexOf(needle);
+    assert.ok(at >= 0, `renderVaultRows no longer renders ${needle}. ${why}.`);
+    return at;
+  });
+  for (let i = 1; i < positions.length; i += 1) {
+    assert.ok(
+      positions[i] > positions[i - 1],
+      `Cell ${i} appears before cell ${i - 1} in renderVaultRows, so the values no longer line up `
+        + `with the header row ${JSON.stringify(headers)}. Swapping two cells relabels real numbers `
+        + 'under the wrong heading and every other check here still passes.',
+    );
+  }
+});
+
+test('whatever renders rows also owns the count chip', () => {
+  // The chip ships as "0 listed here", which is true until a row renders. Once
+  // rows render it is false, and nothing in the markup can fix that: only the
+  // code that appended the rows knows the number. This shipped contradicting
+  // the table one line below it.
+  const html = read('index.html');
+  assert.match(
+    html,
+    /<span class="count-chip"><span class="num">0<\/span> listed here<\/span>/,
+    'The count chip must ship reading 0, which is what a reader sees before the read returns.',
+  );
+  const js = read('app.js');
+  assert.ok(
+    js.includes(".querySelector('.count-chip .num')"),
+    'app.js renders the rows, so app.js must update the chip that counts them. '
+      + 'A static 0 above a populated table is a false number on the page.',
   );
 });
 

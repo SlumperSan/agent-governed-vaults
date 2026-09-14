@@ -133,15 +133,19 @@
         <p class="reads-stamp" id="reads-stamp" aria-live="polite">Reading from the public RPC.</p>
       </div>
 
-      <!-- THE COUNT IS OF CALLS, NOT OF ROWS BELOW, and the two differ: the
-           third row spends TWO calls, usdc() and then symbol() on whatever
-           address that returns. app.js says "four eth_call requests and one
-           eth_blockNumber" in its own header, and that file is the authority
-           on what it sends. This sentence said "three" and undercounted it. -->
+      <!-- THIS SENTENCE COUNTS THIS PANEL ONLY, AND IT HAS BEEN WRONG TWICE.
+           It said "three" while the panel sent four: the third row spends TWO
+           calls, usdc() and then symbol() on whatever address that returns.
+           Then the vault table below started sending its own reads and this
+           sentence, scoped to the panel, read as if it covered the page. Both
+           counts are now named, so neither can be read as the other. app.js is
+           the authority for both: if you change what either pass sends, change
+           this sentence in the same commit. -->
       <p class="reads-intro">
-        Four <span class="mono">eth_call</span> requests and one <span class="mono">eth_blockNumber</span>,
-        sent from this browser straight to the chain 4663 public RPC. Nothing is proxied and nothing
-        is cached.
+        Four <span class="mono">eth_call</span> requests and one <span class="mono">eth_blockNumber</span>
+        for this panel, sent from this browser straight to the chain 4663 public RPC. The vault
+        table below sends its own <span class="mono">vaultCount</span> call, one <span class="mono">allVaults</span>
+        call per vault, and four reads each. Nothing is proxied and nothing is cached.
       </p>
 
       <ul class="reads-list">
@@ -208,17 +212,22 @@
 
   <!-- ===================================================================
        VAULTS
-       Zero ROWS, which is not the same as zero vaults, and this section used
-       to conflate them. Two vaults exist on chain 4663; this page renders no
-       row for either, because nothing here renders rows at all: there is no
-       <tbody> in this file and app.js writes only into the LIVE READS panel.
+       THE ROWS ARE NOW BUILT. This section used to carry a header row and
+       nothing under it, because app.js wrote only into the LIVE READS panel.
+       It now renders one row per vault from allVaults(i), read live.
 
-       The empty state stays static markup on purpose: the sentence has to be
-       true whether or not the RPC answers, and the LIVE READS panel above
-       corroborates it rather than producing it. What changed is WHICH
-       sentence is the true one to pin. It is now a claim about this table,
-       which no chain state can falsify, rather than a count, which the next
-       createVault call falsifies silently.
+       TWO COLUMNS WERE REMOVED RATHER THAN LEFT UNFILLABLE. The header
+       promised "Age" and "Performance vs SPY". VaultCore exposes no
+       createdAt() and no name(), and per-vault performance against an index
+       needs history this page does not have, so both columns could only ever
+       have been filled by inventing them. A header that promises a figure the
+       page cannot read is the same defect as a false sentence, in table form.
+       What replaced them is what the chain actually answers: NAV per share,
+       member count, and the capacity cap.
+
+       The fallback block below stays static markup on purpose: it is what a
+       reader sees when the script does not run or the RPC does not answer, so
+       its prose describes where rows come from rather than asserting a count.
        =================================================================== -->
   <section class="card vaults" aria-labelledby="vaults-h">
     <div class="card-head">
@@ -228,18 +237,27 @@
 
     <div class="table-scroll">
       <table class="vault-table">
-        <caption class="sr-only">Vaults on chain 4663. The table has no rows: this page does not list individual vaults yet.</caption>
+        <caption class="sr-only">Vaults on chain 4663, one row each, read live from the public RPC when this page loads. Columns: vault address, total value locked, NAV per share, member count, and capacity cap.</caption>
         <thead>
           <tr>
-            <th scope="col" class="col-name">Name</th>
+            <th scope="col" class="col-name">Vault</th>
             <th scope="col" class="col-num">TVL</th>
-            <th scope="col" class="col-num">Age</th>
             <th scope="col" class="col-num">NAV per share</th>
-            <th scope="col" class="col-num">Performance vs SPY</th>
+            <th scope="col" class="col-num">Members</th>
+            <th scope="col" class="col-num">Capacity</th>
           </tr>
         </thead>
+        <!-- FILLED BY app.js FROM THE CHAIN. Empty in the markup, and empty is
+             the honest resting state: if the RPC does not answer, no row is
+             invented and the failure is named below instead. -->
+        <tbody id="vault-rows"></tbody>
       </table>
     </div>
+
+    <p class="reads-fail" id="vault-rows-fail" hidden>
+      The vault rows could not be read from the public RPC, so none are shown. The count above and
+      the addresses below come from the same chain and are the fallback. Reload to try again.
+    </p>
 
     <!-- THE EMPTY STATE SITS OUTSIDE THE SCROLL CONTAINER, NOT IN A SPANNING
          CELL. Inside one it inherits the table's 40rem min-width, so at 375 px
@@ -247,14 +265,19 @@
          scroll and the reader sees only its first few words. A table may carry
          a header row and no body rows; the explanation of why there are none
          belongs beside the table, at the width of the card. -->
-    <div class="empty">
+    <!-- THE FALLBACK BLOCK, hidden by app.js the moment a row renders. Its
+         prose must be true as STATIC MARKUP, because that is the state a
+         reader sees when the script does not run or the RPC does not answer.
+         It therefore describes where the rows come from rather than asserting
+         a count, which is the mistake the sentence here used to make. -->
+    <div class="empty" id="vault-empty">
       <svg class="empty-mark" viewBox="0 0 64 40" role="presentation" focusable="false" aria-hidden="true">
         <rect x="0.75" y="0.75" width="62.5" height="38.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></rect>
         <line x1="0.75" y1="12.75" x2="63.25" y2="12.75" stroke="currentColor" stroke-width="1.5"></line>
         <line x1="20.75" y1="0.75" x2="20.75" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
         <line x1="42.25" y1="0.75" x2="42.25" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
       </svg>
-      <p class="empty-lede">This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.</p>
+      <p class="empty-lede">Vault rows are read from chain 4663 when this page loads. None are listed here until that read returns, and none are invented if it fails.</p>
       <p class="empty-sub">
         Creating a vault is permissionless. The caller becomes its creator and its attested
         operator, immutably.
@@ -287,8 +310,9 @@
            in this file and app.js writes only into the LIVE READS panel. It
            was a promise about code nobody had written. -->
       <p class="empty-watch">
-        Rows are not built yet. Until they are, the live <span class="mono">vaultCount()</span>
-        read above and the addresses beside it are how this page tells you what exists.
+        If you are seeing this block, the rows did not load. The live
+        <span class="mono">vaultCount()</span> read above and the addresses beside it come from the
+        same chain and are what this page can still tell you.
       </p>
     </div>
   </section>

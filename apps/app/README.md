@@ -1,8 +1,8 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose three
-most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the page
-loads, above a table of vaults with no rows.
+The vault explorer, v1. It renders two things and it renders both honestly: a protocol card whose
+three most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the
+page loads, above a table with one row per vault, read the same way.
 
 The order used to be stated the other way round here. In `index.html` the protocol card is the first
 `<section>` and the vaults card the second, so the table is BELOW it.
@@ -18,7 +18,8 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 | `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
 | `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
 | The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. This page renders no rows: there is no `<tbody>` in `index.html` and `app.js` writes only into the live-reads panel. Two vaults existed on chain 4663 as of 2026-09-12 and neither is listed |
+| Every vault row | `VaultFactory.allVaults(i)` for each index, then four `eth_call`s per vault (`navWad`, `totalShares`, `holderCount`, `capacityCapUsdc`), all from the browser on load. `1 + n + 4n` calls in total, so the cost grows with the vault count |
+| The "Age" and "Performance vs SPY" columns | Nothing, and they were removed rather than left blank. `VaultCore` exposes no `createdAt()` and no `name()`, and per-vault performance against an index needs price history this page does not hold. A header promising a figure the page cannot read is the same defect as a false sentence, in table form |
 
 **The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
 what the getter is called.** The getter keeps the name `usdc` because that is the name in the
@@ -28,19 +29,20 @@ trusting a variable name over a chain read.
 
 ## Three decisions that are easy to undo by accident
 
-**1. The empty state is static markup, not a rendered value.** The sentence "This table lists no
-vaults. `vaultCount()` above is read live from chain 4663 and is the count that matters." lives in
-`index.html` and is never written by `app.js`. A claim produced by a fetch disappears exactly when
-the fetch fails, which is the moment a reader most needs to be told what is true. The LIVE READS
-panel **corroborates** that sentence with a number read seconds ago; it does not produce it.
+**1. The fallback block is static markup, not a rendered value.** The sentence "Vault rows are read
+from chain 4663 when this page loads. None are listed here until that read returns, and none are
+invented if it fails." lives in `index.html` and is never written by `app.js`. A claim produced by a
+fetch disappears exactly when the fetch fails, which is the moment a reader most needs to be told
+what is true. `app.js` hides the block once a row renders, and does not otherwise touch it.
 `test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the script reds
 the guard.
 
-That sentence is deliberately a claim about the TABLE, not a count of vaults. The version before it
-pinned "`vaultCount()` reads 0", which was true when written and false from the moment vault #1 was
-created, with nothing going red in between: the guard is a static string match that reads no chain,
-so it can only prove the sentence is present, never that it is true. Pin what this deployment
-controls.
+That sentence describes WHERE the rows come from, not how many exist, and it is the third wording.
+The first pinned "`vaultCount()` reads 0", true when written and false from the moment vault #1 was
+created. The second pinned "this table lists no vaults", true until the rows were built. Both went
+false with nothing going red, because the guard is a static string match that reads no chain: it can
+only prove a sentence is present, never that it is true. The current wording holds whether the read
+returns, fails, or never runs, which is the property to preserve when changing it.
 
 **2. There is no `package.json`, and that is not an omission.** The repository root declares the
 workspace glob `apps/*`. A workspace package that is absent from `package-lock.json` makes `npm ci`
@@ -71,7 +73,7 @@ into a browser-side failure. `app.js` sends that header and no other, and no cre
 ```
 src/index.html   the page, all of it
 src/app.css      the only stylesheet, palette carried from apps/site-next/src/tokens.css
-src/app.js       the live reads, and nothing else
+src/app.js       both read passes: the protocol panel, and the vault rows
 src/_headers     the CSP. Copied to dist/_headers, where Pages reads it from
 src/favicon.svg  the comic R on its tile, byte-identical to the site's
 src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand/
@@ -87,9 +89,33 @@ screenshots/
 node --test --test-reporter=tap apps/app/test/claims.test.mjs
 ```
 
-Six checks: the empty-state sentence survives into the build, the factory address is on the page,
-no banned claim shape appears in any built file, `_headers` carries every required directive, the
-markup has no inline script or style, and the page fetches from no origin but the chain RPC.
+Eleven checks: the empty-state sentence survives into the build; the row container `app.js` writes
+into exists in the markup; no column header promises a figure this page cannot read; every pinned
+vault-row selector is recomputed from its signature with viem and compared; the column order and
+their decimal scales are pinned; whatever renders rows also updates the count chip; the factory address is on the page; no banned claim
+shape appears in any built file; `_headers` carries every required directive; the markup has no
+inline script or style; and the page fetches from no origin but the chain RPC.
+
+The five added with the vault rows guard what a runtime failure cannot tell you. An earlier draft
+of this paragraph claimed they guard a *silent zero*, on the theory that `eth_call` answers an
+unknown selector with `0x` which decodes to zero. **That was never true here and was not probed
+before being written.** Chain 4663 answers an unknown selector with a JSON-RPC error
+(`{"code":3,"message":"execution reverted"}`), which `rpc()` throws on; and `BigInt('0x')` is a
+`SyntaxError` anyway, so the zero is unreachable by two independent paths.
+
+The real failure is loud but **wide**: `Promise.all` means one bad selector takes down every row,
+and the page reports a failure without being able to say which call broke. A renamed `tbody` id is
+worse, because it is silent: every read succeeds and the table simply stays empty. And the column guard exists because the rendering was otherwise
+unpinned, so reordering the cell array or changing a decimal scale relabelled real numbers with
+every other check still green.
+
+**The first version of that column guard did not work, and the claim that it did was made without
+running the case.** It sliced the source to a delimiter (`])) {`) that does not occur in `app.js`,
+so `indexOf` returned `-1`, the window became the whole rest of the file, and its order check
+chained only three of the four cells. Swapping TVL and NAV per share rendered each under the
+other's heading and passed all ten checks. It now asserts its own window before using it, bounds
+the window's length, and compares all four cell positions by index. All three cases are run as
+controls: the swap, a broken delimiter, and a dropped chip update each red a named test.
 
 **It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
 `.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before
