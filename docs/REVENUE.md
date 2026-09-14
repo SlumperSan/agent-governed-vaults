@@ -96,7 +96,8 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
 | The route is deployed and refuses unpaid requests in production | **Proven** — `rwally.com/api/vaults` answers 402, 2026-09-13 (§5.6) |
 | A mainnet payment has settled | **No.** Settlement has never been exercised on mainnet. A 402 is the gate refusing; it says nothing about settlement |
-| A conformant third-party client can pay | **No.** The headers are raw JSON where the transport spec requires base64 (#279) |
+| The headers are the encoding the transport spec requires | **Proven** — `PAYMENT-REQUIRED` is base64 live since #287, read back and decoded from the production host |
+| A conformant third-party client can pay | **Not yet.** The encoding is fixed; `accepts[]` still carries no `extra`, so a client has no EIP-712 domain to sign against (#290) |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`
@@ -261,8 +262,15 @@ hashed entry bundle each — `index-Dswh-tMk.js` and `disclaimers-Bny7kgXy.js`, 
 `main-CAxB7eBr.js` and `pageBody-CH-Y7cxl.js` — and the built page set matched the live sitemap
 before the deploy was run.
 
-**A conformant third-party client still cannot pay this, and that is a separate gap.** The 402 is
-emitted as raw JSON where `specs/transports-v2/http.md:161-167` requires base64. Issue #279 tracks it.
+**The header encoding is now conformant, and a conformant client still cannot pay.** Those are two
+different things and #287 closed only the first. `PAYMENT-REQUIRED` is base64 as
+`specs/transports-v2/http.md:161-167` requires — read back from the production host and decoded, not
+inferred — which closed #279. What remains is the challenge's contents, tracked in #290 and measured
+against PayAI rather than reasoned about: `accepts[]` carries no `extra`, and omitting it yields
+`invalid_exact_evm_missing_eip712_domain`, so a third-party client has no EIP-712 domain to sign
+against and cannot produce a valid signature at all. Two smaller gaps sit beside it, both still true
+of the live challenge at the time of writing: `extensions` is `{}`, and `resource.url` is `""` — the
+latter being the key a Bazaar catalogues a resource under, and §6.1 records why that matters.
 Settlement itself has never been exercised on mainnet — the 402 proves the gate refuses unpaid
 requests, and proves nothing whatever about settlement.
 
