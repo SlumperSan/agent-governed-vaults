@@ -439,14 +439,25 @@ test('every page links to the Disclaimers, with the link text pinned', () => {
       /<footer[\s\S]*?href="disclaimers\.html"[^>]*>Disclaimers<\/a>[\s\S]*?<\/footer>/.test(raw.get(p) ?? ''),
       `${p}: the footer must carry a link reading exactly "Disclaimers" — since 2026-09-05 that link is the only route from this page to the risks, the legal position and the licence`,
     );
+    // THE TWIN OF THE STATUS-PAGE CHECK ABOVE, widened on 2026-09-13 for the same reason and one
+    // PR later. #210 named the status.html assertion and #276 fixed it; this one sat one function
+    // below in the identical shape -- scoped to `raw.get(DISCLAIMERS_PAGE)` alone while its
+    // message asserted a property of the SITE -- and no proposed change touched it. Measured
+    // rather than argued: with a `disclaimers.html` link added to a marketing page's header nav,
+    // #276's own site.test.mjs runs 41/41 green. A nav is nine copies of one list, so the single
+    // page each of these read was the page a drift is least likely to land on. Nothing here is
+    // page-specific, so nothing here is scoped to a page, status.html and disclaimers.html
+    // included: the owner's 2026-09-04 and 2026-09-05 decisions make both pages footer links
+    // everywhere, and a page carrying itself in its own header nav is that decision reversed on
+    // the one page that exists to record it.
+    assert.ok(
+      !/<nav[\s\S]*?disclaimers\.html[\s\S]*?<\/nav>/.test(raw.get(p) ?? ''),
+      `${p}: like status.html the Disclaimers page is deliberately footer-only, not in the header nav`,
+    );
   }
   assert.ok(
     /href="disclaimers\.html" aria-current="page"/.test(raw.get(DISCLAIMERS_PAGE) ?? ''),
     `${DISCLAIMERS_PAGE}: its own footer link must carry aria-current="page" — it is not in the header nav, so the footer list is where a reader locates the page they are on`,
-  );
-  assert.ok(
-    !/<nav[\s\S]*?disclaimers\.html[\s\S]*?<\/nav>/.test(raw.get(DISCLAIMERS_PAGE) ?? ''),
-    `${DISCLAIMERS_PAGE}: like status.html it is deliberately footer-only, not in the header nav`,
   );
 });
 
