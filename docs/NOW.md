@@ -40,8 +40,14 @@ work it describes.
   publishes no L2 sequencer uptime feed for 4663 and has said it will not add one, so the sequencer
   check does not execute there; and its feeds publish on an 86,400 s heartbeat, exactly
   `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), so a price up to a day old is
-  accepted. Both bear on what a vault there would be worth; neither is exercised while there is no
-  vault. See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0.
+  accepted. Both bear on what a vault there is worth, and the second is no longer hypothetical:
+  `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds no idle USDG at all, so the whole of its
+  `navWad()` of 4956583584658109534 is that oracle's price of its WETH position, accepted at
+  whatever age the feed last published (`idleUsdc()` 0, `navWad()` and the WETH `balanceOf` above
+  all read with `cast call` at block 62,115,765 on 2026-09-13). The sequencer half is still
+  unexercised, and permanently so on this deployment: `ChainlinkOracle.sequencerUptimeFeed()` reads
+  `address(0)` at that block, which is the branch the check is skipped on.
+  See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0.
 - **The smoke lifecycle is DONE on Base Sepolia and its evidence is committed** (2026-09-03).
   The stack was redeployed 2026-09-02 at `sourceCommit 8a0e1155` and the full ten-phase lifecycle
   ran against it and passed: vault `0xb940d71b…3c98`, exact 5,000,000-unit USDC round trip,

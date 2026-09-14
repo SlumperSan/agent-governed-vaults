@@ -3,6 +3,12 @@
 **Read the first section before any incident. It is the only section that matters under
 pressure.**
 
+**If you are a member rather than an operator, the page you want is
+[MEMBER-VERIFY.md](MEMBER-VERIFY.md).** It gives you the chain reads that tell you what your own
+position actually is, and the direct-to-contract recipes for depositing, reclaiming a pending
+deposit and exiting, none of which need this project's website or API to be up. This playbook is
+written for whoever is running the incident; that one is written for whoever is in the vault.
+
 ## 0. What cannot be done: the honest line, first
 
 This protocol is **immutable**: no proxies, no admin keys, no pause switch, no upgrade path, no

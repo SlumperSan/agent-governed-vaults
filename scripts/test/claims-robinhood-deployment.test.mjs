@@ -121,6 +121,100 @@ const VAULT_COUNT_KEY = 'factory.vaultCount()';
 const NO_VAULT_PHRASE = 'no vault has been created';
 
 /**
+ * Denial shapes, for the FORBIDDING half only.
+ *
+ * The requiring half needs an exact string; the forbidding half needs patterns. One constant
+ * cannot be both, and treating it as both is what let a false sentence ship to readers: the
+ * requirement tested `no vault has been created` and the surface said `no vault exists`.
+ *
+ * **This list is NOT complete, and no list of this kind can be.** An earlier version of this
+ * docstring claimed it was "every way the tree has actually asserted" there is no vault. That was
+ * false against its own enumeration -- it named six instances and the patterns caught five, missing
+ * the very sentence it cited from `SKILL.md`. A guard whose purpose is preventing false claims
+ * shipped one, which is why the claim is now a corpus rather than an adjective: `DENIAL_CORPUS`
+ * below pins what these patterns DO catch and what they must NOT, and its test fails if a cited
+ * example stops being caught. Add a pattern by adding its example to the corpus first.
+ */
+const NO_VAULT_SHAPES = [
+  /no vaults? (?:has|have) been created/,
+  // The word boundary is load-bearing and was lost once already: without it, `exists?`
+  // matches the `exist` inside `existed`, and reds the TRUE historical sentence
+  // `apps/site/operators.html` carries (`This sentence said no vault existed until then.`).
+  /no vaults? exists?\b/,
+  /(?:factory|it) has created no vaults?/,
+  /a vault that (?:has not been|will not be|was never) created/,
+  /none has been created yet/,
+  /nothing is capped because nothing is created/,
+  // Present-perfect WITHOUT a "no vault" lead-in. This is the one the first version missed, on
+  // the instance it cited: "vault on Robinhood Chain has not been created yet". `has`/`have`
+  // only, never `had` -- the past perfect is how the true historical sentences are written
+  // (`apps/site/status.html`: "This page said no vault had been created").
+  /vaults?\b[^.!?]{0,80}?(?:has|have) not (?:yet )?been created/,
+  /(?:has|have) not (?:yet )?been created[^.!?]{0,40}?\bvault/,
+  // `vault\b` and not `vault`: without the boundary this reds
+  // `docs/reviews/SPRINT10-DEPLOYMENT-REVIEW.md`'s "there is no VaultCore edit to review", which
+  // is true and is about a contract, not a deployment.
+  /there is (?:not yet a|no|still no) vaults?\b/,
+  /vaultcount\(\)\s*(?:returns|reads|is)\s*0\b/,
+  // DELIBERATELY NOT INCLUDED: /\bzero vaults\b/.
+  //
+  // It reads like the obvious pattern and it was measured before being dropped. `packages/canary`
+  // uses "zero vaults" as a generic COUNT, about whichever factory a sweep was pointed at, in two
+  // places that are both true: `canary-runner.mjs` ("zero vaults is a successful sweep of
+  // nothing") and a test named "a sweep that found zero vaults does not ping the dead-man". Those
+  // are not claims about chain 4663, and the guard has no way to tell that they are not.
+  //
+  // The alternatives were worse. Path-exempting `packages/canary` mutes a whole subsystem to catch
+  // one phrasing. Requiring "4663" nearby fails on exactly the surfaces that omit the chain id,
+  // which are the ones nobody revisits. So this phrasing is uncovered, on purpose, and saying so
+  // here is the point: an uncovered shape that is WRITTEN DOWN is a known gap, and one that is
+  // silently absent is the defect this whole leg exists to stop.
+];
+
+/**
+ * What the patterns above must catch, and what they must NOT.
+ *
+ * Every `denies` entry is a real sentence that shipped to readers, quoted verbatim from the commit
+ * that removed it. Every `true` entry is a sentence PRESENTLY IN THE TREE that is true and must
+ * stay green -- these are the false-positive cost, and they are the reason the patterns are shaped
+ * the way they are rather than being as broad as possible.
+ */
+const DENIAL_CORPUS = {
+  denies: [
+    // The six the tree actually shipped.
+    'A capacity cap is a per-vault parameter and no vault exists, so there is no blast-radius bound',
+    'The figure moves with the vault, and none has been created yet.',
+    'None. The factory has created no vault.',
+    'what the deal is, and that nothing is capped because nothing is created.',
+    'A planned parameter of a vault that has not been created. Any page',
+    'vault on Robinhood Chain has not been created yet and is planned to launch small',
+    // Paraphrases a writer plausibly reaches for. Demonstrated to slip through the first version.
+    'The first vault has not yet been created on chain 4663.',
+    'there is not yet a vault, so the figure is a plan',
+    'vaultCount() returns 0 on chain 4663',
+    // Exercises the subject-AFTER-verb pattern. Without an example here that pattern shipped
+    // unexercised, which is the rule this corpus exists to enforce, broken by the commit that
+    // wrote the rule. An unexercised pattern is the inert-leg shape `SOAK_VAULTS` already cost us.
+    'has not been created: the first vault on that chain is still the Safe\'s to make',
+    // Exercises pattern 0, which was also unexercised: NO_VAULT_PHRASE's own wording, so the
+    // exact-string leg and the pattern leg are pinned to the same sentence rather than drifting.
+    'no vault has been created on chain 4663 yet',
+    // NOTE: 'zero vaults exist today' is NOT here. See the dropped pattern above -- it is a
+    // known, written-down gap rather than a silent one.
+  ],
+  true: [
+    // Historical: past perfect, and past tense of "exist". Both presently in the tree.
+    'This page said no vault had been created, sourced to a factory.vaultCount() of 0.',
+    'One vault does now exist, and its own cap is a chain read. This sentence said no vault existed until then.',
+  ],
+};
+// NOT in `true` above, deliberately: `scripts/soak/lib.mjs`'s "the factory has created no vaults"
+// IS a denial shape and pattern 3 catches it correctly. It is legitimate for a different reason --
+// it prints only inside `if (count === 0n)` -- so it is excused by PATH in `DENIAL_EXEMPT`, not by
+// weakening a pattern. Those two mechanisms must not be confused: narrowing a pattern to spare one
+// true sentence spares every false one shaped like it.
+
+/**
  * Does `text` carry the no-vault sentence?
  *
  * Whitespace-collapsed and lowercased, because the sentence is prose: it wraps across a line break
@@ -130,6 +224,38 @@ const NO_VAULT_PHRASE = 'no vault has been created';
  * forbidding half of this leg mean anything.
  */
 const saysNoVault = (text) => text.replace(/\s+/g, ' ').toLowerCase().includes(NO_VAULT_PHRASE);
+
+/**
+ * Files that legitimately carry a denial shape. Keyed by PATH, never by `path:line`: a line-keyed
+ * exemption silently un-pins the moment anything above it is edited, which cost four separate
+ * failures on 2026-09-10 alone. A path key survives an edit; a rotted one is caught by the test
+ * below, which requires every entry to still match something.
+ *
+ * There are exactly two legitimate shapes, and neither is a claim about the chain today:
+ *   - a HISTORICAL QUOTE, saying what a surface used to read before the vault existed
+ *   - a CONDITIONAL, printed only on the branch where it is true
+ *
+ * THIS MAP WAS BUILT BY RUNNING THE GUARD, NOT BY COPYING A LIST. That distinction earned itself
+ * twice on the port. `apps/app/README.md` was on the list this set was lifted from and is NOT here:
+ * its historical quote reads ``pinned "`vaultCount()` reads 0"``, and the backtick between the call
+ * and the verb stops shape 9 matching, so the entry protected nothing while reading as though it
+ * did. The rot test below is what surfaced that. And the issue asking for this work named
+ * `groups.ts:16` as an offender; it had already been rewritten, and the line that actually matches
+ * in that file is :138, a different sentence with a different justification. A line number in a
+ * brief is a starting point for a run, never a substitute for one.
+ */
+const DENIAL_EXEMPT = new Map([
+  ['apps/app/test/claims.test.mjs', 'HISTORICAL: "it used to be an empty state" — the test exists BECAUSE that sentence became false'],
+  ['scripts/soak/lib.mjs', 'CONDITIONAL: inside `if (count === 0n)`, so it prints only when true, and it is about whichever factory it is handed rather than about 4663'],
+  ['apps/site-next/src/sections/risks-register/entries.tsx', 'HISTORICAL: the r14 copy-deck changelog quotes the retired clause "a capacity cap is a per-vault parameter and no vault exists" and then states, in the next sentence, that it is false and what replaced it. The rendered cell carries neither.'],
+  ['apps/site-next/src/sections/risks-scope-additions/groups.ts', 'HISTORICAL: the CARD_1_BODY changelog quotes the retired premise "no vault exists yet" and then records the two chain-4663 caps that replaced it. The exported string carries neither.'],
+]);
+
+/** The forbidding half: ANY shape asserting no vault exists, not just the agreed sentence. */
+const deniesTheVault = (text) => {
+  const flat = text.replace(/\s+/g, ' ').toLowerCase();
+  return NO_VAULT_SHAPES.some((re) => re.test(flat));
+};
 
 /**
  * Read the vault out of the record as one of exactly two states, or throw.
@@ -169,7 +295,28 @@ const SKIP_DIRS = new Set([
 
 // Wider than claims-lede-truth's PUBLIC_EXT on purpose: a placeholder left in a source comment is
 // as unshipped as one left in a heading, and nothing else walks these extensions.
-const WALK_EXT = new Set(['.md', '.html', '.txt', '.json', '.mjs', '.js', '.sol', '.yaml', '.yml']);
+//
+// `.ts` and `.tsx` were added on 2026-09-10, after this guard passed clean over a tree in which
+// `apps/site-next/src/sections/risks-register/entries.tsx:316` shipped the sentence "a capacity cap
+// is a per-vault parameter and no vault exists" to readers while `factory.vaultCount()` returned 1.
+// That is RENDERED copy, not a comment - `RisksRegister.tsx` imports `ENTRIES` and lays it out.
+//
+// BE PRECISE ABOUT WHAT THIS DID AND DID NOT FIX, because the first version of this comment was
+// wrong on both counts and a reviewer had to catch it:
+//
+//   - It is NOT true that no guard walked `apps/site-next`. THIS guard already reached
+//     `apps/site-next/dist/*.html` (CI builds the redesign before `test:backend` precisely so the
+//     claims guards can walk `dist/`), and those rendered pages carry this very sentence. And
+//     `claims-key-custody-truth.test.mjs` walks all of `apps/site-next`'s `.ts`/`.tsx` already: its
+//     walk has no allowlist at all, only a `DENY_EXT` deny-list of binary types.
+//   - The extension was therefore NOT what hid it. `NO_VAULT_SHAPES` is what hid it: the forbidding
+//     half of this leg used to test the single exact string `NO_VAULT_PHRASE`, and the offending
+//     cell said "no vault exists", not "no vault has been created". Walking `.tsx` would not have
+//     caught it. The patterns below are the actual fix; this widening only means the SOURCE is
+//     checked as well as the built output, which is where an author reads and edits.
+const WALK_EXT = new Set([
+  '.md', '.html', '.txt', '.json', '.mjs', '.js', '.sol', '.yaml', '.yml', '.ts', '.tsx',
+]);
 
 /** Every file this guard sweeps, enumerated from the filesystem — never from a list. */
 const walk = () => {
@@ -528,7 +675,7 @@ test('every surface that cites the record carries the value the record holds', (
       );
       if (want === 'vault') {
         assert.ok(
-          !saysNoVault(text),
+          !deniesTheVault(text),
           `${rel} names the first vault ${v} from ${RECORD_REL} AND still says "${NO_VAULT_PHRASE}".` +
             ` The vault exists; that sentence was written for the state before it did and is now` +
             ` false. Rewrite the surface rather than adding the address beside it.`,
@@ -552,7 +699,8 @@ test('no surface claims there is no vault once the record holds one', () => {
     if (rel === GUARD_SELF) continue;
     if (rel === RECORD_REL) continue; // the record's own note explains its history
     const text = readFileSync(path.join(REPO, ...rel.split('/')), 'utf8').replace(/\s+/g, ' ');
-    if (saysNoVault(text)) offenders.push(rel);
+    if (DENIAL_EXEMPT.has(rel)) continue;
+    if (deniesTheVault(text)) offenders.push(rel);
   }
   assert.deepEqual(
     offenders,
@@ -561,6 +709,67 @@ test('no surface claims there is no vault once the record holds one', () => {
       ` wherever it still appears. Rewrite each of these to name the vault, or to say what is true` +
       ` of it now:\n  ` + offenders.join('\n  '),
   );
+});
+
+test('denial shapes: every cited example is caught, and every true sentence is not', () => {
+  // The reason this test exists. The first version of NO_VAULT_SHAPES carried a docstring naming
+  // six real instances and claiming to cover "every way the tree has actually asserted" there is
+  // no vault. It caught five. The sixth -- the sentence it quoted from SKILL.md -- would have
+  // sailed straight back in. Prose describing a pattern set drifts from the patterns silently;
+  // a corpus cannot. Both directions are pinned, because a guard that never cries wolf is inert
+  // and one that always does gets deleted.
+  const missed = DENIAL_CORPUS.denies.filter((s) => !deniesTheVault(s));
+  assert.deepEqual(
+    missed,
+    [],
+    'These are denial sentences the patterns do NOT catch. Each one shipped to readers or is a\n'
+      + 'paraphrase demonstrated to slip through. Add a pattern, do not delete the example:\n  '
+      + missed.join('\n  '),
+  );
+
+  const falsePositives = DENIAL_CORPUS.true.filter((s) => deniesTheVault(s));
+  assert.deepEqual(
+    falsePositives,
+    [],
+    'These sentences are TRUE and presently in the tree, but a pattern reds them. Narrow the\n'
+      + 'pattern; a guard that reds true sentences is one someone will switch off:\n  '
+      + falsePositives.join('\n  '),
+  );
+});
+
+test('denial shapes: every pattern is exercised by at least one corpus example', () => {
+  // The docstring above says "Add a pattern by adding its example to the corpus first." Saying it
+  // was not enough: the commit that WROTE that rule added a pattern with no example, and a second
+  // pattern had been unexercised since the set was created. An unexercised pattern is the inert
+  // leg this repository already has scar tissue for -- `SOAK_VAULTS` read but never set, where an
+  // empty `.map()` and an all-clear read identically. A rule a test does not enforce is a comment.
+  const unexercised = NO_VAULT_SHAPES
+    .map((re, i) => ({ i, re, hit: DENIAL_CORPUS.denies.some((s) => re.test(s.toLowerCase())) }))
+    .filter((p) => !p.hit)
+    .map((p) => `  [${p.i}] ${p.re}`);
+  assert.deepEqual(
+    unexercised,
+    [],
+    'These patterns match no corpus example, so nothing proves they still work — or ever did:\n'
+      + unexercised.join('\n')
+      + '\nAdd the sentence each was written from to DENIAL_CORPUS.denies.',
+  );
+});
+
+test('denial exemptions: every entry still matches, none has rotted', () => {
+  // An exemption that no longer matches is indistinguishable from a live one and protects nothing,
+  // while the reader believes the surface is covered. Cheapest possible check: require each key to
+  // still be a file, and still carry a denial shape.
+  for (const [rel, reason] of DENIAL_EXEMPT) {
+    const abs = path.join(REPO, ...rel.split('/'));
+    assert.ok(existsSync(abs), `DENIAL_EXEMPT names ${rel} (${reason}) but that file does not exist.`);
+    assert.ok(
+      deniesTheVault(readFileSync(abs, 'utf8')),
+      `DENIAL_EXEMPT has ${rel} (${reason}) but nothing there matches a denial shape any more.
+`
+        + 'Either the text was rewritten and the entry should go, or a shape stopped matching.',
+    );
+  }
 });
 
 test('the deploy script exempts chain 4663 from the sequencer uptime requirement', () => {
