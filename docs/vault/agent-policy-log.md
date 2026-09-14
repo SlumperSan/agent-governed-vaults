@@ -160,7 +160,10 @@ the first rebalance on chain 4663 that moved funds.
 `_valueWad(USDG, 5000000)` is `5000000 * 10**12 = 5000000000000000000`.
 `_valueWad(WETH, 1966530337330907)` is `priceWad(WETH) * 1966530337330907 / 1e18`. The floor is
 `_valueWad(tokenOut, minAmountOut) * 10000 >= _valueWad(tokenIn, amountIn) * 9800`, so it holds for
-any `priceWad(WETH)` at or above `2491698148247524157496`, which is about 2491.70. At block
+any `priceWad(WETH)` at or above `2491698148247524157497`, which is about 2491.70. **Reproduce that
+threshold with integer division, not with a calculator**: `_valueWad` floors, so at
+`2491698148247524157496` the left side lands 10000 short and the check reverts `MinOutTooLow`, and
+at `…497` it passes with exact equality. At block
 62,130,940 `priceWad(WETH)` read `2502713400000000000000`, so the floor holds at that price with
 about 0.4% to spare. The check that mattered was the one at execution, and the execute transaction
 succeeding is the proof it passed then.
@@ -173,7 +176,10 @@ oracle-implied output and reads like a deviation. It is not one.
 
 **Run the rule backwards instead, which is price-independent.** A `minAmountOut` of
 1966530337330907 is exactly 99% of the oracle-implied output at a `priceWad(WETH)` of
-`2517123639556172363185`, about 2517.12, and exactly 98% at about 2491.70. So this order is
+`2517123639556172363185`, about 2517.12. The contract's own 98% floor holds from
+`2491698148247524157497` upward, and **that last digit is not a rounding of the algebra, it is the
+arithmetic the contract actually does**: `_valueWad` floors, so at `…496` the check misses by 10000
+and at `…497` it passes with exact equality. So this order is
 consistent with having been built to a 99% rule at a construction-time price around 2517.12, which
 is roughly 0.6% above where the feed sat at block 62,130,940.
 

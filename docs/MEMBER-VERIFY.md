@@ -122,12 +122,25 @@ cast call $VAULT "exitFeeBpsOf(address)(uint256)" $YOU --rpc-url $RPC
 ```
 
 **This is the rate, and settlement does not always charge it.** `exitFeeBpsOf` returns a fee that
-decays with how long you have held: it starts at `exitFeeMaxBps()` and reaches zero after
-`exitFeeDecayPeriod()` seconds. Settlement charges zero if you hold every share of the vault,
-whatever this read says, because a fee taken from the only holder would route back to the operator
-and there would be nobody left for it to protect. The comparison that decides it is
-`sharesOf(YOU)` against `totalShares()`: equal means the rate above is not the charge. Both vaults
-on this chain are in exactly that state today, so a first reader is the case this applies to.
+decays from `exitFeeMaxBps()` to zero over `exitFeeDecayPeriod()` seconds. **The clock it decays
+against is your last deposit, not your first.** `_exitFeeBps` measures
+`block.timestamp - lastDepositTime[member]`, and `lastDepositTime` is rewritten on every mint, so a
+top-up puts you back at the full `exitFeeMaxBps()` and starts the decay again. Read the number, do
+not assume it from how long you have been in.
+
+Settlement charges zero if you hold every share of the vault, whatever this read says. The
+comparison that decides it is `sharesOf(YOU)` against `totalShares()`: equal means the rate above
+is not the charge. Both vaults on this chain are in exactly that state today, so a first reader is
+the case this applies to.
+
+**Why the waiver exists, stated exactly, because the obvious guess is wrong.** The exit fee is not
+paid to anyone. It is a fraction of your own payout that **stays in the vault**, which is what makes
+NAV per share non-decreasing for the members who remain. A sole holder has no such members, so the
+fee would come out of their payout and stay in a vault they entirely own: it would route to
+themselves and protect nobody. `VaultCore`'s own comment on the waiver puts it flatly, that the fee
+**can never route to the operator**. That is a different flow entirely: the operator's 10%
+performance fee is paid out to `feeEngine` and credited to the operator's registered payout address
+through `FeeEngine.onFeeCollected`. Do not read your exit fee as anything the operator receives.
 
 **6. The parameters that cannot change.** These are set in the vault's constructor and have no
 setter.
