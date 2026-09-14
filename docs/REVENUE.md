@@ -247,8 +247,10 @@ and no agent here should be asked to.
 
 ## 5.6 — What the deploy measured
 
-Deployed 2026-09-13 from `apps/site-next` at `90e84991`, the squash of #267. Read back from the
-production host, not from the deploy output:
+**Two deploys, both on 2026-09-13, both from `apps/site-next`.** The first was at `90e84991`, the
+squash of #267, and is what put the route on the live host at all. The second followed #287
+(`805f751a`) and is what made `PAYMENT-REQUIRED` base64. Everything below was read back from the
+production host after the second, not from either deploy's output:
 
 `GET https://rwally.com/api/vaults` answers **402 Payment Required** with a `payment-required` header
 carrying `scheme: exact`, `x402Version: 2`, `asset: 0x833589fC…A02913`, `amount: "100000"`, the payee,
@@ -270,7 +272,7 @@ against PayAI rather than reasoned about: `accepts[]` carries no `extra`, and om
 `invalid_exact_evm_missing_eip712_domain`, so a third-party client has no EIP-712 domain to sign
 against and cannot produce a valid signature at all. Two smaller gaps sit beside it, both still true
 of the live challenge at the time of writing: `extensions` is `{}`, and `resource.url` is `""` — the
-latter being the key a Bazaar catalogues a resource under, and §6.1 records why that matters.
+latter being the key a Bazaar catalogues a resource under.
 Settlement itself has never been exercised on mainnet — the 402 proves the gate refuses unpaid
 requests, and proves nothing whatever about settlement.
 
