@@ -203,3 +203,133 @@ The distribution hook already exists and is free to call: `/.well-known/x402` is
 document an agent reads to learn what this endpoint sells and what it costs, without paying to find
 out. Phase 2 is listing it where x402 clients look, publishing an integration snippet, and making the
 payload worth more than its price — which most likely means the live chain read described in §1.
+
+### 6.1 — How a seller gets listed in a Bazaar, measured 2026-09-13
+
+**A registration mechanism exists, and it is not a form.** A resource is cataloged as a side effect
+of a payment that settles through a facilitator implementing the `bazaar` extension. There is no
+submission endpoint, no account, no API key and no terms to accept. There is also no way to be
+listed before somebody has paid, which reverses the ordering §6 above implies: listing is not a
+prerequisite for the first sale, it is a consequence of it.
+
+Every figure in this section was taken by direct request on 2026-09-13. Nothing here was settled,
+signed, or paid for.
+
+| Probe | Result |
+|---|---|
+| `OPTIONS https://facilitator.payai.network/discovery/resources` | `200`, `Allow: GET, HEAD` |
+| `POST` that same path | `404` `application/problem+json` — `"No resource is served at POST /discovery/resources."` |
+| `OPTIONS` and `POST https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` | `405` for both; `Allow: GET` |
+| `GET https://facilitator.payai.network/openapi.json` | `PayAI x402 Facilitator API 2.0.0`, 8 paths; every discovery path is `GET` only |
+| `GET https://facilitator.payai.network/supported` → `extensions` | `["bazaar","eip2612GasSponsoring","erc20ApprovalGasSponsoring"]` |
+| Full pagination of the PayAI catalog | `pagination.total` **28603**, **1892** distinct resource host segments, **zero** `rwally.com` entries |
+
+`GET /discovery/stats` separately reported `resources: 28593` alongside `catalogEntries: 28603` the
+same day. Those are two different counts of two different things; quoting either as "the size of the
+bazaar" conflates them. The 1892 is a count of host segments taken from each `resource` string, and
+some catalog entries carry a bare address rather than a URL, which counts whole — so read it as the
+shape of the catalog, not as a census of domains. The zero is exact: it is a substring scan for
+`rwally` across every `resource` value in all 28603 entries. All three numbers are a reading of a
+live index taken at one moment, and the totals move within hours — re-run the pagination rather than
+quoting these back later. The zero is the figure worth re-checking, and the only one that would mean
+something had changed.
+
+**Neither bazaar exposes a write verb.** The v2 specification does not document one either:
+`specs/x402-specification-v2.md` §8 covers the read side only — `GET /discovery/resources`, the
+discovered-resource field table, the Bazaar concept, and two example queries — and is silent on how
+a resource arrives in the list. The seller side is documented in the x402 repository instead, at
+`docs/extensions/bazaar.mdx`. Asked how to get a service listed, its FAQ answers that you add the
+bazaar extension to your route configuration, and records that listing itself is free.
+
+**The mechanism, in the order it happens.**
+
+1. The resource server puts a `bazaar` entry in the `extensions` map of its 402 `PaymentRequired`
+   body: an `info` object carrying the discovery data, plus a JSON Schema that validates it. The
+   SDKs build it — `declareDiscoveryExtension` in TypeScript, `DeclareDiscoveryExtension` in Go.
+2. The client copies `extensions` out of the challenge into its `PaymentPayload`.
+3. The facilitator, processing that payment, reads `PaymentPayload.extensions[bazaar]` together with
+   `PaymentPayload.resource`, and catalogs the resource. `go/extensions/bazaar/doc.go` describes
+   this path; the extraction entry point is
+   `ExtractDiscoveredResourceFromPaymentPayload(payloadBytes, requirementsBytes, validate)`.
+4. The facilitator may report the outcome in an `EXTENSION-RESPONSES` response header — base64 JSON
+   whose `bazaar.status` is `success`, `processing` or `rejected`.
+
+That entries really arrive this way, rather than by submission, has a tell in the live data: the
+`/discovery/stats` top-merchant list includes `http://localhost:4021/api/pay-service`. Port 4021 is
+what `examples/go/servers/bazaar` binds. No indexer can fetch a `localhost` URL, so that entry can
+only have come from payment traffic — and nothing checked the resource was publicly reachable.
+
+Which catalog a listing lands in is decided by `FACILITATOR_URL` (§5.2): it is the catalog of
+whichever facilitator processes the payment. PayAI advertises `bazaar` in `/supported`, so a payment
+settled there is a candidate for its catalog; Coinbase's bazaar would matter only if the owner
+pointed `FACILITATOR_URL` elsewhere.
+
+**How far a third-party client gets today.** Four `POST /verify` probes against
+`https://facilitator.payai.network`, all carrying deliberately invalid payment material — an all-`f`
+signature and the zero address as payer — so that nothing could settle:
+
+| Request | HTTP | `invalidReason` |
+|---|---|---|
+| `network` flat `"base"` | 400 | `unsupported_x402_version` — `"x402Version 2 requires CAIP-2 network format, got 'base'"` |
+| `network` `"eip155:1"` | 400 | `invalid_network` — `"Unsupported network: eip155:1"` |
+| This route's terms on `eip155:8453`, with `extra` supplied | **200** | `invalid_exact_evm_signature` |
+| The same, with `extra` omitted as the live route omits it | 200 | `invalid_exact_evm_missing_eip712_domain` |
+
+Read the third row narrowly. It establishes that this route's price terms — asset
+`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `amount` `100000`, `payTo`, `maxTimeoutSeconds` 300,
+`network` `eip155:8453` — parse and are accepted by PayAI's verifier, leaving it nothing to object
+to but the signature that was invalid on purpose. It does **not** establish that a client can reach
+that state from the challenge this route emits, because the request body that reached it was
+assembled by hand. Two intermediate failures are worth recording, since each cost a round trip:
+`paymentPayload.resource` must be an object and a sibling `accepted` is required, or the answer is
+`invalid_payload`; and v2 requirements must carry `amount` **without** `maxAmountRequired`, or the
+answer is `invalid_payment_requirements`. All of this is evidence about parsing. None of it is
+evidence about settlement, which needs real funds and was not attempted.
+
+**The transport defect that used to head this list is fixed.** When this section was first written
+it opened on a fourth gap: `PAYMENT-REQUIRED` was emitted as raw JSON where
+`specs/transports-v2/http.md` requires base64, so a strictly conformant client decoded garbage and
+could not form a payment at all — and since cataloging fires on a payment, that kept the route out
+of every bazaar. #287 landed the base64 encoding and closed issue #279 two hours later the same day.
+Verify it rather than trusting this paragraph; the header decodes, and the decode is the check:
+
+```bash
+curl -s -D - -o /dev/null https://rwally.com/api/vaults | sed -n 's/^payment-required: //p' | tr -d '\r' | base64 -d
+```
+
+That leaves **three** gaps between a paid request and a listing, all of them recorded in #290. They
+are no longer queued behind a transport fix: they are now the only thing standing between a settled
+payment and a catalog entry.
+
+1. **The challenge carries no bazaar extension.** `apps/api/src/x402.mjs:234` emits `extensions: {}`,
+   with a comment recording that none are implemented. A payment could settle in full and catalog
+   nothing, because step 1 of the mechanism above never happened.
+2. **The catalog key would be empty.** The decoded challenge carries `"resource":{"url":""}`;
+   `apps/api/src/x402.mjs:215-216` defaults `resource.url` to the empty string when the call site
+   supplies no resource, and the edge route supplies none. `PaymentPayload.resource` is what the
+   facilitator catalogs the entry under.
+3. **The `accepts[]` entry carries no `extra`.** `apps/api/src/x402.mjs:231` includes `extra` only
+   when the caller supplies `price.extra`, and the decoded challenge shows none. Measured above:
+   with `extra` omitted, PayAI answers `invalid_exact_evm_missing_eip712_domain`. A client that does
+   not independently read the USDC EIP-712 domain off the token has nothing to sign against, and
+   that domain differs between chains, so guessing it is not safe —
+   `apps/api/src/facilitator.mjs:374`'s `readUsdcDomain` already documents reading it rather than
+   assuming it.
+
+All three live in `apps/api/src/x402.mjs`. None were edited here, and #290 records them so they are
+not rediscovered.
+
+**A note for whoever edits this section next.** The paragraph above went stale in hours, and no
+guard here could have caught it. `doc-claims` resolves the `file:line` citations in this list and
+checks claims that a numbered **pull request** is still open, reading merge state from `(#N)` in
+squash subjects on `protocol/main`. #279 is an **issue**, closed by PR #287, so
+`git log --format=%s origin/protocol/main | grep -c '(#279)'` returns 0 and the guard has nothing to
+match. Issue-state claims are invisible to it in a way PR-state claims are not. Re-check them by
+hand, or state them so a command in the text settles the question — which is why the `curl` above is
+there rather than a sentence asserting the same thing.
+
+**What the owner would have to do.** Registration asks nothing of the owner directly — no signup, no
+credentials, no agreement to accept. What it needs is §5.2's variables set, the three gaps above
+closed, and §5.5's first purchase settled through a facilitator that advertises `bazaar`. The
+listing follows from that payment. Until then the honest position is that `rwally.com` appears in no
+bazaar — which the catalog scan above confirms directly, rather than by inference.
