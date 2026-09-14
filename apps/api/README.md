@@ -7,7 +7,10 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
   an injected facilitator, `PAYMENT-RESPONSE` receipt echo. Server holds no keys and moves no
   funds under `FACILITATOR=stub` and `FACILITATOR=http`. **`FACILITATOR=svm` is the exception**:
   x402 `exact` on Solana has the facilitator sign as fee payer, so that mode holds a keypair and
-  pays network fees. It is opt-in and off by default.
+  pays network fees. It is opt-in and off by default. All three headers are base64-encoded JSON
+  (`specs/transports-v2/http.md:161-167`) and `PAYMENT-RESPONSE` is a §5.3.2 `SettlementResponse`;
+  readers accept the raw JSON emitted before 2026-09-13 as well. See
+  [`docs/X402-V2-CONFORMANCE.md`](../../docs/X402-V2-CONFORMANCE.md).
 - `src/server.mjs`: Node-http routes: `/health`, `/.well-known/x402` and `/metrics` (free);
   `/vaults`, `/vaults/:addr`, `/vaults/:addr/members/:m` and `/operators/leaderboard` (paid).
   Also the request caps (method, URL length, body size) applied before any handler work.

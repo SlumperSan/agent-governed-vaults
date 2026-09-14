@@ -50,11 +50,44 @@
  * reasoning. This is "emit conformant, accept both": a v2 client's PAYMENT-SIGNATURE payload is
  * now accepted, and every existing flat-shape consumer keeps working unchanged.
  *
- * That is not the same as "a v2 client can pay this API end to end" — it cannot yet. A spec
- * client base64-decodes the `PAYMENT-REQUIRED` header per `specs/transports-v2/http.md:161-167`;
- * this module's `gate()` still emits it as raw JSON (and `PAYMENT-RESPONSE` as raw JSON that is
- * not a §5.3 `SettlementResponse` either). See `docs/X402-V2-CONFORMANCE.md`'s "Header names AND
- * encoding" section for why that is not fixed in this module alone.
+ * ## Header encoding (this section, 2026-09-13)
+ *
+ * `specs/transports-v2/http.md:161-167` ("Header Summary") specifies all three headers as
+ * base64-encoded JSON: `PAYMENT-REQUIRED` a `PaymentRequired`, `PAYMENT-SIGNATURE` a
+ * `PaymentPayload`, `PAYMENT-RESPONSE` a `SettlementResponse`. `decodeSignatureHeader` has always
+ * base64-decoded the inbound one. `gate()` emitted the two outbound ones as raw JSON, and its
+ * `PAYMENT-RESPONSE` was `{receiptId, nonce}` — this repo's own field names, not the §5.3.2
+ * `{success, transaction, network, payer?}` a conformant client reads. So a client that followed
+ * the transport spec base64-decoded `PAYMENT-REQUIRED`, got bytes that are not JSON, and could not
+ * form a payment at all. `gate()` now base64-encodes both, via `encodeHeaderJson`.
+ *
+ * The readers move with it rather than after it: `decodeHeaderJson` here, and the sibling copies in
+ * `packages/agent-sdk/src/header-codec.mjs` and `apps/web/src/api-client.mjs`, accept EITHER
+ * encoding — a value whose first non-space character is `{` is raw JSON, and `{` is not in the
+ * base64 alphabet, so the two cases cannot be confused. Every reader in this repository therefore
+ * keeps working against a server that has not taken this change.
+ *
+ * THE OTHER DIRECTION IS NOT COVERED AND CANNOT BE. A reader that understands only raw JSON cannot
+ * read this server any more — it gets `SyntaxError: Unexpected token 'e', "eyJzY2hlbW"...` — because
+ * a header cannot be base64 and raw JSON at once. That break has an empty subject: all six in-repo
+ * readers are converted in the same change, and the deployed edge route — which still serves raw
+ * JSON until it is redeployed on top of this change — has no external clients to break.
+ *
+ * `PAYMENT-RESPONSE` is a SUPERSET, not a rename: the §5.3.2 fields are added and the `receiptId`/
+ * `nonce` keys stay exactly where they were, because `scripts/live-x402-run.mjs:318` and
+ * `scripts/live-x402-svm-run.mjs` both fail closed on `receipt.receiptId` and neither can run in
+ * `npm run gate` (one needs a funded testnet account, the other a devnet). §5.3.2 lists Optional
+ * fields and an `extensions` map and nowhere forbids additional ones. `transaction` takes
+ * `settled.receiptId`, which IS a transaction hash on both settling paths (`facilitator.mjs`
+ * returns `s.body.transaction` from the standard facilitator's `/settle`, and the local settler
+ * returns the `writeContract` hash); under `FACILITATOR=stub` it is a `stub_…` string instead,
+ * which is type-legal and settles nothing, as that facilitator's own name says.
+ *
+ * TWO THINGS THIS DOES NOT DO, named rather than implied. `network` is CAIP-2 via `toCaip2`, which
+ * passes an SVM network string through unchanged — there is no CAIP-2 mapping for the repo's
+ * Solana network names here and one is not invented. And a failed settlement returns a 402 with no
+ * `PAYMENT-RESPONSE`: the transport spec shows a `{success:false, errorReason}` body on that leg
+ * (`http.md:139-159`) and this module does not emit it.
  *
  * `extra` (§5.1.2, the USDC EIP-712 domain — `facilitator.mjs`'s `readUsdcDomain` documents that it
  * varies per chain, "USDC" on Base Sepolia vs "USD Coin" on mainnet) is populated only when the
@@ -75,6 +108,42 @@ const HEADER_RESPONSE = 'payment-response';
  * (an SVM network string, or an already-CAIP-2 value) passes through `toCaip2` unchanged.
  */
 const CAIP2_BY_LEGACY = { base: 'eip155:8453', 'base-sepolia': 'eip155:84532' };
+
+/**
+ * Encode a JSON value the way `specs/transports-v2/http.md:161-167` requires every x402 header to
+ * be encoded: base64 of the UTF-8 JSON text.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function encodeHeaderJson(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+}
+
+/**
+ * Decode an x402 header that carries a JSON object, accepting BOTH the spec's base64 and the raw
+ * JSON this repo emitted before 2026-09-13. Returns null on anything that is neither.
+ *
+ * THE DISCRIMINATOR IS TOTAL, NOT A HEURISTIC. `{` is not a base64 character, so a value whose
+ * first non-space character is `{` cannot be base64 and IS the legacy raw JSON; everything else
+ * goes to the base64 branch. Both headers have only ever carried a JSON *object*, so the two cases
+ * are exhaustive. Sniffing the other way round would not work: Node's base64 decoder silently
+ * DROPS characters outside the alphabet rather than throwing, so `Buffer.from('{"a":1}','base64')`
+ * returns plausible-looking garbage instead of failing, and a "try base64, fall back on throw"
+ * reader would never reach its fallback.
+ *
+ * @param {string|null|undefined} header
+ * @returns {any|null}
+ */
+export function decodeHeaderJson(header) {
+  if (typeof header !== 'string') return null;
+  const raw = header.trim();
+  if (raw === '') return null;
+  try {
+    return JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Legacy short name -> CAIP-2 for the two networks this repo configures; passes through anything
@@ -319,31 +388,36 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
  * >}
  */
 export async function gate({ headers, price, facilitator, nowMs, seenNonces, resource }) {
+  /**
+   * The 402 return, built in ONE place for all four branches that produce one. It was four
+   * copies of the same three lines, which is how the header encoding came to be something four
+   * separate sites had to remember; a fifth branch added later now cannot forget it.
+   *
+   * The body is the superset of the challenge (so it is itself a spec §5.1.1-shaped
+   * PaymentRequired JSON: x402Version/resource/accepts/extensions all present at the top level)
+   * PLUS `error` and the legacy nested `challenge` key some callers still read
+   * (the `apiGet` body fallback in scripts/soak/api-client.mjs). The BODY stays raw JSON and is
+   * unchanged — only the header is base64, because only the header is what the transport spec
+   * specifies an encoding for ("Response bodies are a server implementation concern",
+   * `specs/transports-v2/http.md:169-171`).
+   * @param {string} error
+   */
+  const require402 = (error) => {
+    const challenge = buildChallenge(price, { nowMs, resource });
+    return {
+      status: /** @type {402} */ (402),
+      headers: { [HEADER_REQUIRED]: encodeHeaderJson(challenge) },
+      body: { ...challenge, error, challenge },
+    };
+  };
+
   const sigHeader = headers[HEADER_SIGNATURE];
   const env = decodeSignatureHeader(sigHeader);
 
-  if (!env) {
-    const challenge = buildChallenge(price, { nowMs, resource });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      // The body is the superset of the challenge (so it is itself a spec §5.1.1-shaped
-      // PaymentRequired JSON: x402Version/resource/accepts/extensions all present at the top
-      // level) PLUS `error` and the legacy nested `challenge` key some callers still read
-      // (scripts/soak/api-client.mjs:53-54's fallback path).
-      body: { ...challenge, error: 'payment required', challenge },
-    };
-  }
+  if (!env) return require402('payment required');
 
   const localCheck = checkEnvelopeAgainstPrice(price, env, nowMs);
-  if (!localCheck.ok) {
-    const challenge = buildChallenge(price, { nowMs, resource });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      body: { ...challenge, error: `payment invalid: ${localCheck.reason}`, challenge },
-    };
-  }
+  if (!localCheck.ok) return require402(`payment invalid: ${localCheck.reason}`);
 
   // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
   // transaction bytes are the right key: they carry the payer's signature over a specific blockhash,
@@ -361,33 +435,51 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // A client-supplied field must never select which server check runs, nor what it runs on.
   const nonce = price.svm ? env.transaction : env.authorization?.nonce;
   if (seenNonces && nonce) {
-    if (seenNonces.has(nonce)) {
-      const challenge = buildChallenge(price, { nowMs, resource });
-      return {
-        status: 402,
-        headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-        body: { ...challenge, error: 'payment invalid: replayed-nonce', challenge },
-      };
-    }
+    if (seenNonces.has(nonce)) return require402('payment invalid: replayed-nonce');
   }
 
   const settled = await facilitator.verifyAndSettle({ price }, env);
-  if (!settled.ok) {
-    const challenge = buildChallenge(price, { nowMs, resource });
-    return {
-      status: 402,
-      headers: { [HEADER_REQUIRED]: JSON.stringify(challenge) },
-      body: { ...challenge, error: `settlement failed: ${settled.reason ?? 'unknown'}`, challenge },
-    };
-  }
+  if (!settled.ok) return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
 
   if (seenNonces && nonce) seenNonces.add(nonce);
   return {
     status: 200,
     headers: {
-      [HEADER_RESPONSE]: JSON.stringify({ receiptId: settled.receiptId, nonce }),
+      [HEADER_RESPONSE]: encodeHeaderJson(buildSettlementResponse({ price, env, settled, nonce })),
     },
     receiptId: settled.receiptId ?? '',
+  };
+}
+
+/**
+ * The `PAYMENT-RESPONSE` value for a settled payment: spec §5.3.2's `SettlementResponse`, plus the
+ * two legacy keys this repo's own clients read. See the module header for why it is a superset and
+ * for what `transaction` actually holds on each facilitator.
+ *
+ * `payer` is Optional in §5.3.2 and is taken from the authorization the payer signed
+ * (`env.authorization.from`); an SVM envelope carries a serialized transaction and no
+ * authorization, so it is omitted there rather than guessed. `amount` is Optional and omitted
+ * throughout: the value this module could put in it is the authorization's, not an observed
+ * settled amount, and the difference is exactly the kind of unverified figure this file must not
+ * assert.
+ *
+ * @param {Object} p
+ * @param {PriceSpec} p.price
+ * @param {object} p.env                       the decoded PAYMENT-SIGNATURE envelope
+ * @param {{ok:boolean, receiptId?:string}} p.settled
+ * @param {string|undefined} p.nonce           the replay key `gate()` recorded
+ */
+export function buildSettlementResponse({ price, env, settled, nonce }) {
+  const payer = env?.authorization?.from;
+  return {
+    // --- spec §5.3.2 ---
+    success: true,
+    transaction: settled.receiptId ?? '',
+    network: toCaip2(price.network),
+    ...(typeof payer === 'string' && payer ? { payer } : {}),
+    // --- this repo's own names, kept so existing readers do not break (module header) ---
+    receiptId: settled.receiptId,
+    nonce,
   };
 }
 

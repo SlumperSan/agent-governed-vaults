@@ -6,7 +6,8 @@ info:
     Read API over the indexed state of the agent-governed index-vault protocol. Read routes are
     metered with x402 (V2): an unpaid request returns 402 with a `PAYMENT-REQUIRED` challenge;
     the client re-requests with a `PAYMENT-SIGNATURE` header carrying an EIP-3009
-    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. In the
+    `transferWithAuthorization` envelope (USDC), which a facilitator settles on-chain. All three
+    x402 headers are base64-encoded JSON, per `specs/transports-v2/http.md:161-167`. In the
     launch modes (`FACILITATOR=stub`, `FACILITATOR=http`) the server holds no keys and moves no
     funds; the opt-in `FACILITATOR=svm` mode holds a Solana fee-payer keypair and pays network
     fees. See docs/AGENT-QUICKSTART.md and packages/agent-sdk.
@@ -44,7 +45,8 @@ paths:
         '200':
           description: Vault list
           headers:
-            payment-response: { schema: { type: string } }
+            payment-response:
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema:
@@ -115,8 +117,7 @@ paths:
           description: Vault view
           headers:
             payment-response:
-              schema: { type: string }
-              description: JSON receipt of the settled x402 payment.
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VaultView' }
@@ -142,8 +143,7 @@ paths:
             returns zeros rather than a 404.
           headers:
             payment-response:
-              schema: { type: string }
-              description: JSON receipt of the settled x402 payment.
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MemberPosition' }
@@ -156,7 +156,8 @@ paths:
         '200':
           description: Leaderboard
           headers:
-            payment-response: { schema: { type: string } }
+            payment-response:
+              schema: { $ref: '#/components/schemas/Base64SettlementResponse' }
           content:
             application/json:
               schema:
@@ -188,12 +189,13 @@ components:
               retryAfterSec: { type: integer }
     PaymentRequired:
       description: >
-        Payment required. The `PAYMENT-REQUIRED` header carries the JSON challenge; authorize it
-        with an EIP-3009 envelope and retry with `PAYMENT-SIGNATURE`.
+        Payment required. The `PAYMENT-REQUIRED` header carries the challenge as base64-encoded
+        JSON; authorize it with an EIP-3009 envelope and retry with `PAYMENT-SIGNATURE`. The
+        response body carries the same challenge unencoded, both at the top level and under
+        `challenge`.
       headers:
         payment-required:
-          schema: { $ref: '#/components/schemas/Challenge' }
-          description: JSON-encoded x402 challenge.
+          schema: { $ref: '#/components/schemas/Base64Challenge' }
       content:
         application/json:
           schema:
@@ -214,6 +216,39 @@ components:
         network: { type: string, example: base }
         nonce: { type: string }
         expiresAt: { type: integer, description: unix ms }
+    Base64Challenge:
+      type: string
+      contentEncoding: base64
+      contentMediaType: application/json
+      contentSchema: { $ref: '#/components/schemas/Challenge' }
+      description: >-
+        The PAYMENT-REQUIRED header value: base64-encoded `Challenge` JSON, per
+        `specs/transports-v2/http.md:161-167`. Readers that predate 2026-09-13 saw raw JSON here.
+        On the wire this is a STRING — the `contentSchema` above says what it decodes to, which is
+        how OpenAPI 3.1 expresses a base64-wrapped document, and is the only way a client generator
+        learns the inner shape.
+    Base64SettlementResponse:
+      type: string
+      contentEncoding: base64
+      contentMediaType: application/json
+      contentSchema: { $ref: '#/components/schemas/SettlementResponse' }
+      description: >-
+        The PAYMENT-RESPONSE header value on a settled 200: base64-encoded `SettlementResponse`
+        JSON. No PAYMENT-RESPONSE is sent on a FAILED settlement — that leg is a 402 whose body
+        `error` carries the reason.
+    SettlementResponse:
+      type: object
+      description: >-
+        What `Base64SettlementResponse` decodes to. The first four fields are the x402 spec's
+        §5.3.2 `SettlementResponse`; `receiptId` and `nonce` are this repo's own names for the same
+        settlement, kept so existing clients keep reading it.
+      properties:
+        success: { type: boolean, enum: [true] }
+        transaction: { type: string, description: the settlement returned by the facilitator }
+        network: { type: string, description: CAIP-2, example: 'eip155:8453' }
+        payer: { type: string, description: the address that signed the authorization; absent when there is none }
+        receiptId: { type: string, description: same value as transaction }
+        nonce: { type: string, description: the replay key the gate recorded }
     PaymentEnvelope:
       type: object
       description: Sent base64-encoded in the PAYMENT-SIGNATURE header.
