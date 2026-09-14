@@ -183,7 +183,9 @@ ABI-encoded constructor arguments only. Net effect on the audit surface:
 
 The optimizer settings were deliberately **not** changed: the 229 B available would have cost
 global runtime gas on every contract and, once the deployer exists, buys nothing. VaultCore's
-1,560 B of headroom is no longer on the deployability path.
+headroom is no longer on the deployability path. This sentence put that headroom at 1,560 B until
+2026-09-13, which was the figure when the decision was taken and is no longer the figure:
+`forge build --sizes` on 2026-09-13 reads **20,650 B** of runtime and **3,926 B** of margin.
 
 ## Design intent (read first)
 
