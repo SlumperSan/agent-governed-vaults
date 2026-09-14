@@ -208,10 +208,18 @@ test('a MATCHING rpc binds and the reader keeps working — the refusal is not i
   }
 });
 
-// The three production call sites. `buildIndexer` and `buildCanary` are proven above by being
-// driven; `run.mjs` is a CLI whose rpcUrl branch cannot be entered without standing up the whole
-// agent, so its wiring is asserted at the source level instead. A method nothing calls is the same
-// defect one level up -- which is the lesson `scripts/test/test-wiring-truth.test.mjs` exists for.
+// The FOUR production call sites. `buildIndexer` and `buildCanary` are proven above by being
+// driven; `run.mjs` and the x402 edge route are asserted at the source level instead -- the first
+// is a CLI whose rpcUrl branch cannot be entered without standing up the whole agent, the second
+// resolves its RPC inside a Cloudflare Worker handler. A method nothing calls is the same defect
+// one level up -- which is the lesson `scripts/test/test-wiring-truth.test.mjs` exists for.
+//
+// This census was THREE until the x402 live-read route was reviewed, and that is exactly how the
+// fourth site shipped unbound: the list was the invariant, and a list nobody extends is a list that
+// silently narrows every time the codebase grows. Adding a `createChainReader({rpcUrl: ...})` call
+// site without adding it here is the defect, not the oversight. Note this census is still a hand-
+// maintained enumeration -- nothing walks the tree for `createChainReader` callers, so a fifth site
+// added tomorrow is invisible to it until someone edits this comment.
 test('reference-agent run.mjs actually CALLS the binding in its --rpc branch', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../../reference-agent/src/run.mjs', import.meta.url), 'utf8')
@@ -222,6 +230,30 @@ test('reference-agent run.mjs actually CALLS the binding in its --rpc branch', a
     src,
     /await\s+chainReader\.assertBoundToDeclaredChain\(\)/,
     'run.mjs must await the binding before reading addresses through --rpc',
+  );
+});
+
+test('the x402 edge route actually CALLS the binding before it reads any vault', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(
+    new URL('../../../apps/site-next/functions/api/vaults.js', import.meta.url),
+    'utf8',
+  )
+    // Strip comments so a mention of the call in prose cannot satisfy this. That file argues at
+    // length about WHY it binds; the argument is not the call.
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.match(
+    src,
+    /await\s+reader\.assertBoundToDeclaredChain\(\)/,
+    'vaults.js must await the binding — it resolves DATA_RPC_URL by chain id and then sells what it reads',
+  );
+  // ORDER, not just presence: a binding that runs after `readVaultsAtHead` has proven nothing about
+  // the addresses already read. Asserted on source position because the route's own behavioural
+  // proof lives in `apps/site-next/test/x402-edge.test.mjs`, which this package does not run.
+  assert.ok(
+    src.indexOf('assertBoundToDeclaredChain') < src.indexOf('readVaultsAtHead(reader'),
+    'the binding must precede the vault read, not follow it',
   );
 });
 

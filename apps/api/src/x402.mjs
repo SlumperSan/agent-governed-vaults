@@ -70,8 +70,16 @@
  * THE OTHER DIRECTION IS NOT COVERED AND CANNOT BE. A reader that understands only raw JSON cannot
  * read this server any more — it gets `SyntaxError: Unexpected token 'e', "eyJzY2hlbW"...` — because
  * a header cannot be base64 and raw JSON at once. That break has an empty subject: all six in-repo
- * readers are converted in the same change, and the deployed edge route — which still serves raw
- * JSON until it is redeployed on top of this change — has no external clients to break.
+ * readers are converted in the same change.
+ *
+ * The clause that used to follow — "the deployed edge route still serves raw JSON until it is
+ * redeployed on top of this change" — has since been overtaken and is corrected rather than left
+ * to rot: `rwally.com` was redeployed on 2026-09-13 and now emits base64. Measured from the
+ * production host, not inferred: `curl -i https://rwally.com/api/vaults` returns
+ * `payment-required: eyJzY2hlbWUiOiJleGFjdCIsIng0MDJWZXJzaW9uIjoyLCJhc3NldCI6IjB4…`, which
+ * base64-decodes to the challenge with `accepts[0].network = eip155:8453`, and a bare `JSON.parse`
+ * of that header value throws. The conclusion is unchanged — the route has no external clients —
+ * but the reason is now "it moved too" rather than "it has not moved yet".
  *
  * `PAYMENT-RESPONSE` is a SUPERSET, not a rename: the §5.3.2 fields are added and the `receiptId`/
  * `nonce` keys stay exactly where they were, because `scripts/live-x402-run.mjs:318` and
@@ -250,6 +258,60 @@ export function buildChallenge(price, opts) {
 }
 
 /**
+ * THE one 402 return. `gate`'s four branches reach it through its own `require402` alias, and
+ * `apps/site-next/functions/api/vaults.js` (the live-read edge route) calls it directly as a fifth
+ * — that route cannot call `gate` at all, because it has to read the chain BETWEEN the local
+ * envelope check and the facilitator call (so a chain read that fails costs the caller nothing)
+ * and `gate` settles internally with no seam at that point. Restating this object's shape at the
+ * edge instead of importing it would be exactly the "second implementation of one protocol"
+ * #267's header comment warns against: a caller that built its own 402 and drifted from this one
+ * is the failure mode, not a hypothetical — and #287 is what it would have looked like. When this
+ * function moved from raw JSON to base64, the fifth site moved with it because there was nothing
+ * at the fifth site to forget.
+ *
+ * ENCODING, split deliberately between header and body. The HEADER is base64 of the JSON, per
+ * `specs/transports-v2/http.md:161-167`'s Header Summary. The BODY stays raw JSON, because the
+ * spec specifies an encoding only for the header — "Response bodies are a server implementation
+ * concern", `specs/transports-v2/http.md:169-171`.
+ *
+ * The body is the superset of the challenge (so it is itself a spec §5.1.1-shaped PaymentRequired
+ * JSON: x402Version/resource/accepts/extensions all present at the top level) PLUS `error` and the
+ * legacy nested `challenge` key some callers still read (the `apiGet` body fallback in
+ * `scripts/soak/api-client.mjs`).
+ * @param {PriceSpec} price
+ * @param {number} nowMs
+ * @param {string} message  the `body.error` text (e.g. `'payment required'`, or
+ *   ``payment invalid: ${reason}``)
+ * @param {{url?:string, description?:string, mimeType?:string}} [resource]  spec §5.1.1
+ *   ResourceInfo, passed through to `buildChallenge` — see `gate`'s own `resource` param.
+ */
+export function challengeResponse(price, nowMs, message, resource) {
+  const challenge = buildChallenge(price, { nowMs, resource });
+  return {
+    status: /** @type {402} */ (402),
+    headers: { [HEADER_REQUIRED]: encodeHeaderJson(challenge) },
+    body: { ...challenge, error: message, challenge },
+  };
+}
+
+/**
+ * Which field of a decoded envelope is its replay-relevant identifier: an EIP-3009 `nonce` for
+ * EVM, or the raw transaction bytes for SVM (Solana's replay bound is the blockhash, not a nonce
+ * — see `svm-exact.mjs` — but the transaction bytes still de-dupe an identical payment).
+ *
+ * Selected from `price`, NEVER from `env.scheme`, because this exact line got that wrong once:
+ * see the long comment above `gate`'s use of this value for the five-presentations-five-200s
+ * defect a client-supplied `env.scheme` produced. Extracted so the edge route's success path
+ * — which also has to echo a nonce in `PAYMENT-RESPONSE`, outside `gate` — reuses the decision
+ * rather than restating it.
+ * @param {PriceSpec} price
+ * @param {object} env  decoded envelope
+ */
+export function nonceOf(price, env) {
+  return price.svm ? env.transaction : env.authorization?.nonce;
+}
+
+/**
  * Decode a client's PAYMENT-SIGNATURE header. Returns null on any malformation (→ 402 again).
  * @param {string|undefined} header
  */
@@ -389,27 +451,22 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
  */
 export async function gate({ headers, price, facilitator, nowMs, seenNonces, resource }) {
   /**
-   * The 402 return, built in ONE place for all four branches that produce one. It was four
-   * copies of the same three lines, which is how the header encoding came to be something four
-   * separate sites had to remember; a fifth branch added later now cannot forget it.
+   * The 402 return, built in ONE place for all four branches that produce one. It was four copies
+   * of the same three lines, which is how the header encoding came to be something four separate
+   * sites had to remember; a fifth branch added later now cannot forget it.
    *
-   * The body is the superset of the challenge (so it is itself a spec §5.1.1-shaped
-   * PaymentRequired JSON: x402Version/resource/accepts/extensions all present at the top level)
-   * PLUS `error` and the legacy nested `challenge` key some callers still read
-   * (the `apiGet` body fallback in scripts/soak/api-client.mjs). The BODY stays raw JSON and is
-   * unchanged — only the header is base64, because only the header is what the transport spec
-   * specifies an encoding for ("Response bodies are a server implementation concern",
-   * `specs/transports-v2/http.md:169-171`).
+   * This closure is now a one-line alias for the MODULE-LEVEL `challengeResponse`, which is where
+   * that one place actually is. The two arrived independently -- #287 de-duplicated `gate`'s four
+   * inline copies into a local closure, and the x402 live-read route extracted the same shape to
+   * module scope because `apps/site-next/functions/api/vaults.js` cannot call `gate()` at all (it
+   * needs a chain read wedged between the local envelope check and settlement, and `gate` settles
+   * as soon as the check passes). Two functions with one body is the exact defect both were
+   * fixing, one level up: the FIFTH site would have been the one that kept emitting raw JSON after
+   * this file moved to base64. Kept as a named local because it reads better at the four call
+   * sites below than repeating `price, nowMs` at each.
    * @param {string} error
    */
-  const require402 = (error) => {
-    const challenge = buildChallenge(price, { nowMs, resource });
-    return {
-      status: /** @type {402} */ (402),
-      headers: { [HEADER_REQUIRED]: encodeHeaderJson(challenge) },
-      body: { ...challenge, error, challenge },
-    };
-  };
+  const require402 = (error) => challengeResponse(price, nowMs, error, resource);
 
   const sigHeader = headers[HEADER_SIGNATURE];
   const env = decodeSignatureHeader(sigHeader);
@@ -433,7 +490,7 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // as it liked. Demonstrated: five presentations, five 200s. That is the SAME defect as the
   // `env.scheme` branch fixed above, one line beneath the comment explaining why it was a defect.
   // A client-supplied field must never select which server check runs, nor what it runs on.
-  const nonce = price.svm ? env.transaction : env.authorization?.nonce;
+  const nonce = nonceOf(price, env);
   if (seenNonces && nonce) {
     if (seenNonces.has(nonce)) return require402('payment invalid: replayed-nonce');
   }
