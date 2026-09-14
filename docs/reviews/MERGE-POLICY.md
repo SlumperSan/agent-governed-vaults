@@ -295,6 +295,14 @@ reason: it is not that CI cannot certify it, it is that the author is the last p
 grade it. That is already covered by CLAUDE.md's independence requirement rather than by anything
 here, and it is named only so the list is not read as exhaustive.
 
+**Read this list as strictly weaker than `docs/SWARM.md` §10, and read §10 first.** Everything above
+is about a change an agent may *make* but must not *land alone*. §10 is about changes an agent may
+not make at all, so for anything on it the merge question never arises. Item 3 above is the same
+structural defect as §10's last entry, "weakening a security gate to make something pass": in both,
+the change produces a green board by construction, so the board stops being evidence about the
+change. §10 is deliberately not enumerated here, because it is enumerated there and in CLAUDE.md
+already, and a third copy is the drift this document exists to argue against.
+
 ## Making this enforcement
 
 These need the repository owner. An agent cannot set branch protection, and should not try.
