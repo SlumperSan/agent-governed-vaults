@@ -15,14 +15,20 @@
 # WHY `nodejs_compat` IS REQUIRED AND IS NOT OPTIONAL.
 # `functions/api/vaults.js` imports `apps/api/src/x402.mjs` rather than reimplementing the 402
 # handshake, which is deliberate — one implementation of a payment protocol, not two that drift.
-# That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` to decode
-# the base64 payment envelope. Both are Node built-ins the Workers runtime provides only under this
-# flag. Measured 2026-09-13: omitting the flag does NOT fail the build — `wrangler@4 pages functions
-# build` with no `--compatibility-flag` still reports "Compiled Worker successfully", but first
-# prints its own warning naming `node:crypto` and the exact import path that pulled it in, and says
-# the Worker "may throw errors at runtime" without the flag. So the failure this flag prevents is a
-# RUNTIME one, not a build one; the flag is recorded here rather than set in the dashboard so the
-# requirement travels with the code either way.
+# That module uses `randomBytes` from `node:crypto` to mint challenge nonces and `Buffer` both to
+# decode the base64 payment envelope and, since 2026-09-13, to base64-ENCODE the PAYMENT-REQUIRED
+# and PAYMENT-RESPONSE headers the transport spec requires (`encodeHeaderJson`, #287). So the flag
+# carries an OUTBOUND dependency as well as an inbound one: without it this route could not answer
+# a 402 at all, not merely fail to read a payment.
+#
+# WHAT GOES WRONG WITHOUT IT IS A RUNTIME FAILURE, NOT A BUILD ONE, and the distinction is the
+# whole reason this comment exists rather than a CI check. Re-measured against this route after
+# #287: omitting the flag does NOT fail the build — `wrangler@4 pages functions build` with no
+# `--compatibility-flag` still reports "Compiled Worker successfully", having first printed its own
+# warning naming `node:crypto` and the exact import path that pulled it in, and saying the Worker
+# "may throw errors at runtime" without the flag. A deploy that drops the flag therefore ships and
+# then 500s on the first request. The flag is recorded here rather than set only in the dashboard
+# so the requirement travels with the code either way.
 
 # WRANGLER 3 VS 4: NO VERSION IS REQUIRED BY THIS ROUTE ANY MORE, AND THAT IS A CHANGE.
 # This used to be pinned to wrangler 4 because `functions/api/_snapshot.json` was imported with a

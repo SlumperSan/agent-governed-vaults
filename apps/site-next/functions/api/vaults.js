@@ -83,6 +83,7 @@
  */
 import {
   HEADERS, decodeSignatureHeader, checkEnvelopeAgainstPrice, challengeResponse, nonceOf,
+  buildSettlementResponse, encodeHeaderJson,
 } from '../../../api/src/x402.mjs';
 import { createStandardHttpFacilitator } from '../../../api/src/facilitator.mjs';
 import { resolvePrice, resolveFacilitatorUrl, resolveFacilitatorNetwork, configErrorResponse } from './_price.js';
@@ -222,7 +223,14 @@ export async function handle(context, deps = {}) {
     },
     200,
     {
-      [HEADERS.RESPONSE]: JSON.stringify({ receiptId: settled.receiptId, nonce }),
+      // Built and encoded by `x402.mjs`, not by this file. #287 made `PAYMENT-RESPONSE` a spec
+      // §5.3.2 `SettlementResponse` (`{success, transaction, network, payer?}`, superset of the
+      // legacy `{receiptId, nonce}`) AND base64 per `specs/transports-v2/http.md:161-167`. This
+      // route used to hand-roll `JSON.stringify({receiptId, nonce})` here, which was correct
+      // against the old server and is a wrong shape in a wrong encoding against the new one. That
+      // is precisely the "second implementation of one protocol" this file's header refuses, so
+      // the shape and the encoding both come from the module that owns them.
+      [HEADERS.RESPONSE]: encodeHeaderJson(buildSettlementResponse({ price, env: envelope, settled, nonce })),
       // `live: true` rests on no intermediary caching it — a cached 200 would keep answering with
       // a stale block after the chain moved.
       'cache-control': 'no-store',

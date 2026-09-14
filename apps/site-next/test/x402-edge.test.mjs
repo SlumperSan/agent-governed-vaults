@@ -173,12 +173,18 @@ test('the 402 challenge demands exactly the configured price, asset, payee and n
   assert.equal(challenge.x402Version, 2);
 });
 
-test('the challenge is echoed in the PAYMENT-REQUIRED header, which is where a client reads it', async () => {
+test('the challenge is echoed in the PAYMENT-REQUIRED header, base64 as the transport spec requires', async () => {
   const res = await handle(ctx(), { reader: noRpcReader });
   const header = res.headers.get('payment-required');
   assert.ok(header, 'no PAYMENT-REQUIRED header');
+
+  // `specs/transports-v2/http.md:161-167` — base64-encoded JSON, not raw JSON. Decoded explicitly
+  // here rather than through any dual-accept helper, which would pass against raw JSON too.
+  assert.ok(!header.trimStart().startsWith('{'), 'must be base64, not raw JSON');
+  assert.equal(Buffer.from(header, 'base64').toString('base64'), header, 'canonical base64');
+
   const body = await bodyOf(res);
-  assert.deepEqual(JSON.parse(header), body.challenge);
+  assert.deepEqual(JSON.parse(Buffer.from(header, 'base64').toString('utf8')), body.challenge);
 });
 
 test('a garbage payment header is refused, and never reads the chain', async () => {
@@ -337,8 +343,23 @@ test('a settled payment serves a live read: block number, chain identity, and th
   assert.equal(body.chainId, 4663);
   assert.equal(body.blockNumber, 1);
   assert.equal(body.receiptId, 'rcpt_42');
-  assert.equal(res.headers.get('payment-response'), JSON.stringify({ receiptId: 'rcpt_42', nonce: '0xnonce1' }));
   assert.equal(res.headers.get('cache-control'), 'no-store', '`live: true` must not be cached and re-served stale');
+
+  // PAYMENT-RESPONSE: base64, and a spec §5.3.2 SettlementResponse superset (#287). Decoded
+  // explicitly rather than through any dual-accept helper, which would pass against raw JSON too
+  // — and raw JSON is exactly what this route emitted before #287, so a lenient check here would
+  // have agreed with the bug.
+  const pr = res.headers.get('payment-response');
+  assert.ok(pr, 'no PAYMENT-RESPONSE header');
+  assert.ok(!pr.trimStart().startsWith('{'), 'must be base64, not raw JSON');
+  assert.equal(Buffer.from(pr, 'base64').toString('base64'), pr, 'canonical base64');
+  const receipt = JSON.parse(Buffer.from(pr, 'base64').toString('utf8'));
+  assert.equal(receipt.success, true);
+  assert.equal(receipt.transaction, 'rcpt_42');
+  assert.equal(receipt.network, 'eip155:8453', 'CAIP-2, not the repo shorthand the challenge advertises');
+  // The legacy keys stay: `scripts/live-x402-run.mjs` fails closed on `receipt.receiptId`.
+  assert.equal(receipt.receiptId, 'rcpt_42');
+  assert.equal(receipt.nonce, '0xnonce1');
 });
 
 test('a malformed creator value is a DECODE failure, not a "chain read failed" 503 — an encoding bug is not a chain fact', async () => {

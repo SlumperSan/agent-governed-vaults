@@ -73,13 +73,23 @@ caller who has not paid, or whose envelope is locally invalid, never costs this 
 call, and a chain read that fails costs the caller nothing rather than being billed anyway), and
 `gate()` settles as soon as the local check passes, with no seam at that point. So this route
 imports `gate()`'s pieces instead — `decodeSignatureHeader`, `checkEnvelopeAgainstPrice`,
-`challengeResponse`, `nonceOf` from `apps/api/src/x402.mjs`, and `createStandardHttpFacilitator`
-from `apps/api/src/facilitator.mjs` (why that one and not the bespoke `createHttpFacilitator` is
-below, under "This deployment cannot hold a private key") — and composes them in that order,
-rather than reimplementing any of them. `challengeResponse` and
-`nonceOf` are used INSIDE `gate()` itself too (not duplicated beside it), so the edge route and
-`gate()` still share one implementation of the 402 shape and the nonce-selection logic; only the
-ORDER in which the pieces run differs between the two callers.
+`challengeResponse`, `nonceOf`, `buildSettlementResponse` and `encodeHeaderJson` from
+`apps/api/src/x402.mjs`, and `createStandardHttpFacilitator` from `apps/api/src/facilitator.mjs`
+(why that one and not the bespoke `createHttpFacilitator` is below, under "This deployment cannot
+hold a private key") — and composes them in that order, rather than reimplementing any of them.
+Every one of those is used INSIDE `gate()` itself too, not duplicated beside it, so the edge route
+and `gate()` share one implementation of the 402 shape, the nonce-selection logic, the
+`PAYMENT-RESPONSE` shape and the header encoding; only the ORDER in which the pieces run differs
+between the two callers.
+
+**That sharing was tested by #287 rather than asserted, and it held.** #287 moved both outbound
+headers from raw JSON to base64 (`specs/transports-v2/http.md:161-167`) and made `PAYMENT-RESPONSE`
+a spec §5.3.2 `SettlementResponse`. The 402 leg needed no change here at all: `challengeResponse` is
+the one implementation, so it moved and this route moved with it. The 200 leg DID need one — this
+route was still hand-rolling `JSON.stringify({receiptId, nonce})` for `PAYMENT-RESPONSE`, the one
+piece of wire format it had not delegated, and that is exactly the piece that broke. It now calls
+`buildSettlementResponse` and `encodeHeaderJson`. The rule earns itself: the part that was shared
+survived a wire-format change untouched, and the part that was copied did not.
 
 The route's chain read reuses `packages/canary/src/reader.mjs`'s `createChainReader`, the same
 component the canary uses to tell a genuine on-chain revert apart from a transport failure — this

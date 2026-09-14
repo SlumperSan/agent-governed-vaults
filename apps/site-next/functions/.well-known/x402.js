@@ -68,7 +68,7 @@ export const onRequestGet = async (context) => {
         ],
         free: ['/.well-known/x402'],
         paymentFlow:
-          'Request the route with no payment header and it answers 402 with a PAYMENT-REQUIRED challenge. Sign the challenge as an EIP-3009 transferWithAuthorization, base64 the envelope into the PAYMENT-SIGNATURE header, and repeat the request. The response carries PAYMENT-RESPONSE with the settlement receipt id.',
+          'Request the route with no payment header and it answers 402 with a PAYMENT-REQUIRED challenge, base64-encoded JSON per specs/transports-v2/http.md. Decode it, sign it as an EIP-3009 transferWithAuthorization, base64 the envelope into the PAYMENT-SIGNATURE header, and repeat the request. The 200 carries PAYMENT-RESPONSE: a base64 SettlementResponse ({success, transaction, network, payer}), with receiptId and nonce alongside. A FAILED settlement is a 402 whose body `error` names the reason and which carries no PAYMENT-RESPONSE.',
         source: 'https://github.com/SlumperSan/agent-governed-vaults',
       },
       null,

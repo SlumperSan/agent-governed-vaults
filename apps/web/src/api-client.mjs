@@ -13,6 +13,37 @@
  */
 
 /**
+ * Decode an x402 header carrying a JSON object, accepting the base64 that
+ * `specs/transports-v2/http.md:161-167` requires OR the raw JSON this API emitted before
+ * 2026-09-13. Returns null on anything that is neither.
+ *
+ * THE DISCRIMINATOR IS TOTAL, NOT A HEURISTIC: `{` is not in the base64 alphabet, so a value whose
+ * first non-space character is `{` cannot be base64 and IS the legacy raw JSON.
+ *
+ * This duplicates `packages/agent-sdk/src/header-codec.mjs` on purpose. Everything under
+ * `apps/web/src/` is loaded straight into the browser by `apps/web/index.html` and imports nothing
+ * outside this directory; a `../../packages/...` specifier would be the one import in this app that
+ * depends on where the repository is served from. It also uses `atob`, not `Buffer`, because there
+ * is no `Buffer` in a browser — the sibling copy exists precisely because the two runtimes differ.
+ * @param {string|null|undefined} header
+ */
+function decodeHeaderJson(header) {
+  if (typeof header !== 'string') return null;
+  const raw = header.trim();
+  if (raw === '') return null;
+  try {
+    if (raw.startsWith('{')) return JSON.parse(raw);
+    // `atob` gives one byte per char; re-read those bytes as UTF-8 so non-ASCII survives.
+    const bin = atob(raw);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {Object} cfg
  * @param {string} cfg.baseUrl
  * @param {Signer} cfg.signer
@@ -24,8 +55,7 @@ export function createClient({ baseUrl, signer, fetchImpl = fetch }) {
     let res = await fetchImpl(url);
     if (res.status !== 402) return finish(res);
 
-    const challengeHeader = res.headers.get('payment-required');
-    const challenge = challengeHeader ? JSON.parse(challengeHeader) : null;
+    const challenge = decodeHeaderJson(res.headers.get('payment-required'));
     if (!challenge) throw new Error('402 without a challenge');
 
     const envelope = await signer(challenge);
@@ -37,7 +67,9 @@ export function createClient({ baseUrl, signer, fetchImpl = fetch }) {
   async function finish(res, receipt) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, body });
-    return { data: body, receipt: receipt ? JSON.parse(receipt) : null };
+    // Since 2026-09-13 this is a spec §5.3.2 `SettlementResponse` — `{success, transaction,
+    // network, payer?}` — carrying `receiptId` and `nonce` alongside, base64-encoded.
+    return { data: body, receipt: decodeHeaderJson(receipt) };
   }
 
   return { get };
