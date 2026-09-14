@@ -251,6 +251,58 @@ exercise exists to prevent.
   CI. It is separate from the self-inclusion defect that `runsForHead` now closes, and it survives
   that fix. **Read a red here before assuming it, especially after the `--strict` flip.**
 
+## Classes that never self-merge
+
+The section above lists what the mechanism cannot catch. For three change classes the gap is not a
+blind spot to be narrowed later but a property of the question being asked, so **these go to the
+owner with numbered, copy-pasteable steps, whatever the board looks like.** A clear preflight is not
+the answer to any of them.
+
+These are a CONVENTION, exactly like the per-file conflict note above: no rule in
+`merge-policy.json` encodes them, `scripts/merge-preflight.mjs` does not evaluate them, and nothing
+mechanically stops a merge. Writing them down here is the whole of the enforcement, and that is
+stated plainly rather than left to be discovered, because the last convention this repository kept
+outside the tree is the one that produced the incident this document exists for.
+
+1. **A `viem` bump, or a bump to the `@noble/*` packages underneath it.** `viem` is the only EVM
+   dependency in `package.json`, and it is on the commit-reveal voting path rather than beside it.
+   `packages/reference-agent/src/salt.mjs:74` is inside `deriveSalt`, which takes the vote salt to be
+   the hash of a wallet signature and nothing else; `salt.mjs:91` is inside `commitmentFor`, which
+   rebuilds the commitment `Governance.commitVote` expects. Both call into `viem` for the hash. So a
+   version of that package which returns a different digest does not produce a wrong answer that
+   fails loudly, it produces a commitment that no later reveal can open. `@noble/*` is not in
+   `package.json` at all; it arrives transitively under `viem` and `@solana/web3.js`, which is the
+   sharp edge here, because a `package-lock.json` change can move the code that computes that hash
+   with no `package.json` line to notice in a diff. What needs reviewing is the dependency, not the
+   board.
+2. **Any new runtime dependency.** A `dependencies` addition is a decision about what this
+   protocol's supply chain contains, and a green suite answers a different question: that the new
+   code did not break the old tests. The standing preference already in the tree is to reach for a
+   Node built-in over a package on a security-sensitive path, written down at
+   `scripts/lib/keystore.mjs:23`; adding over it is the owner's call to make, not a reviewer's to
+   infer.
+3. **Any change to an action pin in `.github/workflows/`.** Every `uses:` in `ci.yml` and
+   `merge-preflight.yml` is pinned to a full commit SHA with the tag in a trailing comment
+   (`actions/checkout@fbc6f399…`, `foundry-rs/foundry-toolchain@908c5403…`,
+   `actions/setup-node@a0853c24…`, `crytic/slither-action@f197989d…`). Generalising the reason:
+   **the correctness of a SHA pin is not a property CI can certify, because CI is the thing being
+   pinned.** A substituted action that runs successfully and exfiltrates on the side produces
+   exactly the green board a correct one does, and it produces it *for this rule's own evidence* as
+   well, since `ci-matches-head` reads the runs those actions produce.
+
+A **change to the merge policy itself** behaves as a fourth case in practice, for a different
+reason: it is not that CI cannot certify it, it is that the author is the last person who should
+grade it. That is already covered by CLAUDE.md's independence requirement rather than by anything
+here, and it is named only so the list is not read as exhaustive.
+
+**Read this list as strictly weaker than `docs/SWARM.md` §10, and read §10 first.** Everything above
+is about a change an agent may *make* but must not *land alone*. §10 is about changes an agent may
+not make at all, so for anything on it the merge question never arises. Item 3 above is the same
+structural defect as §10's last entry, "weakening a security gate to make something pass": in both,
+the change produces a green board by construction, so the board stops being evidence about the
+change. §10 is deliberately not enumerated here, because it is enumerated there and in CLAUDE.md
+already, and a third copy is the drift this document exists to argue against.
+
 ## Making this enforcement
 
 These need the repository owner. An agent cannot set branch protection, and should not try.
