@@ -78,8 +78,12 @@ src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand
 src/fonts/       two woff2 faces, self-hosted
 build.mjs        removes dist/ and copies src/ into it
 test/claims.test.mjs
-screenshots/
 ```
+
+`screenshots/` (explore-desktop-1440.png, explore-mobile-375.png) was removed from the repo in the
+Phase 1 repo-cleanup pass (2026-09-15) — unreferenced by any code, build, or test, and the two
+files were ~1.7 MB combined. They were reference material, not a build input; retake and attach to
+a design doc/wiki page if they're needed again rather than re-committing binaries to git history.
 
 ## Tests
 

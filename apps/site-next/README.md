@@ -159,13 +159,9 @@ The network panel must show zero non-self hosts. One request to a font host is a
 - `faq.html` must carry each of the two standing-fact footer sentences **twice**, and the second
   copy of each lives inside an answer body. The shell renders one of each, so a shell-only
   `faq.html` reads one and one. That second pair is the FAQ section's obligation, not the footer's.
-- The middleware test. `functions/_middleware.js` is here and is byte-identical to
-  `apps/site/functions/_middleware.js`, but nothing in this directory tests it, and
-  `apps/site/test/middleware.test.mjs` still reads the copy under `apps/site`. `test/` now holds
-  `site.test.mjs` and `edge.test.mjs`, and the middleware belongs with the second of those: it is
-  edge behaviour, and that is the file for edge behaviour. It is owed in the change that stops
-  serving `apps/site` — a middleware left behind under test at its old path is a middleware nobody
-  is testing at the path that is served.
+- ~~The middleware test.~~ **Done, Phase 1 repo-cleanup pass (2026-09-15).** `functions/_middleware.js`
+  now has its own `test/middleware.test.mjs` here, moved from the retired `apps/site/test/`, whose
+  copy of both the middleware and its test were the dead duplicate this paragraph used to describe.
 
 ## What has landed
 
