@@ -1,3 +1,25 @@
+# Revenue — HISTORICAL / SUPERSEDED
+
+> **This document is historical and no longer describes a live or planned rail.** The
+> Base-mainnet-settlement paid-snapshot rail it documents (`apps/site-next/functions/api/vaults.js`,
+> `apps/site-next/functions/.well-known/x402.js`, and their supporting `_price.js`/`_snapshot.json`)
+> was **removed on 2026-09-15** because it duplicated and conflicted with `apps/api`'s own x402 rail:
+> it settled payment in USDC on Base mainnet (chain 8453) while the data it sold described
+> Robinhood Chain (4663), and the current direction is Robinhood Chain as the only externally
+> marketed live chain, with `apps/api` as the one canonical paid API
+> (see [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294), which re-enables
+> x402 metering on chain 4663 for `apps/api`, and [PR #295](https://github.com/SlumperSan/agent-governed-vaults/pull/295),
+> which first flagged this conflict in the README's Production Map).
+>
+> Revenue plans and the metered-read runbook now live solely in `apps/api`'s own docs
+> (`docs/DEPLOYMENT.md` §6, `docs/RUNTIME.md`) — this file is kept only so the rationale for the
+> earlier Base-settlement design, and why it was retired, is not lost.
+>
+> Everything below this line is the **original, unedited** runbook for the removed rail. It
+> describes code that no longer exists in this repository. Read it as history, not as instructions.
+
+---
+
 # Revenue — the metered read, and the path to the first dollar
 
 **What this file is.** The runbook for the one revenue mechanism this repository has actually built:
