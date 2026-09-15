@@ -212,23 +212,20 @@ sub-README, this table wins.
 | Vault explorer | `apps/app/` | `app.rwally.com` | **Live.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Reads chain 4663 live, in-browser. |
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
 | Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** Chain-4663 x402 metering re-enabled in PR #294 (draft, unmerged); no public domain chosen yet. |
-| Paid vault-snapshot endpoint | `apps/site-next/functions/api/vaults.js` (Pages Function) | Would ride on `rwally.com/api/vaults` if deployed | **Built and unpublished, revenue $0.00.** See the settlement-chain conflict flagged below — do not deploy until resolved. |
+| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed) | N/A | **Removed** (PR #298, owner-approved) — duplicated `apps/api` and settled on Base mainnet, conflicting with the Robinhood-Chain-only direction. `apps/api` is now the one paid API; `docs/REVENUE.md` is kept for history, marked superseded. |
 | Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once `site-next` publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
 | Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
 | API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
 
-**Open conflict, not yet resolved — flagging here rather than silently picking a side:**
-`docs/REVENUE.md` documents the paid-snapshot endpoint above settling in **USDC on Base mainnet
-(chain 8453)**, deliberately decoupled from the chain-4663 data it describes. That plan predates
-the current direction ("Robinhood Chain is the only externally marketed live chain" +
-PR #294 re-enabling x402 metering on chain 4663 in `apps/api`). The two are different code paths
-(`apps/site-next/functions/api/vaults.js` vs. `apps/api`'s own metered server) and do not
-technically conflict at the code level, but they do conflict at the narrative level: shipping the
-Base-settlement snapshot endpoint while marketing "Robinhood Chain is where the paid API lives"
-would contradict the public claim. Nothing here has been deployed and revenue is $0.00, so there is
-no live contradiction today — but `docs/REVENUE.md` should be explicitly reconciled (either
-re-pointed at Robinhood Chain settlement, or the marketing claim scoped to say "reads describe
-Robinhood Chain, settlement is currently on Base") before either path ships.
+**Resolved (was: open conflict).** `docs/REVENUE.md` used to document the paid-snapshot endpoint
+above settling in **USDC on Base mainnet (chain 8453)**, deliberately decoupled from the chain-4663
+data it described. That plan predated the current direction ("Robinhood Chain is the only
+externally marketed live chain" + PR #294 re-enabling x402 metering on chain 4663 in `apps/api`)
+and would have contradicted it at the narrative level had it ever shipped. The owner decided to
+remove the endpoint entirely (PR #298) rather than re-point its settlement chain, since `apps/api`
+already serves this role on Robinhood Chain and having two paid-API code paths violated the "one
+API" rule this table exists to enforce. Nothing was ever deployed and revenue was $0.00 throughout,
+so there was never a live contradiction — this is now closed.
 
 ## Build & test
 
