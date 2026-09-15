@@ -193,9 +193,42 @@ Chainlink oracle's fail-closed guards, and governance rounds.
 | `packages/oplog/` | Shared operational plumbing: structured logging, durability, shutdown, ops checks. |
 | `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
 | `apps/web/` | Vault Atlas, consumer app: discover, inspect governance/fees, deposit/exit. |
-| `apps/site/` | The public static site: what this is, how it works, and what can go wrong. |
+| `apps/site/` | **Retired.** Superseded by `apps/site-next`; do not deploy (see #267/#268 — deploying this would replace the live site). Kept for history only. |
+| `apps/site-next/` | The public static site that `rwally.com` actually serves: what this is, how it works, and what can go wrong. |
+| `apps/app/` | The vault explorer at `app.rwally.com`: reads protocol facts live from chain 4663 in-browser. |
 | `scripts/` | Operational runners: `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
 | `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
+
+## Production map
+
+Which `apps/*` directory serves which public surface, and which are not deployed anywhere yet.
+This table is the single source of truth for "what is live where" — if it disagrees with a
+sub-README, this table wins.
+
+| Surface | Directory | Domain | Status |
+| --- | --- | --- | --- |
+| Marketing site | `apps/site-next/` | `rwally.com` | **Live.** Canonical; the only site that should ever be deployed to this domain. |
+| Marketing site (retired) | `apps/site/` | — | **Not deployed. Do not deploy.** Superseded by `site-next`; deploying it would overwrite the live site (see #267/#268). |
+| Vault explorer | `apps/app/` | `app.rwally.com` | **Live.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Reads chain 4663 live, in-browser. |
+| Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
+| Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** Chain-4663 x402 metering re-enabled in PR #294 (draft, unmerged); no public domain chosen yet. |
+| Paid vault-snapshot endpoint | `apps/site-next/functions/api/vaults.js` (Pages Function) | Would ride on `rwally.com/api/vaults` if deployed | **Built and unpublished, revenue $0.00.** See the settlement-chain conflict flagged below — do not deploy until resolved. |
+| Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once `site-next` publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
+| Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
+| API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
+
+**Open conflict, not yet resolved — flagging here rather than silently picking a side:**
+`docs/REVENUE.md` documents the paid-snapshot endpoint above settling in **USDC on Base mainnet
+(chain 8453)**, deliberately decoupled from the chain-4663 data it describes. That plan predates
+the current direction ("Robinhood Chain is the only externally marketed live chain" +
+PR #294 re-enabling x402 metering on chain 4663 in `apps/api`). The two are different code paths
+(`apps/site-next/functions/api/vaults.js` vs. `apps/api`'s own metered server) and do not
+technically conflict at the code level, but they do conflict at the narrative level: shipping the
+Base-settlement snapshot endpoint while marketing "Robinhood Chain is where the paid API lives"
+would contradict the public claim. Nothing here has been deployed and revenue is $0.00, so there is
+no live contradiction today — but `docs/REVENUE.md` should be explicitly reconciled (either
+re-pointed at Robinhood Chain settlement, or the marketing claim scoped to say "reads describe
+Robinhood Chain, settlement is currently on Base") before either path ships.
 
 ## Build & test
 
