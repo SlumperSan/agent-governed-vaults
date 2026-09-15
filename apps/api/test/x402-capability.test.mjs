@@ -4,21 +4,25 @@
  *
  * Three things are pinned here, and they are deliberately not the same thing.
  *
- *  1. **The 4663 config disables it.** Read from `contracts/config/robinhood-mainnet.json` through
- *     the resolver, not from a chain id hard-coded in this file — the point of the change is that
- *     there is ONE source of truth and it is the config.
- *  2. **Base's BEHAVIOUR is unchanged, on both Base configs.** Not "the JSON still says true" —
- *     that would be a test of the fixture, not of the server. The assertion is that the API
- *     resolved for 84532 (Base Sepolia) and for 8453 (Base mainnet, re-enabled explicitly per the
- *     owner's 2026-09-09 decision) still answers an unpaid metered read with 402 and a
- *     PAYMENT-REQUIRED challenge, still settles the paid retry through the facilitator, and still
- *     leaves the metered routes out of the rate limiter, exactly as `api.test.mjs` and
+ *  1. **The 4663 config enables it, again, as of 2026-09-15.** Read from
+ *     `contracts/config/robinhood-mainnet.json` through the resolver, not from a chain id
+ *     hard-coded in this file — the point of the change is that there is ONE source of truth and
+ *     it is the config. The block was `enabled: false` from 2026-09-05 to 2026-09-15 (owner
+ *     decision, reaffirmed 2026-09-09); the owner reversed that on 2026-09-15 once Robinhood Chain
+ *     became the only externally marketed live chain and the paid data API had to run against it.
+ *  2. **Base's BEHAVIOUR is unchanged, on both Base configs, and now matches Robinhood's.** Not
+ *     "the JSON still says true" — that would be a test of the fixture, not of the server. The
+ *     assertion is that the API resolved for 84532 (Base Sepolia), 8453 (Base mainnet, re-enabled
+ *     explicitly per the owner's 2026-09-09 decision) and 4663 (Robinhood Chain mainnet, re-enabled
+ *     per the owner's 2026-09-15 decision) all still answer an unpaid metered read with 402 and a
+ *     PAYMENT-REQUIRED challenge, still settle the paid retry through the facilitator, and still
+ *     leave the metered routes out of the rate limiter, exactly as `api.test.mjs` and
  *     `ratelimit.test.mjs` describe today.
- *  3. **Base declaring itself explicitly changes nothing about the default.** `base-mainnet.json`
- *     used to declare no `x402` block at all and rely on absent-means-enabled; it now says
- *     `enabled: true` out loud, matching `base-sepolia.json` and `robinhood-mainnet.json` field for
- *     field. The resolver's default for a chain with no block, or no config, or an unreadable
- *     config directory, is untouched — still enabled.
+ *  3. **Every shipped chain now declares itself explicitly; none of them relies on the default.**
+ *     `base-mainnet.json` used to declare no `x402` block at all and rely on absent-means-enabled;
+ *     it, `base-sepolia.json` and `robinhood-mainnet.json` all now say `enabled: true` out loud,
+ *     field for field. The resolver's default for a chain with no block, or no config, or an
+ *     unreadable config directory, is untouched — still enabled.
  *
  * The default matters as much as any of the above: `createApi` with no `x402` at all must meter.
  * Every existing caller passes nothing, and a capability lookup that cannot answer must never be
@@ -67,9 +71,9 @@ function seededApi(overrides = {}) {
 
 // ── the capability, resolved from contracts/config ───────────────────────────
 
-test('chain 4663 disables x402, and the answer comes from its own config file', () => {
+test('chain 4663 enables x402 again as of 2026-09-15, and the answer comes from its own config file', () => {
   const cap = x402Capability(ROBINHOOD);
-  assert.equal(cap.enabled, false, 'Robinhood Chain does not meter reads over x402');
+  assert.equal(cap.enabled, true, 'Robinhood Chain meters reads over x402 again, per the 2026-09-15 reversal');
   assert.equal(cap.chainId, ROBINHOOD);
   assert.equal(cap.chainName, 'robinhood-mainnet');
   assert.match(cap.source, /robinhood-mainnet\.json/, 'resolved from the config, not from a literal in code');
@@ -77,12 +81,12 @@ test('chain 4663 disables x402, and the answer comes from its own config file', 
   // And the file itself, read directly: the capability is declared, not inferred.
   const raw = JSON.parse(readFileSync(path.join(DEFAULT_CONFIG_DIR, 'robinhood-mainnet.json'), 'utf8'));
   assert.equal(raw.chainId, ROBINHOOD);
-  assert.equal(raw.x402.enabled, false);
+  assert.equal(raw.x402.enabled, true);
   assert.equal(typeof raw.x402.note, 'string');
-  assert.ok(raw.x402.note.length > 0, 'a switched-off capability has to say why');
+  assert.ok(raw.x402.note.length > 0, 'a switched-on capability still has to say why');
 });
 
-test('Base Sepolia and Base mainnet both declare the capability explicitly, per the 2026-09-09 re-enable', () => {
+test('Base Sepolia, Base mainnet and Robinhood Chain all declare the capability explicitly, and all read enabled', () => {
   const sepolia = x402Capability(BASE_SEPOLIA);
   assert.equal(sepolia.enabled, true);
   assert.equal(sepolia.chainName, 'base-sepolia');
@@ -93,13 +97,18 @@ test('Base Sepolia and Base mainnet both declare the capability explicitly, per 
   assert.equal(mainnet.chainName, 'base-mainnet');
   assert.match(mainnet.source, /base-mainnet\.json sets x402\.enabled = true/, 'explicit now, not the absent-block default');
 
-  // Both files, read directly: the capability is declared, not inferred, and each says why.
-  for (const [file, chainId] of [['base-sepolia.json', BASE_SEPOLIA], ['base-mainnet.json', BASE_MAINNET]]) {
+  const robinhood = x402Capability(ROBINHOOD);
+  assert.equal(robinhood.enabled, true);
+  assert.equal(robinhood.chainName, 'robinhood-mainnet');
+  assert.match(robinhood.source, /robinhood-mainnet\.json sets x402\.enabled = true/, 'explicit, and reversed from the 2026-09-05/09-09 off decision');
+
+  // All three files, read directly: the capability is declared, not inferred, and each says why.
+  for (const [file, chainId] of [['base-sepolia.json', BASE_SEPOLIA], ['base-mainnet.json', BASE_MAINNET], ['robinhood-mainnet.json', ROBINHOOD]]) {
     const raw = JSON.parse(readFileSync(path.join(DEFAULT_CONFIG_DIR, file), 'utf8'));
     assert.equal(raw.chainId, chainId);
     assert.equal(raw.x402.enabled, true);
     assert.equal(typeof raw.x402.note, 'string');
-    assert.ok(raw.x402.note.length > 0, 'an enabled capability on Base still says why, matching Robinhood field for field');
+    assert.ok(raw.x402.note.length > 0, 'an enabled capability says why, on every chain, field for field');
   }
 });
 
@@ -223,63 +232,75 @@ test('Base Sepolia still leaves the metered routes out of the rate limiter', asy
     assert.equal((await api.handle('GET', '/vaults', {}, { ip: 'x' })).status, 402, 'x402 is their limiter');
 });
 
-// ── chain 4663: the same reads, no payment gate ──────────────────────────────
+// ── chain 4663: metered again, same as Base ──────────────────────────────────
 
-test('on 4663 the formerly-metered routes serve 200 with no payment headers and no wallet', async () => {
-  const api = seededApi({ x402: x402Capability(ROBINHOOD) });
+test('with the Robinhood Chain capability the metered routes gate on payment and settle through the facilitator', async () => {
+  let settled = 0;
+  const api = seededApi({
+    x402: x402Capability(ROBINHOOD),
+    facilitator: { async verifyAndSettle() { settled += 1; return { ok: true, receiptId: 'rcpt-robinhood' }; } },
+  });
 
   for (const route of ['/vaults', `/vaults/${VAULT}`, '/operators/leaderboard']) {
-    const res = await api.handle('GET', route, {});
-    assert.equal(res.status, 200, `${route} is served without payment`);
-    assert.equal(res.headers[HEADERS.REQUIRED], undefined, `${route} issues no challenge`);
-    assert.equal(res.headers[HEADERS.RESPONSE], undefined, `${route} echoes no receipt`);
+    const unpaid = await api.handle('GET', route, {});
+    assert.equal(unpaid.status, 402, `${route} is gated on this chain again`);
+    const challenge = decodeHeaderJson(unpaid.headers[HEADERS.REQUIRED]);
+    assert.equal(challenge.x402Version, 2);
+    assert.equal(challenge.asset, USDC);
+    assert.equal(challenge.amount, '10000');
   }
 
-  // Same bodies as the paid path serves on a metering chain — this is a gate change, not a data one.
+  const paid = await api.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope('0xrh1') });
+  assert.equal(paid.status, 200);
+  assert.equal(JSON.parse(paid.body).vaults.length, 1);
+  assert.ok(paid.headers[HEADERS.RESPONSE], 'a paid read still echoes PAYMENT-RESPONSE');
+  assert.equal(settled, 1, 'the paid retry actually exercised the facilitator, not just a 200');
+
+  // Same bodies as any other metering chain serves once paid — this is a gate parity check.
   const gated = seededApi({ x402: x402Capability(BASE_SEPOLIA) });
-  const free = await api.handle('GET', '/vaults', {});
-  const paid = await gated.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope('0xsame1') });
-  assert.equal(free.body, paid.body, 'the reads are the same reads');
+  const same = await gated.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope('0xsame1') });
+  assert.equal(paid.body, same.body, 'the reads are the same reads, on every metering chain');
 });
 
-test('on 4663 a payment-signature header is simply irrelevant — never settled, never counted', async () => {
+test('on 4663 an unpaid read is never settled and never counted as a settlement', async () => {
   let settled = 0;
   const api = seededApi({
     x402: x402Capability(ROBINHOOD),
     facilitator: { async verifyAndSettle() { settled += 1; return { ok: true, receiptId: 'rcpt' }; } },
   });
-  const res = await api.handle('GET', '/vaults', { [HEADERS.SIGNATURE]: envelope('0xrh1') });
-  assert.equal(res.status, 200);
-  assert.equal(settled, 0, 'no facilitator call, so nothing can move funds');
+  const res = await api.handle('GET', '/vaults', {});
+  assert.equal(res.status, 402);
+  assert.equal(settled, 0, 'no facilitator call before payment, so nothing can move funds');
   const metrics = (await api.handle('GET', '/metrics', {})).body;
   assert.match(metrics, /^vault_api_settlements_total 0$/m);
-  assert.match(metrics, /^vault_api_payment_required_total 0$/m);
+  assert.match(metrics, /^vault_api_payment_required_total 1$/m);
 });
 
-test('on 4663 discovery reports the capability off, prices nothing, and calls every route free', async () => {
+test('on 4663 discovery reports the capability on, prices every metered route, and free routes stay free', async () => {
   const doc = JSON.parse((await seededApi({ x402: x402Capability(ROBINHOOD) }).handle('GET', '/.well-known/x402', {})).body);
-  assert.equal(doc.enabled, false);
-  assert.equal(doc.price, null, 'no price an agent could try to pay');
-  assert.deepEqual(doc.routes.metered, []);
-  for (const route of [...FREE_ROUTES, ...METERED_ROUTES])
-    assert.ok(doc.routes.free.includes(route), `${route} is advertised as free`);
+  assert.equal(doc.enabled, true);
+  assert.equal(doc.price.asset, USDC);
+  assert.equal(doc.price.amount, '10000');
+  assert.deepEqual(doc.routes.metered, METERED_ROUTES);
+  assert.deepEqual(doc.routes.free, FREE_ROUTES);
 });
 
-test('on 4663 the rate limiter covers the formerly-metered routes, because payment no longer does', async () => {
+test('on 4663 the rate limiter still leaves the metered routes out, because x402 is their limiter again', async () => {
   const api = seededApi({
     x402: x402Capability(ROBINHOOD),
     rateLimit: createRateLimiter({ capacity: 1, refillPerSec: 1, now: () => 0 }),
   });
-  assert.equal((await api.handle('GET', '/vaults', {}, { ip: 'scraper' })).status, 200);
-  const limited = await api.handle('GET', '/vaults', {}, { ip: 'scraper' });
-  assert.equal(limited.status, 429, 'an ungated read route must not also be an unbounded one');
-  assert.ok(Number(limited.headers['retry-after']) >= 1);
+  for (let i = 0; i < 5; i += 1)
+    assert.equal((await api.handle('GET', '/vaults', {}, { ip: 'x' })).status, 402, 'x402 is their limiter, same as Base');
 });
 
-test('on 4663 an unknown route still 404s, and a non-GET is still refused', async () => {
+test('on 4663 an unpaid unknown route is gated before it can 404, and a non-GET is still refused', async () => {
   const api = seededApi({ x402: x402Capability(ROBINHOOD) });
-  assert.equal((await api.handle('GET', '/nope', {})).status, 404);
-  assert.equal((await api.handle('POST', '/vaults', {})).status, 405);
+  // Metering now runs before route resolution on this chain, same as Base: an unpaid GET to an
+  // unknown path is a 402, not a 404, because payment is checked before "not found" is decided.
+  assert.equal((await api.handle('GET', '/nope', {})).status, 402);
+  assert.equal((await api.handle('GET', '/nope', { [HEADERS.SIGNATURE]: envelope('0xrh2') })).status, 404, 'a PAID unknown route still 404s');
+  assert.equal((await api.handle('POST', '/vaults', {})).status, 405, 'method check runs before metering either way');
 });
 
 /*
@@ -379,11 +400,11 @@ test('the EVM path is untouched: numeric keys still resolve out of contracts/con
   // The regression that matters. Every chain-id caller predates this change and none of them may
   // move, including the `source` strings other tests in this file match on.
   const rh = x402Capability(ROBINHOOD);
-  assert.equal(rh.enabled, false, '4663 stays off');
+  assert.equal(rh.enabled, true, '4663 is on again as of 2026-09-15');
   assert.equal(rh.chainId, 4663);
   assert.equal(rh.network, null, 'an EVM chain answers with a chain id, not a network name');
   assert.equal(x402Capability(BASE_SEPOLIA).enabled, true);
-  assert.equal(x402Capability('4663').enabled, false, 'a numeric STRING is still a chain id, not a network name');
+  assert.equal(x402Capability('4663').enabled, true, 'a numeric STRING is still a chain id, not a network name');
   assert.equal(x402Capability(null).enabled, true);
   assert.equal(x402Capability('').enabled, true);
 });
@@ -478,8 +499,9 @@ test('no shipped network is shadowed, so the message above is not routine', () =
 
 test('the CHAIN-ID loader is keep-first too, so the fail-open is not asymmetric', () => {
   // #236 closed last-wins on the network path and left it open on the chain path — which is the
-  // path chain 4663 uses, and 4663's `enabled: false` is a live owner decision. A review
-  // demonstrated it with two configs for one chain id.
+  // path chain 4663 uses, and whichever way that chain's block currently reads (`enabled: true`
+  // again as of 2026-09-15) is a live owner decision either way. A review demonstrated it with
+  // two configs for one chain id.
   const dir = mkdtempSync(path.join(tmpdir(), 'x402-chaindup-'));
   try {
     writeFileSync(path.join(dir, 'a-off.json'), JSON.stringify({ chainId: 99991, chainName: 'off', x402: { enabled: false } }));
@@ -528,7 +550,7 @@ test('unreadable files are a PROPERTY, not an entry — they cannot be looked up
 test('a chain-id collision is NAMED in source, not merely recorded', () => {
   // The commit message claimed both loaders name their collisions. Only the network branch did:
   // `shadowed` was set on the chain entry and nothing read it, so a configuration error on the very
-  // path chain 4663 uses was invisible in the boot log.
+  // path chain 4663's (now re-enabled) capability uses was invisible in the boot log.
   const dir = mkdtempSync(path.join(tmpdir(), 'x402-chaincollide-'));
   try {
     writeFileSync(path.join(dir, 'a-off.json'), JSON.stringify({ chainId: 99992, chainName: 'off', x402: { enabled: false } }));
