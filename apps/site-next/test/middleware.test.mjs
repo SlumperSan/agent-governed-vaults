@@ -11,6 +11,13 @@
  * These tests exist because that is easy to break by accident — a refactor that returns
  * `next()` unconditionally would still serve every page correctly on every hostname, pass every
  * other test in this suite, and silently re-open the hole. Nothing else would notice.
+ *
+ * MOVED HERE from `apps/site/test/middleware.test.mjs` during the Phase 1 repo-cleanup pass
+ * (2026-09-15), per this directory's own README: "the middleware belongs with
+ * `test/edge.test.mjs`... it is owed in the change that stops serving `apps/site`." The retired
+ * `apps/site` copy of `functions/_middleware.js` and its test were removed in the same change —
+ * `apps/site-next/functions/_middleware.js` was always the live one; `apps/site` was never
+ * deployed and its copy tested code nobody serves.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

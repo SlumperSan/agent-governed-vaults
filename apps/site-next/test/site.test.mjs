@@ -2213,6 +2213,40 @@ test('the brand mark is one artwork, byte-identical on both surfaces', () => {
 });
 
 /**
+ * THE MASCOT IS THE SAME ASSET ON BOTH SURFACES, FOR THE SAME REASON AS THE MARK ABOVE.
+ *
+ * `mascot-1280.webp` and `mascot-1920.webp` ship from `apps/site-next/public/media/` and
+ * `apps/app/src/media/` because each Pages project deploys independently and neither origin can
+ * fetch a static asset from the other's host. That means two committed copies rather than one, and
+ * two copies drift silently unless something compares them. Flagged during the Phase 1 repo-cleanup
+ * pass (2026-09-15) as the one asset pair following the brand-mark pattern without a pinning test of
+ * its own; this closes that gap the same way.
+ */
+const MASCOT_MIN_BYTES = 4000;
+
+test('the mascot is one asset, byte-identical on both surfaces', () => {
+  const files = [
+    ['mascot-1280.webp', [path.join(APP, 'public', 'media', 'mascot-1280.webp'), path.join(APP_SURFACE, 'media', 'mascot-1280.webp')]],
+    ['mascot-1920.webp', [path.join(APP, 'public', 'media', 'mascot-1920.webp'), path.join(APP_SURFACE, 'media', 'mascot-1920.webp')]],
+  ];
+
+  for (const [name, [siteFile, appFile]] of files) {
+    const siteBytes = readFileSync(siteFile);
+    const appBytes = readFileSync(appFile);
+    assert.ok(siteBytes.length >= MASCOT_MIN_BYTES, `${name}: site copy is ${siteBytes.length} bytes, under the ${MASCOT_MIN_BYTES}-byte floor`);
+    assert.ok(appBytes.length >= MASCOT_MIN_BYTES, `${name}: app copy is ${appBytes.length} bytes, under the ${MASCOT_MIN_BYTES}-byte floor`);
+    const siteDigest = crypto.createHash('sha256').update(siteBytes).digest('hex');
+    const appDigest = crypto.createHash('sha256').update(appBytes).digest('hex');
+    assert.equal(
+      siteDigest,
+      appDigest,
+      `${name} differs between rwally.com and app.rwally.com (${siteDigest.slice(0, 12)} vs ` +
+        `${appDigest.slice(0, 12)}). Fix: cp apps/site-next/public/media/${name} apps/app/src/media/${name}`,
+    );
+  }
+});
+
+/**
  * THE COMIC MARK COLLAPSES AT SMALL SIZES, AND THAT IS MEASURED RATHER THAN ASSUMED.
  *
  * The brand set's own README records rendering the full-colour mark at 32 pixels and reading it:
