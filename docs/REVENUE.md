@@ -30,6 +30,15 @@ only the owner can run. It is not a business plan and it does not forecast anyth
 landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
 is **$0.00**.
 
+> **Flagged for owner reconciliation, not yet resolved (see README's Production Map).** This plan
+> settles payment in USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain
+> (4663). That split predates the current direction that Robinhood Chain is the only externally
+> marketed live chain and that PR #294 re-enables x402 metering for `apps/api` on chain 4663. The
+> two do not conflict in code — this Pages Function is independent of `apps/api`'s own server — but
+> they would conflict in public narrative if both shipped as separately written. Do not run "What
+> the owner runs" below until the owner has decided whether this endpoint settles on Base as written
+> or is re-pointed to Robinhood Chain.
+
 ---
 
 ## 1. What is being sold
