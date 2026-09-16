@@ -38,8 +38,9 @@
   -->
   <p class="lede">
     Every vault created by the protocol factory, with what it holds and what it may hold.
-    Each figure on this page is a single call to the chain's public RPC, made by your browser
-    when the page loads. Nothing is cached and nothing is served from a database.
+    The vault list comes from the factory itself, and every figure is read from the chain by your
+    browser when the page loads: some are a single call, and the rest are arithmetic on calls made
+    beside them. Nothing is cached and nothing is served from a database.
   </p>
 
   <dl class="stats">
@@ -52,7 +53,7 @@
       <dd class="reading" data-slot="value">reading</dd>
     </div>
     <div class="stat" id="stat-holders">
-      <dt>Holders</dt>
+      <dt>Holder positions</dt>
       <dd class="reading" data-slot="value">reading</dd>
     </div>
     <div class="stat" id="stat-block">
@@ -81,57 +82,42 @@
             <th scope="col" class="num">Capacity used</th>
           </tr>
         </thead>
-        <tbody id="vault-rows">
-          <tr data-vault="0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4">
-            <td>
-              <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4" rel="noopener">0x9b0229FF…D228e2b4</a>
-            </td>
-            <td><span class="addr reading" data-slot="creator">reading</span></td>
-            <td class="num"><span class="reading" data-slot="nav">reading</span></td>
-            <td class="num"><span class="reading" data-slot="price">reading</span></td>
-            <td class="num"><span class="reading" data-slot="holders">reading</span></td>
-            <td class="num">
-              <span class="barwrap">
-                <span class="bar" data-slot="bar"></span>
-                <span class="pct reading" data-slot="pct">reading</span>
-              </span>
-            </td>
-          </tr>
-          <tr data-vault="0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38">
-            <td>
-              <a class="addr" href="https://robinhoodchain.blockscout.com/address/0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38" rel="noopener">0x03E121e1…be31ee38</a>
-            </td>
-            <td><span class="addr reading" data-slot="creator">reading</span></td>
-            <td class="num"><span class="reading" data-slot="nav">reading</span></td>
-            <td class="num"><span class="reading" data-slot="price">reading</span></td>
-            <td class="num"><span class="reading" data-slot="holders">reading</span></td>
-            <td class="num">
-              <span class="barwrap">
-                <span class="bar" data-slot="bar"></span>
-                <span class="pct reading" data-slot="pct">reading</span>
-              </span>
-            </td>
-          </tr>
-        </tbody>
+        <tbody id="vault-rows"></tbody>
       </table>
     </div>
+    <p class="stamp" id="vault-empty" hidden>Reading the vault list from the factory.</p>
   </section>
 
   <!--
-    THE ROW LIST IS STATIC AND THE COUNT IS LIVE, WHICH IS A DELIBERATE PAIR.
-    VaultFactory exposes vaultCount() and no enumeration function, so a browser
-    cannot discover vault addresses from the factory: the two below come from
-    the deployment record. That makes a disagreement possible, and the sentence
-    below is where a reader is told to expect it rather than left to notice it.
+    THE ROW IS A TEMPLATE, WHICH IS HOW THE MARKUP STAYS IN THE DOCUMENT while
+    the rows themselves come from the chain. app.js clones this once per vault
+    the factory reports. Nothing about a row's structure is built out of a
+    string in JavaScript, so what a reader inspects is what ships.
   -->
+  <template id="vault-row">
+    <tr>
+      <td><a class="addr" data-slot="address" rel="noopener" href="#">reading</a></td>
+      <td><span class="addr reading" data-slot="creator">reading</span></td>
+      <td class="num"><span class="reading" data-slot="nav">reading</span></td>
+      <td class="num"><span class="reading" data-slot="price">reading</span></td>
+      <td class="num"><span class="reading" data-slot="holders">reading</span></td>
+      <td class="num">
+        <span class="barwrap">
+          <span class="bar" data-slot="bar"></span>
+          <span class="pct reading" data-slot="pct">reading</span>
+        </span>
+      </td>
+    </tr>
+  </template>
+
   <section class="panel" aria-labelledby="reads-h">
     <h2 id="reads-h">How to check this page</h2>
     <p class="lede">
-      The addresses in the table are the vaults recorded in the deployment ledger. The vault count
-      above is read live from
-      <a class="addr" href="https://robinhoodchain.blockscout.com/address/0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1" rel="noopener">0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</a>,
-      the factory, by calling vaultCount(). If the count is larger than the number of rows, a vault
-      exists that this page does not list, and the ledger is behind the chain.
+      Both the count and the addresses come from the factory,
+      <a class="addr" href="https://robinhoodchain.blockscout.com/address/0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1" rel="noopener">0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</a>:
+      vaultCount() for the number, then allVaults(i) for each address. No file in this repository
+      supplies the list, so this table cannot fall behind the chain. Call the same two functions on
+      the explorer and you should get the same addresses in the same order.
     </p>
     <p class="stamp" id="reads-stamp">Reading from the public RPC.</p>
   </section>

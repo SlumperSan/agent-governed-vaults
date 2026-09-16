@@ -1,114 +1,86 @@
-# `apps/app` — the explore surface at app.rwally.com
+# `apps/app` — the vault explorer at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose three
-most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the page
-loads, above a table of vaults with no rows.
+One page: a stat strip over a table with a row per vault, every figure read from Robinhood Chain by
+the reader's own browser. No server, no database, no wallet connection, and no control that signs
+anything.
 
-The order used to be stated the other way round here. In `index.html` the protocol card is the first
-`<section>` and the vaults card the second, so the table is BELOW it.
+Rebuilt 2026-09-16. Before that it was a status card: four reads, a list of protocol addresses, and
+a table with no rows carrying the static sentence "This table lists no vaults."
 
-It is deployed to the Cloudflare Pages project `rwally-app`, production branch `protocol/main`.
+## Where every fact comes from
 
-## What is on the page, and where each fact comes from
+| On the page | Read by |
+| --- | --- |
+| Vaults | `VaultFactory.vaultCount()` |
+| Each vault's address | `VaultFactory.allVaults(i)`, once per vault |
+| Creator, net asset value, share price, holders, capacity used | five calls per vault, on the vault |
+| Latest block | `eth_blockNumber` |
+| Total value in vaults, holder positions | summed in the browser from the per-vault reads |
 
-| Thing | Source |
-|---|---|
-| The seven contract addresses, the chain id, the deploy block and instant | `contracts/config/deployments/robinhood-mainnet.json` at `origin/protocol/main`, which records every one of them as read back from the chain with `cast` at block 54,991,182 |
-| `VaultFactory.vaultCount()` | An `eth_call` from the browser, on load |
-| `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
-| `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
-| The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. This page renders no rows: there is no `<tbody>` in `index.html` and `app.js` writes only into the live-reads panel. Two vaults existed on chain 4663 as of 2026-09-12 and neither is listed |
-
-**The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
-what the getter is called.** The getter keeps the name `usdc` because that is the name in the
-contract and in `scripts/soak/deployment.mjs`; the token at `0x5fc5360D…` answers `symbol()` with
-`"USDG"` and `decimals()` with 6. Printing "USDC" there would be a false statement produced by
-trusting a variable name over a chain read.
+**The vault list is discovered, not shipped.** `VaultFactory` declares `address[] public allVaults`,
+so Solidity gives it a public getter `allVaults(uint256)` and a browser can index straight into the
+array. The first draft of this rebuild shipped the two addresses as static markup and said the
+factory exposed no enumeration function. That was false, and it was false because it came from
+reading a checkout behind origin rather than the contract. Because the list now comes from the
+chain, this table cannot fall behind it, and no file in this repository supplies an address.
 
 ## Three decisions that are easy to undo by accident
 
-**1. The empty state is static markup, not a rendered value.** The sentence "This table lists no
-vaults. `vaultCount()` above is read live from chain 4663 and is the count that matters." lives in
-`index.html` and is never written by `app.js`. A claim produced by a fetch disappears exactly when
-the fetch fails, which is the moment a reader most needs to be told what is true. The LIVE READS
-panel **corroborates** that sentence with a number read seconds ago; it does not produce it.
-`test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the script reds
-the guard.
+**1. There is no return column, and that is the point.** A vaults screen normally leads with APR and
+a PnL curve. This protocol publishes no return history, and the chain serves no time series to a
+browser, so any such figure would be a performance claim nothing here supports. Share price is
+`navWad / totalShares`, a ratio of two current reads, and it is never converted into a return: that
+would need an entry price this page cannot read. If you add a column, it must survive the same
+question, which is *which call answers it?*
 
-That sentence is deliberately a claim about the TABLE, not a count of vaults. The version before it
-pinned "`vaultCount()` reads 0", which was true when written and false from the moment vault #1 was
-created, with nothing going red in between: the guard is a static string match that reads no chain,
-so it can only prove the sentence is present, never that it is true. Pin what this deployment
-controls.
+**2. The framing sentence is static markup.** A claim produced by a fetch disappears exactly when
+the fetch fails, which is the moment a reader most needs to be told what they are looking at. The
+lede, the caption, the column headers and the row markup all ship in the document; only the figures
+arrive. The row is a `<template>` cloned per vault, so what a reader inspects is what shipped rather
+than a string built in JavaScript.
 
-**2. There is no `package.json`, and that is not an omission.** The repository root declares the
-workspace glob `apps/*`. A workspace package that is absent from `package-lock.json` makes `npm ci`
-fail at the root for every other session sharing this checkout, and the lock file is not this
-directory's to edit. `apps/site` carries no `package.json` for the same reason. Build with:
+**3. A failed read is named, never blank.** Every figure lands in a slot reading `reading` until it
+resolves. A failure writes `read failed` across the stat strip and a sentence into the table's empty
+slot saying the list could not be read, so an empty table is never mistaken for a protocol with no
+vaults. One `catch` in `app.js` does all of it, and the stamp carries the reason.
 
-```
-node apps/app/build.mjs
-```
+## Units, which are the easiest thing here to get wrong
 
-**3. The CSP is strict enough to break the page silently if you stop respecting it.** `_headers`
-ships `script-src 'self'` and `style-src 'self'` with no `'unsafe-inline'`, so an inline `<script>`
-block, an inline `<style>` block and every `style="..."` attribute are blocked by the browser with
-no error on the page and nothing in the build output. This is invisible on `file://` and on any
-local server that does not send the header, so **verify against the deployed URL, not a local
-file.** `test/claims.test.mjs` checks the markup for all three shapes for exactly this reason.
+`navWad` and `totalShares` are WAD, 18 decimals. `capacityCapUsdc` is USDG, 6. The capacity
+percentage scales the WAD figure down rather than scaling the cap up, and every conversion runs on
+`BigInt`: a funded vault's `navWad` exceeds the safe integer range once scaled, and a `Number`
+conversion loses the tail silently rather than throwing.
 
-`connect-src` names one third-party origin, `https://rpc.mainnet.chain.robinhood.com`. It is the
-only external request the page makes. The two fonts are self-hosted copies of the faces
-`apps/site-next` uses, so `font-src 'self'` holds and nothing is fetched from a font CDN.
+Capacity precision follows magnitude. These vaults hold tens of USDG against a 50,000 cap, so a
+fixed one decimal prints a real 0.04% as `0.0%`, which a reader cannot tell from an empty vault.
+Small figures carry three decimals, and anything that would still round to zero reads
+`under 0.0001%`.
 
-One more constraint on the fetch, which is not visible in this repository at all: the RPC's CORS
-preflight allows exactly one request header, `content-type`. Adding a second turns a working read
-into a browser-side failure. `app.js` sends that header and no other, and no credentials.
+`Holder positions` in the stat strip is the sum of each vault's `holderCount`. One address holding
+in two vaults counts twice, which is why the label is positions and not holders.
 
-## Layout
+## Content Security Policy
 
-```
-src/index.html   the page, all of it
-src/app.css      the only stylesheet, palette carried from apps/site-next/src/tokens.css
-src/app.js       the live reads, and nothing else
-src/_headers     the CSP. Copied to dist/_headers, where Pages reads it from
-src/favicon.svg  the comic R on its tile, byte-identical to the site's
-src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand/
-src/fonts/       two woff2 faces, self-hosted
-build.mjs        removes dist/ and copies src/ into it
-test/claims.test.mjs
-```
+`src/_headers` ships `default-src 'none'` with the chain's public RPC as the only third-party
+origin. Two consequences that stay invisible until production:
 
-`screenshots/` (explore-desktop-1440.png, explore-mobile-375.png) was removed from the repo in the
-Phase 1 repo-cleanup pass (2026-09-15) — unreferenced by any code, build, or test, and the two
-files were ~1.7 MB combined. They were reference material, not a build input; retake and attach to
-a design doc/wiki page if they're needed again rather than re-committing binaries to git history.
+- `script-src 'self'` blocks an inline `<script>` with no error on the page, so all behaviour lives
+  in `app.js`.
+- `style-src 'self'` blocks every `style="..."` attribute, so the utilisation bar takes its width
+  from a custom property set by `app.js` rather than from an attribute.
+
+`_headers` must land at the root of the served directory, and `build.mjs` copies it from `src/`. A
+missing `_headers` is not an error and is not reported: the deploy serves with no policy at all and
+looks identical to a correct one.
 
 ## Tests
 
-```
-node --test --test-reporter=tap apps/app/test/claims.test.mjs
-```
+`npm run test:app` at the repository root, also a step of `npm run gate` and of CI. It asserts
+against `dist/`, not `src/`: the reader receives the build output, and a check that reads the source
+proves the author's intention rather than the deploy's content.
 
-Six checks: the empty-state sentence survives into the build, the factory address is on the page,
-no banned claim shape appears in any built file, `_headers` carries every required directive, the
-markup has no inline script or style, and the page fetches from no origin but the chain RPC.
-
-**It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
-`.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before
-`test:backend`. It is deliberately NOT a glob inside `test:backend`: this file rebuilds `dist/`,
-and the repository-wide walks in `test:backend` enumerate files first and read them after, so
-batching them together lets this build delete a path another guard has listed and not yet opened.
-
-This paragraph previously said it was not wired in and to run it by hand. That stopped being true
-when `test:app` was added, and a stale instruction to run a check manually is worse than none: it
-invites someone to conclude the check is optional.
-
-The repository-wide claims guard, `scripts/test/claims-lede-truth.test.mjs`, **does** walk this
-page once it is built: `dist` is deliberately absent from that file's `SKIP_DIRS` and `.html` is in
-its `PUBLIC_EXT`. Build before running the gate, or the guard reports a pass over prose it never
-read.
+The repository-wide claims guard walks the built page too, because `dist` is not in its skip list
+and `.html` is in its public extensions. `test/claims.test.mjs` is the narrow, page-specific half.
 
 ## Deploy
 
@@ -122,14 +94,10 @@ directory; there is no such directory here and there should not be one.
 
 ## What is deliberately not built
 
-Everything in `Design/app-spec-2026-09-05.md` past v1's first screen: the vault detail page, the
-hive activity screens, stake, vote, and every wallet action. The Connect control in the masthead is
-inert and says so, carries `aria-disabled` rather than `disabled` so it keeps its place in the tab
-order, and names its reason through `aria-describedby`.
+Every wallet action: deposit, exit, stake, vote. `app.js` contains no wallet code at all, and the
+page carries no control that implies one. The previous version had an inert Connect button whose own
+copy had become a broken promise once vaults existed; this rebuild removed the control rather than
+rewriting the excuse.
 
-Its reason changed with this pass. It used to say deposits open "when a vault exists", which made
-the control's own copy a hostage to chain state: vaults now exist and the button is still inert, so
-that sentence had quietly become a broken promise. The blocker was never the factory. `app.js`
-contains no wallet code at all, so the title and the note now say what is true of this page, and
-they say the same thing as each other: a sighted reader gets the `title`, a screen-reader user gets
-the `aria-describedby` note, and those two disagreeing is its own defect.
+A per-vault detail page is not built either. Everything a row shows is a call, and a detail page is
+worth building when it can show something a row cannot, rather than the same five figures larger.

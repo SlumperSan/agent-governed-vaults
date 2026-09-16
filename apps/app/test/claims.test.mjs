@@ -83,14 +83,19 @@ const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 // row-rendering code can, and whoever writes it will be editing this line
 // anyway. That is the property to preserve when changing this string: pin
 // something the deployment controls, not something the world does.
-/* The sentence the page must say whether or not a single fetch succeeds. It replaced an
-   empty-state line reading "This table lists no vaults. vaultCount() above is read live from chain
-   4663 and is the count that matters." on 2026-09-16: `factory.vaultCount()` returns 2, so that
-   sentence had become false, and the chain is named rather than numbered by owner instruction. What
-   it was guarding survives unchanged, which is why this constant still exists: the page's framing
-   must be STATIC MARKUP, because a claim produced by a fetch disappears exactly when the fetch
-   fails. */
-const STATIC_FRAME = 'Each figure on this page is a single call to the chain’s public RPC, made by your browser';
+/* The sentence the page must say whether or not a single fetch succeeds.
+ *
+ * IT REPLACED AN EMPTY-STATE LINE on 2026-09-16, reading "This table lists no vaults. vaultCount()
+ * above is read live from chain 4663 and is the count that matters." `factory.vaultCount()` returns
+ * 2, so that sentence had become false, and the chain is named rather than numbered by owner
+ * instruction. What the old constant guarded survives unchanged, which is why this one exists: the
+ * page's framing must be STATIC MARKUP, because a claim produced by a fetch disappears exactly when
+ * the fetch fails.
+ *
+ * IT SAYS "READ FROM THE CHAIN" AND NOT "A SINGLE CALL", which it did for one revision. Total value,
+ * holder positions, share price and capacity used are arithmetic over calls rather than calls, so
+ * the stronger sentence was false of four of the figures on the page. */
+const STATIC_FRAME = 'every figure is read from the chain by your';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -122,19 +127,42 @@ test('the page frames itself in static markup, not from a fetch result', () => {
   );
 });
 
-test('every vault row and its address ship as static markup', () => {
+test('the row markup ships as a template, and no vault address is hard-coded', () => {
   const html = read('index.html');
-  // The factory exposes vaultCount() and no enumeration function, so a browser cannot discover
-  // vault addresses. They are in the document, and this pins that they are: a table whose rows
-  // were built by app.js would be an empty table on a failed read.
-  const rows = [...html.matchAll(/data-vault="(0x[0-9a-fA-F]{40})"/g)].map((m) => m[1]);
-  assert.ok(rows.length >= 1, 'no static vault row found; the table cannot be built from a fetch');
-  for (const addr of rows) {
+
+  // WHY A TEMPLATE RATHER THAN STATIC ROWS. `VaultFactory` declares
+  // `address[] public allVaults`, so `allVaults(uint256)` lets a browser enumerate the vaults from
+  // the factory itself. An earlier draft shipped the two addresses in the document and claimed no
+  // enumeration function existed, which was false. A list that comes from the chain cannot fall
+  // behind it, so the addresses are read and only their MARKUP is shipped.
+  assert.match(
+    html,
+    /<template id="vault-row">/,
+    'the row markup must ship in the document as a template, so a reader inspects what ships ' +
+      'rather than a string built in JavaScript',
+  );
+  for (const slot of ['address', 'creator', 'nav', 'price', 'holders', 'pct']) {
     assert.ok(
-      html.includes('/address/' + addr),
-      `${addr} has a row but no explorer link, so a reader cannot check it`,
+      html.includes('data-slot="' + slot + '"'),
+      `the row template has no ${slot} slot, so app.js has nowhere to write that figure`,
     );
   }
+
+  // THE FAILURE STATE IS THE POINT OF THIS LEG. An empty table and a protocol with no vaults look
+  // identical, and one of them is a lie, so the element that says which ships in the document.
+  assert.ok(
+    html.includes('id="vault-empty"'),
+    'no element carries the empty or failed state for the table, so a failed read renders as a ' +
+      'vault-less protocol',
+  );
+
+  const hardcoded = [...html.matchAll(/0x[0-9a-fA-F]{40}/g)].map((m) => m[0]);
+  const factoryOnly = hardcoded.every((a) => a.toLowerCase() === FACTORY.toLowerCase());
+  assert.ok(
+    factoryOnly,
+    'the only address this page may hard-code is the factory it enumerates from. Found: ' +
+      [...new Set(hardcoded)].join(', '),
+  );
 });
 
 test('the built page names the factory address', () => {
