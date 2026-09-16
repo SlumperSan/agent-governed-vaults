@@ -16,9 +16,9 @@
 > directory.
 > `claims-token-absence.test.mjs` is different: it **replaced** the token-launch legs that used to
 > live in this file rather than depending on them, and now walks `apps/site` itself
-> (`CORPUS = apps/site`) to enforce the absence directly. `skills/rwally-claims-contract/SKILL.md`
-> names this file as the reference for the pinned wording rules, but that is documentation, not
-> enforcement.
+> (`CORPUS = apps/site`) to enforce the absence directly. The pinned wording rules are enforced by
+> the `BANNED` array at the top of `apps/site/test/site.test.mjs`; this file is the reference for
+> what they mean.
 >
 > The two guards this file *is* depended on for run from `scripts/test/*.test.mjs`, a **separate**
 > glob on the same `test:backend` line, so dropping `apps/site/test/*.test.mjs` from that line

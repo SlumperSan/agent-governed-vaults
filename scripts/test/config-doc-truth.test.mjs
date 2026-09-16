@@ -23,8 +23,8 @@
  * false claim through. A *negative* guard ("no doc may state a different decay period") must NOT
  * name its files, because the drift it exists to catch arrives in the file nobody added to the
  * list. This file's first version got that wrong: a hand-kept two-file list plus one literal
- * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to
- * `docs/vault/fees-and-carry.md` left the suite green — the exact drift the file exists to stop.
+ * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to a markdown file
+ * outside that list left the suite green — the exact drift the file exists to stop.
  * So: `LAUNCH_DOCS` below is used only for positive assertions, and every negative guard
  * enumerates markdown from the filesystem and matches the claim by *shape*, not by one phrasing.
  */
@@ -65,7 +65,7 @@ const allConfigs = () => [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
 
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
-const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md', 'docs/vault/go-to-market-plan.md'];
+const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md'];
 
 // Directories that are dated records rather than live claims: an execution review quoting
 // `exitFeeMaxBps = 0` as a hypothetical is describing the state it reviewed, not asserting the
@@ -152,12 +152,12 @@ test('no markdown file in the repo states a decay period other than the one the 
   // The negative guard. Enumerated from the filesystem so a NEW doc making a wrong claim is caught,
   // which a named-file list cannot do. Prior values may survive only as flagged history stated
   // outside the decay-period slot ("this line previously said 302,400 s"), which is how
-  // LAUNCH-READINESS §2 and go-to-market-plan currently record theirs.
+  // LAUNCH-READINESS §2 records its own.
   const seconds = mainnet.smoke.exitFeeDecayPeriod;
   const days = seconds / 86_400;
   const files = markdownFiles();
   assert.ok(files.length > 50, `only ${files.length} markdown files found; the walk is not reaching docs/`);
-  assert.ok(files.includes('docs/vault/fees-and-carry.md'), 'the walk no longer reaches docs/vault/, where the fee prose lives');
+  assert.ok(files.includes('docs/audit/walkthroughs/VaultCore.md'), 'the walk no longer reaches a NESTED docs/ subtree');
 
   let claims = 0;
   for (const file of files) {
@@ -194,10 +194,9 @@ test('no markdown file in the repo states a decay period other than the one the 
  *   - `base-mainnet.json`'s OWN `govNote`, twelve lines below the value, still read "this sets a
  *     non-zero timelockDuration ... mainnet capital wants a day to react" — the config annotating
  *     itself with the opposite of its own value;
- *   - `docs/vault/go-to-market-plan.md` still carried "Zero timelock is defensible *because* Mode-F
- *     exits exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
- * Both are in LAUNCH_DOCS or the config itself, so binding the tuple would have caught the second
- * and the self-consistency check catches the first.
+ *   - a second launch document still carried "Zero timelock is defensible *because* Mode-F exits
+ *     exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
+ * Binding the tuple would have caught the second and the self-consistency check catches the first.
  */
 test('every launch doc states the governance tuple the mainnet config carries', () => {
   const g = mainnet.smoke.gov;
@@ -631,7 +630,7 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
   assert.equal(
     sepoliaDeployment.verifiedWiring?.['factory.allowSubVaults()'],
     true,
-    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/vault/subvaultregistry.md '
+    'base-sepolia.json no longer records factory.allowSubVaults() === true. The sub-vault prose '
       + 'cites that read by name as the evidence the flag is per-deployment.'
   );
 });

@@ -48,9 +48,8 @@ so on.
 
 The claims suite scans stylesheets as prose, so a class name, a custom property, a shader uniform or
 a file name is as exposed as a paragraph is. The list is in
-`.claude/skills/rwally-claims-contract/SKILL.md` and in the `BANNED` array at the top of
-`apps/site/test/site.test.mjs`; read one of them before naming anything, because two of the entries
-are ordinary CSS that nobody thinks of as prose:
+the `BANNED` array at the top of `apps/site/test/site.test.mjs`; read it before naming anything,
+because two of the entries are ordinary CSS that nobody thinks of as prose:
 
 - the environment variable for a device's inset area, and the overflow keyword of the same name that
   can follow `justify-content` — both match a banned word on its boundaries;

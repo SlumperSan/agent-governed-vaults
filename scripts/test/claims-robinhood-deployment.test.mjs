@@ -210,7 +210,6 @@ const CITES = {
   'docs/NOW.md': ['date', 'factory', 'vault'],
   'docs/LAUNCH-READINESS.md': ['date', 'factory', 'vault'],
   'docs/INCIDENTS.md': ['date', 'factory', 'vault'],
-  'docs/vault/current-state.md': ['date', 'factory', 'vault'],
   // status.html is the only page carrying the addresses, so it is the only page whose
   // substitution can be proved rather than inferred: `date` alone could coincide with a
   // date already in the prose, and an address cannot be written from memory.
@@ -223,13 +222,9 @@ const CITES = {
   // risks.html was retired into disclaimers.html by #220; the page moved, the requirement did not.
   'apps/site/disclaimers.html': ['date'],
   'docs/DEPLOYMENT.md': ['date'],
-  'docs/AUDIT-HANDOFF.md': ['date'],
   'docs/CHANGES-SINCE-REVIEWS.md': ['date'],
+  'docs/AUDIT-HANDOFF.md': ['date'],
   'docs/REFERENCE-AGENT.md': ['date'],
-  'docs/vault/HOME.md': ['date'],
-  'docs/vault/launch-readiness-gates.md': ['date'],
-  'docs/vault/go-to-market-plan.md': ['date'],
-  'docs/vault/open-items.md': ['date'],
 };
 
 const HOWTO =
@@ -374,7 +369,7 @@ test('no placeholder survives anywhere in the tree', () => {
  *
  *   - The legal forms are MASKED OUT of the text before the scan, not exempted by a window cue
  *     list. A mask names the exact strings this repository has agreed to write — the decision-date
- *     form `docs/vault/HOME.md:10` fixed, and dated authoring markers. A cue list grows one entry
+ *     form `CLAUDE.md`'s rule fixed, and dated authoring markers. A cue list grows one entry
  *     per surface that happens to trip it, which is how a guard ends up fitted to the tree it was
  *     written against rather than to the rule.
  *   - Scope is decided by the NEAREST chain token, not by "is 4663 anywhere nearby". A dated Base
@@ -411,7 +406,7 @@ const OTHER_CHAIN_TOKEN = /base sepolia|base mainnet|\b84532\b|\b8453\b|\bsepoli
 /** The forms a date literal is allowed to take. Masked, character-for-character, before the scan. */
 const LEGAL_DATE_FORMS = new RegExp(
   [
-    // The decision date, in the form docs/vault/HOME.md:10 fixed and CLAUDE.md's rule follows.
+    // The decision date, in the form CLAUDE.md's rule follows.
     String.raw`(?:on |by |since |from |after )?the owner'?s decision (?:of|to deploy of) 20\d{2}-\d{2}-\d{2}`,
     String.raw`the owner (?:decided|approved) on 20\d{2}-\d{2}-\d{2}`,
     String.raw`on 20\d{2}-\d{2}-\d{2} the owner (?:decided|approved)`,
@@ -748,7 +743,7 @@ test('the record carries the wiring fact the prose sends readers to', () => {
   assert.ok(
     Object.prototype.hasOwnProperty.call(wiring, WIRING_KEY),
     `${RECORD_REL}: verifiedWiring[${JSON.stringify(WIRING_KEY)}] is missing. Several surfaces —` +
-      ' llms.txt (both copies), docs/vault/root-vaults-only.md, docs/AUDIT-HANDOFF.md — tell a reader' +
+      ' llms.txt (both copies) and docs/AUDIT-HANDOFF.md — tell a reader' +
       ' to read that key rather than assume either deploy script\'s value, and an instruction to read' +
       ' a key that is not there is worse than no instruction. Record what `VaultFactory.allowSubVaults()`' +
       ` returned on chain ${CHAIN_ID}. The launch path (Deploy.s.sol) constructs the factory with it` +

@@ -1,8 +1,9 @@
 # Architecture: Agent-Governed Index Vault Protocol
 
 Sprint 1 artifact 1.1. Companion: [THREAT-MODEL.md](THREAT-MODEL.md). Decisions labeled
-**C-n** (commitments) and **K-n** (brief contradictions, resolved or accepted) trace back to
-[BUILD-PLAN.md](../BUILD-PLAN.md).
+**C-n** (commitments) and **K-n** (brief contradictions, resolved or accepted) originate in the
+phased build plan, which is no longer carried in this repository; the commitments themselves are
+stated here and in THREAT-MODEL.md.
 
 ---
 
