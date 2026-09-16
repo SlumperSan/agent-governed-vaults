@@ -97,9 +97,12 @@ a deploy target gets missed or an unintended one gets hit:
       sufficient. This repo's norm is that PRs open as drafts pending that sign-off (see
       [`CONTRIBUTING.md`](../CONTRIBUTING.md) and [`docs/reviews/MERGE-POLICY.md`](../docs/reviews/MERGE-POLICY.md),
       which notes merge policy here is convention, not (yet) mechanically enforced).
-- [ ] If this release depends on a draft PR that reverses a prior owner decision (e.g.
-      [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294) re-enabling x402
-      metering on chain 4663), confirm that reversal has been explicitly re-affirmed by the owner
-      as part of *this* release, not assumed from the PR being open.
+- [ ] If this release depends on a PR that reverses a prior owner decision, confirm that reversal
+      has been explicitly re-affirmed by the owner as part of *this* release, rather than assumed
+      from the PR having landed.
+      [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294), which re-enabled
+      x402 metering on chain 4663, merged on 2026-09-15 and is the worked example: it reversed the
+      owner decision of 2026-09-05 and its own description asked that it not be merged without
+      review.
 - [ ] List the draft PRs this release depends on, by number, in the release notes so a reviewer can
       check each one's sign-off status directly rather than trusting a summary.

@@ -95,7 +95,7 @@ const flat = (s) => s.replace(/\s+/g, ' ');
  * Matched case-insensitively and by shape rather than by one capitalisation.
  */
 const BANNED = [
-  { name: 'x402', re: /x402/i, why: 'There is no x402 payment surface on this deployment, by owner decision of 2026-09-05.' },
+  { name: 'x402', re: /x402/i, why: 'apps/app is a read-only browser explorer and has no x402 payment surface. This rested on the owner decision of 2026-09-05 that chain 4663 would carry no x402; that was reversed on 2026-09-15 and apps/api meters 4663 again, which changes nothing here because the metered API is a different deployment.' },
   { name: 'airdrop', re: /\bair\s?drops?\b/i, why: 'No token distribution is promised, designed or scheduled anywhere in this repository.' },
   { name: 'presale', re: /\bpre-?sales?\b/i, why: 'Nothing is for sale on this page and nothing is being raised.' },
   { name: 'coming soon', re: /\bcoming\s+soon\b/i, why: 'A date nobody has committed to. Say what is true today and what reads 0.' },

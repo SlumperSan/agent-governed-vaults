@@ -21,11 +21,12 @@ npx wrangler@4 pages deploy dist --project-name rwally --branch protocol/main
 Notes carried over from [`apps/site-next/README.md`](apps/site-next/README.md) and
 [`docs/REVENUE.md`](docs/REVENUE.md):
 
-- **Wrangler 4 or newer is required.** Wrangler 3's bundled esbuild cannot parse the JSON import
-  attribute (`with { type: 'json' }`) that one of the Pages Functions needs; it fails the build
-  loudly rather than shipping something broken.
+- **`functions/` holds one Function, `_middleware.js`, and it imports nothing.** It uses no Node
+  built-in and no import attribute, so no wrangler version and no compatibility flag is load-bearing
+  for what this directory ships today.
 - `wrangler.toml` sets `pages_build_output_dir = "dist"` and `compatibility_flags =
-  ["nodejs_compat"]` — the latter is required, not optional, for the Functions bundle.
+  ["nodejs_compat"]`. The flag is left in place for a future Function that needs it; check before
+  relying on it, and read the comment at the top of that file for what it was carrying.
 - No secrets or prices are committed in `wrangler.toml` by design; environment variables are set
   on the Cloudflare Pages project itself (Settings → Environment variables → Production), then the
   site is redeployed for them to take effect.
@@ -33,9 +34,24 @@ Notes carried over from [`apps/site-next/README.md`](apps/site-next/README.md) a
   differ, and the network panel must show zero non-`self` hosts.
 
 **The paid vault-snapshot endpoint that used to live in this directory
-(`functions/api/vaults.js`) has been removed.** It settled on Base mainnet, which conflicted with
-the Robinhood-Chain-only direction, and duplicated `apps/api`'s own metered server. A parallel
-cleanup PR removes it; do not describe deploying it, and do not re-add a paid endpoint under
+(`functions/api/vaults.js`) has been removed from this repository, and is still live in
+production.** It settled on Base mainnet, which conflicted with the Robinhood-Chain-only direction,
+and duplicated `apps/api`'s own metered server, so
+[PR #298](https://github.com/SlumperSan/agent-governed-vaults/pull/298) deleted it along with
+`functions/.well-known/x402.js`, and merged on 2026-09-15. The Pages project has not been
+redeployed since, so both are still answering: `GET https://rwally.com/api/vaults` returns **402**
+and `GET https://rwally.com/.well-known/x402` returns **200**, read 2026-09-16.
+
+**So the next deploy of this directory removes the paid endpoint and the discovery document from
+production.** That is the intended end state, but it must not happen by accident while `apps/api`
+has nowhere to serve from. Check before and after any deploy:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}
+" https://rwally.com/api/vaults
+```
+
+Do not describe deploying the removed endpoint, and do not re-add a paid endpoint under
 `apps/site-next` — `apps/api` is the one metered read API going forward.
 
 ## Vault explorer — `apps/app/` → `app.rwally.com` (live)
@@ -59,9 +75,10 @@ From [`apps/app/README.md`](apps/app/README.md):
 ## Metered read API — `apps/api/` (the one paid API — not yet publicly deployed)
 
 `apps/api` is the **one** metered read API going forward, per the Production Map. It is chain-4663
-x402-metered (re-enabled in [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294),
-draft/unmerged as of this writing) and has **no public domain chosen yet** — it is not deployed
-publicly today. Run it locally/operationally with:
+x402-metered — [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294) re-enabled
+that and merged on 2026-09-15 — and has **no public domain chosen yet**, so it is not deployed
+publicly today. Note that no public facilitator settles on chain 4663, so a 4663 deployment needs
+its own settler before it can take a payment. Run it locally/operationally with:
 
 ```bash
 npm run start:api      # node apps/api/src/serve.mjs

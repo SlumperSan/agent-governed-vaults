@@ -128,8 +128,11 @@ there, `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, but not as a singleton (§3
 per-vault, `Deploy.s.sol` deploys none, and a creator supplies its own). No exit has settled and no
 ten-phase lifecycle artefact exists for this chain.
 
-**No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
-configures an x402 surface, and nothing recorded depends on one.
+**No x402 surface is part of this contract deployment**: none of the ten transactions deploys or
+configures one, and nothing recorded depends on one. That is a property of the contracts and does
+not change. It is a different fact from whether `apps/api` meters reads on this chain, which is an
+API-layer flag — switched off on the owner's decision of 2026-09-05 and switched back on by the
+owner's decision of 2026-09-15. See §6.
 
 **All seven contracts are source-verified, on Sourcify and on the explorer.** Sourcify returns
 `"creationMatch": "exact_match"` and `"runtimeMatch": "exact_match"` for every one of the seven at
@@ -560,12 +563,35 @@ Run each check against the live addresses:
   - **Chains that meter** (Base Sepolia; anything with no `x402` block, which is the default):
     deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on
     Base). Set the price spec (asset = USDC, payTo = your treasury, network).
-  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: false` — the owner's decision of
-    2026-09-05. There is no facilitator to deploy behind and no price spec to set: the same reads
-    are served with no 402 gate. `PRICE_ASSET`/`PRICE_PAYTO` are still required env (the API
-    validates them at startup, unchanged) but are never quoted to a caller. Set
-    `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` deliberately here rather than taking the defaults:
-    with metering off they are the only limit on the read routes, where payment used to be.
+  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: true` — the owner's decision of
+    2026-09-15, which reversed the 2026-09-05 decision that had switched it off. So this chain
+    takes the metering branch above, with one difference that matters when you set the price spec:
+    **the settlement token is USDG, not Circle USDC.** `contracts/config/robinhood-mainnet.json`
+    keeps it under the key `usdc` so the file diffs cleanly against `base-mainnet.json`, but the
+    address is `0x5fc5360d0400a0fd4f2af552add042d716f1d168` and its on-chain record reads
+    `name() "Global Dollar"`, `symbol() "USDG"`, `decimals() 6`. Circle's USDC has zero bytes of
+    code on 4663. Set `PRICE_ASSET` to that address.
+
+    **You must also set the EIP-712 domain by hand here, and the defaults are wrong for this
+    token.** Under `FACILITATOR=standard`, `createStandardHttpFacilitator` takes the domain from
+    `FACILITATOR_USDC_NAME` / `FACILITATOR_USDC_VERSION` and defaults them to `USD Coin` / `2`,
+    which is Circle USDC on Base. It posts that as `paymentRequirements.extra` on every `/verify`
+    and `/settle`, so leaving the defaults on 4663 signs against a domain the token does not have
+    and every payment fails. USDG's domain is `Global Dollar` / `1` — recorded under
+    `verifiedOnChain.observed.usdgDomain`, where it was recovered by reproducing
+    `DOMAIN_SEPARATOR()` from the preimage. It could not be read from the token: **USDG exposes no
+    `version()` getter**, so `readUsdcDomain` in `apps/api/src/facilitator.mjs`, which reads
+    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. It has two
+    direct callers: `assertUsdcDomain`, beside it in the same file, and `scripts/live-x402-run.mjs`,
+    the testnet settlement runner. `facilitator-server.mjs`, the local settling facilitator, reaches
+    it only through `assertUsdcDomain`. None of those paths is taken by a `FACILITATOR=standard`
+    deployment, which is the one this bullet is about.
+    `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
+    chain: x402 is the limiter on the paid ones.
+    **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
+    this bullet describes a configuration, not a running service. USDG carries a canonical
+    EIP-3009 `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` on-chain, so the existing
+    `transferWithAuthorization` settlement path needs no modification when one is stood up.
 
 ## 7. Canary monitoring (post-launch)
 

@@ -107,8 +107,9 @@ the comments, and the owner is who decides a claim.
   both were created by the deployer EOA rather than the creator Safe the record named, because
   `creator` is immutable and that identity cannot be rotated. Base Sepolia
   (84532): yes, a testnet trial with no value at stake. No other chain: no. Settlement is USDG (6 dp)
-  on 4663, and x402 metered reads still run on Base Sepolia only, with no facilitator for 4663, so
-  a sentence about settlement and a sentence about metered reads are about different chains.
+  on 4663, and since the owner's decision of 2026-09-15 `apps/api` meters reads on 4663 too — but
+  **no facilitator is deployed for 4663 and `apps/api` is not deployed anywhere**, so a sentence
+  about metered reads on that chain is about a configuration, never about a running service.
 - **"Guarantee"**: only inside the permitted fragments `no guarantee of any outcome` and
   `a good-faith measure and not a guarantee`.
 - **'Reverts without a sequencer feed.'** `ChainlinkOracle._requireSequencerUp` returns early on

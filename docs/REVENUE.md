@@ -1,6 +1,10 @@
 # Revenue — HISTORICAL / SUPERSEDED
 
-> **This document is historical and no longer describes a live or planned rail.** The
+> **This document is historical and the code it describes is gone from this repository — but the
+> rail it documents is still answering in production.** As of 2026-09-16,
+> `GET https://rwally.com/api/vaults` returns **402** with a `PAYMENT-REQUIRED` challenge and
+> `GET https://rwally.com/.well-known/x402` returns **200**, because the Cloudflare Pages project
+> has not been redeployed since the removal. The next deploy of `apps/site-next` removes both. The
 > Base-mainnet-settlement paid-snapshot rail it documents (`apps/site-next/functions/api/vaults.js`,
 > `apps/site-next/functions/.well-known/x402.js`, and their supporting `_price.js`/`_snapshot.json`)
 > was **removed on 2026-09-15** because it duplicated and conflicted with `apps/api`'s own x402 rail:
@@ -15,8 +19,11 @@
 > (`docs/DEPLOYMENT.md` §6, `docs/RUNTIME.md`) — this file is kept only so the rationale for the
 > earlier Base-settlement design, and why it was retired, is not lost.
 >
-> Everything below this line is the **original, unedited** runbook for the removed rail. It
-> describes code that no longer exists in this repository. Read it as history, not as instructions.
+> Everything below this line is the runbook for the removed rail, and it describes code that no
+> longer exists in this repository. **Read it as history, not as instructions.** It is no longer
+> unedited: sentences that made a present-tense claim about the removed code, or that asserted
+> nothing had been deployed, have been corrected where a reader could have acted on them. The
+> design reasoning is otherwise untouched, which is the whole reason the file is kept.
 
 ---
 
@@ -26,18 +33,16 @@
 paid HTTP reads settled in USDC over x402. It records what is done, what is not, and the exact steps
 only the owner can run. It is not a business plan and it does not forecast anything.
 
-**Status: the rail is built and unpublished.** Every step below up to "What the owner runs" is
-landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
-is **$0.00**.
+**Status: the rail described below is deployed and earning nothing.** Every step up to "What the
+owner runs" is landed and tested, and the endpoint is answering in production — see the banner at the
+top of this file. Its source was removed from this repository by PR #298. **No mainnet payment has
+ever been taken and revenue to date is $0.00**: a 402 is the gate refusing, and says nothing about
+settlement.
 
-> **Flagged for owner reconciliation, not yet resolved (see README's Production Map).** This plan
-> settles payment in USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain
-> (4663). That split predates the current direction that Robinhood Chain is the only externally
-> marketed live chain and that PR #294 re-enables x402 metering for `apps/api` on chain 4663. The
-> two do not conflict in code — this Pages Function is independent of `apps/api`'s own server — but
-> they would conflict in public narrative if both shipped as separately written. Do not run "What
-> the owner runs" below until the owner has decided whether this endpoint settles on Base as written
-> or is re-pointed to Robinhood Chain.
+> **The owner resolved this by removing the endpoint (PR #298).** The plan below settles payment in
+> USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain (4663). `apps/api`
+> is the one paid API going forward, and it meters on chain 4663. See the Production Map in
+> `README.md`.
 
 ---
 
@@ -55,9 +60,10 @@ no Solidity in this repository reads the switch.
 **It is a pinned snapshot, not a live chain read**, and every response says so in `live: false` and
 `asOf`. Balances, NAV, share supply and member positions are deliberately absent: they move block to
 block, and a pinned file carrying them would be wrong within minutes while still looking
-authoritative. `apps/site-next/test/x402-edge.test.mjs` fails if a balance-shaped field ever appears in
-the snapshot, and fails if any vault field drifts from
-`contracts/config/deployments/robinhood-mainnet.json`.
+authoritative. Both properties were enforced by `apps/site-next/test/x402-edge.test.mjs` — it failed
+if a balance-shaped field ever appeared in the snapshot, and failed if any vault field drifted from
+`contracts/config/deployments/robinhood-mainnet.json`. PR #298 deleted that file along with the
+route, so nothing in this repository enforces either property any more.
 
 Serving live balances means a chain read per request at the edge. That is the honest next step and
 it is **not** what ships today.
@@ -82,7 +88,7 @@ Of the four selectable modes, `FACILITATOR=stub`, `FACILITATOR=http` and `FACILI
 hold no key; `FACILITATOR=svm` DOES, because Solana's flow makes that process the fee payer and
 it loads `SVM_KEYPAIR`. This route is EVM-only and uses `standard`.
 
-`apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
+`apps/site-next/functions/api/vaults.js` was a Cloudflare Pages Function. It **imported** `gate` from
 `apps/api/src/x402.mjs` and `createStandardHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
 reimplementing the 402 handshake. Two implementations of one payment protocol drift, and the half
 that drifts at the edge is the half deciding whether a caller's USDC bought anything. The build
@@ -122,9 +128,9 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid | **Proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The edge route refuses to serve unpaid | **Was proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs`, which PR #298 deleted along with the route. The deployed route still refuses: it answers 402 in production. Nothing in this repository tests it any more. |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
-| A mainnet payment has settled | **No.** Nothing has been deployed |
+| A mainnet payment has settled | **No.** The route is deployed and answering 402; settlement has never been exercised on mainnet, and a 402 is the gate refusing |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`

@@ -211,8 +211,8 @@ sub-README, this table wins.
 | Marketing site (retired) | `apps/site/` | — | **Not deployed. Do not deploy.** Superseded by `site-next`; deploying it would overwrite the live site (see #267/#268). |
 | Vault explorer | `apps/app/` | `app.rwally.com` | **Live.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Reads chain 4663 live, in-browser. |
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
-| Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** Chain-4663 x402 metering re-enabled in PR #294 (draft, unmerged); no public domain chosen yet. |
-| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed) | N/A | **Removed** (PR #298, owner-approved) — duplicated `apps/api` and settled on Base mainnet, conflicting with the Robinhood-Chain-only direction. `apps/api` is now the one paid API; `docs/REVENUE.md` is kept for history, marked superseded. |
+| Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** Chain-4663 x402 metering re-enabled by PR #294, merged 2026-09-15; no facilitator stood up for 4663 and no public domain chosen yet. |
+| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of `apps/site-next` removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the Robinhood-Chain-only direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
 | Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once `site-next` publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
 | Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
 | API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
@@ -224,8 +224,22 @@ externally marketed live chain" + PR #294 re-enabling x402 metering on chain 466
 and would have contradicted it at the narrative level had it ever shipped. The owner decided to
 remove the endpoint entirely (PR #298) rather than re-point its settlement chain, since `apps/api`
 already serves this role on Robinhood Chain and having two paid-API code paths violated the "one
-API" rule this table exists to enforce. Nothing was ever deployed and revenue was $0.00 throughout,
-so there was never a live contradiction — this is now closed.
+API" rule this table exists to enforce. Revenue is $0.00 and no settlement has ever been exercised
+on mainnet.
+
+**The removal has not reached production, and that is a trap to know about before deploying.** The
+Cloudflare Pages project still serves what was deployed before PR #298: as of 2026-09-16,
+`GET https://rwally.com/api/vaults` answers **402** with a spec-shaped `PAYMENT-REQUIRED` challenge
+quoting USDC on Base mainnet, and `GET https://rwally.com/.well-known/x402` answers **200** with the
+discovery document — both read off the wire, and neither has source in this repository any more. So
+the next `wrangler pages deploy` of `apps/site-next` removes the paid endpoint and the discovery
+document from production, which is the intended end state but must not happen by accident while
+`apps/api` has nowhere to serve from. Verify before and after any deploy:
+
+```
+curl -s -o /dev/null -w "%{http_code}
+" https://rwally.com/api/vaults
+```
 
 ## Build & test
 

@@ -23,9 +23,11 @@
  *              been told something contradictory about a payment gate. It refuses to start.
  *   CHAIN_ID   the chain this API serves. Its ONLY effect is to resolve the x402 capability from
  *              `contracts/config/*.json` (see packages/chain-config/src/x402.mjs): a config whose
- *              `x402.enabled` is false — chain 4663 — makes this server answer the metered routes
- *              without a 402 gate and bucket every route instead. Unset, or a chain with no config
- *              or no `x402` block, leaves metering ON, which is what it has always been.
+ *              `x402.enabled` is false makes this server answer the metered routes without a 402
+ *              gate and bucket every route instead. No chain config in this repository declares
+ *              that today: 4663 did from 2026-09-05 until the owner reversed it on 2026-09-15, and
+ *              it now meters like any other. Unset, or a chain with no config or no `x402` block,
+ *              leaves metering ON, which is what it has always been.
  *   FACILITATOR (stub | http | standard | svm)   FACILITATOR_URL (required when FACILITATOR=http
  *              or FACILITATOR=standard — for `http` it is this repo's own bespoke settle endpoint;
  *              for `standard` it is a real facilitator's BASE url, e.g.
