@@ -641,12 +641,12 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
  * The test above pins the two SCRIPTS and the recorded on-chain read. It pins no prose, so nothing
  * stopped a doc re-asserting the universal — and that is exactly how the first version of this
  * change was rejected: it scoped bullet 2 of a two-bullet list and left bullet 1, and left the
- * canonical decision note (`root-vaults-only.md`) saying "the protocol ships with sub-vaults
- * disabled … every vault is wired root-only".
+ * canonical decision note of the day saying "the protocol ships with sub-vaults disabled … every
+ * vault is wired root-only".
  *
  * WHAT IS BANNED, and why these shapes rather than a scoping heuristic. "At launch" reads like
- * scoping but is not: `root-vaults-only.md` said "At launch the protocol ships with…" and was
- * still false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
+ * scoping but is not: that same note said "At launch the protocol ships with…" and was still
+ * false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
  * whether a sentence is sufficiently qualified. It bans the two CONSTRUCTIONS that erase the
  * per-factory binding no matter how they are qualified:
  *
@@ -694,9 +694,10 @@ const SUBVAULT_SCOPED = /\bit deploys\b|\bon (?:that|such a|this) factory\b|\bwh
 
 /**
  * SENTENCES, not lines. Markdown wraps at ~100 columns, so a claim and the clause that scopes it
- * routinely sit on different lines: `c1-empty-electorate.md` says "…so on that factory
- * `createChildVault` reverts and every vault it deploys is wired `subVaultRegistry = address(0)`
- * — no vault can be funded as a child there…", where the scoping is two lines above the claim. A
+ * routinely sit on different lines. The worked example this guard was written against read "…so on
+ * that factory `createChildVault` reverts and every vault it deploys is wired
+ * `subVaultRegistry = address(0)` — no vault can be funded as a child there…", where the scoping
+ * is two lines above the claim. A
  * line-based guard reads that as an unscoped universal and false-positives on correct prose,
  * which is how a guard gets weakened or deleted. Paragraph-joined, then split on sentence ends.
  */
