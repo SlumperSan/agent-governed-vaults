@@ -179,9 +179,34 @@ export function networksEqual(a, b) {
 
 /**
  * @typedef {Object} Facilitator
- * @property {(challenge:object, envelope:object) => Promise<{ok:boolean, receiptId?:string, reason?:string}>} verifyAndSettle
+ * @property {(challenge:{price:PriceSpec, resource?:object, extensions?:object}, envelope:object)
+ *   => Promise<{ok:boolean, receiptId?:string, reason?:string}>} verifyAndSettle
+ *   The first argument gained `resource` and `extensions` on 2026-09-16 so that a settlement can be
+ *   catalogued; `price` is unmoved, so a facilitator that reads only `price` is unaffected.
  */
 
+
+/**
+ * Spec §5.1.1's `ResourceInfo`, built in ONE place.
+ *
+ * It is shared rather than inlined because two different consumers need the identical object and
+ * they are in different functions: the 402 challenge advertises it, and the PaymentPayload sent to
+ * the facilitator is catalogued under it. Built twice, they could disagree, and a catalogue keyed
+ * on a URL the challenge never advertised is worse than no catalogue entry at all.
+ *
+ * `url` is Required by the spec and this module has no request path of its own, so an unsupplied
+ * `resource` yields `''` rather than a guess. That is spec-legal but useless as a catalogue key --
+ * see the call site in server.mjs, which is what actually knows the URL.
+ *
+ * @param {{url?:string, description?:string, mimeType?:string}} [resource]
+ */
+export function buildResourceInfo(resource) {
+  return {
+    url: resource?.url ?? '',
+    ...(resource?.description ? { description: resource.description } : {}),
+    ...(resource?.mimeType ? { mimeType: resource.mimeType } : {}),
+  };
+}
 
 /**
  * Build the 402 challenge for a route. Injectable `nonce`/`nowMs` keep it deterministic for tests.
@@ -194,7 +219,7 @@ export function networksEqual(a, b) {
  * unpayable until the counter walks past the burned range. Observed and fixed in sprint 14; see
  * docs/X402-LIVE-REPORT.md.
  * @param {PriceSpec} price
- * @param {{nonce?:string, nowMs:number, ttlMs?:number, resource?:{url?:string, description?:string, mimeType?:string}}} opts
+ * @param {{nonce?:string, nowMs:number, ttlMs?:number, resource?:{url?:string, description?:string, mimeType?:string}, bazaar?:object}} opts
  */
 export function buildChallenge(price, opts) {
   const nonce = opts.nonce ?? `0x${randomBytes(32).toString('hex')}`;
@@ -212,11 +237,7 @@ export function buildChallenge(price, opts) {
     // §5.1.1's ResourceInfo. `url` is Required there; this module has no request path to put in
     // it (that lives at the server.mjs call site), so an unsupplied `opts.resource` yields `''`
     // rather than a guessed value — still spec-legal (a string), just not informative on its own.
-    resource: {
-      url: opts.resource?.url ?? '',
-      ...(opts.resource?.description ? { description: opts.resource.description } : {}),
-      ...(opts.resource?.mimeType ? { mimeType: opts.resource.mimeType } : {}),
-    },
+    resource: buildResourceInfo(opts.resource),
     // §5.1.1/§5.1.2's `accepts` array of PaymentRequirements. `network` is CAIP-2 (§11.1);
     // `maxTimeoutSeconds` is this same challenge's TTL, in seconds; `extra` (§5.1.2, Optional) is
     // included only when the caller supplied `price.extra` — see the `PriceSpec` typedef above.
@@ -231,7 +252,20 @@ export function buildChallenge(price, opts) {
         ...(price.extra ? { extra: price.extra } : {}),
       },
     ],
-    extensions: {}, // §5.1.1: Optional; none implemented, so an empty map rather than omitted.
+    // §5.1.1's Optional `extensions` map, and the one entry this server has a use for.
+    //
+    // A BAZAAR CATALOGUES A RESOURCE AS A SIDE EFFECT OF A PAYMENT: the entry declared here is
+    // echoed into the PaymentPayload and read back by the facilitator on /verify or /settle.
+    // There is no submission endpoint on either the PayAI or the Coinbase bazaar, so an omitted
+    // entry does not mean "not listed yet" -- it means "can never be listed".
+    //
+    // The shape is read from live catalogued entries (GET
+    // facilitator.payai.network/discovery/resources, 2026-09-16), not from vendor prose: `info`
+    // carries `input`, at minimum `{type:'http', method}`, plus optional `pathParams`/
+    // `queryParams` for a GET or `body`/`bodyType` for a POST; `output` is `{type, example}`; and
+    // `schema` is an optional JSON Schema. It comes from the call site for the same reason
+    // `resource` does -- this module has no idea what route it is gating.
+    extensions: opts.bazaar ? { bazaar: opts.bazaar } : {},
   };
   // AN SVM CLIENT BUILDS THE TRANSACTION, SO IT NEEDS TWO THINGS AN EVM CLIENT NEVER ASKS FOR.
   //
@@ -387,7 +421,7 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
  *   {status:200, headers:Record<string,string>, receiptId:string}
  * >}
  */
-export async function gate({ headers, price, facilitator, nowMs, seenNonces, resource }) {
+export async function gate({ headers, price, facilitator, nowMs, seenNonces, resource, bazaar }) {
   /**
    * The 402 return, built in ONE place for all four branches that produce one. It was four
    * copies of the same three lines, which is how the header encoding came to be something four
@@ -403,7 +437,7 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
    * @param {string} error
    */
   const require402 = (error) => {
-    const challenge = buildChallenge(price, { nowMs, resource });
+    const challenge = buildChallenge(price, { nowMs, resource, bazaar });
     return {
       status: /** @type {402} */ (402),
       headers: { [HEADER_REQUIRED]: encodeHeaderJson(challenge) },
@@ -438,7 +472,27 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
     if (seenNonces.has(nonce)) return require402('payment invalid: replayed-nonce');
   }
 
-  const settled = await facilitator.verifyAndSettle({ price }, env);
+  // WHAT THE FACILITATOR IS TOLD, AND WHY IT IS MORE THAN THE PRICE.
+  //
+  // Cataloguing reads `PaymentPayload.resource` together with `PaymentPayload.extensions[bazaar]`.
+  // This call passed `{ price }` alone, so both were dropped HERE even when the challenge carried
+  // them correctly -- which made a well-formed bazaar entry in the 402 inert, and made the two
+  // fixes above unobservable end to end. A facilitator that is never told the resource cannot
+  // catalogue it however good the challenge was.
+  //
+  // Everything added is the SERVER'S OWN, never the client's: `price` comes from PRICE_* config,
+  // `resource` from the call site's knowledge of the route, `bazaar` from the same. The envelope
+  // stays the second argument and is still the only attacker-controlled input on this path.
+  // EACH IS OMITTED WHEN THERE IS NOTHING TO SAY, never sent empty. A `resource` of `{url:''}` is
+  // a catalogue key of `''`, which collides with every other seller that sent the same thing -- so
+  // an empty one is worse than an absent one, not merely equivalent to it. Omitting them also
+  // keeps this argument byte-identical to what it was for every caller that supplies neither,
+  // which is what the wire-contract test pins.
+  const catalog = { price };
+  const resourceInfo = buildResourceInfo(resource);
+  if (resourceInfo.url) catalog.resource = resourceInfo;
+  if (bazaar) catalog.extensions = { bazaar };
+  const settled = await facilitator.verifyAndSettle(catalog, env);
   if (!settled.ok) return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
 
   if (seenNonces && nonce) seenNonces.add(nonce);

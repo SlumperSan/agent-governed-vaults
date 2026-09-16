@@ -267,6 +267,19 @@ export function createStandardHttpFacilitator({
   const base = String(url ?? '').replace(/\/+$/, '');
 
   return {
+    // THE DOMAIN THIS CLIENT WILL DEMAND, PUBLISHED SO THE CHALLENGE CAN ADVERTISE THE SAME ONE.
+    //
+    // `paymentRequirements.extra` below has always carried `{name, version}` on the wire to
+    // /verify and /settle, while the 402 challenge carried no `extra` at all -- so the facilitator
+    // knew the EIP-712 domain and the payer, who is the one that has to sign against it, did not.
+    // Omitting it from the challenge returns `invalid_exact_evm_missing_eip712_domain`.
+    //
+    // Publishing it here rather than re-deriving it at the challenge site is deliberate: two
+    // derivations can drift, and a challenge advertising a domain the facilitator will not accept
+    // fails AFTER the payer has signed, which is the worse of the two failures. `buildApiServer`
+    // joins this into `price.extra` -- the same one line, and the same reason, as `svm.feePayer`.
+    extra: { name: usdcName, version: usdcVersion },
+
     async verifyAndSettle(challenge, envelope) {
       // The server's OWN price spec (asset/amount/payTo/network), never attacker-controlled at
       // this layer — x402.mjs builds it from PRICE_* config and echoes it here unchanged. Fail
@@ -291,10 +304,24 @@ export function createStandardHttpFacilitator({
         maxTimeoutSeconds,
         extra: { name: usdcName, version: usdcVersion },
       };
+      // `resource` AND `extensions` ARE WHAT GET THE SELLER CATALOGUED, and they were absent.
+      //
+      // A Bazaar lists a resource as a side effect of a payment: it reads `PaymentPayload.resource`
+      // as the catalogue key and `PaymentPayload.extensions[bazaar]` as the entry. Neither was sent
+      // here, so every settlement this client made was uncatalogued regardless of what the 402
+      // advertised. Both come from `gate()`, which takes them from the server's own configuration.
+      //
+      // Each is omitted rather than sent empty when the caller has nothing to say. An empty
+      // `resource` is a catalogue key of `''`, which is worse than absent -- it is a key that
+      // collides with every other seller that made the same mistake.
       const paymentPayload = {
         x402Version: 2,
         accepted: paymentRequirements,
         payload: { signature: envelope.signature, authorization: envelope.authorization },
+        ...(challenge?.resource?.url ? { resource: challenge.resource } : {}),
+        ...(challenge?.extensions && Object.keys(challenge.extensions).length
+          ? { extensions: challenge.extensions }
+          : {}),
       };
       const wireBody = { x402Version: 2, paymentPayload, paymentRequirements };
 

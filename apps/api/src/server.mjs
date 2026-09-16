@@ -79,8 +79,62 @@ function jsonStringify(obj) {
  * @param {{enabled:boolean, chainId?:number|null, chainName?:string|null, source?:string}} [deps.x402]
  *        the chain's x402 capability (see the module header). Omitted = enabled, i.e. unchanged.
  * @param {{debug?:Function, info?:Function, warn?:Function, error?:Function}} [deps.log]
+ * @param {string|null} [deps.publicBaseUrl]
+ *        public origin (no trailing slash) used to make the 402's `resource.url` absolute, which
+ *        is what a Bazaar catalogues the resource under. Omitted = the bare request path, i.e.
+ *        exactly what this server sent before.
  */
-export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false, rateLimit = null, metrics = createMetrics(), limits = DEFAULT_LIMITS, trustProxy = false, x402 = { enabled: true }, log = {} }) {
+/**
+ * What a metered route publishes about itself: the url a Bazaar should catalogue it under, and the
+ * `extensions.bazaar` entry to catalogue there. `{url: path}` with no entry for anything else.
+ *
+ * WHAT THIS IS FOR. A Bazaar catalogues a paid resource as a side effect of a payment, and this is
+ * the entry it catalogues. There is no submission endpoint, so a route that never declares one can
+ * never appear in an index however many payments it settles.
+ *
+ * THE SHAPE IS READ, NOT INVENTED. Taken from live catalogued entries at
+ * `GET https://facilitator.payai.network/discovery/resources` on 2026-09-16: `info.input` is at
+ * minimum `{type:'http', method}`, `info.output` is `{type, example}`, and `schema` is an optional
+ * JSON Schema.
+ *
+ * A PARAMETERISED ROUTE IS CATALOGUED AS THE ROUTE, NOT AS ONE ADDRESS. Live entries template path
+ * parameters into the url as `:name` -- `https://api.paysponge.com/v0/inboxes/:inbox_id/messages`
+ * is a real catalogued key. Catalogued under the concrete url the caller happened to request, this
+ * API would publish one vault per payment and never the route, filling an index with near-duplicate
+ * entries that each answer for a single address. So the url returned here is the TEMPLATE, which is
+ * also why it cannot simply be the request path.
+ *
+ * Every route below is a GET that answers JSON, so none carries a request body.
+ *
+ * @param {string} path  the request path, already normalized by the caller
+ * @returns {{url:string, bazaar?:object}}
+ */
+function catalogFor(path) {
+  const entry = (description, pathParams) => ({
+    info: {
+      input: { type: 'http', method: 'GET', ...(pathParams ? { pathParams } : {}) },
+      output: { type: 'json' },
+      description,
+    },
+  });
+  if (path === '/vaults')
+    return { url: path, bazaar: entry('Creation-time facts for every indexed Agent-Governed Vault.') };
+  if (path === '/operators/leaderboard')
+    return { url: path, bazaar: entry('Operators ranked by the indexed vaults they run.') };
+  if (/^\/vaults\/[^/]+\/members\/[^/]+$/.test(path))
+    return {
+      url: '/vaults/:address/members/:member',
+      bazaar: entry('The position one member holds in one vault.', { address: '', member: '' }),
+    };
+  if (/^\/vaults\/[^/]+$/.test(path))
+    return { url: '/vaults/:address', bazaar: entry('One vault, by address.', { address: '' }) };
+  // An unknown path is gated BEFORE it is resolved, so it reaches here. It must not be catalogued:
+  // indexing a 404 publishes a resource that answers nothing. It still gets a `url` so the
+  // challenge is well formed.
+  return { url: path };
+}
+
+export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false, rateLimit = null, metrics = createMetrics(), limits = DEFAULT_LIMITS, trustProxy = false, x402 = { enabled: true }, log = {}, publicBaseUrl = null }) {
   const seenNonces = new Set();
   const lim = { ...DEFAULT_LIMITS, ...limits };
   // Only an explicit `false` turns metering off; anything else — including a malformed capability
@@ -163,7 +217,22 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       // `resource.url` (x402 v2 spec §5.1.1's ResourceInfo) is the one field of the 402 body that
       // x402.mjs cannot fill in on its own — it has no request path — so this is the one call
       // site in the whole conformance change that reaches outside apps/api/src/x402.mjs.
-      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces, resource: { url: path } });
+      //
+      // IT IS ABSOLUTE WHEN IT CAN BE, because that field is the key a Bazaar catalogues the
+      // resource under: every entry read from facilitator.payai.network/discovery/resources on
+      // 2026-09-16 is keyed on a full url. A bare `/vaults` would collide with every other seller
+      // that published a path. Without PUBLIC_BASE_URL configured it stays the bare path, which is
+      // spec-legal and useless rather than wrong-and-persistent — see serve.mjs for why the Host
+      // header is deliberately not used to fill the gap.
+      const catalog = catalogFor(path);
+      const verdict = await gate({
+        headers: lc, price, facilitator, nowMs: now(), seenNonces,
+        resource: {
+          url: publicBaseUrl ? `${publicBaseUrl}${catalog.url}` : catalog.url,
+          mimeType: 'application/json',
+        },
+        bazaar: catalog.bazaar,
+      });
       if (verdict.status === 402) {
         metrics.inc('vault_api_payment_required_total');
         return { status: 402, headers: verdict.headers, body: jsonStringify(verdict.body) };

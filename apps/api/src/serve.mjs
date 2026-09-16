@@ -10,6 +10,9 @@
  * processes.
  *
  * Required env:
+ *   PUBLIC_BASE_URL the public origin this API answers on (e.g. https://api.rwally.com). Optional.
+ *                   Makes the 402's `resource.url` absolute, which is what a Bazaar catalogues a
+ *                   resource under. Unset, that field stays the bare request path.
  *   PRICE_ASSET     USDC contract address (what payments are denominated in)
  *   PRICE_PAYTO     recipient address for metered-read payments
  * Optional env:
@@ -183,6 +186,17 @@ export function resolveApiConfig(env) {
     port: num('PORT', 8402),
     reloadMs: num('RELOAD_MS', 5000),
     cors: flag('CORS'),
+    // The public origin this API is reachable at, e.g. `https://api.rwally.com`. Its only use is
+    // to turn the request path into the ABSOLUTE url that spec §5.1.1's `resource.url` requires
+    // and that a Bazaar catalogues the resource under -- every catalogued entry read from
+    // facilitator.payai.network on 2026-09-16 keys on an absolute url.
+    //
+    // IT IS CONFIGURATION AND NOT THE `Host` HEADER, deliberately. Host is client-supplied, so
+    // deriving the catalogue key from it would let any caller choose what this seller is listed
+    // as by sending one request with a forged Host. Unset, `resource.url` stays the bare path it
+    // is today: uninformative, but not attacker-chosen, and not wrong in a way that persists in
+    // someone else's index.
+    publicBaseUrl: env.PUBLIC_BASE_URL ? String(env.PUBLIC_BASE_URL).replace(/\/+$/, '') : null,
     price: {
       asset: env.PRICE_ASSET,
       amount: env.PRICE_AMOUNT || '10000',
@@ -291,6 +305,20 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   // the join between a pure config and a keypair-holding facilitator, and it is one line because
   // the facilitator publishes its own public key rather than the config guessing at it.
   if (cfg.price?.svm && fac.feePayer) cfg.price.svm.feePayer = fac.feePayer;
+  // THE SAME JOIN, FOR THE EIP-712 DOMAIN, and for the same reason one line up: the challenge
+  // cannot advertise a domain until the thing that will demand it exists. A payer signs an
+  // EIP-3009 authorization against this domain, so a challenge without it leaves them nothing to
+  // sign and /verify answers `invalid_exact_evm_missing_eip712_domain`.
+  //
+  // It is TAKEN FROM THE FACILITATOR rather than re-derived, because the failure mode of two
+  // derivations is a challenge advertising a domain the facilitator rejects -- discovered after
+  // the payer has signed, which is the expensive moment to discover it. A facilitator that does
+  // not publish one (`stub`, and the local settler) leaves `extra` absent, which is exactly the
+  // behaviour every existing test pins.
+  //
+  // An operator-supplied `price.extra` is never overwritten: if someone configured one
+  // deliberately, that is the configuration, and silently replacing it would be the bug.
+  if (cfg.price && !cfg.price.extra && fac.extra) cfg.price.extra = fac.extra;
   const metrics = createMetrics();
   const rateLimit = cfg.rateLimit?.enabled
     ? createRateLimiter({ capacity: cfg.rateLimit.capacity, refillPerSec: cfg.rateLimit.refillPerSec, maxKeys: cfg.rateLimit.maxKeys, now })
@@ -311,6 +339,7 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   const api = createApi({
     state, facilitator: fac, price: cfg.price, cors: cfg.cors,
     rateLimit, metrics, limits: cfg.limits, trustProxy: cfg.trustProxy, x402: cap, log,
+    publicBaseUrl: cfg.publicBaseUrl ?? null,
   });
 
   async function reload() {

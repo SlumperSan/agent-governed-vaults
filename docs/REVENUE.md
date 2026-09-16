@@ -334,27 +334,30 @@ Verify it rather than trusting this paragraph; the header decodes, and the decod
 curl -s -D - -o /dev/null https://rwally.com/api/vaults | sed -n 's/^payment-required: //p' | tr -d '\r' | base64 -d
 ```
 
-That leaves **three** gaps between a paid request and a listing, all of them recorded in #290. They
-are no longer queued behind a transport fix: they are now the only thing standing between a settled
-payment and a catalog entry.
+That left **three** gaps between a paid request and a listing, recorded in #290. **All three are
+closed in `apps/api`, and a fourth was found while closing them.** Cited by symbol rather than by
+line, because these lines have moved once already:
 
-1. **The challenge carries no bazaar extension.** `apps/api/src/x402.mjs:234` emits `extensions: {}`,
-   with a comment recording that none are implemented. A payment could settle in full and catalog
-   nothing, because step 1 of the mechanism above never happened.
-2. **The catalog key would be empty.** The decoded challenge carries `"resource":{"url":""}`;
-   `apps/api/src/x402.mjs:215-216` defaults `resource.url` to the empty string when the call site
-   supplies no resource, and the edge route supplies none. `PaymentPayload.resource` is what the
-   facilitator catalogs the entry under.
-3. **The `accepts[]` entry carries no `extra`.** `apps/api/src/x402.mjs:231` includes `extra` only
-   when the caller supplies `price.extra`, and the decoded challenge shows none. Measured above:
-   with `extra` omitted, PayAI answers `invalid_exact_evm_missing_eip712_domain`. A client that does
-   not independently read the USDC EIP-712 domain off the token has nothing to sign against, and
-   that domain differs between chains, so guessing it is not safe —
-   `apps/api/src/facilitator.mjs:374`'s `readUsdcDomain` already documents reading it rather than
-   assuming it.
+1. **The challenge carried no bazaar extension.** `buildChallenge` in `apps/api/src/x402.mjs` emitted
+   `extensions: {}` unconditionally, so a payment could settle in full and catalog nothing. It now
+   emits the entry its call site supplies, and still emits an empty map when there is none.
+2. **The catalog key would have been empty.** `buildChallenge` defaults `resource.url` to the empty
+   string when the call site supplies no resource, and the edge route supplied none. `createApi` in
+   `apps/api/src/server.mjs` now supplies one, absolute when `PUBLIC_BASE_URL` is configured, and
+   templated as `:name` for a parameterised route so the ROUTE is catalogued rather than one address.
+3. **The `accepts[]` entry carried no `extra`.** `buildChallenge` includes `extra` only when the
+   caller supplies `price.extra`, and nothing supplied it. Measured above: with `extra` omitted,
+   PayAI answers `invalid_exact_evm_missing_eip712_domain`. `createStandardHttpFacilitator` in
+   `apps/api/src/facilitator.mjs` now publishes the `{name, version}` it will itself demand, and
+   `buildApiServer` joins it into `price.extra` — taken from the facilitator rather than re-derived,
+   because a challenge advertising a domain the facilitator rejects fails after the payer has signed.
+4. **Nothing forwarded either field to the facilitator.** `gate()` called
+   `verifyAndSettle({ price }, env)`, dropping `resource` and `extensions` on the floor — so fixing
+   (1) and (2) alone would have changed nothing observable. It now passes both, and omits each when
+   empty rather than sending a catalog key of `''`.
 
-All three live in `apps/api/src/x402.mjs`. None were edited here, and #290 records them so they are
-not rediscovered.
+`apps/api/test/x402-bazaar.test.mjs` pins all four against shapes read from live catalogued entries,
+and each of its guards was mutation-tested in both directions.
 
 **A note for whoever edits this section next.** The paragraph above went stale in hours, and no
 guard here could have caught it. `doc-claims` resolves the `file:line` citations in this list and
