@@ -83,7 +83,14 @@ const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
 // row-rendering code can, and whoever writes it will be editing this line
 // anyway. That is the property to preserve when changing this string: pin
 // something the deployment controls, not something the world does.
-const EMPTY_STATE = 'This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.';
+/* The sentence the page must say whether or not a single fetch succeeds. It replaced an
+   empty-state line reading "This table lists no vaults. vaultCount() above is read live from chain
+   4663 and is the count that matters." on 2026-09-16: `factory.vaultCount()` returns 2, so that
+   sentence had become false, and the chain is named rather than numbered by owner instruction. What
+   it was guarding survives unchanged, which is why this constant still exists: the page's framing
+   must be STATIC MARKUP, because a claim produced by a fetch disappears exactly when the fetch
+   fails. */
+const STATIC_FRAME = 'Each figure on this page is a single call to the chain’s public RPC, made by your browser';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -102,15 +109,32 @@ const BANNED = [
   { name: 'em-dash', re: /—/, why: 'The owner does not want em-dashes in copy. Use a comma, a colon, or two sentences.' },
 ];
 
-test('the built page carries the empty-state sentence verbatim', () => {
+test('the page frames itself in static markup, not from a fetch result', () => {
   const html = flat(read('index.html'));
   assert.ok(
-    html.includes(EMPTY_STATE),
-    'The empty state is the one sentence this page exists to say, and it must be STATIC MARKUP.\n' +
-      'If it is written by app.js from the fetch result then it vanishes whenever the RPC is\n' +
-      'unreachable, which is precisely when a reader most needs to be told what is true.\n' +
-      `Expected to find: "${EMPTY_STATE}"`,
+    html.includes(STATIC_FRAME.replace(/’/g, "'")) || html.includes(STATIC_FRAME),
+    [
+      'The sentence telling a reader what this page is must ship in the document.',
+      'If it is written by app.js from the fetch result then it vanishes whenever the RPC is',
+      'unreachable, which is precisely when a reader most needs to be told what they are looking at.',
+      `Expected to find: "${STATIC_FRAME}"`,
+    ].join('\n'),
   );
+});
+
+test('every vault row and its address ship as static markup', () => {
+  const html = read('index.html');
+  // The factory exposes vaultCount() and no enumeration function, so a browser cannot discover
+  // vault addresses. They are in the document, and this pins that they are: a table whose rows
+  // were built by app.js would be an empty table on a failed read.
+  const rows = [...html.matchAll(/data-vault="(0x[0-9a-fA-F]{40})"/g)].map((m) => m[1]);
+  assert.ok(rows.length >= 1, 'no static vault row found; the table cannot be built from a fetch');
+  for (const addr of rows) {
+    assert.ok(
+      html.includes('/address/' + addr),
+      `${addr} has a row but no explorer link, so a reader cannot check it`,
+    );
+  }
 });
 
 test('the built page names the factory address', () => {
