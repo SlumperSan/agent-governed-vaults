@@ -224,6 +224,7 @@ test('the Host header CANNOT choose what this seller is catalogued as', async ()
   // header when publicBaseUrl is unset and this reddens.
   const body = await challengeFor('/vaults', { headers: { host: 'evil.example.com', 'x-forwarded-host': 'evil.example.com' } });
   assert.equal(body.resource.url, '/vaults');
+  // The absolute-form target is the other way in, and it has its own test below.
   assert.ok(!JSON.stringify(body).includes('evil.example.com'), 'no client-supplied host may appear anywhere in the challenge');
 });
 
@@ -241,6 +242,11 @@ test('a parameterised route is catalogued as the ROUTE, with :name placeholders'
 });
 
 test('every metered route that resolves declares a bazaar entry shaped like a live one', async () => {
+  // `info.description` is NOT among these, deliberately. Across 40 live entries read from the
+  // catalogue, every `info.output` carries an `example` and NOT ONE carries `info.description` — an
+  // earlier revision of this file invented that field and then pinned its own invention, under a
+  // comment claiming the shape had been read. The human sentence belongs in `resource.description`,
+  // which spec §5.1.1 defines and the catalogue does read; it is asserted separately below.
   for (const path of ['/vaults', '/operators/leaderboard']) {
     const body = await challengeFor(path);
     const entry = body.extensions.bazaar;
@@ -248,16 +254,48 @@ test('every metered route that resolves declares a bazaar entry shaped like a li
     assert.equal(entry.info.input.type, 'http');
     assert.equal(entry.info.input.method, 'GET');
     assert.equal(entry.info.output.type, 'json');
-    assert.equal(typeof entry.info.description, 'string');
-    assert.ok(entry.info.description.length > 0);
+    assert.ok('example' in entry.info.output, 'every live entry with an output gives it an example');
+    assert.equal('description' in entry.info, false, 'no live entry carries info.description');
+    assert.equal(typeof body.resource.description, 'string');
+    assert.ok(body.resource.description.length > 0, 'the human sentence goes in resource.description');
   }
 });
 
-test('an UNKNOWN path is gated but never catalogued', async () => {
+test('an UNKNOWN path is gated, never catalogued, and contributes NO url', async () => {
   // Unknown paths are gated before route resolution, so they reach the catalogue lookup. Indexing
-  // one would publish a resource that answers nothing. Mutation: return an entry from the fallback
-  // branch and this reddens.
+  // one would publish a resource that answers nothing — and echoing its path back into
+  // `resource.url` puts a client-controlled string on the wire to /verify and /settle.
+  // Mutation: return `{url: path}` from the fallback branch and this reddens.
   const body = await challengeFor('/not-a-route');
   assert.deepEqual(body.extensions, {});
-  assert.equal(body.resource.url, '/not-a-route');
+  assert.equal(body.resource.url, '', 'an unrecognised route contributes no catalogue key at all');
+});
+
+test('a /vaults/<not-an-address> is NOT catalogued, because this server will 404 it after payment', async () => {
+  // The route patterns here must be the router's own. They were `[^/]+`, looser than the
+  // `0x[0-9a-fA-F]{40}` createApi actually serves, so this path was catalogued, answered 402, took
+  // the payment and then 404'd — selling something that does not exist.
+  // Mutation: loosen either pattern back to `[^/]+` and this reddens.
+  for (const bad of ['/vaults/notanaddress', '/vaults/0x1234', `/vaults/0x${'a'.repeat(40)}/members/nope`]) {
+    const body = await challengeFor(bad);
+    assert.deepEqual(body.extensions, {}, `${bad} must not be catalogued`);
+    assert.equal(body.resource.url, '', `${bad} must contribute no catalogue key`);
+  }
+});
+
+test('an ABSOLUTE-FORM request target cannot reach resource.url', async () => {
+  // THE HOST HEADER WAS NEVER THE ONLY WAY IN. Node does not normalise an absolute-form request
+  // target, so `GET http://evil.example.com/vaults HTTP/1.1` arrives with that whole url as
+  // `req.url`. An earlier revision echoed it straight into `resource.url`, and with a public origin
+  // configured produced the concatenation `https://api.rwally.comhttp://evil.example.com/vaults`.
+  // Demonstrated on a raw socket before this test existed.
+  // Mutation: return `{url: path}` from catalogFor's fallback and this reddens.
+  for (const origin of [null, 'https://api.rwally.com']) {
+    const body = await challengeFor('http://evil.example.com/vaults', { publicBaseUrl: origin });
+    assert.equal(body.resource.url, '', 'an absolute-form target must contribute no catalogue key');
+    assert.ok(
+      !JSON.stringify(body).includes('evil.example.com'),
+      'no client-supplied authority may appear anywhere in the challenge',
+    );
+  }
 });

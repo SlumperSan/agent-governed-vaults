@@ -218,6 +218,7 @@ Production notes:
 | `PRICE_PAYTO` | ✅ | n/a | recipient of metered-read payments |
 | `PRICE_AMOUNT` | | `10000` | price in USDC base units (6dp); `10000` = $0.01 |
 | `PRICE_NETWORK` | | `base` | network label echoed in the x402 challenge |
+| `PUBLIC_BASE_URL` | | unset | the public origin this API answers on, e.g. `https://api.rwally.com`, no trailing slash. Makes the 402's `resource.url` absolute, which is the key a Bazaar catalogues the resource under. Unset, that field carries the route template with no origin, and a resource cannot be usefully catalogued. Deliberately NOT derived from the `Host` header: that is client-supplied, so it would let a caller choose what this seller is listed as |
 | `FACILITATOR` | | `stub` | `stub` (dev, accept-all), `http` (this repo's own settler, §6), `standard` (any real x402 facilitator, §6.7) or `svm` (§6.6) |
 | `FACILITATOR_URL` | if `http` or `standard` | n/a | for `http`, this repo's own settle endpoint (e.g. `http://host:8403/settle`); for `standard`, a facilitator's BASE url with no path (e.g. `https://facilitator.payai.network`) — this process appends `/verify` and `/settle` itself |
 | `FACILITATOR_NETWORK` | if `standard` | n/a | the facilitator's own CAIP-2 network id, e.g. `eip155:8453` for Base — NOT the plain `PRICE_NETWORK` label; see §6.7 |

@@ -44,7 +44,14 @@ import { leaderboard, vaultView, memberPosition, listVaults } from '../../../pac
 /** Routes served without payment — and therefore the routes the rate limiter guards. */
 export const FREE_ROUTES = ['/health', '/.well-known/x402', '/metrics'];
 
-/** Routes metered over x402 wherever the chain has the capability. Advertised by discovery. */
+/** Routes metered over x402 wherever the chain has the capability. Advertised by discovery.
+ *
+ * THE `{address}` SPELLING HERE AND THE `:address` IN `catalogFor` ARE NOT DRIFT. This list is this
+ * repository's own discovery document, which has used braces since it existed and which external
+ * callers read. `catalogFor`'s templates go into a Bazaar entry, and every catalogued entry read
+ * from `facilitator.payai.network/discovery/resources` templates path parameters as `:name`. Two
+ * conventions, two audiences; changing either to match the other would break the one it belongs to.
+ */
 export const METERED_ROUTES = ['/vaults', '/vaults/{address}', '/vaults/{address}/members/{member}', '/operators/leaderboard'];
 
 /**
@@ -86,52 +93,62 @@ function jsonStringify(obj) {
  */
 /**
  * What a metered route publishes about itself: the url a Bazaar should catalogue it under, and the
- * `extensions.bazaar` entry to catalogue there. `{url: path}` with no entry for anything else.
+ * `extensions.bazaar` entry to catalogue there. `{url: ''}` for anything that is not a known route.
  *
  * WHAT THIS IS FOR. A Bazaar catalogues a paid resource as a side effect of a payment, and this is
  * the entry it catalogues. There is no submission endpoint, so a route that never declares one can
  * never appear in an index however many payments it settles.
  *
- * THE SHAPE IS READ, NOT INVENTED. Taken from live catalogued entries at
- * `GET https://facilitator.payai.network/discovery/resources` on 2026-09-16: `info.input` is at
- * minimum `{type:'http', method}`, `info.output` is `{type, example}`, and `schema` is an optional
- * JSON Schema.
+ * NOTHING HERE IS DERIVED FROM THE REQUEST, AND THAT IS THE POINT. An earlier revision returned the
+ * raw request path for an unrecognised route, which put a client-controlled string into
+ * `resource.url` and then into the PaymentPayload sent to /verify and /settle. Node does not
+ * normalise an absolute-form request target, so `GET http://evil.example.com/vaults HTTP/1.1`
+ * arrives with `req.url` set to that whole absolute url -- demonstrated on a raw socket: the
+ * challenge came back advertising `http://evil.example.com/vaults`, and with PUBLIC_BASE_URL set it
+ * came back as the concatenation `https://api.rwally.comhttp://evil.example.com/vaults`. The Host
+ * header was never the only way in. Every url this function returns is now a literal from the table
+ * below, so no request can choose one.
  *
- * A PARAMETERISED ROUTE IS CATALOGUED AS THE ROUTE, NOT AS ONE ADDRESS. Live entries template path
- * parameters into the url as `:name` -- `https://api.paysponge.com/v0/inboxes/:inbox_id/messages`
- * is a real catalogued key. Catalogued under the concrete url the caller happened to request, this
- * API would publish one vault per payment and never the route, filling an index with near-duplicate
- * entries that each answer for a single address. So the url returned here is the TEMPLATE, which is
- * also why it cannot simply be the request path.
+ * THE PATTERNS ARE THE ROUTER'S OWN. They were `[^/]+` in that same revision, which is looser than
+ * the routes `createApi` actually serves (`0x[0-9a-fA-F]{40}`), so `/vaults/notanaddress` was
+ * catalogued, answered 402, took the payment and then 404'd. A route pattern that disagrees with
+ * the router sells something that does not exist.
+ *
+ * THE ENTRY SHAPE IS READ, NOT INVENTED -- and one field in that same revision was invented. Across
+ * 40 entries read from `GET https://facilitator.payai.network/discovery/resources`: every one whose
+ * `info` has an `output` gives it an `example`, and NONE carries `info.description`. So the human
+ * sentence goes in `resource.description`, which spec §5.1.1 defines and the catalogue does read,
+ * and `info` carries only what the live entries carry.
  *
  * Every route below is a GET that answers JSON, so none carries a request body.
  *
  * @param {string} path  the request path, already normalized by the caller
- * @returns {{url:string, bazaar?:object}}
+ * @returns {{url:string, description?:string, bazaar?:object}}
  */
 function catalogFor(path) {
-  const entry = (description, pathParams) => ({
+  const entry = (pathParams) => ({
     info: {
       input: { type: 'http', method: 'GET', ...(pathParams ? { pathParams } : {}) },
-      output: { type: 'json' },
-      description,
+      output: { type: 'json', example: {} },
     },
   });
   if (path === '/vaults')
-    return { url: path, bazaar: entry('Creation-time facts for every indexed Agent-Governed Vault.') };
+    return { url: '/vaults', description: 'Creation-time facts for every indexed Agent-Governed Vault.', bazaar: entry() };
   if (path === '/operators/leaderboard')
-    return { url: path, bazaar: entry('Operators ranked by the indexed vaults they run.') };
-  if (/^\/vaults\/[^/]+\/members\/[^/]+$/.test(path))
+    return { url: '/operators/leaderboard', description: 'Operators ranked by the indexed vaults they run.', bazaar: entry() };
+  if (/^\/vaults\/0x[0-9a-fA-F]{40}\/members\/0x[0-9a-fA-F]{40}$/.test(path))
     return {
       url: '/vaults/:address/members/:member',
-      bazaar: entry('The position one member holds in one vault.', { address: '', member: '' }),
+      description: 'The position one member holds in one vault.',
+      bazaar: entry({ address: '', member: '' }),
     };
-  if (/^\/vaults\/[^/]+$/.test(path))
-    return { url: '/vaults/:address', bazaar: entry('One vault, by address.', { address: '' }) };
-  // An unknown path is gated BEFORE it is resolved, so it reaches here. It must not be catalogued:
-  // indexing a 404 publishes a resource that answers nothing. It still gets a `url` so the
-  // challenge is well formed.
-  return { url: path };
+  if (/^\/vaults\/0x[0-9a-fA-F]{40}$/.test(path))
+    return { url: '/vaults/:address', description: 'One vault, by address.', bazaar: entry({ address: '' }) };
+  // Anything else is gated BEFORE it is resolved, so it reaches here: an unknown path, and also a
+  // `/vaults/<not-an-address>` that this server will 404 after payment. Neither is catalogued, and
+  // neither contributes a url -- `''` is what buildChallenge has always emitted with no resource,
+  // so an unrecognised route's challenge is byte-identical to what it was before this table existed.
+  return { url: '' };
 }
 
 export function createApi({ state, facilitator, price, now = () => Date.now(), cors = false, rateLimit = null, metrics = createMetrics(), limits = DEFAULT_LIMITS, trustProxy = false, x402 = { enabled: true }, log = {}, publicBaseUrl = null }) {
@@ -228,8 +245,9 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       const verdict = await gate({
         headers: lc, price, facilitator, nowMs: now(), seenNonces,
         resource: {
-          url: publicBaseUrl ? `${publicBaseUrl}${catalog.url}` : catalog.url,
-          mimeType: 'application/json',
+          url: catalog.url && publicBaseUrl ? `${publicBaseUrl}${catalog.url}` : catalog.url,
+          ...(catalog.description ? { description: catalog.description } : {}),
+          ...(catalog.url ? { mimeType: 'application/json' } : {}),
         },
         bazaar: catalog.bazaar,
       });

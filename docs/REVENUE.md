@@ -335,8 +335,11 @@ curl -s -D - -o /dev/null https://rwally.com/api/vaults | sed -n 's/^payment-req
 ```
 
 That left **three** gaps between a paid request and a listing, recorded in #290. **All three are
-closed in `apps/api`, and a fourth was found while closing them.** Cited by symbol rather than by
-line, because these lines have moved once already:
+closed in `apps/api` for `FACILITATOR=standard`, and a fourth was found while closing them.** The
+qualifier is load-bearing: only the standard client publishes an EIP-712 domain, so on
+`FACILITATOR=stub`, `http` or `svm` the challenge still carries no `extra` — which is correct, since
+those modes settle against something other than a public EVM facilitator. Cited by symbol rather
+than by line, because these lines have moved once already:
 
 1. **The challenge carried no bazaar extension.** `buildChallenge` in `apps/api/src/x402.mjs` emitted
    `extensions: {}` unconditionally, so a payment could settle in full and catalog nothing. It now
