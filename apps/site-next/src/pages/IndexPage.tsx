@@ -10,13 +10,18 @@
  *   IndexHero     the film-title card: the headline, two true sentences, the
  *                 two doors, and the two addresses a reader can check.
  *   IndexMarquee WENT ON 2026-09-16, on the owner's instruction. It carried four
- *   claims in solid accent, and three of them were verbatim subsets of the two
- *   sentences IndexHero renders directly above it: the lede already says the hive
- *   decides and that every position is voted, and the fact line already reads "No
- *   proxy, no upgrade path, no pause function, no admin key." A strip repeating
- *   its own hero one scroll later is a strip with nothing to say, which is why no
- *   rewrite of the phrases improved it. Removing it also removes the animation
- *   whose loop point was visible on a wide viewport.
+ *   claims in solid accent, and every one of them restated something IndexHero
+ *   renders directly above it: the lede says the index moves only when the hive
+ *   agrees, and the fact line reads "No proxy, no upgrade path, no pause function,
+ *   no admin key." Only `No admin key.` was a verbatim tail of that line; `No
+ *   upgrade path.` is not, because the corpus writes it mid-sentence with a comma
+ *   after "path", and `The hive decides.` was a paraphrase of the lede rather than
+ *   a quotation of anything. The strip's own copy file recorded that comma trap in
+ *   capitals, having been caught by it once. The point stands either way and does
+ *   not need the stronger version: a strip that says again, worse, what the hero
+ *   said one scroll earlier has nothing of its own to say, which is why no rewrite
+ *   of the phrases improved it. Removing it also removes the animation whose loop
+ *   point was visible on a wide viewport.
  *   IndexLive     the page's signature. Five figures read from chain 4663 in
  *                 the reader's own browser, each stamped with the call that
  *                 produced it and the instant it was true.

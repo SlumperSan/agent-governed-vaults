@@ -400,14 +400,14 @@ export const siteHref = (page: ShellPage, href: string): string => {
 export const NAV: ReadonlyArray<{ id: PageId; label: string }> = [];
 
 /**
- * THE HEADER'S CENTRED NAV. Four entries, and they are deliberately NOT
+ * THE HEADER'S CENTRED NAV. Three entries, and they are deliberately NOT
  * `PageId`s.
  *
  * A `PageId` is a document this build prerenders and the internal-link guards
- * walk. Only two of these four are that. The other two are a same-page anchor
- * and an off-site absolute URL, and typing all four as `PageId` is how an
- * anchor ends up in `sitemap.xml` and an off-site host ends up being walked as
- * a local file. So the type here is an href string and nothing more, and each
+ * walk. Only one of these three is that. The others are a same-page anchor and
+ * an off-site absolute URL, and typing them as `PageId` is how an anchor ends
+ * up in `sitemap.xml` and an off-site host ends up being walked as a local
+ * file. So the type here is an href string and nothing more, and each
  * entry says which kind it is.
  *
  *   Home           the top of this page. `#top`, not `index.html`, because from
@@ -417,7 +417,9 @@ export const NAV: ReadonlyArray<{ id: PageId; label: string }> = [];
  *                  collapsed into one scroll, so the thing that used to be a
  *                  page is now a section, and the nav entry is the anchor.
  *   App            app.rwally.com. Off-site.
- *   Disclaimers    the other document. A real page.
+ *
+ * Disclaimers was the fourth until 2026-09-16, when the owner moved it to the
+ * footer. It is unchanged in `FOOTER_PAGES`, which is now the only route to it.
  *
  * `external` is what the component uses to decide `rel="noopener"`, and
  * `page` is what it uses to decide `aria-current="page"`. Both are read from

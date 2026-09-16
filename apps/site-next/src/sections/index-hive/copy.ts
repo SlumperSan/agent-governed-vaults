@@ -23,15 +23,16 @@
  * stat cards in this section: chain 4663, contracts 7, vaults 0. They are gone,
  * and the reason is that all three facts are already on the page, one section
  * above, READ FROM THE CHAIN rather than typed. `IndexLive`'s eyebrow states the
- * chain, its `factory.vaultCount()` cell states the vault count, and the marquee
- * between the two sections states the contract count. Restating them here as
+ * chain and its `factory.vaultCount()` cell states the vault count; the contract
+ * count is no longer stated anywhere on the page, the strip that carried it
+ * having been removed on 2026-09-16. Restating them here as
  * static cards would put the same three facts on the page twice, and the second
  * copy would be the weaker one: written down, not fetched, and stale the moment
  * a vault is created. The section keeps the mascot and the story, which is what
  * only it can carry.
  */
 
-/** The eyebrow. Names the section the nav and the marquee both refer to. */
+/** The eyebrow, and the name the lede of this section refers back to. */
 export const EYEBROW = 'The hive';
 
 /** Promo script line 5, approved 2026-09-05. */

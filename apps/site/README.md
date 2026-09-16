@@ -118,7 +118,7 @@ has no compiler; that file is the compiler. It asserts, across all nine pages:
   test that bans single words gets neutered by its first false positive and then protects nothing.
   The same list is applied to this README and to both stylesheets, not only to the nine pages.
 - **Presence** of the pinned sentences at the permitted count per page, and inside `<main>` rather
-  than in a footer. Since 2026-09-05 that is `Deployed on Robinhood Chain mainnet, chain id 4663.`
+  than in a footer. Rewritten 2026-09-16, that line is `Deployed on Robinhood Chain mainnet.`
   once on `status.html` and once on `disclaimers.html`, the not-an-offer sentence once on
   `disclaimers.html`, and the licence sentence once on `disclaimers.html`, zero
   everywhere else, which is stricter than the old per-page count and not looser: with nothing

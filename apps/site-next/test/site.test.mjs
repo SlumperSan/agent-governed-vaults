@@ -15,7 +15,7 @@
  *   1. It reads `../dist/*.html`, not hand-written pages. The old site was the
  *      source; here the source is React and the build output is the artefact
  *      the reader receives, so the artefact is what is tested. If `dist/` is
- *      absent, the thirty-six tests declared with `t()` and the one declared
+ *      absent, the thirty-five tests declared with `t()` and the one declared
  *      with `tc()` SKIP with a message saying to build — see `t()` below.
  *      Most of them read `dist/`; a few (the status-band stylesheet check, the
  *      Mode-F reveal-phase check and the fixture-name check) do not, and skip
@@ -2437,17 +2437,16 @@ const OWNER_AND_LIVE_STRINGS = [
   // index" is permitted BY NAME in `scripts/test/claims-lede-truth.test.mjs`, which masks it before
   // scanning for an agent as the subject of trading. One character of drift breaks that permission.
   'The AI agent trading index.',
-  // ONE of the four marquee phrases, listed verbatim in the brief's own marquee line. The other
-  // THREE resolve elsewhere and so are not here: "No admin key." is the tail of the corpus sentence
-  // "The contracts carry no proxy, no upgrade path, no pause function and no admin key."; "No
-  // upgrade path." is a clause of apps/site/faq.html's "The contracts carry no pause function, no
-  // proxy and no upgrade path."; and "Every position put to a vote." is promo script line 7.
+  // 'The hive decides.' WAS HERE AND CAME OUT ON 2026-09-16 with the strip that quoted it.
   //
-  // IT READ "TWO … THE OTHER TWO" UNTIL 2026-09-09, and both halves were wrong by then: #232 swapped
-  // a brief-sourced phrase for a corpus-sourced one and moved neither number. A review of the leg
-  // that finally guards this strip caught the same arithmetic in that leg's own failure message, so
-  // both are corrected here rather than one of them.
-  'The hive decides.',
+  // REMOVING IT IS A TIGHTENING, and the reason is the reason this list exists. Every entry is a
+  // sentence permitted onto the page WITHOUT a corpus source behind it, so an entry nothing quotes
+  // is a standing permission for prose nobody is checking. The homepage provenance leg reads this
+  // array as part of its haystack, so leaving the string here would let that exact sentence
+  // reappear anywhere on the page and resolve against nothing but its own past.
+  //
+  // IT WAS NEVER A CORPUS QUOTATION EITHER, which is why it needed this list in the first place: it
+  // paraphrased the hero's lede rather than quoting any sentence in `apps/site/*.html`.
   // 'Seven immutable contracts.' WAS HERE AND CAME OUT ON 2026-09-09, on the owner's instruction to
   // stop marketing a contract count. It was the only marquee phrase that needed this list at all,
   // so removing it is a tightening: one fewer sentence may appear on the page with no corpus behind

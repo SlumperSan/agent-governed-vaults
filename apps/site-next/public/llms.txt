@@ -5,7 +5,7 @@
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
 > or move member funds; nothing rebalances until a proposal passes. Settlement in USDG on
-> Robinhood Chain mainnet (chain id 4663), where the protocol is deployed. The basket the chain
+> Robinhood Chain mainnet, where the protocol is deployed. The basket the chain
 > configuration prices is ETH and BTC; on that chain WETH 0x0bd7…ad73 and cbBTC 0xcec1…0be4,
 > priced from its own Chainlink ETH / USD and CBBTC / USD feeds, settled in USDG 0x5fc5…d168,
 > every address committed in contracts/config/robinhood-mainnet.json.
@@ -26,18 +26,18 @@
 - [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
 
 ## Key semantics an integrator must respect
-- DEPLOYED 2026-09-05 on Robinhood Chain mainnet (chain id 4663), on the owner's decision
+- DEPLOYED 2026-09-05 on Robinhood Chain mainnet, on the owner's decision
   of 2026-09-04, and on no other mainnet. The address book is
   contracts/config/deployments/robinhood-mainnet.json: VaultFactory
   0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1. Read that file rather than this one for anything you
   intend to send a transaction to.
-- TWO VAULTS EXIST ON 4663 AND BOTH HOLD REAL FUNDS. verifiedWiring["factory.vaultCount()"]
+- TWO VAULTS EXIST ON ROBINHOOD CHAIN AND BOTH HOLD REAL FUNDS. verifiedWiring["factory.vaultCount()"]
   reads 2 at block 61,513,974. The first is 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4, created
   2026-09-10 in block 58,991,819, holding idleUsdc 20000000 (20 USDG) as at block 61,646,791; the second is
   0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, created 2026-09-12 in block 61,481,025, which now
   holds 0.001980484 WETH (assetBalance 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash and no USDG at all, because its proposal 3 traded the
   whole balance. Both are capped at 50,000 USDG by capacityCapUsdc(). This bullet said the opposite until
-  2026-09-12 -- "THERE IS NOTHING TO DEPOSIT INTO ON 4663" -- which was true when written on
+  2026-09-12 -- "THERE IS NOTHING TO DEPOSIT INTO ON ROBINHOOD CHAIN" -- which was true when written on
   2026-09-05 and false from 2026-09-10.
 - BOTH VAULTS WERE CREATED BY THE DEPLOYER EOA 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35, NOT
   BY THE SAFE, and the deployment record said they must not be: intendedCreator.why reads "the
@@ -58,7 +58,7 @@
   close them. No presale or airdrop exists and there is nothing here to claim.
 - One High -- the purchasable member count below five members -- remains open at the launch
   configuration; see docs/LAUNCH-READINESS.md.
-- Two limits apply on chain 4663 and nowhere else the docs describe. Chainlink publishes no L2
+- Two limits apply on Robinhood Chain and nowhere else the docs describe. Chainlink publishes no L2
   Sequencer Uptime Feed there and has said it will not add one, so oracle.sequencerUptimeFeed is
   the zero address and ChainlinkOracle returns early from that gate rather than reverting; and the
   feeds publish on an 86,400 s heartbeat, so a price up to a full day old is accepted, exactly
