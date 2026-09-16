@@ -283,6 +283,49 @@ test('a /vaults/<not-an-address> is NOT catalogued, because this server will 404
   }
 });
 
+test('NO request-shaped input reaches the challenge, across every vector tried', async () => {
+  // The absolute-form target below was the reported defect. This is the sweep of everything else a
+  // caller could try, because fixing only the reported case is how a guard ends up decorative: a
+  // protocol-relative authority, a backslash authority, traversal, a fragment, percent-encoded
+  // separators, a case-varied route, a trailing slash, an over-long path, and an absolute-form
+  // target on a route that otherwise WOULD be catalogued. Run against both origin configurations,
+  // with hostile `host` and `x-forwarded-host` set throughout.
+  const A = `0x${'a'.repeat(40)}`;
+  const hostile = [
+    'http://evil.example.com/vaults',
+    '//evil.example.com/vaults',
+    '\\evil.example.com/vaults',
+    '/vaults/../../evil',
+    '/vaults#evil.example.com',
+    '/%2Fevil.example.com/vaults',
+    '/vaults%2Fevil',
+    '/VAULTS',
+    '/vaults/',
+    `/${'a'.repeat(300)}`,
+    `https://evil.example.com/vaults/${A}`,
+  ];
+  for (const publicBaseUrl of [null, 'https://api.rwally.com']) {
+    for (const target of hostile) {
+      const body = await challengeFor(target, {
+        publicBaseUrl,
+        headers: { host: 'evil-host.example.com', 'x-forwarded-host': 'evil-fwd.example.com' },
+      });
+      assert.equal(body.resource.url, '', `${target} must contribute no catalogue key`);
+      assert.deepEqual(body.extensions, {}, `${target} must not be catalogued`);
+      assert.ok(!/evil/i.test(JSON.stringify(body)), `${target} leaked request-shaped input into the challenge`);
+    }
+  }
+});
+
+test('a query string is stripped before the route is catalogued, not echoed into the key', async () => {
+  // `path` is `url.split('?')[0]`, so the query never reaches catalogFor. Worth pinning because the
+  // obvious wrong fix for the vectors above — matching on the raw url — would break this.
+  const body = await challengeFor('/vaults?x=evil.example.com', { publicBaseUrl: 'https://api.rwally.com' });
+  assert.equal(body.resource.url, 'https://api.rwally.com/vaults');
+  assert.ok(body.extensions.bazaar, 'a query string must not cost the route its catalogue entry');
+  assert.ok(!/evil/i.test(JSON.stringify(body)));
+});
+
 test('an ABSOLUTE-FORM request target cannot reach resource.url', async () => {
   // THE HOST HEADER WAS NEVER THE ONLY WAY IN. Node does not normalise an absolute-form request
   // target, so `GET http://evil.example.com/vaults HTTP/1.1` arrives with that whole url as

@@ -316,8 +316,10 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   // not publish one (`stub`, and the local settler) leaves `extra` absent, which is exactly the
   // behaviour every existing test pins.
   //
-  // An operator-supplied `price.extra` is never overwritten: if someone configured one
-  // deliberately, that is the configuration, and silently replacing it would be the bug.
+  // A `price.extra` that is already set is never overwritten. No environment variable sets one
+  // today, so in a normal deployment this is always the facilitator's value; the guard is for a
+  // caller that builds its own config object and hands it to `buildApiServer` directly, which the
+  // tests do.
   if (cfg.price && !cfg.price.extra && fac.extra) cfg.price.extra = fac.extra;
   const metrics = createMetrics();
   const rateLimit = cfg.rateLimit?.enabled

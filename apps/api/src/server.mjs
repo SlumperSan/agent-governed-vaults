@@ -146,8 +146,8 @@ function catalogFor(path) {
     return { url: '/vaults/:address', description: 'One vault, by address.', bazaar: entry({ address: '' }) };
   // Anything else is gated BEFORE it is resolved, so it reaches here: an unknown path, and also a
   // `/vaults/<not-an-address>` that this server will 404 after payment. Neither is catalogued, and
-  // neither contributes a url -- `''` is what buildChallenge has always emitted with no resource,
-  // so an unrecognised route's challenge is byte-identical to what it was before this table existed.
+  // neither contributes a url. `''` is what `buildChallenge` emits when no resource is supplied, so
+  // an unrecognised route advertises no catalogue key at all rather than one the caller chose.
   return { url: '' };
 }
 
