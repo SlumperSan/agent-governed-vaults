@@ -39,14 +39,10 @@ top of this file. Its source was removed from this repository by PR #298. **No m
 ever been taken and revenue to date is $0.00**: a 402 is the gate refusing, and says nothing about
 settlement.
 
-> **Flagged for owner reconciliation, not yet resolved (see README's Production Map).** This plan
-> settles payment in USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain
-> (4663). That split predates the current direction that Robinhood Chain is the only externally
-> marketed live chain and that PR #294 re-enables x402 metering for `apps/api` on chain 4663. The
-> two do not conflict in code — this Pages Function is independent of `apps/api`'s own server — but
-> they would conflict in public narrative if both shipped as separately written. Do not run "What
-> the owner runs" below until the owner has decided whether this endpoint settles on Base as written
-> or is re-pointed to Robinhood Chain.
+> **The owner resolved this by removing the endpoint (PR #298).** The plan below settles payment in
+> USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain (4663). `apps/api`
+> is the one paid API going forward, and it meters on chain 4663. See the Production Map in
+> `README.md`.
 
 ---
 

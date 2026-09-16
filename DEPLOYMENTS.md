@@ -21,11 +21,12 @@ npx wrangler@4 pages deploy dist --project-name rwally --branch protocol/main
 Notes carried over from [`apps/site-next/README.md`](apps/site-next/README.md) and
 [`docs/REVENUE.md`](docs/REVENUE.md):
 
-- **Wrangler 4 or newer is required.** Wrangler 3's bundled esbuild cannot parse the JSON import
-  attribute (`with { type: 'json' }`) that one of the Pages Functions needs; it fails the build
-  loudly rather than shipping something broken.
+- **`functions/` holds one Function, `_middleware.js`, and it imports nothing.** It uses no Node
+  built-in and no import attribute, so no wrangler version and no compatibility flag is load-bearing
+  for what this directory ships today.
 - `wrangler.toml` sets `pages_build_output_dir = "dist"` and `compatibility_flags =
-  ["nodejs_compat"]` — the latter is required, not optional, for the Functions bundle.
+  ["nodejs_compat"]`. The flag is left in place for a future Function that needs it; check before
+  relying on it, and read the comment at the top of that file for what it was carrying.
 - No secrets or prices are committed in `wrangler.toml` by design; environment variables are set
   on the Cloudflare Pages project itself (Settings → Environment variables → Production), then the
   site is redeployed for them to take effect.
