@@ -18,11 +18,13 @@ Read layer over indexed vault state, gated by x402 (V2) payment.
   self-limiting: **x402 IS the rate limiter**, since every metered read costs the caller USDC.
 - **x402 is a per-chain capability** (`packages/chain-config/src/x402.mjs`, resolved from
   `contracts/config/<chain>.json` via `CHAIN_ID`). On a chain that declares `x402.enabled: false`
-  (chain 4663, per the owner's decision of 2026-09-05) the routes above marked "paid" are served
-  with no 402, no challenge and no payment headers, and the token bucket then covers **every**
-  route, because the sentence before this one is exactly why the paid ones were left out of it.
-  Nothing is removed: unset `CHAIN_ID`, a chain with no config, or a config with no `x402` block
-  all meter as they always have, and so does everything above.
+  the routes above marked "paid" are served with no 402, no challenge and no payment headers, and
+  the token bucket then covers **every** route, because the sentence before this one is exactly why
+  the paid ones were left out of it. **No chain config in this repository declares that today.**
+  Chain 4663 did, on the owner's decision of 2026-09-05, until the owner reversed it on 2026-09-15
+  and `robinhood-mainnet.json` went back to `enabled: true`; the capability and its off branch are
+  unchanged, and nothing was removed to reverse it. Unset `CHAIN_ID`, a chain with no config, or a
+  config with no `x402` block all meter as they always have, and so does everything above.
 - `src/metrics.mjs`: the plain-text counters behind `/metrics`, including
   `vault_indexer_snapshot_age_seconds`, which is the indexer-lag signal. The API holds no client
   for the indexed chain by design, so it reports snapshot age rather than a blocks-behind figure it

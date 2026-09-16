@@ -213,7 +213,7 @@ Production notes:
 
 | Var | Required | Default | Meaning |
 |---|---|---|---|
-| `CHAIN_ID` | | unset | the chain this API serves. Its only effect: resolve `x402.enabled` from `contracts/config/<chain>.json`. A chain that switches it off (`4663`) is served with **no 402 gate** and the rate limiter below covers every route. Unset, or a chain with no config or no `x402` block, meters as always |
+| `CHAIN_ID` | | unset | the chain this API serves. Its only effect: resolve `x402.enabled` from `contracts/config/<chain>.json`. A chain that switches it off is served with **no 402 gate** and the rate limiter below covers every route; no chain config in this repository does that today — 4663 declared `false` from 2026-09-05 until the owner reversed it on 2026-09-15. Unset, or a chain with no config or no `x402` block, meters as always |
 | `PRICE_ASSET` | ✅ | n/a | USDC contract address (payment denomination) |
 | `PRICE_PAYTO` | ✅ | n/a | recipient of metered-read payments |
 | `PRICE_AMOUNT` | | `10000` | price in USDC base units (6dp); `10000` = $0.01 |

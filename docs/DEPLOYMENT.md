@@ -560,12 +560,21 @@ Run each check against the live addresses:
   - **Chains that meter** (Base Sepolia; anything with no `x402` block, which is the default):
     deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on
     Base). Set the price spec (asset = USDC, payTo = your treasury, network).
-  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: false` — the owner's decision of
-    2026-09-05. There is no facilitator to deploy behind and no price spec to set: the same reads
-    are served with no 402 gate. `PRICE_ASSET`/`PRICE_PAYTO` are still required env (the API
-    validates them at startup, unchanged) but are never quoted to a caller. Set
-    `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` deliberately here rather than taking the defaults:
-    with metering off they are the only limit on the read routes, where payment used to be.
+  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: true` — the owner's decision of
+    2026-09-15, which reversed the 2026-09-05 decision that had switched it off. So this chain
+    takes the metering branch above, with one difference that matters when you set the price spec:
+    **the settlement token is USDG, not Circle USDC.** `contracts/config/robinhood-mainnet.json`
+    keeps it under the key `usdc` so the file diffs cleanly against `base-mainnet.json`, but the
+    address is `0x5fc5360d0400a0fd4f2af552add042d716f1d168` and its on-chain record reads
+    `name() "Global Dollar"`, `symbol() "USDG"`, `decimals() 6`. Circle's USDC has zero bytes of
+    code on 4663. Set `PRICE_ASSET` to that address. `apps/api` reads the EIP-712 domain off the
+    token itself rather than from a default, so nothing needs to be told the name.
+    `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
+    chain: x402 is the limiter on the paid ones.
+    **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
+    this bullet describes a configuration, not a running service. USDG carries a canonical
+    EIP-3009 `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` on-chain, so the existing
+    `transferWithAuthorization` settlement path needs no modification when one is stood up.
 
 ## 7. Canary monitoring (post-launch)
 
