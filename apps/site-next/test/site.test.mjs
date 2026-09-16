@@ -319,7 +319,7 @@ const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or finan
 // Unlike BANNER_STATUS this one IS reachable in the shape the corpus pins it: it is page-local
 // content (status.html's band, disclaimers.html's hero), not routed through the shared Footer, so
 // it renders exactly where the corpus says it should — see DEPLOYED_LINE_COUNTS below.
-const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
+const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet.';
 // RETIRED AS A PINNED SENTENCE 2026-09-05, KEPT AS A COUNTED ABSENCE. This was FOOTER_TOKEN, the
 // corpus's `No token.` sentence, and it rendered once on disclaimers.html. RWLY was created at
 // 2026-09-05T21:51:57Z, so the sentence opens on a false clause and cannot be repaired by
@@ -1240,7 +1240,7 @@ const DEPLOY_CITED = /\brobinhood\b|\b4663\b|contracts\/config\/deployments\/rob
 /**
  * CHANGED 2026-09-05, CARRYING ACROSS THE CORPUS'S OWN REWRITE OF THIS TEST. It used to require
  * every sentence containing "deployed" to negate itself — true while nothing was deployed anywhere.
- * DEPLOYED_LINE ("Deployed on Robinhood Chain mainnet, chain id 4663.") is now pinned on status.html
+ * DEPLOYED_LINE ("Deployed on Robinhood Chain mainnet.") is now pinned on status.html
  * and disclaimers.html precisely BECAUSE it is true and unnegatable, so a pure negation requirement
  * would red the one sentence the site most needs to state plainly. The successor rule is STRICTER,
  * not weaker: a sentence that says "deployed" without negating itself must name the chain (by word
@@ -2587,69 +2587,18 @@ t('every sentence on the homepage comes from a source that was already checked',
 });
 
 /**
- * THE MARQUEE IS CHECKED SEPARATELY, BECAUSE THE SENTENCE EXTRACTOR CANNOT SEE IT.
+ * THE MARQUEE PROVENANCE LEG WENT WITH THE MARQUEE, 2026-09-16.
  *
- * `homepageSentences` requires four words, for the good reason stated above it: it is what keeps
- * markup fragments and UI labels out of a provenance check. The cost was invisible until a review
- * measured it — THREE OF THE FOUR MARQUEE PHRASES ARE THREE WORDS LONG. "The hive decides.", "No
- * upgrade path." and "No admin key." were read by no guard at all. Only "Every position put to a
- * vote." reached the check, and only because it happens to be six words.
+ * It extracted every `_phrase_` element from the prerendered index and checked each against the
+ * corpus, the promo script and OWNER_AND_LIVE_STRINGS, asserting a floor of four so a renamed CSS
+ * class could not make it pass over an empty list. The strip it read is gone, so the leg had no
+ * subject: it would have extracted nothing and reddened on the floor, and lowering that floor to
+ * zero would have left a test that asserts nothing.
  *
- * So the strip had no provenance rule on a page whose entire discipline is that every sentence
- * traces to something already read against the contracts. It was demonstrated by mutation: editing
- * the corpus sentence a marquee phrase is quoted from left the suite green.
- *
- * The phrases are read FROM THE BUILT PAGE, by the class the renderer stamps on each one, rather
- * than from the `PHRASES` array that produced them. That is deliberate twice over: the array is
- * TypeScript and this suite is plain ESM, and — the real reason — a guard that reads the same
- * constant the page reads proves only that a variable equals itself. The bytes that shipped are the
- * thing under test.
- *
- * The word-count floor does not apply here because the fragment problem does not: every element
- * with this class is a phrase the copy chose, never a label and never a split headline.
+ * NO COVERAGE IS LOST, and that is the reason it could go rather than be neutered. The strip's
+ * phrases were the one part of the homepage the general leg above could not read, because it works
+ * on sentences and the extractor worked on elements. Every sentence that remains on the page is
+ * still checked by `every sentence on the homepage comes from a source that was already checked`,
+ * which enumerates from the prerendered HTML and not from a list.
  */
-const marqueePhrases = () => {
-  const html = raw.get('index.html') ?? '';
-  return [...html.matchAll(/class="[^"]*_phrase_[^"]*"[^>]*>([^<]+)</g)]
-    .map((m) => m[1].replace(/&amp;/gi, '&').replace(/&rsquo;|&#8217;/gi, "'").replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-};
 
-t('every marquee phrase comes from a source that was already checked', () => {
-  const haystack = [
-    normalise(corpusText()),
-    normalise(PROMO_SCRIPT.join('  ')),
-    normalise(OWNER_AND_LIVE_STRINGS.join('  ')),
-  ].join('  ');
-
-  const phrases = marqueePhrases();
-
-  // NON-VACUITY, and it is the whole risk here. This leg finds its subjects by a CSS-module class
-  // name, which the bundler regenerates on every build — `_phrase_17to7_47` today. The substring
-  // `_phrase_` is the stable part, but a renderer that renamed the class or stopped stamping one
-  // would make this extractor return nothing and the assertion below pass over an empty list, which
-  // is precisely the failure the leg exists to fix. Four is the count the strip has carried since it
-  // was written; a floor of four reds the moment the extractor stops reading.
-  assert.equal(
-    phrases.length,
-    4,
-    `expected four marquee phrases, extracted ${phrases.length}. Either the strip changed length — ` +
-      'in which case change this number and say why in the commit — or the class the extractor ' +
-      'matches on was renamed and this provenance check is no longer reading anything.',
-  );
-
-  const unsourced = phrases.filter((s) => !haystack.includes(normalise(s)));
-  assert.deepEqual(
-    unsourced,
-    [],
-    'Every phrase on the marquee must appear in one of the three sources the homepage leg lists.\n' +
-      'The strip is the most quotable surface on the site — four short declaratives, set in capitals,\n' +
-      'scrolling — and it was the one surface with no provenance rule. Do not add a phrase to\n' +
-      'OWNER_AND_LIVE_STRINGS to make this pass. Where each of the four comes from today:\n' +
-      '  "No upgrade path." and "No admin key."  the corpus, apps/site/faq.html and index.html\n' +
-      '  "Every position put to a vote."         promo script line 7\n' +
-      '  "The hive decides."                     OWNER_AND_LIVE_STRINGS, from the brief\n' +
-      'Unsourced phrases:\n' +
-      unsourced.map((s) => `  ${JSON.stringify(s)}`).join('\n'),
-  );
-});

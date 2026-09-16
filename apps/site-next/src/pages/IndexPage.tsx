@@ -9,7 +9,14 @@
  *
  *   IndexHero     the film-title card: the headline, two true sentences, the
  *                 two doors, and the two addresses a reader can check.
- *   IndexMarquee  the seam. Four claims in solid accent, moving.
+ *   IndexMarquee WENT ON 2026-09-16, on the owner's instruction. It carried four
+ *   claims in solid accent, and three of them were verbatim subsets of the two
+ *   sentences IndexHero renders directly above it: the lede already says the hive
+ *   decides and that every position is voted, and the fact line already reads "No
+ *   proxy, no upgrade path, no pause function, no admin key." A strip repeating
+ *   its own hero one scroll later is a strip with nothing to say, which is why no
+ *   rewrite of the phrases improved it. Removing it also removes the animation
+ *   whose loop point was visible on a wide viewport.
  *   IndexLive     the page's signature. Five figures read from chain 4663 in
  *                 the reader's own browser, each stamped with the call that
  *                 produced it and the instant it was true.
@@ -42,7 +49,6 @@
  * PageShell; the page's single `<h1>` comes from IndexHero.
  */
 import IndexHero from '../sections/index-hero/IndexHero';
-import IndexMarquee from '../sections/index-marquee/IndexMarquee';
 import IndexLive from '../sections/index-live/IndexLive';
 import IndexHive from '../sections/index-hive/IndexHive';
 import IndexHow from '../sections/index-how/IndexHow';
@@ -51,7 +57,6 @@ export default function IndexPage() {
   return (
     <>
       <IndexHero />
-      <IndexMarquee />
       <IndexLive />
       <IndexHive />
       <IndexHow />

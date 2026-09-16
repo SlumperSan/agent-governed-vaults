@@ -36,13 +36,34 @@ export const HEADING = 'One rebalance, start to finish.';
 export const RAIL = 'Deposit, observe, propose, commit, reveal, wait, execute.';
 
 /**
- * The three steps.
+ * The six steps, each with the corpus's own sentence for it.
  *
- * `Commit, then reveal.` is the third, and it names commit-reveal because the
- * brief requires this section to name it and because it is the step that
- * surprises people: an unrevealed commit is forfeit and counts as an abstain.
- * The full consequence is on the Disclaimers page, which is where every warning,
- * limit and unresolved question was consolidated on 2026-09-05.
+ * IT WAS THREE UNTIL 2026-09-16, on the owner's instruction to expand this
+ * section. The three were Deposit, Propose and Vote, each with a four-to-five
+ * word line, and "Vote" collapsed commit and reveal into one card. That
+ * collapse hid the mechanic this section is required to name: the two phases are
+ * separate transactions, and the gap between them is where an unrevealed commit
+ * becomes an abstain. Splitting them, and giving every step the full corpus
+ * sentence rather than a compressed one, is the expansion.
+ *
+ * STILL NOT ALL SEVEN THE RAIL NAMES. `observe` has no card because it is not a
+ * transaction a member sends. The rail above still names all seven.
+ *
+ * EVERY LINE IS A COMPLETE CORPUS SENTENCE, terminal period included, because
+ * `test/site.test.mjs` normalises without stripping punctuation and checks each
+ * homepage sentence as a substring of the corpus. A line trimmed to fit a card
+ * would stop matching the moment it stopped ending where the source does.
+ *
+ * AND NONE OF THEM CONTAINS AN APOSTROPHE, which is a rendering constraint
+ * rather than a style one. The step for the timelock was first written from the
+ * corpus sentence "A passed proposal waits out the vault's timelock, then
+ * becomes executable for a bounded window." The extractor that feeds the
+ * provenance check reads "the vault s timelock" out of the built page, because
+ * the apostrophe ships as an entity and entities are stripped to spaces before
+ * `normalise` runs — and `normalise` folds curly quotes but decodes nothing. The
+ * sentence was true, sourced and unmatched. Two apostrophe-free corpus sentences
+ * say the same thing across two steps, so the split is the fix and the extra
+ * step is the expansion.
  */
 export const STEPS: ReadonlyArray<{
   readonly n: string;
@@ -51,5 +72,15 @@ export const STEPS: ReadonlyArray<{
 }> = [
   { n: '01', verb: 'Deposit', line: 'Membership is bought, not granted.' },
   { n: '02', verb: 'Propose', line: 'Follows stake, not identity.' },
-  { n: '03', verb: 'Vote', line: 'Commit, then reveal.' },
+  { n: '03', verb: 'Commit', line: 'Members submit a hash of their vote and a salt.' },
+  { n: '04', verb: 'Reveal', line: 'An unrevealed commit is forfeit and counts as an abstain.' },
+  { n: '05', verb: 'Wait', line: 'The protocol caps any timelock at 30 days.' },
+  {
+    n: '06',
+    verb: 'Execute',
+    line: 'The window closes when the proposal executes, is defeated, or its execution window lapses.',
+  },
 ];
+
+/** The closing line under the steps. Corpus: apps/site/index.html. */
+export const CLOSER = 'Nothing executes without a member vote.';

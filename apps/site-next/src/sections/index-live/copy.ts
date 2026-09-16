@@ -26,8 +26,9 @@
  * "Robinhood SPY / USD" and the contract says "RHSPY / USD".
  */
 
-/** The section's eyebrow. 4663 is the chain, and the read asserts it. */
-export const EYEBROW = 'Live from chain 4663';
+/** The section's eyebrow. The chain is named, never numbered: 4663 is publicly
+ *  known as Robinhood Chain, and a bare number tells a reader nothing. */
+export const EYEBROW = 'Live from Robinhood Chain';
 
 /** Under the giant figure. */
 export const BLOCK_LABEL = 'Latest block';

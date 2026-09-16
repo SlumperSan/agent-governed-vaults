@@ -116,6 +116,23 @@
   color: var(--muted);
 }
 
+/* THE CLOSING LINE, set apart from the list rather than as a sixth row.
+   It is not a step: it is the invariant every step above is arranged around, and
+   putting it in the ordered list would number it as though a member does it. The
+   rule above it is the same hairline the steps are separated by, so the line
+   reads as the list's own conclusion rather than as a new block. */
+.closer {
+  margin-top: var(--s6);
+  padding-top: var(--s5);
+  border-top: 1px solid var(--line);
+  font-family: var(--display);
+  font-size: var(--step-h3);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  max-width: 34ch;
+}
+
 @media (max-width: 52rem) {
   .how {
     padding-block: var(--s8);

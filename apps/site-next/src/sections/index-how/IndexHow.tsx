@@ -15,7 +15,7 @@
  * therefore presentation, and the semantics come from the element.
  */
 import type { JSX } from 'react';
-import { EYEBROW, HEADING, RAIL, STEPS } from './copy';
+import { CLOSER, EYEBROW, HEADING, RAIL, STEPS } from './copy';
 import styles from './IndexHow.module.css';
 
 export default function IndexHow(): JSX.Element {
@@ -43,6 +43,8 @@ export default function IndexHow(): JSX.Element {
             </li>
           ))}
         </ol>
+
+        <p className={styles.closer}>{CLOSER}</p>
       </div>
     </section>
   );

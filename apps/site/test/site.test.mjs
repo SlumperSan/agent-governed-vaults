@@ -84,7 +84,7 @@ const PROSE_FILES = ['README.md', 'assets/tokens.css', 'assets/site.css'];
 // so its replacement states the deployment and can be checked against the committed record rather
 // than against nothing. What the old constant protected -- that every page tells a reader where the
 // code is -- is carried by DEPLOYED_LINE below plus the mandatory footer link to the Disclaimers.
-const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
+const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet.';
 const BANNER_OFFER = 'Nothing on this site is an offer, a solicitation, or financial advice.';
 // RETIRED AS A PINNED SENTENCE 2026-09-05, KEPT AS A COUNTED ABSENCE. This was FOOTER_TOKEN, and it
 // rendered once on disclaimers.html. RWLY was created at 2026-09-05T21:51:57Z, so the sentence opens

@@ -174,7 +174,7 @@ const REFERENCES: ReadonlyArray<{ key: string; term: string; body: string }> = [
     key: 'deployment-record',
     term: '<code>contracts/config/deployments/robinhood-mainnet.json</code>',
     body:
-      'The address ledger for chain 4663, plus the note recording how each value was read back on-chain rather than transcribed from a deploy log.',
+      'The address ledger for Robinhood Chain, plus the note recording how each value was read back on-chain rather than transcribed from a deploy log.',
   },
   {
     key: 'contracts',

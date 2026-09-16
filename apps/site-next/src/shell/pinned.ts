@@ -94,7 +94,7 @@ export const BANNER_TAG = 'Pre-launch';
  * directly — status.html's pre-launch band and disclaimers.html's deployment
  * paragraph are the two places the corpus pins it, exactly once each.
  */
-export const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet, chain id 4663.';
+export const DEPLOYED_LINE = 'Deployed on Robinhood Chain mainnet.';
 
 /* ---------------------------------------------------------------------------
  * FOOTER — the two standing-fact sentences are COUNTED, not merely required.
@@ -434,7 +434,6 @@ export const HEADER_NAV: ReadonlyArray<{
   { label: 'Home', href: '#top', page: 'index.html' },
   { label: 'How it works', href: '#how' },
   { label: 'App', href: 'https://app.rwally.com', external: true },
-  { label: 'Disclaimers', href: 'disclaimers.html', page: 'disclaimers.html' },
 ];
 
 /**

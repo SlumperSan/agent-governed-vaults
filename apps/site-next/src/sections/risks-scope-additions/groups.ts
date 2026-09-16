@@ -112,14 +112,14 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
    vault yet. I want the pivot to the all-stocks index." CARD_1_BODY used to
    carry the page-level 50,000/"planned" pairing on its own; that figure
    described a vault that WOULD not be created — past intent, not a standing
-   fact: two vaults exist on chain 4663 and both read capacityCapUsdc()
+   fact: two vaults exist on Robinhood Chain and both read capacityCapUsdc()
    50000000000, so the figure is real rather than planned, and CARD_1_BODY
    now says so. The sibling comment in risks-register/entries.tsx:110-113
    already handled this tense correctly; this copy did not until 2026-09-13.
    The trailing clause here used to say the figure "comes out of CARD_1_BODY
    entirely rather than being requalified", and that was still false after the
    first correction: CARD_1_BODY carries the figure today, as a deployed fact
-   ("The two vaults on chain 4663 are capped at 50,000 USDG each"), which is
+   ("The two vaults on Robinhood Chain are capped at 50,000 USDG each"), which is
    what the sentence three lines above already says. The figure was REQUALIFIED,
    not removed — that is the whole change. Carried from the "DAO treasuries
    and larger allocators" entry of the "Four groups this is wrong for" list
@@ -135,13 +135,13 @@ export const CARD_4_TITLE = 'Anyone in a restricted jurisdiction';
 
 /* CARD_1_BODY's CONCLUSION is unchanged and its PREMISE was replaced on
    2026-09-12. It used to reach "no cap for a treasury to check against" from
-   "no vault exists yet". Two vaults exist on chain 4663 now, both with
+   "no vault exists yet". Two vaults exist on Robinhood Chain now, both with
    capacityCapUsdc() reading 50000000000, which is 50,000 USDG at 6 decimals.
    So there IS a cap to check against, and it happens to make the same point
    more sharply than its absence did: 50,000 USDG is not a treasury-scale
    venue, and now a reader can verify that rather than take it on trust. */
 export const CARD_1_BODY =
-  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. The two vaults on chain 4663 are capped at 50,000 USDG each, so there is a figure to check against, and it is nowhere near large enough to absorb a treasury allocation.';
+  'A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. The two vaults on Robinhood Chain are capped at 50,000 USDG each, so there is a figure to check against, and it is nowhere near large enough to absorb a treasury allocation.';
 
 export const CARD_2_BODY =
   'There is no autopilot. Skipping votes does not park your position neutrally: it moves quorum and wastes your commit; it hands the outcome to whoever did turn up.';
