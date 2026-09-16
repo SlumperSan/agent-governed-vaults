@@ -9,10 +9,12 @@
  * loads the snapshot on boot and reloads it periodically, so indexer and API run as separate
  * processes.
  *
- * Required env:
- *   PUBLIC_BASE_URL the public origin this API answers on (e.g. https://api.rwally.com). Optional.
+ * Optional env:
+ *   PUBLIC_BASE_URL the public origin this API answers on (e.g. https://api.rwally.com).
  *                   Makes the 402's `resource.url` absolute, which is what a Bazaar catalogues a
- *                   resource under. Unset, that field stays the bare request path.
+ *                   resource under. Unset, that field carries the route template with no origin.
+ *
+ * Required env:
  *   PRICE_ASSET     USDC contract address (what payments are denominated in)
  *   PRICE_PAYTO     recipient address for metered-read payments
  * Optional env:
@@ -193,9 +195,9 @@ export function resolveApiConfig(env) {
     //
     // IT IS CONFIGURATION AND NOT THE `Host` HEADER, deliberately. Host is client-supplied, so
     // deriving the catalogue key from it would let any caller choose what this seller is listed
-    // as by sending one request with a forged Host. Unset, `resource.url` stays the bare path it
-    // is today: uninformative, but not attacker-chosen, and not wrong in a way that persists in
-    // someone else's index.
+    // as by sending one request with a forged Host. Unset, `resource.url` carries the route
+    // template with no origin: uninformative, but not attacker-chosen, and not wrong in a way that
+    // persists in someone else's index.
     publicBaseUrl: env.PUBLIC_BASE_URL ? String(env.PUBLIC_BASE_URL).replace(/\/+$/, '') : null,
     price: {
       asset: env.PRICE_ASSET,
@@ -312,9 +314,10 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   //
   // It is TAKEN FROM THE FACILITATOR rather than re-derived, because the failure mode of two
   // derivations is a challenge advertising a domain the facilitator rejects -- discovered after
-  // the payer has signed, which is the expensive moment to discover it. A facilitator that does
-  // not publish one (`stub`, and the local settler) leaves `extra` absent, which is exactly the
-  // behaviour every existing test pins.
+  // the payer has signed, which is the expensive moment to discover it. Only `standard` publishes
+  // a domain; `stub`, `http` and `svm` do not, and on those the challenge carries no `extra` at
+  // all. That is correct rather than a gap: none of the three settles against a public EVM
+  // facilitator, so there is no domain of theirs for a payer to sign against.
   //
   // A `price.extra` that is already set is never overwritten. No environment variable sets one
   // today, so in a normal deployment this is always the facilitator's value; the guard is for a

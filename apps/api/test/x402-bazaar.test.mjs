@@ -28,6 +28,9 @@ import assert from 'node:assert/strict';
 import { gate, buildChallenge, buildResourceInfo } from '../src/x402.mjs';
 import { createStandardHttpFacilitator } from '../src/facilitator.mjs';
 import { createApi } from '../src/server.mjs';
+import { writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const USDC = '0x' + 'c'.repeat(40);
 const PAYTO = '0x' + 'd'.repeat(40);
@@ -55,6 +58,20 @@ function wireEnvelope(nonceByte) {
     },
   };
 }
+
+const STATE_PATH = path.join(os.tmpdir(), `ops7-bazaar-state-${process.pid}.json`);
+const HEARTBEAT_DIR = path.join(os.tmpdir(), `ops7-bazaar-hb-${process.pid}`);
+// An empty snapshot in the shape `deserializeState` accepts: it rejects anything whose `version`
+// is not exactly 1, so a hand-written `{vaults, lastBlock}` fails to load and buildApiServer
+// throws before it ever reaches the join these three tests are about.
+writeFileSync(
+  STATE_PATH,
+  JSON.stringify({
+    version: 1, lastBlock: 0, lastLogIndex: 0,
+    vaults: [], operators: [], shares: [], proposals: [], activeProposal: [],
+  }),
+  'utf8',
+);
 
 const okFacilitator = { verifyAndSettle: async () => ({ ok: true, receiptId: '0xreceipt' }) };
 
@@ -172,6 +189,65 @@ test('a configured domain is published instead of the Base default — the USDG 
   // read off the token at all. It has to come from configuration, and the default is wrong for it.
   const fac = createStandardHttpFacilitator({ url: 'https://f.example', network: 'eip155:4663', usdcName: 'Global Dollar', usdcVersion: '1' });
   assert.deepEqual(fac.extra, { name: 'Global Dollar', version: '1' });
+});
+
+test('buildApiServer joins the published facilitator domain into price.extra', async () => {
+  // THIS IS THE LEG THE SUITE WAS MISSING, and its absence was demonstrated rather than reasoned
+  // about: deleting the join line in serve.mjs left the whole backend suite byte-identical, so the
+  // claim that these tests pin all four defects was false — they pinned three.
+  // Mutation: delete `if (cfg.price && !cfg.price.extra && fac.extra) ...` in serve.mjs, this reddens.
+  const { buildApiServer } = await import('../src/serve.mjs');
+  const cfg = {
+    price: { ...price },
+    statePath: STATE_PATH,
+    heartbeatDir: HEARTBEAT_DIR,
+    reloadMs: 60_000,
+    limits: {},
+  };
+  const built = await buildApiServer(cfg, {
+    facilitator: { extra: { name: 'USD Coin', version: '2' }, verifyAndSettle: async () => ({ ok: true, receiptId: 'r' }) },
+    log: {},
+  });
+  built.heartbeat?.stop?.();
+  assert.deepEqual(cfg.price.extra, { name: 'USD Coin', version: '2' });
+});
+
+test('buildApiServer never overwrites a price.extra the caller already set', async () => {
+  // Mutation: drop the `!cfg.price.extra` term from the guard and this reddens.
+  const { buildApiServer } = await import('../src/serve.mjs');
+  const mine = { name: 'Global Dollar', version: '1' };
+  const cfg = {
+    price: { ...price, extra: mine },
+    statePath: STATE_PATH,
+    heartbeatDir: HEARTBEAT_DIR,
+    reloadMs: 60_000,
+    limits: {},
+  };
+  const built = await buildApiServer(cfg, {
+    facilitator: { extra: { name: 'USD Coin', version: '2' }, verifyAndSettle: async () => ({ ok: true, receiptId: 'r' }) },
+    log: {},
+  });
+  built.heartbeat?.stop?.();
+  assert.deepEqual(cfg.price.extra, mine, 'a configured domain must survive the join');
+});
+
+test('a facilitator that publishes no domain leaves price.extra absent', async () => {
+  // stub, http and svm publish none. The challenge then omits `extra`, which is correct: those modes
+  // do not settle against a public EVM facilitator. Mutation: default `fac.extra` and this reddens.
+  const { buildApiServer } = await import('../src/serve.mjs');
+  const cfg = {
+    price: { ...price },
+    statePath: STATE_PATH,
+    heartbeatDir: HEARTBEAT_DIR,
+    reloadMs: 60_000,
+    limits: {},
+  };
+  const built = await buildApiServer(cfg, {
+    facilitator: { verifyAndSettle: async () => ({ ok: true, receiptId: 'r' }) },
+    log: {},
+  });
+  built.heartbeat?.stop?.();
+  assert.equal('extra' in cfg.price, false);
 });
 
 test('a challenge built from a price carrying extra advertises it in accepts[0]', () => {

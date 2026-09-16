@@ -296,7 +296,7 @@ That entries really arrive this way, rather than by submission, has a tell in th
 what `examples/go/servers/bazaar` binds. No indexer can fetch a `localhost` URL, so that entry can
 only have come from payment traffic — and nothing checked the resource was publicly reachable.
 
-Which catalog a listing lands in is decided by `FACILITATOR_URL` (§5.2): it is the catalog of
+Which catalog a listing lands in is decided by `FACILITATOR_URL` (§5): it is the catalog of
 whichever facilitator processes the payment. PayAI advertises `bazaar` in `/supported`, so a payment
 settled there is a candidate for its catalog; Coinbase's bazaar would matter only if the owner
 pointed `FACILITATOR_URL` elsewhere.
@@ -360,11 +360,12 @@ than by line, because these lines have moved once already:
    empty rather than sending a catalog key of `''`.
 
 `apps/api/test/x402-bazaar.test.mjs` pins all four against shapes read from live catalogued entries,
-and each of its guards was mutation-tested in both directions.
+and each of its guards was mutation-tested in both directions — the defect reintroduced one at a
+time, each going red, each restored to green.
 
 **A note for whoever edits this section next.** The paragraph above went stale in hours, and no
-guard here could have caught it. `doc-claims` resolves the `file:line` citations in this list and
-checks claims that a numbered **pull request** is still open, reading merge state from `(#N)` in
+guard here could have caught it. `doc-claims` resolves `file:line` citations and checks claims that
+a numbered **pull request** is still open, reading merge state from `(#N)` in
 squash subjects on `protocol/main`. #279 is an **issue**, closed by PR #287, so
 `git log --format=%s origin/protocol/main | grep -c '(#279)'` returns 0 and the guard has nothing to
 match. Issue-state claims are invisible to it in a way PR-state claims are not. Re-check them by
@@ -372,7 +373,8 @@ hand, or state them so a command in the text settles the question — which is w
 there rather than a sentence asserting the same thing.
 
 **What the owner would have to do.** Registration asks nothing of the owner directly — no signup, no
-credentials, no agreement to accept. What it needs is §5.2's variables set, the three gaps above
-closed, and §5.5's first purchase settled through a facilitator that advertises `bazaar`. The
+credentials, no agreement to accept. What it needs is the environment variables set and a
+first purchase settled through a facilitator that advertises `bazaar`. The three gaps above are
+closed in code; what remains is a payment, and the owner is the only one who can make it. The
 listing follows from that payment. Until then the honest position is that `rwally.com` appears in no
 bazaar — which the catalog scan above confirms directly, rather than by inference.

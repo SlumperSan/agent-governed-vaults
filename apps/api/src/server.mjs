@@ -88,8 +88,8 @@ function jsonStringify(obj) {
  * @param {{debug?:Function, info?:Function, warn?:Function, error?:Function}} [deps.log]
  * @param {string|null} [deps.publicBaseUrl]
  *        public origin (no trailing slash) used to make the 402's `resource.url` absolute, which
- *        is what a Bazaar catalogues the resource under. Omitted = the bare request path, i.e.
- *        exactly what this server sent before.
+ *        is what a Bazaar catalogues the resource under. Omitted, `resource.url` carries the route
+ *        TEMPLATE with no origin for a route this server serves, and `''` for anything else.
  */
 /**
  * What a metered route publishes about itself: the url a Bazaar should catalogue it under, and the
@@ -122,7 +122,9 @@ function jsonStringify(obj) {
  *
  * Every route below is a GET that answers JSON, so none carries a request body.
  *
- * @param {string} path  the request path, already normalized by the caller
+ * @param {string} path  the request target with its query string stripped, which is all the
+ *                       caller does to it — it is NOT otherwise normalised, and this function must
+ *                       therefore treat it as attacker-controlled
  * @returns {{url:string, description?:string, bazaar?:object}}
  */
 function catalogFor(path) {
@@ -238,9 +240,9 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       // IT IS ABSOLUTE WHEN IT CAN BE, because that field is the key a Bazaar catalogues the
       // resource under: every entry read from facilitator.payai.network/discovery/resources on
       // 2026-09-16 is keyed on a full url. A bare `/vaults` would collide with every other seller
-      // that published a path. Without PUBLIC_BASE_URL configured it stays the bare path, which is
-      // spec-legal and useless rather than wrong-and-persistent — see serve.mjs for why the Host
-      // header is deliberately not used to fill the gap.
+      // that published a path. Without PUBLIC_BASE_URL configured it carries the route template
+      // with no origin, which is spec-legal and useless rather than wrong-and-persistent — see
+      // serve.mjs for why the Host header is deliberately not used to fill the gap.
       const catalog = catalogFor(path);
       const verdict = await gate({
         headers: lc, price, facilitator, nowMs: now(), seenNonces,
