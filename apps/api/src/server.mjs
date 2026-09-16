@@ -89,7 +89,8 @@ function jsonStringify(obj) {
  * @param {string|null} [deps.publicBaseUrl]
  *        public origin (no trailing slash) used to make the 402's `resource.url` absolute, which
  *        is what a Bazaar catalogues the resource under. Omitted, `resource.url` carries the route
- *        TEMPLATE with no origin for a route this server serves, and `''` for anything else.
+ *        with no origin: a literal for a collection route, a `:name` template for a parameterised
+ *        one, and `''` for anything this server does not serve.
  */
 /**
  * What a metered route publishes about itself: the url a Bazaar should catalogue it under, and the
@@ -240,7 +241,7 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       // IT IS ABSOLUTE WHEN IT CAN BE, because that field is the key a Bazaar catalogues the
       // resource under: every entry read from facilitator.payai.network/discovery/resources on
       // 2026-09-16 is keyed on a full url. A bare `/vaults` would collide with every other seller
-      // that published a path. Without PUBLIC_BASE_URL configured it carries the route template
+      // that published a path. Without PUBLIC_BASE_URL configured it carries the route itself
       // with no origin, which is spec-legal and useless rather than wrong-and-persistent — see
       // serve.mjs for why the Host header is deliberately not used to fill the gap.
       const catalog = catalogFor(path);

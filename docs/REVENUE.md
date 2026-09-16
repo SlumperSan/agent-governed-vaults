@@ -360,7 +360,7 @@ than by line, because these lines have moved once already:
    empty rather than sending a catalog key of `''`.
 
 `apps/api/test/x402-bazaar.test.mjs` pins all four against shapes read from live catalogued entries,
-and each of its guards was mutation-tested in both directions — the defect reintroduced one at a
+and every guard in it was mutation-tested in both directions, the defect reintroduced one at a
 time, each going red, each restored to green.
 
 **A note for whoever edits this section next.** The paragraph above went stale in hours, and no

@@ -250,6 +250,55 @@ test('a facilitator that publishes no domain leaves price.extra absent', async (
   assert.equal('extra' in cfg.price, false);
 });
 
+test('resolveApiConfig reads PUBLIC_BASE_URL, strips its trailing slashes, and defaults to null', async () => {
+  // THE ENV PARSE HAD NO TEST, which a review proved by deleting the line and watching the whole
+  // backend suite come back byte-identical. Deleting it now reddens here.
+  const { resolveApiConfig } = await import('../src/serve.mjs');
+  const base = { PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO };
+  assert.equal(resolveApiConfig(base).publicBaseUrl, null, 'unset must be null, never the empty string');
+  assert.equal(resolveApiConfig({ ...base, PUBLIC_BASE_URL: 'https://api.rwally.com' }).publicBaseUrl, 'https://api.rwally.com');
+  // A trailing slash here would produce `https://api.rwally.com//vaults` as a catalogue key.
+  assert.equal(resolveApiConfig({ ...base, PUBLIC_BASE_URL: 'https://api.rwally.com///' }).publicBaseUrl, 'https://api.rwally.com');
+  assert.equal(resolveApiConfig({ ...base, PUBLIC_BASE_URL: '' }).publicBaseUrl, null, 'an empty value is unset, not an empty origin');
+});
+
+test('the challenge carries mimeType and a description for a catalogued route, and neither for one that is not', async () => {
+  // Both fields were added by this change and neither was walked by a guard. `description` is the
+  // slot the catalogue actually reads for a human sentence, and `mimeType` is §5.1.1's own field;
+  // shipping either on an uncatalogued route would advertise something about a 404.
+  // Mutation: drop either spread at the gate call site and this reddens.
+  const known = await challengeFor('/vaults');
+  assert.equal(known.resource.mimeType, 'application/json');
+  assert.equal(typeof known.resource.description, 'string');
+  assert.ok(known.resource.description.length > 0);
+
+  const unknown = await challengeFor('/not-a-route');
+  assert.equal('mimeType' in unknown.resource, false, 'an uncatalogued route must advertise no mimeType');
+  assert.equal('description' in unknown.resource, false, 'an uncatalogued route must advertise no description');
+});
+
+test('publicBaseUrl reaches createApi from buildApiServer', async () => {
+  // The wiring line `publicBaseUrl: cfg.publicBaseUrl ?? null` had no guard either. This drives the
+  // whole path: config in, absolute catalogue key out.
+  const { buildApiServer } = await import('../src/serve.mjs');
+  const cfg = {
+    price: { ...price },
+    statePath: STATE_PATH,
+    heartbeatDir: HEARTBEAT_DIR,
+    reloadMs: 60_000,
+    limits: {},
+    publicBaseUrl: 'https://api.rwally.com',
+  };
+  const built = await buildApiServer(cfg, {
+    facilitator: { verifyAndSettle: async () => ({ ok: true, receiptId: 'r' }) },
+    log: {},
+  });
+  built.heartbeat?.stop?.();
+  const res = await built.api.handle('GET', '/vaults', {});
+  assert.equal(res.status, 402);
+  assert.equal(JSON.parse(res.body).resource.url, 'https://api.rwally.com/vaults');
+});
+
 test('a challenge built from a price carrying extra advertises it in accepts[0]', () => {
   const c = buildChallenge({ ...price, extra: { name: 'USD Coin', version: '2' } }, { nowMs: 1000 });
   assert.deepEqual(c.accepts[0].extra, { name: 'USD Coin', version: '2' });

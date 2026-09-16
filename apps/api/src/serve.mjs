@@ -12,7 +12,9 @@
  * Optional env:
  *   PUBLIC_BASE_URL the public origin this API answers on (e.g. https://api.rwally.com).
  *                   Makes the 402's `resource.url` absolute, which is what a Bazaar catalogues a
- *                   resource under. Unset, that field carries the route template with no origin.
+ *                   resource under. Unset, that field carries the route with no origin, which is
+ *                   a literal for a collection route and a `:name` template for a parameterised
+ *                   one; an unrecognised route contributes no key at all.
  *
  * Required env:
  *   PRICE_ASSET     USDC contract address (what payments are denominated in)
@@ -316,8 +318,12 @@ export async function buildApiServer(cfg, { facilitator, log = loggerFromEnv('ap
   // derivations is a challenge advertising a domain the facilitator rejects -- discovered after
   // the payer has signed, which is the expensive moment to discover it. Only `standard` publishes
   // a domain; `stub`, `http` and `svm` do not, and on those the challenge carries no `extra` at
-  // all. That is correct rather than a gap: none of the three settles against a public EVM
-  // facilitator, so there is no domain of theirs for a payer to sign against.
+  // all. That is correct rather than a gap, and the reason differs by mode. `stub` settles
+  // nothing. `svm` is a different scheme with a different signature. `http` DOES settle EVM
+  // EIP-3009 through `facilitator-server.mjs`, which proves the domain on-chain with
+  // `assertUsdcDomain` and rejects anything signed against another as `signer-mismatch` -- it
+  // simply does not publish that domain back to this join, because it is this repository's own
+  // single-POST endpoint rather than a facilitator a stranger's client would need told.
   //
   // A `price.extra` that is already set is never overwritten. No environment variable sets one
   // today, so in a normal deployment this is always the facilitator's value; the guard is for a
