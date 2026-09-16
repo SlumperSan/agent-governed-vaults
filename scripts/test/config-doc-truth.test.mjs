@@ -4,8 +4,8 @@
  * `contracts/config/base-mainnet.json` is the reference configuration. The launch docs argue its
  * values, and twice now the two have drifted apart without anything turning red:
  *
- *   - LAUNCH-READINESS §2 and go-to-market-plan said the exit fee decays over 302,400 s while the
- *     config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
+ *   - LAUNCH-READINESS §2 and a second launch document said the exit fee decays over 302,400 s
+ *     while the config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
  *   - `govDefencesNote` claimed Governance enforces a 100 bps proposal-threshold floor; that floor
  *     was implemented, measured and reverted (`test/audit/AuditProposalThresholdFloor.t.sol`).
  *     A config note that misstates a security check is how the next vault gets configured wrong

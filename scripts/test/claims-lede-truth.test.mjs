@@ -90,7 +90,7 @@
  * ## What is deliberately NOT banned
  *
  * The product is called the Agent-Governed Index Vault Protocol. Banning `agent-governed` would red
- * the repo's own name, `BUILD-PLAN.md`, `VaultCore.sol`'s NatSpec and the design docs — and the next
+ * the repo's own name, the phased build plan, `VaultCore.sol`'s NatSpec and the design docs — and the next
  * person to hit that weakens the gate instead of the copy. So these guards target the ATTRIBUTION
  * CONSTRUCTIONS (an agent *pooling*, an agent *governing*, a *universal* weighting claim), never the
  * product name.
