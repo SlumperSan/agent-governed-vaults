@@ -19,8 +19,11 @@
 > (`docs/DEPLOYMENT.md` §6, `docs/RUNTIME.md`) — this file is kept only so the rationale for the
 > earlier Base-settlement design, and why it was retired, is not lost.
 >
-> Everything below this line is the **original, unedited** runbook for the removed rail. It
-> describes code that no longer exists in this repository. Read it as history, not as instructions.
+> Everything below this line is the runbook for the removed rail, and it describes code that no
+> longer exists in this repository. **Read it as history, not as instructions.** It is no longer
+> unedited: sentences that made a present-tense claim about the removed code, or that asserted
+> nothing had been deployed, have been corrected where a reader could have acted on them. The
+> design reasoning is otherwise untouched, which is the whole reason the file is kept.
 
 ---
 
@@ -61,9 +64,10 @@ no Solidity in this repository reads the switch.
 **It is a pinned snapshot, not a live chain read**, and every response says so in `live: false` and
 `asOf`. Balances, NAV, share supply and member positions are deliberately absent: they move block to
 block, and a pinned file carrying them would be wrong within minutes while still looking
-authoritative. `apps/site-next/test/x402-edge.test.mjs` fails if a balance-shaped field ever appears in
-the snapshot, and fails if any vault field drifts from
-`contracts/config/deployments/robinhood-mainnet.json`.
+authoritative. Both properties were enforced by `apps/site-next/test/x402-edge.test.mjs` — it failed
+if a balance-shaped field ever appeared in the snapshot, and failed if any vault field drifted from
+`contracts/config/deployments/robinhood-mainnet.json`. PR #298 deleted that file along with the
+route, so nothing in this repository enforces either property any more.
 
 Serving live balances means a chain read per request at the edge. That is the honest next step and
 it is **not** what ships today.
@@ -88,7 +92,7 @@ Of the four selectable modes, `FACILITATOR=stub`, `FACILITATOR=http` and `FACILI
 hold no key; `FACILITATOR=svm` DOES, because Solana's flow makes that process the fee payer and
 it loads `SVM_KEYPAIR`. This route is EVM-only and uses `standard`.
 
-`apps/site-next/functions/api/vaults.js` is a Cloudflare Pages Function. It **imports** `gate` from
+`apps/site-next/functions/api/vaults.js` was a Cloudflare Pages Function. It **imported** `gate` from
 `apps/api/src/x402.mjs` and `createStandardHttpFacilitator` from `apps/api/src/facilitator.mjs` rather than
 reimplementing the 402 handshake. Two implementations of one payment protocol drift, and the half
 that drifts at the edge is the half deciding whether a caller's USDC bought anything. The build

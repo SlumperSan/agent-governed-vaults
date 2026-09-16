@@ -581,10 +581,11 @@ Run each check against the live addresses:
     `verifiedOnChain.observed.usdgDomain`, where it was recovered by reproducing
     `DOMAIN_SEPARATOR()` from the preimage. It could not be read from the token: **USDG exposes no
     `version()` getter**, so `readUsdcDomain` in `apps/api/src/facilitator.mjs`, which reads
-    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. Its two
-    callers are `facilitator-server.mjs`, the local settling facilitator, and
-    `scripts/live-x402-run.mjs`, the testnet settlement runner — neither of which is on the path a
-    `FACILITATOR=standard` deployment takes, and the standard client never calls it.
+    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. It has two
+    direct callers: `assertUsdcDomain`, beside it in the same file, and `scripts/live-x402-run.mjs`,
+    the testnet settlement runner. `facilitator-server.mjs`, the local settling facilitator, reaches
+    it only through `assertUsdcDomain`. None of those paths is taken by a `FACILITATOR=standard`
+    deployment, which is the one this bullet is about.
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
     **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
