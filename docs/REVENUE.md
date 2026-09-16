@@ -30,9 +30,11 @@
 paid HTTP reads settled in USDC over x402. It records what is done, what is not, and the exact steps
 only the owner can run. It is not a business plan and it does not forecast anything.
 
-**Status: the rail is built and unpublished.** Every step below up to "What the owner runs" is
-landed and tested. Nothing has been deployed, no mainnet payment has been taken, and revenue to date
-is **$0.00**.
+**Status: the rail described below is deployed and earning nothing.** Every step up to "What the
+owner runs" is landed and tested, and the endpoint is answering in production — see the banner at the
+top of this file. Its source was removed from this repository by PR #298. **No mainnet payment has
+ever been taken and revenue to date is $0.00**: a 402 is the gate refusing, and says nothing about
+settlement.
 
 > **Flagged for owner reconciliation, not yet resolved (see README's Production Map).** This plan
 > settles payment in USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain
@@ -126,9 +128,9 @@ local corroboration of it; `docs/REVENUE.md` names that dependency in §4 delibe
 |---|---|
 | The 402 handshake settles real USDC | **Proven** — Base **Sepolia**, 2026-08-24, $0.01, 14/14 independent on-chain checks (`docs/X402-LIVE-REPORT.md`) |
 | Replay is refused by the chain | **Proven** on that run — `authorization-used` |
-| The edge route refuses to serve unpaid | **Proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs` |
+| The edge route refuses to serve unpaid | **Was proven** — 23 tests in `apps/site-next/test/x402-edge.test.mjs`, which PR #298 deleted along with the route. The deployed route still refuses: it answers 402 in production. Nothing in this repository tests it any more. |
 | The Worker bundle builds | **Proven** — `wrangler@4 pages functions build`, 2026-09-13 |
-| A mainnet payment has settled | **No.** Nothing has been deployed |
+| A mainnet payment has settled | **No.** The route is deployed and answering 402; settlement has never been exercised on mainnet, and a 402 is the gate refusing |
 | Anyone has paid anything | **No.** Revenue is $0.00 |
 
 **The one dependency outside this repository is the facilitator.** Settling `transferWithAuthorization`

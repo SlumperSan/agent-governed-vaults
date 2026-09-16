@@ -128,8 +128,11 @@ there, `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, but not as a singleton (§3
 per-vault, `Deploy.s.sol` deploys none, and a creator supplies its own). No exit has settled and no
 ten-phase lifecycle artefact exists for this chain.
 
-**No x402 is part of this deployment** (owner, 2026-09-05): none of the ten transactions deploys or
-configures an x402 surface, and nothing recorded depends on one.
+**No x402 surface is part of this contract deployment**: none of the ten transactions deploys or
+configures one, and nothing recorded depends on one. That is a property of the contracts and does
+not change. It is a different fact from whether `apps/api` meters reads on this chain, which is an
+API-layer flag — switched off on the owner's decision of 2026-09-05 and switched back on by the
+owner's decision of 2026-09-15. See §6.
 
 **All seven contracts are source-verified, on Sourcify and on the explorer.** Sourcify returns
 `"creationMatch": "exact_match"` and `"runtimeMatch": "exact_match"` for every one of the seven at
@@ -578,8 +581,10 @@ Run each check against the live addresses:
     `verifiedOnChain.observed.usdgDomain`, where it was recovered by reproducing
     `DOMAIN_SEPARATOR()` from the preimage. It could not be read from the token: **USDG exposes no
     `version()` getter**, so `readUsdcDomain` in `apps/api/src/facilitator.mjs`, which reads
-    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. Only the
-    local settling facilitator (`facilitator-server.mjs`) calls it; the standard client never does.
+    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. Its two
+    callers are `facilitator-server.mjs`, the local settling facilitator, and
+    `scripts/live-x402-run.mjs`, the testnet settlement runner — neither of which is on the path a
+    `FACILITATOR=standard` deployment takes, and the standard client never calls it.
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
     **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
