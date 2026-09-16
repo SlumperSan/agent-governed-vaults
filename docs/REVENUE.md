@@ -1,6 +1,10 @@
 # Revenue — HISTORICAL / SUPERSEDED
 
-> **This document is historical and no longer describes a live or planned rail.** The
+> **This document is historical and the code it describes is gone from this repository — but the
+> rail it documents is still answering in production.** As of 2026-09-16,
+> `GET https://rwally.com/api/vaults` returns **402** with a `PAYMENT-REQUIRED` challenge and
+> `GET https://rwally.com/.well-known/x402` returns **200**, because the Cloudflare Pages project
+> has not been redeployed since the removal. The next deploy of `apps/site-next` removes both. The
 > Base-mainnet-settlement paid-snapshot rail it documents (`apps/site-next/functions/api/vaults.js`,
 > `apps/site-next/functions/.well-known/x402.js`, and their supporting `_price.js`/`_snapshot.json`)
 > was **removed on 2026-09-15** because it duplicated and conflicted with `apps/api`'s own x402 rail:

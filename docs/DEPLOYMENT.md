@@ -567,8 +567,19 @@ Run each check against the live addresses:
     keeps it under the key `usdc` so the file diffs cleanly against `base-mainnet.json`, but the
     address is `0x5fc5360d0400a0fd4f2af552add042d716f1d168` and its on-chain record reads
     `name() "Global Dollar"`, `symbol() "USDG"`, `decimals() 6`. Circle's USDC has zero bytes of
-    code on 4663. Set `PRICE_ASSET` to that address. `apps/api` reads the EIP-712 domain off the
-    token itself rather than from a default, so nothing needs to be told the name.
+    code on 4663. Set `PRICE_ASSET` to that address.
+
+    **You must also set the EIP-712 domain by hand here, and the defaults are wrong for this
+    token.** Under `FACILITATOR=standard`, `createStandardHttpFacilitator` takes the domain from
+    `FACILITATOR_USDC_NAME` / `FACILITATOR_USDC_VERSION` and defaults them to `USD Coin` / `2`,
+    which is Circle USDC on Base. It posts that as `paymentRequirements.extra` on every `/verify`
+    and `/settle`, so leaving the defaults on 4663 signs against a domain the token does not have
+    and every payment fails. USDG's domain is `Global Dollar` / `1` — recorded under
+    `verifiedOnChain.observed.usdgDomain`, where it was recovered by reproducing
+    `DOMAIN_SEPARATOR()` from the preimage. It could not be read from the token: **USDG exposes no
+    `version()` getter**, so `readUsdcDomain` in `apps/api/src/facilitator.mjs`, which reads
+    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. Only the
+    local settling facilitator (`facilitator-server.mjs`) calls it; the standard client never does.
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
     **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
