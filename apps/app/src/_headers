@@ -36,7 +36,8 @@
 #   somewhere the reader did not agree to.
 #
 # img-src 'self'
-#   The favicon. There is no other image and no data: or blob: anywhere.
+#   The favicon and the brand mark, both SVG and both same-origin. No data: or blob: anywhere, and
+#   no third-party image host.
 #
 # font-src 'self'
 #   The two self-hosted woff2 faces. No font CDN, no external stylesheet.

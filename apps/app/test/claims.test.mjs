@@ -193,10 +193,28 @@ test('no banned claim shape survives into the built page', () => {
 test('the build carries the headers file, so the deploy is not policy-free', () => {
   assert.ok(
     existsSync(path.join(DIST, '_headers')),
-    'Cloudflare Pages reads _headers from the root of the served directory. Without it the\n' +
-      'deploy serves with no Content-Security-Policy and reports no error of any kind.',
+    'Cloudflare Pages reads _headers from the root of the served directory. Without it the deploy ' +
+      'serves with no Content-Security-Policy and reports no error of any kind.',
   );
-  const headers = read('_headers');
+
+  // THE DIRECTIVES ARE READ OFF THE POLICY LINE, NOT OFF THE FILE, and that distinction is the
+  // whole guard. This leg used to match each directive against the entire file. Every directive is
+  // ALSO named in the column-0 comment block that explains the policy, so deleting one from the
+  // live header left the comment behind and the assertion still passed. A reviewer demonstrated it
+  // end to end: with `style-src 'self'` gone from the policy this suite stayed green, and Chrome
+  // then blocked /app.css and rendered the page in Times New Roman.
+  //
+  // Cloudflare's own syntax is what separates the two: a path pattern sits at column 0 and its
+  // headers are INDENTED beneath it, while a comment is a line beginning with # at column 0.
+  const headerLines = read('_headers').split(/\r?\n/);
+  const indented = headerLines.filter((line) => /^\s+\S/.test(line));
+  const policy = indented.find((line) => /^\s*Content-Security-Policy:/i.test(line));
+  assert.ok(
+    policy,
+    'no INDENTED Content-Security-Policy line in _headers. A header written at column 0 is read ' +
+      'by Cloudflare as a path pattern with no headers, which does nothing and reports nothing.',
+  );
+
   for (const directive of [
     "default-src 'none'",
     "script-src 'self'",
@@ -206,10 +224,15 @@ test('the build carries the headers file, so the deploy is not policy-free', () 
     "img-src 'self'",
     "font-src 'self'",
     "frame-ancestors 'none'",
-    'X-Content-Type-Options: nosniff',
   ]) {
-    assert.ok(headers.includes(directive), `_headers is missing: ${directive}`);
+    assert.ok(policy.includes(directive), `the Content-Security-Policy line is missing: ${directive}`);
   }
+
+  // Not a CSP directive, so it is its own header line and is checked as one.
+  assert.ok(
+    indented.some((line) => /^\s*X-Content-Type-Options:\s*nosniff\s*$/i.test(line)),
+    '_headers carries no indented X-Content-Type-Options: nosniff line',
+  );
 });
 
 test('the page has no inline script and no inline style, which the CSP would block', () => {

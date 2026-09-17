@@ -22,8 +22,10 @@ so Solidity gives it a public getter `allVaults(uint256)` and a browser can inde
 array. The first draft of this rebuild shipped the two addresses as static markup and said the
 factory exposed no enumeration function. That was false, and it was false because it came from
 reading a checkout behind origin rather than the contract. Because the list now comes from the
-chain, this table cannot fall behind it. The only address this repository supplies is the factory's;
-a guard pins that it is the only one the page may hard-code.
+chain, this table cannot fall behind it. The vault addresses are still written down in this
+repository, in the deployment ledger and in the docs that cite it; what changed is that THIS PAGE no
+longer reads them from there. A guard pins that the factory is the only address the page may
+hard-code.
 
 ## Three decisions that are easy to undo by accident
 
@@ -43,7 +45,9 @@ than a string built in JavaScript.
 **3. A failed read is named, never blank.** Every figure lands in a slot reading `reading` until it
 resolves. A failure writes `read failed` across the stat strip and a sentence into the table's empty
 slot saying the list could not be read, so an empty table is never mistaken for a protocol with no
-vaults. One `catch` in `app.js` does all of it, and the stamp carries the reason.
+vaults. There are two failure paths and they are different: one vault failing is caught per row, so
+the other rows keep their figures and the totals say what they are a total of; the whole read
+failing is caught once, and then the stat strip and the table both say so.
 
 ## Units, which are the easiest thing here to get wrong
 
@@ -54,8 +58,9 @@ conversion loses the tail silently rather than throwing.
 
 Capacity precision follows magnitude. These vaults hold tens of USDG against a 50,000 cap, so a
 fixed one decimal prints a real 0.04% as `0.0%`, which a reader cannot tell from an empty vault.
-Small figures carry three decimals, and anything that would still round to zero reads
-`under 0.0001%`.
+Small figures carry three decimals, and anything that would still round to zero at that precision
+reads `under 0.0005%`, which is half the last place shown. The threshold is derived from the number
+of decimals rather than written down, so the two cannot drift apart.
 
 `Holder positions` in the stat strip is the sum of each vault's `holderCount`. One address holding
 in two vaults counts twice, which is why the label is positions and not holders.
