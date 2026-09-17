@@ -187,7 +187,8 @@ approval. This should be flagged to the Sprint 4 contract agent as a concrete th
 
 **Read-across for the vault design:** Every mature protocol with a performance fee
 (Enzyme, dHEDGE) uses a **single global/per-vault HWM**, not per-depositor — this is worth
-weighing against the brief's `(member, operator)` HWM key (C-3/CM-4 in the phased build plan), which
+weighing against the brief's `(member, operator)` HWM key (C-3/CM-4 in the phased build plan, no
+longer carried in this repository), which
 is a materially different design point than any precedent found here. None of these four
 protocols implement a cross-vault-portable, per-(depositor,operator) HWM registry — that
 appears to be a novel mechanism for this project, not one with direct prior art. Flagging this
@@ -279,7 +280,7 @@ Keyper network) the brief doesn't ask for, and commit-reveal is still directly i
 pure Solidity where Shutter is not. But it's a concrete signal that **non-reveal-by-forgetting,
 not just non-reveal-by-strategic-griefing, is a real failure mode in a live, incentive-aligned,
 audited system**, which should inform two Sprint 2 choices already scoped in the phased build
-plan: (a) the reveal-deadline forfeiture mechanic should assume a meaningful fraction
+plan, no longer carried in this repository: (a) the reveal-deadline forfeiture mechanic should assume a meaningful fraction
 of legitimate voters will simply fail to reveal in time, not only adversarial griefers; (b) the
 existing "standing defaults" mechanism (K-3, VO-2) is doing double duty as a mitigation for
 exactly this failure mode, and its liveness-floor tradeoff should be weighed with that in mind.
