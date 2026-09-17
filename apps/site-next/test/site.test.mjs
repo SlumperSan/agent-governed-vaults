@@ -47,7 +47,10 @@
  *      paragraph's own "the line then claimed thirty-six" were written on
  *      2026-09-05 against a file that had thirty-six. The number went wrong on
  *      2026-09-09, when df9d13f4 (#227) removed a `t()` and left thirty-five,
- *      and it is right again now, by accident. `tc()` is still ONE.
+ *      and it was right again by accident until 2026-09-16, when removing the
+ *      marquee provenance leg took it back to THIRTY-FIVE, which is what
+ *      `grep -c` over `^t(` reports and what the header line above now says.
+ *      `tc()` is still ONE.
  *      `test()` is TEN and was already ten before this change. The leg that took
  *      it from nine to ten is the purchase-ban probe, which arrived earlier and
  *      sits eighth in the file -- position and ordinal are different things, and
@@ -668,7 +671,7 @@ t('the top status band is gone from every marketing page and lives only on the s
 // left a link in their place, so a footer-position rule would now assert something no page does.
 // What replaces it is stricter about the thing that actually matters: the count, defaulting to
 // zero, so a sentence cannot reappear on a page that is not named — and the mandatory footer link
-// to the Disclaimers page, which the "every page's footer links to the disclaimers page" test above
+// to the Disclaimers page, which the "every page links to every other page" test below
 // pins on every page.
 t('each pinned sentence appears exactly where it is pinned, and nowhere else', () => {
   for (const p of PAGES) {
@@ -2574,7 +2577,7 @@ t('every sentence on the homepage comes from a source that was already checked',
     'Every sentence on the homepage must appear verbatim in one of three sources:\n' +
       '  1. the corpus, apps/site/*.html, which is guarded by apps/site/test/site.test.mjs\n' +
       '  2. PROMO_SCRIPT, the promo lines the owner approved on 2026-09-05\n' +
-      '  3. OWNER_AND_LIVE_STRINGS, the tagline, one marquee phrase and the live panel labels\n' +
+      '  3. OWNER_AND_LIVE_STRINGS, the tagline and the live panel labels\n' +
       'A fourth source, RWLY_LAUNCH_RECORD, was retired on 2026-09-09 with the beat it sourced.\n' +
       'Do not add a sentence to source 3 to make this pass. Source 3 is for strings that CANNOT\n' +
       'exist in the corpus, and every entry in it carries the reason it cannot. If a sentence says\n' +
@@ -2594,10 +2597,18 @@ t('every sentence on the homepage comes from a source that was already checked',
  * subject: it would have extracted nothing and reddened on the floor, and lowering that floor to
  * zero would have left a test that asserts nothing.
  *
- * NO COVERAGE IS LOST, and that is the reason it could go rather than be neutered. The strip's
- * phrases were the one part of the homepage the general leg above could not read, because it works
- * on sentences and the extractor worked on elements. Every sentence that remains on the page is
- * still checked by `every sentence on the homepage comes from a source that was already checked`,
- * which enumerates from the prerendered HTML and not from a list.
+ * IT GOES BECAUSE ITS SUBJECT IS GONE, not because another guard picks the phrases up. Two earlier
+ * drafts of this note claimed the latter and both were wrong about the mechanism, so the mechanism
+ * is written out here.
+ *
+ * The general leg above splits every text run on sentence ends and DISCARDS any fragment of fewer
+ * than four words. Three of the four strip phrases were three words -- "The hive decides.", "No
+ * upgrade path.", "No admin key." -- so that floor filtered them and the element-scoped leg was the
+ * only thing checking them. The fourth, "Every position put to a vote.", is six words and the
+ * general leg DID read it, which is the half the earlier drafts got backwards.
+ *
+ * So one phrase loses a duplicate check and three lose their only one. Nothing on the page today is
+ * less covered than it was, because none of the four is on the page; the honest statement is that
+ * this leg's coverage ended with the strip rather than moved anywhere.
  */
 

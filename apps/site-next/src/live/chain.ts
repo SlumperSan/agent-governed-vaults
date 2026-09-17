@@ -46,7 +46,13 @@
 /** The chain's public JSON-RPC endpoint. Mirrored in `public/_headers`. */
 export const RPC = 'https://rpc.mainnet.chain.robinhood.com';
 
-/** Robinhood Chain mainnet. Stated on the page, and asserted against this read. */
+/** Robinhood Chain mainnet.
+ *
+ * NOTHING READS THIS CONSTANT, and it is kept anyway. It used to be stated on the page and asserted
+ * against the chain's answer; the page names the chain rather than numbering it since 2026-09-16,
+ * so the assertion it backed is gone. The numeral stays because the value is the one fact about
+ * this file that a reader pointing it at a different RPC has to change, and a named export is where
+ * they will look for it. */
 export const CHAIN_ID = 4663;
 
 /**

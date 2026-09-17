@@ -24,8 +24,9 @@
  * and the reason is that all three facts are already on the page, one section
  * above, READ FROM THE CHAIN rather than typed. `IndexLive`'s eyebrow states the
  * chain and its `factory.vaultCount()` cell states the vault count; the contract
- * count is no longer stated anywhere on the page, the strip that carried it
- * having been removed on 2026-09-16. Restating them here as
+ * count is no longer stated anywhere on the page, the strip having stopped
+ * carrying it on 2026-09-09 and the strip itself having gone on 2026-09-16.
+ * Restating them here as
  * static cards would put the same three facts on the page twice, and the second
  * copy would be the weaker one: written down, not fetched, and stale the moment
  * a vault is created. The section keeps the mascot and the story, which is what
