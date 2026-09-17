@@ -366,6 +366,28 @@ test('a parameterised route is catalogued as the ROUTE, with :name placeholders'
   assert.deepEqual(member.extensions.bazaar.info.input.pathParams, { address: '', member: '' });
 });
 
+test('EVERY value in the catalogFor table is asserted, url and description alike', async () => {
+  // THE TABLE HAS TWELVE VALUES AND THE ASSERTIONS WALKED NINE. A review proved it by corrupting
+  // `/operators/leaderboard`'s url and deleting both parameterised routes' descriptions, and
+  // watching the whole gate pass unchanged. Every url and every description is pinned here, so a
+  // corruption of any one of them reddens.
+  const want = [
+    ['/vaults', '/vaults', 'Creation-time facts for every indexed Agent-Governed Vault.'],
+    ['/operators/leaderboard', '/operators/leaderboard', 'Operators ranked by the indexed vaults they run.'],
+    [`/vaults/0x${'a'.repeat(40)}`, '/vaults/:address', 'One vault, by address.'],
+    [
+      `/vaults/0x${'a'.repeat(40)}/members/0x${'b'.repeat(40)}`,
+      '/vaults/:address/members/:member',
+      'The position one member holds in one vault.',
+    ],
+  ];
+  for (const [request, url, description] of want) {
+    const body = await challengeFor(request, { publicBaseUrl: 'https://api.rwally.com' });
+    assert.equal(body.resource.url, 'https://api.rwally.com' + url, `${request}: wrong catalogue url`);
+    assert.equal(body.resource.description, description, `${request}: wrong or missing description`);
+  }
+});
+
 test('every metered route that resolves declares a bazaar entry shaped like a live one', async () => {
   // `info.description` is NOT among these, deliberately. Across 40 live entries read from the
   // catalogue, every `info.output` carries an `example` and NOT ONE carries `info.description` — an

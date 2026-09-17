@@ -197,9 +197,10 @@ export function resolveApiConfig(env) {
     //
     // IT IS CONFIGURATION AND NOT THE `Host` HEADER, deliberately. Host is client-supplied, so
     // deriving the catalogue key from it would let any caller choose what this seller is listed
-    // as by sending one request with a forged Host. Unset, `resource.url` carries the route
-    // template with no origin: uninformative, but not attacker-chosen, and not wrong in a way that
-    // persists in someone else's index.
+    // as by sending one request with a forged Host. Unset, `resource.url` carries the route with
+    // no origin -- a literal for a collection route, a `:name` template for a parameterised one,
+    // and `''` for a path this server does not serve: uninformative, but not attacker-chosen, and
+    // not wrong in a way that persists in someone else's index.
     publicBaseUrl: env.PUBLIC_BASE_URL ? String(env.PUBLIC_BASE_URL).replace(/\/+$/, '') : null,
     price: {
       asset: env.PRICE_ASSET,
