@@ -277,6 +277,22 @@ test('the challenge carries mimeType and a description for a catalogued route, a
   assert.equal('description' in unknown.resource, false, 'an uncatalogued route must advertise no description');
 });
 
+test("createApi's own publicBaseUrl default is null, not an origin", async () => {
+  // THE DEFAULT WAS WALKED BY NOTHING. Every other test passes the value explicitly, so changing
+  // `publicBaseUrl = null` in the signature to a literal left the whole suite byte-identical. A
+  // caller that omits the option must get the no-origin behaviour, because the alternative is a
+  // catalogue key nobody configured.
+  // Mutation: give the parameter any string default and this reddens.
+  const api = createApi({
+    state: { vaults: new Map(), lastBlock: 0 },
+    facilitator: okFacilitator,
+    price,
+  });
+  const res = await api.handle('GET', '/vaults', {});
+  assert.equal(res.status, 402);
+  assert.equal(JSON.parse(res.body).resource.url, '/vaults', 'an omitted publicBaseUrl must add no origin');
+});
+
 test('publicBaseUrl reaches createApi from buildApiServer', async () => {
   // The wiring line `publicBaseUrl: cfg.publicBaseUrl ?? null` had no guard either. This drives the
   // whole path: config in, absolute catalogue key out.
@@ -402,7 +418,14 @@ test('every metered route that resolves declares a bazaar entry shaped like a li
     assert.equal(entry.info.input.method, 'GET');
     assert.equal(entry.info.output.type, 'json');
     assert.ok('example' in entry.info.output, 'every live entry with an output gives it an example');
-    assert.equal('description' in entry.info, false, 'no live entry carries info.description');
+    assert.equal(
+      'description' in entry.info,
+      false,
+      'info.description was absent from all 40 entries read on 2026-09-16, and a later read of 100 ' +
+        'found it on one. It is rare rather than forbidden, so this pins what THIS page emits ' +
+        'rather than a universal about the catalogue: the human sentence belongs in ' +
+        'resource.description, which the spec defines and the catalogue reads.',
+    );
     assert.equal(typeof body.resource.description, 'string');
     assert.ok(body.resource.description.length > 0, 'the human sentence goes in resource.description');
   }

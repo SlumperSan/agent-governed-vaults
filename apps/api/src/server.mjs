@@ -242,9 +242,9 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       // resource under: every entry read from facilitator.payai.network/discovery/resources on
       // 2026-09-16 is keyed on a full url. A bare `/vaults` would collide with every other seller
       // that published a path. Without PUBLIC_BASE_URL configured it carries the route with no
-      // origin, which is a literal for a collection route and a `:name` template for a
-      // parameterised one: spec-legal and useless rather than wrong-and-persistent — see serve.mjs
-      // for why the Host header is deliberately not used to fill the gap.
+      // origin, which is a literal for a collection route, a `:name` template for a parameterised
+      // one, and `''` for a path this server does not serve: spec-legal and useless rather than
+      // wrong-and-persistent — see serve.mjs for why the Host header is deliberately not used.
       const catalog = catalogFor(path);
       const verdict = await gate({
         headers: lc, price, facilitator, nowMs: now(), seenNonces,
