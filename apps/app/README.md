@@ -22,7 +22,8 @@ so Solidity gives it a public getter `allVaults(uint256)` and a browser can inde
 array. The first draft of this rebuild shipped the two addresses as static markup and said the
 factory exposed no enumeration function. That was false, and it was false because it came from
 reading a checkout behind origin rather than the contract. Because the list now comes from the
-chain, this table cannot fall behind it, and no file in this repository supplies an address.
+chain, this table cannot fall behind it. The only address this repository supplies is the factory's;
+a guard pins that it is the only one the page may hard-code.
 
 ## Three decisions that are easy to undo by accident
 

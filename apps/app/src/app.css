@@ -22,6 +22,27 @@
    property assignment rather than a style attribute.
    =========================================================================== */
 
+/* THE TWO SELF-HOSTED FACES. `_headers` ships font-src 'self' and there is no
+   font CDN, so if these rules are absent the two woff2 files still deploy and
+   are never requested, and the page silently falls back to a system stack. A
+   rewrite of this file dropped them once and renamed the families to something
+   nothing loads; nothing went red, because no guard reads a font stack. */
+@font-face {
+  font-family: 'Plex Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url('/fonts/plex-sans-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('/fonts/plex-mono-400.woff2') format('woff2');
+}
+
 :root {
   /* The ground is a near-black with green in it rather than a neutral grey. A
      vault screen is read for minutes at a time, and true black under a bright
@@ -42,8 +63,8 @@
   --accent-dim: #2f9c74;
   --bad: #ff6b6b;
 
-  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: 'Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   --s1: 0.25rem;
   --s2: 0.5rem;

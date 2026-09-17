@@ -13,7 +13,7 @@
    function. That was wrong, and it was wrong in the way worth naming: it came
    from reading a checkout that was behind origin rather than the contract. The
    table now cannot disagree with the chain, because the chain is where it comes
-   from, and the deployment ledger is no longer in the path at all.
+   from, and the factory below is the only address this file carries.
 
    WHAT IT DOES. One eth_blockNumber and one vaultCount(), then one allVaults(i)
    per vault, then five calls per vault. Every figure lands in the page.
@@ -180,8 +180,15 @@ async function readVault(row, address) {
        would be noise on a full one. */
     const millionths = (navUsdg * 1000000n) / cap;
     const pct = Number(millionths) / 10000;
-    if (millionths === 0n && nav > 0n) setSlot(row, 'pct', 'under 0.0001%');
-    else setSlot(row, 'pct', pct.toFixed(pct > 0 && pct < 1 ? 3 : 1) + '%');
+    const places = pct > 0 && pct < 1 ? 3 : 1;
+    const shown = pct.toFixed(places);
+    /* THE TEST IS ON WHAT IS DISPLAYED, not on the integer behind it. Testing
+       `millionths === 0n` let a vault at 0.05 USDG against a 50,000 cap print
+       "0.000%": the integer was non-zero and `toFixed(3)` rounded it away. A
+       funded vault must never render a zero, so the check is the rendered
+       string. */
+    if (nav > 0n && Number(shown) === 0) setSlot(row, 'pct', 'under ' + (0.5 / 10 ** places).toFixed(places + 1) + '%');
+    else setSlot(row, 'pct', shown + '%');
     const bar = row.querySelector('[data-slot="bar"]');
     if (bar) bar.style.setProperty('--fill', Math.min(pct, 100).toFixed(4) + '%');
   }
@@ -218,10 +225,33 @@ async function run() {
       return { row, address };
     });
 
-    const results = await Promise.all(rows.map(({ row, address }) => readVault(row, address)));
+    /* ONE VAULT'S FAILURE MUST NOT BLANK THE OTHERS, and the first draft let it.
+       Rows are in the document before their reads resolve, so a throw inside any
+       `readVault` reached the outer catch: it overwrote every figure that HAD
+       resolved with "read failed", left the failed rows stuck on "reading", and
+       printed "the vault list could not be read" under a table that had just
+       been read successfully. `navWad()` reverts by design when the oracle
+       breaker trips (VaultCore.sol:297), so this is a state the chain produces
+       rather than a hypothetical. Settled per row: a row that fails says so in
+       its own cells, and the totals say what they are a total OF. */
+    const settled = await Promise.all(
+      rows.map(({ row, address }) =>
+        readVault(row, address).then(
+          (r) => ({ ok: true, ...r }),
+          (err) => {
+            for (const name of ['creator', 'nav', 'price', 'holders', 'pct']) {
+              setSlot(row, name, 'read failed', 'is-bad');
+            }
+            return { ok: false, err };
+          },
+        ),
+      ),
+    );
 
-    const tvl = results.reduce((sum, r) => sum + r.nav, 0n);
-    const positions = results.reduce((sum, r) => sum + r.holders, 0n);
+    const good = settled.filter((r) => r.ok);
+    const failed = settled.length - good.length;
+    const tvl = good.reduce((sum, r) => sum + r.nav, 0n);
+    const positions = good.reduce((sum, r) => sum + r.holders, 0n);
     setSlot(document.getElementById('stat-tvl'), 'value', fixed(tvl, 18n, 2));
     setSlot(document.getElementById('stat-holders'), 'value', positions.toString());
 
@@ -233,6 +263,16 @@ async function run() {
           ' vaults and this page reads the first ' +
           MAX_ENUMERATE +
           '. The rest are on the chain and not on this page.',
+        'is-bad',
+      );
+    } else if (failed > 0) {
+      setStamp(
+        stampNow() +
+          ' ' +
+          failed +
+          ' of ' +
+          settled.length +
+          ' vaults could not be read, so the totals above are of the rest.',
         'is-bad',
       );
     } else {
