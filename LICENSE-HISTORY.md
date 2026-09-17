@@ -11,7 +11,7 @@ License 1.1, with these parameters:
 
 | Parameter | Value |
 | --- | --- |
-| Licensor | Michael Huynh |
+| Licensor | SlumperSan |
 | Additional Use Grant | None |
 | Change Date | 2030-09-02 |
 | Change License | GPL-2.0-or-later |
