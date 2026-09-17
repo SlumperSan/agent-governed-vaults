@@ -369,7 +369,7 @@ test('no placeholder survives anywhere in the tree', () => {
  *
  *   - The legal forms are MASKED OUT of the text before the scan, not exempted by a window cue
  *     list. A mask names the exact strings this repository has agreed to write — the decision-date
- *     form `CLAUDE.md`'s rule fixed, and dated authoring markers. A cue list grows one entry
+ *     decision-date form the pattern below defines, and dated authoring markers. A cue list grows one entry
  *     per surface that happens to trip it, which is how a guard ends up fitted to the tree it was
  *     written against rather than to the rule.
  *   - Scope is decided by the NEAREST chain token, not by "is 4663 anywhere nearby". A dated Base
@@ -406,7 +406,8 @@ const OTHER_CHAIN_TOKEN = /base sepolia|base mainnet|\b84532\b|\b8453\b|\bsepoli
 /** The forms a date literal is allowed to take. Masked, character-for-character, before the scan. */
 const LEGAL_DATE_FORMS = new RegExp(
   [
-    // The decision date, in the form CLAUDE.md's rule follows.
+    // The decision date. The form is defined by the pattern on the next line and nowhere else:
+    // an earlier draft cited a rule in CLAUDE.md, which carries no such rule.
     String.raw`(?:on |by |since |from |after )?the owner'?s decision (?:of|to deploy of) 20\d{2}-\d{2}-\d{2}`,
     String.raw`the owner (?:decided|approved) on 20\d{2}-\d{2}-\d{2}`,
     String.raw`on 20\d{2}-\d{2}-\d{2} the owner (?:decided|approved)`,
