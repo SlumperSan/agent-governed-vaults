@@ -39,7 +39,7 @@ export const RAIL = 'Deposit, observe, propose, commit, reveal, wait, execute.';
  * The six steps, each with the corpus's own sentence for it.
  *
  * IT WAS THREE UNTIL 2026-09-16, on the owner's instruction to expand this
- * section. The three were Deposit, Propose and Vote, each with a four-to-five
+ * section. The three were Deposit, Propose and Vote, with lines of five, four and three
  * word line, and "Vote" collapsed commit and reveal into one card. That
  * collapse hid the mechanic this section is required to name: the two phases are
  * separate transactions, and the gap between them is where an unrevealed commit

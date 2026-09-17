@@ -51,7 +51,8 @@
  *      marquee provenance leg took it back to THIRTY-FIVE, which is what
  *      `grep -c` over `^t(` reports and what the header line above now says.
  *      `tc()` is still ONE.
- *      `test()` is TEN and was already ten before this change. The leg that took
+ *      `test()` is ELEVEN and was already eleven before this change, which two
+ *      earlier versions of this paragraph reported as ten. The leg that took
  *      it from nine to ten is the purchase-ban probe, which arrived earlier and
  *      sits eighth in the file -- position and ordinal are different things, and
  *      saying "the tenth" would be the same class of mistake again. The line
@@ -2451,9 +2452,10 @@ const OWNER_AND_LIVE_STRINGS = [
   // IT WAS NEVER A CORPUS QUOTATION EITHER, which is why it needed this list in the first place: it
   // paraphrased the hero's lede rather than quoting any sentence in `apps/site/*.html`.
   // 'Seven immutable contracts.' WAS HERE AND CAME OUT ON 2026-09-09, on the owner's instruction to
-  // stop marketing a contract count. It was the only marquee phrase that needed this list at all,
-  // so removing it is a tightening: one fewer sentence may appear on the page with no corpus behind
-  // it.
+  // stop marketing a contract count. Removing it was a tightening: one fewer sentence permitted on
+  // the page with no corpus behind it. That entry read "the only marquee phrase that needed this
+  // list at all" until 2026-09-16, and the entry directly above shows it was not: two of the four
+  // needed it, and both are gone now.
   //
   // ITS REPLACEMENT, 'No upgrade path.', RESOLVES AGAINST `apps/site/faq.html`, and the first draft
   // of this comment named the wrong sentence. It claimed the phrase was a substring of "The

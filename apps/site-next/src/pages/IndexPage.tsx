@@ -13,7 +13,8 @@
  *   claims in solid accent, and every one of them restated something IndexHero
  *   renders directly above it: the lede says the index moves only when the hive
  *   agrees, and the fact line reads "No proxy, no upgrade path, no pause function,
- *   no admin key." Only `No admin key.` was a verbatim tail of that line; `No
+ *   no admin key." Only `No admin key.` matched that line's tail at all, and then only
+ *   case-insensitively, the corpus writing it lowercase mid-sentence; `No
  *   upgrade path.` is not, because the corpus writes it mid-sentence with a comma
  *   after "path", and `The hive decides.` was a paraphrase of the lede rather than
  *   a quotation of anything. The strip's own copy file recorded that comma trap in
