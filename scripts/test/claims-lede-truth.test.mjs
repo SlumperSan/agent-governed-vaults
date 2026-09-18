@@ -704,6 +704,11 @@ const SITE = 'apps/site';
  * The fewest pages any shape of this site has published: `index.html`, `disclaimers.html` and the
  * `404.html` below. A `PAGE_IDS` that parses to less than this is a gutted declaration rather than
  * a smaller site, and the expectation derived from it would be too weak to mean anything.
+ *
+ * IT IS A TRIPWIRE, NOT A FACT ABOUT THE SITE, and it sits at `protocol/main`'s exact reality with
+ * no margin on purpose. If the site legitimately drops to one page this reds, and the obvious next
+ * move — lowering the number until it goes quiet — is the relax-until-green shape this whole file
+ * exists to refuse. Re-point it or delete it deliberately, in a change that says which.
  */
 const MIN_PAGES = 3;
 
