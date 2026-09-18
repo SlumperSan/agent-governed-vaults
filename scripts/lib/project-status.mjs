@@ -334,6 +334,10 @@ function board(vaultRoot) {
       // Owner-answerable tasks declare their own options. The board renders these as buttons
       // and will not record any answer that is not one of them.
       options: list(fm.options),
+      // Which department is waiting on this answer. The board records the answer; the
+      // orchestrator reads the outbox and relays it, because an HTTP server cannot talk to
+      // a Claude session.
+      notify: list(fm.notify),
       answer: fm.answer || '',
       answeredAt: fm.answered || '',
       checklist,

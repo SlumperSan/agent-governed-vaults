@@ -16,7 +16,8 @@
  * remote listener -- do not "helpfully" change the bind address.
  */
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
+import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
 
 const argv = process.argv.slice(2);
@@ -28,6 +29,12 @@ const flag = (name, dflt) => {
 const PORT = Number(flag('port', 4270));
 const NO_GH = argv.includes('--no-gh');
 const HOST = '127.0.0.1';
+
+/** Answers waiting to be relayed to the department that asked. One JSON object per line. */
+const OUTBOX = path.join(
+  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults/Tasks',
+  '_outbox.jsonl',
+);
 
 // Collecting shells out to git and gh, so a page that gathered on every request would hammer both
 // and make a refresh feel slow. Cache briefly and let the client poll freely.
@@ -224,6 +231,9 @@ const PAGE = `<!doctype html>
   .card{background:var(--panel);border:1px solid var(--line);border-left-width:3px;
         border-radius:6px;padding:7px 9px;margin-bottom:7px}
   .card:last-child{margin-bottom:0}
+  .p-critical,.p-crit{border-left-color:var(--nogo);border-left-width:4px}
+  .p-critical .ct::before,.p-crit .ct::before{content:'CRITICAL ';color:var(--nogo);
+                                              font-size:9.5px;font-weight:700;letter-spacing:.06em}
   .p-high{border-left-color:var(--nogo)}
   .p-med{border-left-color:var(--warn)}
   .p-low{border-left-color:var(--line)}
@@ -319,7 +329,10 @@ function render(d){
 
   // --- the board
   if(d.board){
-    const COLS=[['doing','In progress'],['review','In review'],['blocked','Blocked'],['backlog','Backlog'],['done','Done']];
+    // Left to right in the order work moves. DONE IS NOT A COLUMN: finished work is the majority
+    // of any healthy board and it crowded out the four columns that still need a decision. The
+    // count stays in every header — "4 of 11" — so progress is still visible without a parking lot.
+    const COLS=[['backlog','To do'],['doing','In progress'],['review','In review'],['blocked','Blocked']];
     // Owner first, always. What is waiting on him is the only thing on this board he can act on,
     // and alphabetical ordering buried it between Marketing and Product.
     const DEPTS=[...new Set(d.board.tasks.map(t=>t.department))]
@@ -338,6 +351,10 @@ function render(d){
     // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
     // finished. Done sinks because a tracker is for the work that is left.
     const ORDER={doing:0,review:1,blocked:2,backlog:3,done:4};
+    // Critical, high, medium, low, then unset. Applied WITHIN a column, so the top card in any
+    // column is the most urgent thing in that state rather than the most recently saved file.
+    const PRIO={critical:0,crit:0,high:1,med:2,medium:2,low:3};
+    const byPrio=(a,b)=>((PRIO[a.priority]??9)-(PRIO[b.priority]??9))||(b.mtime-a.mtime);
     const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○'};
     const chip = t => { const d=t.checklist.filter(c=>c.done).length;
       return t.checklist.length? '<span class="ck">☑ '+d+'/'+t.checklist.length+'</span>' : ''; };
@@ -358,7 +375,7 @@ function render(d){
     const columnsFor = (tasks, withDept) => {
       let h='<div class="cols">';
       for(const [key,label] of COLS){
-        const inCol=tasks.filter(t=>t.status===key);
+        const inCol=tasks.filter(t=>t.status===key).sort(byPrio);
         h+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
           + (inCol.length? inCol.map(t=>card(t,withDept)).join('') : '<div class="empty">—</div>')
           +'</div>';
@@ -367,7 +384,7 @@ function render(d){
     };
     const checklistFor = tasks =>
       '<details class="more"><summary>as a checklist</summary><div class="list">'
-      + tasks.slice().sort((a,b)=>(ORDER[a.status]-ORDER[b.status])||a.title.localeCompare(b.title))
+      + tasks.slice().sort((a,b)=>(ORDER[a.status]-ORDER[b.status])||byPrio(a,b)||a.title.localeCompare(b.title))
              .map(line).join('')
       +'</div></details>';
     const header = (name, tasks, open) => {
@@ -660,8 +677,34 @@ function recordAnswer(id, answer, custom) {
   const tmp = `${t.file}.tmp-${process.pid}`;
   writeFileSync(tmp, patched, 'utf8');
   renameSync(tmp, t.file);
+
+  // ROUTING. The answer is recorded above whatever happens next, and the outbox is a separate
+  // append-only line, so a failure to notify can never lose the decision itself.
+  //
+  // An HTTP server cannot call SendMessage, so it writes the INTENT here and the orchestrator
+  // session relays it. Watch this file with Monitor and the relay is prompt rather than manual.
+  try {
+    appendFileSync(
+      OUTBOX,
+      JSON.stringify({
+        at: new Date().toISOString(),
+        id: t.id,
+        title: t.title,
+        answer,
+        custom: Boolean(custom),
+        notify: t.notify,
+        file: t.file,
+      }) + '\n',
+      'utf8',
+    );
+  } catch (e) {
+    // Say so rather than reporting a clean success: the decision IS saved, but nobody was told.
+    cache = { at: 0, data: null };
+    return { code: 200, msg: `recorded, but NOT queued for routing: ${/** @type {Error} */ (e).message}` };
+  }
+
   cache = { at: 0, data: null };
-  return { code: 200, msg: 'recorded' };
+  return { code: 200, msg: t.notify.length ? `recorded, routing to ${t.notify.join(', ')}` : 'recorded' };
 }
 
 const server = createServer((req, res) => {
