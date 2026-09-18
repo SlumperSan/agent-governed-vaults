@@ -1,0 +1,96 @@
+{
+  "chainName": "arc-mainnet",
+  "chainId": 5042,
+  "status": "CONFIGURATION EVIDENCE FOR A CHAIN WITH NO DEPLOYMENT OF THIS REPOSITORY. Nothing from this repository exists on chain 5042. This file records read-only JSON-RPC measurements taken from Arc mainnet on 2026-09-18 against https://rpc.mainnet.arc.io, for a deployment that has not been broadcast and is not authorised. It is NOT an address book: if a deployment ever happens, what exists on chain goes in `contracts/config/deployments/arc-mainnet.json`, written from what the chain returned. Modelled key-for-key on `robinhood-mainnet.json` so the two diff field by field. THIS FILE IS INCOMPLETE AND SAYS SO: `router` and the basket assets are UNRESOLVED — see `unresolved`. It cannot be deployed from as it stands.",
+  "verifiedOnChain": {
+    "at": "2026-09-18",
+    "rpc": "https://rpc.mainnet.arc.io",
+    "chainId": "eth_chainId returned 0x13b2 = 5042.",
+    "headAtRead": 21531149,
+    "chainTimestampAtRead": 1789751290,
+    "method": "Hand-rolled read-only JSON-RPC (eth_chainId, eth_blockNumber, eth_getBlockByNumber, eth_call, eth_getCode) from Node, with serial reads and backoff. No key, no broadcast, no forge, no cast. Every age and gap below is measured against the chain's OWN block timestamp, never the reader's wall clock.",
+    "operationalNote": "THE PUBLIC RPC RATE-LIMITS AND REFUSES LOG QUERIES. `eth_getLogs` returned -32012 'requested range too large' at 50,000 blocks AND at 900 blocks, and -32005 'rate limit exceeded' under repetition; an unfiltered Transfer-topic scan failed on every one of fourteen attempted windows. The Blockscout explorer at explorer.arc.io returns HTTP 403 to programmatic requests, with or without a browser User-Agent. This is why `unresolved` below is unresolved: it is a limit of what this endpoint would serve, not a judgement that the contracts are absent.",
+    "addressSquattingChecked": "THE CANONICAL UNISWAP ADDRESSES ON ARC ARE NOT UNISWAP, verified rather than assumed, exactly as robinhood-mainnet.json had to verify the same class of claim. 0x1F98431c8aD98523631AE4a59f267346ea31F984 (canonical UniswapV3Factory) and 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45 (canonical SwapRouter02) BOTH carry 2,747 bytes of code on 5042, and both fail to self-identify: owner(), feeAmountTickSpacing(), getPool(), factory() and WETH9() every one returns empty (0x). Neither is an EIP-1967 proxy — both implementation slots are zero. Do not populate `router` from a canonical address on this chain."
+  },
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "usdcNote": "GENUINE CIRCLE USDC, and on Arc it is a NATIVE PREDEPLOY rather than a deployed ERC-20 — the same address on every Arc network. Read on 5042: 1,798 bytes of code, decimals() 6, symbol() \"USDC\", name() \"USDC\". Unlike robinhood-mainnet.json, where the `usdc` key held USDG, here the key and the asset agree, so `scripts/verify-mainnet-config.mjs`'s symbol()==\"USDC\" && decimals()==6 assertion passes on both halves. `VaultCore` reads decimals() once and caches usdcScalar = 10**(18-6) = 1e12 immutably, which satisfies the SHORTFALL_DUST_WAD floor.",
+  "usdcIsAlsoGasNote": "ON ARC THE NATIVE GAS ASSET IS USDC ITSELF, exposed two ways over ONE pool of funds: an 18-decimal native view used only for gas and msg.value, and this 6-decimal ERC-20 view at the address above. They are not two assets and must never be summed, converted or swapped between. Nothing in `contracts/` reads a native balance, so the vault accounting is unaffected — but any off-chain surface that displays a balance must use the 6-decimal ERC-20 view alone. This has no analogue on 4663 or Base and is the single most likely place for an integrator to double-count.",
+  "chainlinkOracle": {
+    "note": "The launch oracle path, exactly as on Base and 4663: one genuine Chainlink Data Feed per asset, consumed directly by `ChainlinkOracle`. All four proxies below were read on 5042 and every one returned 9,571 bytes of code, decimals() 8 and version() 6 — the same EACAggregatorProxy shape as the feeds on 4663 — with description() matching the string recorded beside it exactly.",
+    "sequencerUptimeFeed": "",
+    "sequencerUptimeFeedNote": "NONE SUPPLIED AND NONE FOUND. No L2 Sequencer Uptime Feed appears in Chainlink's published feed set for arc-mainnet (32 feeds, enumerated 2026-09-18), and Arc is an L1 rather than an L2 rollup, so the Base uptime-feed pattern does not apply. This is the SAME EXEMPTION 4663 required, and it is an OWNER DECISION rather than a detail: `DeployChainlinkOracle.s.sol` refuses chains it has no sequencer policy for, and that refusal has to be widened deliberately before any deploy here.",
+    "feedsEnumeratedFrom": "https://reference-data-directory.vercel.app/feeds-arc-mainnet.json — 32 feeds on arc-mainnet. The same directory returns HTTP 404 for every arc testnet slug tried (arc-testnet, arc), which is the measurement behind `arcTestnetIsNotADeployTarget`.",
+    "assets": [
+      {
+        "symbol": "ETH",
+        "token": "UNRESOLVED",
+        "feed": "0x50FCDD99D6762D1C170DC6A9111db944AEE6D364",
+        "feedDescription": "ETH / USD",
+        "feedDecimals": 8,
+        "feedVersion": 6,
+        "observedAnswer": 260666000000,
+        "observedAnswerHuman": "$2,606.66",
+        "observedAgeSeconds": 1138,
+        "roundGapsSeconds": [
+          961,
+          1530,
+          2101,
+          420,
+          2161,
+          1338,
+          150,
+          240,
+          1530,
+          180
+        ],
+        "roundGapMedianSeconds": 1338,
+        "roundGapMaxSeconds": 2161,
+        "heartbeatSeconds": 86400
+      },
+      {
+        "symbol": "cbBTC",
+        "token": "UNRESOLVED",
+        "feed": "0x0baD7926628b6408FeedcABaEc68c1Ea77bd127c",
+        "feedDescription": "CBBTC / USD",
+        "feedDecimals": 8,
+        "feedVersion": 6,
+        "observedAnswer": 8114520966756,
+        "observedAnswerHuman": "$81,145.21",
+        "observedAgeSeconds": 2097,
+        "roundGapsSeconds": [
+          7893,
+          1801,
+          120,
+          180,
+          360,
+          120,
+          14286,
+          1770,
+          2731,
+          10325
+        ],
+        "roundGapMedianSeconds": 1801,
+        "roundGapMaxSeconds": 14286,
+        "heartbeatSeconds": 86400
+      }
+    ],
+    "heartbeatNote": "MEASURE THE CADENCE, NOT THE INSTANTANEOUS AGE, AND THIS FILE ALMOST RECORDED THE WRONG ONE. A single sample taken at 2026-09-18T16:38Z showed ETH/USD 523 s old and CBBTC/USD 521 s old — 0.15 h — which reads as an invitation to set a heartbeat far tighter than 4663's 86,400 s. Eleven rounds of history say otherwise: ETH/USD gaps reach 2,161 s and CBBTC/USD gaps reach 14,286 s (3.97 h), and BTC/USD, sampled alongside, reaches 16,956 s (4.71 h). These feeds publish in bursts on price deviation and go quiet in between, so a heartbeat chosen from a resting age would be breached by a feed behaving exactly to spec. Any value below ~6 h is unsafe against this sample, and an eleven-round window is a small sample for a chain days old. `ChainlinkOracle.MAX_HEARTBEAT` is 86,400 s and the constructor rejects anything above it. Decide deliberately; do not copy 4663's 86,400 s on the grounds that it worked there, and do not derive a tighter value from a resting age.",
+    "usdcFeedNote": "A USDC/USD feed exists at 0x84EA90AC252Dc437031461836DB5164219147905 (description \"USDC / USD\", 8 decimals, version 6, answer 99986742 = $0.99986742). `ChainlinkOracle` does NOT consume it: the settlement token is pinned at 1e18 and is forbidden from the feed map. It is recorded because its round history is the cleanest measurement of the heartbeat itself — a stablecoin resting at 1.0000 never trips a deviation threshold, and its ten measured gaps are 86,404–86,467 s, i.e. it publishes on nothing but the heartbeat. That is the same behaviour USDG/USD showed on 4663.",
+    "heartbeatChoiceNote": "86,400 s, which is ChainlinkOracle.MAX_HEARTBEAT exactly and therefore the loosest bound the constructor accepts. CHOSEN AS THE SAFE PLACEHOLDER, NOT AS AN ANSWER, and it remains the owner decision `rebuildChecklist` names. The measurement behind it is in `heartbeatNote`: the widest gap seen in eleven rounds was 14,286 s on CBBTC/USD and 16,956 s on BTC/USD sampled beside it, so anything below ~6 h is breachable by a feed behaving to spec, and an eleven-round window on a chain days old is a small sample. A tighter value is probably right here and must be argued from a longer measurement, not from this file."
+  },
+  "router": "UNRESOLVED",
+  "routerNote": "NOT POPULATED, AND MUST NOT BE GUESSED. Uniswap's own announcement says v2, v3, v4 and UniswapX are live on Arc, and the UniswapX playbook for chain 5042 gives the v3 Factory and SwapRouter02 only in truncated form (0xf0db…3918 and 0x53bf…6f77), which is not an address. The canonical cross-chain addresses are demonstrably something else on this chain — see `verifiedOnChain.addressSquattingChecked`. What WAS resolved and read: the Uniswap v4 PoolManager at 0x8366a39cc670b4001a1121b8f6a443a643e40951 carries 24,009 bytes and its owner() resolves to 0xbca30b5429935205037069cf5b8a165f55d05a75; the UniswapX v3 DutchOrderReactor at 0x0000000015134054eA82AE0bb9fda66b36402C36 carries 17,206 bytes and the OrderQuoter at 0x00000000a3db63Df9078cBF3dF88B4CAdD5a7F58 carries 3,709. Permit2 (9,152 B) and Multicall3 (3,808 B) are present at their canonical addresses. NOTE THAT v4 IS NOT DIRECTLY USABLE HERE: `AggregationRouterAdapter` and `UniswapV3Adapter` both target a router with a v3-shaped `exactInputSingle`, not a v4 PoolManager singleton, so pointing this key at the PoolManager would not work even once its address is known.",
+  "routerAllowedSignatures": [
+    "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+    "exactInput((bytes,address,uint256,uint256))"
+  ],
+  "routerAllowedSignaturesNote": "Carried from robinhood-mainnet.json unchanged and NOT verified against any Arc router, because no Arc router address has been resolved. Read `allowedSelector(bytes4)` back off the deployed adapter before trusting either, and confirm both selectors appear in the resolved router's runtime first.",
+  "unresolved": {
+    "router": "The Uniswap v3 SwapRouter02 address on 5042. Blocked by: truncated addresses in Uniswap's published playbook, a 403 from the Blockscout explorer API, and an RPC that refuses eth_getLogs at every window size tried. Resolve it from a v3 pool's factory() or from Uniswap's deployment registry, then read the runtime and confirm both allow-listed selectors appear in it.",
+    "basketAssets": "The ETH-representation and BTC-representation token addresses on 5042. Chainlink publishes ETH/USD, BTC/USD and CBBTC/USD feeds here, which is strong evidence the assets trade on this chain, but an oracle feed is not a token address and this file will not record one it has not read. NOTE that Arc has NO wrapped-native token — the native asset is USDC, not ETH — so the 4663 basket of WETH + cbBTC does not port by address or by name, and `0x0` as a currency in Uniswap v4 means native USDC, not native ETH.",
+    "consequence": "WITHOUT THESE, NOTHING CAN BE DEPLOYED FROM THIS FILE. `ChainlinkOracle`'s constructor takes (asset, feed) pairs and `VaultCore` takes a basket of asset addresses; both need the token addresses that are missing above, and `Deploy.s.sol` needs the router. The four feeds, the settlement token and the chain binding are established; the assets they price are not."
+  },
+  "arcTestnetIsNotADeployTarget": "MEASURED, AND IT RULES OUT THE OBVIOUS DRY RUN. Arc testnet (chain 5042002, https://rpc.testnet.arc.io, confirmed live at block 62,771,753) carries the USDC predeploy at the same address with the same 1,798 bytes and 6 decimals, Permit2 and Multicall3 — and NOTHING ELSE this protocol needs. Read on 5042002: canonical UniswapV3Factory 0 bytes, canonical SwapRouter02 0 bytes, UniversalRouter 0 bytes, Pyth receiver 0 bytes, CCTP TokenMessengerV2 0 bytes; and Chainlink's feed directory has no arc testnet network at all. `ChainlinkOracle` requires a genuine feed per asset and fails closed when it cannot produce a trustworthy price, so there is nothing on Arc testnet to point it at. A deploy there could only be made to stand up against mock feeds and a mock router, which would demonstrate that the bytecode is chain-portable and nothing whatsoever about oracle or execution behaviour.",
+  "deployAuthorisationNote": "NO DEPLOY IS AUTHORISED BY THIS FILE. `docs/SWARM.md` §10 puts anything needing a private key, a funded account or `--broadcast` on the escalate-do-not-act list, together with mainnet deploys and fund movement. This file was written by a session holding no key and no funded account on 5042, and it is configuration evidence for a decision that remains the owner's.",
+  "whatThisFileIs": "A SURVEY OF CHAIN 5042, NOT A DEPLOYABLE CONFIGURATION, and it is filed here rather than in contracts/config/ for exactly that reason. `scripts/test/config-doc-truth.test.mjs` enumerates every `*-mainnet.json` under contracts/config/ and holds it to the ChainlinkOracle constructor bounds: a resolved `asset` address per priced asset, a sane-price band, and feed decimals. This file satisfies none of those, because the asset addresses and the router on Arc are UNRESOLVED (see `unresolved`). Putting it under contracts/config/ would have meant either inventing addresses or weakening that guard, and the guard is right: an incomplete mainnet config is not a mainnet config. WHEN the router and the basket assets are resolved and a band is chosen, this graduates into `contracts/config/arc-mainnet.json` with the full shape, and the guard covers it from that day."
+}

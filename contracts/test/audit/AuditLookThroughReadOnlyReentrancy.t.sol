@@ -16,6 +16,9 @@ import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {IExecutionAdapter} from "../../src/interfaces/IExecutionAdapter.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
 
+/// @dev The per-proposal slippage bound these tests execute under.
+uint256 constant MAX_SLIPPAGE_BPS = 200;
+
 /// Slither `reentrancy-no-eth` on `VaultCore.executeRebalance`: internal accounting is debited
 /// for a leg's input before `adapter.executeSwap` and credited with the measured output after,
 /// so for the duration of that external call the vault's own accounting UNDERSTATES its NAV.
@@ -160,7 +163,7 @@ contract AuditLookThroughReadOnlyReentrancyTest is Test {
 
         mal.arm(1_000 * USDC_1);
         vm.prank(address(gov));
-        child.executeRebalance(address(mal), _leg());
+        child.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg());
 
         assertFalse(mal.navReadOk(), "parent NAV was readable while the child was mid-swap");
         assertFalse(mal.depositOk(), "attacker minted parent shares against a mid-swap child");
@@ -191,7 +194,7 @@ contract AuditLookThroughReadOnlyReentrancyTest is Test {
 
         mal.arm(1_000 * USDC_1);
         vm.prank(address(gov));
-        child.executeRebalance(address(mal), _leg());
+        child.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg());
 
         assertTrue(mal.sawChildLocked(), "child was not locked during its own swap");
         assertFalse(child.locked(), "lock not released after the swap");
@@ -204,7 +207,7 @@ contract AuditLookThroughReadOnlyReentrancyTest is Test {
         uint256 navBefore = parent.navWad();
 
         vm.prank(address(gov));
-        child.executeRebalance(address(mal), _leg()); // `arm` not called: adapter behaves
+        child.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg()); // `arm` not called: adapter behaves
 
         assertEq(parent.navWad(), navBefore, "NAV moved across an at-par swap");
 
@@ -450,7 +453,7 @@ contract AuditLookThroughDepth2Test is Test {
 
         mal.arm(500 * USDC_1, sharesBefore / 2);
         vm.prank(address(gov));
-        leaf.executeRebalance(address(mal), _leg());
+        leaf.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg());
 
         assertTrue(mal.probed(), "the adapter never ran its probes");
 
@@ -485,7 +488,7 @@ contract AuditLookThroughDepth2Test is Test {
 
         mal.arm(0, 0); // observe only — no re-entrant mint or burn
         vm.prank(address(gov));
-        leaf.executeRebalance(address(mal), _leg());
+        leaf.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg());
 
         assertTrue(mal.sawLeafLocked(), "the leaf was not locked during its own swap");
         assertFalse(mal.sawMidLocked(), "the INTERMEDIATE vault was flagged; it is not itself locked");
@@ -508,7 +511,7 @@ contract AuditLookThroughDepth2Test is Test {
         uint256 navBefore = root.navWad();
 
         vm.prank(address(gov));
-        leaf.executeRebalance(address(mal), _leg()); // `arm` not called: the adapter behaves
+        leaf.executeRebalance(address(mal), MAX_SLIPPAGE_BPS, _leg()); // `arm` not called: the adapter behaves
 
         assertEq(root.navWad(), navBefore, "NAV moved across an at-par swap");
 

@@ -1,23 +1,21 @@
 # Agent-Governed Index Vault Protocol
 
 RWAlly is the AI agent trading index.
-Permissionless vaults where members pool USDG into spot crypto index baskets and ratify
+Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
 every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds; nothing rebalances until a proposal passes. Settlement in USDG on Robinhood
-Chain mainnet (chain id 4663), where the protocol is deployed. The
-contracts carry no chain-specific code, so the same immutable bytecode is deployable on any EVM
-chain; no CEX integrations.
+move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc, Circle's
+chain, where USDC is also the native gas asset. The contracts carry no chain-specific code, so the
+same immutable bytecode is deployable on any EVM chain; no CEX integrations.
 
-The basket the chain configuration prices is ETH and BTC. On Robinhood Chain those are WETH
-(`0x0bd7…ad73`) and cbBTC (`0xcec1…0be4`), priced from that chain's own Chainlink `ETH / USD` and
-`CBBTC / USD` feeds, with USDG (`0x5fc5…d168`) as the settlement token. Every one of those
-addresses was read off chain 4663 rather than typed from memory, and all of them are committed in
-[`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json).
+The basket is ETH and BTC, priced from Chainlink `ETH / USD` and `CBBTC / USD` feeds, with USDC as
+the settlement token. On Arc mainnet (chain id 5042) those feeds are live and USDC is a native
+predeploy at `0x3600…0000`; the survey of what was read off chain 5042 is
+[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json).
 
-**Deployed on Robinhood Chain mainnet (chain 4663), and the launch verdict on the board is still
-NO-GO**; those are two different facts, and the second did not stop the first. Read
-[Status](#status) before anything else in this file.
+**Built for Arc, and not yet deployed there.** The contracts are written, audited and tested, and
+no instance of this protocol exists on Arc or on any other mainnet. Read [Status](#status) before
+anything else in this file.
 
 ## Why it exists
 
@@ -37,30 +35,24 @@ correct, and it is not a forecast.
 
 ## Status
 
-**Deployed 2026-09-05 on Robinhood Chain mainnet (chain id 4663), on the owner's decision
-of 2026-09-04, and on no other mainnet.** The address book is
-[`contracts/config/deployments/robinhood-mainnet.json`](contracts/config/deployments/robinhood-mainnet.json):
-`VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. That file is written from what
-the chain returned and is the authority for every address in it; nothing in this README is.
+**Not deployed on any mainnet.** Arc is the target chain and the protocol is not on it yet. The
+Arc survey — chain binding, the USDC predeploy and the four Chainlink feeds, each read from chain
+5042 rather than copied from documentation — is
+[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json). It is a survey
+and not a deployable configuration: the Uniswap router and the basket token addresses on Arc are
+still unresolved, and the file says so. The steps between here and a deploy are
+[`docs/evidence/arc-deploy-runbook.md`](docs/evidence/arc-deploy-runbook.md).
 
-**The singletons are deployed and wired, and two vaults now hold real funds there.**
-`verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974. The first is
-`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4`, created 2026-09-10, holding `idleUsdc` 20000000 — 20 USDG — at block 61,646,791; the second is
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38`, created 2026-09-12, now holding 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash
-and no USDG at all, because proposal 3 traded its whole balance. Both are capped
-at 50,000 USDG. This paragraph said there was nothing to deposit into until 2026-09-12, which was
-true when written and false from the day the first vault was created.
+**Arc testnet is not a dry run, and that is measured rather than assumed.** Chain 5042002 carries
+the USDC predeploy, Permit2 and Multicall3 and nothing else this protocol needs: no Uniswap, no
+Pyth, no CCTP, and Chainlink publishes no feeds for it at all. `ChainlinkOracle` requires a genuine
+feed per asset and fails closed without one, so a deploy there could only stand up against mocks.
+Base Sepolia remains the functional testbed, and its ten-phase lifecycle evidence is committed.
 
-**Both were created by the deployer EOA `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, and the
-deployment record said they must not be.** Its `intendedCreator.why` reads: "the first vault here
-must be created BY THE SAFE, not by a script from the EOA." `createVault` fixes `msg.sender` as the
-vault's immutable creator and attested operator, and no later transaction can correct that, so this
-cannot be fixed on these two vaults, only avoided on the next one. See `creatorDeviationNote` in
-the address book. Two
-limits apply there and are stated wherever the chain is named: Chainlink publishes no L2 Sequencer
-Uptime Feed for 4663 and has said it will not add one, so `oracle.sequencerUptimeFeed` is the zero
-address and the gate returns early rather than reverting; and the feeds publish on an 86,400 s
-heartbeat, so a price up to a full day old is accepted, exactly `ChainlinkOracle.MAX_HEARTBEAT`.
+**A prior deployment on another chain was wound down on 2026-09-18.** Both vaults that existed
+there were fully exited by their sole holder and read `totalShares() == 0`; nothing of anyone's
+remains in them. That chain is no longer a target and its configuration has been removed from this
+repository.
 
 **Launch verdict: NO-GO.** That verdict is unchanged and was not cleared by deploying. The argued
 board is [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) (nine gates, each with its evidence),
@@ -122,16 +114,17 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
   **Disabled at launch**. `VaultFactory.allowSubVaults = false` (the C-1 fix: root vaults only),
   so this code is dormant on the launch path.
 - Safety: **one genuine Chainlink Data Feed per asset**, read directly. WETH is priced through
-  ETH/USD and cbBTC through CBBTC/USD; the settlement token, USDG on the stated target chain, is
+  ETH/USD and cbBTC through CBBTC/USD; the settlement token, USDC, is
   pinned to $1.00. There is **no cbETH**, because no cbETH/USD feed was read for either mainnet
   configuration (Base has only cbETH/ETH, which is not a USD price). There is no median, no quorum
   and no per-vault source set: each asset maps to exactly one feed, fixed immutably at
   construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
   an **L2 sequencer uptime gate** with a grace period after recovery, a per-feed **heartbeat**,
-  and a **sane-price band**. On Robinhood Chain (chain id 4663) only the last two of those run:
-  Chainlink publishes no L2 Sequencer Uptime Feed there, and `_requireSequencerUp` returns early on
-  a zero address, so the gate is skipped at price time under the owner-approved exemption of
-  2026-09-04; see `docs/DEPLOYMENT.md` and `contracts/config/robinhood-mainnet.json`. `priceWad` reverts rather than return a stale, absent or implausible
+  and a **sane-price band**. On Arc only the last two would run: Chainlink publishes no L2
+  Sequencer Uptime Feed for Arc — it is an L1, not a rollup — and `_requireSequencerUp` returns
+  early on a zero address, so the gate is skipped at price time. That exemption has to be granted
+  deliberately before any deploy; see `docs/DEPLOYMENT.md` and
+  `docs/evidence/arc-mainnet-survey.json`. `priceWad` reverts rather than return a stale, absent or implausible
   price, which freezes every NAV path including active-share exits (by design; pending
   observation-window capital is always reclaimable). Per-vault capacity caps are optional
   (`capacityCapUsdc == 0` is uncapped).
@@ -195,7 +188,7 @@ Chainlink oracle's fail-closed guards, and governance rounds.
 | `apps/web/` | Vault Atlas, consumer app: discover, inspect governance/fees, deposit/exit. |
 | `apps/site/` | **Retired.** Superseded by `apps/site-next`; do not deploy (see #267/#268 — deploying this would replace the live site). Kept for history only. |
 | `apps/site-next/` | The public static site that `rwally.com` actually serves: what this is, how it works, and what can go wrong. |
-| `apps/app/` | The vault explorer at `app.rwally.com`: reads protocol facts live from chain 4663 in-browser. |
+| `apps/app/` | The vault explorer at `app.rwally.com`: reads protocol facts live in-browser. |
 | `scripts/` | Operational runners: `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
 | `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
 
@@ -209,23 +202,20 @@ sub-README, this table wins.
 | --- | --- | --- | --- |
 | Marketing site | `apps/site-next/` | `rwally.com` | **Live.** Canonical; the only site that should ever be deployed to this domain. |
 | Marketing site (retired) | `apps/site/` | — | **Not deployed. Do not deploy.** Superseded by `site-next`; deploying it would overwrite the live site (see #267/#268). |
-| Vault explorer | `apps/app/` | `app.rwally.com` | **Live.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Reads chain 4663 live, in-browser. |
+| Vault explorer | `apps/app/` | `app.rwally.com` | **Live, and reading a chain the protocol is no longer on.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Its live reads must be re-pointed at Arc before it describes anything again. |
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
-| Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** Chain-4663 x402 metering re-enabled by PR #294, merged 2026-09-15; no facilitator stood up for 4663 and no public domain chosen yet. |
-| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of `apps/site-next` removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the Robinhood-Chain-only direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
+| Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** x402 metering is implemented; no facilitator stood up and no public domain chosen yet. Its chain configuration targets Arc. |
+| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of `apps/site-next` removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the single-chain direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
 | Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once `site-next` publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
 | Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
 | API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
 
 **Resolved (was: open conflict).** `docs/REVENUE.md` used to document the paid-snapshot endpoint
-above settling in **USDC on Base mainnet (chain 8453)**, deliberately decoupled from the chain-4663
-data it described. That plan predated the current direction ("Robinhood Chain is the only
-externally marketed live chain" + PR #294 re-enabling x402 metering on chain 4663 in `apps/api`)
-and would have contradicted it at the narrative level had it ever shipped. The owner decided to
-remove the endpoint entirely (PR #298) rather than re-point its settlement chain, since `apps/api`
-already serves this role on Robinhood Chain and having two paid-API code paths violated the "one
-API" rule this table exists to enforce. Revenue is $0.00 and no settlement has ever been exercised
-on mainnet.
+above settling in **USDC on Base mainnet (chain 8453)**, decoupled from the chain whose data it
+described. The owner removed the endpoint entirely (PR #298) rather than re-point its settlement
+chain, since `apps/api` already serves this role and two paid-API code paths violated the "one API"
+rule this table exists to enforce. Revenue is $0.00 and no settlement has ever been exercised on
+mainnet.
 
 **The removal has not reached production, and that is a trap to know about before deploying.** The
 Cloudflare Pages project still serves what was deployed before PR #298: as of 2026-09-16,
@@ -279,7 +269,7 @@ with `forge snapshot --nmt "testFuzz|testFork"`).
 Agents integrate against the contracts. Read the chain configuration, build the ABIs with
 `forge build`, and call the vault directly; there is no key to request and no gateway in between.
 See [docs/AGENT-QUICKSTART.md](docs/AGENT-QUICKSTART.md),
-[`contracts/config/robinhood-mainnet.json`](contracts/config/robinhood-mainnet.json),
+[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json),
 and [`/llms.txt`](llms.txt).
 
 License: MIT; see [LICENSE](LICENSE). The repository was source-available under BUSL-1.1 until

@@ -1,8 +1,8 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: a protocol card whose three
-most load-bearing facts are re-read from chain 4663 in the reader's own browser every time the page
-loads, above a table of vaults with no rows.
+The vault explorer, v1. It renders one thing and it renders it honestly: the protocol is not
+deployed on Arc, or on any mainnet, so the protocol card says so plainly instead of showing live
+reads it does not have, above a table of vaults with no rows.
 
 The order used to be stated the other way round here. In `index.html` the protocol card is the first
 `<section>` and the vaults card the second, so the table is BELOW it.
@@ -11,36 +11,30 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 
 ## What is on the page, and where each fact comes from
 
+The protocol is not deployed on Arc, or on any mainnet, so there is no deployment record for this
+page to read and no address for it to call. Every fact on the page follows from that:
+
 | Thing | Source |
 |---|---|
-| The seven contract addresses, the chain id, the deploy block and instant | `contracts/config/deployments/robinhood-mainnet.json` at `origin/protocol/main`, which records every one of them as read back from the chain with `cast` at block 54,991,182 |
-| `VaultFactory.vaultCount()` | An `eth_call` from the browser, on load |
-| `VaultFactory.allowSubVaults()` | An `eth_call` from the browser, on load |
-| `ChainlinkOracle.usdc()`, then `symbol()` on the token it names | Two `eth_call`s from the browser, on load |
-| The block the reads landed at | `eth_blockNumber`, same load |
-| Every vault row | Nothing. This page renders no rows: there is no `<tbody>` in `index.html` and `app.js` writes only into the live-reads panel. Two vaults existed on chain 4663 as of 2026-09-12 and neither is listed |
-
-**The token that `usdc()` names is USDG, and the page prints what `symbol()` returned rather than
-what the getter is called.** The getter keeps the name `usdc` because that is the name in the
-contract and in `scripts/soak/deployment.mjs`; the token at `0x5fc5360D…` answers `symbol()` with
-`"USDG"` and `decimals()` with 6. Printing "USDC" there would be a false statement produced by
-trusting a variable name over a chain read.
+| The chain the protocol targets, Arc, id 5042 | Static copy in `index.html`. It names Arc itself, not anything this deployment has produced there |
+| The seven contract addresses this page used to name | Nothing. The record they came from named the project's abandoned prior chain and was deleted along with it; this page names no address in its place, invented or otherwise |
+| `VaultFactory.vaultCount()`, `VaultFactory.allowSubVaults()`, the oracle's settlement token | Nothing. There is no VaultFactory and no oracle on Arc to call, so `app.js` sends no `eth_call` and no `eth_blockNumber` request |
+| Every vault row | Nothing. There is no `<tbody>` in `index.html` and `app.js` writes nothing into the page. The two vaults that existed on the project's prior chain were fully exited on 2026-09-18 and hold nothing |
 
 ## Three decisions that are easy to undo by accident
 
 **1. The empty state is static markup, not a rendered value.** The sentence "This table lists no
-vaults. `vaultCount()` above is read live from chain 4663 and is the count that matters." lives in
-`index.html` and is never written by `app.js`. A claim produced by a fetch disappears exactly when
-the fetch fails, which is the moment a reader most needs to be told what is true. The LIVE READS
-panel **corroborates** that sentence with a number read seconds ago; it does not produce it.
-`test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the script reds
-the guard.
+vaults. The protocol is not deployed on Arc, so there is nothing to list." lives in `index.html`
+and is never written by `app.js`, because `app.js` writes nothing: there is no live read to produce
+it from. `test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the
+script, or letting some future live read stand in for it, reds the guard.
 
-That sentence is deliberately a claim about the TABLE, not a count of vaults. The version before it
-pinned "`vaultCount()` reads 0", which was true when written and false from the moment vault #1 was
-created, with nothing going red in between: the guard is a static string match that reads no chain,
-so it can only prove the sentence is present, never that it is true. Pin what this deployment
-controls.
+That sentence is deliberately a claim about the TABLE, not a count of vaults on some chain. Two
+earlier versions of it went stale with nothing going red: one pinned a bare count that the next
+`createVault` call falsified silently, the other pointed at a live `vaultCount()` read on a chain
+the project has since abandoned. The guard is a static string match that reads no chain, so it can
+only prove a sentence is present, never that it is true. Pin what this deployment controls, which
+right now is that the table renders no rows.
 
 **2. There is no `package.json`, and that is not an omission.** The repository root declares the
 workspace glob `apps/*`. A workspace package that is absent from `package-lock.json` makes `npm ci`
@@ -58,20 +52,17 @@ no error on the page and nothing in the build output. This is invisible on `file
 local server that does not send the header, so **verify against the deployed URL, not a local
 file.** `test/claims.test.mjs` checks the markup for all three shapes for exactly this reason.
 
-`connect-src` names one third-party origin, `https://rpc.mainnet.chain.robinhood.com`. It is the
-only external request the page makes. The two fonts are self-hosted copies of the faces
-`apps/site-next` uses, so `font-src 'self'` holds and nothing is fetched from a font CDN.
-
-One more constraint on the fetch, which is not visible in this repository at all: the RPC's CORS
-preflight allows exactly one request header, `content-type`. Adding a second turns a working read
-into a browser-side failure. `app.js` sends that header and no other, and no credentials.
+`connect-src` names no third-party origin, just `'self'`. The protocol is not deployed anywhere, so
+this page makes no chain call and there is nothing to widen the policy for. The two fonts are
+self-hosted copies of the faces `apps/site-next` uses, so `font-src 'self'` holds and nothing is
+fetched from a font CDN.
 
 ## Layout
 
 ```
 src/index.html   the page, all of it
 src/app.css      the only stylesheet, palette carried from apps/site-next/src/tokens.css
-src/app.js       the live reads, and nothing else
+src/app.js       inert. No chain call: nothing is deployed to read
 src/_headers     the CSP. Copied to dist/_headers, where Pages reads it from
 src/favicon.svg  the comic R on its tile, byte-identical to the site's
 src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand/
@@ -91,9 +82,11 @@ a design doc/wiki page if they're needed again rather than re-committing binarie
 node --test --test-reporter=tap apps/app/test/claims.test.mjs
 ```
 
-Six checks: the empty-state sentence survives into the build, the factory address is on the page,
-no banned claim shape appears in any built file, `_headers` carries every required directive, the
-markup has no inline script or style, and the page fetches from no origin but the chain RPC.
+Seven checks: the empty-state sentence survives into the build, the page states plainly that the
+protocol is not deployed, no contract address of any kind survives into the build, no banned claim
+shape appears in any built file, `_headers` carries every required directive and names no external
+origin in `connect-src`, the markup has no inline script or style, and the page makes no request to
+any origin at all, with `app.js` carrying no `fetch()` call.
 
 **It runs in CI and in the gate, as its own step.** The root `package.json` declares `test:app`,
 `.github/workflows/ci.yml` runs it at line 137, and `scripts/gate.mjs` invokes it immediately before
@@ -127,9 +120,9 @@ hive activity screens, stake, vote, and every wallet action. The Connect control
 inert and says so, carries `aria-disabled` rather than `disabled` so it keeps its place in the tab
 order, and names its reason through `aria-describedby`.
 
-Its reason changed with this pass. It used to say deposits open "when a vault exists", which made
-the control's own copy a hostage to chain state: vaults now exist and the button is still inert, so
-that sentence had quietly become a broken promise. The blocker was never the factory. `app.js`
-contains no wallet code at all, so the title and the note now say what is true of this page, and
-they say the same thing as each other: a sighted reader gets the `title`, a screen-reader user gets
-the `aria-describedby` note, and those two disagreeing is its own defect.
+The control is inert because this page has no wallet code at all: `app.js` sends no
+`eth_requestAccounts`, does no signing, and touches no `window.ethereum`. That is true independent
+of whether the protocol is deployed anywhere, so the title and the note say what is true of this
+page rather than of chain state, and they say the same thing as each other: a sighted reader gets
+the `title`, a screen-reader user gets the `aria-describedby` note, and those two disagreeing is
+its own defect.

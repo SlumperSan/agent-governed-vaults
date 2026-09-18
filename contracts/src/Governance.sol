@@ -5,7 +5,11 @@ import {IGovernance} from "./interfaces/IGovernance.sol";
 import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
 
 interface IVaultExecution {
-    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders) external;
+    function executeRebalance(
+        address adapter,
+        uint256 maxSlippageBps,
+        IExecutionAdapter.SwapOrder[] calldata orders
+    ) external;
     function allocateToChild(address child, uint256 amountUsdc) external;
     function redeemFromChild(address child, uint256 shares) external;
 }
@@ -612,9 +616,11 @@ contract Governance is IGovernance {
         } else if (payload.length > 0) {
             // Rebalance: decode the committed orders and drive the vault's execution path.
             // The payload hash was fixed at proposal time — voters approved THESE orders.
-            (address adapter, IExecutionAdapter.SwapOrder[] memory orders) =
-                abi.decode(payload, (address, IExecutionAdapter.SwapOrder[]));
-            IVaultExecution(p.vault).executeRebalance(adapter, orders);
+            // The bound rides in the payload, so `actionHash` commits to it exactly as it commits
+            // to the adapter and the orders: voters approved THIS tolerance, not a constant.
+            (address adapter, uint256 maxSlippageBps, IExecutionAdapter.SwapOrder[] memory orders) =
+                abi.decode(payload, (address, uint256, IExecutionAdapter.SwapOrder[]));
+            IVaultExecution(p.vault).executeRebalance(adapter, maxSlippageBps, orders);
         }
         emit Executed(pid);
     }

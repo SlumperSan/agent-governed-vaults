@@ -338,36 +338,23 @@ the scope of the contract security review.** Do not point it at funds you would 
 
 This section previously said the opposite: that the contracts were not deployed, that
 [issue #10](https://github.com/SlumperSan/agent-governed-vaults/issues/10) blocked it, and that no
-transaction this agent constructs had ever been mined. **All three are false.** Issue #10 is closed,
-the protocol has been deployed to Base Sepolia and, since 2026-09-05, to Robinhood Chain
-mainnet (chain 4663), which makes the warning below sharper rather than softer: this agent can now
-be pointed at a chain whose USDG is real money, and at a factory that will create a real vault for
-whoever calls it. Two vaults exist on it today, 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 and
-0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38, the first holding USDG and the second a WETH position,
-so there IS something there to
-join and the warning is no longer hypothetical. The guard below is about the key, not about the
-vault, and a key configured against 4663 signs
-whatever it is asked to sign. Note the one guard that already exists and its exact
-limit: `--demo-wallet` is refused off a known testnet (`TESTNET_CHAIN_IDS` in
-`packages/reference-agent/src/run.mjs` is `{84532, 11155111, 31337, 1337}`, and 4663 is not in it),
-so a throwaway key cannot sign there, but nothing stops a real key being configured against 4663.
-The agent ran its full loop on Base Sepolia in execute
+transaction this agent constructs had ever been mined. The first two are false. Issue #10 is closed
+and the protocol has been deployed to Base Sepolia, where the agent ran its full loop in execute
 mode: join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
 priced on its own, and settle, every phase with a transaction hash. See
-[SOAK-REPORT.md](SOAK-REPORT.md) §5.
+[SOAK-REPORT.md](SOAK-REPORT.md) §5. The protocol is built for Arc (chain id 5042) but has not been
+deployed there, or on Base mainnet, or on any other mainnet, so there is currently no live factory
+or vault this agent could be pointed at.
 
-The same claim outlived this section in the source comments, which the claims guard cannot reach;
-it walks `.md`, `.html`, `.txt` and `.json`, not `.mjs`. Five sites across
-`fixtures/demo-chain.mjs`, `fixtures/seed-snapshot.mjs`, `src/chain.mjs` and `src/run.mjs` still
-said the protocol was not deployed; all five were corrected on 2026-09-04
-([#197](https://github.com/SlumperSan/agent-governed-vaults/issues/197)). The absence is now scoped
-to Base mainnet, where it is true. **And that scoping was itself falsified by the Robinhood Chain
-deployment of 2026-09-05**, the third time in three days that a deployment absolute in this repository had to be narrowed rather
-than replaced. `contracts/config/deployments/` now holds two records,
-[`base-sepolia.json`](../contracts/config/deployments/base-sepolia.json) and
-[`robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json), and no Base
-mainnet one. The lesson is recorded here rather than overwritten: the defect is not the wrong word,
-it is narrowing a claim to the boundary that happens to be visible today.
+That will change the moment a mainnet deployment lands, and the warning below is written for that
+day. The guard below is about the key, not about the vault: a key configured against any mainnet
+chain signs whatever it is asked to sign, and on Arc that chain's USDC is both the settlement asset
+and the native gas asset, so a compromised key there can drain gas funds as well as vault funds from
+one balance. Note the one guard that already exists and its exact limit: `--demo-wallet` is refused
+off a known testnet (`TESTNET_CHAIN_IDS` in `packages/reference-agent/src/run.mjs` is
+`{84532, 11155111, 31337, 1337}`, and neither Arc's 5042 nor any other mainnet id is in it), so a
+throwaway key cannot sign against a mainnet chain, but nothing stops a real key being configured
+against one.
 
 **The live run is what makes the warning above stronger, not weaker.** It surfaced two launch-class
 bugs that no amount of mock testing had found: `requireProvenOperator: false` was inert, so no

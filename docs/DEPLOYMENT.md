@@ -1,8 +1,8 @@
 # Deployment Runbook
 
-Sprint 9. Covers testnet bring-up (Base Sepolia) and the mainnet bring-up this runbook was actually
-used for — Robinhood Chain (chain 4663), 2026-09-05 — the mandatory wiring order, post-deploy
-verification, and canary monitoring. Contracts are immutable — there is no upgrade path, so
+Sprint 9. Covers testnet bring-up (Base Sepolia) and the mandatory wiring order, post-deploy
+verification, and canary monitoring for a future Arc (chain 5042) mainnet deploy — the protocol is
+not deployed on Arc or any mainnet today. Contracts are immutable — there is no upgrade path, so
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
 
@@ -42,132 +42,26 @@ unwired registry cannot be fixed after the fact).
   [`base-mainnet.json`](../contracts/config/base-mainnet.json) and described in §3; **UNVERIFIED-ON-CHAIN**
   and not for a mainnet launch.
 
-### A second mainnet configuration for chain 4663, and where its deployment is recorded instead (2026-09-04)
+### Arc is the target chain, and nothing is deployed on it (2026-09-18)
 
-**Added 2026-09-04:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json),
-for Robinhood Chain (chain id 4663). It is modelled key for key on `base-mainnet.json` so the two
-diff field by field, and its `chainlinkOracle` block is the launch shape §1 describes: WETH and
-cbBTC priced from that chain's own `ETH / USD` and `CBBTC / USD` Chainlink Data Feeds, with USDG as
-the pinned settlement token under the historical `usdc` key. Every address, code size, decimal, feed
-description, aggregator phase and answer in it was read from chain 4663 by read-only JSON-RPC on
-2026-09-04. Those reads are several batches rather than one instant, spanning roughly three minutes
-of chain time, and the file records the earliest and latest samples alongside the one its feed ages
-are measured against.
+**There is no mainnet deployment of this protocol, on Arc or anywhere else**, so there is no
+address book in `contracts/config/deployments/` for a mainnet. Base Sepolia's record is the only
+deployment record in this repository.
 
-**What this file is, and what it is not.** It is configuration evidence for chain 4663, and a
-configuration is not an address book: it records what was read off that chain on the date above,
-never what exists on it now. What exists on chain 4663 is recorded separately, in
-[`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json),
-written from what the chain returned and described in the subsection below, "The chain-4663
-deployment, and where it is recorded". **Do not read either file as evidence about the other.** The
-one link between them that either file can settle is that the record's
-`oracle.sequencerUptimeFeed` and `oracle.maxStalenessSeconds` agree with this file's
-`chainlinkOracle` block, and `scripts/test/claims-robinhood-deployment.test.mjs` asserts exactly
-that and nothing wider — in particular, nothing here establishes which configuration any broadcast
-actually read, and the open questions at the end of this section are the reason that matters.
+What exists for Arc is a survey rather than a configuration:
+[`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) records the chain
+binding (5042), the USDC predeploy at `0x3600…0000` with 6 decimals, and four Chainlink feeds —
+each read off chain 5042 by read-only JSON-RPC rather than copied from documentation. It is filed
+under `docs/evidence/` and NOT under `contracts/config/` deliberately: the shared guards hold every
+`*-mainnet.json` there to the `ChainlinkOracle` constructor bounds, and this file cannot meet them
+because the Uniswap router and the basket token addresses on Arc are still unresolved. When those
+are resolved it graduates into `contracts/config/arc-mainnet.json` and the guards cover it from that
+day. Until then, read
+[`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md) for what is blocking.
 
-No contract from this repository exists on Base mainnet. Neither this file nor the deployment on
-chain 4663 changes a row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md) — §0 of that file records
-which of its gates were not run on that chain, and gates 3 and 6 are still STALE and still hold Base
-at NO-GO. What this configuration supplies for chain 4663 is three of §1 step 1's four inputs — real,
-on-chain-verified feed addresses (never invented ones), per-asset heartbeats and sane-price
-bounds. It deliberately does **not** supply the fourth, that step's L2 sequencer
-uptime feed: `chainlinkOracle.sequencerUptimeFeed` is empty under an owner-approved exemption dated
-2026-09-04, because Chainlink publishes no L2 Sequencer Uptime Feed for that chain. The file's
-`sequencerUptimeFeedNote` states what `ChainlinkOracle` does with a zero feed, and
-`scripts/test/config-doc-truth.test.mjs` pins both the emptiness and that behaviour so the note
-cannot drift from the code.
-
-Two further questions in it were the owner's, and the owner answered both on 2026-09-05: vault #1
-takes the file's 100-unit `minDepositUsdc` (100 USDG, superseding the 0.01 figure an earlier vault-1
-note recorded), and the creator Safe holds 100 USDG for the first deposit. Supplying a config is
-not a substitute for the rest of this runbook.
-
-### The chain-4663 deployment, and where it is recorded (2026-09-05)
-
-The owner broadcast this runbook's §1 and §2 against Robinhood Chain mainnet on 2026-09-05: ten
-transactions from `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, every receipt status 1. The
-`ChainlinkOracle` went in alone at block 54,989,143 (`0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB`);
-the six singletons and the three wire calls landed together five seconds later at block 54,989,195 —
-`OperatorRegistry` `0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568`, `SubVaultRegistry`
-`0x692385262C05df7515560886f167c4eDD0814025`, `FeeEngine`
-`0x221D09326DBf6CDb708E7aBEdC9B117d64Ac4232`, `Governance`
-`0x790A308f1ac06FeD4C79884BAD25d0C721C5B125`, `VaultDeployer`
-`0xc36198FD2c7C62738159ED1FF965679105FAF05a`, `VaultFactory`
-`0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`. Source commit `b1cde122`.
-
-**The address book is
-[`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json),
-and it — not this paragraph and not `robinhood-mainnet.json` — is the record.** Every value in it
-was read back from the chain with `cast` at block 54,991,182. Read the record before citing any
-number here; two things it carries are worth knowing before you open it:
-
-- **Do not rebuild that table from the broadcast JSON.** On this run the `transactions[].hash`
-  column of `contracts/broadcast/Deploy.s.sol/4663/run-latest.json` is scrambled — it pairs
-  `SubVaultRegistry` with a hash whose receipt returns the OperatorRegistry's address — while the
-  same file's `receipts[]` array is correct. This is the Sprint-9 failure `scripts/soak/deployment.mjs`
-  documents, and it recurred. The record's identities rest on byte-for-byte bytecode comparison
-  against the `b1cde122` artifacts, which no label can mislead.
-- **`factory.allowSubVaults()` reads false**, so this deployment is root-vaults-only — the opposite
-  of the Base Sepolia record's `true`, and deliberately so in both places.
-
-**Two vaults exist, and neither was created by the Safe.** `factory.vaultCount()` reads 2:
-`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10) and
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12). This paragraph said vault #1 did not
-exist yet and that creating it was the Safe `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`'s to do
-and nobody else's. The instruction was right and it was not followed: both carry the deployer EOA
-as `creator()`. The reason §4 gives is exactly why that cannot be undone: `VaultCore.creator` is
-immutable and `createVault` takes the creator from `msg.sender`, so an EOA that creates a vault
-cannot hand it back. The Safe could have done it, holding 0 ETH or not, because a Safe's
-`execTransaction` is gas-paid by the submitting owner; it has executed 65 transactions on this
-chain. **For any future vault this instruction still stands.**
-
-Deposits, a governance round and a filled rebalance have now been exercised on chain 4663:
-proposal 3 moved 5 USDG of `idleUsdc` into WETH on vault two. An execution adapter is deployed
-there, `0xc83B9CE8a12B8aca3f5f7d1C20383d60B1ECaA5E`, but not as a singleton (§3: adapters are
-per-vault, `Deploy.s.sol` deploys none, and a creator supplies its own). No exit has settled and no
-ten-phase lifecycle artefact exists for this chain.
-
-**No x402 surface is part of this contract deployment**: none of the ten transactions deploys or
-configures one, and nothing recorded depends on one. That is a property of the contracts and does
-not change. It is a different fact from whether `apps/api` meters reads on this chain, which is an
-API-layer flag — switched off on the owner's decision of 2026-09-05 and switched back on by the
-owner's decision of 2026-09-15. See §6.
-
-**All seven contracts are source-verified, on Sourcify and on the explorer.** Sourcify returns
-`"creationMatch": "exact_match"` and `"runtimeMatch": "exact_match"` for every one of the seven at
-`https://sourcify.dev/server/v2/contract/4663/<address>`, and the explorer reports each of them
-`"is_verified": true` with `"is_partially_verified": false` at
-`https://robinhoodchain.blockscout.com/api/v2/smart-contracts/<address>`. Both endpoints were read
-again on 2026-09-05 for this paragraph, contract by contract, rather than carried over. The source
-that matched is the tree at `sourceCommit` `b1cde122`, compiled with `0.8.26+commit.8a97fa7a`, which
-is the same commit `bytecodeCurrency` in the record pins.
-
-Three things a later reader should know before trusting or retrying this:
-
-- **The verified source carries `SPDX-License-Identifier: BUSL-1.1` in all 27 of its files**, across
-  all seven contracts, because that is the header the code was compiled and broadcast with at
-  `b1cde122`. The repository relicensed to MIT afterwards, on 2026-09-05, in #223. The two are not
-  in conflict and neither is stale: an explorer shows the source a deployment was built from, and
-  that source cannot change after the fact. The explorer's own `license_type` field reads `none`,
-  which is a field nobody set rather than a claim about the licence.
-- **The explorer's `/api/v2/smart-contracts/` endpoint answers HTTP 500 intermittently**, on
-  contracts that are demonstrably verified. `VaultDeployer` needed several attempts, and while it
-  was still failing, `/api/v2/search` and `/api/v2/addresses/` both reported that same address
-  verified. **A 500 from that endpoint is a server error, not an answer that a contract is
-  unverified.** Retry it, or read one of the other two.
-- **This supersedes an earlier automated attempt that was refused**, which returned HTTP 403 behind a
-  bot challenge and never reached submission. That obstacle is kept here for the historical record
-  only. How verification was ultimately accepted is not something these read-backs establish, and
-  nothing should be inferred about the mechanism.
-
-**Explorer verification is a convenience and is still not what establishes these contracts'
-identity.** `bytecodeCurrency` in the record does that, by byte-for-byte comparison against the
-`b1cde122` artifacts, and it depends on no explorer. What verification adds is that a reader who
-does not build the tree can now read the source beside the bytecode.
-
-This changes no row of [LAUNCH-READINESS.md](LAUNCH-READINESS.md), whose board is the Base mainnet
-launch.
+**On Arc, USDC is also the native gas asset** — an 18-decimal native view and the 6-decimal ERC-20
+view are one pool of funds, not two assets. Nothing in `contracts/` reads a native balance, so vault
+accounting is unaffected, but any surface that displays a balance must use the ERC-20 view alone.
 
 ## 1. Deploy and verify the curated oracle FIRST (C-6)
 
@@ -199,136 +93,31 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about chain 4663; what the Robinhood Chain factory actually enforces is `factory.oracleAllowlistEnforced()` and `factory.isAllowedOracle(...)` in `contracts/config/deployments/robinhood-mainnet.json`, read back on-chain, and that is the only place to look for it.
+> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); once a factory is deployed there, `factory.oracleAllowlistEnforced()` and `factory.isAllowedOracle(...)` must be read back on-chain from the actual deployed factory address — no Arc deployments file exists yet to look it up in.
 
-### Robinhood Chain 4663 — the sequencer-uptime-feed exemption (owner-approved 2026-09-04)
+### Arc — the sequencer-uptime-feed exemption is NOT yet granted
 
-**Recorded because it weakens a security gate, and the record is the only place that says so.** On
-2026-09-04 the owner approved deploying on Robinhood Chain (chain id 4663, an Arbitrum Nitro Orbit
-chain) and, on being told that exempting it from the sequencer-uptime-feed requirement weakens a
-security gate, answered: *"Approve the sequencer exemption, I'll fund the deployer now"*. Chain 4663
-is therefore on `requiresSequencerUptimeFeed`'s exempt allowlist
-([`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol), `ROBINHOOD_CHAIN_ID`)
-and on `SEQUENCER_EXEMPT_REASONS` in
-[`verify-chainlink-oracle.mjs`](../scripts/verify-chainlink-oracle.mjs), so a deploy there runs with
-`ORACLE_SEQUENCER` unset and the pre-deploy check passes that row instead of failing it.
+**This weakens a security gate, so it is an owner decision and it has not been made.** Chainlink
+publishes no L2 Sequencer Uptime Feed for Arc, and would not be expected to: Arc is an L1, not a
+rollup, so there is no sequencer whose liveness the feed would report. `ChainlinkOracle`'s
+`_requireSequencerUp` returns early on a zero address, so the gate is skipped at price time rather
+than reverting — which means deploying on Arc runs with two of the three oracle defences, not three.
 
-**One signal this switches off, and what already stops it mattering.** `SEQUENCER_REQUIRED` is
-computed from the *config's* `chainId` (`verify-chainlink-oracle.mjs:140`) and never from the RPC,
-while the RPC is resolved `BASE_MAINNET_RPC ?? BASE_RPC ?? DEFAULT_RPC` (`:110`) — so a
-`BASE_MAINNET_RPC` left exported from a Base session still decides which endpoint a run launched
-with the 4663 config queries. Before this change that misdirected run **failed** the sequencer row,
-and something objected; on an exempt chain the row now **passes**, so on its own the exemption would
-let a wrong-chain verification come back green. The root cause was the missing chain binding rather
-than the exemption, and it was fixed separately and landed first: PR #205
-(`fix(verify-chainlink-oracle): bind the run to the chain the config names`) is on `protocol/main`
-as `89d0fbb6`, and this change is rebased on top of it. The script now reads `eth_chainId` from
-whichever RPC it resolved and refuses the entire run — before any feed is read (`:442`) — when that
-id differs from the config's `chainId`, so a misdirected run never reaches the sequencer row at all,
-exempt chain or not. Clearing `BASE_MAINNET_RPC` by hand, which
-[`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json)'s
-`chainlinkOracle.verification` list still instructs, remains the right habit: the binding governs
-whether a verdict means anything, not which endpoint gets queried.
+`requiresSequencerUptimeFeed` in
+[`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) refuses a chain it
+has no sequencer policy for. **Arc is not on its exempt allowlist and must be added deliberately
+before any deploy** — that edit is the moment the decision gets made, and it should be recorded here
+with a date and the owner's words, the way the previous one was.
 
-**Why an exemption rather than a feed address.** Chainlink publishes no L2 Sequencer Uptime Feed for
-this chain and states it is no longer expanding that feed set to additional networks
-([docs.chain.link/data-feeds/l2-sequencer-feeds](https://docs.chain.link/data-feeds/l2-sequencer-feeds),
-read 2026-09-04). There is no address to supply, so the fail-closed default refuses the deploy
-outright rather than costing the operator one argument — which is the case the allowlist exists for.
-
-**The residual risk, in plain words.** With `sequencerUptimeFeed` at `address(0)`,
-`ChainlinkOracle._requireSequencerUp` returns on its first line
-([`ChainlinkOracle.sol:314`](../contracts/src/oracle/ChainlinkOracle.sol)) and never reverts, so
-`priceWad` answers normally. A sequencer outage on 4663 would therefore **not** freeze pricing, and
-the 3,600-second `GRACE_PERIOD` after a restart (`ChainlinkOracle.sol:79`) never applies there
-either. 4663 is a Stage 0 chain with a centralised sequencer
-([l2beat.com/scaling/projects/robinhood](https://l2beat.com/scaling/projects/robinhood), retrieved
-2026-09-04), so that is the outage shape most likely to occur. What members are left with is the
-per-asset heartbeat/staleness bound and the sane-price band — the same two guards that carry every
-other bad-price case, now carrying this one alone. The heartbeat is only as tight as the value the
-deployer passes: the constructor accepts `[600, 86400]` seconds (`MIN_HEARTBEAT` / `MAX_HEARTBEAT`,
-`ChainlinkOracle.sol:97-98`), and a heartbeat set at the 86,400-second maximum admits a full day of
-staleness before it fires.
-
-**And that maximum is the value the committed config carries, on measurement rather than on
-preference.** [`robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json) sets
-`chainlinkOracle.assets[].heartbeatSeconds` to `86400` on both WETH and cbBTC, which its
-`heartbeatNote` records is `ChainlinkOracle.MAX_HEARTBEAT` exactly. The evidence is
-`usdcReferenceFeeds.usdgFeedCadenceNote`: the eleven inter-round gaps across this chain's USDG/USD
-aggregator rounds 81-92 measured **86,403-86,427 s** (median 86,424), and a stablecoin resting at
-1.0000 never trips a deviation threshold, so its publish cadence is this chain's bare Chainlink
-heartbeat and nothing else. Read the claim as narrowly as the config states it: the two basket feeds
-do **not** publish on that cadence, and `feedCadenceSecondsNote` says so — eleven ETH/USD gaps with
-a median of 557 s and eleven CBBTC/USD gaps with a median of 690 s, bursty and deviation-driven — it
-is the feeds' behaviour *at rest* that the heartbeat governs, corroborated by the latest round of
-each sitting 41,131 s and 37,306 s old at the 2026-09-04 read with no incident. The consequence for
-this section is the one the `heartbeatNote` draws: any bound below the published heartbeat can be
-breached by a feed behaving exactly to spec, so on 4663 the only remaining staleness guard sits at
-its loosest legal setting, and a NAV priced off a feed that may legitimately be a day stale is a
-materially different instrument from the Base one. That is an owner decision, and it is recorded
-rather than tuned here.
-
-**Two things this exemption does not do.** It does not change any other chain: `DeployChainlinkOracle`
-still refuses every id outside the three-entry allowlist unless the feed address is supplied, pinned
-by `test_requiresSequencerUptimeFeedIsAnAllowlist` and by the adjacent-id case for 4664. And it did
-not, by itself, make a 4663 deploy actionable: the deploy happened on 2026-09-05 and is recorded in
-§0 above, under "The chain-4663 deployment, and where it is recorded".
-
-A config for that chain does now exist — #209 landed
-[`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json), described
-in §0 above — and it is worth reading what its own status fields claim, because they claim less than
-the filename suggests. Its **top-level `status`** opens *"THE DEPLOYMENT'S CONFIGURATION, NOT ITS
-ADDRESS BOOK"*; its **`chainlinkOracle.status`** reads *"VERIFIED-ON-CHAIN 2026-09-04 … VERIFIED
-means the addresses, decimals, descriptions, phases and answers below were read from that chain. IT
-DOES NOT MEAN DEPLOYED, AND THIS BLOCK IS NOT AN ADDRESS"* — the live `ChainlinkOracle` is
-`0x79279FBa…`, in the deployment record. Both fields were rewritten on 2026-09-05: they previously
-said nothing was deployed on chain 4663 and that no `ChainlinkOracle` instance existed there, which
-was true on the day the config was written and was falsified by the broadcast the next day. What
-the config supplies is three of §1 step 1's four inputs — real, on-chain-verified
-feed addresses, per-asset heartbeats and sane-price bounds, the same three §0 above enumerates — and
-deliberately not that step's fourth, the L2 sequencer uptime feed:
-`chainlinkOracle.assets` carries WETH (`0x0bd7…ad73`) priced from that chain's own `ETH / USD` feed
-`0x78F3…d3A9`, and cbBTC (`0xcec1…0be4`) priced from its `CBBTC / USD` feed `0x0009…a21a`, with every
-address, `decimals()`, `description()`, `phaseId()`, `aggregator()` and `latestRoundData()` read from
-chain 4663 by read-only JSON-RPC on 2026-09-04 (`chainlinkOracle.verifiedOnChain`). `sequencerUptimeFeed`
-is empty there under this same exemption, and `chainlinkOracle.verification` says the verifier passes
-that row only once 4663 is on its exempt allowlist — which is what this change adds.
-
-Four things were blocking when this section was written, and none of them was in that change's
-gift. Two have since closed and two remain:
-
-- **The deployment record now exists.** `contracts/config/deployments/` holds `base-sepolia.json`
-  and `robinhood-mainnet.json`; the seven contracts on chain 4663 are the ones that record describes
-  (§0 above, "The chain-4663 deployment, and where it is recorded"), and no contract from this
-  repository exists on any other mainnet.
-- **The funding and one immutable launch parameter were executed, and neither landed as this
-  bullet used to describe it.** Every clause of the previous version was false by 2026-09-12, and
-  all four are corrected here rather than deleted, because the gap between the plan and the chain
-  is the point. It said creation was "not yet executed": `createVault` ran twice, on 2026-09-10 and
-  2026-09-12. It called `0xC73B…AD4c` the `creator`: `creator()` on both vaults returns the deployer
-  EOA, not the Safe — see `creatorDeviationNote` in the record. It said that Safe "holds 100 USDG
-  for the first deposit": `USDG.balanceOf` on it reads 0 at block 61,646,791, and the 20 USDG that
-  funded vault #1 came from the EOA. And it said vault #1 "takes the config's 100-unit
-  `minDepositUsdc`": `minDepositUsdc()` reads **10000** on both vaults — 0.01 USDG, not 100 — set
-  immutably at creation. `contracts/config/robinhood-mainnet.json` still carries
-  `smoke.minDepositUsdc` `"100000000"` and a `smokeParametersProvenanceNote` calling the gap an open
-  owner decision; the chain settled it at 10000 and the config was never reconciled. A constructor
-  argument is not a deployed fact.
-- **The owner broadcast it on 2026-09-05.** §1 step 2 and §2 both need a funded key and
-  `--broadcast`, which `docs/SWARM.md` §10 places outside an agent's authority entirely; the owner
-  ran both scripts, and the record was written from on-chain readback afterwards.
-- **The public claims have been flipped.** All eight pages of `apps/site` used to carry the status
-  line *"Not deployed to mainnet."*; the 4663 deploy falsified it the moment it landed, and the
-  replacement states the deployment and cites the record in the same sentence, so a reader can check
-  it. That flip was its own reviewed change rather than a side effect of this one, and it did not
-  touch [LAUNCH-READINESS.md](LAUNCH-READINESS.md)'s **VERDICT: NO-GO**, which is about Base mainnet
-  and was not cleared by deploying somewhere else.
-
-`verify-chainlink-oracle.mjs` does have a default RPC for 4663 as the tree stands: #205 put
-`4663: https://rpc.mainnet.chain.robinhood.com` in `DEFAULT_RPC` (`:104-109`), so a run against this
-config no longer exits 1 for want of an explicit `BASE_RPC`. What keeps that convenience honest is
-the `eth_chainId` binding that arrived in the same PR — whichever endpoint is resolved has to answer
-4663 before a single feed is read (`:442`) — so a default can pick an endpoint but never certify one.
+**One habit worth keeping from the previous chain.** `verify-chainlink-oracle.mjs` computes
+`SEQUENCER_REQUIRED` from the *config's* `chainId` and never from the RPC, while the RPC is resolved
+from environment variables — so a stale `BASE_MAINNET_RPC` exported from an earlier session decides
+which endpoint a run queries. On an exempt chain the sequencer row then **passes**, so on its own
+an exemption would let a wrong-chain verification come back green. What stops it is the chain
+binding: the script reads `eth_chainId` from whichever RPC it resolved and refuses the whole run —
+before any feed is read — when that id differs from the config's. Clear the RPC environment
+variables by hand anyway; the binding governs whether a verdict means anything, not which endpoint
+gets queried.
 
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
@@ -383,8 +172,8 @@ allowlist makes it non-selectable there anyway).
    `testnetCompromise` recorded in
    [`base-sepolia.json`](../contracts/config/base-sepolia.json), acceptable only because Base
    Sepolia has one feed per pair and no real capital. **A BASE mainnet stack is:** (Base-shaped, and
-   not the universal mainnet shape — the Robinhood Chain stack has no sequencer leg at all and runs
-   its feeds at the 86,400 s `MAX_HEARTBEAT` ceiling)
+   not the universal mainnet shape — Arc, an L1, has no sequencer leg at all and its feeds run at
+   the 86,400 s `MAX_HEARTBEAT` ceiling)
 
    | Class | Adapter | Fails when | `updatedAt` |
    | --- | --- | --- | --- |
@@ -502,21 +291,21 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > post-audit feature. To enable sub-vaults you must deploy a factory with `allowSubVaults = true`,
 > which is only appropriate once that mechanism has shipped and been audited. See
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The protocol is
-> **NO-GO for BASE mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key), and those two gates were not run before the Robinhood Chain mainnet deployment of 2026-09-05 either; the
-> security gates are cleared and the external audit is complete on owner attestation. Enabling
-> sub-vaults is additionally gated on the post-launch look-through mechanism shipping and being audited.
+> **NO-GO for mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key).
+> The protocol has never been deployed to any mainnet, so this gate has not yet been exercised
+> outside testnet; the security gates are cleared and the external audit is complete on owner
+> attestation. Enabling sub-vaults is additionally gated on the post-launch look-through mechanism
+> shipping and being audited.
 >
 > **This is not a ban on testnet sub-vault drills** — the Base Sepolia drills already run
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
-> holding members' money — and since 2026-09-05 there is a mainnet deployment to apply it to, though
-> two vaults now hold real money on it: 0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4 with 20 USDG (`idleUsdc` 20000000 at block 61,646,791)
-> and 0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38 with 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash, so the constraint applies there in
-> full rather than in principle. Confirm
-> `VaultFactory.allowSubVaults()` on the Robinhood Chain factory before assuming it holds there;
-> the value read back at deployment is in that chain's address book under
-> `verifiedWiring["factory.allowSubVaults()"]`.
+> holding members' money. There is no mainnet deployment today and no vault anywhere holds member
+> funds, so the constraint is a design requirement to carry into whenever an Arc (chain 5042)
+> deployment happens, not a live position to check now. Once a factory is deployed there, confirm
+> `VaultFactory.allowSubVaults()` by reading it back on-chain rather than assuming a value carried
+> over from a prior deployment.
 
 ## 5. Post-deploy verification (before any real capital)
 
@@ -539,11 +328,12 @@ Run each check against the live addresses:
 - [ ] `oracle.sequencerUptimeFeed()` — **on a chain that has one.** On Base it must be the Base L2
       sequencer uptime feed and not `address(0)`; confirm `latestRoundData()` answers `0` (up) and
       that `block.timestamp - startedAt > 3600` (outside the grace period), or `priceWad` will
-      revert for every asset. A deploy without it has no sequencer guard at all, and that is the
-      accepted state on **Robinhood Chain (4663)**, where Chainlink publishes no uptime feed and
-      has said it will not add one: `address(0)` there is the intended configuration, nothing
-      compensates for the missing guard, and this checklist item is satisfied by confirming the
-      zero rather than by finding a feed.
+      revert for every asset. A deploy without it has no sequencer guard at all. On **Arc (chain
+      5042)**, an L1 with no L2 Sequencer Uptime Feed published or expected, `address(0)` is the
+      configuration this checklist item resolves to — but per §1's Arc section, that exemption is
+      an owner decision that has **not yet been made**: `requiresSequencerUptimeFeed` in
+      `DeployChainlinkOracle.s.sol` must be widened to admit chain 5042 deliberately before this
+      item can be satisfied by confirming the zero rather than by finding a feed.
 - [ ] `factory.isAllowedOracle(<oracle>)` is true and `factory.oracleAllowlistEnforced()` is true
       — the C-6 curation gate. An unenforced allowlist on mainnet ships the finding.
 - [ ] **Know what has no check:** there is exactly one feed per asset, so there is nothing to
@@ -563,35 +353,33 @@ Run each check against the live addresses:
   - **Chains that meter** (Base Sepolia; anything with no `x402` block, which is the default):
     deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on
     Base). Set the price spec (asset = USDC, payTo = your treasury, network).
-  - **Chain 4663 (Robinhood Chain)** declares `x402.enabled: true` — the owner's decision of
-    2026-09-15, which reversed the 2026-09-05 decision that had switched it off. So this chain
-    takes the metering branch above, with one difference that matters when you set the price spec:
-    **the settlement token is USDG, not Circle USDC.** `contracts/config/robinhood-mainnet.json`
-    keeps it under the key `usdc` so the file diffs cleanly against `base-mainnet.json`, but the
-    address is `0x5fc5360d0400a0fd4f2af552add042d716f1d168` and its on-chain record reads
-    `name() "Global Dollar"`, `symbol() "USDG"`, `decimals() 6`. Circle's USDC has zero bytes of
-    code on 4663. Set `PRICE_ASSET` to that address.
+  - **Arc mainnet (chain 5042)**: whether this chain's config will declare `x402.enabled: true` is
+    an owner decision not yet made — `contracts/config/arc-mainnet.json` does not exist yet (see
+    [arc-deploy-runbook.md](evidence/arc-deploy-runbook.md) §5). If it takes the metering branch
+    above, one thing is simpler here than it used to be: **the settlement token genuinely is
+    Circle USDC.** It is a native predeploy at `0x3600000000000000000000000000000000000000`, read
+    on-chain as `decimals() 6`, `symbol() "USDC"`, `name() "USDC"`
+    ([arc-mainnet-survey.json](evidence/arc-mainnet-survey.json)). The key named `usdc` and the
+    asset it holds now agree — there is no mismatched token hiding behind that key here, and
+    nothing to warn about on that front. Set `PRICE_ASSET` to that address. Note that on Arc this
+    same address is also the native gas asset, exposed as an 18-decimal native view over the same
+    pool of funds as this 6-decimal ERC-20 view — never sum or convert between them.
 
-    **You must also set the EIP-712 domain by hand here, and the defaults are wrong for this
-    token.** Under `FACILITATOR=standard`, `createStandardHttpFacilitator` takes the domain from
+    **You must still set the EIP-712 domain by hand, and it must be recovered from the token, not
+    assumed.** Under `FACILITATOR=standard`, `createStandardHttpFacilitator` takes the domain from
     `FACILITATOR_USDC_NAME` / `FACILITATOR_USDC_VERSION` and defaults them to `USD Coin` / `2`,
-    which is Circle USDC on Base. It posts that as `paymentRequirements.extra` on every `/verify`
-    and `/settle`, so leaving the defaults on 4663 signs against a domain the token does not have
-    and every payment fails. USDG's domain is `Global Dollar` / `1` — recorded under
-    `verifiedOnChain.observed.usdgDomain`, where it was recovered by reproducing
-    `DOMAIN_SEPARATOR()` from the preimage. It could not be read from the token: **USDG exposes no
-    `version()` getter**, so `readUsdcDomain` in `apps/api/src/facilitator.mjs`, which reads
-    `name`, `version` and `DOMAIN_SEPARATOR`, cannot resolve this token's domain at all. It has two
-    direct callers: `assertUsdcDomain`, beside it in the same file, and `scripts/live-x402-run.mjs`,
-    the testnet settlement runner. `facilitator-server.mjs`, the local settling facilitator, reaches
-    it only through `assertUsdcDomain`. None of those paths is taken by a `FACILITATOR=standard`
-    deployment, which is the one this bullet is about.
+    which is Circle USDC on Base — not necessarily this predeploy's domain on chain 5042. Leaving
+    Base's defaults in place signs against a domain the token may not have, and every payment
+    fails. Before configuring these values, recover `name()`, `version()` and `DOMAIN_SEPARATOR()`
+    directly from the token on chain 5042 via `readUsdcDomain` in
+    `apps/api/src/facilitator.mjs` — or, if it exposes no `version()` getter, by reproducing
+    `DOMAIN_SEPARATOR()` from its preimage the way the previous chain's domain had to be recovered.
+    Nobody has resolved this value yet; do not guess it.
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
-    **No facilitator is deployed for chain 4663 yet, and `apps/api` is not deployed anywhere**, so
-    this bullet describes a configuration, not a running service. USDG carries a canonical
-    EIP-3009 `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` on-chain, so the existing
-    `transferWithAuthorization` settlement path needs no modification when one is stood up.
+    **No facilitator is deployed for chain 5042, `apps/api` is not deployed anywhere, and the
+    protocol itself is not deployed on Arc or any mainnet** — this bullet describes a
+    configuration to complete before any of that exists, not a running service.
 
 ## 7. Canary monitoring (post-launch)
 
@@ -683,19 +471,15 @@ Do **not** deploy to mainnet before: (a) an external audit consuming
 staged-value guardrail period on testnet, (d) `capacityCapUsdc` set conservatively for the
 initial vaults.
 
-**What was satisfied for the Robinhood Chain mainnet deployment of 2026-09-05, stated
-rather than left to inference** (added 2026-09-04): (a) the external audit was commissioned and
-owner-attested against the launch tree, so it was satisfied for the source but not for the
-`requiresSequencerUptimeFeed` change made after it; (b) the pre-audit and audit findings were
-remediated and re-reviewed on that same tree; (c) a staged-value guardrail period on testnet was
-**NOT** completed — gates 3 and 6 have no current evidence on any chain: the five drills and the
+**Nothing has been satisfied for a mainnet deployment yet.** The protocol is not deployed on Arc,
+or on any mainnet: there is no live factory, no live vault anywhere, and no `capacityCapUsdc` has
+been set. A prior mainnet deployment on the chain this project has since moved away from was fully
+exited on 2026-09-18 and holds nothing. Gates (a)–(d) above must be satisfied fresh, against Arc
+(chain 5042), before any future deployment — none of them carry over from that abandoned chain,
+and gates 3 and 6 in particular have no current evidence on any chain: the five drills and the
 canary alongside them ran on Base Sepolia on 2026-08-24/25 and passed 5/5
 ([SOAK-REPORT.md](SOAK-REPORT.md)), but against bytecode that has since changed, and they have not
-been re-run; (d) two vaults now exist on chain 4663 and both fixed `capacityCapUsdc` at creation,
-at 50,000 USDG each, immutable and readable on-chain today. Neither was created by the creator
-Safe: both carry the deployer EOA as `creator()`, against this document's own instruction, and
-that cannot be corrected on either. The deployment proceeded on the owner's decision of
-2026-09-04 with (c) outstanding.
+been re-run.
 
 ## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)
 

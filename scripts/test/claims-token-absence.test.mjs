@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════════════════════
  * On 2026-09-05 a token launched and the site flipped to describe it. Several guard legs were
  * written that day to pin the launch facts: `apps/site/test/site.test.mjs` required the address
- * stem, the supply figure and a status chip beside every mention; `apps/site-next/test/site.test.mjs`
+ * stem, the supply figure and a status chip beside every mention; `apps/site/test/site.test.mjs`
  * required a window qualifier and pinned a per-page list of facts each page had to state. Those
  * legs were correct for a site that described a live token.
  *
@@ -158,7 +158,7 @@ const filesUnder = (dir, exts, names = new Set()) => {
   return out.sort();
 };
 
-const SITE_NEXT_DIST = path.join(REPO, 'apps', 'site-next', 'dist');
+const SITE_DIST = path.join(REPO, 'apps', 'site', 'dist');
 const CORPUS = path.join(REPO, 'apps', 'site');
 const APP_SRC = path.join(REPO, 'apps', 'app', 'src');
 const APP_DIST = path.join(REPO, 'apps', 'app', 'dist');
@@ -188,49 +188,50 @@ const APP_DIST = path.join(REPO, 'apps', 'app', 'dist');
  * being checked here is that all three exist -- which a glob cannot state, because a glob that finds
  * two is indistinguishable from a site that has two.
  */
-const LLMS_COPIES = ['llms.txt', 'apps/site/llms.txt', 'apps/site-next/public/llms.txt'];
+// TWO COPIES NOW, NOT THREE. `apps/site/llms.txt` went with the retired site on 2026-09-18. The
+// floor below drops with it — it is a minimum that must match reality, because a floor set above
+// what exists reds this file forever and a floor set below it stops noticing a deletion.
+const LLMS_COPIES = ['llms.txt', 'apps/site/public/llms.txt'];
 
 /**
  * The surface groups, each with the floor that makes its emptiness loud.
  *
- * The floors are minima and not counts: a page added to the corpus must not red this file, and a
- * page REMOVED from it must. Nine corpus pages exist today; the redesign prerenders two.
+ * The floors are minima and not counts: a page added to a group must not red this file, and a page
+ * REMOVED from it must.
+ *
+ * THE `apps/site` CORPUS GROUP WENT ON 2026-09-18, when that site was retired and deleted. It is
+ * removed rather than pointed elsewhere because the corpus WAS those nine pages — the checked prose
+ * every other surface quoted from — and no other directory is that. The surfaces that remain are
+ * the built pages rwally.com serves and the llms.txt copies, and both are still walked. The ban
+ * itself is unchanged: the token, its address, the launchpad, the curve and the supply figures stay
+ * forbidden on every surface listed here.
  */
 const groups = () => {
   return [
     {
-      name: 'apps/site-next/dist (the pages rwally.com serves)',
+      name: 'apps/site/dist (the pages rwally.com serves)',
       // `.xml` IS IN THIS SET BECAUSE THE SITEMAP CARRIED A TOKEN REFERENCE and was cleaned in the
       // same change. A guard that protects the pages but not the sitemap leaves the one file whose
       // regression nobody would notice by reading the site.
       //
       // `.js` AND THE TWO EXTENSIONLESS EDGE FILES were added on 2026-09-09, after a review pointed
       // out that the bundle is where the token address actually lived: it was a constant in
-      // `apps/site-next/src/live/chain.ts`, which Vite compiles into `dist/assets/*.js`. Deleting
+      // a source module, which Vite compiles into `dist/assets/*.js`. Deleting
       // the constant is what fixed it; walking the bundle is what stops it coming back through a
       // component nobody re-reads. `_headers` and `_redirects` ship verbatim to Cloudflare Pages.
       files: filesUnder(
-        SITE_NEXT_DIST,
+        SITE_DIST,
         new Set(['.html', '.txt', '.xml', '.js']),
         new Set(['_headers', '_redirects']),
       ),
       floor: 3,
-      fix: 'run `npm run build --workspace apps/site-next` first; CI and `npm run gate` both build it before this suite',
+      fix: 'run `npm run build --workspace apps/site` first; CI and `npm run gate` both build it before this suite',
     },
     {
-      name: 'apps/site (the nine corpus pages)',
-      files: readdirSync(CORPUS)
-        .filter((f) => f.endsWith('.html'))
-        .sort()
-        .map((f) => path.join(CORPUS, f)),
-      floor: 9,
-      fix: 'a corpus page was deleted. The corpus is the checked prose every other surface quotes from',
-    },
-    {
-      name: 'the three llms.txt copies',
+      name: 'the llms.txt copies',
       files: LLMS_COPIES.map((f) => path.join(REPO, f)),
-      floor: 3,
-      fix: 'one of the three copies is missing. They are byte-identical by design',
+      floor: 2,
+      fix: 'one of the copies is missing. They are byte-identical by design',
     },
     {
       name: 'apps/app (app.rwally.com, src plus dist when a build has left one)',

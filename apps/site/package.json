@@ -1,0 +1,29 @@
+{
+  "name": "@rwally/site",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "rwally.com \u2014 the public site. Prerendered React, one page.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && vite build --ssr && node scripts/prerender.mjs",
+    "lint": "oxlint src",
+    "typecheck": "tsc -b --force",
+    "test": "node --test test/*.test.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@fontsource-variable/ibm-plex-sans": "^5.0.0",
+    "@fontsource/ibm-plex-mono": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "oxlint": "^1.0.0",
+    "typescript": "~5.9.0",
+    "vite": "^7.0.0"
+  }
+}

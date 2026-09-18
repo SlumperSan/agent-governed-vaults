@@ -16,6 +16,9 @@ import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {IExecutionAdapter} from "../../src/interfaces/IExecutionAdapter.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
 
+/// @dev The per-proposal slippage bound these tests execute under.
+uint256 constant MAX_SLIPPAGE_BPS = 200;
+
 /// The register of `VaultCore`'s state-mutating external surface, and the guard status of each
 /// entry. This is the machine-checked form of the invariant H-9's fix depends on.
 library GuardedSurface {
@@ -52,7 +55,7 @@ library GuardedSurface {
         s[9] = "pullChildEscrow(address,address)";
         // H-9's first window: each leg's input is debited before the swap, the measured output
         // credited after.
-        s[10] = "executeRebalance(address,(address,address,uint256,uint256,uint256,bytes)[])";
+        s[10] = "executeRebalance(address,uint256,(address,address,uint256,uint256,uint256,bytes)[])";
         // Pays out an EE-6 escrow slice; zeroes `claimable` around an external transfer.
         s[11] = "claimEscrowed(address)";
     }
@@ -308,7 +311,7 @@ contract AuditReentrancyGuardCoverageTest is Test {
 
         assertFalse(vault.locked(), "vault reported locked at rest");
         vm.prank(address(gov));
-        vault.executeRebalance(address(probe), _leg());
+        vault.executeRebalance(address(probe), MAX_SLIPPAGE_BPS, _leg());
         assertFalse(vault.locked(), "lock not released after the rebalance");
 
         assertTrue(probe.sawLocked(), "the vault was not locked during its own swap");

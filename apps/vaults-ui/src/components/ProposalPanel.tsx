@@ -1,0 +1,103 @@
+import type { Vault } from '../lib/atlas';
+import { proposalPhase, quorumReadout, wadExact } from '../lib/atlas';
+
+interface Props {
+  readonly vault: Vault;
+  readonly nowSec: number;
+}
+
+/**
+ * The proposal, its phase, and the votes.
+ *
+ * PHASE AND QUORUM ARE NOT COMPUTED HERE. `proposalPhase` and `quorumReadout`
+ * come from `apps/web/src/governance.mjs`, which mirrors `Governance.sol` and
+ * is tested against it. A component that re-derived "has it passed" would be a
+ * second opinion on a consensus rule.
+ *
+ * Votes are shown as commit-reveal actually behaves: `revealedWeight` is the
+ * quorum numerator and is the only weight that has been proven, while for and
+ * against include applied standing defaults. Unrevealed commitments are not
+ * votes and are not counted here.
+ */
+export function ProposalPanel({ vault, nowSec }: Props) {
+  const p = vault.proposal;
+  if (!p) {
+    return (
+      <section className="panel">
+        <h2>Proposal</h2>
+        <p className="note">No open proposal. Nothing rebalances until one passes.</p>
+      </section>
+    );
+  }
+
+  const phase = proposalPhase(p, nowSec);
+  const readout = quorumReadout({
+    ptype: p.ptype,
+    revealedWeight: p.revealedWeight,
+    forWeight: p.forWeight,
+    snapshotTotal: p.snapshotTotal,
+    memberCount: p.memberCount,
+    quorumBps: (vault.governanceConfig?.['quorumBps'] as number | undefined) ?? undefined,
+    revealedVoterCount: p.revealedVoterCount,
+  });
+
+  const forW = p.forWeight ?? 0n;
+  const againstW = p.againstWeight ?? 0n;
+  const cast = forW + againstW;
+  const forPct = cast === 0n ? 0 : Number((forW * 10000n) / cast) / 100;
+
+  return (
+    <section className="panel">
+      <h2>Proposal #{p.pid}</h2>
+      <p className="proposal-title">{p.title}</p>
+      <dl className="kv">
+        <dt>Type</dt>
+        <dd>{p.ptype}</dd>
+        <dt>Phase</dt>
+        <dd>
+          <span className="tag">{phase.phase}</span>{' '}
+          <span className="dim">{phase.deadlineLabel}</span>
+        </dd>
+        <dt>Proposed by</dt>
+        <dd className="mono">{p.proposer}</dd>
+        <dt>Quorum</dt>
+        <dd>
+          <span className={readout.met ? 'tag' : 'tag tag-warn'}>{readout.met ? 'met' : 'not met'}</span>{' '}
+          <span className="dim">{readout.text}</span>
+        </dd>
+      </dl>
+
+      <h3>Votes</h3>
+      <div
+        className="bar"
+        role="img"
+        aria-label={`${forPct.toFixed(1)} percent for, ${(100 - forPct).toFixed(1)} percent against, of revealed weight`}
+      >
+        <div className="bar-for" style={{ width: `${forPct}%` }} />
+      </div>
+      <table className="grid">
+        <tbody>
+          <tr>
+            <th scope="row">For</th>
+            <td className="num">{wadExact(forW, { maxFrac: 2 })}</td>
+          </tr>
+          <tr>
+            <th scope="row">Against</th>
+            <td className="num">{wadExact(againstW, { maxFrac: 2 })}</td>
+          </tr>
+          <tr>
+            <th scope="row">Revealed</th>
+            <td className="num">{wadExact(p.revealedWeight ?? 0n, { maxFrac: 2 })}</td>
+          </tr>
+          <tr>
+            <th scope="row">Eligible at snapshot</th>
+            <td className="num dim">{wadExact(p.snapshotTotal ?? 0n, { maxFrac: 2 })}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="note">
+        Revealed weight is the quorum numerator. A commitment that is never revealed is not a vote.
+      </p>
+    </section>
+  );
+}

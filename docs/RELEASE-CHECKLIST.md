@@ -50,8 +50,8 @@ silently skipping it.
       [`docs/CHANGES-SINCE-REVIEWS.md`](../docs/CHANGES-SINCE-REVIEWS.md) for the pattern this
       repo already follows for audit-facing deltas.
 - [ ] For any change to `apps/api`'s payment path or to a live payment surface: explicit owner
-      sign-off, not just a passing test suite — payment-gating logic on a chain already holding
-      real funds gets treated like a contract change for review purposes.
+      sign-off, not just a passing test suite — payment-gating logic gets treated like a contract
+      change for review purposes even before a mainnet deployment exists to move real funds on.
 - [ ] Note any *open* findings that remain unresolved at release time (e.g. High **H-8**'s
       partial-fix-by-configuration status) in the release notes rather than letting a reader assume
       "released" means "no known issues." See [`SECURITY.md`](../SECURITY.md) for current audit
@@ -66,8 +66,8 @@ a deploy target gets missed or an unintended one gets hit:
 - [ ] `app.rwally.com` (`apps/app`) — deploying? Y/N.
 - [ ] `apps/api` — deploying/changing its running config? Y/N. (No public domain yet; still worth
       stating if its deployed behavior changes.)
-- [ ] Contracts — new deployment, or code-only release with no new on-chain deployment? Robinhood
-      Chain mainnet (chain 4663) already holds real funds in two vaults — treat any mainnet
+- [ ] Contracts — new deployment, or code-only release with no new on-chain deployment? The
+      protocol is built for Arc but has no mainnet deployment anywhere today — treat any mainnet
       contract deployment step as irreversible and confirm it is intentional, not a side effect of
       running a script.
 - [ ] Confirm `apps/site` is **not** part of this release and is not being deployed — see
@@ -101,8 +101,8 @@ a deploy target gets missed or an unintended one gets hit:
       has been explicitly re-affirmed by the owner as part of *this* release, rather than assumed
       from the PR having landed.
       [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294), which re-enabled
-      x402 metering on chain 4663, merged on 2026-09-15 and is the worked example: it reversed the
-      owner decision of 2026-09-05 and its own description asked that it not be merged without
-      review.
+      x402 metering on a since-abandoned mainnet deployment, merged on 2026-09-15 and is the worked
+      example: it reversed an earlier owner decision and its own description asked that it not be
+      merged without review.
 - [ ] List the draft PRs this release depends on, by number, in the release notes so a reviewer can
       check each one's sign-off status directly rather than trusting a summary.

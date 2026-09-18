@@ -123,25 +123,22 @@ const STEPS = [
   },
   {
     id: 'site-build',
-    title: 'npm run build --workspace apps/site-next',
+    title: 'npm run build --workspace apps/site',
     cmd: WIN ? 'npm.cmd' : 'npm',
-    args: ['run', 'build', '--workspace', 'apps/site-next'],
+    args: ['run', 'build', '--workspace', 'apps/site'],
     cwd: REPO,
-    // ORDERING IS LOAD-BEARING, and for TWO consumers, not one. It used to sit after `backend`.
-    //
-    // The near one: `site-test` reads the BUILT pages (prerendered HTML in dist/) and skips
-    // itself when dist/ is absent.
-    // The far one, and the reason this moved: the repository-wide claims guards run by `backend`
-    // -- claims-lede-truth.test.mjs and config-doc-truth.test.mjs -- enumerate .md/.html/.txt/
-    // .json from the filesystem and neither skips `dist`. `apps/site-next/.gitignore` ignores
-    // `dist`, so on a fresh checkout the redesign's prerendered pages are not there to be
-    // walked, and those guards cover none of them while still reporting a pass.
-    //
-    // NOT DROPPED BY --quick, and the runtime is beside the point: with `backend` now depending
-    // on this step's output, a --quick run that skipped it would take the backend suite red
-    // rather than save time. claims-lede-truth.test.mjs asserts every prerendered page is in the
-    // walk, so that failure is loud instead of silent.
-    why: 'Must precede `backend` AND `site-test`: without dist/ the claims guards walk zero redesign pages.',
+    // Same ordering argument as `site-build` below, for the same two consumers: this app's own
+    // suite reads the prerendered dist/, and the repository-wide claims guards run by `backend`
+    // walk dist/ as a public surface. Built before either, or both check a page that is not there.
+    why: 'apps/site is prerendered; its dist/ is what its suite and the claims guards both read.',
+  },
+  {
+    id: 'site-test',
+    title: 'npm test --workspace apps/site',
+    cmd: WIN ? 'npm.cmd' : 'npm',
+    args: ['test', '--workspace', 'apps/site'],
+    cwd: REPO,
+    why: 'apps/site/test/site.test.mjs: prerender non-vacuity, copy reached the page, no deployment claim.',
   },
   {
     id: 'app-test',
@@ -187,14 +184,6 @@ const STEPS = [
     // which `backend` already runs.
     advisory: true,
     why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
-  },
-  {
-    id: 'site-test',
-    title: 'npm test --workspace apps/site-next',
-    cmd: WIN ? 'npm.cmd' : 'npm',
-    args: ['test', '--workspace', 'apps/site-next'],
-    cwd: REPO,
-    why: 'apps/site-next/test/site.test.mjs: pinned strings, banned shapes and non-vacuous guards, against dist/.',
   },
   {
     id: 'test',

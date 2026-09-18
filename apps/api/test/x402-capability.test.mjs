@@ -30,7 +30,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +48,7 @@ const PAYTO = '0x' + 'd'.repeat(40);
 const VAULT = '0x' + '1'.repeat(40);
 const PRICE = { asset: USDC, amount: '10000', payTo: PAYTO, network: 'base' };
 
-const ROBINHOOD = 4663;
+const ARC = 5042;
 const BASE_SEPOLIA = 84532;
 const BASE_MAINNET = 8453;
 
@@ -71,60 +71,48 @@ function seededApi(overrides = {}) {
 
 // ── the capability, resolved from contracts/config ───────────────────────────
 
-test('chain 4663 enables x402 again as of 2026-09-15, and the answer comes from its own config file', () => {
-  const cap = x402Capability(ROBINHOOD);
-  assert.equal(cap.enabled, true, 'Robinhood Chain meters reads over x402 again, per the 2026-09-15 reversal');
-  assert.equal(cap.chainId, ROBINHOOD);
-  assert.equal(cap.chainName, 'robinhood-mainnet');
-  assert.match(cap.source, /robinhood-mainnet\.json/, 'resolved from the config, not from a literal in code');
+test('every shipped chain config declares the x402 capability explicitly, and all read enabled', () => {
+  // ENUMERATED FROM DISK, NOT NAMED. This test used to list three chains by hand, and when one of
+  // them was deleted the list silently became a list of two that still passed — the guard shrank
+  // without anything going red. Reading the directory means a config added today is covered today,
+  // and a config removed cannot quietly reduce the coverage.
+  const files = readdirSync(DEFAULT_CONFIG_DIR).filter((f) => f.endsWith('.json')).sort();
+  assert.ok(files.length > 0, 'no chain configs found at all — the directory moved and this guard is checking nothing');
 
-  // And the file itself, read directly: the capability is declared, not inferred.
-  const raw = JSON.parse(readFileSync(path.join(DEFAULT_CONFIG_DIR, 'robinhood-mainnet.json'), 'utf8'));
-  assert.equal(raw.chainId, ROBINHOOD);
-  assert.equal(raw.x402.enabled, true);
-  assert.equal(typeof raw.x402.note, 'string');
-  assert.ok(raw.x402.note.length > 0, 'a switched-on capability still has to say why');
-});
-
-test('Base Sepolia, Base mainnet and Robinhood Chain all declare the capability explicitly, and all read enabled', () => {
-  const sepolia = x402Capability(BASE_SEPOLIA);
-  assert.equal(sepolia.enabled, true);
-  assert.equal(sepolia.chainName, 'base-sepolia');
-  assert.match(sepolia.source, /base-sepolia\.json sets x402\.enabled = true/);
-
-  const mainnet = x402Capability(BASE_MAINNET);
-  assert.equal(mainnet.enabled, true);
-  assert.equal(mainnet.chainName, 'base-mainnet');
-  assert.match(mainnet.source, /base-mainnet\.json sets x402\.enabled = true/, 'explicit now, not the absent-block default');
-
-  const robinhood = x402Capability(ROBINHOOD);
-  assert.equal(robinhood.enabled, true);
-  assert.equal(robinhood.chainName, 'robinhood-mainnet');
-  assert.match(robinhood.source, /robinhood-mainnet\.json sets x402\.enabled = true/, 'explicit, and reversed from the 2026-09-05/09-09 off decision');
-
-  // All three files, read directly: the capability is declared, not inferred, and each says why.
-  for (const [file, chainId] of [['base-sepolia.json', BASE_SEPOLIA], ['base-mainnet.json', BASE_MAINNET], ['robinhood-mainnet.json', ROBINHOOD]]) {
+  let checked = 0;
+  for (const file of files) {
     const raw = JSON.parse(readFileSync(path.join(DEFAULT_CONFIG_DIR, file), 'utf8'));
-    assert.equal(raw.chainId, chainId);
-    assert.equal(raw.x402.enabled, true);
-    assert.equal(typeof raw.x402.note, 'string');
-    assert.ok(raw.x402.note.length > 0, 'an enabled capability says why, on every chain, field for field');
+    if (typeof raw.chainId !== 'number') continue; // not a chain config
+    checked += 1;
+
+    assert.ok(raw.x402, `${file}: no x402 block — the capability must be declared, never inferred`);
+    assert.equal(raw.x402.enabled, true, `${file}: x402.enabled is not true`);
+    assert.equal(typeof raw.x402.note, 'string', `${file}: x402 has no note`);
+    assert.ok(raw.x402.note.length > 0, `${file}: an enabled capability says why, on every chain, field for field`);
+
+    // And the resolver agrees with the file, so the answer comes from config rather than a literal.
+    const cap = x402Capability(raw.chainId);
+    assert.equal(cap.enabled, true, `${file}: resolver disagrees with the file`);
+    assert.equal(cap.chainId, raw.chainId);
+    assert.match(cap.source, new RegExp(`${file.replace('.', '\.')} sets x402\.enabled = true`),
+      `${file}: capability not resolved from this config file`);
   }
+  assert.ok(checked > 0, 'no file in contracts/config carried a numeric chainId — this guard resolved nothing');
 });
 
 test('an unknown chain, no chain id, or an unreadable config dir all resolve to ENABLED', () => {
   assert.equal(x402Capability(1).enabled, true, 'unknown chain id');
   assert.equal(x402Capability(null).enabled, true, 'no chain id configured');
   assert.equal(x402Capability(undefined).enabled, true);
-  assert.equal(x402Capability(ROBINHOOD, { dir: path.join(REPO, 'no-such-config-dir') }).enabled, true,
+  assert.equal(x402Capability(BASE_MAINNET, { dir: path.join(REPO, 'no-such-config-dir') }).enabled, true,
     'a lookup that cannot read its source must not be the reason a payment gate comes off');
 });
 
 test('CHAIN_ID is carried by the API config, and a non-integer is refused at startup', () => {
   const base = { PRICE_ASSET: USDC, PRICE_PAYTO: PAYTO };
   assert.equal(resolveApiConfig(base).chainId, null, 'unset CHAIN_ID means no chain — metering stays on');
-  assert.equal(resolveApiConfig({ ...base, CHAIN_ID: '4663' }).chainId, ROBINHOOD);
-  assert.throws(() => resolveApiConfig({ ...base, CHAIN_ID: 'robinhood' }), /CHAIN_ID must be an integer/);
+  assert.equal(resolveApiConfig({ ...base, CHAIN_ID: '5042' }).chainId, ARC);
+  assert.throws(() => resolveApiConfig({ ...base, CHAIN_ID: 'arc' }), /CHAIN_ID must be an integer/);
 });
 
 // ── Base Sepolia behaviour: unchanged ────────────────────────────────────────
@@ -237,7 +225,7 @@ test('Base Sepolia still leaves the metered routes out of the rate limiter', asy
 test('with the Robinhood Chain capability the metered routes gate on payment and settle through the facilitator', async () => {
   let settled = 0;
   const api = seededApi({
-    x402: x402Capability(ROBINHOOD),
+    x402: x402Capability(ARC),
     facilitator: { async verifyAndSettle() { settled += 1; return { ok: true, receiptId: 'rcpt-robinhood' }; } },
   });
 
@@ -265,7 +253,7 @@ test('with the Robinhood Chain capability the metered routes gate on payment and
 test('on 4663 an unpaid read is never settled and never counted as a settlement', async () => {
   let settled = 0;
   const api = seededApi({
-    x402: x402Capability(ROBINHOOD),
+    x402: x402Capability(ARC),
     facilitator: { async verifyAndSettle() { settled += 1; return { ok: true, receiptId: 'rcpt' }; } },
   });
   const res = await api.handle('GET', '/vaults', {});
@@ -277,7 +265,7 @@ test('on 4663 an unpaid read is never settled and never counted as a settlement'
 });
 
 test('on 4663 discovery reports the capability on, prices every metered route, and free routes stay free', async () => {
-  const doc = JSON.parse((await seededApi({ x402: x402Capability(ROBINHOOD) }).handle('GET', '/.well-known/x402', {})).body);
+  const doc = JSON.parse((await seededApi({ x402: x402Capability(ARC) }).handle('GET', '/.well-known/x402', {})).body);
   assert.equal(doc.enabled, true);
   assert.equal(doc.price.asset, USDC);
   assert.equal(doc.price.amount, '10000');
@@ -287,7 +275,7 @@ test('on 4663 discovery reports the capability on, prices every metered route, a
 
 test('on 4663 the rate limiter still leaves the metered routes out, because x402 is their limiter again', async () => {
   const api = seededApi({
-    x402: x402Capability(ROBINHOOD),
+    x402: x402Capability(ARC),
     rateLimit: createRateLimiter({ capacity: 1, refillPerSec: 1, now: () => 0 }),
   });
   for (let i = 0; i < 5; i += 1)
@@ -295,7 +283,7 @@ test('on 4663 the rate limiter still leaves the metered routes out, because x402
 });
 
 test('on 4663 an unpaid unknown route is gated before it can 404, and a non-GET is still refused', async () => {
-  const api = seededApi({ x402: x402Capability(ROBINHOOD) });
+  const api = seededApi({ x402: x402Capability(ARC) });
   // Metering now runs before route resolution on this chain, same as Base: an unpaid GET to an
   // unknown path is a 402, not a 404, because payment is checked before "not found" is decided.
   assert.equal((await api.handle('GET', '/nope', {})).status, 402);
@@ -399,12 +387,16 @@ test('a file with no `network` key is not indexed, so a stray json cannot claim 
 test('the EVM path is untouched: numeric keys still resolve out of contracts/config', () => {
   // The regression that matters. Every chain-id caller predates this change and none of them may
   // move, including the `source` strings other tests in this file match on.
-  const rh = x402Capability(ROBINHOOD);
-  assert.equal(rh.enabled, true, '4663 is on again as of 2026-09-15');
-  assert.equal(rh.chainId, 4663);
-  assert.equal(rh.network, null, 'an EVM chain answers with a chain id, not a network name');
+  // Uses a chain that HAS a config on disk, because the claim is that numeric keys resolve OUT OF
+  // contracts/config. Asserting it with a chain that has no config would pass on the unknown-chain
+  // default and prove nothing about the resolution path.
+  const bm = x402Capability(BASE_MAINNET);
+  assert.equal(bm.enabled, true);
+  assert.equal(bm.chainId, BASE_MAINNET);
+  assert.equal(bm.network, null, 'an EVM chain answers with a chain id, not a network name');
+  assert.match(bm.source, /base-mainnet\.json/, 'resolved from the config file, not a literal in code');
   assert.equal(x402Capability(BASE_SEPOLIA).enabled, true);
-  assert.equal(x402Capability('4663').enabled, true, 'a numeric STRING is still a chain id, not a network name');
+  assert.equal(x402Capability(String(BASE_MAINNET)).enabled, true, 'a numeric STRING is still a chain id, not a network name');
   assert.equal(x402Capability(null).enabled, true);
   assert.equal(x402Capability('').enabled, true);
 });

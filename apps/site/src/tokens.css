@@ -1,0 +1,61 @@
+/**
+ * THE DIRECTION, DECIDED FIRST AND DEFENDED ON EVERY SECTION.
+ *
+ * Primary family: ethereal / divine. Accent: hyperpop crystalline.
+ * Near-black void, bone white, ONE warm light in the dark, iridescent bloom in the bright frames.
+ *
+ * THE RULE THAT DOES THE WORK: one accent per section. Gold lives in dark sections, iridescence in
+ * light ones, red exactly once on the whole page. A section that reaches for a second accent is a
+ * section that has stopped having a point of view, and the fastest way to make this look like every
+ * other protocol site is to let gold and violet share a frame.
+ */
+
+:root {
+  /* Base — most of the page is one of these two. */
+  --void: #05060a;
+  --void-raised: #0a0c12;
+  --void-line: #171a22;
+  --bone: #f4f1ea;
+
+  /* Divine accent: the one warm light. Dark sections only. */
+  --ember: #ffb24d;
+  --ember-deep: #ff7a18;
+
+  /* Crystalline accent: the hyperpop bloom. Bright sections only. */
+  --iris-violet: #8a6bff;
+  --iris-cyan: #4fc3ff;
+  --iris-magenta: #ff6ad5;
+
+  /* Danger. Used ONCE on this page, on the sentence that earns it. */
+  --alarm: #ff2a2a;
+
+  --ink: var(--bone);
+  --ink-dim: #8e94a3;
+  --ink-faint: #5c6270;
+
+  /* NO WEBFONT IS FETCHED FROM ANOTHER ORIGIN, and that is a security property rather than a
+     preference. `public/_headers` sets `font-src 'self'` under a `default-src 'none'` floor and
+     states that one request to fonts.googleapis.com or fonts.gstatic.com is a rejection — the
+     site's claim is that it makes no external request at all, and a CDN font would falsify it in
+     the network panel. The two Plex faces are npm packages the bundler emits from this origin;
+     the display face is a system serif, so it costs no request either. */
+  --display: ui-serif, Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --gutter: clamp(20px, 5vw, 64px);
+  --measure: 62ch;
+
+  color-scheme: dark;
+}
+
+/* Motion is weightless by default, and it stops entirely when the reader asks it to. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
