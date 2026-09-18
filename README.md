@@ -11,8 +11,9 @@ Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights f
 operatorship — the AI operator proposes as a member, from its own position, and operatorship
 confers no authority to vote, execute, pause, reprice, or move member funds.
 
-Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is
-ETH and BTC, priced from Chainlink `ETH / USD` and `CBBTC / USD` feeds. The contracts carry no
+Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
+single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `CBBTC / USD` feed.
+There is no ETH leg, because Arc carries no ETH representation of any kind. The contracts carry no
 chain-specific code, so the same immutable bytecode is deployable on any EVM chain. No centralised
 exchanges anywhere in the design.
 
@@ -134,12 +135,12 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
 - Sub-vaults: depth ≤3, recursion block, stacked-fee cap, recursive look-through NAV.
   **Disabled at launch**. `VaultFactory.allowSubVaults = false` (the C-1 fix: root vaults only),
   so this code is dormant on the launch path.
-- Safety: **one genuine Chainlink Data Feed per asset**, read directly. WETH is priced through
-  ETH/USD and cbBTC through CBBTC/USD; the settlement token, USDC, is
-  pinned to $1.00. There is **no cbETH**, because no cbETH/USD feed was read for either mainnet
-  configuration (Base has only cbETH/ETH, which is not a USD price). There is no median, no quorum
-  and no per-vault source set: each asset maps to exactly one feed, fixed immutably at
-  construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
+- Safety: **one genuine Chainlink Data Feed per asset**, read directly. On Arc the basket is the
+  single asset **cirBTC**, priced through `CBBTC / USD`; the settlement token, USDC, is
+  pinned to $1.00. **There is no ETH leg on Arc** — the chain carries no ETH representation of any
+  kind, so the `ETH / USD` feed Arc publishes prices nothing this protocol holds. There is no
+  median, no quorum and no per-vault source set: each asset maps to exactly one feed, fixed
+  immutably at construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
   an **L2 sequencer uptime gate** with a grace period after recovery, a per-feed **heartbeat**,
   and a **sane-price band**. On Arc only the last two would run: Chainlink publishes no L2
   Sequencer Uptime Feed for Arc — it is an L1, not a rollup — and `_requireSequencerUp` returns
