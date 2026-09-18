@@ -248,7 +248,12 @@ function frontmatter(text) {
     if (!kv) continue;
     let v = kv[2].trim().replace(/^["']|["']$/g, '');
     if (v.startsWith('[') && v.endsWith(']')) {
-      out[kv[1]] = v.slice(1, -1).split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+      // Split on commas that are NOT inside quotes. A naive split on ',' tore
+      // "86,400s (MAX_HEARTBEAT)" into two options, and the board rendered both as real choices —
+      // an answer button offering half a sentence is worse than no button.
+      out[kv[1]] = (v.slice(1, -1).match(/"[^"]*"|'[^']*'|[^,]+/g) ?? [])
+        .map((s) => s.trim().replace(/^["']|["']$/g, '').trim())
+        .filter(Boolean);
     } else {
       out[kv[1]] = v;
     }
@@ -326,6 +331,11 @@ function board(vaultRoot) {
       blockedBy: list(fm.blocked_by),
       note: fm.note || '',
       updated: fm.updated || '',
+      // Owner-answerable tasks declare their own options. The board renders these as buttons
+      // and will not record any answer that is not one of them.
+      options: list(fm.options),
+      answer: fm.answer || '',
+      answeredAt: fm.answered || '',
       checklist,
       // Trimmed to keep the payload small; the file is the full record and the card links to it.
       description: desc.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1200),

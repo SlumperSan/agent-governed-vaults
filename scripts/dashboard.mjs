@@ -16,6 +16,7 @@
  * remote listener -- do not "helpfully" change the bind address.
  */
 import { createServer } from 'node:http';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { collect } from './lib/project-status.mjs';
 
 const argv = process.argv.slice(2);
@@ -74,8 +75,14 @@ const PAGE = `<!doctype html>
          position:sticky;top:0;z-index:5}
   h1{font-size:15px;margin:0;letter-spacing:.02em}
   .meta{color:var(--dim);font-size:12px;font-family:var(--mono)}
-  main{display:grid;gap:14px;padding:16px 20px 40px;
-       grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));max-width:1600px}
+  main{display:block;padding:16px 20px 40px;max-width:1800px}
+  /* The folded reference panels keep the old multi-column grid, inside the fold. */
+  .rest{margin-top:16px}
+  .rest > summary{cursor:pointer;color:var(--dim);font-size:11px;text-transform:uppercase;
+                  letter-spacing:.08em;padding:8px 2px}
+  .rest > summary:hover{color:var(--ink)}
+  .restgrid{display:grid;gap:14px;margin-top:10px;
+            grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))}
   section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
   section.wide{grid-column:1/-1}
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
@@ -103,11 +110,30 @@ const PAGE = `<!doctype html>
   @media (prefers-reduced-motion:no-preference){ .tick{transition:opacity .2s} }
 
   /* --- board. One row of columns per department, so "who is on what" is answered by position. */
+  /* --- view switcher */
+  .tiles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .tile{background:var(--bg);color:var(--dim);border:1px solid var(--line);border-radius:7px;
+        padding:6px 12px;font:inherit;font-size:12.5px;cursor:pointer;display:flex;
+        align-items:center;gap:7px}
+  .tile:hover{color:var(--ink);border-color:var(--dim)}
+  .tile .n{font-family:var(--mono);font-size:10.5px;padding:0 5px;border-radius:999px;
+           background:var(--panel);border:1px solid var(--line)}
+  .tile.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .tile.on .n{background:#ffffff26;border-color:transparent;color:#fff}
+  .tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  /* Department tag on a card, shown only in the merged All view. */
+  .cdept{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
+         margin-bottom:3px}
+
   .dept{margin:0 0 18px}
   .dept:last-child{margin-bottom:0}
+  details.dept > summary{list-style:none}
+  details.dept > summary::-webkit-details-marker{display:none}
+  .caret{font-family:var(--mono);color:var(--dim);margin-right:6px}
   .dh{font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;
       padding:0 0 7px;border-bottom:1px solid var(--line);margin-bottom:9px;
-      display:flex;align-items:center;gap:10px}
+      display:flex;align-items:center;gap:10px;cursor:pointer}
+  .dh:hover{color:var(--accent)}
   .dh .muted{font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px}
   .dh .cnt{font-family:var(--mono);font-weight:400;font-size:11.5px;color:var(--dim);
            text-transform:none;letter-spacing:0}
@@ -162,6 +188,23 @@ const PAGE = `<!doctype html>
   .dh2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
        margin-bottom:8px;display:flex;align-items:center;gap:9px}
   .ddesc{font-size:12.5px;line-height:1.55;white-space:pre-wrap;color:var(--ink)}
+  /* The one place the board writes. Made to look like a decision, not a form. */
+  .answer .opt{display:block;width:100%;text-align:left;margin-bottom:6px;padding:9px 12px;
+               background:var(--bg);color:var(--ink);border:1px solid var(--line);
+               border-radius:7px;font:inherit;font-size:12.5px;cursor:pointer}
+  .answer .opt:hover{border-color:var(--accent);background:var(--panel)}
+  .answer .opt:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .answer .opt:disabled{opacity:.6;cursor:default}
+  .answer .opt.failed{border-color:var(--nogo);color:var(--nogo)}
+  .danswer{font-size:13px;font-weight:600;color:var(--go)}
+  .other{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+  .other textarea{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+                  border-radius:7px;padding:8px 10px;font:inherit;font-size:12.5px;resize:vertical}
+  .other textarea:focus{outline:none;border-color:var(--accent)}
+  .other-go{margin-top:6px}
+  /* A card the owner can act on, flagged in the column without opening it. */
+  .card.needsme{border-left-color:var(--warn)}
+  .needsme .ct::after{content:' ● needs you';color:var(--warn);font-size:10.5px;font-weight:600}
   .dfile{font-family:var(--mono);font-size:11px;color:var(--dim);overflow-wrap:anywhere}
   .more summary{cursor:pointer;color:var(--dim);font-size:11px;text-transform:uppercase;
                 letter-spacing:.07em;padding:3px 0}
@@ -197,7 +240,8 @@ const PAGE = `<!doctype html>
 </style>
 </head><body>
 <header>
-  <h1>Agent-Governed Vaults — Command Center</h1>
+  <h1>Board</h1>
+  <span class="meta" id="repo"></span>
   <span class="meta" id="stamp">loading…</span>
   <span class="meta" id="err" class="nogo"></span>
 </header>
@@ -276,8 +320,13 @@ function render(d){
   // --- the board
   if(d.board){
     const COLS=[['doing','In progress'],['review','In review'],['blocked','Blocked'],['backlog','Backlog'],['done','Done']];
-    const DEPTS=[...new Set(d.board.tasks.map(t=>t.department))].sort();
-    const card = t => '<div class="card p-'+esc(t.priority||'none')+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
+    // Owner first, always. What is waiting on him is the only thing on this board he can act on,
+    // and alphabetical ordering buried it between Marketing and Product.
+    const DEPTS=[...new Set(d.board.tasks.map(t=>t.department))]
+      .sort((a,b)=> (a==='Owner'?-1:b==='Owner'?1:a.localeCompare(b)));
+    const card = (t, withDept) => '<div class="card p-'+esc(t.priority||'none')
+      +(t.options.length && !t.answer ? ' needsme':'')+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
+      + (withDept?'<div class="cdept">'+esc(t.department)+'</div>':'')
       + '<div class="ct">'+esc(t.title)+'</div>'
       + '<div class="cm">'
         + (t.owner?'<span class="who">'+esc(t.owner)+'</span>':'<span class="who none">unassigned</span>')
@@ -305,35 +354,56 @@ function render(d){
       + (t.blockedBy.length?'<span class="blk">needs '+esc(t.blockedBy.join(', '))+'</span>':'')
       + '</div>';
 
+    /** One department's five columns. withDept tags each card, for the merged All view. */
+    const columnsFor = (tasks, withDept) => {
+      let h='<div class="cols">';
+      for(const [key,label] of COLS){
+        const inCol=tasks.filter(t=>t.status===key);
+        h+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
+          + (inCol.length? inCol.map(t=>card(t,withDept)).join('') : '<div class="empty">—</div>')
+          +'</div>';
+      }
+      return h+'</div>';
+    };
+    const checklistFor = tasks =>
+      '<details class="more"><summary>as a checklist</summary><div class="list">'
+      + tasks.slice().sort((a,b)=>(ORDER[a.status]-ORDER[b.status])||a.title.localeCompare(b.title))
+             .map(line).join('')
+      +'</div></details>';
+    const header = (name, tasks, open) => {
+      const done=tasks.filter(t=>t.status==='done').length;
+      const pct=tasks.length? Math.round(done/tasks.length*100):0;
+      return '<summary class="dh"><span class="caret">'+(open?'▾':'▸')+'</span>'+esc(name)
+        +' <span class="cnt">'+done+' of '+tasks.length+'</span>'
+        +'<span class="bar"><i style="width:'+pct+'%"></i></span></summary>';
+    };
+
     let body='';
     if(d.board.problem) body+='<div class="caveat">'+esc(d.board.problem)+'</div>';
     if(!d.board.tasks.length){
       body+='<div class="note">No task files. Add one to <code>Tasks/</code> in the vault.</div>';
     }
-    for(const dep of DEPTS){
-      const mine=d.board.tasks.filter(t=>t.department===dep);
-      const done=mine.filter(t=>t.status==='done').length;
-      const pct=mine.length? Math.round(done/mine.length*100) : 0;
-      body+='<div class="dept"><div class="dh">'+esc(dep)
-        +' <span class="cnt">'+done+' of '+mine.length+'</span>'
-        +'<span class="bar"><i style="width:'+pct+'%"></i></span></div>';
 
-      // Columns first and always visible — this is the view he asked for.
-      body+='<div class="cols">';
-      for(const [key,label] of COLS){
-        const inCol=mine.filter(t=>t.status===key);
-        body+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
-          + (inCol.length? inCol.map(card).join('') : '<div class="empty">—</div>')
-          +'</div>';
-      }
-      body+='</div>';
+    // The switcher. All merges every department into one board; a named tile shows only that one.
+    // Selection is remembered in the URL hash so a refresh — and the 5s poll — keep your view.
+    body+='<div class="tiles">'
+      + ['All',...DEPTS].map(t=>{
+          const open=t==='All'? d.board.tasks.filter(x=>x.status!=='done').length
+                              : d.board.tasks.filter(x=>x.department===t&&x.status!=='done').length;
+          return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="'+esc(t)+'">'
+            +esc(t)+' <span class="n">'+open+'</span></button>';
+        }).join('')
+      +'</div>';
 
-      // The flat checklist stays, folded away, for reading the whole department in one column.
-      body+='<details class="more"><summary>as a checklist</summary><div class="list">'
-        + mine.slice().sort((a,b)=>(ORDER[a.status]-ORDER[b.status])||a.title.localeCompare(b.title))
-              .map(line).join('')
-        +'</div></details></div>';
+    if(VIEW==='All'){
+      // Merged: five columns, every department's cards together, each tagged with its department.
+      body+='<div class="dept">'+columnsFor(d.board.tasks, true)+checklistFor(d.board.tasks)+'</div>';
+    } else {
+      const mine=d.board.tasks.filter(t=>t.department===VIEW);
+      body+='<details class="dept" open>'+header(VIEW,mine,true)
+        +columnsFor(mine,false)+checklistFor(mine)+'</details>';
     }
+
     const allDone=d.board.tasks.filter(t=>t.status==='done').length;
     const allPct=d.board.tasks.length? Math.round(allDone/d.board.tasks.length*100):0;
     // FIRST on the page, not buried under the repo panels. It is the thing he opens this for; the
@@ -375,7 +445,28 @@ function render(d){
     if(d.now.traps)   S.push(sec('Traps not visible in the code', md(d.now.traps)));
   }
 
-  document.getElementById('main').innerHTML = S.join('');
+  // THE BOARD IS THE PAGE. Everything else is reference and folds away.
+  //
+  // This screen had nine panels above the fold and the board was the last of them. The tree, the
+  // gate table, the launch-gate register, the sprint list, the deployment address book and the
+  // NOW extracts are all still here and still correct — they are just not what this is opened for,
+  // and a board you have to scroll past six tables to reach is a board nobody looks at.
+  const board = S[0] ?? '';
+  const rest = S.slice(1).join('');
+  document.getElementById('main').innerHTML = board
+    + (rest ? '<details class="rest"><summary>repo status — tree, gate, launch gates, sprints, deployments</summary>'
+              + '<div class="restgrid">'+rest+'</div></details>' : '');
+
+  // Branch and gate as one line in the header rather than two panels, because they are the two
+  // facts worth seeing without opening anything.
+  const g = d.gate;
+  document.getElementById('repo').innerHTML =
+    '<span class="mono">'+esc(d.tree.branch)+'</span>'
+    + (d.tree.dirty.length? ' <span class="warn">'+d.tree.dirty.length+' uncommitted</span>' : ' <span class="go">clean</span>')
+    + (g? ' · gate <span class="'+(g.passed?'go':'nogo')+'">'+(g.passed?'passed':'failed')+'</span>'
+          + (g.caveats.length? ' <span class="warn" title="'+esc(g.caveats.join('; '))+'">(caveats)</span>' : '')
+        : ' · <span class="warn">gate never run</span>');
+
   document.getElementById('stamp').textContent = new Date(d.at).toISOString().slice(0,19).replace('T',' ')+'Z';
 
   // The board refreshes every 5s. Re-render an open drawer from the new data rather than closing
@@ -383,6 +474,20 @@ function render(d){
   TASKS = Object.fromEntries((d.board?.tasks||[]).map(t=>[t.id,t]));
   if(openId){ TASKS[openId] ? drawTask(openId) : closeDrawer(); }
 }
+
+// ---- view switching ----------------------------------------------------------------------
+// Which department is on screen. Kept in the URL hash so the 5s poll cannot reset it and a
+// refresh lands you back where you were.
+let VIEW = decodeURIComponent((location.hash||'').replace(/^#/,'')) || 'All';
+function setView(v){
+  VIEW = v;
+  history.replaceState(null,'','#'+encodeURIComponent(v));
+  if(LAST) render(LAST);
+}
+window.addEventListener('hashchange', () => {
+  const v = decodeURIComponent((location.hash||'').replace(/^#/,'')) || 'All';
+  if(v!==VIEW){ VIEW=v; if(LAST) render(LAST); }
+});
 
 // ---- task drawer -------------------------------------------------------------------------
 let TASKS = {};
@@ -419,9 +524,28 @@ function drawTask(id){
     + (t.description
         ? '<div class="dsec"><div class="dh2">Description</div><div class="ddesc">'+esc(t.description)+'</div></div>'
         : '')
+    // The one place this board writes. A task that names options and is waiting on him gets
+    // real buttons; clicking one records the answer against the task file so the next session
+    // reads a decision instead of asking again.
+    + (t.options.length && !t.answer
+        ? '<div class="dsec answer"><div class="dh2">Your answer</div>'
+          + t.options.map((o,i)=>'<button class="opt" data-answer="'+esc(t.id)+'" data-opt="'+i+'">'
+              +esc(o)+'</button>').join('')
+          // Always an escape hatch. A fixed option list is a guess at what he will decide, and
+          // forcing a decision into the nearest listed option records something he did not mean.
+          + '<div class="other"><textarea id="othertext" rows="3" placeholder="Or write your own answer…"></textarea>'
+          + '<button class="opt other-go" data-answer="'+esc(t.id)+'" data-opt="custom">Record my answer</button></div>'
+          + '<div class="note">Recorded in the task file and read by whichever department is '
+          + 'waiting on it. Nothing is sent anywhere else.</div></div>'
+        : '')
+    + (t.answer
+        ? '<div class="dsec"><div class="dh2">Answered</div>'
+          + '<div class="danswer">'+esc(t.answer)+'</div>'
+          + (t.answeredAt?'<div class="note">'+esc(t.answeredAt)+'</div>':'')+'</div>'
+        : '')
     + '<div class="dsec"><div class="dh2">Source</div><div class="dfile">'+esc(t.file)+'</div>'
-      + '<div class="note">This board only reads. Edit the file — in Obsidian or by an agent — and the change '
-      + 'appears here within 5s.</div></div>';
+      + '<div class="note">Everything else on this board is read-only. Edit the file — in Obsidian '
+      + 'or by an agent — and the change appears here within 5s.</div></div>';
 
   document.getElementById('drawer').hidden = false;
   document.getElementById('scrim').hidden = false;
@@ -432,7 +556,32 @@ function closeDrawer(){
   document.getElementById('drawer').hidden = true;
   document.getElementById('scrim').hidden = true;
 }
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
+  const opt = e.target.closest('[data-answer]');
+  if(opt){
+    const t = TASKS[opt.dataset.answer];
+    const custom = opt.dataset.opt === 'custom';
+    const choice = custom
+      ? (document.getElementById('othertext')?.value || '').trim()
+      : t?.options[Number(opt.dataset.opt)];
+    if(!choice) return;
+    opt.disabled = true; opt.textContent = 'saving…';
+    try{
+      const r = await fetch('/api/answer', {method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({id: opt.dataset.answer, answer: choice, custom})});
+      if(!r.ok) throw new Error(await r.text());
+      tick();
+    }catch(err){
+      // Say the write failed rather than showing an answer that was never recorded.
+      opt.disabled = false;
+      opt.textContent = 'failed — retry';
+      opt.classList.add('failed');
+      document.getElementById('err').innerHTML='<span class="nogo">answer not saved: '+esc(err.message)+'</span>';
+    }
+    return;
+  }
+  const tile = e.target.closest('[data-view]');
+  if(tile){ setView(tile.dataset.view); return; }
   const hit = e.target.closest('[data-id]');
   if(hit){ drawTask(hit.dataset.id); return; }
   if(e.target.id==='scrim' || e.target.id==='dclose') closeDrawer();
@@ -447,11 +596,13 @@ document.addEventListener('keydown', e => {
 function sec(title, body, klass){ return '<section class="'+(klass||'')+'"><h2>'+title+'</h2>'+body+'</section>'; }
 function row(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
 
+let LAST = null;
 async function tick(){
   try{
     const r = await fetch('/api/status');
     if(!r.ok) throw new Error('HTTP '+r.status);
-    render(await r.json());
+    LAST = await r.json();
+    render(LAST);
     document.getElementById('err').textContent='';
   }catch(e){
     // Say so rather than silently showing stale numbers -- a board you cannot trust is worse
@@ -463,8 +614,79 @@ tick(); setInterval(tick, 5000);
 </script>
 </body></html>`;
 
+/**
+ * The ONE write this server performs, and the reasons it is narrow.
+ *
+ * It records the owner's answer against a task file: `answer:` and `answered:` in the frontmatter,
+ * nothing else touched. It is the only endpoint that is not a read, and it exists because the
+ * alternative — him typing a decision into a chat and an agent transcribing it into the vault — is
+ * the step where decisions get lost or reworded.
+ *
+ * WHAT IT WILL NOT DO. It will not create a file, will not write a task that does not exist, will
+ * not accept an answer that is not one of the options the task itself declares, and will not
+ * overwrite an answer already recorded. A board that can write arbitrary text into the vault is a
+ * board that can put words in his mouth.
+ *
+ * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
+ * listener. Do not widen the bind address to "make it reachable from my phone".
+ */
+function recordAnswer(id, answer, custom) {
+  const tasks = snapshot(true).board?.tasks ?? [];
+  const t = tasks.find((x) => x.id === id);
+  if (!t) return { code: 404, msg: `no task ${id}` };
+  // A listed option must match exactly; a free-text answer is accepted as written. The option list
+  // is a shortcut for the common cases, never a menu he has to squeeze a real decision into.
+  if (!custom && !t.options.includes(answer)) {
+    return { code: 400, msg: 'answer is not one of this task’s options' };
+  }
+  if (custom && !answer.trim()) return { code: 400, msg: 'empty answer' };
+  if (answer.length > 2000) return { code: 400, msg: 'answer too long' };
+  // A newline would end the answer: line and let free text forge other frontmatter keys - a
+  // second line reading 'status: done' would be parsed as real. Collapse rather than reject,
+  // because rejecting a multi-line answer throws away what he typed.
+  answer = answer.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  if (!answer) return { code: 400, msg: 'empty answer' };
+  if (t.answer) return { code: 409, msg: `already answered: ${t.answer}` };
+
+  const raw = readFileSync(t.file, 'utf8');
+  const end = raw.indexOf('\n---', 3);
+  if (!raw.startsWith('---') || end === -1) return { code: 422, msg: 'task file has no frontmatter block' };
+
+  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const patched =
+    raw.slice(0, end) + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
+  // Write via a temp file in the same directory, then rename. A half-written task file would be
+  // parsed by the next poll 5s later and render as a task with no title.
+  const tmp = `${t.file}.tmp-${process.pid}`;
+  writeFileSync(tmp, patched, 'utf8');
+  renameSync(tmp, t.file);
+  cache = { at: 0, data: null };
+  return { code: 200, msg: 'recorded' };
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
+
+  if (url.pathname === '/api/answer' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 4096) req.destroy(); // a decision is short; anything larger is not one
+    });
+    req.on('end', () => {
+      let out;
+      try {
+        const { id, answer, custom } = JSON.parse(body);
+        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom));
+      } catch (e) {
+        out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
+      }
+      res.writeHead(out.code, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(out.msg);
+    });
+    return;
+  }
+
   if (url.pathname === '/api/status') {
     const body = JSON.stringify(snapshot(url.searchParams.has('force')));
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
