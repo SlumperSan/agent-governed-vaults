@@ -1,0 +1,71 @@
+# Index Vault Protocol
+
+> RWAlly is the AI agent trading index.
+> Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
+> every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
+> proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
+> or move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc,
+> Circle's chain, where USDC is also the native gas asset. The basket is ETH and BTC, priced from
+> Chainlink ETH / USD and CBBTC / USD feeds and settled in USDC.
+> The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
+> same immutable bytecode is deployable on any EVM chain; Arc is the target, not a constraint the
+> code enforces. THE PROTOCOL IS NOT DEPLOYED ON ARC, OR ON ANY OTHER MAINNET, AS OF 2026-09-18 --
+> there is no address for an agent to send a transaction to. This file orients AI agents
+> integrating the protocol.
+
+## Start here (agents)
+- [Arc survey](docs/evidence/arc-mainnet-survey.json): the chain binding, settlement token and
+  Chainlink feeds read off Arc mainnet. A survey, not a deployable configuration -- the Uniswap
+  router and basket token addresses are still unresolved and the file says so.
+- [Arc deploy runbook](docs/evidence/arc-deploy-runbook.md): what has to be resolved before a
+  deploy is possible, and why Arc testnet cannot serve as the dry run.
+- [Agent Quickstart](docs/AGENT-QUICKSTART.md): the contract calls an agent makes, and the
+  semantics it must respect before making them.
+
+## Protocol reference
+- [Architecture](docs/ARCHITECTURE.md): NAV/share math, two-mode exits, governance, sub-vaults, safety.
+- [Threat model](docs/THREAT-MODEL.md): every mechanic → attack vector → mitigation, and accepted risks.
+- [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
+
+## Key semantics an integrator must respect
+- NOT DEPLOYED, ON ARC OR ANYWHERE ELSE. There is no address book, because there are no
+  addresses. Any integration written against this protocol today is written against source, not
+  against a live instance. Do not send a transaction anywhere on the strength of this file.
+- A PRIOR DEPLOYMENT ON ANOTHER CHAIN WAS WOUND DOWN ON 2026-09-18. Both vaults that existed there
+  were fully exited by their sole holder and read totalShares() == 0. That chain is no longer a
+  target and its configuration has been removed from this repository.
+- One High -- the purchasable member count below five members -- remains open at the launch
+  configuration; see docs/LAUNCH-READINESS.md.
+- Two limits would apply on Arc and are decided rather than inherited. Chainlink publishes no L2
+  Sequencer Uptime Feed for Arc -- it is an L1, not a rollup -- so oracle.sequencerUptimeFeed would
+  be the zero address and ChainlinkOracle returns early from that gate rather than reverting; and
+  the per-feed heartbeat is an owner decision bounded by ChainlinkOracle.MAX_HEARTBEAT
+  (contracts/src/oracle/ChainlinkOracle.sol:98). Measured Arc round gaps reach 4.71 h, so a
+  heartbeat chosen from a resting feed age would be breached by a feed behaving to spec; see
+  docs/evidence/arc-mainnet-survey.json.
+- First deposit sits in a 4-hour observation window (no shares, no vote) unless skipWindow().
+- Exits are forward-priced (settle at post-rebalance NAV) from the moment a live proposal reaches
+  its REVEAL phase -- not from the moment one passes -- and while a passed proposal is inside its
+  execution window. Governance.hasPendingExecution(vault) is the exact predicate; a defeated
+  proposal still queued the exits requested while it was live.
+- Sub-vaults (parent/child vaults, look-through NAV) are DISABLED on the mainnet launch path:
+  Deploy.s.sol constructs VaultFactory with allowSubVaults = false, so createChildVault reverts
+  SubVaultsDisabled and every vault it deploys is wired subVaultRegistry = address(0). This is a
+  per-deployment immutable, not a protocol property -- the Base Sepolia testnet factory is
+  deployed with it TRUE. Neither script's value may be assumed for any factory: call
+  VaultFactory.allowSubVaults() on the factory you integrate against.
+- Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
+- 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
+  across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
+- Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata;
+  permissionless creation means scam vaults exist; verify the operator, not the name.
+
+## Contracts (ABIs in contracts/out/ after `forge build`)
+- VaultCore, Governance, FeeEngine, OperatorRegistry, ChainlinkOracle,
+  AggregationRouterAdapter, SubVaultRegistry, VaultFactory.
+
+## Build & test
+- Everything CI runs: npm run gate  (`--list` explains every step)
+- Contracts: cd contracts && forge test
+- Backend/SDK/frontend logic: npm run test:backend
+(Test counts are deliberately not quoted here; they go stale silently. Run the suites.)

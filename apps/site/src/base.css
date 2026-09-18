@@ -1,0 +1,89 @@
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Film grain over the whole page. Heavenly, not dirty — it sits at 3% and never moves. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+section { padding: clamp(80px, 13vh, 160px) var(--gutter); position: relative; }
+.inner { max-width: 1120px; margin: 0 auto; }
+.measure { max-width: var(--measure); }
+
+h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: -0.015em; margin: 0; }
+h1 { font-size: clamp(44px, 8.5vw, 104px); line-height: 0.98; }
+h2 { font-size: clamp(30px, 4.6vw, 54px); line-height: 1.06; }
+h3 { font-size: clamp(19px, 2.1vw, 24px); line-height: 1.25; }
+
+p { margin: 0 0 1.15em; }
+p:last-child { margin-bottom: 0; }
+
+a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 22px;
+}
+
+.lede { font-size: clamp(19px, 2.3vw, 24px); line-height: 1.45; color: var(--ink); }
+.dim { color: var(--ink-dim); }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+
+/* ── The bright section. Iridescence lives here and nowhere else. ── */
+.bright { background: var(--bone); color: #14151a; }
+.bright .eyebrow { color: #6b7080; }
+.bright .dim { color: #55596a; }
+
+/* ── The one warm light: a gold shaft behind the hero, and nothing else on the page. ── */
+.shaft {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 46% at 50% 6%, rgba(255, 178, 77, 0.2), transparent 68%),
+    radial-gradient(34% 30% at 50% 0%, rgba(255, 122, 24, 0.24), transparent 72%);
+}
+
+/* Embers rise. Upward motion is the whole point — ascension, not decoration. */
+.ember-field { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.ember {
+  position: absolute;
+  bottom: -8px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 7px 1px rgba(255, 178, 77, 0.65);
+  animation: rise linear infinite;
+}
+@keyframes rise {
+  0%   { transform: translateY(0) scale(1); opacity: 0; }
+  12%  { opacity: 0.85; }
+  100% { transform: translateY(-88vh) scale(0.45); opacity: 0; }
+}
+
+hr.rule { border: 0; height: 1px; background: var(--void-line); margin: 0; }
+.bright hr.rule { background: #ddd8cc; }

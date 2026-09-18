@@ -1,0 +1,127 @@
+/* ── Hero ─────────────────────────────────────────────────────────────────── */
+.hero { min-height: 100svh; display: flex; align-items: center; overflow: hidden; }
+.hero .inner { position: relative; z-index: 1; }
+.hero h1 {
+  max-width: 15ch;
+  /* The one warm light, applied to the type itself rather than to a span inside it. See the note
+     in App.tsx: splitting this headline with an element breaks a guarded product phrase. */
+  background: linear-gradient(168deg, var(--bone) 34%, var(--ember) 76%, var(--ember-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero .lede { margin-top: 34px; max-width: 54ch; color: var(--ink-dim); }
+
+/* The status line. It is the first thing a reader should be able to check, so it is not buried. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 40px;
+  padding: 9px 16px 9px 13px;
+  border: 1px solid var(--void-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+.status .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 9px 2px rgba(255, 178, 77, 0.55);
+}
+
+.scroll-hint {
+  position: absolute; left: var(--gutter); bottom: 34px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+
+/* ── Why (bright, crystalline) ────────────────────────────────────────────── */
+.why { overflow: hidden; }
+.why h2 { max-width: 20ch; }
+.why .body { margin-top: 30px; font-size: clamp(17px, 1.9vw, 20px); }
+
+/* The crystalline bloom: iridescence, and only in the bright section. */
+.bloom {
+  position: absolute; pointer-events: none;
+  width: 52vw; height: 52vw; max-width: 620px; max-height: 620px;
+  right: -12vw; top: -14vw;
+  background:
+    radial-gradient(circle at 34% 34%, rgba(138, 107, 255, 0.5), transparent 58%),
+    radial-gradient(circle at 66% 44%, rgba(79, 195, 255, 0.42), transparent 56%),
+    radial-gradient(circle at 50% 70%, rgba(255, 106, 213, 0.38), transparent 60%);
+  filter: blur(46px);
+}
+
+/* The one red on the page. It marks the sentence about what this is NOT. */
+.not-a-claim {
+  margin-top: 46px;
+  padding-left: 20px;
+  border-left: 2px solid var(--alarm);
+  max-width: 56ch;
+}
+.not-a-claim strong { font-weight: 600; }
+
+/* ── How it works ─────────────────────────────────────────────────────────── */
+.steps { margin-top: 56px; display: grid; gap: 1px; background: var(--void-line); border: 1px solid var(--void-line); }
+.step { background: var(--void); padding: 30px clamp(20px, 3vw, 36px); }
+@media (min-width: 900px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+.step .n {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+  color: var(--ember); margin-bottom: 16px;
+}
+.step h3 { margin-bottom: 10px; }
+.step p { font-size: 15.5px; color: var(--ink-dim); margin: 0; }
+
+/* ── Authority: the invariant list, the spine of the protocol ─────────────── */
+.authority { background: var(--void-raised); }
+.invariants { margin: 44px 0 0; padding: 0; list-style: none; display: grid; gap: 1px; background: var(--void-line); border-block: 1px solid var(--void-line); }
+.invariant { background: var(--void-raised); padding: 22px clamp(18px, 2.4vw, 28px); display: grid; gap: 4px; }
+@media (min-width: 760px) { .invariant { grid-template-columns: 30px 1fr; gap: 0 20px; align-items: baseline; } }
+.invariant .k { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+.invariant p { margin: 0; font-size: 16px; }
+
+/* ── Status detail ────────────────────────────────────────────────────────── */
+.facts { margin-top: 44px; display: grid; gap: 1px; background: var(--void-line); border: 1px solid var(--void-line); }
+@media (min-width: 820px) { .facts { grid-template-columns: 1fr 1fr; } }
+.fact { background: var(--void); padding: 26px clamp(18px, 2.6vw, 30px); }
+.fact .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 10px; }
+.fact .v { font-size: 17px; }
+.fact .v .num { font-family: var(--mono); font-size: 15px; color: var(--ember); }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+footer { padding: 54px var(--gutter) 72px; border-top: 1px solid var(--void-line); }
+.foot-grid { display: flex; flex-wrap: wrap; gap: 26px 44px; justify-content: space-between; align-items: baseline; }
+footer a { color: var(--ink-dim); text-decoration: none; }
+footer a:hover { color: var(--ink); text-decoration: underline; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 22px; font-size: 14px; }
+.foot-legal { font-size: 13px; color: var(--ink-faint); max-width: 60ch; }
+
+/* ── Spacing utilities ─────────────────────────────────────────────────────
+   These exist because public/_headers sets `style-src 'self'` with NO 'unsafe-inline'. Prerendered
+   markup carries its style attributes into the HTML, so a `style={{ marginTop: 26 }}` becomes a
+   declaration the browser REFUSES — in production only, silently, with nothing to report it. Every
+   spacing decision therefore has to be a class. */
+.mt-8  { margin-top: 8px; }
+.mt-24 { margin-top: 24px; }
+.mt-26 { margin-top: 26px; }
+.mt-28 { margin-top: 28px; }
+.mt-36 { margin-top: 36px; }
+.mt-40 { margin-top: 40px; }
+.mt-44 { margin-top: 44px; }
+.mt-64 { margin-top: 64px; }
+.mb-20 { margin-bottom: 20px; }
+.mb-64 { margin-bottom: 64px; }
+
+/* A lede that sits under a heading and reads as secondary. */
+.lede-sub { margin-top: 26px; color: var(--ink-dim); }
+
+/* The jump list on the disclaimers page. */
+.jump { list-style: none; margin: 32px 0 0; padding: 0; display: grid; gap: 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; }
+
+/* `.facts` is two columns on the homepage; the register's cells read better as one. */
+.facts.one-col { grid-template-columns: 1fr; }
