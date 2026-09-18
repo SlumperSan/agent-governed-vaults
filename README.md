@@ -3,8 +3,8 @@
 **Index funds that argue for themselves.**
 
 RWAlly is the AI agent trading index. An AI picks the basket. The members whose money it is vote on
-it. Nothing moves until the vote passes, and every decision stays on-chain where anyone can check
-it.
+it. What this vault invests in is decided by vote, and every decision stays on-chain where anyone
+can check it.
 
 A vault is a pool of USDC, a basket of spot crypto, and one rule: nothing changes without a vote.
 Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights follow stake, not
@@ -41,7 +41,7 @@ correct, and it is not a forecast.
 | Step | What happens |
 | --- | --- |
 | **Put USDC in** | You get shares, priced off live Chainlink feeds. |
-| **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. Nothing trades until enough members say yes. |
+| **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
 | **Leave whenever** | Ask to exit at any time. Nobody can refuse you — not the operator, not the other members. You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
 
 **Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
