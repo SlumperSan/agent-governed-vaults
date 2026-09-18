@@ -29,7 +29,17 @@ import { resolveAgentRunConfig, policyFor, EXECUTE_ENV_VAR } from '../soak/agent
 const WETH = '0x4200000000000000000000000000000000000006';
 const LINK = '0xE4aB69C077896252FAFBD49EFD26B5D171A32410';
 
-/** For the selector drift guard: viem and the compiled ABIs, both optional in a bare checkout. */
+/**
+ * For the selector drift guard: viem and the compiled ABIs.
+ *
+ * NEITHER IS OPTIONAL, which is a correction rather than a change of policy. `viem` is a root
+ * dependency (`package.json`, `dependencies`), so it is absent only in a checkout with no
+ * `npm install` — in which `node --test` does not run at all. `contracts/out` is produced by
+ * `npm run build:contracts`, which `npm run gate` and `.github/workflows/ci.yml` both run before
+ * `npm run test:backend`. The import is still wrapped so a missing module produces this file's own
+ * failure message instead of an unhandled rejection at import time, when `test()` has not yet been
+ * reached and node reports the whole file as failing to load.
+ */
 const viem = await import('viem').catch(() => null);
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'contracts', 'out');
 const abiOf = (rel) => {
@@ -392,11 +402,30 @@ test('the pinned revert selectors are recomputed from the COMPILED ABIs, not tru
   // validated. `SEL_NO_PENDING` decides whether a `cancelPending` revert is a freeze-safety
   // VIOLATION or a benign "nothing to cancel", and `SEL_STALE_ORACLE` labels which revert froze the
   // vault. A signature moving out from under either would silently reclassify real evidence.
-  // Skips when viem or the artifacts are absent, matching packages/canary/test/abis.test.mjs.
-  if (!viem || !ORACLE_ABI.length || !VAULT_ABI.length) {
-    console.log('# skipped: needs viem and `forge build` artifacts');
-    return;
-  }
+  //
+  // THIS NO LONGER SKIPS, AND THE SHAPE IT REPLACED WAS WORSE THAN A SKIP. It read
+  //
+  //     console.log('# skipped: needs viem and `forge build` artifacts');
+  //     return;
+  //
+  // and `node:test` counts a bare return as a PASS. It does not appear in the skipped count, so
+  // this suite reported `104 tests, 104 pass, skipped 0` — a line that would have looked identical
+  // if this check had silently stopped running. That is precisely the false green the docstring
+  // above says must not happen to this particular assertion.
+  //
+  // The precedent is two files away: `contracts-size-truth.test.mjs` carries a standalone test
+  // named "contracts/out exists — this guard must never skip its way to green", whose message says
+  // a skipped check "is indistinguishable from a passing one". This asserts its own inputs for the
+  // same reason rather than leaning on that one, because a cross-file anchor is a dependency
+  // nobody reading this file can see.
+  assert.ok(viem, 'viem is a root dependency and this guard needs it — run `npm install`');
+  assert.ok(
+    ORACLE_ABI.length && VAULT_ABI.length,
+    'contracts/out is missing or incomplete, so the pinned selectors cannot be recomputed from the\n' +
+      'compiled ABIs and this guard would otherwise report a pass over nothing.\n' +
+      'Run `npm run build:contracts` (or `npm run gate`, which builds first).\n' +
+      `  ChainlinkOracle: ${ORACLE_ABI.length} entries\n  VaultCore: ${VAULT_ABI.length} entries`,
+  );
   const selectorOf = (sig) => viem.keccak256(viem.toBytes(sig)).slice(0, 10);
   const errorsIn = (abi) => abi.filter((e) => e.type === 'error').map((e) => `${e.name}(${e.inputs.map((i) => i.type).join(',')})`);
 

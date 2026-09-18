@@ -26,6 +26,21 @@ import {
 
 const viem = await import('viem').catch(() => null);
 
+/**
+ * WHY THE `skip:` CONDITIONS BELOW ARE SAFE, AND WHAT THEY DEPEND ON — a cross-file dependency
+ * that is invisible from this file, which is the whole reason it is written here.
+ *
+ * Every artifact-gated test in this suite skips when `contracts/out` is absent. On its own that
+ * would be the self-disarming shape: a suite reporting green over checks that never ran. It is
+ * safe only because `scripts/test/contracts-size-truth.test.mjs` carries a standalone test —
+ * "contracts/out exists — this guard must never skip its way to green" — which reds in that case,
+ * so these skips can never be the only signal. That test asserts each of these artifacts
+ * individually, not just the directory, because a PARTIAL build would otherwise let the family
+ * skip around a missing piece with the anchor still green.
+ *
+ * So: do not remove those skips in favour of throwing here, and do not let a cleanup delete that
+ * test without reading this. The same paragraph is at the other end.
+ */
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, '../../../contracts/out');
 const vaultAbiPath = join(OUT, 'VaultCore.sol/VaultCore.json');
