@@ -217,44 +217,49 @@ test('hex comparison is case- and 0x-insensitive (cast and solc disagree on both
 });
 
 test('an unreadable on-chain leg reports SKIP — it never reports a match it did not make', () => {
-  const line = formatOnchainLine('robinhood-mainnet', /** @type {any} */ ({ skipped: 'rpc read failed: timeout' }));
+  const line = formatOnchainLine('some-mainnet', /** @type {any} */ ({ skipped: 'rpc read failed: timeout' }));
   assert.match(line, /SKIP/);
   assert.doesNotMatch(line, /identical|consistent/, 'a read that did not happen must not read as a pass');
 });
 
 test('the on-chain leg is keyed per RECORD, so two records sharing a chainName cannot collide', () => {
-  // Found while porting, and it is the same fail-open class this file exists for: `protocol/main`
-  // carries TWO records declaring "chainName": "robinhood-mainnet" (the protocol deployment and the
-  // RWLY one). Keying the on-chain map by chain name let the second record's SKIP overwrite the
-  // first record's completed comparison, so the leg printed SKIP for a deployment it had just read
-  // and found MISMATCHED. A result silently replaced by a SKIP reads exactly like a result that was
-  // never computed.
+  // Found while porting, and it is the same fail-open class this file exists for. The tree once
+  // carried TWO deployment records declaring the same "chainName" (a protocol deployment and a
+  // launchpad-token record for the same chain). Keying the on-chain map by chain name let the
+  // second record's SKIP overwrite the first record's completed comparison, so the leg printed SKIP
+  // for a deployment it had just read and found MISMATCHED. A result silently replaced by a SKIP
+  // reads exactly like a result that was never computed.
   //
   // BEHAVIOUR, not source text. The first version of this test asserted the runner's keying
   // expression matched /path\.basename\(file/ -- which the reverted expression
   // `cfg.chainName ?? path.basename(file, '.json')` ALSO matches, so it passed on the mutant while
   // the live run visibly lost a record. A guard that passes when the bug returns is decorative.
-  const a = onchainKey('robinhood-mainnet', { chainName: 'robinhood-mainnet' });
-  const b = onchainKey('rwly-robinhood-mainnet', { chainName: 'robinhood-mainnet' });
+  const a = onchainKey('some-mainnet', { chainName: 'some-mainnet' });
+  const b = onchainKey('token-some-mainnet', { chainName: 'some-mainnet' });
   assert.notEqual(a, b, 'two records sharing a chainName must not collapse onto one key');
   assert.equal(new Set([a, b]).size, 2);
-  assert.match(a, /^robinhood-mainnet/, 'the filename leads, because it is the unique part');
-  assert.match(b, /^rwly-robinhood-mainnet/);
+  assert.match(a, /^some-mainnet/, 'the filename leads, because it is the unique part');
+  assert.match(b, /^token-some-mainnet/);
   // A record with no chainName still gets a usable key rather than "undefined".
   assert.equal(onchainKey('base-sepolia', {}), 'base-sepolia');
 
-  // Non-vacuous: prove the collision this guards against is real in the tracked records, so the
-  // test cannot quietly become decorative if one of the two records is renamed away.
+  // NON-VACUITY IS NOW PROVED SYNTHETICALLY, ABOVE, AND HERE IS WHY IT MOVED.
+  //
+  // This block used to walk contracts/config/deployments/ and assert that two tracked records
+  // really did share a chainName, so the collision the keying fix prevents could be shown to be
+  // real rather than hypothetical. Both of those records were deleted on 2026-09-18 with the chain
+  // they described, and the assertion started failing — correctly: no two tracked records share a
+  // chainName any more.
+  //
+  // The property under test did not change. Two records CAN still collide the moment a second one
+  // is written for a chain that already has one, which is exactly what a launchpad-token record
+  // beside a protocol record was. So the collision is constructed above from synthetic inputs,
+  // where it cannot evaporate because the tree changed shape, and the filesystem is used below only
+  // for what it can still prove: that the keys derived from the records that DO exist are distinct.
   const dir = path.join(ROOT, 'contracts', 'config', 'deployments');
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
-  const names = files
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).chainName)
-    .filter(Boolean);
-  assert.ok(
-    names.length !== new Set(names).size,
-    'no two deployment records share a chainName any more — re-read this test before deleting it; ' +
-      'the keying fix is still correct but this non-vacuity check no longer proves anything',
-  );
+  assert.ok(files.length > 0, 'no deployment records at all — the directory moved and the check below proves nothing');
+
   // And the keys derived from the real records are all distinct, which is the property that matters.
   const keys = files.map((f) =>
     onchainKey(path.basename(f, '.json'), JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))),

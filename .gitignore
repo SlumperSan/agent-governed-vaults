@@ -29,3 +29,26 @@ skills-lock.json
 # Local pre-merge gate result (scripts/gate.mjs). Describes THIS machine last run,
 # not a property of the branch, so it is never committed.
 .gate-state.json
+
+# ── Secrets: patterns this file did NOT cover, checked with `git check-ignore` ──
+# `.env` alone matches only that exact name, so `.env.local` and `.env.production`
+# were tracked. `.env.example` is the committed template and is re-included below.
+**/.env*
+!.env.example
+!**/.env.example
+
+# Key material. This repository broadcasts transactions; a deployer key reaching a
+# commit is unrecoverable, because a pushed secret is a leaked secret even after a
+# revert. None of these were covered before.
+**/keys/
+**/key.json
+**/deployer-key.json
+**/*keystore*.json
+*.pem
+*.p12
+
+# The harness's own worktree isolation writes here, INSIDE the repository. CLAUDE.md
+# tells agents never to use it precisely because the filesystem-walking guards read it
+# and turn red for reasons unrelated to the change under test. Ignored so a stray one
+# cannot be committed either.
+.claude/worktrees/

@@ -8,11 +8,11 @@
 > Base-mainnet-settlement paid-snapshot rail it documents (`apps/site-next/functions/api/vaults.js`,
 > `apps/site-next/functions/.well-known/x402.js`, and their supporting `_price.js`/`_snapshot.json`)
 > was **removed on 2026-09-15** because it duplicated and conflicted with `apps/api`'s own x402 rail:
-> it settled payment in USDC on Base mainnet (chain 8453) while the data it sold described
-> Robinhood Chain (4663), and the current direction is Robinhood Chain as the only externally
-> marketed live chain, with `apps/api` as the one canonical paid API
-> (see [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294), which re-enables
-> x402 metering on chain 4663 for `apps/api`, and [PR #295](https://github.com/SlumperSan/agent-governed-vaults/pull/295),
+> it settled payment in USDC on Base mainnet (chain 8453) while the data it sold described the
+> mainnet chain the protocol was deployed to at the time, since abandoned. The current direction is
+> Arc-only, with `apps/api` as the one canonical paid API
+> (see [PR #294](https://github.com/SlumperSan/agent-governed-vaults/pull/294), which re-enabled
+> x402 metering for `apps/api` on that since-abandoned deployment, and [PR #295](https://github.com/SlumperSan/agent-governed-vaults/pull/295),
 > which first flagged this conflict in the README's Production Map).
 >
 > Revenue plans and the metered-read runbook now live solely in `apps/api`'s own docs
@@ -40,20 +40,21 @@ ever been taken and revenue to date is $0.00**: a 402 is the gate refusing, and 
 settlement.
 
 > **The owner resolved this by removing the endpoint (PR #298).** The plan below settles payment in
-> USDC on Base mainnet (8453) while the data it sells describes Robinhood Chain (4663). `apps/api`
-> is the one paid API going forward, and it meters on chain 4663. See the Production Map in
-> `README.md`.
+> USDC on Base mainnet (8453) while the data it sells describes a different chain than the payment
+> settles on. `apps/api` is the one paid API going forward. See the Production Map in `README.md`
+> for what chain it currently serves — the protocol itself is built for Arc and not yet deployed
+> there.
 
 ---
 
 ## 1. What is being sold
 
-`GET /api/vaults` on `rwally.com` returns creation-time facts for every Agent-Governed Vault on
-Robinhood Chain mainnet (4663): address, creator, creation block and time, minimum deposit,
-capacity cap, runtime codesize. Two vaults today.
+`GET /api/vaults` on `rwally.com` returned creation-time facts for every Agent-Governed Vault on the
+mainnet chain the protocol was deployed to at the time (since abandoned, and holding nothing today):
+address, creator, creation block and time, minimum deposit, capacity cap, runtime codesize.
 
-**The data chain and the payment chain are different, deliberately.** The data describes chain 4663.
-Payment settles in USDC on **Base mainnet** (8453). x402 metering is an API concern that touches no
+**The data chain and the payment chain were different, deliberately.** The data described that
+mainnet deployment's chain. Payment settled in USDC on **Base mainnet** (8453). x402 metering is an API concern that touches no
 contract on either chain — `contracts/config/base-mainnet.json`'s `x402.unaffectedNote` records that
 no Solidity in this repository reads the switch.
 
@@ -62,8 +63,9 @@ no Solidity in this repository reads the switch.
 block, and a pinned file carrying them would be wrong within minutes while still looking
 authoritative. Both properties were enforced by `apps/site-next/test/x402-edge.test.mjs` — it failed
 if a balance-shaped field ever appeared in the snapshot, and failed if any vault field drifted from
-`contracts/config/deployments/robinhood-mainnet.json`. PR #298 deleted that file along with the
-route, so nothing in this repository enforces either property any more.
+the deployment record it was pinned to (since deleted along with the deployment it described).
+PR #298 deleted the test file along with the route, so nothing in this repository enforces either
+property any more.
 
 Serving live balances means a chain read per request at the edge. That is the honest next step and
 it is **not** what ships today.

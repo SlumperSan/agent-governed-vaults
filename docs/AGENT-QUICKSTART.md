@@ -6,8 +6,11 @@ exit) is here or one link away. The contracts are the whole integration surface;
 to request and no gateway between an agent and a vault.
 
 - **On-chain ABIs:** `contracts/out/*/*.json` after `forge build`
-- **Chain configuration:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json);
-  assets, feeds, sane-price bands and the settlement token
+- **Chain configuration:** the protocol is built for Arc but has no live chain configuration yet —
+  [`docs/evidence/arc-mainnet-survey.json`](../docs/evidence/arc-mainnet-survey.json) is a read-only
+  survey of Arc (assets, feeds, sane-price bands and the settlement token), not a deployable config;
+  see [`docs/evidence/arc-deploy-runbook.md`](../docs/evidence/arc-deploy-runbook.md) for what remains
+  before one exists
 - **Machine index:** [`/llms.txt`](../llms.txt)
 
 ## 1. Act on-chain
@@ -44,12 +47,14 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   asset** (`ChainlinkOracle`; WETH via ETH/USD, cbBTC via BTC/USD, USDC pinned). If that feed
   breaches its heartbeat or the sane-price band, or (**on Base only**) the sequencer is down or
   inside its post-recovery grace period, `priceWad` reverts and **everything freezes, including
-  exits**, by design, and with **no fallback source**. Predicting a freeze on chain 4663 uses a
-  shorter list: no Chainlink L2 sequencer uptime feed exists for it, so `sequencerUptimeFeed` is
-  `address(0)`, `_requireSequencerUp` returns early and that trigger cannot fire there; and its
-  feeds publish on an 86,400 s heartbeat, exactly `MAX_HEARTBEAT`
-  (`contracts/src/oracle/ChainlinkOracle.sol:98`), so the staleness trigger fires only after a feed
-  has been stopped for more than a day. The oracle is immutable per vault, so check
+  exits**, by design, and with **no fallback source**. Predicting a freeze depends on the chain: a
+  chain with no Chainlink L2 sequencer uptime feed configured has `sequencerUptimeFeed` at
+  `address(0)`, so `_requireSequencerUp` returns early and that trigger cannot fire there — but only
+  once a deploy explicitly exempts that chain id; the deploy script fails closed for any id it has
+  not been told about. Independent of that, every feed has a per-asset heartbeat capped by
+  `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), and the staleness trigger fires
+  only after a feed has gone stale past whichever heartbeat the deploy actually configures. The
+  oracle is immutable per vault, so check
   `VaultCore.oracle()` against the blessed set before you deposit and don't strand funds in a vault
   whose feeds you don't trust. Un-activated (observation-window) deposits stay reclaimable during a
   freeze via `cancelPending`, which reads no oracle.

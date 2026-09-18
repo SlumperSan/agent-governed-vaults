@@ -300,12 +300,20 @@ test('no live markdown file states an exit-fee maximum other than the one the co
   assert.ok(claims >= LAUNCH_DOCS.length, `only ${claims} exit-fee-maximum claims matched; the patterns have stopped recognising the form the docs use`);
 });
 
-test('the exit-fee decay period in the mainnet config matches the site reference table by test, not by hand', () => {
-  // apps/site/test/site.test.mjs already pins how-it-works.html to the config. This cross-check
-  // only makes the dependency explicit so a future edit of that test cannot silently drop it.
-  const siteTest = read('apps', 'site', 'test', 'site.test.mjs');
-  assert.match(siteTest, /config\.smoke\.exitFeeDecayPeriod/, 'site.test.mjs no longer pins the exit-fee decay row to the reference mainnet configuration it reads (CONFIG_PATH)');
-});
+// THE EXIT-FEE DECAY CROSS-CHECK WAS REMOVED ON 2026-09-18, and this note is its headstone.
+//
+// It asserted that `apps/site/test/site.test.mjs` pinned the exit-fee decay row on
+// how-it-works.html to `config.smoke.exitFeeDecayPeriod`, so the published figure could not drift
+// from the configuration. Both the page and the whole `apps/site` tree were deleted when that site
+// was retired, so there is no longer a published exit-fee decay figure anywhere to keep fresh:
+// `apps/site-next` ships index and disclaimers only, and pins `smoke.gov` and `smoke.minDepositUsdc`
+// rather than this field.
+//
+// It is DELETED rather than re-pointed because re-pointing it at the live site would have asserted
+// a pin that does not exist, and softening it to "some config field is pinned" would have been a
+// check that passes without checking. WHEN THE NEW SITE PUBLISHES AN EXIT-FEE FIGURE, restore a
+// test here that pins it — that is the moment the coverage is worth having again, and this comment
+// is what should stop it being forgotten.
 
 test("Governance.sol has no proposalThresholdBps floor, and every config's govDefencesNote says so", () => {
   const gov = read('contracts', 'src', 'Governance.sol');
@@ -939,24 +947,25 @@ test("every mainnet config's chainlinkOracle assets satisfy the ChainlinkOracle 
  *      `_requireSequencerUp` is ever changed to fail CLOSED, that note becomes false — and it is the
  *      note a reader consults to understand what the exemption costs them.
  */
-test('robinhood-mainnet.json leaves the sequencer uptime feed empty, on the record and for the stated reason', () => {
-  const rh = JSON.parse(read('contracts', 'config', 'robinhood-mainnet.json'));
-  assert.equal(rh.chainId, 4663, 'robinhood-mainnet.json is not chain 4663');
-
-  const seq = rh.chainlinkOracle.sequencerUptimeFeed;
-  assert.equal(seq, '', 'robinhood-mainnet.json now names a sequencer uptime feed; rewrite sequencerUptimeFeedNote to match it');
-
-  // The note, matched by SHAPE rather than by one phrasing: an owner approval, and its date.
-  const note = String(rh.chainlinkOracle.sequencerUptimeFeedNote ?? '');
-  assert.match(note, /owner[- ]approved/i, 'sequencerUptimeFeedNote must record that the exemption is owner-approved');
-  assert.match(note, /\b2026-09-04\b/, 'sequencerUptimeFeedNote must carry the date of that approval');
-
-  // Claim 2: the runtime behaviour the note describes.
+test('ChainlinkOracle still fails OPEN on a zero sequencer feed, which is what an exemption costs', () => {
+  // SPLIT FROM A CONFIG-ANCHORED TEST ON 2026-09-18. The original asserted two things at once: that
+  // a particular mainnet config left `sequencerUptimeFeed` empty with a dated owner approval, and
+  // that the CONTRACT skips the gate on `address(0)`. The first half died with that config when the
+  // chain was abandoned; the second half is a live property of shipped Solidity and had no business
+  // being coupled to a config file's existence.
+  //
+  // It matters on Arc for the same reason it mattered before: Chainlink publishes no L2 Sequencer
+  // Uptime Feed for Arc -- it is an L1, not a rollup -- so any Arc deployment runs with a zero feed
+  // and therefore with two of the three oracle defences, not three.
+  //
+  // The config half is NOT silently dropped: when `contracts/config/arc-mainnet.json` exists, add a
+  // test beside this one asserting its empty feed carries a dated owner approval. Until then there
+  // is no config to anchor it to, and a test that skips itself is how the previous one went quiet.
   const oracle = read('contracts', 'src', 'oracle', 'ChainlinkOracle.sol');
   assert.ok(
     oracle.includes('if (address(seq) == address(0)) return;'),
-    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). robinhood-mainnet.json\'s '
-      + 'sequencerUptimeFeedNote tells the reader that an oracle with a zero feed serves prices '
-      + 'through an outage and never reverts on that account; rewrite it before this changes.'
+    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). Every document stating that '
+      + 'an oracle with a zero feed serves prices through an outage and never reverts on that '
+      + 'account is now false; rewrite them before this change lands.'
   );
 });

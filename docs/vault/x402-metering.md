@@ -56,11 +56,10 @@ chain from `contracts/config/<chain>.json` (`x402.enabled`, resolved by
 `packages/chain-config/src/x402.mjs` off the API's `CHAIN_ID`); an absent block means enabled, so
 `base-mainnet.json` and every caller that passes no chain id are unaffected.
 
-**No chain configured in this repository sets it false today.** Chain 4663 (Robinhood Chain) did,
-on the owner's decision of 2026-09-05, until the owner reversed that on 2026-09-15 and
-`robinhood-mainnet.json` went back to `enabled: true`. Nothing was deleted to switch it off and
-nothing was restored to switch it back on: the gate, the facilitator, the SDK loop and the agent
-budget were untouched throughout, and the reversal was one config value.
+**No chain configured in this repository sets it false today.** The mechanism has been exercised
+before, on a chain config since deleted: toggling `x402.enabled` is a one-line change that touches
+nothing else — the gate, the facilitator, the SDK loop and the agent budget are all untouched by it,
+in either direction.
 
 The off branch is still reachable and still worth knowing. On a chain that declares `false` the
 "Paid" routes above are served with no 402, no challenge and no payment headers, and the token

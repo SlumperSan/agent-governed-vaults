@@ -1,11 +1,10 @@
 # Current State
 
 What is true right now. The **Base mainnet** launch verdict is **NO-GO** (but no longer for
-security reasons). Since 2026-09-05 the protocol is deployed on **Robinhood Chain
-mainnet (chain 4663)**, on the owner's decision of 2026-09-04 and without that board's soak and
-canary gates. Two vaults exist on it and both hold real money:
-`0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (`idleUsdc` 20000000 at block 61,646,791) and
-`0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash).
+security reasons). The protocol is built for Arc (chain id 5042, where USDC is both the
+settlement token and the native gas asset) but is not deployed there, on Base mainnet, or on any
+other mainnet. A prior mainnet deployment on a since-abandoned chain was fully exited on
+2026-09-18 and holds nothing.
 
 > **⚠ This note goes stale by design.** The computed, live state comes from `npm run cc` and
 > [docs/NOW.md](../NOW.md); the argued go/no-go board is
@@ -19,12 +18,6 @@ canary gates. Two vaults exist on it and both hold real money:
 This protocol is immutable at deployment, so "ship" is a one-way door. This note is the single place
 to read the current posture without reconstructing it from PRs and audit prose. If a row here says
 NO-GO, real money should not go in.
-
-**And a contradiction that is stated rather than smoothed away:** on 2026-09-04 the owner decided
-to deploy to Robinhood Chain mainnet and to fund it, while the board this note mirrors said
-NO-GO. That verdict is about the Base mainnet launch and was not applied to chain 4663. But the
-sentence above is advice, not a jurisdictional claim, and the deployment went against it. A reader
-should know that and should not be left to reconcile the two from a date stamp.
 
 ## Base mainnet launch verdict: NO-GO, on operational gates only
 
@@ -41,8 +34,8 @@ Every **security** gate is cleared ([[launch-readiness-gates]]):
   and the gate reads *findings remediated*, not *no criticals*. **Do not describe this protocol as
   "audited" without that qualifier.**
 - **Gate 5: mainnet oracle stack (GO with a named residual)**, earned against BASE feeds and the
-  Base L2 sequencer uptime feed. It says nothing about chain 4663, which has no sequencer uptime
-  feed and runs its feeds at the 86,400 s `MAX_HEARTBEAT` ceiling. See below.
+  Base L2 sequencer uptime feed. It says nothing about Arc, which has no Chainlink L2 sequencer
+  uptime feed either (it is an L1, not a rollup) and has no heartbeat chosen yet. See below.
 
 What still blocks GO is operational, not more code: the operational gates **3/6** (soak, canary),
 gate 2 (testnet full lifecycle) is GO since 2026-09-03, which [[launch-readiness-gates]] and
@@ -66,9 +59,8 @@ Chainlink answer; there is no second source to cross-check against. A feed depre
 fails that asset **CLOSED with no fallback**: every NAV path in a vault holding it, exits included,
 reverts until the feed recovers. A vault's oracle is `immutable` and the factory allowlist gates
 *creation* only, so there is **no rotation lever** (residual 12, "curation immobility"). The
-sequencer guard has never run against a real uptime feed outside the fork tests. The Robinhood
-Chain mainnet deployment did not change that, because Chainlink publishes no uptime feed for chain
-4663 to wire.
+sequencer guard has never run against a real uptime feed outside the fork tests, and no mainnet
+deployment exists yet to change that.
 
 The retired stack (`OracleAggregator.sol`, `PythSource.sol`, `UniswapV3TwapSource.sol` and the
 vendored `FullMath`/`TickMath`) now lives under **`contracts/test/retired/`**, kept solely as the
@@ -76,19 +68,10 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 
 ## Deployment state
 
-- **Deployed on Robinhood Chain mainnet (chain 4663) on 2026-09-05**: record
-  at `contracts/config/deployments/robinhood-mainnet.json`, `VaultFactory`
-  `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp). The singletons are
-  deployed and wired, and **two vaults now hold real funds there**:
-  `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974, with
-  `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10) holding `idleUsdc` 20000000 at block 61,646,791 and
-  `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12) holding 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash
-  after proposal 3 traded its USDG. Both were created by
-  the deployer EOA rather than by the creator Safe
-  `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, against the record's own `intendedCreator`, and
-  `creator` is immutable so it cannot be corrected on these two.
-  **No Base mainnet deployment exists.** This line previously read
-  "testnet only; nothing has ever been broadcast to mainnet", which one transaction falsified.
+- **No mainnet deployment exists today.** A deployment on a since-abandoned chain existed from
+  2026-09-05; both vaults it held were fully exited on 2026-09-18 and hold nothing. **No Base
+  mainnet deployment exists**, and none exists on Arc either — the protocol is built for Arc but
+  has not been deployed there.
 - **Deployed on Base Sepolia** (a testnet trial, no real value at stake).
   **The committed address book now IS the current deployment**, as of 2026-09-03.
   `contracts/config/deployments/base-sepolia.json` records `sourceCommit 8a0e1155`, deploy block

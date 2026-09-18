@@ -95,25 +95,13 @@ The adapter warning that used to sit here is retired. The live adapter is
 the #108 scoped refund, established by ancestry against `8a0e1155`, not asserted. The earlier
 adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft path, is superseded.
 
-**No Base mainnet deployment exists.** A Robinhood Chain mainnet deployment (chain 4663) does, made
-on 2026-09-05 and recorded at `contracts/config/deployments/robinhood-mainnet.json`. It was not
-audited as a deployment, and **it now holds real funds**: `verifiedWiring["factory.vaultCount()"]`
-reads 2 at block 61,513,974, with `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holding `idleUsdc`
-20000000 (20 USDG) and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holding `assetBalance`
-1980483895862031 wei of WETH — a priced position rather than cash — both read at block 61,646,791.
-The WETH figure is the integer the chain returns; surfaces that render it as 0.001980484 are
-rounding it, and every one of these balances moves on the next deposit, exit or rebalance, which is
-why the block is stated rather than the reading being offered as current. This sentence said the deployment held
-no member funds until 2026-09-12; that was true when written and false from 2026-09-10. A reviewer
-should also read `creatorDeviationNote` in that record: both vaults were created by the deployer
-EOA rather than by the creator Safe the record specified, and `creator` is immutable, so that
-identity cannot be rotated on either. What is live
-there is the seven contracts and their wiring, and a reviewer should read the record's
-`bytecodeCurrency` block, which establishes byte-for-byte that all seven are what `sourceCommit`
-`b1cde122` builds. The audit surface is the source at the tag
-above. Treat every
-testnet instance as evidence about the bytecode it actually ran, and check which commit that was
-before relying on it.
+**No mainnet deployment exists.** The protocol is built for Arc (chain id 5042, where USDC is both
+the settlement token and the native gas asset), not yet deployed there or on Base mainnet or any
+other mainnet. `docs/evidence/arc-mainnet-survey.json` records what has been read off Arc so far —
+the chain binding, the USDC predeploy, and four Chainlink feeds — and is explicitly a survey, not a
+deployable config: the Uniswap router and the basket asset addresses are still unresolved. The audit
+surface is the source at the tag above. Treat every testnet instance as evidence about the bytecode
+it actually ran, and check which commit that was before relying on it.
 
 > **Reviewers start at [audit/README.md](audit/README.md)**, the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs
