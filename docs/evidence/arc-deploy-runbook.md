@@ -12,13 +12,14 @@ Two facts, and the second is the one that stops work:
 1. **`docs/SWARM.md` §10 puts this out of an agent's hands.** Anything needing a private key, a
    funded account or `--broadcast` escalates to the owner. That is why the commands below are for
    you to run.
-2. **The configuration is incomplete, so there is nothing to run them against yet.** The Arc survey
-   (`docs/evidence/arc-mainnet-survey.json`) resolved the chain binding, the settlement token and
-   four Chainlink feeds. It did **not** resolve the Uniswap v3 router or the basket asset
-   addresses. `ChainlinkOracle`'s constructor takes `(asset, feed)` pairs and `VaultCore` takes a
-   basket of asset addresses; `Deploy.s.sol` needs a router. Those are missing.
+2. **The basket has no agreed shape, and that is a decision rather than a lookup.** The Arc survey
+   (`docs/evidence/arc-mainnet-survey.json`) resolved the chain binding, the settlement token, four
+   Chainlink feeds, the Uniswap v3 router and the one basket-eligible asset Arc has. What it cannot
+   resolve is what the basket should *be*: **Arc has a BTC leg and no ETH leg**, so the two-asset
+   design does not port, and `docs/SWARM.md` §10 puts launch parameters with the owner.
 
-So this runbook has a prerequisite section that is real work, not a formality.
+So §§1-2 below are results to read, not work to do. §§3-5 are still real work, and all of them wait
+on the basket decision.
 
 ## Why Arc testnet is not the dry run
 
@@ -39,41 +40,65 @@ up against mock feeds and a mock router, which demonstrates that the bytecode is
 nothing whatever about oracle or execution behaviour. Base Sepolia remains the functional testbed;
 its ten-phase lifecycle evidence is already committed.
 
-## Prerequisites — the unresolved half
+## Prerequisites — what is settled, and what is not
 
-### 1. Resolve the Uniswap v3 SwapRouter02 on chain 5042
+Sections 1 and 2 were open questions when this runbook was written. Both were answered on
+2026-09-18 by direct RPC on chain 5042, cross-checked on four endpoints. They are recorded here as
+results rather than as steps, because re-deriving them costs a session and one of them already did.
 
-Uniswap's own announcement says v2, v3, v4 and UniswapX are live on Arc. The UniswapX playbook for
-chain 5042 truncates the two addresses that matter (`0xf0db…3918` for the v3 factory, `0x53bf…6f77`
-for SwapRouter02), and a truncated address is not an address.
+### 1. Uniswap v3 SwapRouter02 — RESOLVED
+
+| | |
+|---|---|
+| SwapRouter02 | `0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77` |
+| v3Factory | `0xf0db7b58379503491d857db50ac9ece64c653918` |
+| NonfungiblePositionManager | `0x39654a85a4c05127f5fd6ed22caec077a0fb1377` |
+
+`router.factory()` resolves to the factory above, and both allow-listed selectors are present in the
+router runtime: `0x04e45aaf` (`exactInputSingle`) and `0xb858183f` (`exactInput`).
 
 **Do not take the canonical cross-chain addresses.** Both were read on 5042 and neither is Uniswap:
 `0x1F98431c8aD98523631AE4a59f267346ea31F984` and `0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45` each
 carry 2,747 bytes and return empty for `owner()`, `getPool()`, `factory()` and `WETH9()`. Neither is
 a proxy. This is the same address-squatting hazard `robinhood-mainnet.json` had to verify around.
 
-Once you have a candidate, confirm it before use:
-
-```bash
-cast code <router> --rpc-url https://rpc.mainnet.arc.io | wc -c
-```
-
-Then check it self-identifies — `factory()` must return a factory whose `getPool` resolves the pools
-you intend to trade — and confirm both allow-listed selectors appear in its runtime: `0x04e45aaf`
-(`exactInputSingle`) and `0xb858183f` (`exactInput`).
+Still read `allowedSelector(bytes4)` back off the deployed adapter before a deploy — the addresses
+being right does not mean the adapter was configured with them.
 
 Note that **Uniswap v4 is not a substitute**. `AggregationRouterAdapter` and `UniswapV3Adapter` both
 target a v3-shaped router, not a v4 PoolManager singleton, so the confirmed PoolManager at
 `0x8366a39cc670b4001a1121b8f6a443a643e40951` cannot be pointed at directly.
 
-### 2. Resolve the basket asset addresses
+### 2. Basket assets — ANSWERED, and the answer is not two assets
 
-Chainlink publishes ETH/USD, BTC/USD and CBBTC/USD on Arc, which is good evidence those assets
-trade there — but a feed is not a token address. **Arc has no wrapped-native token**: the native
-asset is USDC, so the 4663 basket of WETH + cbBTC does not port by address or by name, and `0x0` as
-a Uniswap v4 currency on Arc means native USDC, not native ETH.
+**Arc has a BTC leg and no ETH leg.** cirBTC is `0x171a4217b86a807a64eb94757db6849fb4bdbaa0`,
+8 decimals, Circle FiatToken stack, $7.40M USDC against 73.38 BTC in a single pool, with AMM spot
+within 0.20% of the Chainlink feed.
 
-Resolve each token by reading the chain, then record `symbol()`, `decimals()` and code size.
+**There is no ETH representation on Arc in any form.** A complete `PoolCreated` scan of the real
+factory — 26,286 pools, 26,187 tokens, zero window errors — read all 52 ETH-or-BTC-family symbols
+and found 51 of them to be 18-decimal squatters worth under $452. Circle's whole Arc token set,
+enumerated from `MinterConfigured` and `MasterMinterChanged` across all history, is USDC, EURC,
+cirBTC, USYC, MXNB, TRYB and three unnamed contracts. There is no cirETH.
+
+Arc publishes an ETH/USD feed that prices nothing on this chain. **A published feed is evidence
+about Chainlink's coverage, not evidence that an asset trades here** — that inference is the one
+this runbook's earlier draft made, and it was wrong.
+
+So the 4663 basket of WETH + cbBTC does not port, and this is no longer a lookup:
+
+> **The basket shape is an owner decision.** Single-asset cirBTC; cirBTC plus a thin second leg from
+> Arc's remaining Circle tokens, none of which is a crypto index constituent; or not launching the
+> index on Arc yet. `docs/SWARM.md` §10 puts launch parameters on the escalate list.
+
+**One trap to carry into the config.** Chainlink publishes `cirBTC Reserves` at
+`0xEB0884a871ea1f6483B5FC10fd3D7dC5806411fc` — a proof-of-reserve feed structurally identical to a
+price feed (9,571 bytes, 8 decimals, version 6, fresh positive answer) reporting 786.98 where
+CBBTC/USD reports 81,110.58. It is the only Arc feed whose description contains the basket asset's
+ticker, so it sorts first when the feed list is searched. `ChainlinkOracle._requireUsdQuote` rejects
+it, and that was mutation-tested eight ways: change **only** the description to `cirBTC / USD` and
+the identical feed is accepted. The description check is what saves this; the band is not. Populate
+`feedDescriptionOnChain` the way `base-mainnet.json` does.
 
 ### 3. Choose the sane-price band and the heartbeat
 
@@ -83,8 +108,8 @@ within `MAX_BAND_RATIO`) and `feedDecimals` per asset.
 On the heartbeat, read `heartbeatNote` in the survey before choosing. The short version: a single
 sample showed the feeds 0.15 h old, which invites a tight bound, and eleven rounds of history show
 gaps reaching 14,286 s on CBBTC/USD and 16,956 s on BTC/USD. Anything below roughly six hours is
-breachable by a feed behaving exactly to spec, and eleven rounds is a small sample on a chain days
-old. `ChainlinkOracle.MAX_HEARTBEAT` is 86,400 s.
+breachable by a feed behaving exactly to spec, and eleven rounds is a small sample. Arc's genesis is
+2026-05-12, so four months of history exist to widen the window with. `ChainlinkOracle.MAX_HEARTBEAT` is 86,400 s.
 
 ### 4. Widen the sequencer-feed refusal
 
