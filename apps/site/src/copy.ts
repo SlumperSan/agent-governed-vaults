@@ -18,6 +18,15 @@
  *   - The operator's lack of power is ENUMERATED, never a blanket negative — the operator IS the
  *     sole recipient of the performance fee, so a wide claim is falsifiable in one transaction.
  *   - "Stake-weighted" is only true at five or more members, so it is not used here.
+ *   - EXITS CANNOT BE VETOED, AND THEY CAN BE DELAYED. Never write that an exit is unconditional,
+ *     instant, or that nothing can queue it. `VaultCore.sol:538` names the case in its own NatSpec:
+ *     "Mode F — a pending execution exists => queued, settles at post-execution NAV", triggered from
+ *     the reveal phase, so a proposal that is ultimately DEFEATED still queued every exit requested
+ *     while it was live. A stale feed freezes exits too, and that freeze lifts only when the feed
+ *     recovers. Settlement after a defeat is not automatic — `settleQueuedExit` has to be called,
+ *     by anyone. The true reassurance is that nobody can REFUSE an exit; say that instead.
+ *     `disclaimers-copy.ts` has stated all of this correctly throughout — the homepage said the
+ *     opposite until 2026-09-18, so the site carried a claim and its refutation at the same time.
  */
 
 export const HOME = {
@@ -69,10 +78,11 @@ export const HOME = {
       },
       {
         n: '03',
-        title: 'Leave whenever',
+        title: 'Ask to leave any time',
         body:
-          'Withdraw your share any time. No queue, no approval, nobody can block it — not the ' +
-          'operator, not a pending vote.',
+          'Nobody can refuse you — not the operator, not the other members. You are paid in ' +
+          'kind: a slice of everything the vault holds. If a vote is live your exit queues and ' +
+          'settles after it, at the price that follows.',
       },
     ],
   },
@@ -86,7 +96,7 @@ export const HOME = {
       'member funds.',
     points: [
       { t: 'No admin key', d: 'No owner, no proxy, no upgrade path, no pause switch. Once deployed, nobody can change the rules.' },
-      { t: 'No blocked exits', d: 'Withdrawing is unconditional. It cannot be queued, gated or vetoed.' },
+      { t: 'No vetoed exits', d: 'Nobody can refuse, gate or veto your exit. It can be delayed — a live vote queues it, a stale feed freezes it — but a delay is a rule anyone can read, not a decision someone makes about you.' },
       { t: 'No silent trades', d: 'Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
       { t: 'No guessing on price', d: 'If a price feed goes stale the vault freezes rather than trading on bad data. That includes exits.' },
     ],
