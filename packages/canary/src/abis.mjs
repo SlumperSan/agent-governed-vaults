@@ -50,6 +50,11 @@ export const VAULT_VIEWS = Object.freeze([
   view('childVaultCount', [], ['uint256']),
   view('childVaults', ['uint256'], ['address']),
   view('sharesOf', ['address'], ['uint256']),
+  // The other two halves of a member's position. Both are PUBLIC mappings on VaultCore and neither
+  // is ever emitted — `ExitQueued` carries the share count but no running total, and cost basis has
+  // no event at all — so a projection cannot carry them and only a chain read can.
+  view('queuedExitShares', ['address'], ['uint256']),
+  view('costBasisUsdc', ['address'], ['uint256']),
   view('totalPendingUsdc', [], ['uint256']),
   // The vault's immutable governance module — how `governance-watch` finds the Governance
   // contract without a second env var, exactly the way `oracle` locates the oracle.
