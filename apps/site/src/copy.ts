@@ -34,8 +34,8 @@ export const HOME = {
     eyebrow: 'Built for Arc',
     headline: 'Index funds that argue for themselves.',
     sub:
-      'An AI picks the basket. You and the other members vote on it. Nothing moves until the vote ' +
-      'passes — and every decision stays on-chain where anyone can check it.',
+      'An AI picks the basket. You and the other members vote on it. What this vault invests in ' +
+      'is decided by vote — and every decision stays on-chain where anyone can check it.',
     primary: { label: 'Open the app', kind: 'app' },
     secondary: { label: 'How it works', href: '/how-it-works.html' },
   },
@@ -73,8 +73,8 @@ export const HOME = {
         n: '02',
         title: 'Vote on every trade',
         body:
-          'The operator proposes a basket. You vote in secret, then reveal. Nothing trades until ' +
-          'enough members say yes.',
+          'The operator proposes a basket. You vote in secret, then reveal. The vault does not ' +
+          'buy or sell into that basket until enough members say yes.',
       },
       {
         n: '03',
@@ -97,7 +97,7 @@ export const HOME = {
     points: [
       { t: 'No admin key', d: 'No owner, no proxy, no upgrade path, no pause switch. Once deployed, nobody can change the rules.' },
       { t: 'No vetoed exits', d: 'Nobody can refuse, gate or veto your exit. It can be delayed — a live vote queues it, a stale feed freezes it — but a delay is a rule anyone can read, not a decision someone makes about you.' },
-      { t: 'No silent trades', d: 'Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
+      { t: 'Every trade is on the record', d: 'Every trade is recorded on-chain, with the proposal and the votes that authorised it where there was one. Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
       { t: 'No guessing on price', d: 'If a price feed goes stale the vault freezes rather than trading on bad data. That includes exits.' },
     ],
   },
