@@ -101,6 +101,99 @@ const PAGE = `<!doctype html>
   a{color:var(--accent)}
   .muted{color:var(--dim)}
   @media (prefers-reduced-motion:no-preference){ .tick{transition:opacity .2s} }
+
+  /* --- board. One row of columns per department, so "who is on what" is answered by position. */
+  .dept{margin:0 0 18px}
+  .dept:last-child{margin-bottom:0}
+  .dh{font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;
+      padding:0 0 7px;border-bottom:1px solid var(--line);margin-bottom:9px;
+      display:flex;align-items:center;gap:10px}
+  .dh .muted{font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px}
+  .dh .cnt{font-family:var(--mono);font-weight:400;font-size:11.5px;color:var(--dim);
+           text-transform:none;letter-spacing:0}
+  .bar{flex:1;max-width:190px;height:4px;background:var(--line);border-radius:999px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--go);border-radius:999px}
+  /* In the section heading, where h2 is uppercase and letter-spaced. */
+  .bar.hd{display:inline-block;vertical-align:middle;width:120px;max-width:120px;margin-left:8px}
+
+  /* --- checklist. Struck-through when done, so progress reads without counting. */
+  .list{margin-bottom:8px}
+  .li{display:flex;align-items:baseline;gap:8px;padding:3.5px 0;font-size:13px;min-width:0}
+  .mk{font-family:var(--mono);width:1em;flex:none;text-align:center}
+  .lt{min-width:0;overflow-wrap:anywhere}
+  .s-done{color:var(--dim)}
+  .s-done .lt{text-decoration:line-through}
+  .s-done .mk{color:var(--go)}
+  .s-doing .mk{color:var(--accent)}
+  .s-doing .lt{font-weight:600}
+  .s-review .mk{color:var(--warn)}
+  .s-blocked .mk{color:var(--nogo)}
+  .s-blocked .lt{color:var(--nogo)}
+  .s-backlog .mk{color:var(--dim)}
+  .li[data-id],.card[data-id]{cursor:pointer;border-radius:5px}
+  .li[data-id]:hover,.card[data-id]:hover{background:var(--bg);outline:1px solid var(--line)}
+  .card[data-id]:hover{background:var(--panel);outline-color:var(--accent)}
+  .li[data-id]:focus-visible,.card[data-id]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .lb{font-size:10px;padding:1px 7px;border-radius:999px;background:var(--bg);
+      border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .lb.p{border-color:currentColor;color:var(--warn)}
+  .ck,.due{font-family:var(--mono);font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .due.late{color:var(--nogo)}
+  .more{margin-top:2px}
+
+  /* --- task drawer */
+  #scrim{position:fixed;inset:0;background:#0009;z-index:9}
+  #drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);z-index:10;
+          background:var(--panel);border-left:1px solid var(--line);
+          padding:18px 20px 40px;overflow-y:auto}
+  #dclose{position:absolute;top:12px;right:14px;background:none;border:0;color:var(--dim);
+          font-size:15px;cursor:pointer;padding:4px 8px;border-radius:5px}
+  #dclose:hover{background:var(--bg);color:var(--ink)}
+  .dstate{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:650}
+  .dstate.s-doing{color:var(--accent)} .dstate.s-blocked{color:var(--nogo)}
+  .dstate.s-review{color:var(--warn)} .dstate.s-done{color:var(--go)}
+  .dstate.s-backlog{color:var(--dim)}
+  .dtitle{font-size:18px;margin:6px 40px 10px 0;line-height:1.3;font-weight:650}
+  .dchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+  .drow{display:flex;gap:12px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .dk{color:var(--dim);width:92px;flex:none}
+  .dv{min-width:0;overflow-wrap:anywhere}
+  .dsec{margin-top:18px}
+  .dh2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+       margin-bottom:8px;display:flex;align-items:center;gap:9px}
+  .ddesc{font-size:12.5px;line-height:1.55;white-space:pre-wrap;color:var(--ink)}
+  .dfile{font-family:var(--mono);font-size:11px;color:var(--dim);overflow-wrap:anywhere}
+  .more summary{cursor:pointer;color:var(--dim);font-size:11px;text-transform:uppercase;
+                letter-spacing:.07em;padding:3px 0}
+  .more[open] summary{margin-bottom:7px}
+  .cols{display:grid;gap:9px;grid-template-columns:repeat(5,1fr)}
+  @media(max-width:1100px){ .cols{grid-template-columns:repeat(2,1fr)} }
+  @media(max-width:620px){ .cols{grid-template-columns:1fr} }
+  .col{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;min-width:0}
+  .clh{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
+       margin-bottom:7px;display:flex;justify-content:space-between;gap:6px}
+  .clh .n{font-family:var(--mono)}
+  /* The column carries the state colour, so a full Blocked column is visible without reading it. */
+  .c-doing .clh{color:var(--accent)}
+  .c-blocked .clh{color:var(--nogo)}
+  .c-review .clh{color:var(--warn)}
+  .c-done .clh{color:var(--go)}
+  .card{background:var(--panel);border:1px solid var(--line);border-left-width:3px;
+        border-radius:6px;padding:7px 9px;margin-bottom:7px}
+  .card:last-child{margin-bottom:0}
+  .p-high{border-left-color:var(--nogo)}
+  .p-med{border-left-color:var(--warn)}
+  .p-low{border-left-color:var(--line)}
+  .p-none{border-left-color:var(--line)}
+  .ct{font-size:12.5px;line-height:1.35}
+  .cm{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .who{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:999px;
+       background:var(--bg);border:1px solid var(--line);color:var(--ink)}
+  .who.none{color:var(--dim);font-style:italic}
+  .blk{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:999px;
+       border:1px solid currentColor;color:var(--nogo)}
+  .cn{color:var(--dim);font-size:11.5px;margin-top:5px;line-height:1.4}
+  .empty{color:var(--dim);text-align:center;font-size:12px;padding:5px 0}
 </style>
 </head><body>
 <header>
@@ -109,6 +202,11 @@ const PAGE = `<!doctype html>
   <span class="meta" id="err" class="nogo"></span>
 </header>
 <main id="main"></main>
+<div id="scrim" hidden></div>
+<aside id="drawer" hidden aria-label="Task detail">
+  <button id="dclose" aria-label="Close">✕</button>
+  <div id="dbody"></div>
+</aside>
 <script>
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cls = s => { const u=(s||'').toUpperCase();
@@ -175,6 +273,75 @@ function render(d){
         +'<div class="note">Derived from remote branches not merged into <code>protocol/main</code>, cross-referenced with open PRs. Nothing to keep up to date.</div>'
       : '<div class="note go">Everything is merged.</div>', 'wide'));
 
+  // --- the board
+  if(d.board){
+    const COLS=[['doing','In progress'],['review','In review'],['blocked','Blocked'],['backlog','Backlog'],['done','Done']];
+    const DEPTS=[...new Set(d.board.tasks.map(t=>t.department))].sort();
+    const card = t => '<div class="card p-'+esc(t.priority||'none')+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
+      + '<div class="ct">'+esc(t.title)+'</div>'
+      + '<div class="cm">'
+        + (t.owner?'<span class="who">'+esc(t.owner)+'</span>':'<span class="who none">unassigned</span>')
+        + (t.blockedBy.length?'<span class="blk">blocked by '+esc(t.blockedBy.join(', '))+'</span>':'')
+      + '</div>'
+      + (t.note?'<div class="cn">'+esc(t.note)+'</div>':'')
+      + '</div>';
+
+    // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
+    // finished. Done sinks because a tracker is for the work that is left.
+    const ORDER={doing:0,review:1,blocked:2,backlog:3,done:4};
+    const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○'};
+    const chip = t => { const d=t.checklist.filter(c=>c.done).length;
+      return t.checklist.length? '<span class="ck">☑ '+d+'/'+t.checklist.length+'</span>' : ''; };
+    const dueChip = t => { if(!t.due) return '';
+      const late = Date.parse(t.due) < Date.now();
+      return '<span class="due'+(late?' late':'')+'">◷ '+esc(t.due)+'</span>'; };
+    const labels = t => t.labels.map(l=>'<span class="lb">'+esc(l)+'</span>').join('');
+
+    const line = t => '<div class="li s-'+esc(t.status)+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
+      + '<span class="mk">'+MARK[t.status]+'</span>'
+      + '<span class="lt">'+esc(t.title)+'</span>'
+      + labels(t) + chip(t) + dueChip(t)
+      + (t.status!=='done' && t.owner?'<span class="who">'+esc(t.owner)+'</span>':'')
+      + (t.blockedBy.length?'<span class="blk">needs '+esc(t.blockedBy.join(', '))+'</span>':'')
+      + '</div>';
+
+    let body='';
+    if(d.board.problem) body+='<div class="caveat">'+esc(d.board.problem)+'</div>';
+    if(!d.board.tasks.length){
+      body+='<div class="note">No task files. Add one to <code>Tasks/</code> in the vault.</div>';
+    }
+    for(const dep of DEPTS){
+      const mine=d.board.tasks.filter(t=>t.department===dep);
+      const done=mine.filter(t=>t.status==='done').length;
+      const pct=mine.length? Math.round(done/mine.length*100) : 0;
+      body+='<div class="dept"><div class="dh">'+esc(dep)
+        +' <span class="cnt">'+done+' of '+mine.length+'</span>'
+        +'<span class="bar"><i style="width:'+pct+'%"></i></span></div>';
+
+      // Columns first and always visible — this is the view he asked for.
+      body+='<div class="cols">';
+      for(const [key,label] of COLS){
+        const inCol=mine.filter(t=>t.status===key);
+        body+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
+          + (inCol.length? inCol.map(card).join('') : '<div class="empty">—</div>')
+          +'</div>';
+      }
+      body+='</div>';
+
+      // The flat checklist stays, folded away, for reading the whole department in one column.
+      body+='<details class="more"><summary>as a checklist</summary><div class="list">'
+        + mine.slice().sort((a,b)=>(ORDER[a.status]-ORDER[b.status])||a.title.localeCompare(b.title))
+              .map(line).join('')
+        +'</div></details></div>';
+    }
+    const allDone=d.board.tasks.filter(t=>t.status==='done').length;
+    const allPct=d.board.tasks.length? Math.round(allDone/d.board.tasks.length*100):0;
+    // FIRST on the page, not buried under the repo panels. It is the thing he opens this for; the
+    // tree, gate and launch tables are reference and belong below it.
+    S.unshift(sec('Board · '+allDone+' of '+d.board.tasks.length
+      +' <span class="bar hd"><i style="width:'+allPct+'%"></i></span>', body, 'wide'));
+  }
+
   // --- departments
   if(d.departments.length){
     S.push(sec('Department output (Obsidian vault)',
@@ -210,7 +377,72 @@ function render(d){
 
   document.getElementById('main').innerHTML = S.join('');
   document.getElementById('stamp').textContent = new Date(d.at).toISOString().slice(0,19).replace('T',' ')+'Z';
+
+  // The board refreshes every 5s. Re-render an open drawer from the new data rather than closing
+  // it, or the card you are reading vanishes mid-read every time the poll lands.
+  TASKS = Object.fromEntries((d.board?.tasks||[]).map(t=>[t.id,t]));
+  if(openId){ TASKS[openId] ? drawTask(openId) : closeDrawer(); }
 }
+
+// ---- task drawer -------------------------------------------------------------------------
+let TASKS = {};
+let openId = null;
+const STATE_LABEL = {doing:'In progress',review:'In review',blocked:'Blocked',backlog:'Backlog',done:'Done'};
+
+function drawTask(id){
+  const t = TASKS[id]; if(!t) return;
+  const done = t.checklist.filter(c=>c.done).length;
+  const pct = t.checklist.length ? Math.round(done/t.checklist.length*100) : 0;
+  const meta = (k,v) => v ? '<div class="drow"><span class="dk">'+k+'</span><span class="dv">'+v+'</span></div>' : '';
+  const late = t.due && Date.parse(t.due) < Date.now();
+
+  document.getElementById('dbody').innerHTML =
+    '<div class="dstate s-'+esc(t.status)+'">'+esc(STATE_LABEL[t.status]||t.status)+'</div>'
+    + '<h3 class="dtitle">'+esc(t.title)+'</h3>'
+    + '<div class="dchips">'
+      + t.labels.map(l=>'<span class="lb">'+esc(l)+'</span>').join('')
+      + (t.priority&&t.priority!=='none'?'<span class="lb p">'+esc(t.priority)+' priority</span>':'')
+    + '</div>'
+    + meta('Department', esc(t.department))
+    + meta('Members', t.members.length ? t.members.map(m=>'<span class="who">'+esc(m)+'</span>').join(' ') : '<span class="muted">unassigned</span>')
+    + meta('Due', t.due ? '<span class="'+(late?'nogo':'')+'">'+esc(t.due)+(late?' — overdue':'')+'</span>' : '')
+    + meta('Created', esc(t.created))
+    + meta('Updated', esc(t.updated))
+    + meta('Blocked by', t.blockedBy.length ? t.blockedBy.map(b=>'<span class="blk">'+esc(b)+'</span>').join(' ') : '')
+    + (t.checklist.length
+        ? '<div class="dsec"><div class="dh2">Checklist <span class="cnt">'+done+' of '+t.checklist.length+'</span>'
+          + '<span class="bar"><i style="width:'+pct+'%"></i></span></div>'
+          + t.checklist.map(c=>'<div class="li s-'+(c.done?'done':'backlog')+'"><span class="mk">'
+              +(c.done?'✓':'○')+'</span><span class="lt">'+esc(c.text)+'</span></div>').join('')
+          + '</div>'
+        : '')
+    + (t.description
+        ? '<div class="dsec"><div class="dh2">Description</div><div class="ddesc">'+esc(t.description)+'</div></div>'
+        : '')
+    + '<div class="dsec"><div class="dh2">Source</div><div class="dfile">'+esc(t.file)+'</div>'
+      + '<div class="note">This board only reads. Edit the file — in Obsidian or by an agent — and the change '
+      + 'appears here within 5s.</div></div>';
+
+  document.getElementById('drawer').hidden = false;
+  document.getElementById('scrim').hidden = false;
+  openId = id;
+}
+function closeDrawer(){
+  openId = null;
+  document.getElementById('drawer').hidden = true;
+  document.getElementById('scrim').hidden = true;
+}
+document.addEventListener('click', e => {
+  const hit = e.target.closest('[data-id]');
+  if(hit){ drawTask(hit.dataset.id); return; }
+  if(e.target.id==='scrim' || e.target.id==='dclose') closeDrawer();
+});
+document.addEventListener('keydown', e => {
+  if(e.key==='Escape') closeDrawer();
+  if((e.key==='Enter'||e.key===' ') && document.activeElement?.dataset?.id){
+    e.preventDefault(); drawTask(document.activeElement.dataset.id);
+  }
+});
 
 function sec(title, body, klass){ return '<section class="'+(klass||'')+'"><h2>'+title+'</h2>'+body+'</section>'; }
 function row(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
