@@ -41,7 +41,13 @@ correct, and it is not a forecast.
 | --- | --- |
 | **Put USDC in** | You get shares, priced off live Chainlink feeds. |
 | **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. Nothing trades until enough members say yes. |
-| **Leave whenever** | Withdraw your pro-rata share any time. It cannot be queued, gated or vetoed — not by the operator, not by a pending vote. |
+| **Leave whenever** | Ask to exit at any time. Nobody can refuse you — not the operator, not the other members. You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
+
+**Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
+reveal phase and settles at the price *after* that vote executes — including a vote that goes on to
+be defeated. And if a Chainlink feed goes stale or implausible, the vault freezes rather than price
+off bad data; that freeze includes exits, and it lifts when the feed recovers. Both are the safety
+design working, and both are described exactly in [Contracts](#contracts).
 
 Two fees, both readable in the contracts: a **10% performance fee** on realised gains, paid to the
 operator, charged on exit against a high-water mark; and an **exit fee of up to 1%** that decays
