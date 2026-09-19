@@ -17,8 +17,11 @@ Include, as far as you can:
 
 - A clear description of the issue and its impact (funds at risk, data exposure, availability).
 - Steps to reproduce, or a proof-of-concept (a Foundry test, an HTTP request, a transcript).
-- The commit hash, contract address, or deployed chain (mainnet is **Robinhood Chain, chain id
-  4663**; see `contracts/config/deployments/robinhood-mainnet.json`) the finding applies to.
+- The commit hash, contract address, or deployed chain the finding applies to. **No deployment of
+  this protocol is live on any mainnet.** The running stack is Base Sepolia testnet
+  (`contracts/config/deployments/base-sepolia.json`); the contracts left on Robinhood Chain (chain
+  4663) are immutable and hold nothing, and that chain is no longer a target — `docs/INCIDENTS.md`
+  §0 carries the readings.
 - Whether the issue is, to your knowledge, being actively exploited.
 
 ## Scope
@@ -27,7 +30,8 @@ In scope:
 
 - `contracts/` — `VaultCore`, `Governance`, `FeeEngine`, `OperatorRegistry`, `ChainlinkOracle`, the
   execution adapters, `SubVaultRegistry`, `VaultFactory`/`VaultDeployer`, and their deployed
-  bytecode on Robinhood Chain mainnet (chain 4663) and Base Sepolia testnet.
+  bytecode on Base Sepolia testnet and on chain 4663, where the contracts remain deployed and
+  immutable although no vault there holds value.
 - `apps/api/` — the metered read API (x402 payment gate, facilitator integration, rate limiting).
   This is the one paid API surface going forward; a duplicate paid endpoint that previously lived
   under `apps/site-next` (settling on Base mainnet) has been removed as part of a parallel cleanup
