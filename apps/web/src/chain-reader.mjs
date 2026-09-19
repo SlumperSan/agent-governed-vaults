@@ -145,6 +145,28 @@ export function planProposal(governance, pid) {
 }
 
 /**
+ * Round 3c — `paused()` and `isBlacklisted(vault)` on EACH basket leg's OWN token contract.
+ * Card #32. Separate from `planLegs` (3a) on purpose: those are valuation reads against the
+ * VAULT (assetUnit/assetBalance/priceWad), these are safety reads against the TOKEN, and a caller
+ * may legitimately want to poll them on a different cadence than price.
+ *
+ * One call pair per leg, in basket order — this is what makes the assembled result "per leg"
+ * rather than one flag for the whole basket, and it is written to work for however many legs
+ * `basketLength` reports, not for two.
+ *
+ * @param {string} vault
+ * @param {readonly string[]} assets
+ */
+export function planLegSafety(vault, assets) {
+  const out = [];
+  for (const a of assets) {
+    out.push(call(a, 'TOKEN_SAFETY_VIEWS', 'paused'));
+    out.push(call(a, 'TOKEN_SAFETY_VIEWS', 'isBlacklisted', [vault]));
+  }
+  return Object.freeze(out);
+}
+
+/**
  * Round 4 — `latestRoundData` per feed, for the `updatedAt` that oracle freshness turns on.
  *
  * Only the asset feeds belong here. The L2 sequencer uptime feed reads the SAME tuple but consumes
@@ -239,6 +261,58 @@ export function assembleLeg(r) {
 }
 
 /**
+ * The tri-state a per-leg safety read renders as. Deliberately NOT a boolean — see
+ * `assembleLegSafety`, which is the function this whole card (#32) exists for.
+ * @typedef {'active'|'paused'|'unknown'} PausedState
+ * @typedef {'clear'|'blacklisted'|'unknown'} BlacklistState
+ */
+
+/** What a leg's safety reads look like before any call has been attempted — unknown, never "fine". */
+export const LEG_SAFETY_UNREAD = Object.freeze({
+  paused: /** @type {PausedState} */ ('unknown'),
+  pausedReadAt: null,
+  blacklisted: /** @type {BlacklistState} */ ('unknown'),
+  blacklistedReadAt: null,
+});
+
+/**
+ * Turn one leg's two safety reads into a tri-state record — never a boolean.
+ *
+ * `pausedValue`/`blacklistedValue` must be the EXACT boolean the contract returned, or anything
+ * else to mean "not established": `null` for a revert, a timeout, or a call the caller never made;
+ * `undefined` for the same; and — on purpose — any other shape too (a string, a number, an object),
+ * because a decode failure downstream is exactly as untrustworthy as an explicit revert and must
+ * not be laundered into a boolean by whatever coerced it. Only `=== true` reads as the alarming
+ * state and only `=== false` reads as the clear one; everything else is `'unknown'`. There is no
+ * `?? false` in this function, on purpose — that is the exact defect card #32 exists to prevent: an
+ * unreachable RPC endpoint must never render as "this asset is fine", because that is precisely the
+ * moment nobody can verify it.
+ *
+ * `pausedReadAt`/`blacklistedReadAt` are carried through UNCHANGED, per call, from whatever the
+ * caller stamped when that specific call answered (or failed) — never overwritten with a shared
+ * "now" here. Two legs, or even the two calls on one leg, read seconds apart are two distinct facts
+ * about two distinct moments; collapsing them onto one batch timestamp would let a stale answer
+ * borrow a fresh one's clock, which is exactly how a member is shown a paused asset as current.
+ *
+ * @param {{address: string, pausedValue: unknown, pausedReadAt: number|null,
+ *          blacklistedValue: unknown, blacklistedReadAt: number|null}} r
+ * @returns {{address: string, paused: PausedState, pausedReadAt: number|null,
+ *            blacklisted: BlacklistState, blacklistedReadAt: number|null}}
+ */
+export function assembleLegSafety(r) {
+  const paused = r.pausedValue === true ? 'paused' : r.pausedValue === false ? 'active' : 'unknown';
+  const blacklisted =
+    r.blacklistedValue === true ? 'blacklisted' : r.blacklistedValue === false ? 'clear' : 'unknown';
+  return Object.freeze({
+    address: r.address,
+    paused,
+    pausedReadAt: r.pausedReadAt ?? null,
+    blacklisted,
+    blacklistedReadAt: r.blacklistedReadAt ?? null,
+  });
+}
+
+/**
  * Assemble the proposal record, or null when the vault has none.
  *
  * Returns null ONLY for a genuine absence — `pid` of 0, or `Status.None`. A caller that did not
@@ -298,6 +372,8 @@ export function assembleProposal(pid, p) {
  *          totalPendingUsdc: bigint, oracle: string, governance: string, creator: string,
  *          childVaultCount?: number|bigint},
  *   legs?: readonly {valueWad: bigint}[],
+ *   legSafety?: readonly ({address: string, paused: PausedState, pausedReadAt: number|null,
+ *     blacklisted: BlacklistState, blacklistedReadAt: number|null} | undefined)[],
  *   proposal?: unknown,
  *   governanceConfig?: Record<string, unknown> | null,
  *   name?: string, operatorName?: string, operatorAddress?: string, attested?: boolean,
@@ -333,7 +409,21 @@ export function assembleVault(r) {
     governance: r.core.governance,
     creator: r.core.creator,
 
-    basket: legs.map((l, i) => ({ ...l, weightBps: weights[i] })),
+    // Card #32: every leg carries its own paused/blacklisted tri-state and its own read
+    // timestamps. A leg whose safety reads were never supplied gets LEG_SAFETY_UNREAD — unknown,
+    // not a silent "active"/"clear" — rather than omitting the fields and letting some later
+    // `leg.paused === false` read an absence as a clean bill of health.
+    basket: legs.map((l, i) => {
+      const safety = r.legSafety?.[i];
+      return {
+        ...l,
+        weightBps: weights[i],
+        paused: safety?.paused ?? LEG_SAFETY_UNREAD.paused,
+        pausedReadAt: safety?.pausedReadAt ?? LEG_SAFETY_UNREAD.pausedReadAt,
+        blacklisted: safety?.blacklisted ?? LEG_SAFETY_UNREAD.blacklisted,
+        blacklistedReadAt: safety?.blacklistedReadAt ?? LEG_SAFETY_UNREAD.blacklistedReadAt,
+      };
+    }),
     proposal: r.proposal ?? null,
     governanceConfig: r.governanceConfig ?? null,
 

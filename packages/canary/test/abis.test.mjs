@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
   VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
+  TOKEN_SAFETY_VIEWS,
   VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   GOVERNANCE_VIEWS, GOVERNANCE_WATCH_EVENTS,
   signatureOf,
@@ -107,7 +108,7 @@ test('StaleOracle is NOT filed as a gate — it must never read as a healthy exi
 });
 
 test('the ABI table declares no state-changing function — the canary is read-only by construction', () => {
-  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS, ...CHAINLINK_FEED_IDENTITY_VIEWS]) {
+  for (const frag of [...VAULT_VIEWS, ...ORACLE_VIEWS, ...CHAINLINK_ORACLE_VIEWS, ...AGGREGATOR_V3_VIEWS, ...CHAINLINK_FEED_IDENTITY_VIEWS, ...TOKEN_SAFETY_VIEWS]) {
     assert.equal(frag.stateMutability, 'view', `${frag.name} is not a view function`);
   }
 });

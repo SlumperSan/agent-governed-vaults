@@ -163,6 +163,23 @@ export const ERC20_VIEWS = Object.freeze([
   view('balanceOf', ['address'], ['uint256']),
 ]);
 
+/**
+ * Per-leg token safety reads — `paused()` and `isBlacklisted(address)` on a basket asset's OWN
+ * token contract, not on VaultCore. Security confirmed both are plain view calls (card #32).
+ *
+ * NOT locally compiled, and cannot be drift-checked the way VAULT_VIEWS is: cirBTC is Circle's
+ * FiatToken stack deployed on Arc mainnet, external to this repo (see
+ * contracts/config/arc-mainnet.json), so there is no `contracts/out` artifact for it — the same
+ * situation CHAINLINK_FEED_IDENTITY_VIEWS is in for `aggregator()`/`phaseId()`. The signatures are
+ * Circle's own published Blacklistable/Pausable interface: `isBlacklisted(address)` is the
+ * standard USDC-family selector (see contracts/lib/forge-std/src/StdCheats.sol:218, which embeds
+ * the same 4-byte selector for USDC on other chains).
+ */
+export const TOKEN_SAFETY_VIEWS = Object.freeze([
+  view('paused', [], ['bool']),
+  view('isBlacklisted', ['address'], ['bool']),
+]);
+
 /** ERC20 Transfer — the fee-routing signal's only log input. */
 export const ERC20_TRANSFER_EVENT = Object.freeze(
   ev('Transfer', [addr('from', true), addr('to', true), u256('value')]),
