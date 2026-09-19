@@ -44,15 +44,21 @@ correct, and it is not a forecast.
 | --- | --- | --- |
 | **Put USDC in** | Only you | Your first deposit is held for four hours before it becomes anything. It is not shares yet and it does not vote. You can cancel and take it back at any point in that window — the one action that keeps working even if the vault freezes. |
 | **Activate it** | **You or anyone** | Once the four hours elapse, the deposit can be activated by any caller, not just you. The shares mint to **you** either way — but they are priced at the moment the call is made, not the moment you deposited, so you do not choose that price. |
-| **Vote on every trade** | Only you | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
+| **Vote on every trade** | You, or someone you authorised | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. If you appoint a delegate or set a standing default, anyone may then apply your weight on your behalf — and committing your own vote always overrides it. |
 | **Ask to leave** | Only you | No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
 | **Settle a queued exit** | **You or anyone** | If a live vote queued your exit, settling it is a separate call that anybody can make — and until somebody does, those shares are locked and do not vote. |
 
-**Two of those six can be done by a stranger, and you can read which off the signatures.**
-`activate(address)` and `settleQueuedExit(address)` take *your* address, so any caller may trigger
-them on your behalf. `deposit`, `cancelPending`, `skipWindow` and `requestExit` take no address and
-act on whoever calls them, so only you can. Neither permissionless call can send your money anywhere
-but to you — but both decide *when* something happens to it, and that is not nothing.
+**Four calls can be made by a stranger, and you can read which off the signatures.**
+`activate(address)`, `settleQueuedExit(address)`, `revealDelegated(uint256, address)` and
+`applyStandingDefault(uint256, address)` all take *your* address, so any caller may trigger them on
+your behalf — the last two only once you have appointed a delegate or set a standing default.
+`deposit`, `cancelPending`, `skipWindow`, `requestExit`, `setDelegate` and `setStandingDefault` take
+no address and act on whoever calls them, so only you can.
+
+**A permissionless caller cannot redirect your payout**: it goes to you, less the fees the vault
+charges on any exit whether you call it yourself or not. What the caller controls is *when* — and
+timing sets the price, which sets the realised gain, which sets the performance fee. So it is not
+fee-neutral, and that is the part worth knowing.
 
 **Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
 reveal phase and settles at the price *after* that vote executes — including a vote that goes on to
