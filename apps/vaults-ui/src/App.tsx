@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Page } from './Shell';
 import { Holdings } from './components/Holdings';
+import { MemberActions } from './components/MemberActions';
 import { ProposalPanel } from './components/ProposalPanel';
 import { VaultList } from './components/VaultList';
+import { WalletConnect } from './components/WalletConnect';
 import type { Vault, Wallet } from './lib/atlas';
 import { NOW, usdcExact, VAULTS, WALLET, wadExact } from './lib/atlas';
+import { WalletProvider } from './lib/wallet';
 
 /**
  * Vaults, proposals, votes, holdings — four reads over one vault.
@@ -13,8 +16,20 @@ import { NOW, usdcExact, VAULTS, WALLET, wadExact } from './lib/atlas';
  * is the same fixture set the allocator front end's tests run against. Wiring this
  * to a live endpoint is a matter of replacing the two imports below with
  * `live-adapter.mjs`; nothing in the components knows where a vault came from.
+ *
+ * ONE EXCEPTION: `<MemberActions>` (deposit/vote/exit) signs against the LIVE chain a connected
+ * wallet is on, never against this fixture data — see `src/lib/chain-actions.ts`. A member's
+ * money and vote are real even while the rest of this page is a rendering of test fixtures.
  */
 export function App() {
+  return (
+    <WalletProvider>
+      <AppShell />
+    </WalletProvider>
+  );
+}
+
+function AppShell() {
   const vaults = VAULTS as unknown as readonly Vault[];
   const wallet = WALLET as unknown as Wallet;
   const nowSec = NOW;
@@ -38,6 +53,7 @@ export function App() {
           Rendering <code>apps/web/src/fixtures.mjs</code> — the allocator front end&rsquo;s test
           fixtures, not a live chain read.
         </p>
+        <WalletConnect />
       </header>
 
       <div className="columns">
@@ -87,6 +103,7 @@ export function App() {
 
             <ProposalPanel vault={vault} nowSec={nowSec} />
             <Holdings vault={vault} nowSec={nowSec} />
+            <MemberActions vault={vault} />
           </div>
         ) : (
           <div className="detail">
