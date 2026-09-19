@@ -18,14 +18,42 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const APP = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const PAGE = path.join(APP, 'dist', 'index.html');
 const COPY = path.join(APP, 'src', 'copy.ts');
 
-const BUILT = existsSync(PAGE);
-const SKIP = 'dist/index.html is not built. Run `npm run build --workspace apps/site` first.';
+/**
+ * EVERY BUILT PAGE, NOT JUST THE HOMEPAGE.
+ *
+ * This read `dist/index.html` alone, from when the site was one document. `copy.ts` now carries
+ * HOME, HOW, ABOUT and DOCS, so a homepage-only scan reported every sentence belonging to the other
+ * three as copy that never reached the page — 34 of them, all of which were on their pages.
+ *
+ * The list is derived from `src/pages.ts` rather than repeated here, so a page added there is
+ * covered here the same day. `404.html` is excluded exactly as it is there: nothing navigates to it
+ * and no copy in `copy.ts` belongs to it.
+ */
+const PAGE_IDS = [...readFileSync(path.join(APP, 'src', 'pages.ts'), 'utf8').matchAll(/'([a-z0-9-]+\.html)'/g)]
+  .map((m) => m[1])
+  .filter((p) => p !== '404.html');
+const PAGES = PAGE_IDS.map((p) => path.join(APP, 'dist', p));
+
+const BUILT = PAGES.length > 0 && PAGES.every((p) => existsSync(p));
+const SKIP = 'apps/site is not built. Run `npm run build --workspace apps/site` first.';
 const t = (name, fn) => test(name, BUILT ? {} : { skip: SKIP }, fn);
 
-const html = () => readFileSync(PAGE, 'utf8');
+/**
+ * A missing page list would make every scan below vacuous, so it throws rather than skipping —
+ * the `existsSync`-skip shape is how a guard in this repository once went to zero coverage while
+ * the gate stayed green.
+ */
+if (PAGE_IDS.length === 0) {
+  throw new Error('site.test: parsed no page ids out of src/pages.ts — every copy scan would pass trivially.');
+}
+
+/** The homepage alone, for the tests that are specifically about it. */
+const html = () => readFileSync(path.join(APP, 'dist', 'index.html'), 'utf8');
+
+/** Every built page concatenated, for "this sentence reached the site somewhere". */
+const allHtml = () => PAGES.map((p) => readFileSync(p, 'utf8')).join('\n');
 
 /**
  * The copy source with comments stripped.
@@ -85,9 +113,9 @@ t('every sentence in copy.ts reaches the built page', () => {
       'would pass by checking almost nothing'
   );
 
-  const h = html();
+  const h = allHtml();
   const missing = strings.filter((s) => !h.includes(esc(s)));
-  assert.deepEqual(missing, [], `copy that never reached the page:\n  ${missing.join('\n  ')}`);
+  assert.deepEqual(missing, [], `copy that never reached any page:\n  ${missing.join('\n  ')}`);
 });
 
 t('the page does not claim a deployment it does not have', () => {

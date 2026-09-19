@@ -1,4 +1,4 @@
-import { Footer } from './Footer';
+import { Page } from './Shell';
 
 /**
  * 404.html. Served by Cloudflare Pages, with a 404 status, for any path matching no asset.
@@ -9,8 +9,7 @@ import { Footer } from './Footer';
  */
 export function NotFound() {
   return (
-    <>
-      <main>
+    <Page>
         <section className="hero">
           <div className="shaft" aria-hidden="true" />
           <div className="inner">
@@ -27,8 +26,6 @@ export function NotFound() {
             </p>
           </div>
         </section>
-      </main>
-      <Footer />
-    </>
+    </Page>
   );
 }
