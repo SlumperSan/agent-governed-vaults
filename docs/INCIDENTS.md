@@ -73,7 +73,7 @@ reader can run. Never state a recovery time you cannot evidence.
 > Two of that chain's properties change what an on-call reader should expect once a vault exists:
 > there is no Chainlink L2 sequencer uptime feed for 4663, so
 > that gate cannot freeze a vault there, and its feeds publish on an 86,400 s heartbeat, exactly
-> `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), so the staleness breaker only
+> `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:132`), so the staleness breaker only
 > fires after a feed has been stopped for more than a day.
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
