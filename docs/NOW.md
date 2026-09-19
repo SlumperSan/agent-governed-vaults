@@ -23,13 +23,20 @@ work it describes.
   survey — [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) — recording
   the chain binding, the USDC predeploy at `0x3600…0000` and four Chainlink feeds, each read off
   chain 5042 rather than copied from documentation.
-- **The Arc config is INCOMPLETE and cannot be deployed from.** The Uniswap v3 router address and
-  the basket token addresses on Arc are unresolved: Uniswap's published playbook truncates the
-  router address, the canonical cross-chain Uniswap addresses are demonstrably something else on
-  5042 (both return empty for `owner()`, `getPool()`, `factory()` and `WETH9()`), the public RPC
-  refuses `eth_getLogs` at every window size tried, and the Blockscout explorer returns 403. The
-  blockers and what resolves them are in
-  [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
+- **The Arc router and the basket are RESOLVED, and the config still cannot be deployed from — for
+  a different reason than it used to be.** Both were read off chain 5042 and re-read on a second
+  endpoint. Uniswap v3 `SwapRouter02` is `0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77`: it carries
+  runtime code and self-identifies, `factory()` returning the v3 factory `0xf0db…3918`, byte-identical
+  on `rpc.mainnet.arc.io` and `arc.gateway.tenderly.co`. **The basket is cirBTC alone**,
+  `0x171a4217b86a807a64eb94757db6849fb4bdbaa0`, `symbol() cirBTC`, `decimals() 8`: a complete
+  `PoolCreated` scan of that factory found **no ETH representation on Arc in any form**, so the
+  WETH + cbBTC basket does not port; the owner settled the shape on 2026-09-18 as single-asset
+  cirBTC, priced from Arc's `BTC / USD` feed rather than `CBBTC / USD`. `eth_getLogs` is
+  **capped, not refused** — an address- and topic-filtered 10,000-block window returns logs on the
+  public RPC while 50,000 returns `-32012 requested range too large`, and the cap is 100,000 on the
+  Tenderly gateway. Where the survey still reads `UNRESOLVED`, it is the survey that is stale. What
+  blocks a deploy now is the launch parameters, which are an owner decision, and the remaining steps
+  in [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
 - **Arc TESTNET is not a dry run, and that is measured.** Chain 5042002 carries the USDC predeploy,
   Permit2 and Multicall3 and nothing else this protocol needs: Uniswap, Pyth and CCTP all read zero
   bytes, and Chainlink publishes no feeds for it at all. `ChainlinkOracle` needs a genuine feed per
