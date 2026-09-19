@@ -317,6 +317,19 @@ function frontmatter(text) {
  * a directory segment — a silent empty panel that looked like "no output yet". This returns a
  * `problem` string instead, and the page prints it.
  */
+/**
+ * EXPORTED so the dashboard can re-read the board WITHOUT re-running collect().
+ *
+ * collect() shells out with spawnSync -- `gh api graphql` at a 25s timeout among others -- and
+ * spawnSync blocks Node's only thread, so a full collect on every poll saturated the server: every
+ * request, read or write, took 7-9 seconds and queued behind the last one. The board itself is pure
+ * filesystem and costs milliseconds. Separating them lets the cards stay live at poll speed while
+ * the git and GitHub half is cached for far longer.
+ */
+export function readBoard(vaultRoot) {
+  return board(vaultRoot);
+}
+
 function board(vaultRoot) {
   const base = path.join(vaultRoot, 'Tasks');
   if (!existsSync(base)) {

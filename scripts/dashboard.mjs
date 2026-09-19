@@ -18,7 +18,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { collect } from './lib/project-status.mjs';
+import { collect, readBoard } from './lib/project-status.mjs';
 import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
@@ -43,13 +43,23 @@ let cache = { at: 0, data: null };
 // The board is read from the vault on every request, so a task file edited in Obsidian or by an
 // agent should appear within a second. A 4s server cache on top of a 5s client poll meant up to
 // 9s of lag on a board he watches while departments work.
-const TTL_MS = 800;
+// THE SLOW HALF IS CACHED FOR A LONG TIME; THE BOARD IS NOT CACHED AT ALL.
+//
+// collect() shells out with spawnSync -- `gh api graphql` at a 25s timeout, `gh run view` at 20s,
+// check-run annotations at 20s each -- and spawnSync BLOCKS NODE'S ONLY THREAD. At an 800ms TTL
+// against a 1s poll that meant a fresh collect on almost every request, so the server was
+// permanently saturated: measured, /api/status took 7-9 SECONDS and every other request, including
+// every answer and delete, queued behind it. From the page that looked like a button stuck on
+// "saving..." and a board that had stopped updating.
+//
+// The board is pure filesystem and costs milliseconds, so it is re-read on EVERY request and the
+// git/GitHub half is cached for 30s. Cards stay live at poll speed; CI and branch state lag by up
+// to half a minute, which is the right trade for state that changes on a human timescale anyway.
+const TTL_MS = 30_000;
 
 /** The vault folder the board reads, and the one task numbers are written back into. */
-const TASKS_DIR = path.join(
-  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults',
-  'Tasks',
-);
+const VAULT_ROOT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
 
 function snapshot(force = false) {
   const now = Date.now();
@@ -72,6 +82,22 @@ function snapshot(force = false) {
   }
   cache = { at: now, data: collect({ gh: !NO_GH }) };
   return cache.data;
+}
+
+/**
+ * What every read serves: the cached slow half with a FRESHLY READ board on top.
+ *
+ * A task file edited in Obsidian or by an agent appears within a poll, as it always did, without
+ * paying for git and gh to be interrogated again.
+ */
+function view() {
+  const base = snapshot();
+  try {
+    return { ...base, board: readBoard(VAULT_ROOT) };
+  } catch {
+    // Never let the fast path take the board down; the cached board is stale, not wrong.
+    return base;
+  }
 }
 
 const esc = (s) =>
@@ -1168,6 +1194,65 @@ tick(); setInterval(tick, 1000);
  * listener. Do not widen the bind address to "make it reachable from my phone".
  */
 /**
+ * Resolve ONE task from disk, without calling collect().
+ *
+ * THE BUG THIS FIXES, because it was reported three times and looked like three different bugs.
+ * `recordAnswer` and `deleteTask` both began with `snapshot(true)`, which forces a full `collect()`.
+ * `collect()` shells out with **`spawnSync`** -- `gh api graphql` at a 25s timeout, `gh run view` at
+ * 20s, a check-run annotation fetch at 20s each -- and `spawnSync` BLOCKS NODE'S ONLY THREAD. So
+ * every click on an answer button could freeze the entire server, and the page with it, for up to a
+ * minute: the button sat at "saving...", the poll stopped, and when the loop finally freed up the
+ * re-render wiped the button back to its normal label with no error shown. From the outside that
+ * reads as "it did not let me accept" -- and on a slow enough call the write never landed at all.
+ *
+ * A write needs ONE task file. It does not need git, GitHub CI, the launch gates or the deployment
+ * address book. Reading that file directly turns a blocking multi-second round trip into a stat and
+ * a read, and the endpoint answers immediately.
+ *
+ * It parses only the fields a write decision turns on. Anything else the board needs comes from
+ * `collect()` on the read path, where being slow is merely slow.
+ */
+function taskFromDisk(id) {
+  // Reject a traversal outright rather than normalising it: ids come from the page, and the page is
+  // not a trust boundary this server should be relying on.
+  if (!id || /[\\/]|\.\./.test(id)) return null;
+  const file = path.join(TASKS_DIR, `${id}.md`);
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const end = raw.indexOf('\n---', 3);
+  if (!raw.startsWith('---') || end === -1) return null;
+  const head = raw.slice(0, end);
+  const field = (k) => {
+    const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'mi').exec(head);
+    return m ? m[1].trim() : '';
+  };
+  const list = (v) => {
+    const t = v.trim();
+    if (!t) return [];
+    // Frontmatter lists arrive as ["a", "b"] or as a bare comma-separated line.
+    const inner = t.startsWith('[') && t.endsWith(']') ? t.slice(1, -1) : t;
+    return inner
+      .split(',')
+      .map((x) => x.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+  };
+  return {
+    id,
+    file,
+    num: Number(field('num')) || 0,
+    title: field('title').replace(/^["']|["']$/g, ''),
+    status: field('status').toLowerCase() || 'backlog',
+    options: list(field('options')),
+    answer: field('answer'),
+    notify: list(field('notify')),
+  };
+}
+
+/**
  * Remove a task from the board. THE FILE IS MOVED, NEVER UNLINKED.
  *
  * It goes to `Tasks/_deleted/` with a `deleted:` stamp in its frontmatter. The board reads
@@ -1186,8 +1271,7 @@ tick(); setInterval(tick, 1000);
  * a second task that happens to share a filename must not destroy the first.
  */
 function deleteTask(id) {
-  const tasks = snapshot(true).board?.tasks ?? [];
-  const t = tasks.find((x) => x.id === id);
+  const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
 
   const dir = path.dirname(t.file);
@@ -1229,7 +1313,7 @@ function deleteTask(id) {
     /* logged where it can be read; the move already happened */
   }
 
-  snapshot(true);
+  cache = { at: 0, data: null };
   return { code: 200, msg: `deleted — recoverable at ${dest}` };
 }
 
@@ -1248,8 +1332,7 @@ const SUGGESTION_OPTIONS = Object.freeze(['Approve - move to To do', 'Decline'])
 const optionsFor = (t) => (t.options.length ? t.options : t.status === 'suggestion' ? [...SUGGESTION_OPTIONS] : []);
 
 function recordAnswer(id, answer, custom) {
-  const tasks = snapshot(true).board?.tasks ?? [];
-  const t = tasks.find((x) => x.id === id);
+  const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
   // A listed option must match exactly; a free-text answer is accepted as written. The option list
   // is a shortcut for the common cases, never a menu he has to squeeze a real decision into.
@@ -1368,7 +1451,7 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/status') {
-    const body = JSON.stringify(snapshot(url.searchParams.has('force')));
+    const body = JSON.stringify(url.searchParams.has('force') ? { ...snapshot(true), board: readBoard(VAULT_ROOT) } : view());
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(body);
   }
