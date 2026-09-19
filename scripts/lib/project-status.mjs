@@ -62,13 +62,17 @@ function gate() {
   const g = jsonOr(readFileSync(p, 'utf8'), null);
   if (!g) return null;
   const headFull = sh('git', ['rev-parse', 'HEAD']);
-  // The two ways a green gate lies. A board that omits these is the failure mode it exists to stop.
+  // The ways a green gate lies. A board that omits these is the failure mode it exists to stop.
   g.sameCommit = Boolean(g.commit && headFull && g.commit === headFull);
   g.caveats = [
     !g.sameCommit && 'ran on a DIFFERENT commit',
     g.treeDirty && 'ran against a dirty tree',
     g.mode?.quick && 'was --quick (no gas snapshot)',
     g.mode?.only && `was --only ${g.mode.only.join(',')}`,
+    // `passed` is a boolean and cannot say "nothing ran", so the count says it instead. Written by
+    // gate.mjs only since the executed-step fix; an OLDER state file has no `executed` field, and
+    // `undefined === 0` is false, so it earns no caveat rather than a false one.
+    g.executed === 0 && 'checked NOTHING -- every selected step was skipped',
   ].filter(Boolean);
   return g;
 }

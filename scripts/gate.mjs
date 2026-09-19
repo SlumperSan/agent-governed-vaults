@@ -386,6 +386,37 @@ async function runSyntaxStep() {
 }
 
 /**
+ * The states that mean a check ACTUALLY RAN. `skip` did not run, and `notrun` is the tail this
+ * script fills in after a fail-fast break, so neither is evidence about anything.
+ */
+const EXECUTED = Object.freeze(['pass', 'fail', 'warn']);
+
+/**
+ * The verdict, DERIVED IN ONE PLACE, because the three things that publish it must not be able to
+ * disagree: the console line, the exit code, and `passed` in `.gate-state.json`. Before this, the
+ * console read a local `failed` flag while `writeGateState` recomputed the verdict for itself, so
+ * fixing one of them would have left the terminal saying GATE PASSED while the board said otherwise.
+ *
+ * 'inconclusive' IS THE CASE #309's FLOOR DOES NOT REACH. That floor guards the step LIST; this
+ * guards the OUTCOMES, and a `skip` is not a `fail`. The one runtime skip today is slither when it
+ * is absent from PATH, so `--only slither` on a machine without slither selected one step, cleared
+ * the floor, skipped it, and reported a pass over zero executed checks -- `{"passed":true}` into the
+ * file `scripts/lib/project-status.mjs` reads and `npm run cc` presents as live state to whoever
+ * reads it first. A pass now requires at least one step that RAN, not one that was selected.
+ *
+ * A failing run is still a failure and never inconclusive: `fail` is tested first, and it is itself
+ * an executed step.
+ *
+ * @param {{state: string}[]} results
+ * @returns {'pass' | 'fail' | 'inconclusive'}
+ */
+function verdictFor(results) {
+  if (results.some((r) => r.state === 'fail')) return 'fail';
+  if (!results.some((r) => EXECUTED.includes(r.state))) return 'inconclusive';
+  return 'pass';
+}
+
+/**
  * Persist the run for `npm run cc`. Untracked (see .gitignore) -- it describes THIS machine's last
  * run, not a property of the branch, so committing it would just create merge conflicts.
  */
@@ -399,7 +430,10 @@ function writeGateState(results, totalMs) {
     treeDirty: Boolean((dirty.stdout || '').trim()),
     totalMs,
     mode: { quick: QUICK, runAll: RUN_ALL, only: ONLY ? [...ONLY] : null },
-    passed: !results.some((r) => r.state === 'fail'),
+    passed: verdictFor(results) === 'pass',
+    // How many steps RAN. The board needs this to tell a run that checked nothing apart from a run
+    // that checked everything, which `passed: false` alone cannot say.
+    executed: results.filter((r) => EXECUTED.includes(r.state)).length,
     steps: results.map((r) => ({ id: r.s.id, state: r.state, ms: r.ms })),
   };
   try {
@@ -459,7 +493,6 @@ ${C.d}(see --list)${C.x}
   console.log(`${C.d}${steps.length} steps${QUICK ? ' -- gas snapshot dropped by --quick' : ''}${C.x}\n`);
 
   const results = [];
-  let failed = false;
 
   for (const [i, s] of steps.entries()) {
     const label = `[${i + 1}/${steps.length}] ${s.title}`;
@@ -490,7 +523,6 @@ ${C.d}(see --list)${C.x}
     } else {
       console.log(`${C.r}FAIL${C.x} ${s.title}${note} ${C.d}${secs(ms)}${C.x}\n`);
       results.push({ s, state: 'fail', ms, code });
-      failed = true;
       if (!RUN_ALL) {
         results.push(...steps.slice(i + 1).map((rest) => ({ s: rest, state: 'notrun', ms: 0 })));
         break;
@@ -515,7 +547,11 @@ ${C.d}(see --list)${C.x}
   const total = secs(Date.now() - t0);
   console.log(`${C.b}${'-'.repeat(64)}${C.x}`);
 
-  if (failed) {
+  // The SAME expression the state file was written from, so the console, the exit code and the
+  // board cannot tell three different stories about one run.
+  const verdict = verdictFor(results);
+
+  if (verdict === 'fail') {
     const first = results.find((r) => r.state === 'fail');
     console.log(`\n${C.r}${C.b}GATE FAILED${C.x} on ${C.b}${first?.s.id}${C.x} ${C.d}(${total})${C.x}`);
     console.log(`${C.d}Re-run just that step: npm run gate -- --only ${first?.s.id}${C.x}`);
@@ -528,6 +564,19 @@ ${C.d}(see --list)${C.x}
     }
     console.log('');
     process.exit(1);
+  }
+
+  if (verdict === 'inconclusive') {
+    // NOT a pass and NOT a failure: nothing was checked, so there is no verdict to publish. Exit 2
+    // is the code this script already uses for "the gate could not run" -- the missing-forge
+    // preflight and #309's zero-step floor both use it -- so `exit 1` keeps meaning a real defect.
+    const skipped = results.filter((r) => r.state === 'skip').map((r) => r.s.id);
+    console.log(
+      `\n${C.y}${C.b}GATE INCONCLUSIVE${C.x} ${C.d}(${total})${C.x}\n` +
+        `${C.r}Zero steps executed${C.x}: every selected step was skipped (${skipped.join(', ') || 'none selected'}).\n` +
+        `${C.d}This is not a pass. Install the missing tool, or widen --only to a step that runs.${C.x}\n`,
+    );
+    process.exit(2);
   }
 
   const warned = results.filter((r) => r.state === 'warn').length;
