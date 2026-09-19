@@ -17,8 +17,8 @@
  *
  * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing is deployed, so the
  * deployment paragraph, the vault capacity figures and the address ledger references say so; the
- * sequencer-gate entry states that the exemption Arc would need has NOT been granted rather than
- * describing one already given; and figures that came out of a configuration file which has since
+ * sequencer-gate entry records the Arc exemption, granted for chain 5042 on 2026-09-19, and what it
+ * costs at price time; and figures that came out of a configuration file which has since
  * been deleted were removed rather than carried forward as though still sourced.
  *
  * THE TWO DERIVED SENTENCES. RisksContents' heading ("All fifteen.") and its closing clause
@@ -215,7 +215,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values that have not been chosen, bounded above by the 86,400 seconds the oracle constructor accepts; this page will print them when there is a deployment to print them from. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
+        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values, bounded above by the 90,000 seconds the oracle constructor accepts &mdash; deliberately an hour more than the 86,400-second cadence these feeds publish on, because a bound set at the cadence itself trips on a feed that is behaving normally. Both are chosen for Arc, and this page will print them when there is a deployment to print them from. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
       }
     ]
   },
@@ -253,7 +253,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain it has no sequencer policy for, and a pre-deploy check fails a configuration that omits the feed. Chainlink publishes no L2 Sequencer Uptime Feed for Arc, so deploying there would require exempting it &mdash; an explicit weakening of a security gate, and one that has NOT been granted. If it ever is, the consequence is stated here rather than buried in the commit that grants it: on a chain with no feed the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band carry this risk alone. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight. Where a feed is wired, the oracle enforces a 3,600-second grace period after the sequencer returns, and the mitigation and the risk are then the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed anywhere."
+        "dd": "A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain it has no sequencer policy for, and a pre-deploy check fails a configuration that omits the feed. Chainlink publishes no L2 Sequencer Uptime Feed for Arc, so deploying there requires exempting it, and that exemption has been granted &mdash; for chain 5042 alone, on 19 September 2026. The consequence is stated here rather than left in the commit that granted it: on Arc the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band carry this risk alone. What makes that defensible is that Arc is an L1 rather than a rollup, so there is no sequencer, and no sequencer outage for the gate to catch. What it costs is that the oracle serves prices straight through whatever Arc&rsquo;s equivalent of a halt turns out to be, and never refuses on that account. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight on every chain that is not on the exempt list. Where a feed is wired, the oracle enforces a 3,600-second grace period after the sequencer returns, and the mitigation and the risk are then the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed anywhere."
       }
     ]
   },
@@ -606,7 +606,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "stock-index-needs-different-oracle",
     "term": "The stock index needs a different oracle",
-    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 86,400-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
+    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
   }
 ];
 
@@ -659,9 +659,9 @@ export const REFERENCES: readonly Reference[] = [
     "body": "H-8, M-7, M-8, M-10 and M-15: the open High at the launch configuration, the Mode-F recurrence, the opaque proposal payload, and the missing exit-side slippage floor."
   },
   {
-    "key": "base-mainnet-config",
-    "term": "<code>docs/evidence/arc-mainnet-survey.json</code>",
-    "body": "Every reference value quoted on this site: the governance durations, the quorum and threshold, the minimum deposit, the exit-fee schedule, the staleness bounds and the two price bands."
+    "key": "arc-mainnet-config",
+    "term": "<code>contracts/config/arc-mainnet.json</code>",
+    "body": "Every reference value quoted on this site: the governance durations, the quorum and threshold, the minimum deposit, the exit-fee schedule, the staleness bound and the price band. Each field carries a note recording how the number was arrived at. <code>docs/evidence/arc-mainnet-survey.json</code> is the raw chain survey it was built from; where the two disagree, the config is the one written against the contracts."
   },
   {
     "key": "deployment-record",
