@@ -110,7 +110,7 @@ export const HOME = {
       'position — and operatorship confers no authority to vote, execute, pause, reprice, or move ' +
       'member funds.',
     points: [
-      { t: 'No admin key', d: 'No owner, no proxy, no upgrade path, no pause switch. Once deployed, nobody can change the rules.' },
+      { t: 'One key, and all it does is wiring', d: 'No owner, no admin role, no proxy, no upgrade path, no pause switch. One deploy key exists and its entire power is pointing the registries at each other — three one-shot calls writing four address slots, each reverting the second time it is tried. That is the whole list of what any key can do here, and none of it is a path to your money.' },
       { t: 'No vetoed exits', d: 'Nobody can refuse, gate or veto your exit. It can be delayed — a live vote queues it, a stale feed freezes it — but a delay is a rule anyone can read, not a decision someone makes about you.' },
       { t: 'Every trade is on the record', d: 'Every trade is recorded on-chain, with the proposal and the votes that authorised it where there was one. Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
       { t: 'No guessing on price', d: 'If a price feed goes stale the vault freezes rather than trading on bad data. That includes exits.' },

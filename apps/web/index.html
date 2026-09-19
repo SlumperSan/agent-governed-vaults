@@ -843,7 +843,7 @@ function renderOperator(x) {
 
 function renderRisks(x) {
   const risks = [
-    ['Contracts are immutable.', 'No proxies, no upgrades, no admin key, no recovery. Nobody can reverse a transaction here: not the operator, not the protocol, not us.'],
+    ['Contracts are immutable.', 'No proxies, no upgrades, no recovery, and no owner or admin role. One deploy key exists and its whole power is wiring — three one-shot calls writing four address slots, none of them a path to your money. Nobody can reverse a transaction here: not the operator, not the protocol, not us.'],
     ['Shares cannot be transferred or sold.', 'Exiting the vault is the only way out of a position.'],
     ['A stale oracle freezes deposits and exits.', 'It is a safety mechanism, not an outage: it stops anyone entering or leaving at a price the vault cannot verify. There is no emergency withdrawal, deliberately. Capital still in the observation window stays reclaimable.'],
     ['Exits forward-price during a vote.', 'Once a proposal passes its commit deadline, an exit is queued and settles later at a price nobody can show you yet.'],
