@@ -1,4 +1,4 @@
-import { Footer } from './Footer';
+import { Page } from './Shell';
 import {
   ACTIONS,
   CONTENTS_ENTRIES,
@@ -43,8 +43,7 @@ function Html({ value, className }: { value: string; className?: string }) {
 
 export function Disclaimers() {
   return (
-    <>
-      <main>
+    <Page current="/disclaimers.html">
         {/* Hero: the standing disclosures. No hero canvas or gradient here on purpose — this page
             is text, not a pitch. */}
         <section>
@@ -196,8 +195,6 @@ export function Disclaimers() {
             </p>
           </div>
         </section>
-      </main>
-      <Footer />
-    </>
+    </Page>
   );
 }

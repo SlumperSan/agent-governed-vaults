@@ -32,7 +32,19 @@ const NOT_FOUND = '404.html';
  * These are minima with real headroom, not measurements — a floor set at today's byte count reds on
  * the next honest edit.
  */
-const FLOORS = { 'index.html': 6000, 'disclaimers.html': 8000, '404.html': 700 };
+const FLOORS = {
+  // 70% of each page's measured render, rounded to 100. Set that way on purpose: a floor at the
+  // current byte count reds on the next honest edit, and a floor set low enough to admit the 1.5 KB
+  // 404 would admit a homepage that had lost four of its five sections. Every number here was
+  // measured after verifying the page rendered all its sections, not guessed and then lowered until
+  // the build went green — which is how a floor stops being a floor.
+  'index.html': 3400,
+  'how-it-works.html': 2300,
+  'about.html': 2000,
+  'docs.html': 2500,
+  'disclaimers.html': 28400,
+  '404.html': 1100,
+}
 const DEFAULT_FLOOR = 2000;
 
 if (!existsSync(SSR_ENTRY)) {

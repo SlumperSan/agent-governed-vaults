@@ -1,55 +1,65 @@
 /**
- * THE DIRECTION, DECIDED FIRST AND DEFENDED ON EVERY SECTION.
+ * THE BRAND, DECIDED FIRST AND DEFENDED ON EVERY SECTION.
  *
- * Primary family: ethereal / divine. Accent: hyperpop crystalline.
- * Near-black void, bone white, ONE warm light in the dark, iridescent bloom in the bright frames.
+ * Blue and white on a deep navy base. The reference points are Hyperliquid's vaults surface —
+ * calm, dense, financial — and arc.io's spacing and restraint.
  *
- * THE RULE THAT DOES THE WORK: one accent per section. Gold lives in dark sections, iridescence in
- * light ones, red exactly once on the whole page. A section that reaches for a second accent is a
- * section that has stopped having a point of view, and the fastest way to make this look like every
- * other protocol site is to let gold and violet share a frame.
+ * THE RULE THAT DOES THE WORK, carried over from the previous direction because it is the reason
+ * that one held together: ONE ACCENT PER SECTION. Electric blue is the only accent. Green and red
+ * appear ONLY as data semantics (a return that is up, a return that is down) and never as
+ * decoration — the moment a heading is green because green looks nice, a reader can no longer trust
+ * green to mean anything.
+ *
+ * This replaced a near-black/gold palette on 2026-09-18. It is a full replacement, not a variant:
+ * there is no gold token left to reach for.
  */
 
 :root {
-  /* Base — most of the page is one of these two. */
-  --void: #05060a;
-  --void-raised: #0a0c12;
-  --void-line: #171a22;
-  --bone: #f4f1ea;
+  /* Base — deep navy, not black. Black reads as a terminal; navy reads as a balance sheet. */
+  --bg: #070b18;
+  --surface: #0c1224;
+  --surface-2: #111a33;
+  --line: #1c2745;
+  --line-soft: #161f38;
 
-  /* Divine accent: the one warm light. Dark sections only. */
-  --ember: #ffb24d;
-  --ember-deep: #ff7a18;
+  /* Ink */
+  --ink: #f2f6ff;
+  --ink-dim: #93a3c4;
+  /* 5.16 on --bg, 4.90 on --surface, 4.53 on --surface-2 — clears WCAG AA 4.5:1 on all three.
+     Was #5d6c8c, which is 3.73 / 3.54 / 3.27 and FAILED on every ground. That token carried
+     .foot-legal at 12.5px — legal copy a reader is expected to read — plus four micro-labels at
+     11-12px, none large enough for the 3:1 large-text allowance and none of them incidental. The
+     roles are real, so the fix is the value, not a ban on using it. Keep it clearly below
+     --ink-dim (7.73) or the two levels stop being distinguishable. */
+  --ink-faint: #7183a9;
 
-  /* Crystalline accent: the hyperpop bloom. Bright sections only. */
-  --iris-violet: #8a6bff;
-  --iris-cyan: #4fc3ff;
-  --iris-magenta: #ff6ad5;
+  /* The one accent. */
+  --blue: #2f6bff;
+  --blue-bright: #5b8cff;
+  --blue-soft: rgba(47, 107, 255, 0.14);
+  --blue-line: rgba(91, 140, 255, 0.35);
 
-  /* Danger. Used ONCE on this page, on the sentence that earns it. */
-  --alarm: #ff2a2a;
+  /* Data semantics ONLY. Never decoration. */
+  --up: #2bd67b;
+  --down: #ff5470;
+  --warn: #ffb020;
 
-  --ink: var(--bone);
-  --ink-dim: #8e94a3;
-  --ink-faint: #5c6270;
-
-  /* NO WEBFONT IS FETCHED FROM ANOTHER ORIGIN, and that is a security property rather than a
-     preference. `public/_headers` sets `font-src 'self'` under a `default-src 'none'` floor and
-     states that one request to fonts.googleapis.com or fonts.gstatic.com is a rejection — the
-     site's claim is that it makes no external request at all, and a CDN font would falsify it in
-     the network panel. The two Plex faces are npm packages the bundler emits from this origin;
-     the display face is a system serif, so it costs no request either. */
-  --display: ui-serif, Georgia, "Times New Roman", serif;
   --sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --gutter: clamp(20px, 5vw, 64px);
-  --measure: 62ch;
+  --gutter: clamp(18px, 4.5vw, 56px);
+  --measure: 60ch;
+  --nav-h: 60px;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.35);
 
   color-scheme: dark;
 }
 
-/* Motion is weightless by default, and it stops entirely when the reader asks it to. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -57,5 +67,6 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
