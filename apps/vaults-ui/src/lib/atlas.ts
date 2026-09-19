@@ -4,10 +4,23 @@
  * Components import from here, never from `@atlas/*` directly, so the surface
  * that would have to change if the allocator modules moved is this file alone.
  */
-export { usdcExact, usdcShort, usdcCompact, wadExact } from '@atlas/format';
+export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits, formatUnits } from '@atlas/format';
+export type { ParseUnitsResult } from '@atlas/format';
 export { proposalPhase, quorumReadout, PHASES } from '@atlas/governance';
 export { oracleHealth, position, vaultView } from '@atlas/vault-view';
 export { NOW, VAULTS, WALLET, vaultByAddress } from '@atlas/fixtures';
+// Commit-reveal salt custody (apps/web/src/vote-custody.mjs) — see that file and
+// src/lib/chain-actions.ts for the design. Re-exported here, not imported directly by
+// components, for the same reason as everything else in this file.
+export { CUSTODY_UNREAD, CUSTODY_NONE, CUSTODY_REVEALED, CUSTODY_READY, CUSTODY_MISMATCH, canReveal } from '@atlas/vote-custody';
+export type { VoteCustodyState } from '@atlas/vote-custody';
+// Pre-flight refusal checks (apps/web/src/wallet-refusals.mjs, #341) and deposit-status
+// classification (apps/web/src/deposit-status.mjs, #340) — what MemberActions.tsx gates a
+// signature request on, so this file and that component never disagree with the pure modules.
+export { canSign, requestExitPricingRefusal, creatorGateRefusal, exitFeeCeiling } from '@atlas/wallet-refusals';
+export type { Refusal, ExitFeeCeiling } from '@atlas/wallet-refusals';
+export { classifyDepositStatus } from '@atlas/deposit-status';
+export type { DepositStatus } from '@atlas/deposit-status';
 
 /** A basket leg as the fixtures and the chain reader both shape it. */
 export interface BasketLeg {
