@@ -23,13 +23,16 @@ work it describes.
   survey — [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) — recording
   the chain binding, the USDC predeploy at `0x3600…0000` and four Chainlink feeds, each read off
   chain 5042 rather than copied from documentation.
-- **The Arc config is INCOMPLETE and cannot be deployed from.** The Uniswap v3 router address and
-  the basket token addresses on Arc are unresolved: Uniswap's published playbook truncates the
-  router address, the canonical cross-chain Uniswap addresses are demonstrably something else on
-  5042 (both return empty for `owner()`, `getPool()`, `factory()` and `WETH9()`), the public RPC
-  refuses `eth_getLogs` at every window size tried, and the Blockscout explorer returns 403. The
-  blockers and what resolves them are in
-  [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
+- **The Uniswap v3 router and the basket's one eligible asset are RESOLVED on Arc, by direct read.**
+  `SwapRouter02` is `0x53bf…6f77` (`factory()` confirms it, both allow-listed selectors present in
+  the router runtime), cross-checked byte-identical on four RPC endpoints. The canonical
+  cross-chain Uniswap addresses are NOT Uniswap on this chain — squatted, verified rather than
+  assumed. `eth_getLogs` works and is CAPPED, not refused (10k blocks public RPC, 100k on
+  Tenderly); a filtered, bounded scan returns real results. **What remains open is the basket
+  SHAPE, an owner decision, not a lookup**: Arc has a BTC leg (cirBTC) and no ETH leg, so the prior
+  two-asset design does not port. The measurements and the open decision are in
+  [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md) and
+  [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json).
 - **Arc TESTNET is not a dry run, and that is measured.** Chain 5042002 carries the USDC predeploy,
   Permit2 and Multicall3 and nothing else this protocol needs: Uniswap, Pyth and CCTP all read zero
   bytes, and Chainlink publishes no feeds for it at all. `ChainlinkOracle` needs a genuine feed per
