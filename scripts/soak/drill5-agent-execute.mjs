@@ -136,6 +136,14 @@ async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) 
     governance: config.chain.governance,
     onEvent: (e) => wrapped[e.level === 'warn' ? 'warn' : 'info'](e.msg, e.detail),
   });
+  // #204/#293: `assertLiveChainId` above (line 191) only checks the deployment address book
+  // against a live read taken once at script start -- it never proves THIS reader's own RPC
+  // connection answers for the chain id THIS phase declares. Every other createChainReader
+  // caller in the repo binds before its first read (run.mjs, canary-runner.mjs); this one did
+  // not, and packages/chain-config/test/chain-binding.test.mjs now enumerates callers from the
+  // filesystem and reds on exactly this gap.
+  const bound = await chainReader.assertBoundToDeclaredChain();
+  wrapped.info(`chain binding: ${bound.message}`);
 
   const agent = createAgent({
     config, account, payer: account, chainReader, log: wrapped,
