@@ -5,7 +5,7 @@
 > every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
 > or move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc,
-> Circle's chain, where USDC is also the native gas asset. The basket is a single asset, cirBTC,
+> where USDC is also the native gas asset. The basket is a single asset, cirBTC,
 > priced from the Chainlink BTC / USD feed and settled in USDC. There is no ETH leg: of the 26,187
 > tokens that appear in a Uniswap v3 pool on Arc, 52 carry an ETH- or BTC-family symbol, and every
 > one of the 51 that is not cirBTC holds under $452 of depth.
