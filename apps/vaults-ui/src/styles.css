@@ -129,3 +129,35 @@ button:focus-visible {
 
 .note { color: var(--ink-dim); font-size: 13px; margin: 12px 0 0; }
 code { font-family: var(--mono); font-size: 12.5px; }
+
+/* Wallet connect + the deposit/vote/exit actions — the one interactive surface in this app that
+   asks for a signature. .btn uses the same --blue-bright accent .vault-row.is-selected does, on
+   the grounds stated at the top of this file: selected and focused only, and a button a member is
+   about to sign something from is exactly that. */
+.btn {
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--blue-bright);
+  background: var(--blue-bright);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--blue-bright); }
+
+.wallet-connect { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.wallet-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.act-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.act-row input[type='text'] {
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  width: 160px;
+}
+.act-row label { display: flex; align-items: center; gap: 4px; font-size: 13px; }

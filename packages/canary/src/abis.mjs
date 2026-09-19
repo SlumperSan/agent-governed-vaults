@@ -59,6 +59,16 @@ export const VAULT_VIEWS = Object.freeze([
   // The vault's immutable governance module — how `governance-watch` finds the Governance
   // contract without a second env var, exactly the way `oracle` locates the oracle.
   view('governance', [], ['address']),
+  // The five reads apps/web/src/wallet-refusals.mjs and apps/web/src/deposit-status.mjs need to
+  // classify a signature as safe/refused/irrevocable before the member wallet UI asks for one
+  // (VaultCore.sol:107,110-115,117,87-88,1073). `pendingDeposit` is a public mapping of a struct,
+  // so Solidity's auto-getter returns the tuple `(amountUsdc, availableAt)` in DECLARATION order —
+  // matching that order here is load-bearing, not cosmetic.
+  view('pendingDeposit', ['address'], [{ name: 'amountUsdc', type: 'uint256' }, { name: 'availableAt', type: 'uint64' }]),
+  view('nonCreatorMemberCount', [], ['uint256']),
+  view('lastDepositTime', ['address'], ['uint256']),
+  view('exitFeeMaxBps', [], ['uint256']),
+  view('exitFeeDecayPeriod', [], ['uint256']),
 ]);
 
 /**
@@ -235,6 +245,15 @@ export const GOVERNANCE_VIEWS = Object.freeze([
   view('commitOf', ['uint256', 'address'], ['bytes32']),
   view('revealedOf', ['uint256', 'address'], ['bool']),
   view('revealedSupportOf', ['uint256', 'address'], ['bool']),
+  // Governance's OWN verdict on whether a vault has a pending execution (Governance.sol:736) —
+  // the fact `VaultCore.requestExit` (VaultCore.sol:551-567) branches on to decide Mode I
+  // (instant settlement, this transaction) vs Mode F (queues, irrevocable, settles later at
+  // whatever NAV holds once the pending proposal resolves). apps/vaults-ui reads this directly
+  // rather than reconstructing it from proposal deadlines client-side (governance.mjs's
+  // `hasPendingExecution` does that from a `Proposal` shape, for a caller that already has one in
+  // hand) — the contract already computed the answer, and an exit warning is exactly the place a
+  // second, client-side opinion of the same fact must not exist.
+  view('hasPendingExecution', ['address'], ['bool']),
   view('configOf', ['address'], [
     { name: 'commitDuration', type: 'uint32' },
     { name: 'revealDuration', type: 'uint32' },
