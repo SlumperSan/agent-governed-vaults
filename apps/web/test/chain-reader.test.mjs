@@ -17,9 +17,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  LEG_SAFETY_UNREAD,
   PROPOSAL_STATUS_BY_ORDINAL,
   PROPOSAL_TYPE_BY_ORDINAL,
   assembleLeg,
+  assembleLegSafety,
   assembleProposal,
   assembleVault,
   legValueWad,
@@ -27,6 +29,7 @@ import {
   planBasketAssets,
   planCore,
   planFeeds,
+  planLegSafety,
   planLegs,
   planPosition,
   planProposal,
@@ -34,7 +37,9 @@ import {
   weightsBps,
 } from '../src/chain-reader.mjs';
 import { MISSING_IN_LIVE } from '../src/live-adapter.mjs';
-import { VAULT_VIEWS, GOVERNANCE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS } from '../../../packages/canary/src/abis.mjs';
+import {
+  VAULT_VIEWS, GOVERNANCE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, TOKEN_SAFETY_VIEWS,
+} from '../../../packages/canary/src/abis.mjs';
 
 const WAD = 10n ** 18n;
 const wad = (n) => BigInt(Math.round(n * 1e6)) * 10n ** 12n;
@@ -50,6 +55,7 @@ const TABLES = {
   GOVERNANCE_VIEWS,
   CHAINLINK_ORACLE_VIEWS,
   AGGREGATOR_V3_VIEWS,
+  TOKEN_SAFETY_VIEWS,
 };
 
 // ── The planner names only functions that exist ────────────────────────────────────────────────
@@ -60,6 +66,7 @@ test('every planned call names a real fragment in the table it claims', () => {
     ...planBasketAssets(VAULT, 2),
     ...planProposalId(GOV, VAULT),
     ...planLegs(VAULT, ORACLE, [WETH]),
+    ...planLegSafety(VAULT, [WETH]),
     ...planProposal(GOV, 41),
     ...planFeeds(['0xfeed000000000000000000000000000000000001']),
     ...planPosition(VAULT, '0xmember00000000000000000000000000000001'.padEnd(42, '0').slice(0, 42)),
@@ -83,6 +90,272 @@ test('planBasketAssets indexes every slot exactly once', () => {
   const calls = planBasketAssets(VAULT, 3);
   assert.deepEqual(calls.map((c) => c.args[0]), [0, 1, 2]);
   assert.equal(planBasketAssets(VAULT, 0).length, 0);
+});
+
+test('planLegSafety plans paused() and isBlacklisted(vault) for every leg, in order', () => {
+  const CBBTC = '0xcb00000000000000000000000000000000cb00';
+  const calls = planLegSafety(VAULT, [WETH, CBBTC]);
+  assert.equal(calls.length, 4);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [WETH, 'paused', []],
+      [WETH, 'isBlacklisted', [VAULT]],
+      [CBBTC, 'paused', []],
+      [CBBTC, 'isBlacklisted', [VAULT]],
+    ],
+  );
+  assert.equal(planLegSafety(VAULT, []).length, 0);
+});
+
+// ── Card #32: paused()/isBlacklisted() per leg — FAILURE DIRECTION FIRST ───────────────────────
+//
+// The whole point of this card: a failed read must render as 'unknown', NEVER as the safe-looking
+// boolean. Every shape a failure can take — a throw the caller catches into `null`, a timeout the
+// caller also catches into `null`, a revert (same), and a call that "succeeds" but the caller could
+// not decode into a strict boolean — is asserted here, BEFORE the happy path, and each assertion
+// names explicitly that the result is not the healthy value.
+
+test('a thrown call (caller passes null) renders paused as unknown, never active', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: null, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.paused, 'unknown');
+  assert.notEqual(leg.paused, 'active', 'a failed read must never look like "not paused"');
+});
+
+test('a timed-out call (caller passes null) renders isBlacklisted as unknown, never clear', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: null, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.blacklisted, 'unknown');
+  assert.notEqual(leg.blacklisted, 'clear');
+});
+
+test('a reverting call renders unknown for both reads, not a mix of unknown and healthy', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: null, pausedReadAt: NOW, blacklistedValue: null, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.paused, 'unknown');
+  assert.equal(leg.blacklisted, 'unknown');
+});
+
+test('a call returning data that is not a strict boolean renders unknown, not a coerced boolean', () => {
+  // A truthy non-boolean (an object, a numeric 1, a string) must not be treated as `true`, and a
+  // falsy non-boolean (0, '', undefined) must not be treated as `false` either — only the EXACT
+  // booleans the contract can actually return may resolve to a definite state.
+  for (const bogus of [1, 0, '', 'false', 'true', undefined, {}, [], NaN]) {
+    const leg = assembleLegSafety({
+      address: WETH, pausedValue: bogus, pausedReadAt: NOW, blacklistedValue: bogus, blacklistedReadAt: NOW,
+    });
+    assert.equal(leg.paused, 'unknown', `pausedValue ${JSON.stringify(bogus)} must render unknown`);
+    assert.equal(leg.blacklisted, 'unknown', `blacklistedValue ${JSON.stringify(bogus)} must render unknown`);
+  }
+});
+
+test('no assembled leg-safety state is ever "not paused" or "clear" from a failed read, across every failure shape', () => {
+  const failureShapes = [null, undefined, 0, 1, '', 'paused', NaN, {}, []];
+  for (const bogus of failureShapes) {
+    const leg = assembleLegSafety({
+      address: WETH, pausedValue: bogus, pausedReadAt: NOW, blacklistedValue: bogus, blacklistedReadAt: NOW,
+    });
+    assert.notEqual(leg.paused, 'active');
+    assert.notEqual(leg.blacklisted, 'clear');
+  }
+});
+
+// ── Now the happy path ──────────────────────────────────────────────────────────────────────────
+
+test('a clean read renders the real boolean, not unknown', () => {
+  const healthy = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW,
+  });
+  assert.equal(healthy.paused, 'active');
+  assert.equal(healthy.blacklisted, 'clear');
+
+  const alarming = assembleLegSafety({
+    address: WETH, pausedValue: true, pausedReadAt: NOW, blacklistedValue: true, blacklistedReadAt: NOW,
+  });
+  assert.equal(alarming.paused, 'paused');
+  assert.equal(alarming.blacklisted, 'blacklisted');
+});
+
+// ── Each leg, and each call on a leg, carries its OWN read timestamp ───────────────────────────
+
+test('pausedReadAt and blacklistedReadAt are carried through unchanged, not stamped with a shared now', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: true, blacklistedReadAt: NOW + 4,
+  });
+  assert.equal(leg.pausedReadAt, NOW);
+  assert.equal(leg.blacklistedReadAt, NOW + 4);
+  assert.notEqual(leg.pausedReadAt, leg.blacklistedReadAt, 'two calls read seconds apart are two facts, not one');
+});
+
+
+test('BLOCKER: a REORDERED safety array cannot hand one leg another leg\'s safety state', () => {
+  // THE FAILURE THIS CLOSES, in the shape it was demonstrated. The merge was `r.legSafety[i]`, so a
+  // caller that assembled the array in a different order than the basket rendered a PAUSED and
+  // BLACKLISTED asset as `active` / `clear` with a fresh timestamp. A confident wrong answer, which is
+  // strictly worse than the `unknown` the tri-state exists to preserve — and the ordered-array test
+  // beside this one could never see it, because index and identity agree there.
+  const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  // Leg B is the dangerous one: paused AND blacklisted.
+  const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
+  const safetyB = assembleLegSafety({ address: '0xcb', pausedValue: true, pausedReadAt: NOW - 4, blacklistedValue: true, blacklistedReadAt: NOW - 3 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [legA, legB],
+    legSafety: [safetyB, safetyA], // REVERSED
+  });
+
+  assert.equal(v.basket[1].paused, 'paused', 'the paused leg must still read paused when the array order differs');
+  assert.equal(v.basket[1].blacklisted, 'blacklisted');
+  assert.equal(v.basket[1].pausedReadAt, NOW - 4, 'and it must keep its OWN timestamp, not the other leg\'s');
+  assert.equal(v.basket[0].paused, 'active');
+  assert.equal(v.basket[0].blacklisted, 'clear');
+  assert.equal(v.basket[0].pausedReadAt, NOW - 10);
+});
+
+test('a safety record for an address that is not in the basket reaches no leg at all', () => {
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const stranger = assembleLegSafety({ address: '0xdeadbeef', pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [stranger],
+  });
+  assert.equal(v.basket[0].paused, 'unknown', 'a record naming another asset must not clear this leg');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+  assert.equal(v.basket[0].pausedReadAt, null);
+});
+
+test('TWO records naming one address make it ambiguous, and ambiguity reads unknown', () => {
+  // Fails closed rather than picking one. "Two answers" about whether an asset is paused is not an
+  // answer, and the one thing that must never come out of this function is a clean bill of health
+  // nobody established.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const first = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const second = assembleLegSafety({ address: WETH, pausedValue: true, pausedReadAt: NOW + 1, blacklistedValue: true, blacklistedReadAt: NOW + 1 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [first, second],
+  });
+  assert.equal(v.basket[0].paused, 'unknown');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+});
+
+test('THREE OR MORE records naming one address stay ambiguous - two is the arity that proves nothing', () => {
+  // At exactly two records `safetyByAddress.has(key)` carries the whole check and the `ambiguous`
+  // SET never matters: deleting it leaves two-record ambiguity working. The set exists for the third
+  // record, which finds `has(key)` FALSE - the second one deleted the entry - and would re-insert,
+  // handing the leg a clean bill of health assembled from three contradictory reads. Every arity from
+  // 2 to 5 is checked, because "an odd number of duplicates re-inserts" is the shape of the bug.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const n of [2, 3, 4, 5]) {
+    const records = [];
+    for (let i = 0; i < n; ++i) {
+      records.push(assembleLegSafety({
+        address: i % 2 === 0 ? WETH : WETH.toUpperCase(), // and the duplicate may be checksummed
+        pausedValue: i % 2 === 0,
+        pausedReadAt: NOW + i,
+        blacklistedValue: i % 2 === 0,
+        blacklistedReadAt: NOW + i,
+      }));
+    }
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [leg],
+      legSafety: records,
+    });
+    assert.equal(v.basket[0].paused, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].blacklisted, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].pausedReadAt, null, `${n} records: an ambiguous leg must carry no timestamp either`);
+  }
+});
+
+test('a record with NO address is dropped, and an address-less leg does not collect it', () => {
+  // `if (!key) continue` in the merge. Without it the record is stored under the '' key, and
+  // `lcAddr` returns '' for any leg whose address is missing or not a string - so that leg LOOKS UP
+  // the address-less record and inherits its state. That is blocker 1 of this PR returning by a
+  // different door, and it needs a leg with no address to show, which no other test builds.
+  const namedLeg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const anonLeg = assembleLeg({ address: undefined, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const missing of [undefined, null, '', '   ', 42, {}]) {
+    const orphan = assembleLegSafety({ address: missing, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [namedLeg, anonLeg],
+      legSafety: [orphan],
+    });
+    const why = `address ${JSON.stringify(missing)}`;
+    // 'active'/'clear' is the DANGEROUS answer here: a clean bill of health nobody established.
+    assert.equal(v.basket[0].paused, 'unknown', `${why}: a named leg must not collect an unaddressed record`);
+    assert.equal(v.basket[1].paused, 'unknown', `${why}: an address-less leg must not collect it either`);
+    assert.equal(v.basket[1].blacklisted, 'unknown', `${why}: nor its blacklist state`);
+  }
+});
+
+test('address matching is case-insensitive, because a checksummed address is the same asset', () => {
+  const leg = assembleLeg({ address: WETH.toLowerCase(), assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const safety = assembleLegSafety({ address: WETH.toUpperCase(), pausedValue: true, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [safety],
+  });
+  assert.equal(v.basket[0].paused, 'paused', 'a checksum difference must not silently lose a paused state');
+});
+
+test('assembleVault merges per-leg safety by ADDRESS, each leg keeping its own timestamps', () => {
+  const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
+  const safetyB = assembleLegSafety({ address: '0xcb', pausedValue: null, pausedReadAt: NOW - 4, blacklistedValue: true, blacklistedReadAt: NOW - 3 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [legA, legB],
+    // REVERSED on purpose. With `[safetyA, safetyB]` the array is already in basket order, so the
+    // index merge this PR replaced produces the identical result and the test named "by ADDRESS"
+    // passes with the defect restored. The order has to disagree with the legs for the assertion to
+    // be about identity rather than about position.
+    legSafety: [safetyB, safetyA],
+  });
+
+  assert.equal(v.basket[0].paused, 'active');
+  assert.equal(v.basket[0].pausedReadAt, NOW - 10);
+  assert.equal(v.basket[1].paused, 'unknown', 'leg B\'s failed paused() read must not borrow leg A\'s healthy state');
+  assert.equal(v.basket[1].blacklisted, 'blacklisted');
+  assert.notEqual(
+    v.basket[0].pausedReadAt, v.basket[1].pausedReadAt,
+    'two legs read at different times are two distinct facts, not one shared timestamp',
+  );
+});
+
+test('a leg with no safety reads supplied at all defaults to LEG_SAFETY_UNREAD — unknown, never healthy', () => {
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    // legSafety deliberately omitted
+  });
+  assert.equal(v.basket[0].paused, LEG_SAFETY_UNREAD.paused);
+  assert.equal(v.basket[0].paused, 'unknown');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+  assert.equal(v.basket[0].pausedReadAt, null);
 });
 
 // ── Arithmetic, against VaultCore's own formulas ────────────────────────────────────────────────
