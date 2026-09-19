@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "gate": "node scripts/gate.mjs",
+    "gate:log": "node scripts/gate-logged.mjs",
     "cc": "node scripts/status.mjs",
     "cc:web": "node scripts/dashboard.mjs",
     "build:contracts": "cd contracts && forge build",
