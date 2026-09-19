@@ -228,6 +228,13 @@ export const GOVERNANCE_VIEWS = Object.freeze([
   // subtracts it from `forWeight` in both sub-five stake terms, so a reader that shows a sub-five
   // FOR majority without it is showing a number the contract does not use.
   view('delegatedForWeight', ['uint256'], ['uint256']),
+  // Member-scoped commit-reveal custody reads (apps/web/src/vote-custody.mjs). All three are
+  // PUBLIC mappings, never emitted, so a chain read is the only source. `commitOf` returning
+  // `bytes32(0)` is a genuine "no commit" answer, not a missing read — the caller distinguishes
+  // that from an unread/reverted call, never from this table.
+  view('commitOf', ['uint256', 'address'], ['bytes32']),
+  view('revealedOf', ['uint256', 'address'], ['bool']),
+  view('revealedSupportOf', ['uint256', 'address'], ['bool']),
   view('configOf', ['address'], [
     { name: 'commitDuration', type: 'uint32' },
     { name: 'revealDuration', type: 'uint32' },

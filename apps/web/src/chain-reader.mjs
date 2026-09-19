@@ -202,6 +202,51 @@ export function planPosition(vault, member) {
 }
 
 /**
+ * A member's vote-custody reads for one proposal — `apps/web/src/vote-custody.mjs`'s only source
+ * of truth. Separate from `planPosition`: those are read for every connected member on every
+ * vault, these only when a member is looking at a proposal they may have committed on.
+ *
+ * @param {string} governance
+ * @param {number|bigint} pid
+ * @param {string} member
+ */
+export function planVoteCommit(governance, pid, member) {
+  return Object.freeze([
+    call(governance, 'GOVERNANCE_VIEWS', 'commitOf', [pid, member]),
+    call(governance, 'GOVERNANCE_VIEWS', 'revealedOf', [pid, member]),
+    call(governance, 'GOVERNANCE_VIEWS', 'revealedSupportOf', [pid, member]),
+  ]);
+}
+
+const ZERO_BYTES32 = '0x' + '0'.repeat(64);
+const isBytes32Hex = (v) => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v);
+
+/**
+ * Assemble `planVoteCommit`'s three reads into the shape `vote-custody.mjs` expects.
+ *
+ * Mirrors `assembleLegSafety` / `PROPOSAL_UNKNOWN`: only an EXACT typed value earns "known". A
+ * `bytes32(0)` commitment IS a real, known "no commit" answer — `commitOf` cannot revert on a
+ * well-formed call, so a zero here means the mapping is genuinely empty. Anything else (`null`,
+ * `undefined`, a revert, a timeout, a call never attempted, or a malformed string) is left
+ * `undefined` — UNREAD, never coerced into "no commit" or "not revealed". Reporting a member
+ * ready to reveal off an unread commit is the exact failure this module exists to prevent.
+ *
+ * @param {{commitOfValue: unknown, revealedValue: unknown, revealedSupportValue: unknown}} r
+ * @returns {{onChainCommitment: string|undefined, revealed: boolean|undefined, revealedSupport: boolean|undefined}}
+ */
+export function assembleVoteCommit(r) {
+  return Object.freeze({
+    onChainCommitment: isBytes32Hex(r.commitOfValue) ? r.commitOfValue : undefined,
+    revealed: r.revealedValue === true || r.revealedValue === false ? r.revealedValue : undefined,
+    revealedSupport:
+      r.revealedSupportValue === true || r.revealedSupportValue === false ? r.revealedSupportValue : undefined,
+  });
+}
+
+/** Exported so `vote-custody.mjs` and its tests share one definition of "genuinely no commit". */
+export const VOTE_COMMIT_ZERO = ZERO_BYTES32;
+
+/**
  * NAV per share, in WAD.
  *
  * Returns 0n for an empty vault rather than dividing by zero. An empty vault has no price per
