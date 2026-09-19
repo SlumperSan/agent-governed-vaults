@@ -86,7 +86,9 @@ export const HOME = {
         title: 'Vote on every trade',
         body:
           'The operator proposes a basket. You vote in secret, then reveal. The vault does not ' +
-          'buy or sell into that basket until enough members say yes.',
+          'buy or sell into that basket until enough members say yes. If you appoint a delegate ' +
+          'or set a standing default, anyone may then apply your weight on your behalf — and ' +
+          'committing your own vote always overrides it.',
       },
       {
         n: '04',
