@@ -74,11 +74,12 @@ export const HOME = {
       },
       {
         n: '02',
-        title: 'Come back and activate it',
+        title: 'Then it has to be activated',
         body:
-          'After the four hours you activate the deposit yourself, and your shares are priced ' +
-          'at that moment off live Chainlink feeds. Nothing does this for you. Until you do it ' +
-          'you are holding your own money in escrow, not a position — and you cannot vote.',
+          'Once the four hours elapse the deposit can be activated by any caller, not just you. ' +
+          'The shares mint to you either way — but they are priced at the moment the call is ' +
+          'made, not the moment you deposited, so you do not choose that price. Until someone ' +
+          'makes it you are holding your own money in escrow, not a position, and you cannot vote.',
       },
       {
         n: '03',
