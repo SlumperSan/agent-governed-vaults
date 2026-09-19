@@ -1054,8 +1054,27 @@ function recordAnswer(id, answer, custom) {
   if (!raw.startsWith('---') || end === -1) return { code: 422, msg: 'task file has no frontmatter block' };
 
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const patched =
-    raw.slice(0, end) + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
+  let head = raw.slice(0, end);
+
+  // APPROVING A SUGGESTION MOVES IT. Recording the answer and leaving `status: suggestion` in place
+  // left the card sitting in the Suggestions column after it had been approved, which reads as the
+  // click not having worked -- and the whole point of the column is that approved ideas leave it.
+  //
+  // The rewrite is confined to the frontmatter block (`head` ends at the closing `---`) and to a
+  // status line that currently reads `suggestion`, so it cannot touch a body line that happens to
+  // start with "status:" and cannot move a card that is not a suggestion.
+  //
+  // A free-text answer is NEITHER an approval nor a decline and deliberately leaves the card where
+  // it is: he has said something the two buttons could not say, and guessing which way it fell
+  // would either bury an idea he liked or queue one he did not. The answer is on the card for the
+  // department to act on.
+  if (t.status === 'suggestion') {
+    const moved = /^\s*approve\b/i.test(answer) ? 'backlog'
+                : /^\s*decline\b/i.test(answer) ? 'done'
+                : '';
+    if (moved) head = head.replace(/^status:[ \t]*suggestion[ \t]*$/mi, `status: ${moved}`);
+  }
+  const patched = head + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
   // Write via a temp file in the same directory, then rename. A half-written task file would be
   // parsed by the next poll 5s later and render as a task with no title.
   const tmp = `${t.file}.tmp-${process.pid}`;
