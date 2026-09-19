@@ -102,7 +102,7 @@ export const STATUS = {
     },
     {
       k: 'Basket',
-      v: 'ETH and BTC, priced from Chainlink feeds. One genuine feed per asset, read directly.',
+      v: 'cirBTC, priced from a Chainlink feed. One genuine feed, read directly, and no fallback.',
     },
     {
       k: 'Portability',
