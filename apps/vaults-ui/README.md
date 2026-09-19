@@ -20,9 +20,32 @@ the real modules.
 
 ## What it renders from
 
-`apps/web/src/fixtures.mjs` — the allocator front end's test fixtures, not a live chain read. The
-page says so on screen. Pointing it at a chain means swapping the two imports in `src/App.tsx` for
-`apps/web/src/live-adapter.mjs`; no component knows where a vault came from.
+**Live chain reads. No fixtures reach this app.** `src/lib/live-vaults.ts` calls
+`apps/web/src/chain-reader.mjs`'s `plan*`/`assemble*` functions over viem, bound to the chain
+`VITE_CHAIN_ID` declares (`packages/chain-config/src/chain-binding.mjs`, issue #204 — the client
+refuses to read unless the RPC actually answers for that chain id). `apps/web/src/fixtures.mjs` is
+the allocator front end's OWN test fixtures and nothing in this workspace's `src/` imports it;
+`test/csp.test.mjs` fails the build if that ever changes.
+
+**Three env vars, build-time only** (Vite inlines `import.meta.env.*` — a served page cannot read
+them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset —
+which is the state of a production build today, since nothing from this repository is deployed on
+Arc mainnet yet (`contracts/config/arc-mainnet.json`'s own `status` field says so) — and the page
+renders an honest "not configured" state, never a bundled sample. `cp .env.example
+.env.development.local` sets all three against **Base Sepolia**, the one live-read path this
+repository can prove end to end right now (`contracts/config/deployments/base-sepolia.json`'s smoke
+vault, with nothing to fill in — see the template's own header), so `npm run dev` exercises real
+chain reads. Vite never loads `.env.example` itself, same convention as the root `.env.example`.
+
+**Before the Arc cutover:** set the three vars in the Cloudflare Pages build environment for this
+project, **and** update `public/_headers`' `connect-src` to the production RPC origin, in the same
+commit — see that file's own comment on the directive, and `test/csp.test.mjs`'s coupling test,
+which fails if `.env.example`'s `VITE_RPC_URL` and `_headers`' `connect-src` disagree.
+
+**Not wired here:** a connected wallet's own position (shares, cost basis, queued exit,
+pending-deposit and vote-custody reads — `chain-reader.mjs`'s `planPosition`/`planVoteCommit`).
+`feat/wallet-connect-and-sign` adds the wallet connection this app needs before those reads have a
+member address to read for; this app shows an honest "connect a wallet" notice in that slot.
 
 ## Commands
 
@@ -71,7 +94,8 @@ The rest, unchanged and still worth knowing:
   beside `apps/site/functions`. This app has no Function and needs none. `apps/app/README.md`
   records the hazard from the other side: Pages picks up a Functions bundle from the working
   directory if one is sitting there.
-- **One thing to check before the first deploy:** `connect-src` is `'self'`, because this app reads
-  bundled fixtures rather than a chain. The moment it is pointed at `apps/web/src/live-adapter.mjs`,
-  the one RPC origin has to be added to `public/_headers` **in the same commit as the code that
-  calls it**, or every read is refused by the browser.
+- **`connect-src` already names an RPC origin** (`https://sepolia.base.org`, the provable
+  Base Sepolia config — see "What it renders from" above), because this app now reads a chain
+  rather than bundling fixtures. **Before deploying against a different `VITE_RPC_URL`, update
+  `public/_headers`' `connect-src` to match, in the same commit**, or every read is refused by the
+  browser with no build-time warning.

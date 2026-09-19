@@ -54,7 +54,9 @@ export function ProposalPanel({ vault, nowSec }: Props) {
   return (
     <section className="panel">
       <h2>Proposal #{p.pid}</h2>
-      <p className="proposal-title">{p.title}</p>
+      {/* No on-chain title — `Governance.proposals` carries `actionHash`, not prose. Fall back to
+          the proposal type rather than rendering a blank line where fixture data used to have one. */}
+      <p className="proposal-title">{p.title ?? `${p.ptype} proposal`}</p>
       <dl className="kv">
         <dt>Type</dt>
         <dd>{p.ptype}</dd>

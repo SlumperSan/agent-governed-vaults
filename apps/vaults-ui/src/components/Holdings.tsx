@@ -1,9 +1,14 @@
-import type { Vault } from '../lib/atlas';
-import { legValueWad, usdcExact, wadExact } from '../lib/atlas';
+import type { BasketLeg, Vault } from '../lib/atlas';
+import { usdcExact, wadExact } from '../lib/atlas';
 
 interface Props {
   readonly vault: Vault;
   readonly nowSec: number;
+}
+
+/** WAD-scaled balance for display — `assetUnit`, never `decimals`: see `atlas.ts`'s `BasketLeg`. */
+function balanceWad(leg: BasketLeg): bigint {
+  return leg.assetUnit === 0n ? 0n : (leg.balance * 10n ** 18n) / leg.assetUnit;
 }
 
 /**
@@ -13,15 +18,21 @@ interface Props {
  * beside it is what the position is actually worth at the current oracle
  * price. They drift apart between rebalances by design — nothing rebalances
  * until a proposal passes — so both are shown rather than one.
+ *
+ * A LEG WHOSE PRICE COULD NOT BE READ SHOWS "—", NOT "$0.00". `leg.priceWad`/`leg.valueWad` are
+ * `null` when `priceWad()` reverted (see `live-vaults.ts`) — the same freeze condition that zeros
+ * `vault.navWad`, one basket asset at a time. A null leg contributes nothing to `basketWad`'s sum
+ * (there is no other honest number to add), so the weight percentages below are computed over
+ * what could actually be priced, not over an assumed zero.
  */
 export function Holdings({ vault, nowSec }: Props) {
   const legs = vault.basket;
-  const basketWad = legs.reduce((acc, l) => acc + legValueWad(l), 0n);
+  const basketWad = legs.reduce((acc, l) => acc + (l.valueWad ?? 0n), 0n);
   const idleWad = vault.idleUsdc * 10n ** 12n;
   const totalWad = basketWad + idleWad;
 
-  const pct = (part: bigint): string =>
-    totalWad === 0n ? '—' : `${(Number((part * 10000n) / totalWad) / 100).toFixed(2)}%`;
+  const pct = (part: bigint | null): string =>
+    part === null || totalWad === 0n ? '—' : `${(Number((part * 10000n) / totalWad) / 100).toFixed(2)}%`;
 
   return (
     <section className="panel">
@@ -40,16 +51,15 @@ export function Holdings({ vault, nowSec }: Props) {
         </thead>
         <tbody>
           {legs.map((leg) => {
-            const value = legValueWad(leg);
             const age = nowSec - leg.oracleUpdatedAt;
             const stale = age > leg.maxStalenessSec;
             return (
               <tr key={leg.address}>
-                <th scope="row">{leg.symbol}</th>
-                <td className="num">{wadExact(leg.balance * 10n ** BigInt(18 - leg.decimals), { maxFrac: 6 })}</td>
-                <td className="num">${wadExact(leg.priceWad, { maxFrac: 2 })}</td>
-                <td className="num">${wadExact(value, { maxFrac: 2 })}</td>
-                <td className="num">{pct(value)}</td>
+                <th scope="row">{leg.symbol || `${leg.address.slice(0, 6)}…${leg.address.slice(-4)}`}</th>
+                <td className="num">{wadExact(balanceWad(leg), { maxFrac: 6 })}</td>
+                <td className="num">{leg.priceWad === null ? '—' : `$${wadExact(leg.priceWad, { maxFrac: 2 })}`}</td>
+                <td className="num">{leg.valueWad === null ? '—' : `$${wadExact(leg.valueWad, { maxFrac: 2 })}`}</td>
+                <td className="num">{pct(leg.valueWad)}</td>
                 <td className="num dim">{(leg.weightBps / 100).toFixed(2)}%</td>
                 <td className={stale ? 'num tag-warn' : 'num dim'}>
                   {age}s{stale ? ' · stale' : ''}
@@ -69,8 +79,9 @@ export function Holdings({ vault, nowSec }: Props) {
         </tbody>
       </table>
       <p className="note">
-        Values are the vault&rsquo;s own oracle reads. A stale leg is marked rather than hidden:
-        every NAV-reading path freezes on staleness, including exits.
+        Values are the vault&rsquo;s own oracle reads. A stale leg is marked rather than hidden, and
+        a leg whose price could not be read shows &ldquo;—&rdquo; rather than a fabricated $0: every
+        NAV-reading path freezes on staleness, including exits.
       </p>
     </section>
   );

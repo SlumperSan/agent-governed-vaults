@@ -1,0 +1,13 @@
+/**
+ * Types for `packages/canary/src/abis.mjs`. Hand-written: the source is untyped ESM, drift-checked
+ * against the compiled contracts by `packages/canary/test/abis.test.mjs` — not by this file. Only
+ * the fragment tables `src/lib/live-vaults.ts` actually encodes against are declared.
+ */
+import type { Abi } from 'viem';
+
+export declare const VAULT_VIEWS: Abi;
+export declare const GOVERNANCE_VIEWS: Abi;
+export declare const CHAINLINK_ORACLE_VIEWS: Abi;
+export declare const AGGREGATOR_V3_VIEWS: Abi;
+export declare const TOKEN_SAFETY_VIEWS: Abi;
+export declare const OPERATOR_REGISTRY_VIEWS: Abi;

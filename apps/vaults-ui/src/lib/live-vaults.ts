@@ -1,0 +1,434 @@
+import { useEffect, useState } from 'react';
+import { createPublicClient, http, type PublicClient } from 'viem';
+import { assertChainBinding } from '@chain/binding';
+import {
+  AGGREGATOR_V3_VIEWS,
+  CHAINLINK_ORACLE_VIEWS,
+  GOVERNANCE_VIEWS,
+  OPERATOR_REGISTRY_VIEWS,
+  VAULT_VIEWS,
+} from '@chain/abis';
+import {
+  assembleLeg,
+  assembleLegSafety,
+  assembleProposal,
+  assembleVault,
+  describeError,
+  failed,
+  loading,
+  planBasketAssets,
+  planCore,
+  planFeeds,
+  planLegSafety,
+  planLegs,
+  planProposal,
+  planProposalId,
+  ready,
+  type AssembledVault,
+  type Fetched,
+  type PlannedCall,
+  type Vault,
+} from './atlas';
+
+/**
+ * The viem glue between `apps/web/src/chain-reader.mjs` (which only says WHICH calls to make and
+ * what the answers MEAN — see that file's own header for why it holds no viem and no network) and
+ * a real RPC. `chain-reader.mjs` calls this "the twenty lines of viem" its header says belong to
+ * the caller; this workspace is that caller.
+ *
+ * NOT IN `apps/web/src`. That directory is zero-dependency by its own rule (importable under
+ * `node --test` with no fixture server), so viem, `packages/canary/src/abis.mjs` and
+ * `packages/chain-config/src/chain-binding.mjs` are aliased in here instead — see `vite.config.ts`.
+ *
+ * WHAT THIS DOES NOT COVER. `planPosition`/`planVoteCommit` (a connected wallet's own shares,
+ * pending deposit, queued exit, and vote-custody reads) are deliberately not wired here.
+ * `feat/wallet-connect-and-sign` is the branch adding a connected wallet to this app at all; wiring
+ * per-member reads before there is a wallet to read them for would be inventing a member address.
+ * `App.tsx` renders an honest "connect a wallet" notice in that slot instead of the fixture WALLET.
+ */
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** The fragment tables `chain-reader.mjs`'s `PlannedCall.abi` can name. Extend, don't fork. */
+const ABI_TABLES: Record<string, unknown> = Object.freeze({
+  VAULT_VIEWS,
+  GOVERNANCE_VIEWS,
+  CHAINLINK_ORACLE_VIEWS,
+  AGGREGATOR_V3_VIEWS,
+  OPERATOR_REGISTRY_VIEWS,
+});
+
+function toContractCall(c: PlannedCall) {
+  const abi = ABI_TABLES[c.abi];
+  if (!abi) throw new Error(`live-vaults: planned call names an unknown ABI table "${c.abi}"`);
+  return { address: c.address, abi, functionName: c.fn, args: c.args };
+}
+
+/**
+ * Viem decodes a multi-output Solidity function — a struct-valued mapping getter's auto-generated
+ * ABI lists each field as its OWN output rather than a single tuple, which is what `configOf`,
+ * `proposals`, `feedOf` and `latestRoundData` all are — as a plain POSITIONAL array, confirmed
+ * against the real contracts on Base Sepolia: none of `configOf`'s, `proposals`'s or `feedOf`'s
+ * results carry a `.fieldName` property despite every output in `packages/canary/src/abis.mjs`
+ * being named. `chain-reader.mjs`'s `assembleProposal`/`assembleLeg`/`assembleVault` all
+ * destructure these by NAME (`p.ptype`, `feed.heartbeat`, `governanceConfig['quorumBps']`, …)
+ * because its own tests always hand it named objects — so this is the missing half of "the
+ * twenty lines of viem" that module's header calls the caller's problem: zip each positional
+ * result back into the name its own ABI fragment declares. A single-output function (everything
+ * in `VAULT_VIEWS`) is unaffected — viem returns those unwrapped, never as a one-element array.
+ */
+function namedStruct(table: string, fn: string, value: unknown): Record<string, unknown> {
+  const abi = ABI_TABLES[table] as readonly { name: string; outputs?: readonly { name?: string }[] }[];
+  const fragment = abi?.find((f) => f.name === fn);
+  const outputs = fragment?.outputs;
+  if (!outputs || !Array.isArray(value)) {
+    throw new Error(`live-vaults: cannot decode ${table}.${fn} — no fragment outputs, or the result was not an array`);
+  }
+  const obj: Record<string, unknown> = {};
+  outputs.forEach((o, i) => {
+    if (o.name) obj[o.name] = (value as readonly unknown[])[i];
+  });
+  return obj;
+}
+
+/** A viem-shaped multicall result, without importing viem's type just for this. */
+interface CallResult {
+  readonly status: 'success' | 'failure';
+  readonly result?: unknown;
+  readonly error?: unknown;
+}
+
+/** Batches one round through `client.multicall`. Empty input returns `[]` without a network call. */
+async function multicallPlan(
+  client: Pick<PublicClient, 'multicall'>,
+  calls: readonly PlannedCall[],
+): Promise<readonly CallResult[]> {
+  if (calls.length === 0) return [];
+  return (await client.multicall({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    contracts: calls.map(toContractCall) as any,
+    allowFailure: true,
+  })) as readonly CallResult[];
+}
+
+function callErrorText(c: CallResult): string {
+  const e = c.error as { shortMessage?: string; message?: string } | undefined;
+  return e?.shortMessage ?? e?.message ?? String(c.error ?? 'unknown error');
+}
+
+/**
+ * A read this pipeline treats as STRUCTURAL — immutable state or a plain storage read that a
+ * well-formed, correctly-addressed vault must answer. A failure here is transport/config trouble,
+ * not a fact about the vault, so it throws rather than folding into the assembled result; the
+ * caller (`fetchLiveVaults`) turns that into the page's `error` state instead of a half-built
+ * `Vault` with an invented number in place of the field that failed.
+ */
+function requireOk(c: CallResult, label: string, address: string): unknown {
+  if (c.status !== 'success') {
+    throw new Error(`live-vaults: ${label} failed for ${address}: ${callErrorText(c)}`);
+  }
+  return c.result;
+}
+
+interface RawLeg {
+  readonly address: string;
+  readonly assetUnit: bigint;
+  readonly balance: bigint;
+  readonly priceOk: boolean;
+  readonly priceWad: bigint;
+  readonly feed: string;
+  readonly heartbeat: number | bigint;
+}
+
+/**
+ * Round 3a — `planLegs` reads four values per asset: `assetUnit`, `assetBalance`, `priceWad`,
+ * `feedOf`. Only `priceWad` is allowed to fail: `chain-reader.mjs`'s own header names it "the read
+ * allowed to revert meaningfully" at the VAULT level (`navWad`), and on a single-asset basket the
+ * same stale/out-of-band/down-sequencer condition that reverts `navWad` reverts this leg's
+ * `priceWad` too — so a failure here is expected, not a transport error, on a frozen vault's leg.
+ */
+async function readLegs(
+  client: Pick<PublicClient, 'multicall'>,
+  vault: string,
+  oracle: string,
+  assets: readonly string[],
+): Promise<readonly RawLeg[]> {
+  if (assets.length === 0) return [];
+  const results = await multicallPlan(client, planLegs(vault, oracle, assets));
+  return assets.map((address, i) => {
+    const base = i * 4;
+    const assetUnit = requireOk(results[base] as CallResult, `assetUnit(${address})`, vault) as bigint;
+    const balance = requireOk(results[base + 1] as CallResult, `assetBalance(${address})`, vault) as bigint;
+    const priceCall = results[base + 2] as CallResult;
+    const priceOk = priceCall.status === 'success';
+    const feedRaw = requireOk(results[base + 3] as CallResult, `feedOf(${address})`, vault);
+    const feed = namedStruct('CHAINLINK_ORACLE_VIEWS', 'feedOf', feedRaw) as {
+      feed: string;
+      heartbeat: number | bigint;
+    };
+    return {
+      address,
+      assetUnit,
+      balance,
+      priceOk,
+      priceWad: priceOk ? (priceCall.result as bigint) : 0n,
+      feed: feed.feed,
+      heartbeat: feed.heartbeat,
+    };
+  });
+}
+
+/**
+ * Round 4 — `latestRoundData` per feed, for `oracleUpdatedAt`. A failed feed read defaults the age
+ * to "as of the epoch" rather than "just now": `Holdings.tsx` compares `nowSec - oracleUpdatedAt`
+ * against `maxStalenessSec` to badge a leg stale, and the safe direction for an UNREADABLE age is
+ * to read as maximally stale, never as fresh.
+ */
+async function readFeedAges(
+  client: Pick<PublicClient, 'multicall'>,
+  legs: readonly RawLeg[],
+): Promise<readonly number[]> {
+  if (legs.length === 0) return [];
+  const results = await multicallPlan(client, planFeeds(legs.map((l) => l.feed)));
+  return results.map((r) => {
+    if (r.status !== 'success') return 0;
+    const decoded = namedStruct('AGGREGATOR_V3_VIEWS', 'latestRoundData', r.result) as { updatedAt: bigint };
+    return Number(decoded.updatedAt);
+  });
+}
+
+/** Round 3c (card #32) — a failed `paused`/`isBlacklisted` read is a legitimate `'unknown'`, not a transport error. */
+async function readLegSafety(client: Pick<PublicClient, 'multicall'>, vault: string, assets: readonly string[]) {
+  if (assets.length === 0) return [];
+  const results = await multicallPlan(client, planLegSafety(vault, assets));
+  const readAt = Math.floor(Date.now() / 1000);
+  return assets.map((address, i) => {
+    const pausedR = results[i * 2] as CallResult;
+    const blR = results[i * 2 + 1] as CallResult;
+    return assembleLegSafety({
+      address,
+      pausedValue: pausedR.status === 'success' ? pausedR.result : null,
+      pausedReadAt: readAt,
+      blacklistedValue: blR.status === 'success' ? blR.result : null,
+      blacklistedReadAt: readAt,
+    });
+  });
+}
+
+/** One vault, all four rounds. Throws on any structural read failure — the caller maps that to `Fetched.error`. */
+async function readOneVault(client: PublicClient, address: string): Promise<AssembledVault> {
+  const coreResults = await multicallPlan(client, planCore(address));
+  // planCore's order: navWad, totalShares, idleUsdc, usdcScalar, totalPendingUsdc, basketLength,
+  // childVaultCount, oracle, governance, creator, operatorRegistry — 11 calls, indices 0-10.
+  // Cast to a fixed-length tuple (rather than `CallResult[]`) so the destructure below is not
+  // subject to `noUncheckedIndexedAccess` widening every element to `| undefined` — the length is
+  // pinned by `planCore`'s own literal call list, asserted by `apps/web/test/chain-reader.test.mjs`.
+  const [
+    navWadCall, totalSharesR, idleUsdcR, usdcScalarR, totalPendingUsdcR,
+    basketLengthR, childVaultCountR, oracleR, governanceR, creatorR, operatorRegistryR,
+  ] = coreResults as unknown as readonly [
+    CallResult, CallResult, CallResult, CallResult, CallResult,
+    CallResult, CallResult, CallResult, CallResult, CallResult, CallResult,
+  ];
+  const core = {
+    navWad: navWadCall.status === 'success' ? (navWadCall.result as bigint) : null,
+    totalShares: requireOk(totalSharesR, 'totalShares', address) as bigint,
+    idleUsdc: requireOk(idleUsdcR, 'idleUsdc', address) as bigint,
+    usdcScalar: requireOk(usdcScalarR, 'usdcScalar', address) as bigint,
+    totalPendingUsdc: requireOk(totalPendingUsdcR, 'totalPendingUsdc', address) as bigint,
+    childVaultCount: requireOk(childVaultCountR, 'childVaultCount', address) as bigint,
+    oracle: requireOk(oracleR, 'oracle', address) as string,
+    governance: requireOk(governanceR, 'governance', address) as string,
+    creator: requireOk(creatorR, 'creator', address) as string,
+  };
+  const operatorRegistry = requireOk(operatorRegistryR, 'operatorRegistry', address) as string;
+  const basketLength = Number(requireOk(basketLengthR, 'basketLength', address) as bigint);
+
+  const [assetResults, proposalIdResults, operatorIdResults] = await Promise.all([
+    multicallPlan(client, planBasketAssets(address, basketLength)),
+    multicallPlan(client, planProposalId(core.governance, address)),
+    // Attestation (`operatorId !== 0`, `live-adapter.mjs`'s own convention). Not one of
+    // `chain-reader.mjs`'s `plan*` functions — OperatorRegistry is outside that module's contract
+    // — so this is the one call this file plans directly rather than through it. Left unread, a
+    // real vault's own `attested` would default to `false` (`assembleVault`'s own default), which
+    // is the SAME false claim as an unregistered operator: `vault-state.mjs` renders it as a
+    // critical "self-declared and unverifiable" badge. Reading it is cheaper than being wrong.
+    multicallPlan(client, [
+      { address: operatorRegistry, abi: 'OPERATOR_REGISTRY_VIEWS', fn: 'operatorIdOf', args: [core.creator] },
+    ]),
+  ]);
+  const assets = assetResults.map((r, i) => requireOk(r as CallResult, `basketAssets(${i})`, address) as string);
+  const activeProposalId = requireOk(proposalIdResults[0] as CallResult, 'activeProposalOf', address) as bigint;
+  const governanceConfig = namedStruct(
+    'GOVERNANCE_VIEWS',
+    'configOf',
+    requireOk(proposalIdResults[1] as CallResult, 'configOf', address),
+  );
+  const operatorId = requireOk(operatorIdResults[0] as CallResult, 'operatorIdOf', address) as bigint;
+  const attested = operatorId !== 0n;
+
+  const [rawLegs, legSafety, proposalResults] = await Promise.all([
+    readLegs(client, address, core.oracle, assets),
+    readLegSafety(client, address, assets),
+    activeProposalId === 0n ? Promise.resolve(null) : multicallPlan(client, planProposal(core.governance, activeProposalId)),
+  ]);
+
+  const oracleAges = await readFeedAges(client, rawLegs);
+  const legs = rawLegs.map((r, i) =>
+    assembleLeg({
+      address: r.address,
+      assetUnit: r.assetUnit,
+      balance: r.balance,
+      priceWad: r.priceWad,
+      feed: { feed: r.feed, heartbeat: r.heartbeat },
+      oracleUpdatedAt: oracleAges[i] ?? 0,
+    }),
+  );
+  // Overwrite for DISPLAY only, after `assembleLeg` has already used a stand-in 0n so its internal
+  // `legValueWad` (balance * priceWad / assetUnit) does not throw on `null * bigint`. The stand-in
+  // never reaches a render: `priceOk === false` forces both fields back to `null` here, the same
+  // "trust the flag, not the number" pattern `assembleVault` already applies to a reverted `navWad`.
+  const legsForDisplay = legs.map((l, i) =>
+    rawLegs[i]?.priceOk === false ? { ...l, priceWad: null, valueWad: null } : l,
+  );
+
+  let proposal: ReturnType<typeof assembleProposal> = null;
+  if (proposalResults) {
+    const record = namedStruct(
+      'GOVERNANCE_VIEWS',
+      'proposals',
+      requireOk(proposalResults[0] as CallResult, 'proposals', address),
+    );
+    const delegatedForWeightR = proposalResults[1] as CallResult;
+    proposal = assembleProposal(
+      activeProposalId,
+      record,
+      delegatedForWeightR.status === 'success' ? (delegatedForWeightR.result as bigint) : null,
+    );
+  }
+
+  return assembleVault({
+    address,
+    core,
+    legs: legsForDisplay,
+    legSafety,
+    proposal,
+    governanceConfig,
+    attested,
+    // `name`/`operatorName` are left `''` (the default `assembleVault` already applies). Neither
+    // has an on-chain source: VAULT_VIEWS has no `name()`, and the only operator-identifying read
+    // this pipeline makes is `VaultCore.creator` — the immutable payout address (see
+    // `contracts/config/deployments/base-sepolia.json`'s `operatorPayoutNote`), not a registered
+    // display name. `operatorAddress: core.creator` is therefore the one address this data can
+    // honestly attribute the vault to; the UI falls back to a short form of `address` for the
+    // missing `name`, not a fabricated one — see `atlas.ts`'s `Vault.name`/`operatorName` comments.
+    operatorAddress: core.creator,
+  });
+}
+
+export interface LiveConfig {
+  readonly rpcUrl: string;
+  readonly chainId: number;
+  readonly vaultAddresses: readonly string[];
+}
+
+/**
+ * Reads `VITE_RPC_URL` / `VITE_CHAIN_ID` / `VITE_VAULT_ADDRESSES`, all three build-time (Vite
+ * inlines `import.meta.env.*` at build, never reads them at runtime from the served page).
+ *
+ * `null` on anything unusable — NOT a default that points somewhere. Nothing is deployed on Arc
+ * 5042 yet (`contracts/config/arc-mainnet.json`'s own `status` field says so), so a production
+ * build with no env configured must render "not configured", never fall back to a guess. See
+ * `App.tsx` for how that state renders, and `apps/vaults-ui/.env.example` for the one
+ * configuration this repository can currently prove end to end (Base Sepolia, chain 84532).
+ */
+export function readLiveConfig(): LiveConfig | null {
+  const env = import.meta.env as Record<string, string | undefined>;
+  const rpcUrl = env.VITE_RPC_URL;
+  const chainIdRaw = env.VITE_CHAIN_ID;
+  const vaultsRaw = env.VITE_VAULT_ADDRESSES;
+  if (!rpcUrl || !chainIdRaw || !vaultsRaw) return null;
+  const chainId = Number(chainIdRaw);
+  if (!Number.isInteger(chainId) || chainId <= 0) return null;
+  const vaultAddresses = vaultsRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((a) => ADDRESS_RE.test(a));
+  if (vaultAddresses.length === 0) return null;
+  return Object.freeze({ rpcUrl, chainId, vaultAddresses });
+}
+
+/**
+ * Builds a viem public client for `cfg` and refuses to read through it until `assertChainBinding`
+ * (packages/chain-config — issue #204) confirms the RPC actually answers for `cfg.chainId`. A
+ * client that silently reads the wrong chain is worse than no client: every address this module
+ * goes on to read means something different there.
+ */
+export async function buildBoundClient(cfg: LiveConfig): Promise<PublicClient> {
+  const client = createPublicClient({
+    chain: {
+      id: cfg.chainId,
+      name: `chain-${cfg.chainId}`,
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: { default: { http: [cfg.rpcUrl] } },
+    },
+    transport: http(cfg.rpcUrl),
+  });
+  await assertChainBinding({
+    client,
+    declaredChainId: cfg.chainId,
+    rpc: cfg.rpcUrl,
+    declaredBy: 'VITE_CHAIN_ID',
+  });
+  return client;
+}
+
+/** Every configured vault, read fresh. Exported for the unit test; components use `useLiveVaults`. */
+export async function fetchLiveVaults(cfg: LiveConfig, client?: PublicClient): Promise<readonly Vault[]> {
+  const c = client ?? (await buildBoundClient(cfg));
+  const blockNumber = await c.getBlockNumber();
+  const vaults = await Promise.all(cfg.vaultAddresses.map((address) => readOneVault(c, address)));
+  return vaults.map((v) => ({ ...v, blockNumber }));
+}
+
+/**
+ * The one hook every vault-reading view in this app uses. Runs once per mount (and again if the
+ * configured vault set changes), never renders a partial `Vault` while a read is in flight — the
+ * `Fetched` union (`apps/web/src/freshness.mjs`) is what stands in for "no data yet" instead of a
+ * default that would print as a real, and wrong, number.
+ */
+export function useLiveVaults(): Fetched<readonly Vault[]> {
+  const [state, setState] = useState<Fetched<readonly Vault[]>>(() => loading());
+
+  useEffect(() => {
+    let cancelled = false;
+    const cfg = readLiveConfig();
+    if (!cfg) {
+      setState(
+        failed(
+          'Live chain reads are not configured for this build.',
+          'VITE_RPC_URL / VITE_CHAIN_ID / VITE_VAULT_ADDRESSES were not set at build time — nothing ' +
+            'is deployed on Arc mainnet yet. This is expected before launch, and is why this screen ' +
+            'shows no vault rather than a bundled sample.',
+          false,
+        ),
+      );
+      return;
+    }
+    setState(loading());
+    fetchLiveVaults(cfg)
+      .then((vaults) => {
+        if (cancelled) return;
+        setState(ready(vaults, { chainId: cfg.chainId, rpcUrl: cfg.rpcUrl }));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setState(describeError(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return state;
+}
