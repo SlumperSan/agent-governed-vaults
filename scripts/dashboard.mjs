@@ -295,6 +295,45 @@ const PAGE = `<!doctype html>
        color:var(--t-dim);display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
   .clh .n{font-weight:400}
   .cardlist{padding:4px}
+  /* SUGGESTIONS AND GOALS READ AS UPSTREAM, not as two more pipeline states. A left rule and a
+     tinted header is the whole treatment -- anything louder and the eye starts at the ideas
+     column instead of at what is in progress, which inverts what this board is for. */
+  .col.c-suggestion,.col.c-goal{position:relative}
+  .col.c-suggestion::before,.col.c-goal::before{content:'';position:absolute;left:0;top:8px;
+       bottom:8px;width:3px;border-radius:3px}
+  .col.c-suggestion::before{background:#b07d2b}
+  .col.c-goal::before{background:#5b7fd4}
+  .col.c-suggestion .clh{color:#c9922f}
+  .col.c-goal .clh{color:#7e9ce0}
+
+  /* --- timeline. Bars are drawn from the due dates the departments set; nothing is estimated
+     here, so an undated goal gets a hatched track and the words "no date set" rather than a
+     plausible-looking bar. A guessed date on this page would be read as a measured one. */
+  .tl{margin:0 0 12px;border:1px solid var(--t-line,#2a2f3a);border-radius:10px;
+      background:var(--t-col);padding:6px 10px 10px}
+  .tlh{cursor:pointer;font-size:13px;color:var(--t-dim);padding:4px 0;list-style:none}
+  .tlh::-webkit-details-marker{display:none}
+  .tlh::before{content:'▾ '}
+  .tl:not([open]) .tlh::before{content:'▸ '}
+  .tlgrp{margin-top:8px}
+  .tldept{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--t-dim);
+      margin:0 0 4px;padding-bottom:3px;border-bottom:1px solid var(--t-line,#2a2f3a)}
+  .tleta{font-family:var(--mono);font-size:10.5px;color:#7e9ce0}
+  .tleta.late{color:var(--nogo)}
+  .tleta.none{color:var(--dim);opacity:.75}
+  .tlrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(90px,2fr) 108px;
+      gap:10px;align-items:center;padding:3px 2px;border-radius:6px;cursor:pointer}
+  .tlrow:hover{background:rgba(255,255,255,.04)}
+  .tlname{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tltrack{height:8px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+  .tltrack i{display:block;height:100%;border-radius:4px;background:#5b7fd4}
+  .tltrack i.late{background:var(--nogo)}
+  .tltrack i.nodate{width:100%;background:repeating-linear-gradient(45deg,
+      rgba(255,255,255,.10) 0 4px,transparent 4px 8px)}
+  .tlwhen{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;
+      white-space:nowrap}
+  .tlwhen.late{color:var(--nogo)}
+  .tlwhen.none{opacity:.7}
   /* A CARD IS NOT DRAGGABLE AND MUST NOT PRETEND TO BE. Trello's hover lightens the card and its
      cursor is grab; a grab cursor on a read-only board is a promise. Hover is copied, the
      cursor is pointer, and the drag shadow and tilt are gone entirely. */
@@ -485,7 +524,16 @@ function render(d){
     // Left to right in the order work moves. DONE IS NOT A COLUMN: finished work is the majority
     // of any healthy board and it crowded out the four columns that still need a decision. The
     // count stays in every header — "4 of 11" — so progress is still visible without a parking lot.
-    const COLS=[['backlog','To do'],['doing','In progress'],['review','In review'],['blocked','Needs you']];
+    // Suggestions and Goals lead, because both are UPSTREAM of the work rather than states of it.
+    // Suggestions: a department's idea, awaiting approve/decline. Approved ones are moved to To do
+    // by editing the file, same as every other card here. Goals: the outcome a department is
+    // working toward; a goal does not travel the pipeline, it stays until it is met.
+    const COLS=[['suggestion','Suggestions'],['goal','Goals'],['backlog','To do'],
+                ['doing','In progress'],['review','In review'],['blocked','Needs you']];
+    // WHAT COUNTS AS WORK. Progress bars and tile counts are about deliverables, so neither a
+    // suggestion nor a goal belongs in the denominator: a goal has no terminal state and would
+    // sit in "0 of N" forever, making every department read as less finished than it is.
+    const isWork = t => t.status!=='suggestion' && t.status!=='goal';
 
     // BLOCKED MEANS ONE THING: waiting on an answer from him. Nothing else belongs there.
     //
@@ -493,7 +541,12 @@ function render(d){
     // him - he cannot do anything about it until the upstream answer lands, and putting it in
     // front of him makes the column a list of things he cannot action. Those render as To do.
     const needsOwner = t => t.options.length > 0 && !t.answer;
-    const eff = t => (t.status === 'blocked' && !needsOwner(t)) ? 'backlog' : t.status;
+    // A SUGGESTION STAYS IN SUGGESTIONS even though it carries options and therefore needs him.
+    // Without this it would render under "Needs you" and the Suggestions column would always read
+    // zero -- the column exists precisely to keep unapproved ideas out of the decision queue, so
+    // routing them there by their options field would defeat it.
+    const eff = t => (t.status === 'suggestion' || t.status === 'goal') ? t.status
+                   : (t.status === 'blocked' && !needsOwner(t)) ? 'backlog' : t.status;
     // Column label per task id, for the modal breadcrumb. Built from the same COLS and eff() the
     // columns themselves use, so the two can never disagree. Done has no column, so it falls back
     // to its state name rather than to an empty crumb.
@@ -534,12 +587,12 @@ function render(d){
 
     // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
     // finished. Done sinks because a tracker is for the work that is left.
-    const ORDER={doing:0,review:1,blocked:2,backlog:3,done:4};
+    const ORDER={doing:0,review:1,blocked:2,backlog:3,suggestion:4,goal:5,done:6};
     // Critical, high, medium, low, then unset. Applied WITHIN a column, so the top card in any
     // column is the most urgent thing in that state rather than the most recently saved file.
     const PRIO={critical:0,crit:0,high:1,med:2,medium:2,low:3};
     const byPrio=(a,b)=>((PRIO[a.priority]??9)-(PRIO[b.priority]??9))||(b.mtime-a.mtime);
-    const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○'};
+    const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○',suggestion:'💡',goal:'◎'};
     const chip = t => { const d=t.checklist.filter(c=>c.done).length;
       return t.checklist.length? '<span class="ck">☑ '+d+'/'+t.checklist.length+'</span>' : ''; };
     const dueChip = t => { if(!t.due) return '';
@@ -576,10 +629,11 @@ function render(d){
              .map(line).join('')
       +'</div></details>';
     const header = (name, tasks, open) => {
-      const done=tasks.filter(t=>t.status==='done').length;
-      const pct=tasks.length? Math.round(done/tasks.length*100):0;
+      const work=tasks.filter(isWork);
+      const done=work.filter(t=>t.status==='done').length;
+      const pct=work.length? Math.round(done/work.length*100):0;
       return '<summary class="dh"><span class="caret">'+(open?'▾':'▸')+'</span>'+esc(name)
-        +' <span class="cnt">'+done+' of '+tasks.length+'</span>'
+        +' <span class="cnt">'+done+' of '+work.length+'</span>'
         +'<span class="bar"><i style="width:'+pct+'%"></i></span></summary>';
     };
 
@@ -597,10 +651,59 @@ function render(d){
       body+='<button class="catchup" data-catchup="1">Get up to speed'
         +'<span class="n">'+queue.length+'</span></button>';
     }
+    // --- TIMELINE. How long the goals take, drawn from the due: date each department set on its own
+    // goal file. NOTHING HERE IS ESTIMATED. A goal with no date renders as "no date set" and is
+    // excluded from the scale rather than given a guess -- a fabricated ETA on this page is the
+    // same defect class as a derived number presented as a measurement, and it would be believed.
+    const goals=d.board.tasks.filter(t=>t.status==='goal');
+    if(goals.length){
+      const DAY=86400000, now=Date.now();
+      const dated=goals.filter(g=>g.due && !Number.isNaN(Date.parse(g.due)));
+      // The scale runs from today to the furthest dated goal. An overdue goal would otherwise
+      // draw a negative-width bar, so the floor is today and lateness is said in words instead.
+      const horizon=dated.length? Math.max(...dated.map(g=>Date.parse(g.due)), now+DAY) : now+DAY;
+      const span=Math.max(horizon-now, DAY);
+      const days=ms=>Math.round(ms/DAY);
+      const row=g=>{
+        if(!g.due||Number.isNaN(Date.parse(g.due)))
+          return '<div class="tlrow" data-id="'+esc(g.id)+'" role="button" tabindex="0">'
+            +'<span class="tlname">'+esc(g.title)+'</span>'
+            +'<span class="tltrack"><i class="nodate"></i></span>'
+            +'<span class="tlwhen none">no date set</span></div>';
+        const end=Date.parse(g.due), left=days(end-now), late=end<now;
+        const w=Math.max(2, Math.round(Math.min(end-now, span)/span*100));
+        return '<div class="tlrow" data-id="'+esc(g.id)+'" role="button" tabindex="0">'
+          +'<span class="tlname">'+esc(g.title)+'</span>'
+          +'<span class="tltrack"><i class="'+(late?'late':'')+'" style="width:'+(late?100:w)+'%"></i></span>'
+          +'<span class="tlwhen'+(late?' late':'')+'">'
+          +(late? Math.abs(left)+'d overdue' : left+'d · '+esc(g.due))+'</span></div>';
+      };
+      const byDept={};
+      for(const g of goals) (byDept[g.department]||=[]).push(g);
+      const shown=VIEW==='All'? Object.keys(byDept).sort() : Object.keys(byDept).filter(k=>k===VIEW);
+      // The department ETA is the LATEST due among its goals -- when everything it is committed to
+      // is meant to be done, not the next milestone. Undated goals make it unknown and say so.
+      const eta=list=>{
+        const ds=list.filter(g=>g.due && !Number.isNaN(Date.parse(g.due))).map(g=>Date.parse(g.due));
+        if(!ds.length) return '<span class="tleta none">no dates set</span>';
+        const last=Math.max(...ds), l=days(last-now);
+        const undated=list.length-ds.length;
+        return '<span class="tleta'+(last<now?' late':'')+'">all done in '+(last<now?'—':l+'d')
+          +'</span>'+(undated?'<span class="tleta none">'+undated+' undated</span>':'');
+      };
+      if(shown.length) body+='<details class="tl" open><summary class="tlh">Timeline — '
+        +goals.length+' goal'+(goals.length===1?'':'s')+'</summary>'
+        + shown.map(k=>'<div class="tlgrp"><div class="tldept">'+esc(k)+eta(byDept[k])+'</div>'
+            + byDept[k].slice().sort((a,b)=>(Date.parse(a.due)||Infinity)-(Date.parse(b.due)||Infinity))
+                       .map(row).join('')
+          +'</div>').join('')
+        +'</details>';
+    }
+
     body+='<div class="tiles">'
       + ['All',...DEPTS].map(t=>{
-          const open=t==='All'? d.board.tasks.filter(x=>x.status!=='done').length
-                              : d.board.tasks.filter(x=>x.department===t&&x.status!=='done').length;
+          const open=t==='All'? d.board.tasks.filter(x=>isWork(x)&&x.status!=='done').length
+                              : d.board.tasks.filter(x=>x.department===t&&isWork(x)&&x.status!=='done').length;
           return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="'+esc(t)+'">'
             +esc(t)+' <span class="n">'+open+'</span></button>';
         }).join('')
@@ -620,11 +723,12 @@ function render(d){
         +columnsFor(mine,false)+checklistFor(mine)+'</details>';
     }
 
-    const allDone=d.board.tasks.filter(t=>t.status==='done').length;
-    const allPct=d.board.tasks.length? Math.round(allDone/d.board.tasks.length*100):0;
+    const allWork=d.board.tasks.filter(isWork);
+    const allDone=allWork.filter(t=>t.status==='done').length;
+    const allPct=allWork.length? Math.round(allDone/allWork.length*100):0;
     // FIRST on the page, not buried under the repo panels. It is the thing he opens this for; the
     // tree, gate and launch tables are reference and belong below it.
-    S.unshift(sec('Board · '+allDone+' of '+d.board.tasks.length
+    S.unshift(sec('Board · '+allDone+' of '+allWork.length
       +' <span class="bar hd"><i style="width:'+allPct+'%"></i></span>', body, 'wide'));
   }
 
@@ -717,7 +821,8 @@ let openId = null;
 // answer recorded elsewhere drops out of the queue rather than being offered twice.
 let QUEUE = [];
 let inQueue = false;
-const STATE_LABEL = {doing:'In progress',review:'In review',blocked:'Blocked',backlog:'Backlog',done:'Done'};
+const STATE_LABEL = {doing:'In progress',review:'In review',blocked:'Blocked',backlog:'Backlog',done:'Done',
+  suggestion:'Suggestion',goal:'Goal'};
 /** Column label per task id, filled by render(). See the comment where TASKS is built. */
 const COL_LABEL = {};
 

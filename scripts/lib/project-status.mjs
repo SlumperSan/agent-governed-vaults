@@ -224,8 +224,26 @@ function departments(vaultRoot) {
 
 // ---------------------------------------------------------------- the board (vault tasks)
 
-/** The columns, in order. A task whose `status` is none of these lands in `backlog`. */
-export const BOARD_COLUMNS = Object.freeze(['backlog', 'doing', 'review', 'blocked', 'done']);
+/**
+ * The columns, in order. A task whose `status` is none of these lands in `backlog`.
+ *
+ * `suggestion` and `goal` lead because they are UPSTREAM of the work, not states of it.
+ * A suggestion is a department's idea awaiting an approve/decline; a goal is the outcome the
+ * department is working toward and does not move columns as it progresses. Neither is a
+ * deliverable task, so both are excluded from the board's done/total counts -- see `isWork()`
+ * in scripts/dashboard.mjs. Adding a status here WITHOUT adding it to that file's COLS and ORDER
+ * maps renders an empty column rather than an error, which is the exact silent-fallback shape
+ * 5a392a4d was written to prevent: change all three together.
+ */
+export const BOARD_COLUMNS = Object.freeze([
+  'suggestion',
+  'goal',
+  'backlog',
+  'doing',
+  'review',
+  'blocked',
+  'done',
+]);
 
 /** The departments a task may belong to. An unrecognised one is shown as-is rather than dropped. */
 export const BOARD_DEPARTMENTS = Object.freeze(['Tech', 'Marketing', 'Security', 'Design']);
@@ -334,6 +352,9 @@ function board(vaultRoot) {
       // Owner-answerable tasks declare their own options. The board renders these as buttons
       // and will not record any answer that is not one of them.
       options: list(fm.options),
+      // The option a department recommends, matched by exact string against `options`. Shown as
+      // a badge so he can see the expert answer without opening a findings file to hunt for it.
+      recommended: fm.recommended || '',
       // Which department is waiting on this answer. The board records the answer; the
       // orchestrator reads the outbox and relays it, because an HTTP server cannot talk to
       // a Claude session.
