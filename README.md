@@ -53,12 +53,13 @@ correct, and it is not a forecast.
 `applyStandingDefault(uint256, address)` all take *your* address, so any caller may trigger them on
 your behalf — the last two only once you have appointed a delegate or set a standing default.
 `deposit`, `cancelPending`, `skipWindow` and `requestExit` take no address at all; `setDelegate` and
-`setStandingDefault` take a vault address and a value, never yours. All six act on whoever calls
-them, so only you can.
+`setStandingDefault` take a vault address and one more parameter that is never you. All six act on
+whoever calls them, so only you can.
 
 **The test is not "does it take an address" — it is "does a parameter name the member whose position
 or weight is affected".** `claimEscrowed(address asset)` is the case that proves the difference: it
-takes an address, that address is a token, and anyone calling it is paid nothing.
+takes an address, that address is a token, and anyone calling it is paid only their own escrow,
+never yours.
 
 **A permissionless caller cannot redirect your payout**: it goes to you, less the fees the vault
 charges on any exit whether you call it yourself or not. What the caller controls is *when* — and
