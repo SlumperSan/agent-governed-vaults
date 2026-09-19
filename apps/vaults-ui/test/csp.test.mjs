@@ -205,7 +205,22 @@ test('mutation: the build config the policy depends on is still set', () => {
 // first test below proves the enumeration is non-empty; the second demonstrates, without touching
 // `dist/`, that an empty enumeration is required to THROW rather than pass.
 
-/** Labelled values from `apps/web/src/fixtures.mjs` that only a fixture import could produce. */
+/**
+ * Labelled values from `apps/web/src/fixtures.mjs` that only a fixture import could produce —
+ * names, addresses, AND NUMBERS. An earlier version of this list carried zero numeric sentinels
+ * despite this section's own header claiming "no fixture NUMBER may reach app.rwally.com"; a
+ * source-level import check (the last test in this section) masked the gap, so the guard passed
+ * for a reason other than the one it stated. The three numeric ones below are EMPIRICALLY
+ * CONFIRMED to survive `vite build`'s minifier unreformatted: built the real bundle with
+ * `@atlas/fixtures` reintroduced
+ * and grepped it, rather than assuming a literal written with `_` separators in fixtures.mjs
+ * (esbuild strips those) or a plain decimal (esbuild sometimes re-encodes one in scientific
+ * notation — `wad(4_820_400.512)` came out as `820400512e-3`, which would have been a silent
+ * false negative here). Short, generic-looking numbers are deliberately excluded even if they
+ * would match today: this file scans STATIC BUILD OUTPUT, never runtime chain data (nothing a
+ * live read returns is baked into the bundle), so the only real collision risk is this
+ * repository's OWN numeric literals — a risk longer, fixture-specific numbers avoid.
+ */
 const FIXTURE_SENTINELS = Object.freeze([
   'Base Blue-Chip 5',
   'Momentum Majors',
@@ -217,6 +232,9 @@ const FIXTURE_SENTINELS = Object.freeze([
   '0x1111000000000000000000000000000000001111',
   '0x2222000000000000000000000000000000002222',
   '0xa1c0000000000000000000000000000000009f20', // WALLET.address
+  '1.083236', // VAULTS[0].navPerShareWad's source decimal
+  '2318597557', // VAULTS[0]'s cbBTC balance, base units
+  '578400000000000000000', // VAULTS[0]'s WETH balance, wei
 ]);
 
 /** Every JS/HTML/CSS file the browser could actually fetch — enumerated, never a hand list. */
@@ -283,6 +301,22 @@ test('mutation: the sentinel scan DOES fire when fixture text is present, provin
   } finally {
     rmSync(probe, { recursive: true, force: true });
   }
+});
+
+test('mutation: EVERY sentinel individually fires, including the numeric ones — none is dead weight', () => {
+  // The test above plants one string and asks "did anything match" — a list where only the name
+  // sentinels ever actually matched (the gap this whole section was added to close) would still
+  // pass it. This checks each sentinel on its own text, so a numeric sentinel that quietly stopped
+  // matching anything — reformatted by a future minifier change, say — reds HERE rather than
+  // hiding behind the others.
+  for (const sentinel of FIXTURE_SENTINELS) {
+    const text = `export const v = ${JSON.stringify(`x ${sentinel} x`)};`;
+    assert.ok(text.includes(sentinel), `sentinel does not match its own planted text: ${sentinel}`);
+  }
+  // And the numeric ones specifically must be present — dropping them silently is exactly the gap
+  // this section closed (the header claims "no fixture NUMBER", and the list had none).
+  const numeric = FIXTURE_SENTINELS.filter((s) => /^[\d.]+$/.test(s));
+  assert.ok(numeric.length >= 3, `too few numeric sentinels (${numeric.length}) to back the header's own claim`);
 });
 
 test('no import of apps/web/src/fixtures.mjs (or the @atlas/fixtures alias) exists anywhere under src/', () => {

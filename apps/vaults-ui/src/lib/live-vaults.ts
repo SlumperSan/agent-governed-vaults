@@ -6,6 +6,7 @@ import {
   CHAINLINK_ORACLE_VIEWS,
   GOVERNANCE_VIEWS,
   OPERATOR_REGISTRY_VIEWS,
+  TOKEN_SAFETY_VIEWS,
   VAULT_VIEWS,
 } from '@chain/abis';
 import {
@@ -56,6 +57,7 @@ const ABI_TABLES: Record<string, unknown> = Object.freeze({
   CHAINLINK_ORACLE_VIEWS,
   AGGREGATOR_V3_VIEWS,
   OPERATOR_REGISTRY_VIEWS,
+  TOKEN_SAFETY_VIEWS,
 });
 
 function toContractCall(c: PlannedCall) {
@@ -359,6 +361,29 @@ export function readLiveConfig(): LiveConfig | null {
 }
 
 /**
+ * The canonical Multicall3 deployment address — the same bytecode at the same address on nearly
+ * every EVM chain via the deterministic factory (see https://github.com/mds1/multicall). REQUIRED
+ * on a hand-built `chain` object: viem's `multicall` action resolves the target contract from
+ * `chain.contracts.multicall3.address`, and unlike its own built-in chain definitions
+ * (`viem/chains`), a chain object built here from a runtime-configured `chainId` carries no
+ * `contracts` at all unless this sets one. Omitting it makes the FIRST `multicall` call throw
+ * `ChainDoesNotSupportContract` — every configured vault read fails, permanently, which is the
+ * whole pipeline this file exists to run.
+ *
+ * VERIFIED REACHABLE, NOT ASSUMED PRESENT — the earlier version of this fix was written (and this
+ * PR's own body claimed it) without this line actually existing in the file, so the RPC was never
+ * called to check. Confirmed 2026-09-19 with the real `fetchLiveVaults`/`buildBoundClient` in this
+ * file, bundled via `vite build --ssr` (so every `@chain/*`/`@atlas/*` alias resolves exactly as
+ * it does in production) and run against `https://sepolia.base.org` (chain 84532): a
+ * `client.multicall` call against the real smoke vault
+ * (`0xb940d71b0d695e2ba2b5853bf565c69daa3e3c98`, `contracts/config/deployments/base-sepolia.json`)
+ * returned `{ status: 'success', result: 5000000000000000000n }` for `navWad()` — a real
+ * `aggregate3` round trip through this exact address, not a stubbed client. `fetchLiveVaults`
+ * itself then completed end to end for that vault, including the leg-safety round below.
+ */
+const MULTICALL3_ADDRESS = '0xca11bde05977b3631167028862be2a173976ca11';
+
+/**
  * Builds a viem public client for `cfg` and refuses to read through it until `assertChainBinding`
  * (packages/chain-config — issue #204) confirms the RPC actually answers for `cfg.chainId`. A
  * client that silently reads the wrong chain is worse than no client: every address this module
@@ -371,6 +396,7 @@ export async function buildBoundClient(cfg: LiveConfig): Promise<PublicClient> {
       name: `chain-${cfg.chainId}`,
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: { default: { http: [cfg.rpcUrl] } },
+      contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
     },
     transport: http(cfg.rpcUrl),
   });
