@@ -441,6 +441,34 @@ const STATE_PATH = process.env.GATE_STATE_PATH
   ? path.resolve(process.env.GATE_STATE_PATH)
   : path.join(REPO, '.gate-state.json');
 
+// ENFORCED HERE, BY THE WRITER, BECAUSE A STATIC WALK FOR SPAWNERS CANNOT BE MADE TO WORK.
+//
+// The first attempt at making the isolation construction was a guard that walked the repo for files
+// spawning this script and required each to set GATE_STATE_PATH. A review found its floor could never
+// fire -- the input set contained this file and the guard's own source, whose regex literal matched
+// the pattern it searched for -- and that four spawn shapes evaded it entirely: `npm run gate`,
+// spawning gate-logged.mjs instead, a path assembled from a variable, and a `.js` file. It was also
+// per-file, so a second unisolated spawn inside a compliant file was invisible.
+//
+// So the check lives where it cannot be walked around: in the process that writes the record. Node's
+// test runner sets NODE_TEST_CONTEXT in the test process and children inherit it, so any gate whose
+// ancestry is a test -- through npm, through the wrapper, however the path was assembled, whatever the
+// caller's file extension -- arrives here with that variable set. If it did not also isolate its
+// record, it would write the file `npm run cc` reads and could read another run as its own. Refuse.
+//
+// Exit 2 is this script's code for "the gate could not run" rather than for a defect, which is what
+// this is: a harness mistake, not a failing check.
+if (process.env.NODE_TEST_CONTEXT && !process.env.GATE_STATE_PATH) {
+  console.error(
+    `\n${C.r}refusing to run under a test without GATE_STATE_PATH.${C.x}\n` +
+      `This gate would write ${path.relative(REPO, STATE_PATH) || '.gate-state.json'}, which is the record\n` +
+      `\`npm run cc\` reads and which every other gate on this checkout also writes -- so a test that\n` +
+      `spawns a gate and then reads that file can get another run's record. Point this child at its own\n` +
+      `file:\n\n  env: { ...process.env, GATE_STATE_PATH: <a temp path> }\n`,
+  );
+  process.exit(2);
+}
+
 /**
  * Persist the run for `npm run cc`.
  */

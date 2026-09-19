@@ -55,6 +55,8 @@ const WIN = process.platform === 'win32';
  * `npm run cc` has to have one file to read.
  */
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-executed-state-'));
+/** The repo-global record the board reads. Only ever READ here, never written. */
+const REAL_STATE = path.join(REPO, '.gate-state.json');
 let stateSeq = 0;
 after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
 
@@ -215,6 +217,43 @@ test('the board is told a run checked nothing, in words, not just as a false', a
     'a record from another commit must say so, or a board green means nothing about this tree',
   );
   assert.equal(elsewhere.sameCommit, false);
+});
+
+test('a gate spawned under a test REFUSES without GATE_STATE_PATH, so the isolation is not optional', () => {
+  // THE ENFORCEMENT, TESTED FROM BOTH SIDES. An earlier attempt made this a static guard that walked
+  // the repo for files spawning gate.mjs. A review showed its floor could never fire — the input set
+  // contained gate.mjs and the guard's own source, whose regex literal matched the pattern it searched
+  // for — and that four spawn shapes evaded it: `npm run gate`, spawning the wrapper instead, a path
+  // built from a variable, and a `.js` file. A floor whose input set contains the guard itself has
+  // already passed.
+  //
+  // So the refusal lives in the process that writes the record, where there is nothing to walk around.
+  // Node sets NODE_TEST_CONTEXT in a test process and children inherit it, so a gate whose ancestry is
+  // a test arrives with it set however it was started.
+  const env = { .../** @type {Record<string,string>} */ (process.env) };
+  delete env.GATE_STATE_PATH;
+  assert.ok(env.NODE_TEST_CONTEXT, 'this test is meaningless outside the node test runner');
+
+  const stateBefore = fs.existsSync(REAL_STATE) ? fs.readFileSync(REAL_STATE, 'utf8') : null;
+  const r = spawnSync(process.execPath, [GATE, '--only', 'syntax'], {
+    cwd: REPO,
+    encoding: 'utf8',
+    timeout: 120_000,
+    env,
+  });
+  const out = `${r.stdout || ''}${r.stderr || ''}`;
+
+  assert.equal(r.status, 2, `expected the "could not run" code, got ${r.status}:\n${out.slice(-400)}`);
+  assert.match(out, /refusing to run under a test without GATE_STATE_PATH/);
+  // And it refuses BEFORE writing: the record the board reads must be exactly as it was.
+  const stateAfter = fs.existsSync(REAL_STATE) ? fs.readFileSync(REAL_STATE, 'utf8') : null;
+  assert.equal(stateAfter, stateBefore, 'the run wrote the repo-global record it was refusing to write');
+
+  // The other direction: the same invocation WITH an isolated path runs to a verdict rather than
+  // refusing, so the check cannot be satisfied by simply blocking every spawned gate.
+  const ok = runGate('syntax', { ...env });
+  assert.equal(ok.status, 0, ok.out.slice(-300));
+  assert.match(ok.out, /GATE PASSED/);
 });
 
 test('F2: the board WIRES gateCaveats in, not merely defines it', async () => {

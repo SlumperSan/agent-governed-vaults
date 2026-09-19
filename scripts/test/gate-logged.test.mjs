@@ -154,11 +154,18 @@ test('MUTATION-SHAPED: the log is the raw stream, so a filter cannot drop the li
 test('the wrapper does not change what the gate decides — same exit code as the gate alone', () => {
   // If the wrapper could alter the verdict it would be worse than no capture at all.
   const env = envWith(forgeShimDir());
+  // ISOLATED LIKE EVERY OTHER SPAWN HERE. This direct comparison run had no GATE_STATE_PATH, and the
+  // refusal in gate.mjs caught it the moment that check landed -- in a file the earlier static guard
+  // reported COMPLIANT, because that guard matched per file and this file sets the variable elsewhere.
+  // A second unisolated spawn inside an otherwise-correct file is exactly what it could not see.
   const direct = spawnSync(process.execPath, [path.join(REPO, 'scripts', 'gate.mjs'), '--only', 'fmt'], {
     cwd: REPO,
     encoding: 'utf8',
     timeout: 180_000,
-    env,
+    env: {
+      ...env,
+      GATE_STATE_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-direct-')), 'state.json'),
+    },
   });
   const wrapped = runWrapper(['--only', 'fmt'], env);
   assert.equal(wrapped.status, direct.status, 'wrapped and direct runs must agree on the exit code');
