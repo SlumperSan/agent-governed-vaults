@@ -1,0 +1,12 @@
+{
+  "_comment": "Fixture DEPLOY_JSON for scripts/test/smoke-test-harness.test.mjs — shaped exactly like a real forge broadcast/DeployTestnet.s.sol/84532/run-latest.json, read by scripts/smoke-test.mjs:loadDeployment() via plain fs, never through cast. Addresses are fixture-only, chosen distinct and recognisable; they are never dialled.",
+  "transactions": [
+    { "transactionType": "CREATE", "contractName": "OperatorRegistry", "contractAddress": "0x0000000000000000000000000000000000A001" },
+    { "transactionType": "CREATE", "contractName": "SubVaultRegistry", "contractAddress": "0x0000000000000000000000000000000000A002" },
+    { "transactionType": "CREATE", "contractName": "FeeEngine", "contractAddress": "0x0000000000000000000000000000000000A003" },
+    { "transactionType": "CREATE", "contractName": "Governance", "contractAddress": "0x0000000000000000000000000000000000A004" },
+    { "transactionType": "CREATE", "contractName": "VaultFactory", "contractAddress": "0x0000000000000000000000000000000000A005" },
+    { "transactionType": "CREATE", "contractName": "ChainlinkOracle", "contractAddress": "0x0000000000000000000000000000000000A006" },
+    { "transactionType": "CREATE", "contractName": "AggregationRouterAdapter", "contractAddress": "0x0000000000000000000000000000000000A007" }
+  ]
+}

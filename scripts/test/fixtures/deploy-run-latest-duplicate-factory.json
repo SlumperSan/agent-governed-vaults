@@ -1,0 +1,13 @@
+{
+  "_comment": "Wrong-path/wrong-fixture negative control: TWO VaultFactory CREATE entries. scripts/smoke-test.mjs's loadDeployment() requires exactly one per contract name (`assert(a.length === 1, ...)`), so this must trip 'expected exactly one VaultFactory'.",
+  "transactions": [
+    { "transactionType": "CREATE", "contractName": "OperatorRegistry", "contractAddress": "0x0000000000000000000000000000000000A001" },
+    { "transactionType": "CREATE", "contractName": "SubVaultRegistry", "contractAddress": "0x0000000000000000000000000000000000A002" },
+    { "transactionType": "CREATE", "contractName": "FeeEngine", "contractAddress": "0x0000000000000000000000000000000000A003" },
+    { "transactionType": "CREATE", "contractName": "Governance", "contractAddress": "0x0000000000000000000000000000000000A004" },
+    { "transactionType": "CREATE", "contractName": "VaultFactory", "contractAddress": "0x0000000000000000000000000000000000A005" },
+    { "transactionType": "CREATE", "contractName": "VaultFactory", "contractAddress": "0x0000000000000000000000000000000000A0FF" },
+    { "transactionType": "CREATE", "contractName": "ChainlinkOracle", "contractAddress": "0x0000000000000000000000000000000000A006" },
+    { "transactionType": "CREATE", "contractName": "AggregationRouterAdapter", "contractAddress": "0x0000000000000000000000000000000000A007" }
+  ]
+}
