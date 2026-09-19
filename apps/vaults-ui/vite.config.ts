@@ -1,26 +1,35 @@
 /**
- * ONE ENTRY, AND A SET OF ALIASES THAT POINT OUT OF THIS APP.
+ * ONE ENTRY, AND ALIASES THAT POINT OUT OF THIS APP.
  *
  * The `@atlas/*` aliases resolve to `apps/web/src/*.mjs` — the allocator front
  * end's pure modules, each mirroring a contract term for term and each tested
- * under `apps/web/test/`. `@chain/*` is the same idea one layer further out:
- * `act.mjs`'s write-call ABI fragments and `abis.mjs`'s read-call ABI fragments
- * already live in `packages/reference-agent/src` and `packages/canary/src`,
- * tested against the compiled contracts there (`packages/canary/test/abis.test.mjs`
- * recomputes every read selector, and `packages/reference-agent/test` exercises the
- * write shapes end to end). This app imports every one of them rather than copying
- * them, so there is exactly one implementation of every governed number and every
- * call shape in the repo. If an alias is ever pointed at a local copy, the copy
- * becomes a second implementation of a consensus rule and the tests that cover it
- * stop covering what ships. Do not do that.
+ * under `apps/web/test/`. This app imports them rather than copying them, so
+ * there is exactly one implementation of every governed number in the repo.
+ * If an alias is ever pointed at a local copy, the copy becomes a second
+ * implementation of a consensus rule and the tests that cover it stop covering
+ * what ships. Do not do that.
+ *
+ * `@chain/*` is the SAME rule applied one package further out: `packages/canary/src/abis.mjs`
+ * already declares every read-call ABI fragment a chain read needs, drift-checked against the
+ * compiled contracts by `packages/canary/test/abis.test.mjs`; `packages/reference-agent/src/act.mjs`
+ * carries the write-call fragments the same way, tested end to end under
+ * `packages/reference-agent/test`; and `packages/chain-config/src/chain-binding.mjs` is the ONLY
+ * place #204 (an RPC answering for a chain nobody asked it to confirm) is decided. A local copy of
+ * any of the three would drift from what it mirrors silently — the same argument as `@atlas/*`,
+ * aimed at the three packages `src/lib/live-vaults.ts` and `src/lib/chain-actions.ts` need and
+ * `apps/web/src` cannot import itself (it is zero-dependency by its own header).
+ *
+ * NO `@atlas/fixtures` ALIAS. `apps/web/src/fixtures.mjs` is the allocator front end's OWN test
+ * fixtures, not this workspace's data source — plan item 0.7 removed the last import of it from
+ * `src/`, and `test/csp.test.mjs` asserts none of its labelled values ever reach `dist/`.
+ * Re-adding this alias is the easiest way to reintroduce the regression that test exists to catch.
  */
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 const atlas = (name: string) => fileURLToPath(new URL(`../web/src/${name}.mjs`, import.meta.url));
-const agent = (name: string) => fileURLToPath(new URL(`../../packages/reference-agent/src/${name}.mjs`, import.meta.url));
-const canary = (name: string) => fileURLToPath(new URL(`../../packages/canary/src/${name}.mjs`, import.meta.url));
+const pkg = (path: string) => fileURLToPath(new URL(`../../packages/${path}`, import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -29,26 +38,24 @@ export default defineConfig({
       '@atlas/format': atlas('format'),
       '@atlas/governance': atlas('governance'),
       '@atlas/vault-view': atlas('vault-view'),
-      '@atlas/fixtures': atlas('fixtures'),
+      '@atlas/chain-reader': atlas('chain-reader'),
+      '@atlas/freshness': atlas('freshness'),
       // vote-custody.mjs imports VOTE_COMMIT_ZERO from './chain-reader.mjs' by relative path, so
       // that file is pulled in by vite's own resolver once vote-custody is aliased in — it does
       // not need its own alias entry for that import to work. It gets one anyway because this
       // app also calls planVoteCommit/assembleVoteCommit directly (see src/lib/chain-actions.ts).
       '@atlas/vote-custody': atlas('vote-custody'),
-      '@atlas/chain-reader': atlas('chain-reader'),
       // Pre-flight refusal checks (#341) and deposit-status classification (#340) — both pure,
       // both already tested under apps/web/test/. This app calls them rather than re-deriving the
       // creator gate, the Mode-F exit warning, or the observation-window states a second time.
       '@atlas/wallet-refusals': atlas('wallet-refusals'),
       '@atlas/deposit-status': atlas('deposit-status'),
+      '@chain/abis': pkg('canary/src/abis.mjs'),
+      '@chain/binding': pkg('chain-config/src/chain-binding.mjs'),
       // Write-call ABI fragments (deposit/approve/commitVote/revealVote/requestExit) — the same
       // ones packages/reference-agent's autonomous actor sends, so a wallet-connected member and
       // an agent never disagree about what a "deposit" or "reveal" transaction looks like.
-      '@chain/act': agent('act'),
-      // Read-call ABI fragments (VAULT_VIEWS, GOVERNANCE_VIEWS) — the same table
-      // planVoteCommit/assembleVoteCommit above name their reads against by string ('VAULT_VIEWS',
-      // 'GOVERNANCE_VIEWS'); this app resolves those names to these arrays before calling viem.
-      '@chain/abis': canary('abis'),
+      '@chain/act': pkg('reference-agent/src/act.mjs'),
     },
   },
   build: {

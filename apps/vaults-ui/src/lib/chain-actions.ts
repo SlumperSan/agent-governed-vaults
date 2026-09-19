@@ -10,12 +10,14 @@
  * `deposit(uint256)`, NOT `deposit(uint256,uint256)`. VaultCore has both (VaultCore.sol:392-403);
  * the two-argument overload adds `minSharesOut` slippage protection (M-15) on the immediate-mint
  * path only — a first-time deposit is escrowed pending and prices at ACTIVATION regardless, so
- * `minSharesOut` cannot protect it either way. This app still renders fixture NAV, not a live read
- * (App.tsx says so), so there is no live number here to compute a meaningful tolerance from; a
- * `minSharesOut` guessed without one is decorative, not protective. `packages/reference-agent`'s
- * actor (the other signer of this exact call) makes the same choice — see `VAULT_WRITE_ABI` in
- * act.mjs, which declares only the one-argument fragment. Once this app reads live NAV, switching
- * the deposit call to the two-argument overload is the natural follow-up; it is not this card.
+ * `minSharesOut` cannot protect that path either way, live NAV or not. This app now reads live NAV
+ * (`src/lib/live-vaults.ts`, plan item 0.7, merged into this branch after this file was written —
+ * the claim here used to be that no live number existed yet to compute a tolerance from; that is
+ * no longer true for a REPEAT deposit on the immediate-mint path, only for a first one). Wiring
+ * `minSharesOut` for that case is still not this card: it needs its own slippage-tolerance UI and
+ * its own review, not a silent behavior change riding along with a merge. `packages/reference-agent`'s
+ * actor (the other signer of this exact call) makes the same one-argument choice — see
+ * `VAULT_WRITE_ABI` in act.mjs, which declares only that fragment.
  *
  * `requestExit` is IRREVOCABLE once it queues (a proposal past its commit deadline turns the call
  * into a Mode-F queue, VaultCore.sol:551-567) — there is no cancel. This module does not decide

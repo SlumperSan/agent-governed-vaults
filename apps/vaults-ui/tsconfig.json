@@ -21,7 +21,7 @@
     "types": ["vite/client"],
     "paths": {
       "@atlas/*": ["./src/lib/atlas-modules/*"],
-      "@chain/*": ["./src/lib/chain-modules/*"]
+      "@chain/*": ["./src/lib/atlas-modules/chain/*"]
     }
   },
   "include": ["src"]

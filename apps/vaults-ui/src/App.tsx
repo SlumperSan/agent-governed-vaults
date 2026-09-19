@@ -5,21 +5,30 @@ import { MemberActions } from './components/MemberActions';
 import { ProposalPanel } from './components/ProposalPanel';
 import { VaultList } from './components/VaultList';
 import { WalletConnect } from './components/WalletConnect';
-import type { Vault, Wallet } from './lib/atlas';
-import { NOW, usdcExact, VAULTS, WALLET, wadExact } from './lib/atlas';
+import { shortAddress, wadExact } from './lib/atlas';
+import { useLiveVaults } from './lib/live-vaults';
 import { WalletProvider } from './lib/wallet';
 
 /**
- * Vaults, proposals, votes, holdings — four reads over one vault.
+ * Vaults, proposals, votes, holdings — four reads over one vault, plus deposit/vote/exit for a
+ * connected wallet.
  *
- * IT READS FIXTURES, NOT A CHAIN, AND THE PAGE SAYS SO. `apps/web/src/fixtures.mjs`
- * is the same fixture set the allocator front end's tests run against. Wiring this
- * to a live endpoint is a matter of replacing the two imports below with
- * `live-adapter.mjs`; nothing in the components knows where a vault came from.
+ * LIVE CHAIN READS, NOT FIXTURES. Plan item 0.7. `useLiveVaults` (`src/lib/live-vaults.ts`) is the
+ * only place this component gets a `Vault` from — no `apps/web/src/fixtures.mjs` import exists
+ * anywhere in this workspace's `src/`, and `test/csp.test.mjs` fails the build if one reaches
+ * `dist/`.
  *
- * ONE EXCEPTION: `<MemberActions>` (deposit/vote/exit) signs against the LIVE chain a connected
- * wallet is on, never against this fixture data — see `src/lib/chain-actions.ts`. A member's
- * money and vote are real even while the rest of this page is a rendering of test fixtures.
+ * THE FOUR STATES `Fetched` NAMES ARE ALL RENDERED BELOW, on purpose: `loading` and `error` render
+ * their own screens rather than falling through to a `Vault` shape with a field left `undefined` —
+ * an unresolved read must never look like a `0`, which is the false claim plan item 0.7 exists to
+ * close.
+ *
+ * `<MemberActions>` (deposit/vote/exit, plan item 0.2) signs against whatever chain the connected
+ * wallet is on — via its own `publicClient`/`walletClient` in `lib/wallet.tsx`, independent of the
+ * read-only client `useLiveVaults` builds — but the `vault` it receives is now the SAME live
+ * object this page renders everywhere else, not a fixture: `MemberActions`'s own fixture-address
+ * guard (`vault.address` must look like a real address) is no longer reachable with a fixture
+ * `vault.address` in play, because there is no fixture `vault.address` left to reach it with.
  */
 export function App() {
   return (
@@ -30,15 +39,15 @@ export function App() {
 }
 
 function AppShell() {
-  const vaults = VAULTS as unknown as readonly Vault[];
-  const wallet = WALLET as unknown as Wallet;
-  const nowSec = NOW;
+  const fetched = useLiveVaults();
+  const nowSec = Math.floor(Date.now() / 1000);
 
-  const [selected, setSelected] = useState<string>(vaults[0]?.address ?? '');
-  const vault = useMemo(() => vaults.find((v) => v.address === selected), [vaults, selected]);
-  const position = useMemo(
-    () => wallet.positions.find((p) => p.vault === selected),
-    [wallet, selected],
+  const vaults = fetched.kind === 'ready' ? fetched.data : [];
+  const [selected, setSelected] = useState<string>('');
+  const activeSelection = selected || (vaults[0]?.address ?? '');
+  const vault = useMemo(
+    () => vaults.find((v) => v.address === activeSelection),
+    [vaults, activeSelection],
   );
 
   return (
@@ -50,67 +59,80 @@ function AppShell() {
           commit-reveal. Nothing rebalances until a proposal passes.
         </p>
         <p className="note faint">
-          Rendering <code>apps/web/src/fixtures.mjs</code> — the allocator front end&rsquo;s test
-          fixtures, not a live chain read.
+          {fetched.kind === 'ready' && fetched.freshness['rpcUrl']
+            ? `Live chain read via ${String(fetched.freshness['rpcUrl'])} — nothing on this page is a bundled sample.`
+            : 'Every figure on this page is a direct chain read — nothing here is a bundled sample.'}
         </p>
         <WalletConnect />
       </header>
 
-      <div className="columns">
-        <VaultList vaults={vaults} selected={selected} onSelect={setSelected} />
-
-        {vault ? (
+      {fetched.kind === 'loading' ? (
+        <div className="columns">
           <div className="detail">
-            <section className="panel">
-              <h2>{vault.name}</h2>
-              <dl className="kv">
-                <dt>Address</dt>
-                <dd className="mono">{vault.address}</dd>
-                <dt>Operator</dt>
-                <dd>
-                  {vault.operatorName} <span className="mono dim">{vault.operatorAddress}</span>
-                </dd>
-                <dt>NAV</dt>
-                <dd>${wadExact(vault.navWad, { maxFrac: 2 })}</dd>
-                <dt>NAV per share</dt>
-                <dd>{wadExact(vault.navPerShareWad, { maxFrac: 6 })}</dd>
-                <dt>Capacity cap</dt>
-                <dd>{usdcExact(vault.capacityCapUsdc)}</dd>
-                <dt>Holders</dt>
-                <dd>{vault.holderCount}</dd>
-              </dl>
-              <p className="note">
-                Operatorship confers no authority to vote, execute, pause, reprice, or move member
-                funds.
-              </p>
-            </section>
+            <p className="note" role="status" aria-live="polite">
+              Reading the chain…
+            </p>
+          </div>
+        </div>
+      ) : fetched.kind === 'empty' ? (
+        <div className="columns">
+          <div className="detail">
+            <p className="note">{fetched.message}</p>
+          </div>
+        </div>
+      ) : fetched.kind === 'error' ? (
+        <div className="columns">
+          <div className="detail">
+            <p className="note tag-warn">{fetched.message}</p>
+            {fetched.detail ? <p className="note dim">{fetched.detail}</p> : null}
+          </div>
+        </div>
+      ) : (
+        <div className="columns">
+          <VaultList vaults={vaults} selected={activeSelection} onSelect={setSelected} />
 
-            <section className="panel">
-              <h2>Your position</h2>
-              {position ? (
+          {vault ? (
+            <div className="detail">
+              <section className="panel">
+                <h2>{vault.name || shortAddress(vault.address)}</h2>
                 <dl className="kv">
-                  <dt>Shares</dt>
-                  <dd>{wadExact(position.shares, { maxFrac: 6 })}</dd>
-                  <dt>Cost basis</dt>
-                  <dd>{usdcExact(position.costBasisUsdc)}</dd>
-                  <dt>Queued for exit</dt>
-                  <dd>{wadExact(position.queuedExitShares, { maxFrac: 6 })}</dd>
+                  <dt>Address</dt>
+                  <dd className="mono">{vault.address}</dd>
+                  <dt>Operator</dt>
+                  <dd>
+                    {vault.operatorName || 'Unnamed'}{' '}
+                    <span className="mono dim">{vault.operatorAddress}</span>
+                  </dd>
+                  <dt>NAV</dt>
+                  <dd>
+                    {vault.frozen ? (
+                      <span className="tag tag-warn">frozen — NAV unavailable</span>
+                    ) : (
+                      `$${wadExact(vault.navWad, { maxFrac: 2 })}`
+                    )}
+                  </dd>
+                  <dt>NAV per share</dt>
+                  <dd>{vault.frozen ? '—' : wadExact(vault.navPerShareWad, { maxFrac: 6 })}</dd>
+                  <dt>Holders</dt>
+                  <dd>{vault.holderCount}</dd>
                 </dl>
-              ) : (
-                <p className="note">This wallet holds no shares in this vault.</p>
-              )}
-            </section>
+                <p className="note">
+                  Operatorship confers no authority to vote, execute, pause, reprice, or move member
+                  funds.
+                </p>
+              </section>
 
-            <ProposalPanel vault={vault} nowSec={nowSec} />
-            <Holdings vault={vault} nowSec={nowSec} />
-            <MemberActions vault={vault} />
-          </div>
-        ) : (
-          <div className="detail">
-            <p className="note">Select a vault.</p>
-          </div>
-        )}
-      </div>
+              <ProposalPanel vault={vault} nowSec={nowSec} />
+              <Holdings vault={vault} nowSec={nowSec} />
+              <MemberActions vault={vault} />
+            </div>
+          ) : (
+            <div className="detail">
+              <p className="note">Select a vault.</p>
+            </div>
+          )}
+        </div>
+      )}
     </Page>
   );
 }

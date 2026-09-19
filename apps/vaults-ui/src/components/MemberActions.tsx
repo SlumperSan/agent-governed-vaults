@@ -30,8 +30,10 @@ import {
 } from '../lib/chain-actions';
 import { useWallet } from '../lib/wallet';
 
-/** Real wall-clock seconds — the live chain reads in this component are never in the fixture's
- * time reference frame (`App.tsx`'s `NOW` constant), so they must not be compared against it. */
+/** Real wall-clock seconds, computed locally rather than threaded in as a prop — `App.tsx` passes
+ * its own `Math.floor(Date.now() / 1000)` down to `ProposalPanel`/`Holdings` for the same reason:
+ * every reader of "now" in this app is the real clock, not a fixture's frozen one, since plan item
+ * 0.7 removed the last fixture (`apps/web/src/fixtures.mjs`'s `NOW` constant) from this workspace. */
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 const UNKNOWN_REFUSAL: Refusal = {
@@ -61,9 +63,12 @@ const IDLE: FlowState = { busy: false, message: null, error: null };
  * or `Holdings.tsx`/`VaultList.tsx` — a sibling panel, mounted once per selected vault in App.tsx.
  *
  * Reads (vault addresses, share balance, vote-commit state) happen against the LIVE connected
- * chain via `chain-actions.ts`, independent of the fixture data the rest of this app still
- * renders — see chain-actions.ts's header. A member acts on what their wallet and the chain agree
- * is true, never on the fixture displayed beside it.
+ * chain via `chain-actions.ts`'s own `publicClient` — a SEPARATE viem client from the one
+ * `src/lib/live-vaults.ts` builds for the read-only vault list, bound to whatever chain the
+ * connected wallet is actually on rather than the fixed `VITE_RPC_URL` that page reads through.
+ * Plan item 0.7 (merged into this branch after this component was written) means the `vault` prop
+ * below is no longer fixture data either, so both halves of this page now agree with the chain —
+ * this component's own reads were never the part that needed catching up.
  */
 export function MemberActions({ vault }: Props) {
   const { status, address, publicClient, walletClient } = useWallet();
