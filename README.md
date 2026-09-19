@@ -40,12 +40,19 @@ correct, and it is not a forecast.
 
 ### What you actually do with one
 
-| Step | What happens |
-| --- | --- |
-| **Put USDC in** | Your first deposit is held for four hours before it becomes anything. It is not shares yet. You can cancel and take it back at any point in that window — that is the one action that keeps working even if the vault freezes. |
-| **Come back and activate it** | After the four hours you activate the deposit yourself, and your shares are priced at that moment off live Chainlink feeds. Nothing does this for you. Until you do it you are holding your own money in escrow, not a position — and you cannot vote. |
-| **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
-| **Leave whenever** | Ask to exit at any time. No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
+| Step | Who can do it | What happens |
+| --- | --- | --- |
+| **Put USDC in** | Only you | Your first deposit is held for four hours before it becomes anything. It is not shares yet and it does not vote. You can cancel and take it back at any point in that window — the one action that keeps working even if the vault freezes. |
+| **Activate it** | **You or anyone** | Once the four hours elapse, the deposit can be activated by any caller, not just you. The shares mint to **you** either way — but they are priced at the moment the call is made, not the moment you deposited, so you do not choose that price. |
+| **Vote on every trade** | Only you | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
+| **Ask to leave** | Only you | No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
+| **Settle a queued exit** | **You or anyone** | If a live vote queued your exit, settling it is a separate call that anybody can make — and until somebody does, those shares are locked and do not vote. |
+
+**Two of those six can be done by a stranger, and you can read which off the signatures.**
+`activate(address)` and `settleQueuedExit(address)` take *your* address, so any caller may trigger
+them on your behalf. `deposit`, `cancelPending`, `skipWindow` and `requestExit` take no address and
+act on whoever calls them, so only you can. Neither permissionless call can send your money anywhere
+but to you — but both decide *when* something happens to it, and that is not nothing.
 
 **Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
 reveal phase and settles at the price *after* that vote executes — including a vote that goes on to
