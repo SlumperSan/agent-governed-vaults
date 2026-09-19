@@ -25,17 +25,36 @@
  */
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GATE = path.join(REPO, 'scripts', 'gate.mjs');
 
-// Untracked, like `.gate-state.json` and for the same reason: it describes THIS machine's last run.
-// A per-run filename rather than one rolling file, because the run you want to read is usually the
-// one BEFORE the re-run you did to see whether it reproduced.
+/**
+ * OUTSIDE THE REPOSITORY, AND THAT IS THE WHOLE DESIGN RATHER THAN TIDINESS.
+ *
+ * The first version wrote `.gate-logs/` at the repo root, gitignored. The very next gate run went
+ * RED: `claims-key-custody-truth.test.mjs` walks the filesystem for prose, found the log, and read a
+ * PASSING TEST'S OWN NAME — `no unqualified "no RPC client" claim about the API` — as a surface
+ * making that claim. A log of the guards tripping the guards.
+ *
+ * The obvious repair is to add `.gate-logs` to that file's `SKIP_DIRS`. There are seven independent
+ * `SKIP_DIRS` sets in this repository and nothing keeps them in step, so that repair is seven edits
+ * and a trap for the eighth guard somebody writes tomorrow. `.gitignore` does not help either: these
+ * walks read the filesystem, not the index.
+ *
+ * So the logs live under the OS temp directory, in a per-checkout folder. A file that is not in the
+ * tree cannot be found by anything that walks the tree, for any guard, including ones not yet
+ * written. The absolute path is printed at the end of every run, and `GATE_LOG_DIR` overrides it for
+ * anyone who wants them somewhere specific — pointing that INSIDE the repo re-opens exactly the
+ * failure described above.
+ */
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const dir = path.join(REPO, '.gate-logs');
+const dir = process.env.GATE_LOG_DIR
+  ? path.resolve(process.env.GATE_LOG_DIR)
+  : path.join(os.tmpdir(), 'agv-gate-logs', path.basename(REPO));
 mkdirSync(dir, { recursive: true });
 const logPath = path.join(dir, `gate-${stamp}.log`);
 const log = createWriteStream(logPath, { flags: 'a' });
@@ -70,8 +89,9 @@ child.on('error', (e) => {
 });
 
 child.on('close', (code) => {
-  const rel = path.relative(REPO, logPath).split(path.sep).join('/');
-  const tail = `\nfull output: ${rel}\n`;
+  // The absolute path, because the file is deliberately not under the repo and a relative path from
+  // here would be a string of `../`.
+  const tail = `\nfull output: ${logPath}\n`;
   process.stdout.write(tail);
   log.write(`\n# exit ${code ?? 1} at ${new Date().toISOString()}\n`);
   // Exit only once the file is flushed, or a failing run loses the bytes that explain it.

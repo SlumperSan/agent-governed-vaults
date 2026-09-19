@@ -29,7 +29,6 @@ skills-lock.json
 # Local pre-merge gate result (scripts/gate.mjs). Describes THIS machine last run,
 # not a property of the branch, so it is never committed.
 .gate-state.json
-.gate-logs/
 
 # ── Secrets: patterns this file did NOT cover, checked with `git check-ignore` ──
 # `.env` alone matches only that exact name, so `.env.local` and `.env.production`

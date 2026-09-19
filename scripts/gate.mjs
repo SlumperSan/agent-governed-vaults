@@ -583,6 +583,7 @@ ${C.d}(see --list)${C.x}
     // followed by six clean runs with no record of the failing test, which left the red
     // untrustworthy in both directions. gate:log tees this whole stream to a file.
     console.log(`${C.d}Capture the full output next time: npm run gate:log${ONLY ? ` -- --only ${[...ONLY].join(',')}` : ''}${C.x}`);
+    console.log(`${C.d}  (it writes outside the repo and prints the path; a log in the tree is read as prose by the claims guards)${C.x}`);
     if (first?.s.id === 'test' || first?.s.id === 'snapshot') {
       // Do not let a genuine finding get filed as "the gate is flaky".
       console.log(

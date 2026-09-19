@@ -35,7 +35,10 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const WRAPPER = path.join(REPO, 'scripts', 'gate-logged.mjs');
-const LOG_DIR = path.join(REPO, '.gate-logs');
+// Its own directory per test run, via the same override the wrapper documents. Never inside the
+// repository: a log in the tree is read as prose by every guard that walks it, which is the failure
+// that moved these files out in the first place.
+const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-logs-'));
 const WIN = process.platform === 'win32';
 
 /** An env whose PATH has `prepend` in front. Every case-variant of the key is deleted first: on
@@ -70,7 +73,11 @@ function runWrapper(args, env) {
     // Its own state file: the gates this spawns must not overwrite the repo's record, and must not
     // be read by another test file as if they were that file's own run. See GATE_STATE_PATH in
     // scripts/gate.mjs for the failure that forced this.
-    env: { ...env, GATE_STATE_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-state-')), 'state.json') },
+    env: {
+      ...env,
+      GATE_STATE_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-state-')), 'state.json'),
+      GATE_LOG_DIR: LOG_DIR,
+    },
   });
   const created = (fs.existsSync(LOG_DIR) ? fs.readdirSync(LOG_DIR) : []).filter((f) => !before.has(f));
   assert.equal(created.length, 1, `expected exactly one new log file, got ${created.length}`);
@@ -87,7 +94,11 @@ test('THE CASE THAT WAS MISSING: a failing step leaves the CHILD output on disk,
   assert.match(log, /SHIM_FORGE_MARKER/, 'the failing child own output is the half that was lost; it must be in the log');
   assert.match(log, /GATE FAILED on fmt/, 'the verdict line too');
   assert.match(log, /# exit 1 at \d{4}-/, 'the log must record the exit code, so a truncated run is visible as truncated');
-  assert.match(out, /full output: \.gate-logs\//, 'the console must say where the log is, or nobody reads it');
+  assert.match(out, /full output: \S+[/\\]gate-\S+\.log/, 'the console must say where the log is, or nobody reads it');
+  assert.ok(
+    !/full output: [^\n]*[/\\]\.gate-logs[/\\]/.test(out),
+    'the log must not be written inside the repository: every guard that walks the tree reads it as prose',
+  );
 });
 
 test('a passing run is captured too — the run BEFORE the re-run is the one you want to read', () => {
