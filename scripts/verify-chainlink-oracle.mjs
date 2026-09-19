@@ -135,6 +135,10 @@ export const SEQUENCER_EXEMPT_REASONS = new Map([
     4663,
     'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage. Two guards survive that, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
   ],
+  [
+    5042,
+    'Arc — an L1, not a rollup, so there is no sequencer whose uptime could be reported and no feed to supply; Chainlink publishes none for arc-mainnet, established by enumerating all 32 feeds it DOES publish for the chain rather than by failing to find one. NOT the same kind of entry as 4663: that one weakened a guard that applied, this one records that the guard does not apply. Owner decision 2026-09-19. Two guards survive a zero uptime feed, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). The residual this accepts: at a 90,000 s heartbeat a stalled FEED is caught within a day and a stalled CHAIN is not distinguishable from a quiet one',
+  ],
 ]);
 export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());
 const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);
@@ -144,9 +148,15 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 // Mirrors of the bounds ChainlinkOracle's constructor now enforces (MIN_HEARTBEAT / MAX_HEARTBEAT /
 // MAX_BAND_RATIO). Duplicated here on purpose: catching a bad config BEFORE `--broadcast` costs a
 // read-only run, and catching it after costs a redeploy of an immutable contract.
-const MIN_HEARTBEAT = 600n;
-const MAX_HEARTBEAT = 86400n;
-const MAX_BAND_RATIO = 1000n;
+export const MIN_HEARTBEAT = 600n;
+// 90,000 s, NOT 86,400. Raised in #307 because Arc's BTC/USD worst gap is 86,423 s across 199 rounds,
+// so the old ceiling sat 23 s BELOW a healthy feed's real behaviour. This copy stayed at 86,400 for a
+// day, which meant this script — the pre-deploy check — would have REJECTED the Arc config's 90,000,
+// a value the constructor accepts. A mirror that drifts fails in the direction of blocking a correct
+// deploy, which is the safe direction and still wrong. `scripts/test/verify-chainlink-oracle.test.mjs`
+// now pins all three of these to the contract source so the next raise cannot leave this behind.
+export const MAX_HEARTBEAT = 90000n;
+export const MAX_BAND_RATIO = 1000n;
 
 /**
  * `--strict` (or STRICT=1) makes NOTICES set the exit code. Off by default, because the two
