@@ -194,6 +194,19 @@ const STEPS = [
     why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
   },
   {
+    id: 'vault-lint',
+    title: 'vault-lint (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-lint.mjs')],
+    cwd: REPO,
+    // ADVISORY for one week from 2026-09-19, then blocking (card 189, Chairman directive 6). The
+    // vault is a local machine path outside this repo and outside CI's reach -- the script itself
+    // exits 0 with a notice when the vault is simply absent from this environment, which is why
+    // this step is safe to run unconditionally rather than gated on a path check here.
+    advisory: true,
+    why: 'Do Tasks/ cards carry a shell fragment, a value outside a closed set, or a truncated body? Card 135\'s post-mortem.',
+  },
+  {
     id: 'test',
     title: 'forge test',
     cmd: 'forge',
