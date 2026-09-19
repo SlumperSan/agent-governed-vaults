@@ -36,9 +36,13 @@ const GATE = path.join(REPO, 'scripts', 'gate.mjs');
  * OUTSIDE THE REPOSITORY, AND THAT IS THE WHOLE DESIGN RATHER THAN TIDINESS.
  *
  * The first version wrote `.gate-logs/` at the repo root, gitignored. The very next gate run went
- * RED: `claims-key-custody-truth.test.mjs` walks the filesystem for prose, found the log, and read a
- * PASSING TEST'S OWN NAME — `no unqualified "no RPC client" claim about the API` — as a surface
- * making that claim. A log of the guards tripping the guards.
+ * RED: `claims-key-custody-truth.test.mjs` walks the filesystem for prose, found the log, and read
+ * the TITLE OF ONE OF ITS OWN PASSING TESTS as a surface making the claim that test exists to ban.
+ * A log of the guards tripping the guards.
+ *
+ * That title is deliberately not quoted here. Reproducing a banned shape inside the file that
+ * explains it is how the shape spreads, and this repository has already caught that exact move six
+ * times — including once in the header of the guard that bans it.
  *
  * The obvious repair is to add `.gate-logs` to that file's `SKIP_DIRS`. There are seven independent
  * `SKIP_DIRS` sets in this repository and nothing keeps them in step, so that repair is seven edits
