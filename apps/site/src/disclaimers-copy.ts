@@ -207,7 +207,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is one asset: cirBTC, a wrapped Bitcoin on Arc, priced through the BTC/USD feed &mdash; the underlying cirBTC claims to wrap, not a feed for some other wrapper. There is no ETH leg, because Arc carries no ETH representation with any liquidity. There is no second provider and no fallback source, so if that one feed goes stale or implausible the vault stops pricing rather than guess &mdash; and that freeze reaches exits too. This is a named residual risk, not an oversight."
+        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is one asset: cirBTC, priced through the BTC/USD feed &mdash; the underlying cirBTC claims to wrap, not a feed for some other wrapper. cirBTC is issued rather than trustless: its contract can be paused, upgraded, and can blacklist addresses, and those powers sit with whoever controls those roles &mdash; not with this protocol and not with its operator. Its own <code>name()</code> returns &ldquo;Circle Wrapped Bitcoin&rdquo;; who actually holds the keys is not something this page can verify from the chain. There is no ETH leg: of the 26,187 tokens on Arc, 52 carry an ETH- or BTC-family symbol and every one of the 51 that is not cirBTC holds under $452 of depth. There is no second provider and no fallback source, so if that one feed goes stale or implausible the vault stops pricing rather than guess &mdash; and that freeze reaches exits too. This is a named residual risk, not an oversight."
       },
       {
         "dt": "Worst case",
