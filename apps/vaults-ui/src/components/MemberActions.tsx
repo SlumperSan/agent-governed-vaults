@@ -451,7 +451,20 @@ export function MemberActions({ vault }: Props) {
               <th scope="row">
                 USDC
                 <br />
-                <span className="dim">idle stables{preview.perfFee !== null && preview.perfFee.maxUsdc > 0n ? ', before the performance fee below' : ''}</span>
+                <span className={preview.perfFee === null ? 'tag-warn' : 'dim'}>
+                  idle stables
+                  {preview.perfFee !== null && preview.perfFee.maxUsdc > 0n
+                    ? ', before the performance fee below'
+                    : preview.perfFee === null
+                      ? // Matches apps/web/index.html's identical branch: the fee could not be
+                        // BOUNDED (costBasisUsdc unread, an unpriced leg, or a child unwind), never
+                        // that no fee applies. Not rendering this here is the exact defect PR #350's
+                        // review found -- a member-facing Total that reads as final when it is not.
+                        '. The 10% performance fee is withheld from this leg and from every slice ' +
+                        'below, and could not be bounded from the data here, so these are pre-fee ' +
+                        'figures, not receipts'
+                      : ''}
+                </span>
               </th>
               <td className="num">{previewLeg(preview.usdcPayMin, preview.usdcPay, (n) => usdcShort(n))}</td>
             </tr>
@@ -510,6 +523,21 @@ export function MemberActions({ vault }: Props) {
         <p className="note tag-warn">
           Part of this exit unwinds child-vault positions — this preview covers the common path only and understates
           what you would actually receive.
+        </p>
+      ) : null}
+      {preview?.ok &&
+      preview.perfFee === null &&
+      preview.valueComplete &&
+      !preview.coversFromChildren &&
+      preview.payoutValueWad !== null &&
+      preview.payoutValueWad > 0n ? (
+        // The one case previewExit CAN price a gain but cannot bound the performance fee taken from
+        // it — costBasisUsdc failed to read independently of everything else above. Every other
+        // null-perfFee cause already has its own warning (coversFromChildren) or its own label
+        // (valueComplete driving "cannot be totalled"), so reaching here means specifically this.
+        <p className="note tag-warn">
+          The Total above is pre-fee, not a receipt — the 10% performance fee could not be bounded from
+          what was read, so it is not shown as a range here the way it is on the leg rows.
         </p>
       ) : null}
 

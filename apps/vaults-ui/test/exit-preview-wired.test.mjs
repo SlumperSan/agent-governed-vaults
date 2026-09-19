@@ -78,6 +78,48 @@ test('MemberActions.tsx renders preview.usdcPay / preview.slices / preview.payou
   }
 });
 
+// ─────────── the perf-fee-cannot-be-bounded caveat (independent read on #350, REJECT) ───────────
+// `previewExit` sets `perfFee: null` when the ceiling cannot be bounded (costBasisUsdc unread, an
+// unpriced leg, or a child unwind) -- a real, reachable state, not a theoretical one. The first
+// version of this file rendered nothing at all for it: no caveat on the USDC row, no warning
+// paragraph, so a member saw a bare "Total value: $X" that looked final and was not.
+
+test('the USDC-leg caveat names the unbounded-fee case specifically, matching apps/web/index.html', () => {
+  assert.match(
+    MEMBER_ACTIONS,
+    /could not be bounded from the data here, so these are pre-fee/,
+    'the index.html-equivalent caveat text is missing from the USDC leg',
+  );
+  assert.match(MEMBER_ACTIONS, /className=\{preview\.perfFee === null \? 'tag-warn' : 'dim'\}/, 'the caveat must be visually flagged (tag-warn), not styled as routine dim text');
+});
+
+test('a standalone warning paragraph fires specifically when perfFee cannot be bounded but a real total is shown', () => {
+  const idx = MEMBER_ACTIONS.indexOf('The Total above is pre-fee, not a receipt');
+  assert.ok(idx >= 0, 'the standalone Total-row warning is missing');
+  const start = MEMBER_ACTIONS.lastIndexOf('{preview?.ok &&', idx);
+  assert.ok(start >= 0, 'could not find the guarding condition before the warning');
+  const guard = MEMBER_ACTIONS.slice(start, idx);
+  assert.match(guard, /preview\.perfFee === null/, 'the warning must be gated on perfFee === null');
+  assert.match(guard, /preview\.valueComplete/, 'must not fire when the total cannot be priced at all (a different, already-labelled case)');
+  assert.match(guard, /!preview\.coversFromChildren/, 'must not duplicate the child-unwind warning');
+  assert.match(guard, /preview\.payoutValueWad > 0n/, 'must not fire when there is no payout to warn about');
+});
+
+test('MUTATION: reverting to the pre-fix two-way branch (bounded-nonzero vs everything else) drops the caveat, caught', () => {
+  const preFix = MEMBER_ACTIONS.replace(
+    /<span className=\{preview\.perfFee === null[\s\S]*?<\/span>/,
+    "<span className=\"dim\">idle stables{preview.perfFee !== null && preview.perfFee.maxUsdc > 0n ? ', before the performance fee below' : ''}</span>",
+  );
+  assert.notEqual(preFix, MEMBER_ACTIONS, 'mutation target not found -- update this test if the branch moved');
+  assert.doesNotMatch(preFix, /could not be bounded from the data here/, 'RED: the pre-fix shape must not carry the caveat');
+});
+
+test('MUTATION: removing the standalone warning paragraph is caught', () => {
+  const idx = MEMBER_ACTIONS.indexOf('The Total above is pre-fee, not a receipt');
+  const withoutWarning = MEMBER_ACTIONS.slice(0, idx - 400) + MEMBER_ACTIONS.slice(MEMBER_ACTIONS.indexOf('{exit.message', idx));
+  assert.doesNotMatch(withoutWarning, /The Total above is pre-fee/, 'RED: the mutation must actually remove the warning');
+});
+
 // ─────────────────── costBasisUsdc: the one new chain read ───────────────────
 
 test("ExitGateInputs carries costBasisUsdc, and readExitGateInputs reads VaultCore.costBasisUsdc(member)", () => {
