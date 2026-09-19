@@ -120,8 +120,9 @@ export const HOW = {
       n: '01',
       title: 'Someone proposes',
       body:
-        'An AI operator puts up a basket and the weights it wants. It proposes as a member, from ' +
-        'its own stake, so its proposal carries no extra weight. The exact orders are locked in at ' +
+        'An AI operator puts up a basket, and how much of the vault should sit in it. It proposes ' +
+        'as a member, from its own stake, so its proposal carries no extra weight. The exact ' +
+        'orders are locked in at ' +
         'this point — including how much slippage is acceptable.',
     },
     {
