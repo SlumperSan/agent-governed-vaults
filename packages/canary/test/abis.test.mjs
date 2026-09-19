@@ -264,6 +264,40 @@ test('the feed-identity HARM legs exist on the compiled contracts the oracle its
   }
 });
 
+test('the token-safety legs are the EXACT Circle Pausable/Blacklistable signatures, and are recorded as unpinnable', () => {
+  // UNPINNABLE AGAINST A COMPILED ARTEFACT, AND PINNED ANYWAY — the same shape as the
+  // feed-identity legs below, for the same reason: there is no compiled USDC/cirBTC in this repo to
+  // check these against, so the assertion exists to make a rename DELIBERATE rather than silent.
+  //
+  // THE REVIEW FINDING THAT PUT IT HERE. `TOKEN_SAFETY_VIEWS` was added with no signature or selector
+  // pin anywhere, and a coordinated rename to the USDT spelling `isBlackListed` passed all 46 tests
+  // green. `paused()` → `paused(address)` survived too. The keccak test above cannot catch either: it
+  // derives each selector FROM the fragment, so a renamed fragment yields a consistent selector for
+  // the wrong function.
+  //
+  // THE CAPITALISATION IS NOT A TYPO AND MUST NOT BE "FIXED". `isBlacklisted(address)` is Circle's
+  // published Blacklistable spelling; `isBlackListed(address)` is Tether's, a genuinely different
+  // function with a different selector. Reading the wrong one reverts, and a reverting read is what
+  // this basket's safety state renders as `unknown` — so the cost of the rename is not a crash, it is
+  // a permanent `unknown` that looks like an RPC problem.
+  //
+  // Selectors, computed independently and recorded so the reason for these exact strings is legible:
+  //   paused()                  0x5c975abb
+  //   isBlacklisted(address)    0xfe575a87
+  //   isBlackListed(address)    0xe47d6060   <- Tether's, and NOT what we read
+  assert.deepEqual(
+    TOKEN_SAFETY_VIEWS.map(signatureOf).sort(),
+    ['isBlacklisted(address)', 'paused()'],
+  );
+  // Both are views returning exactly one bool: a leg's safety is a tri-state built from a strict
+  // boolean, so a decode returning anything else lands on `unknown` and the state goes permanently
+  // unreadable rather than wrong.
+  for (const frag of TOKEN_SAFETY_VIEWS) {
+    assert.equal(frag.stateMutability, 'view', `${signatureOf(frag)} must be declared a view`);
+    assert.deepEqual(frag.outputs.map((o) => o.type), ['bool'], `${signatureOf(frag)} must return one bool`);
+  }
+});
+
 test('the feed-identity IDENTITY legs are the EACAggregatorProxy signatures, and are recorded as unpinnable', () => {
   // Self-referential on purpose, and labelled as such: there is no compiled EACAggregatorProxy in
   // this repo to check against. The assertion is here so a rename is at least deliberate.
