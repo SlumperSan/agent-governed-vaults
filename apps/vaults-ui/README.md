@@ -44,29 +44,33 @@ matching pair of steps in `scripts/gate.mjs` and `.github/workflows/ci.yml`, bec
 
 ## Deploying
 
-**Not settled, and it is not this app's call.** Cloudflare Pages needs a project name and a
-hostname, and the open question is whether this workspace takes over `app.rwally.com` from
-`apps/app` (Pages project `rwally-app`) or stands up beside it. That is an owner decision; nothing
-here should guess it, because a `wrangler.toml` with a `name` in it IS the guess.
+**Settled.** The owner decided on 2026-09-19 that this workspace takes `app.rwally.com` and
+`apps/app` retires into it rather than standing beside it — one member surface, one address, no new
+name to market. `wrangler.toml` here carries the **existing** Pages project, `rwally-app`, pointed
+at this source directory rather than `apps/app`'s.
 
-**What IS settled, so whoever decides does not have to re-derive it:**
+```bash
+npm run build --workspace apps/vaults-ui
+cd apps/vaults-ui && npx wrangler@latest pages deploy dist --project-name=rwally-app --branch=protocol/main
+```
 
-- **Output directory is `dist/`**, which is what a Pages project's build output must point at.
+**THE NEXT DEPLOY AGAINST THAT PROJECT REPLACES THE LIVE VAULT EXPLORER.** The DNS is already
+pointed, so there is no cutover step to forget and no moment where the change is staged — it is live
+the instant the deploy finishes. That is the intended end state and **it is the owner's call, not a
+deployer's.** This repository has already shipped the wrong directory to a live Pages project once.
+
+The rest, unchanged and still worth knowing:
+
+- **Output directory is `dist/`**, which is what the Pages project's build output points at.
 - **`public/_headers` is the edge policy**, and Pages reads it from the root of the SERVED
-  directory, which is why it lives in `public/` and not here. `test/csp.test.mjs` asserts it lands
-  at `dist/_headers` byte-identically and that the policy still matches what the build emits.
-- **There is no `functions/` directory and there should not be one.** `apps/site` keeps its
-  `wrangler.toml` beside `apps/site/functions` because Pages bundles Functions relative to the
-  directory wrangler runs in; with no Functions, that constraint does not apply here and the
-  deploy can run from anywhere. `apps/app/README.md` records the matching hazard from the other
-  side: Pages will pick up a Functions bundle from the working directory if one is there.
-- **The command, once a project exists**, follows `apps/app`'s shape:
-
-  ```bash
-  npm run build --workspace apps/vaults-ui
-  cd apps/vaults-ui && npx wrangler@latest pages deploy dist --project-name=<project> --branch=protocol/main
-  ```
-
+  directory, which is why it lives in `public/` and not beside `wrangler.toml`. `test/csp.test.mjs`
+  asserts it lands at `dist/_headers` byte-identically and that the policy still matches what the
+  build emits, so a deploy that would have shipped no policy reds in the gate instead.
+- **There is no `functions/` directory and there should not be one.** Pages bundles Functions
+  relative to the directory wrangler runs in, which is why `apps/site` keeps its `wrangler.toml`
+  beside `apps/site/functions`. This app has no Function and needs none. `apps/app/README.md`
+  records the hazard from the other side: Pages picks up a Functions bundle from the working
+  directory if one is sitting there.
 - **One thing to check before the first deploy:** `connect-src` is `'self'`, because this app reads
   bundled fixtures rather than a chain. The moment it is pointed at `apps/web/src/live-adapter.mjs`,
   the one RPC origin has to be added to `public/_headers` **in the same commit as the code that

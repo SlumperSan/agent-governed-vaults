@@ -1,0 +1,46 @@
+# Cloudflare Pages configuration for the vault workspace at app.rwally.com.
+#
+# THE PROJECT NAME IS NOT A NEW ONE, AND THAT IS THE POINT. `rwally-app` is the
+# existing Pages project already serving app.rwally.com. The owner decided on
+# 2026-09-19 that this workspace TAKES that address and `apps/app` retires into
+# it rather than standing beside it — one member surface, one address, no new
+# name to market. So this file points the same project at a different source
+# directory; it does not create a second project, and there is no second
+# hostname to configure.
+#
+# WHAT THAT MEANS ON THE DAY, stated because it is the hazard this repository has
+# already hit once with the marketing site: THE NEXT `pages deploy` AGAINST THIS
+# PROJECT REPLACES THE LIVE VAULT EXPLORER. That is the intended end state and it
+# must not happen by accident. The DNS is already pointed; nothing needs to
+# change there, which is precisely why an accidental deploy is live immediately.
+# The cutover is the owner's call, not a deployer's.
+#
+# WHY THERE IS NO `functions` DIRECTORY HERE, AND WHY ONE MUST NOT APPEAR
+# CASUALLY. Pages bundles Functions from `./functions` RELATIVE TO THE DIRECTORY
+# WRANGLER RUNS IN, not from inside the uploaded asset directory. `apps/site`
+# keeps its wrangler.toml beside `apps/site/functions` for exactly that reason.
+# This app has no Function and needs none: everything it renders is static, and
+# the edge policy is a `_headers` file rather than middleware. `apps/app/README.md`
+# records the hazard from the other side — Pages will pick up a Functions bundle
+# from the working directory if one is sitting there.
+#
+# `pages_build_output_dir` IS THE BUILD OUTPUT AND NOTHING ELSE MAY LIVE UNDER IT.
+# `public/_headers` is copied into `dist/` by the build, and Pages reads that file
+# from the root of the SERVED directory — which is why it lives in `public/` and
+# not beside this file. `test/csp.test.mjs` asserts it lands at `dist/_headers`
+# byte-identically and that the policy still matches what the build emits, so a
+# deploy that would have shipped no policy reds in the gate instead.
+#
+# NO `compatibility_flags`. `apps/site` carries `nodejs_compat` only in case a
+# future Function needs it; there is no Function here, so an unused flag would be
+# a claim about a capability nothing exercises.
+#
+# BEFORE THE FIRST DEPLOY THAT READS A CHAIN: `connect-src` in public/_headers is
+# `'self'`, because this app renders bundled fixtures. The moment it is pointed at
+# a live adapter, the one RPC origin has to be added to that file IN THE SAME
+# COMMIT as the code that calls it, or every read is refused by the browser and
+# the page renders empty with no build-time warning.
+
+name = "rwally-app"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-09-19"
