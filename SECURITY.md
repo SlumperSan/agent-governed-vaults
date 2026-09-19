@@ -32,7 +32,7 @@ In scope:
   This is the one paid API surface going forward; a duplicate paid endpoint that previously lived
   under `apps/site-next` (settling on Base mainnet) has been removed as part of a parallel cleanup
   so that `apps/api` is the single paid API.
-- The live public sites: `apps/site-next/` (serves `rwally.com`) and `apps/app/` (serves
+- The live public sites: `apps/site/` (serves `rwally.com`) and `apps/app/` (serves
   `app.rwally.com`).
 - `packages/` supporting the above (`indexer`, `agent-sdk`, `canary`, `reference-agent`, `oplog`).
 

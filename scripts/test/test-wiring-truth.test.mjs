@@ -395,7 +395,7 @@ test('the enumeration and the globs are non-empty, so neither check above is vac
       'SKIP_DIRS grew an entry that swallows most of the repository.',
   );
 
-  assert.ok(scripts.length >= 3, `Found ${scripts.length} wired script(s), expected at least 3 (test:app, test:backend, apps/site-next#test).`);
+  assert.ok(scripts.length >= 3, `Found ${scripts.length} wired script(s), expected at least 3 (test:app, test:backend, apps/site#test).`);
 
   const dead = [];
   for (const s of scripts) {

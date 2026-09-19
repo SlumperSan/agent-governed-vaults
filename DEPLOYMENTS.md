@@ -7,18 +7,23 @@ README wins; this page exists to gather the commands in one place, not to replac
 
 Every command below is copied from the surface's own README/config — none are invented here.
 
-## Marketing site — `apps/site-next/` → `rwally.com` (live, canonical)
+## Marketing site — `apps/site/` → `rwally.com` (live, canonical)
 
-Build, then deploy from inside `apps/site-next` (Pages bundles `./functions` relative to the
+**This said `apps/site-next` until 2026-09-18.** That directory was deleted in
+[#304](https://github.com/SlumperSan/agent-governed-vaults/pull/304); `apps/site` is what carries
+`name = "rwally"` in its `wrangler.toml` today.
+
+Build, then deploy from inside `apps/site` (Pages bundles `./functions` relative to the
 working directory, so the deploy must run from here):
 
 ```bash
-cd apps/site-next
+cd apps/site
 npm run build          # tsc -b && vite build && vite build --ssr && node scripts/prerender.mjs
 npx wrangler@4 pages deploy dist --project-name rwally --branch protocol/main
 ```
 
-Notes carried over from [`apps/site-next/README.md`](apps/site-next/README.md) and
+Notes carried over from the header comment in
+[`apps/site/wrangler.toml`](apps/site/wrangler.toml) and
 [`docs/REVENUE.md`](docs/REVENUE.md):
 
 - **`functions/` holds one Function, `_middleware.js`, and it imports nothing.** It uses no Node
@@ -52,7 +57,7 @@ curl -s -o /dev/null -w "%{http_code}
 ```
 
 Do not describe deploying the removed endpoint, and do not re-add a paid endpoint under
-`apps/site-next` — `apps/api` is the one metered read API going forward.
+`apps/site` — `apps/api` is the one metered read API going forward.
 
 ## Vault explorer — `apps/app/` → `app.rwally.com` (live)
 
@@ -86,7 +91,7 @@ npm run start:api      # node apps/api/src/serve.mjs
 
 See [`docs/RUNTIME.md` §8](docs/RUNTIME.md#8-operations) for operating it (log format, rate
 limits, metrics, backups, restore) once a public deploy target exists. Do not stand up a second,
-competing paid endpoint elsewhere (see the site-next note above) — route new paid-read work through
+competing paid endpoint elsewhere (see the marketing-site note above) — route new paid-read work through
 this app.
 
 ## Allocator front end — `apps/web/` ("Vault Atlas") — no assigned domain
@@ -94,19 +99,28 @@ this app.
 Not deployed. No production domain has been decided. Do not deploy this to any of the domains
 above without an explicit owner decision and a Production Map update.
 
-## `apps/site/` — retired. **Do not deploy.**
+## The `apps/site` deploy warning that used to be here — inverted, and why the lesson survives
 
-`apps/site` is the retired nine-page static site. It is **not** what `rwally.com` serves —
-`apps/site-next` is — and deploying it to the `rwally` Cloudflare Pages project replaces the live
-site with this retired build. This already almost happened once: see
-[PR #267](https://github.com/SlumperSan/agent-governed-vaults/pull/267) and
-[issue #268](https://github.com/SlumperSan/agent-governed-vaults/issues/268), where a runbook
-shipped alongside a new feature told the owner to run `wrangler pages deploy . --project-name
-rwally` from `apps/site` — a reviewer caught it before it published.
+**This section said `apps/site` was retired and must never be deployed. That is now backwards** and
+the correction is recorded rather than quietly dropped, because the warning was load-bearing for a
+year and someone will remember it.
 
-**Never run a Pages deploy from `apps/site`.** If you find any script, runbook, or doc instructing
-otherwise, treat it as a bug and fix it — see `apps/site/README.md`'s own retirement banner for the
-canonical warning text.
+`apps/site-next` was the canonical site until [#304](https://github.com/SlumperSan/agent-governed-vaults/pull/304)
+**deleted that directory**. `apps/site` is now what `rwally.com` serves — its `wrangler.toml` carries
+`name = "rwally"` — so the old banner pointed a deployer at a path that no longer exists and
+forbade the only one that works.
+
+**The near-miss it cited was real and its lesson still stands, for a different reason.** In
+[PR #267](https://github.com/SlumperSan/agent-governed-vaults/pull/267) /
+[issue #268](https://github.com/SlumperSan/agent-governed-vaults/issues/268) a runbook told the
+owner to run `wrangler pages deploy . --project-name rwally` from `apps/site`, and a reviewer caught
+it before it published. That command is **still wrong today**, and not because of the directory:
+it deploys `.` — the source tree — rather than `dist`, the prerendered build output. Deploying the
+source publishes TypeScript and templates in place of the rendered site.
+
+So the rule that survives is about the argument, not the path: **deploy `dist`, never `.`**, and run
+wrangler from `apps/site` so Pages resolves `./functions` to `apps/site/functions`. The commands at
+the top of this page are the ones to copy.
 
 ## Planned, not built
 

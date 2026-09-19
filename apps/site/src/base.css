@@ -74,7 +74,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--blue-bright); o
   padding: 11px 20px;
   border-radius: var(--r-md);
   border: 1px solid transparent;
-  background: var(--blue);
+  /* --blue-control, NOT --blue. #fff on --blue measures 4.4988:1 against a
+     4.5:1 requirement; see the Controls block in tokens.css for the three
+     values and what each one has to clear. */
+  background: var(--blue-control);
   color: #fff;
   font: inherit;
   font-weight: 600;
@@ -83,9 +86,18 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--blue-bright); o
   cursor: pointer;
   transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
-.btn:hover { background: var(--blue-bright); }
-.btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
-.btn-ghost:hover { background: var(--surface-2); border-color: var(--blue-line); }
+/* THE BORDER CARRIES THE HOVER, NOT THE FILL. The window where a fill both holds
+   white at 4.5:1 and stays visible against --surface-2 at 3:1 is too narrow for a
+   fill shift a reader would notice, so the state change is a --blue-bright ring on
+   the border that was already there at `transparent`. */
+.btn:hover { background: var(--blue-control-hover); border-color: var(--blue-bright); }
+/* .btn-ghost's border IS the control — there is no fill to identify it by — so it
+   takes --line-control (4.14:1) rather than --line (1.33:1), which is decoration and
+   below the 3:1 floor SC 1.4.11 sets for a boundary that carries meaning. */
+.btn-ghost { background: transparent; border-color: var(--line-control); color: var(--ink); }
+/* Hover moves the border to the interaction colour rather than to --blue-line
+   (1.72:1), which was a hover state a reader could not see. */
+.btn-ghost:hover { background: var(--surface-2); border-color: var(--blue-bright); }
 .btn-sm { padding: 8px 15px; font-size: 14px; }
 
 /* ── Cards and panels ──────────────────────────────────────────────────── */

@@ -1,14 +1,25 @@
-:root {
-  --bg: #0b0c0e;
-  --panel: #131519;
-  --line: #24272e;
-  --ink: #e8eaed;
-  --dim: #8b919c;
-  --accent: #5b8cff;
-  --warn: #d98b2b;
-  --mono: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
-  color-scheme: dark;
-}
+/* ===========================================================================
+   THE WORKSPACE SURFACE.
+
+   THE PALETTE IS NOT DEFINED HERE. It is imported, not copied, from
+   apps/site/src/tokens.css -- the file Departments/Design.md names canonical --
+   so there is exactly one place any colour in this product is decided. This
+   file previously declared its own seven-value palette (a near-black --bg, a
+   grey --dim, a lone --accent), which is the drift the charter warns about: two
+   palettes means two sets of contrast ratios and only one of them ever gets
+   re-measured.
+
+   THE OLD NAMES ARE GONE RATHER THAN ALIASED. An alias block mapping --dim onto
+   --ink-dim would have been a smaller diff and would have left a second
+   vocabulary in the tree for the next person to extend. The canonical names are
+   used directly: --surface for a panel, --ink-dim for secondary text,
+   --blue-bright for interaction, --line-focus for a selected boundary.
+
+   ONE ACCENT, AND IT MEANS INTERACTION. --blue-bright is the most legible colour
+   on this background, so every state wants it; if four things on one card are
+   blue, selection stops being readable. Selected and focused only.
+   =========================================================================== */
+@import '../../site/src/tokens.css';
 
 * { box-sizing: border-box; }
 
@@ -16,12 +27,25 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.5 ui-sans-serif, system-ui, "IBM Plex Sans", sans-serif;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-.shell { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+a { color: inherit; }
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--blue-bright);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
 
-.masthead h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.01em; }
+/* The content column, matched to the masthead's 1160px so the brand and the
+   first panel share a left edge at every width. */
+.shell { max-width: 1160px; margin: 0 auto; padding: 32px var(--gutter) 64px; }
+
+.masthead h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.015em; font-weight: 600; }
 
 .columns { display: grid; grid-template-columns: 300px 1fr; gap: 20px; margin-top: 24px; }
 
@@ -30,15 +54,15 @@ body {
 }
 
 .panel {
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   padding: 18px;
   margin-bottom: 20px;
 }
 
 .panel h2 { margin: 0 0 14px; font-size: 16px; letter-spacing: 0.01em; }
-.panel h3 { margin: 20px 0 10px; font-size: 14px; color: var(--dim); }
+.panel h3 { margin: 20px 0 10px; font-size: 14px; color: var(--ink-dim); }
 
 .detail { min-width: 0; }
 
@@ -50,7 +74,7 @@ body {
   width: 100%;
   text-align: left;
   padding: 11px 12px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid transparent;
   background: transparent;
   color: inherit;
@@ -58,40 +82,50 @@ body {
   cursor: pointer;
 }
 
-.vault-row:hover { background: #191c22; }
-.vault-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.vault-row.is-selected { border-color: var(--accent); background: #171b26; }
+.vault-row:hover { background: var(--surface); }
+.vault-row:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
+/* --line-focus rather than --line: a selected boundary carries meaning, and
+   --line is 1.33:1, below the 3:1 floor a non-text indicator has to clear. */
+.vault-row.is-selected { border-color: var(--line-focus); background: var(--blue-soft); }
 .vault-row-name { font-weight: 600; }
-.vault-row-meta { font-size: 12.5px; color: var(--dim); }
+.vault-row-meta { font-size: 12.5px; color: var(--ink-dim); }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
-.kv dt { color: var(--dim); font-size: 13px; }
+.kv dt { color: var(--ink-dim); font-size: 13px; }
 .kv dd { margin: 0; }
 
 .grid { width: 100%; border-collapse: collapse; font-size: 14px; }
 .grid th, .grid td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
-.grid thead th { color: var(--dim); font-weight: 500; font-size: 12.5px; }
+.grid thead th { color: var(--ink-dim); font-weight: 500; font-size: 12.5px; }
 .grid tbody th { font-weight: 600; }
-.num { text-align: right; font-family: var(--mono); font-size: 13px; }
+.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; }
 
 .mono { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
-.dim { color: var(--dim); }
+.dim { color: var(--ink-dim); }
+/* One level below --ink-dim and still AA: 5.16:1 on --bg, 4.90 on --surface,
+   4.53 on --surface-2. It has no large-text allowance to fall back on at the
+   12.5-13px this surface uses it at, so the value is the floor, not a style. */
+.faint { color: var(--ink-faint); }
 
 .tag {
   display: inline-block;
+  /* .vault-row is a grid, and a grid item stretches by default: without this the
+     pill filled the row's whole width and read as a progress bar rather than a
+     badge. Visible in the first render of the ported chrome. */
+  justify-self: start;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #1d2433;
-  color: var(--accent);
+  background: var(--surface-2);
+  color: var(--blue-bright);
   font-size: 12px;
 }
 
 .tag-warn { color: var(--warn); }
 
-.bar { height: 8px; border-radius: 999px; background: #2a1f1a; overflow: hidden; margin-bottom: 14px; }
-.bar-for { height: 100%; background: var(--accent); }
+.bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-bottom: 14px; }
+.bar-for { height: 100%; background: var(--blue); }
 
 .proposal-title { margin: 0 0 14px; font-size: 15px; }
 
-.note { color: var(--dim); font-size: 13px; margin: 12px 0 0; }
+.note { color: var(--ink-dim); font-size: 13px; margin: 12px 0 0; }
 code { font-family: var(--mono); font-size: 12.5px; }

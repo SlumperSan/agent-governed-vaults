@@ -83,10 +83,44 @@ contract ChainlinkOracle is IOracleAggregator {
     /// and one below the floor freezes the asset against a HEALTHY feed. Neither is fixable after
     /// deployment.
     ///
-    /// Ceiling 24h: the slowest heartbeat tier Chainlink publishes for Data Feeds, and the age past
-    /// which a price cannot bound the NAV-vs-market arb a vault mints and redeems shares against.
-    /// Base Sepolia's deliberately generous 86_400 bound sits exactly here, so the check is
-    /// inclusive (contracts/config/base-sepolia.json); mainnet's 3_600 is well inside.
+    /// Ceiling 25h. IT WAS 86_400 (24h) UNTIL 2026-09-18, ON THE ARGUMENT THAT 24h IS THE SLOWEST
+    /// HEARTBEAT TIER CHAINLINK PUBLISHES. That argument is withdrawn: it equated the heartbeat
+    /// TIER with the maximum inter-update GAP, and the two differ by publish jitter, which is
+    /// strictly positive. A feed on the 24h tier does not update every 86,400s — it updates every
+    /// 86,400s PLUS however long the publish takes to land. So the old ceiling sat BELOW the real
+    /// maximum, and a config written at the ceiling false-tripped against a healthy feed.
+    ///
+    /// Measured on Arc (chain 5042) 2026-09-18, walking `getRoundData` back per feed:
+    ///
+    ///   USDC/USD    56 gaps over 1,344h — every one in [86,400, 86,467]. The best estimator of
+    ///               the jitter tail on this chain, because a stablecoin resting at 1.0000 never
+    ///               trips a deviation threshold, so it publishes on NOTHING but its heartbeat and
+    ///               all 56 samples are heartbeat samples. Tail reaches +67s.
+    ///   BTC/USD     199 gaps over 449h — 3 exceed 86,400, by +7s, +21s and +23s. Worst 86,423s,
+    ///               only 2s above the runner-up, and stable across both halves of the walk.
+    ///   CBBTC/USD   199 gaps over 507h — 2 exceed 86,400, by +3s and +4s.
+    ///
+    /// THE BOUND IS STRUCTURAL, NOT AN OPEN-ENDED SERIES, and that is why a fixed ceiling is still
+    /// the right shape. Shorter windows gave 4.71h, then 11.94h, then 24.01h — each rose only
+    /// because the window was shorter than the heartbeat itself. Once the window exceeded it the
+    /// figure stopped moving: 449h and 169h both give 86,423s. The maximum is one heartbeat period
+    /// plus jitter, and jitter is what this headroom is for.
+    ///
+    /// SIZE AGAINST THE FAMILY'S TAIL, NOT THE ASSET'S OWN. BTC/USD reached its heartbeat only 3
+    /// times in 449 hours, so its own +23s tail is sampled far too sparsely to size against;
+    /// USDC/USD reached it 55 times and got to +67s. A feed that rarely goes quiet has not
+    /// demonstrated a smaller jitter, only fewer chances to show it.
+    ///
+    /// 90_000 = 86_400 + 3_600: one hour of allowance, ~54x the largest jitter seen in 56 days on
+    /// the best-sampled feed. THE ASYMMETRY IS WHY IT IS AN HOUR AND NOT A MINUTE. A false trip
+    /// freezes every NAV-reading path INCLUDING exits, so it locks a member out of their own money
+    /// while the feed is healthy. Late detection costs a stale price for one extra hour on a feed
+    /// that only publishes daily anyway — and detection latency is floored by the feed's own
+    /// cadence regardless of what this constant says, so the hour buys real safety against a cost
+    /// that is close to nil.
+    ///
+    /// Base Sepolia's deliberately generous 86_400 bound is now inside the ceiling rather than on
+    /// it (contracts/config/base-sepolia.json); Base mainnet's 3_600 is well inside.
     ///
     /// Floor 10min: measured against the four feeds in the two shipped configs on 2026-08-29 — more
     /// than half of their observed inter-update intervals exceed 600s (medians 914-1232s), so a
@@ -95,7 +129,7 @@ contract ChainlinkOracle is IOracleAggregator {
     /// rejection here is a deploy-time revert the deployer fixes by WIDENING the bound — erring
     /// safe — rather than a post-deploy freeze.
     uint32 private constant MIN_HEARTBEAT = 600;
-    uint32 private constant MAX_HEARTBEAT = 86_400;
+    uint32 private constant MAX_HEARTBEAT = 90_000;
 
     /// @dev Widest sane-price band accepted, as a ceiling/floor ratio. Every band in both shipped
     /// configs is exactly 1000x; wider than that the band admits a >99.9% collapse as "sane", which
