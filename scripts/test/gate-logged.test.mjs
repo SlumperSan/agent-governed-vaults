@@ -67,7 +67,10 @@ function runWrapper(args, env) {
     cwd: REPO,
     encoding: 'utf8',
     timeout: 180_000,
-    env,
+    // Its own state file: the gates this spawns must not overwrite the repo's record, and must not
+    // be read by another test file as if they were that file's own run. See GATE_STATE_PATH in
+    // scripts/gate.mjs for the failure that forced this.
+    env: { ...env, GATE_STATE_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-state-')), 'state.json') },
   });
   const created = (fs.existsSync(LOG_DIR) ? fs.readdirSync(LOG_DIR) : []).filter((f) => !before.has(f));
   assert.equal(created.length, 1, `expected exactly one new log file, got ${created.length}`);

@@ -21,7 +21,7 @@
  * shim earlier on PATH than the real one. The steps chosen (`slither`, `syntax`, `fmt`) never run
  * forge for real and never recurse into this suite, so the whole file stays under a few seconds.
  */
-import { test, before, after } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -31,23 +31,25 @@ import { fileURLToPath } from 'node:url';
 
 const GATE = fileURLToPath(new URL('../gate.mjs', import.meta.url));
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
-const STATE = path.join(REPO, '.gate-state.json');
 const WIN = process.platform === 'win32';
 
 /**
- * `.gate-state.json` is this machine's real last-run record and is gitignored, but it is also what
- * `npm run cc` reads, so these tests must put it back exactly as they found it -- INCLUDING putting
- * back its absence, which a naive restore would turn into a file holding "undefined".
+ * EACH RUN GETS ITS OWN STATE FILE, AND THAT REPLACED A SAVE-AND-RESTORE THAT COULD NOT WORK.
+ *
+ * These tests used to let the gate write repo-global `.gate-state.json` and put the old contents
+ * back afterwards. Restoring is not the problem; SHARING is. The path is repo-global, so a gate
+ * spawned by any other test file in the same parallel `node --test` invocation overwrites it, and a
+ * test that spawns a gate and then reads the file gets whichever run finished last. It failed
+ * exactly that way — `caveats did not say the run checked nothing: ["was --only fmt"]`, another
+ * file's run read as if it were its own — intermittently, which is the worst version.
+ *
+ * So every child here is pointed at its own temp file through `GATE_STATE_PATH`. The repo's real
+ * record is never touched, so there is nothing to restore and `npm run cc` cannot be disturbed by a
+ * test run at all.
  */
-/** @type {string | null} */
-let saved = null;
-before(() => {
-  saved = fs.existsSync(STATE) ? fs.readFileSync(STATE, 'utf8') : null;
-});
-after(() => {
-  if (saved === null) fs.rmSync(STATE, { force: true });
-  else fs.writeFileSync(STATE, saved);
-});
+const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-executed-state-'));
+let stateSeq = 0;
+after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
 
 /** Directory holding a binary, or null when it is not installed. */
 function dirOf(bin) {
@@ -92,17 +94,17 @@ function assertPathShape(env, { forgePresent = true, slitherAbsent = true } = {}
   }
 }
 
-/** Run the real gate, and read back all three things it publishes. */
+/** Run the real gate against a state file nobody else writes, and read back all three publishers. */
 function runGate(only, env) {
-  fs.rmSync(STATE, { force: true });
+  const statePath = path.join(stateDir, `gate-state-${++stateSeq}.json`);
   const r = spawnSync(process.execPath, [GATE, '--only', only], {
     cwd: REPO,
     encoding: 'utf8',
     timeout: 120_000,
-    env,
+    env: { ...env, GATE_STATE_PATH: statePath },
   });
   const out = `${r.stdout || ''}${r.stderr || ''}`;
-  const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : null;
+  const state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, 'utf8')) : null;
   return { status: r.status, out, state };
 }
 
@@ -170,15 +172,26 @@ test('MUTATION: a FAILING run is a failure, never inconclusive -- and `notrun` i
 
 test('the board is told a run checked nothing, in words, not just as a false', async () => {
   // `passed: false` alone renders as FAILED, which is a different sentence from "checked nothing".
-  const { collect } = await import('../lib/project-status.mjs');
+  //
+  // ASSERTED ON THE SNAPSHOT THIS RUN PRODUCED, NOT BY RE-READING THE FILE. The earlier version
+  // called `collect()`, which re-reads repo-global `.gate-state.json` — and any other process
+  // running a gate rewrites it. A gate spawned by `gate-logged.test.mjs` in the same parallel
+  // `node --test` invocation did exactly that, and this test failed with
+  // `caveats did not say the run checked nothing: ["was --only fmt"]`: another file's run, read as
+  // if it were its own. The state object is captured by `runGate` the moment the child exits and
+  // `gateCaveats` is pure, so there is no window left to race.
+  const { gateCaveats } = await import('../lib/project-status.mjs');
   const env = envWithPath({ drop: dirOf('slither') });
   assertPathShape(env);
-  runGate('slither', env);
-  const { gate } = collect({ gh: false });
-  assert.ok(gate, 'the board must see the state file this run just wrote');
-  assert.equal(gate.passed, false);
+  const { state } = runGate('slither', env);
+  assert.ok(state, 'the run must have written a state file for the board to read');
+  assert.equal(state.passed, false);
+  const { caveats } = gateCaveats(state, state.commit);
   assert.ok(
-    gate.caveats.some((c) => /checked NOTHING/.test(c)),
-    `caveats did not say the run checked nothing: ${JSON.stringify(gate.caveats)}`,
+    caveats.some((c) => /checked NOTHING/.test(c)),
+    `caveats did not say the run checked nothing: ${JSON.stringify(caveats)}`,
   );
+  // And the same-commit caveat is absent when the shas agree, so the phrase above is not carried in
+  // by an unrelated caveat firing.
+  assert.ok(!caveats.some((c) => /DIFFERENT commit/.test(c)));
 });

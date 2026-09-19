@@ -425,8 +425,24 @@ function verdictFor(results) {
 }
 
 /**
- * Persist the run for `npm run cc`. Untracked (see .gitignore) -- it describes THIS machine's last
- * run, not a property of the branch, so committing it would just create merge conflicts.
+ * Where the run is recorded. `.gate-state.json` at the repo root by default, which is the file
+ * `npm run cc` reads; untracked (see .gitignore), because it describes THIS machine's last run
+ * rather than a property of the branch.
+ *
+ * `GATE_STATE_PATH` OVERRIDES IT, AND THE REASON IS A RACE THAT WAS REAL. The path is repo-global,
+ * so two gates running at once on one checkout overwrite each other's record — and a test that
+ * spawns a gate and then reads the file gets whichever run finished last. That happened: a gate
+ * spawned by one test file was read by another as if it were its own, producing
+ * `caveats did not say the run checked nothing: ["was --only fmt"]` on an unrelated head, twice,
+ * intermittently. Any caller that runs gates concurrently should point each at its own file; tests
+ * that assert on a run's record MUST, or they are asserting on whatever else the machine is doing.
+ */
+const STATE_PATH = process.env.GATE_STATE_PATH
+  ? path.resolve(process.env.GATE_STATE_PATH)
+  : path.join(REPO, '.gate-state.json');
+
+/**
+ * Persist the run for `npm run cc`.
  */
 function writeGateState(results, totalMs) {
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' });
@@ -445,7 +461,7 @@ function writeGateState(results, totalMs) {
     steps: results.map((r) => ({ id: r.s.id, state: r.state, ms: r.ms })),
   };
   try {
-    writeFileSync(path.join(REPO, '.gate-state.json'), JSON.stringify(state, null, 2) + '\n');
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n');
   } catch {
     // Never let bookkeeping fail the gate -- the verdict on the console is the real product.
   }

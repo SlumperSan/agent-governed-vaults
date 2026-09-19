@@ -56,16 +56,25 @@ function tree() {
 
 // ---------------------------------------------------------------- gate
 
-function gate() {
-  const p = path.join(REPO, '.gate-state.json');
-  if (!existsSync(p)) return null;
-  const g = jsonOr(readFileSync(p, 'utf8'), null);
-  if (!g) return null;
-  const headFull = sh('git', ['rev-parse', 'HEAD']);
-  // The ways a green gate lies. A board that omits these is the failure mode it exists to stop.
-  g.sameCommit = Boolean(g.commit && headFull && g.commit === headFull);
-  g.caveats = [
-    !g.sameCommit && 'ran on a DIFFERENT commit',
+/**
+ * The ways a green gate lies, computed from ONE state object rather than from the file.
+ *
+ * PURE, AND THAT IS THE POINT RATHER THAN A STYLE PREFERENCE. `.gate-state.json` is repo-global and
+ * any process running a gate rewrites it, so a caller that spawns a gate and then re-reads the file
+ * is racing every other gate on the machine. That race was real: `gate-executed-step.test.mjs`
+ * asserted the "checked NOTHING" caveat by re-reading through `collect()`, and a gate spawned by a
+ * different test file in the same parallel `node --test` run overwrote the file in between. It
+ * failed with `caveats did not say the run checked nothing: ["was --only fmt"]` — the other file's
+ * run, read as if it were its own. Given a state object, this function cannot be raced.
+ *
+ * @param {Record<string, any>} g a parsed `.gate-state.json`
+ * @param {string} headFull the current HEAD sha, or '' when it cannot be read
+ * @returns {{sameCommit: boolean, caveats: string[]}}
+ */
+export function gateCaveats(g, headFull) {
+  const sameCommit = Boolean(g.commit && headFull && g.commit === headFull);
+  const caveats = [
+    !sameCommit && 'ran on a DIFFERENT commit',
     g.treeDirty && 'ran against a dirty tree',
     g.mode?.quick && 'was --quick (no gas snapshot)',
     g.mode?.only && `was --only ${g.mode.only.join(',')}`,
@@ -74,6 +83,15 @@ function gate() {
     // `undefined === 0` is false, so it earns no caveat rather than a false one.
     g.executed === 0 && 'checked NOTHING -- every selected step was skipped',
   ].filter(Boolean);
+  return { sameCommit, caveats: /** @type {string[]} */ (caveats) };
+}
+
+function gate() {
+  const p = path.join(REPO, '.gate-state.json');
+  if (!existsSync(p)) return null;
+  const g = jsonOr(readFileSync(p, 'utf8'), null);
+  if (!g) return null;
+  Object.assign(g, gateCaveats(g, sh('git', ['rev-parse', 'HEAD'])));
   return g;
 }
 
