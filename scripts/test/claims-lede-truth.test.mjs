@@ -185,8 +185,27 @@ const publicSurfaces = () => {
     .filter((f) => !f.endsWith('package-lock.json'));
 };
 
-const surfacesWithText = () =>
-  publicSurfaces().map((f) => ({ file: f, text: readFileSync(path.join(REPO, f), 'utf8') }));
+/**
+ * THE FLOOR BELONGS HERE, NOT ONLY ON `publicSurfaces()`.
+ *
+ * `every prerendered page is inside the walk` floors `publicSurfaces()`, and that is the function
+ * it reads. The seven content guards read THIS one. The two are a `.map()` apart, and nothing tied
+ * them together: with `surfacesWithText` returning `[]` and `publicSurfaces` untouched, all 11
+ * tests in this file stayed green -- 78 ms against a 544 ms baseline -- while the agent-attribution,
+ * weighted-vote, stake-weighted, stake-blind, operator-power, deposit-screening and
+ * RWLY-attribution guards each reported "no offending prose" having read no prose at all. That is
+ * a floor on one property standing in for a floor on a neighbouring one, which is the adjacency
+ * this repository rejects reviews over.
+ */
+const surfacesWithText = () => {
+  const withText = publicSurfaces().map((f) => ({ file: f, text: readFileSync(path.join(REPO, f), 'utf8') }));
+  assert.ok(
+    withText.length >= 50,
+    `the public-surface walk returned ${withText.length} file(s). Every guard below is NEGATIVE -- ` +
+      'it reports the prose it found -- so an empty corpus is indistinguishable from a clean one.',
+  );
+  return withText;
+};
 
 /** Collapse hard-wrapped prose so a sentence split across two lines still matches as one. */
 const flat = (s) => s.replace(/\s+/g, ' ');
