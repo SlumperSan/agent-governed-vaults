@@ -128,8 +128,7 @@ export const HOME = {
   cta: {
     headline: 'Have a look around.',
     sub: 'Walk through a vault, a proposal and a vote. You can connect a wallet to look around ' +
-      '— there is nothing to deposit into yet, and the app will tell you so rather than let you ' +
-      'find out.',
+      '— there is nothing to deposit into yet.',
     label: 'Open the app',
   },
 } as const;
