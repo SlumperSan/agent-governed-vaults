@@ -105,11 +105,19 @@ the identical feed is accepted. The description check is what saves this; the ba
 `scripts/test/config-doc-truth.test.mjs` requires `minPriceWad`, `maxPriceWad` (strictly above,
 within `MAX_BAND_RATIO`) and `feedDecimals` per asset.
 
-On the heartbeat, read `heartbeatNote` in the survey before choosing. The short version: a single
-sample showed the feeds 0.15 h old, which invites a tight bound, and eleven rounds of history show
-gaps reaching 14,286 s on CBBTC/USD and 16,956 s on BTC/USD. Anything below roughly six hours is
-breachable by a feed behaving exactly to spec, and eleven rounds is a small sample. Arc's genesis is
-2026-05-12, so four months of history exist to widen the window with. `ChainlinkOracle.MAX_HEARTBEAT` is 86,400 s.
+**The heartbeat is no longer a choice to make here — it is 90,000 s, set in
+`contracts/config/arc-mainnet.json`.** This section previously offered a range to pick from, on
+eleven rounds of history showing gaps reaching 16,956 s; that sample was short by 5x and the advice
+built on it ("anything below roughly six hours is breachable") was far too loose.
+
+Measured over 449 hours by walking `getRoundData` back on the feeds: **BTC/USD's worst gap is
+86,423 s (24.01 h)**, CBBTC/USD's is 86,404 s. So the old `MAX_HEARTBEAT` of 86,400 s sat **23
+seconds below the worst gap** and a vault at the contract maximum would have false-tripped — which
+reverts every NAV path including exits. The constant was raised to 90,000 s on 2026-09-18.
+
+The figure is stable rather than still rising: a 169 h walk and a 449 h walk both return 86,423 s.
+The earlier smaller readings rose only because each window was shorter than the heartbeat itself and
+never contained a quiet stretch. See `Decisions/2026-09-18 MAX_HEARTBEAT raised to 90000`.
 
 ### 4. Widen the sequencer-feed refusal
 
