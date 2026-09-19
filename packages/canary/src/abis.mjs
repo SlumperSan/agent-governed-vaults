@@ -235,6 +235,15 @@ export const GOVERNANCE_VIEWS = Object.freeze([
   view('commitOf', ['uint256', 'address'], ['bytes32']),
   view('revealedOf', ['uint256', 'address'], ['bool']),
   view('revealedSupportOf', ['uint256', 'address'], ['bool']),
+  // Governance's OWN verdict on whether a vault has a pending execution (Governance.sol:736) —
+  // the fact `VaultCore.requestExit` (VaultCore.sol:551-567) branches on to decide Mode I
+  // (instant settlement, this transaction) vs Mode F (queues, irrevocable, settles later at
+  // whatever NAV holds once the pending proposal resolves). apps/vaults-ui reads this directly
+  // rather than reconstructing it from proposal deadlines client-side (governance.mjs's
+  // `hasPendingExecution` does that from a `Proposal` shape, for a caller that already has one in
+  // hand) — the contract already computed the answer, and an exit warning is exactly the place a
+  // second, client-side opinion of the same fact must not exist.
+  view('hasPendingExecution', ['address'], ['bool']),
   view('configOf', ['address'], [
     { name: 'commitDuration', type: 'uint32' },
     { name: 'revealDuration', type: 'uint32' },

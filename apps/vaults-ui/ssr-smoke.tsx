@@ -21,6 +21,9 @@ const MUST_CONTAIN = [
   'Reveal closes', // proposalPhase.deadlineLabel — the field that was wrong
   'WETH', // a basket leg
   'Idle USDC', // the idle row
+  'Connect wallet', // WalletConnect — disconnected on the server, no window/eip6963 to announce
+  'Deposit', // MemberActions — mounted with no wallet connected, still has to render
+  'Request exit', // MemberActions' exit action
 ];
 
 const missing = MUST_CONTAIN.filter((s) => !html.includes(s));
