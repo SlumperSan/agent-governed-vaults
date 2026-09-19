@@ -41,6 +41,9 @@ export interface Proposal {
   readonly snapshotTotal?: bigint;
   readonly memberCount?: number;
   readonly revealedVoterCount?: number;
+  /** Cranked delegated FOR weight (VO-2b). Absent/null must read as UNKNOWN, never as 0 —
+   *  `quorumReadout` already treats it that way; this field only has to carry it through. */
+  readonly delegatedForWeight?: bigint | null;
 }
 
 export interface Vault {
