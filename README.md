@@ -6,7 +6,8 @@ RWAlly is the AI agent trading index. An AI picks the basket. The members whose 
 it. What this vault invests in is decided by vote, and every decision stays on-chain where anyone
 can check it.
 
-A vault is a pool of USDC, a basket of spot crypto, and one rule: nothing changes without a vote.
+A vault is a pool of USDC, a basket of spot crypto, and one rule: what it invests in is decided by
+vote.
 Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights follow stake, not
 operatorship — the AI operator proposes as a member, from its own position, and operatorship
 confers no authority to vote, execute, pause, reprice, or move member funds.
@@ -42,13 +43,21 @@ correct, and it is not a forecast.
 | --- | --- |
 | **Put USDC in** | You get shares, priced off live Chainlink feeds. |
 | **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
-| **Leave whenever** | Ask to exit at any time. Nobody can refuse you — not the operator, not the other members. You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
+| **Leave whenever** | Ask to exit at any time. No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
 
 **Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
 reveal phase and settles at the price *after* that vote executes — including a vote that goes on to
 be defeated. And if a Chainlink feed goes stale or implausible, the vault freezes rather than price
-off bad data; that freeze includes exits, and it lifts when the feed recovers. Both are the safety
-design working, and both are described exactly in [Contracts](#contracts).
+off bad data; that freeze includes exits, and it lifts when the feed recovers.
+
+**One thing is a hard block, and it applies only to the vault's creator.** A creator cannot exit
+below 5% of the vault while any other member remains — `_checkCreatorGate` reverts
+`CreatorStakeGate()`, checked when the exit is *requested* rather than when it settles, so it cannot
+be dodged by queueing. That is the creator's skin-in-the-game commitment, it binds nobody else, and
+it is a refusal rather than a delay.
+
+All three are the safety design working, and all three are described exactly in
+[Contracts](#contracts).
 
 Two fees, both readable in the contracts: a **10% performance fee** on realised gains, paid to the
 operator, charged on exit against a high-water mark; and an **exit fee of up to 1%** that decays
