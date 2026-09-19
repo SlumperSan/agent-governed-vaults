@@ -1,6 +1,6 @@
 ---
 name: rwally-design-system
-description: The visual and motion system for the rwally.com redesign — dark cinematic, self-hosted React. Load before designing or building any component, page, animation, or shader for apps/site-next. Encodes the owner's two decisions (self-hosted React; dark cinematic), the security envelope the build must stay inside, the token system, the motion grammar, and the performance and accessibility budgets.
+description: The visual and motion system for the rwally.com redesign — dark cinematic, self-hosted React. Load before designing or building any component, page, animation, or shader for apps/site. Encodes the owner's two decisions (self-hosted React; dark cinematic), the security envelope the build must stay inside, the token system, the motion grammar, and the performance and accessibility budgets.
 ---
 
 # rwally design system: dark cinematic, self-hosted

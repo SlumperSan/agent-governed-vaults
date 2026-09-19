@@ -193,7 +193,7 @@ FACILITATOR_NETWORK  eip155:8453
 `PRICE_ASSET` is Circle-native USDC on Base. It is **not** USDbC (`0xd9aAEc86…10b6CA`, read back as `symbol() == "USDbC"` on Base mainnet), the bridged legacy
 token; getting that wrong prices the route against the wrong dollar.
 
-**5.3 — Publish the site with Functions.** Run from **`apps/site-next`**, and deploy its build
+**5.3 — Publish the site with Functions.** Run from **`apps/site`**, and deploy its build
 output, because Pages bundles Functions from `./functions` relative to the working directory rather
 than from inside the uploaded folder:
 
@@ -204,11 +204,16 @@ npx wrangler@4 pages deploy dist --project-name rwally --branch protocol/main
 Build `dist/` first by this directory's own build step.
 
 **An earlier version of this runbook said to run `wrangler pages deploy .` from `apps/site`, and
-that would have taken the live site down.** `apps/site` is the RETIRED nine-page static site;
-`rwally.com` serves `apps/site-next` (`apps/site-next/README.md:4`, and the live origin returns
-`<script type="module" crossorigin src="/assets/index-*.js">` while `apps/site/index.html` carries
-zero `<script>` tags). Deploying `apps/site` to the `rwally` project would have replaced the live
-build with the retired one. Caught in review before any deploy; nothing was published.
+that would have taken the live site down. Half of that warning has since inverted, so read which
+half.** At the time, `apps/site` was the retired nine-page static site and `rwally.com` served
+`apps/site-next`. [#304](https://github.com/SlumperSan/agent-governed-vaults/pull/304) then
+**deleted `apps/site-next`**, and `apps/site` — rebuilt — is what `rwally.com` serves today; its
+`wrangler.toml` carries `name = "rwally"`.
+
+**The directory half of the warning is dead. The argument half is not.** `deploy .` publishes the
+source tree rather than `dist`, the prerendered build output, so it would ship TypeScript and
+templates in place of the rendered site — wrong then, wrong now, and wrong in whichever directory
+you run it from. Deploy `dist`, never `.`.
 
 Wrangler **4 or newer**: wrangler 3's esbuild cannot parse the JSON import attribute that Node
 requires, and fails the build.
