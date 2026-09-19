@@ -1,7 +1,8 @@
 /**
- * The one place this app reaches across into `apps/web/src` (and, for the two chain packages
- * `apps/web/src` cannot import itself, into `packages/canary` and `packages/chain-config` — see
- * `vite.config.ts`'s alias comment for why those live one hop further out).
+ * The one place this app reaches across into `apps/web/src` (and, for the three chain packages
+ * `apps/web/src` cannot import itself, into `packages/canary`, `packages/chain-config` and
+ * `packages/reference-agent` — see `vite.config.ts`'s alias comment for why those live one hop
+ * further out).
  *
  * Components import from here, never from `@atlas/*` or `@chain/*` directly, so the surface
  * that would have to change if the allocator modules moved is this file alone.
@@ -11,7 +12,8 @@
  * `BasketLeg` values are constructed, and it builds them from `assembleVault`/`assembleLeg`/
  * `assembleProposal` below, never from `apps/web/src/fixtures.mjs`.
  */
-export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress } from '@atlas/format';
+export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits, formatUnits } from '@atlas/format';
+export type { ParseUnitsResult } from '@atlas/format';
 export { proposalPhase, quorumReadout, PHASES } from '@atlas/governance';
 export { oracleHealth, position, vaultView } from '@atlas/vault-view';
 export {
@@ -40,6 +42,18 @@ export type {
 } from '@atlas/chain-reader';
 export { loading, empty, failed, ready, describeError } from '@atlas/freshness';
 export type { Fetched } from '@atlas/freshness';
+// Commit-reveal salt custody (apps/web/src/vote-custody.mjs) — see that file and
+// src/lib/chain-actions.ts for the design. Re-exported here, not imported directly by
+// components, for the same reason as everything else in this file.
+export { CUSTODY_UNREAD, CUSTODY_NONE, CUSTODY_REVEALED, CUSTODY_READY, CUSTODY_MISMATCH, canReveal } from '@atlas/vote-custody';
+export type { VoteCustodyState } from '@atlas/vote-custody';
+// Pre-flight refusal checks (apps/web/src/wallet-refusals.mjs, #341) and deposit-status
+// classification (apps/web/src/deposit-status.mjs, #340) — what MemberActions.tsx gates a
+// signature request on, so this file and that component never disagree with the pure modules.
+export { canSign, requestExitPricingRefusal, creatorGateRefusal, exitFeeCeiling } from '@atlas/wallet-refusals';
+export type { Refusal, ExitFeeCeiling } from '@atlas/wallet-refusals';
+export { classifyDepositStatus } from '@atlas/deposit-status';
+export type { DepositStatus } from '@atlas/deposit-status';
 
 /**
  * A basket leg as `chain-reader.mjs`'s `assembleLeg` shapes it, plus the per-leg safety tri-state

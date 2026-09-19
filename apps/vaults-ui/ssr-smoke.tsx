@@ -25,6 +25,12 @@ const MUST_CONTAIN = [
   'Vault Atlas', // the masthead
   'commit-reveal', // the masthead's one-line explainer, unrelated to any data source
   'Reading the chain', // the loading state useLiveVaults starts in — renderToString runs no effects
+  // WalletConnect (#345) sits in the header, outside the loading/ready branch, so it renders on
+  // every first paint regardless of fetch state — disconnected server-side, no window/eip6963 to
+  // announce a provider. MemberActions is NOT in this list: it only mounts once a vault is
+  // selected inside the `ready` branch, which a loading-state SSR render never reaches, so
+  // asserting 'Deposit'/'Request exit' here would be asserting something this render cannot show.
+  'Connect wallet',
 ];
 
 // The same sentinels test/csp.test.mjs scans dist/ for. Listed again here
@@ -37,6 +43,8 @@ const MUST_NOT_CONTAIN = [
   'Meridian',
   'Halcyon',
   '0x1111000000000000000000000000000000001111',
+  '1.083236',
+  '2318597557',
 ];
 
 const missing = MUST_CONTAIN.filter((s) => !html.includes(s));

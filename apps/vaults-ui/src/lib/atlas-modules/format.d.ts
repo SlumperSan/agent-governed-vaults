@@ -7,3 +7,5 @@ export declare function usdcCompact(value: unknown): string;
 export declare function wadExact(value: unknown, opts?: { maxFrac?: number }): string;
 export declare function formatUnits(value: unknown, decimals: number, opts?: Record<string, unknown>): string;
 export declare function shortAddress(a: unknown): string;
+export type ParseUnitsResult = { ok: true; value: bigint } | { ok: false; error: string };
+export declare function parseUnits(input: unknown, decimals?: number, opts?: { unit?: string }): ParseUnitsResult;

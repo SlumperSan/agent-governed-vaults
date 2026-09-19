@@ -2,11 +2,15 @@
  * Types for `apps/web/src/chain-reader.mjs` — hand-written, like every file in this directory,
  * because the source is untyped ESM. See this directory's own warning in `atlas.ts`'s neighbours:
  * a wrong declaration here is believed by `tsc` over the module it describes, and the mistake
- * surfaces only at render. Kept deliberately narrow — only the shapes `src/lib/live-vaults.ts`
- * and `atlas.ts` actually consume, not every export `chain-reader.mjs` has.
+ * surfaces only at render. Kept deliberately narrow — only the shapes `src/lib/live-vaults.ts`,
+ * `src/lib/chain-actions.ts` and `atlas.ts` actually consume, not every export `chain-reader.mjs`
+ * has: `planCore`/`assembleVault`/… (the vault-read surface `live-vaults.ts` calls) and
+ * `planVoteCommit`/`assembleVoteCommit` (the vote-custody surface `chain-actions.ts` calls) are
+ * two independent slices of the same module, declared together here because both PRs that added
+ * them declared this same file.
  */
 
-/** A planned read. `abi` names the fragment table (`@chain/abis`) the caller must encode against. */
+/** A planned read — `call()`'s shape in chain-reader.mjs. `abi` names a table in `@chain/abis`. */
 export interface PlannedCall {
   readonly address: string;
   readonly abi: string;
@@ -161,3 +165,22 @@ export declare function legValueWad(leg: {
 }): bigint;
 
 export declare function navPerShareWad(navWad: bigint, totalShares: bigint): bigint;
+
+/** Commit-reveal vote custody (#339) — the read plan `vote-custody.mjs` and `chain-actions.ts` consume. */
+export declare const VOTE_COMMIT_ZERO: string;
+
+export declare function planVoteCommit(
+  governance: string,
+  pid: number | bigint,
+  member: string,
+): readonly PlannedCall[];
+
+export declare function assembleVoteCommit(r: {
+  commitOfValue: unknown;
+  revealedValue: unknown;
+  revealedSupportValue: unknown;
+}): {
+  onChainCommitment: string | undefined;
+  revealed: boolean | undefined;
+  revealedSupport: boolean | undefined;
+};

@@ -1,7 +1,9 @@
 /**
  * Types for `packages/canary/src/abis.mjs`. Hand-written: the source is untyped ESM, drift-checked
  * against the compiled contracts by `packages/canary/test/abis.test.mjs` — not by this file. Only
- * the fragment tables `src/lib/live-vaults.ts` actually encodes against are declared.
+ * the fragment tables `src/lib/live-vaults.ts` and `src/lib/chain-actions.ts` actually encode
+ * against are declared — two independent callers of the same module, one file each side of a
+ * merge, consolidated here rather than left as two declarations of the same export.
  */
 import type { Abi } from 'viem';
 

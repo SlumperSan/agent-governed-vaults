@@ -10,18 +10,19 @@
  * what ships. Do not do that.
  *
  * `@chain/*` is the SAME rule applied one package further out: `packages/canary/src/abis.mjs`
- * already declares every ABI fragment a chain read needs, drift-checked against the compiled
- * contracts by `packages/canary/test/abis.test.mjs`, and `packages/chain-config/src/chain-binding.mjs`
- * is the ONLY place #204 (an RPC answering for a chain nobody asked it to confirm) is decided. A
- * local copy of either would drift from what it mirrors silently — the same argument as `@atlas/*`,
- * aimed at the two packages `src/lib/live-vaults.ts` needs and `apps/web/src` cannot import itself
- * (it is zero-dependency by its own header).
+ * already declares every read-call ABI fragment a chain read needs, drift-checked against the
+ * compiled contracts by `packages/canary/test/abis.test.mjs`; `packages/reference-agent/src/act.mjs`
+ * carries the write-call fragments the same way, tested end to end under
+ * `packages/reference-agent/test`; and `packages/chain-config/src/chain-binding.mjs` is the ONLY
+ * place #204 (an RPC answering for a chain nobody asked it to confirm) is decided. A local copy of
+ * any of the three would drift from what it mirrors silently — the same argument as `@atlas/*`,
+ * aimed at the three packages `src/lib/live-vaults.ts` and `src/lib/chain-actions.ts` need and
+ * `apps/web/src` cannot import itself (it is zero-dependency by its own header).
  *
  * NO `@atlas/fixtures` ALIAS. `apps/web/src/fixtures.mjs` is the allocator front end's OWN test
  * fixtures, not this workspace's data source — plan item 0.7 removed the last import of it from
- * `src/`, and `test/csp.test.mjs` asserts none of its labelled values ever
- * reach `dist/`. Re-adding this alias is the easiest way to reintroduce the regression that test
- * exists to catch.
+ * `src/`, and `test/csp.test.mjs` asserts none of its labelled values ever reach `dist/`.
+ * Re-adding this alias is the easiest way to reintroduce the regression that test exists to catch.
  */
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
@@ -39,8 +40,22 @@ export default defineConfig({
       '@atlas/vault-view': atlas('vault-view'),
       '@atlas/chain-reader': atlas('chain-reader'),
       '@atlas/freshness': atlas('freshness'),
+      // vote-custody.mjs imports VOTE_COMMIT_ZERO from './chain-reader.mjs' by relative path, so
+      // that file is pulled in by vite's own resolver once vote-custody is aliased in — it does
+      // not need its own alias entry for that import to work. It gets one anyway because this
+      // app also calls planVoteCommit/assembleVoteCommit directly (see src/lib/chain-actions.ts).
+      '@atlas/vote-custody': atlas('vote-custody'),
+      // Pre-flight refusal checks (#341) and deposit-status classification (#340) — both pure,
+      // both already tested under apps/web/test/. This app calls them rather than re-deriving the
+      // creator gate, the Mode-F exit warning, or the observation-window states a second time.
+      '@atlas/wallet-refusals': atlas('wallet-refusals'),
+      '@atlas/deposit-status': atlas('deposit-status'),
       '@chain/abis': pkg('canary/src/abis.mjs'),
       '@chain/binding': pkg('chain-config/src/chain-binding.mjs'),
+      // Write-call ABI fragments (deposit/approve/commitVote/revealVote/requestExit) — the same
+      // ones packages/reference-agent's autonomous actor sends, so a wallet-connected member and
+      // an agent never disagree about what a "deposit" or "reveal" transaction looks like.
+      '@chain/act': pkg('reference-agent/src/act.mjs'),
     },
   },
   build: {
