@@ -6,6 +6,8 @@
   "deployedAtNote": "Block 46,307,173's own timestamp, read with `cast block`. An earlier draft recorded 20:57:15Z from the runner's wall clock, one second later.",
   "startBlock": 46307173,
   "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "intendedCreator": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "intendedCreatorNote": "WHO MAY CREATE A VAULT HERE, DECLARED RATHER THAN INFERRED. scripts/smoke-test.mjs refuses to broadcast createVault unless the signer equals this address, and re-reads the created vault's own creator() afterwards to confirm the chain agrees. It reads THIS file by path (contracts/config/deployments/<chain>.json, override with SMOKE_DEPLOYMENT) and cross-checks its chainId against SMOKE_CONFIG, because the first revision of that check read the forge broadcast artifact instead - which carries no such key, so it refused every input and would have been deleted on deploy night. On chain 4663 both vaults were created by the deployer EOA against a record that said the creator Safe should do it, and NOTHING COMPARED THE TWO - the divergence was found by a human reading the record months later, and `creator` is immutable with no rotation path, so the remedy was a new vault rather than a correction. This field exists so that comparison happens before the transaction rather than after. For this testnet deployment the intent IS the deployer EOA, which is what created the smoke vault; see operatorPayoutNote for why that sets no precedent for a production vault.",
   "sourceCommit": "8a0e1155",
   "rpc": "https://sepolia.base.org",
   "explorer": "https://sepolia.basescan.org",
