@@ -26,12 +26,21 @@
  * Requiring the route is not a wording rule that rephrasing defeats: satisfying it means actually
  * telling the reader where the file went.
  *
- * SCOPE, STATED RATHER THAN SILENT. Published documentation: every `*.md` at the repository root and
- * everything under `docs/`. NOT `skills/`: `skills/rwally-claims-contract/SKILL.md` carries the same
- * dead reference, and that file is the claims CONTRACT for public copy — it is pinned in lockstep
- * with `apps/site/test/site.test.mjs`, so changing what it permits is a copy-policy decision that
- * belongs to Marketing rather than a citation fix. It is routed there, not excluded because it was
- * inconvenient. When that lands, widen `PROSE_ROOTS` here rather than adding an exception.
+ * SCOPE: every `*.md` at the repository root and everything under `docs/` and `skills/`.
+ *
+ * THE ONE EXCEPTION IS ENFORCED BY THIS FILE, NOT DESCRIBED BESIDE IT, and that distinction is the
+ * point. `skills/rwally-claims-contract/SKILL.md` carries the same dead reference, and it is the
+ * claims CONTRACT for public copy — pinned in lockstep with the "every deployed" test in
+ * `apps/site/test/site.test.mjs` — so what it permits is a copy-policy decision that belongs to
+ * Marketing rather than a citation fix. Leaving `skills/` OUT OF THE WALK would have expressed that
+ * in a comment, and the next person to widen the corpus would have silently re-included it while
+ * believing they had changed nothing. Instead the directory is walked and the file is named in
+ * `ROUTED_ELSEWHERE`, with an owner and a reason.
+ *
+ * AND THE EXCEPTION EXPIRES BY ITSELF. A second test asserts every entry is STILL an offender, so
+ * the moment Marketing fixes that file the suite goes red and names the entry to delete. An
+ * allowlist that outlives its reason is the shape that turns a guard into decoration; this one
+ * cannot.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,7 +67,25 @@ const linkTo = (line, file) =>
   new RegExp(`\\]\\([^)]*${RECORD_DIR.replace(/\//g, '\\/')}/${file.replace(/\./g, '\\.')}[^)]*\\)`).test(line);
 
 /** Published documentation. See SCOPE above before widening or narrowing this. */
-const PROSE_ROOTS = ['.', 'docs'];
+const PROSE_ROOTS = ['.', 'docs', 'skills'];
+
+/**
+ * Files whose dead citation is another department's decision to make. Each entry must name the owner
+ * and the reason, and each is asserted below to be STILL an offender — an entry that has become
+ * unnecessary fails the suite rather than sitting here.
+ */
+const ROUTED_ELSEWHERE = Object.freeze([
+  {
+    file: 'skills/rwally-claims-contract/SKILL.md',
+    owner: 'Marketing',
+    why: 'the claims contract for public copy: it licenses positive "deployed" sentences on the premise '
+      + 'that the protocol IS deployed on chain 4663, and cites the deleted record as the checkable '
+      + 'evidence. Retiring that premise is a copy-policy change, and the bullet is pinned in lockstep '
+      + 'with the "every deployed" test in apps/site/test/site.test.mjs, so the site copy has to move in '
+      + 'the same change.',
+  },
+]);
+const ROUTED_FILES = new Set(ROUTED_ELSEWHERE.map((r) => r.file));
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-ssr', 'out', 'cache', 'lib', 'broadcast', '.wrangler']);
 
 function proseFiles() {
@@ -88,8 +115,9 @@ function everExisted(repoPath) {
   return (r.stdout || '').trim().length > 0;
 }
 
-test('no published document cites a deployment record that was deleted', () => {
-  const offenders = [];
+/** Every dead-record citation in the corpus, keyed by file. Shared by both tests below. */
+function deadCitations() {
+  const byFile = new Map();
   for (const rel of proseFiles()) {
     const text = readFileSync(path.join(REPO, rel), 'utf8');
     const lines = text.split('\n');
@@ -99,14 +127,21 @@ test('no published document cites a deployment record that was deleted', () => {
         if (existsSync(path.join(REPO, repoPath))) continue;
         // A path this repository never held is a target to be written, not a citation.
         if (!everExisted(repoPath)) continue;
-        if (linkTo(line, m[1])) {
-          offenders.push(`${rel}:${i + 1}  LINK to ${repoPath}`);
-        } else if (!ROUTE.test(line)) {
-          offenders.push(`${rel}:${i + 1}  ${repoPath} named with no retrieval route`);
-        }
+        const found = linkTo(line, m[1])
+          ? `${rel}:${i + 1}  LINK to ${repoPath}`
+          : !ROUTE.test(line)
+            ? `${rel}:${i + 1}  ${repoPath} named with no retrieval route`
+            : null;
+        if (found) byFile.set(rel, [...(byFile.get(rel) ?? []), found]);
       }
     });
   }
+  return byFile;
+}
+
+test('no published document cites a deployment record that was deleted', () => {
+  const byFile = deadCitations();
+  const offenders = [...byFile].filter(([rel]) => !ROUTED_FILES.has(rel)).flatMap(([, v]) => v);
   assert.deepEqual(
     offenders,
     [],
@@ -154,6 +189,28 @@ test('probe: the guard sees a dead citation, and lets a never-written target thr
     !ROUTE.test('`VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG'),
     'an address must NOT read as a commit-ish, or naming the factory would excuse the dead citation',
   );
+});
+
+test('every ROUTED_ELSEWHERE entry is still needed — a spent exception must be deleted, not kept', () => {
+  // This is what makes the exception expire by itself. When Marketing retires the premise in that
+  // SKILL.md, the file stops being an offender and this test names the entry to remove. Without it,
+  // the allowlist would outlive its reason and quietly shrink the guard's corpus for good.
+  const byFile = deadCitations();
+  const spent = ROUTED_ELSEWHERE.filter((r) => !byFile.has(r.file));
+  assert.deepEqual(
+    spent.map((r) => r.file),
+    [],
+    'these no longer cite a deleted deployment record, so their ROUTED_ELSEWHERE entries are spent. '
+      + 'Delete the entry — the file is now covered by the guard like everything else:\n  '
+      + spent.map((r) => `${r.file} (routed to ${r.owner})`).join('\n  '),
+  );
+
+  // And the walk must actually reach them, or "still an offender" would be answered by a corpus that
+  // never looks: a routed file outside PROSE_ROOTS would pass the assertion above for the wrong reason.
+  const walked = new Set(proseFiles());
+  for (const r of ROUTED_ELSEWHERE) {
+    assert.ok(walked.has(r.file), `${r.file} is routed but not walked; widen PROSE_ROOTS`);
+  }
 });
 
 test('the record that DOES exist is cited by name across the documentation, so this is not vacuous', () => {
