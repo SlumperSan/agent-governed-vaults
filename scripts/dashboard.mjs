@@ -574,8 +574,34 @@ function render(d){
     // Suggestions: a department's idea, awaiting approve/decline. Approved ones are moved to To do
     // by editing the file, same as every other card here. Goals: the outcome a department is
     // working toward; a goal does not travel the pipeline, it stays until it is met.
-    const COLS=[['suggestion','Suggestions'],['goal','Goals'],['backlog','To do'],
-                ['doing','In progress'],['review','In review'],['blocked','Needs you']];
+    // DERIVED FROM THE COLLECTOR, NOT COPIED FROM IT. d.board.columns IS BOARD_COLUMNS, sent with
+    // every payload, so a status added there appears here with no second edit.
+    //
+    // This replaces three hardcoded lists that had to be changed together. A comment saying "change
+    // all three together" is not a mechanism, and the cost of it drifting was measured rather than
+    // guessed: with a status present in the collector and absent here, 2 tasks in, 1 placed into a
+    // column, 1 DROPPED, and nothing thrown. Rendering collects the tasks matching each column key,
+    // so a status with no column shows NOWHERE. On a board whose whole purpose is showing what is
+    // in flight, a silently absent card is the worst available failure.
+    //
+    // META IS PRESENTATION ONLY -- a label, a mark, and a place in the reading order. A STATUS WITH
+    // NO ENTRY STILL RENDERS, under its own raw name, at the end. That is the property that
+    // matters: an unlabelled column is a cosmetic problem a human fixes in a minute, and a
+    // disappeared task is a defect nobody sees.
+    const META={
+      suggestion:{label:'Suggestions', mark:'\u{1F4A1}', rank:4},
+      goal:      {label:'Goals',       mark:'\u25CE',    rank:5},
+      backlog:   {label:'To do',       mark:'\u25CB',    rank:3},
+      doing:     {label:'In progress', mark:'\u25D0',    rank:0},
+      review:    {label:'In review',   mark:'\u25D0',    rank:1},
+      blocked:   {label:'Needs you',   mark:'\u2715',    rank:2},
+      done:      {label:'Done',        mark:'\u2713',    rank:9},
+    };
+    const metaOf = k => META[k] || {label:k, mark:'\u25A1', rank:8};
+    // DONE IS NOT A COLUMN: finished work is the majority of any healthy board and it crowded out
+    // the columns that still need a decision. The count stays in every header -- "4 of 11" -- so
+    // progress is visible without a parking lot.
+    const COLS=(d.board.columns||[]).filter(k=>k!=='done').map(k=>[k, metaOf(k).label]);
     // WHAT COUNTS AS WORK. Progress bars and tile counts are about deliverables, so neither a
     // suggestion nor a goal belongs in the denominator: a goal has no terminal state and would
     // sit in "0 of N" forever, making every department read as less finished than it is.
@@ -637,12 +663,15 @@ function render(d){
 
     // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
     // finished. Done sinks because a tracker is for the work that is left.
-    const ORDER={doing:0,review:1,blocked:2,backlog:3,suggestion:4,goal:5,done:6};
+    // Same source, same fallback. An unknown status sorts at 8 rather than undefined -- which made
+    // the comparator return NaN and handed Array.sort an inconsistent ordering, silently and
+    // implementation-defined.
+    const ORDER=Object.fromEntries((d.board.columns||[]).map(k=>[k, metaOf(k).rank]));
     // Critical, high, medium, low, then unset. Applied WITHIN a column, so the top card in any
     // column is the most urgent thing in that state rather than the most recently saved file.
     const PRIO={critical:0,crit:0,high:1,med:2,medium:2,low:3};
     const byPrio=(a,b)=>((PRIO[a.priority]??9)-(PRIO[b.priority]??9))||(b.mtime-a.mtime);
-    const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○',suggestion:'💡',goal:'◎'};
+    const MARK=Object.fromEntries((d.board.columns||[]).map(k=>[k, metaOf(k).mark]));
     const chip = t => { const d=t.checklist.filter(c=>c.done).length;
       return t.checklist.length? '<span class="ck">☑ '+d+'/'+t.checklist.length+'</span>' : ''; };
     const dueChip = t => { if(!t.due) return '';
