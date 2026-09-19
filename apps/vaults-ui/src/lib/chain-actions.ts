@@ -36,14 +36,20 @@ import { canReveal, commitmentFor, deriveSalt, reconstructVoteCustody, type Vote
 import { assembleVoteCommit, planVoteCommit, type PlannedCall } from '@atlas/chain-reader';
 import { TARGET_CHAIN } from './chains';
 
+/** Every field is independently nullable: `readExitGateInputs` resolves each read on its own
+ * (`Promise.allSettled`, not `Promise.all`), so one reverting call — an older vault, a transient
+ * RPC error — cannot null the other six. `wallet-refusals.mjs`'s `creatorGateRefusal` and
+ * `exitFeeCeiling` already accept a per-field `null` and resolve to 'unknown' only for the fields
+ * that actually failed, which is the whole reason this is safe to pass straight through rather
+ * than gating on "every field present". */
 export interface ExitGateInputs {
-  readonly creator: Address;
-  readonly sharesOf: bigint;
-  readonly totalShares: bigint;
-  readonly nonCreatorMemberCount: bigint;
-  readonly exitFeeMaxBps: bigint;
-  readonly exitFeeDecayPeriod: bigint;
-  readonly lastDepositTime: bigint;
+  readonly creator: Address | null;
+  readonly sharesOf: bigint | null;
+  readonly totalShares: bigint | null;
+  readonly nonCreatorMemberCount: bigint | null;
+  readonly exitFeeMaxBps: bigint | null;
+  readonly exitFeeDecayPeriod: bigint | null;
+  readonly lastDepositTime: bigint | null;
 }
 
 const READ_TABLES: Record<string, typeof VAULT_VIEWS> = { VAULT_VIEWS, GOVERNANCE_VIEWS };
@@ -121,17 +127,28 @@ export async function readExitGateInputs(
 ): Promise<ExitGateInputs> {
   const read = (functionName: string, args: readonly unknown[] = []) =>
     publicClient.readContract({ address: vault, abi: VAULT_VIEWS, functionName, args });
-  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime] =
-    await Promise.all([
-      read('creator') as Promise<Address>,
-      read('sharesOf', [member]) as Promise<bigint>,
-      read('totalShares') as Promise<bigint>,
-      read('nonCreatorMemberCount') as Promise<bigint>,
-      read('exitFeeMaxBps') as Promise<bigint>,
-      read('exitFeeDecayPeriod') as Promise<bigint>,
-      read('lastDepositTime', [member]) as Promise<bigint>,
-    ]);
-  return { creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime };
+  // allSettled, deliberately not all: one revert (an older vault missing a view, a transient RPC
+  // error on one call) must resolve to that ONE field being unknown, not the whole exit gate.
+  const results = await Promise.allSettled([
+    read('creator'),
+    read('sharesOf', [member]),
+    read('totalShares'),
+    read('nonCreatorMemberCount'),
+    read('exitFeeMaxBps'),
+    read('exitFeeDecayPeriod'),
+    read('lastDepositTime', [member]),
+  ]);
+  const value = <T>(r: PromiseSettledResult<unknown>): T | null => (r.status === 'fulfilled' ? (r.value as T) : null);
+  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime] = results;
+  return {
+    creator: value<Address>(creator),
+    sharesOf: value<bigint>(sharesOf),
+    totalShares: value<bigint>(totalShares),
+    nonCreatorMemberCount: value<bigint>(nonCreatorMemberCount),
+    exitFeeMaxBps: value<bigint>(exitFeeMaxBps),
+    exitFeeDecayPeriod: value<bigint>(exitFeeDecayPeriod),
+    lastDepositTime: value<bigint>(lastDepositTime),
+  };
 }
 
 export interface DepositStatusInputs {

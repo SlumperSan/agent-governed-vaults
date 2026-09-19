@@ -90,7 +90,9 @@ export function MemberActions({ vault }: Props) {
   const [reveal, setReveal] = useState<FlowState>(IDLE);
 
   // Live reads, refreshed whenever the connected member or the selected vault changes. Every read
-  // here is independent — one failing (a bad RPC, an unattested vault) never blocks the others.
+  // here is independent at the TOP level — one of these four calls failing never blocks the
+  // others. readExitGateInputs carries the same independence one level DEEPER, across its own
+  // seven reads; see its call site below.
   useEffect(() => {
     if (!connected || !address || !isAddress(vaultAddr)) {
       setAddrs(null);
@@ -108,9 +110,11 @@ export function MemberActions({ vault }: Props) {
     readMemberShares(publicClient, vaultAddr, address as Address)
       .then((s) => { if (!cancelled) setShares(s); })
       .catch(() => { if (!cancelled) setShares(null); });
-    // Both feed a pre-flight refusal check (wallet-refusals.mjs / deposit-status.mjs), so a read
-    // that fails resolves to null — "not yet known" — rather than to a value that would let a
-    // refusal check quietly treat a failed read as a favorable one.
+    // Feeds creatorGateRefusal/exitFeeCeiling (wallet-refusals.mjs). readExitGateInputs resolves
+    // each of its seven reads independently (Promise.allSettled) and nulls only the ones that
+    // actually failed, so one reverting call (an older vault, a transient RPC error) narrows the
+    // refusal check's confidence for that ONE field rather than for the whole exit gate — the
+    // .catch below is only the outer fallback for readExitGateInputs itself throwing.
     readExitGateInputs(publicClient, vaultAddr, address as Address)
       .then((g) => { if (!cancelled) setExitGate(g); })
       .catch(() => { if (!cancelled) setExitGate(null); });
@@ -213,7 +217,10 @@ export function MemberActions({ vault }: Props) {
   // that has not been typed yet.
   const exitParsed = parseUnits(exitInput, 18, { unit: 'shares' });
   const burnShares = exitParsed.ok ? exitParsed.value : 0n;
-  const creatorGate: Refusal = exitGate && address
+  // exitGate's own fields are independently nullable (see readExitGateInputs) — passed straight
+  // through rather than gated on "every field present", because creatorGateRefusal/exitFeeCeiling
+  // already resolve to 'unknown' only for the specific missing field, not for the whole check.
+  const creatorGate: Refusal = exitGate
     ? creatorGateRefusal({
         creator: exitGate.creator,
         member: address,
@@ -227,7 +234,7 @@ export function MemberActions({ vault }: Props) {
     ? exitFeeCeiling({
         exitFeeMaxBps: exitGate.exitFeeMaxBps,
         exitFeeDecayPeriodSec: exitGate.exitFeeDecayPeriod,
-        tenureSec: BigInt(nowSec()) - exitGate.lastDepositTime,
+        tenureSec: exitGate.lastDepositTime == null ? null : BigInt(nowSec()) - exitGate.lastDepositTime,
       })
     : null;
 
