@@ -129,9 +129,9 @@ contract Governance is IGovernance {
         bytes32 actionHash; // keccak256 of the execution payload
         uint256 snapshotTotal; // eligible stake at createdAt
         uint256 memberCount; // holders at createdAt — fixes the quorum regime (CM-7)
-        uint256 forWeight; // includes applied standing defaults
-        uint256 againstWeight; // includes applied standing defaults
-        uint256 revealedWeight; // revealed votes ONLY — the quorum numerator (VO-2)
+        uint256 forWeight; // tally: own reveals + applied standing defaults + cranked delegations
+        uint256 againstWeight; // tally: own reveals + applied standing defaults + cranked delegations
+        uint256 revealedWeight; // SELF-revealed votes only — the quorum numerator (VO-2 / VO-2b)
         uint256 revealedVoterCount; // signer-regime quorum numerator
     }
 
@@ -148,6 +148,11 @@ contract Governance is IGovernance {
     mapping(uint256 => mapping(address => bool)) public revealedSupportOf; // valid iff revealedOf
     mapping(uint256 => mapping(address => bool)) public defaultApplied;
     mapping(uint256 => mapping(address => uint256)) public delegateAccrued; // RECEIVED weight only; excludes the delegate's own reveal (F1)
+    /// @notice Cranked delegated weight that landed on the FOR side of a proposal (VO-2b). Tracked
+    /// so the sub-five `forStakeMajority` branch can measure a FOR majority that does NOT include
+    /// weight one delegate directed. Always `<= proposals[pid].forWeight`: every increment here is
+    /// paired with the same increment there, in `revealDelegated`.
+    mapping(uint256 => uint256) public delegatedForWeight;
 
     mapping(address => GovConfig) public configOf; // per vault
     mapping(address => bool) public vaultRegistered;
@@ -167,8 +172,13 @@ contract Governance is IGovernance {
     event Committed(uint256 indexed pid, address indexed voter);
     event Revealed(uint256 indexed pid, address indexed voter, bool support, uint256 weight);
     event DefaultApplied(uint256 indexed pid, address indexed member, bool support, uint256 weight);
+    /// @dev `support` is the DELEGATE's revealed direction, which is the direction this weight was
+    /// applied on. It was absent until VO-2b, and every off-chain consumer read `args.support` off
+    /// this event anyway: `packages/indexer/src/projections.mjs` booked the weight FOR when truthy
+    /// and AGAINST otherwise, so with the field missing it booked EVERY cranked delegation AGAINST,
+    /// whichever way the delegate had voted. The sibling `DefaultApplied` has always carried it.
     event DelegatedRevealed(
-        uint256 indexed pid, address indexed delegator, address indexed delegate, uint256 weight
+        uint256 indexed pid, address indexed delegator, address indexed delegate, bool support, uint256 weight
     );
     event Finalized(uint256 indexed pid, Status status);
     event Executed(uint256 indexed pid);
@@ -261,9 +271,17 @@ contract Governance is IGovernance {
         // M-6's real defect was that the SHIPPED CONFIGS disabled their own defences. That is
         // fixed where it lives, in base-mainnet.json and base-sepolia.json.
         require(cfg.proposalThresholdBps <= BPS, BadGovConfig());
-        // M-6: at 10000 one delegate could carry 100% of snapshot stake, so a single live
-        // participant plus a permissionless cranker manufactured full quorum out of offline
-        // delegators — defeating VO-2's "quorum measured against live participation" rationale.
+        // M-6: at 10000 one delegate could carry 100% of snapshot stake. The cap is a bound on how
+        // far ONE delegate may swing the TALLY; it is NOT what keeps quorum honest, and reading it
+        // as a quorum defence is what let the defect below survive a remediation.
+        //
+        // VO-2b: quorum is kept honest by `revealDelegated` never touching `revealedWeight` at all,
+        // so no cap VALUE is load-bearing for it. It could not have been: the cap binds RECEIVED
+        // weight while a delegate's own weight is uncapped (F1), so the binding quantity was
+        // `ownStakeBps + concentrationCapBps < quorumBps` — `ownStakeBps` being live distribution a
+        // constructor cannot see, exactly the reason the proposalThresholdBps floor above was
+        // reverted. And a `RuleChange` repeals any config value, so one live voter could restore it.
+        // Measured in test/audit/AuditDelegatedQuorum.t.sol.
         require(
             cfg.concentrationCapBps > 0 && cfg.concentrationCapBps <= CONCENTRATION_CAP_CEILING_BPS,
             BadGovConfig()
@@ -406,6 +424,8 @@ contract Governance is IGovernance {
 
     /// @notice Crank a non-participating delegator's weight onto their delegate's revealed
     /// direction. Permissionless. Self-participation (commit) takes precedence over delegation.
+    /// Counts toward the TALLY only, never toward QUORUM (VO-2b) — an absent member's weight can
+    /// change which way a proposal goes, and can never be what makes it decidable.
     /// @param pid the proposal id
     /// @param delegator the member whose standing delegation should be applied
     function revealDelegated(uint256 pid, address delegator) external {
@@ -427,10 +447,30 @@ contract Governance is IGovernance {
         defaultApplied[pid][delegator] = true;
         _accrueDelegate(pid, del, weight, p);
 
-        if (support) p.forWeight += weight;
-        else p.againstWeight += weight;
-        p.revealedWeight += weight; // delegated reveals are live participation → count in quorum
-        emit DelegatedRevealed(pid, delegator, del, weight);
+        if (support) {
+            p.forWeight += weight;
+            delegatedForWeight[pid] += weight;
+        } else {
+            p.againstWeight += weight;
+        }
+        // VO-2b: cranked weight counts toward the TALLY and never toward QUORUM — the same rule
+        // `applyStandingDefault` has always obeyed (see its "tally yes, quorum never" note). It
+        // deliberately does NOT touch `p.revealedWeight` or `p.revealedVoterCount`.
+        //
+        // WHY, measured rather than argued (test/audit/AuditDelegatedQuorum.t.sol): while a crank
+        // fed `revealedWeight`, ONE member's single reveal plus a permissionless stranger cranking
+        // offline delegators reached quorum, passed AND executed at the shipped 2500/4000 — the
+        // delegate's own weight is never concentration-capped (F1), so it stacked on top of a 4000
+        // bps received cap for a 3000e18/5000e18 ceiling against a 1250e18 quorum. Lowering
+        // `concentrationCapBps` cannot close that: the cap binds RECEIVED weight, and the binding
+        // quantity is `ownStakeBps + concentrationCapBps < quorumBps`, where `ownStakeBps` is live
+        // distribution a constructor cannot see — the exact reason this repo implemented, measured
+        // and REVERTED the `proposalThresholdBps` floor (test/audit/AuditProposalThresholdFloor).
+        //
+        // Nor is a distinct-revealer floor a substitute: a head count is free to Sybil by splitting
+        // one deposit across two addresses, whereas quorum measured in SELF-REVEALED STAKE cannot be
+        // inflated that way. That is the discriminator this fix turns on.
+        emit DelegatedRevealed(pid, delegator, del, support, weight);
     }
 
     /// @dev Concentration cap (VO-5): a delegate's accrued RECEIVED weight — the sum of all
@@ -541,7 +581,20 @@ contract Governance is IGovernance {
         bool quorumOk;
         if (p.ptype == ProposalType.RuleChange) {
             // Full consensus (CM-8/K-2): every unit of snapshot-eligible stake revealed FOR.
-            // Standing defaults never contribute (they are routine-rebalance-only anyway).
+            // Standing defaults never contribute (they are routine-rebalance-only anyway), and
+            // neither do cranked delegations (VO-2b) — so "full consensus" now means every member
+            // self-revealing. THAT IS A REAL LIVENESS COST, stated rather than buried: delegation
+            // was the only way a vault with an absent member could change its own rules, and one
+            // live voter reaching `revealedWeight == snapshotTotal` through cranks is precisely the
+            // demonstrated attack (test/audit/AuditDelegatedQuorum.t.sol). It does not self-lock:
+            // a Defeated RuleChange settles, so it never blocks the next proposal (contrast C-2).
+            // `p.forWeight` is NOT subtracted here, and that is deliberate rather than an omission.
+            // The first term already requires every unit of snapshot stake to have SELF-revealed, so
+            // by the time the second is evaluated the FOR side is made of self-reveals and a crank
+            // can only add on top of a threshold already met. Subtracting `delegatedForWeight` here
+            // would change no outcome and would suggest the term is reachable by a cranker, which it
+            // is not. Said out loud because the sub-five branches DO subtract it, and an arithmetic
+            // difference between sibling branches reads as a bug to the next person.
             quorumOk = p.revealedWeight == p.snapshotTotal && p.forWeight >= p.snapshotTotal;
         } else if (p.memberCount < SIGNER_REGIME_BELOW) {
             // H-8 (CM-7): the `<5`-member signer regime was a pure head count, stake-blind and
@@ -561,20 +614,48 @@ contract Governance is IGovernance {
             // (H-8(a)). Distinguishing a real member from a sybil costs exactly `minDepositUsdc`,
             // so this is mitigated at the config layer (a meaningful minimum deposit) and documented
             // under H-8/CM-7 — the same resolution as M-6, and for the same reason.
+            // Both stake terms below measure SELF-DIRECTED FOR weight. Branch 1's stake gate exists
+            // "to block near-zero-stake sybils from passing an arbitrary rebalance against a silent
+            // incumbent" — cranked weight would hollow out exactly that: two split-deposit dust
+            // addresses clear `revealedVoterCount * 2 > memberCount` for free (H-8(a), open by
+            // design), and a third member's delegation would then supply the stake the gate asks for.
+            //
+            // BRANCH 1 IS ISOLATED AND MUTATION-COVERED, so this subtraction is LOAD-BEARING and must
+            // not be tidied away as redundant with `forStakeMajority`. The isolating test is
+            // `AuditDelegatedQuorum.t.sol:test_ATTACK_subFive_branchOne_isNotCarriedByCrankedWeight`,
+            // which asserts branch 2 false WITH and WITHOUT the crank, the head gate satisfied, the
+            // raw `forWeight` numerator clearing this stake gate and the self-directed one not: only
+            // this term decides it, and restoring `p.forWeight` here turns it red.
+            // What makes branch 1 reachable without branch 2 is weight accounted to NEITHER side.
+            // `_boundedWeight` is `min(snapshot, current)`, so a member who exits after the snapshot
+            // contributes less than their snapshot share while `snapshotTotal` stays fixed. The test
+            // builds exactly that — four members at 100/100/100/1700 with the large holder settling
+            // out during the commit window — which is why the argument that a sub-five head majority
+            // makes branch 1 imply branch 2 does not hold.
+            uint256 selfDirectedFor = p.forWeight - delegatedForWeight[pid];
             bool headMajorityWithStake = p.revealedVoterCount * 2 > p.memberCount
-                && p.forWeight * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;
-            bool forStakeMajority = p.forWeight * 2 > p.snapshotTotal;
-            // NOTE (Audit Council, informational): `forWeight` includes APPLIED STANDING DEFAULTS,
-            // so branch 2 can pass a Rebalance on a >50% pre-declared-default majority with zero live
-            // reveals — whereas the >=5-member stake regime below counts `revealedWeight` only
-            // (defaults never count toward quorum, VO-2/K-3). This asymmetry is design-consistent and
-            // non-exploitable: standing defaults are Rebalance-only (VO-4), must pre-date the proposal
-            // (`setAt < createdAt`), and are genuine stakeholder pre-declarations — a >50% default
-            // majority IS a real mandate. It only ever WIDENS passing (additive), so it introduces no
-            // freeze. Named here so an auditor sees it is intended, not overlooked.
+                && selfDirectedFor * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;
+            // VO-2b: branch 2 is a QUORUM test written in FOR-stake, so cranked delegated weight is
+            // subtracted out of its numerator. Removing the crank from `revealedWeight` alone does
+            // NOT reach this branch — measured, not assumed: at THREE members, one member's reveal
+            // (1000e18) plus one cranked delegator (1000e18) makes `forWeight * 2 = 4000e18 >
+            // 3000e18` and passes with `revealedVoterCount == 1`. So the attack is not gated at the
+            // fifth member; the sub-five regime carries it on a DIFFERENT quantity.
+            // `delegatedForWeight[pid] <= p.forWeight` by construction (both are written together in
+            // `revealDelegated`), so this cannot underflow.
+            //
+            // APPLIED STANDING DEFAULTS deliberately REMAIN in this numerator, and the distinction is
+            // the whole point. A default is the member's OWN direction, Rebalance-only (VO-4), must
+            // pre-date the proposal (`setAt < createdAt`) and expires in 72h — a >50% default majority
+            // IS a real mandate (Audit Council, accepted). A crank carries the DELEGATE's direction,
+            // has no TTL and applies to every proposal type: a >50% cranked majority is one person's
+            // decision wearing four members' stake. Same weight, different number of deciders.
+            bool forStakeMajority = selfDirectedFor * 2 > p.snapshotTotal;
             quorumOk = headMajorityWithStake || forStakeMajority;
         } else {
-            // Stake quorum: revealed (live) weight only — defaults never count (VO-2).
+            // Stake quorum: SELF-revealed weight only. Neither standing defaults (VO-2/K-3) nor
+            // cranked delegations (VO-2b) reach `revealedWeight`, so an absent member's weight can
+            // never be what makes a proposal decidable — only what decides it.
             quorumOk = p.revealedWeight * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;
         }
 

@@ -145,6 +145,37 @@ test('standing default counts in tally but not quorum (revealedWeight)', () => {
   assert.equal(p.revealedWeight, 500n, 'default NOT in quorum');
 });
 
+test('a cranked delegation counts in the tally, never in quorum, and on the RIGHT side', () => {
+  // VO-2b, and a second defect this found. `DelegatedRevealed` carried no `support` field until
+  // this change, while the handler booked the weight FOR when `args.support` was truthy and AGAINST
+  // otherwise -- so EVERY cranked delegation landed on `againstWeight`, whichever way the delegate
+  // had actually voted. A FOR crank is the case that could never have been right.
+  const s = applyAll([
+    { name: 'Proposed', vault: V, blockNumber: 1, logIndex: 0, args: { pid: 3, vault: V, ptype: 0, proposer: A } },
+    { name: 'Revealed', vault: V, blockNumber: 2, logIndex: 0, args: { pid: 3, voter: A, support: true, weight: 500n } },
+    { name: 'DelegatedRevealed', vault: V, blockNumber: 2, logIndex: 1, args: { pid: 3, delegator: B, delegate: A, support: true, weight: 400n } },
+  ]);
+  const p = s.proposals.get(3);
+  assert.equal(p.forWeight, 900n, 'a FOR crank lands on the FOR side');
+  assert.equal(p.againstWeight, 0n, 'and not on the AGAINST side');
+  assert.equal(p.revealedWeight, 500n, 'cranked weight is NOT in the quorum numerator');
+  assert.equal(p.revealedVoters, 1, 'nor in the revealer count');
+  assert.equal(p.delegatedForWeight, 400n, 'tracked so finalize can subtract it sub-five');
+});
+
+test('an AGAINST crank books against, and still never reaches quorum', () => {
+  const s = applyAll([
+    { name: 'Proposed', vault: V, blockNumber: 1, logIndex: 0, args: { pid: 4, vault: V, ptype: 0, proposer: A } },
+    { name: 'Revealed', vault: V, blockNumber: 2, logIndex: 0, args: { pid: 4, voter: A, support: false, weight: 500n } },
+    { name: 'DelegatedRevealed', vault: V, blockNumber: 2, logIndex: 1, args: { pid: 4, delegator: B, delegate: A, support: false, weight: 400n } },
+  ]);
+  const p = s.proposals.get(4);
+  assert.equal(p.againstWeight, 900n);
+  assert.equal(p.forWeight, 0n);
+  assert.equal(p.revealedWeight, 500n);
+  assert.equal(p.delegatedForWeight, 0n, 'only FOR cranks are tracked -- that is the term finalize uses');
+});
+
 test('a queued exit settled by its own member is counted as Mode-F', () => {
   const s = applyAll([
     ev('DepositActivated', 1, 0, V, { member: A, sharesMinted: 100n }),

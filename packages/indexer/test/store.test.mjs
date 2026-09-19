@@ -65,6 +65,69 @@ test('deserializeState defaults eventStats/adapters to empty for a snapshot writ
   assert.equal(back.lastBlock, richState().lastBlock);
 });
 
+test('a PRE-VO-2b snapshot loads instead of bricking the daemon, and reports UNKNOWN not zero', () => {
+  // THE OUTAGE. The first revision of `delegatedForWeight` threw on a snapshot that predated the
+  // field -- `BigInt(undefined)` -- and proposals are never pruned, so ANY existing snapshot holding
+  // even a settled proposal killed `buildIndexer` at startup. `loadSnapshot` catches only ENOENT, so
+  // it does not degrade to a rebuild; it fails to start. The comment beside the eventStats/adapters
+  // defaults in store.mjs describes that exact failure, and the throw was written without reading it.
+  const legacy = JSON.parse(JSON.stringify(serializeState(richState())));
+  for (const [, p] of legacy.proposals) delete p.delegatedForWeight;
+
+  const back = deserializeState(legacy);
+  const p = back.proposals.get(7);
+  assert.equal(p.delegatedForWeight, null, 'an unrecorded cranked history is null -- not 0n');
+  assert.notEqual(p.delegatedForWeight, 0n, '0n would report a sub-five FOR majority the contract refuses');
+  assert.equal(p.revealedWeight, 1000n, 'the rest of the proposal still loads');
+  assert.equal(back.lastBlock, richState().lastBlock);
+});
+
+test('once the cranked history is unknown it STAYS unknown, even as new cranks arrive', () => {
+  // Adding the cranks seen since a partial snapshot produces a definite number that is definitely
+  // too small. Unknown is the honest answer and the one `quorumReadout` already handles.
+  const legacy = JSON.parse(JSON.stringify(serializeState(richState())));
+  for (const [, p] of legacy.proposals) delete p.delegatedForWeight;
+  const s = deserializeState(legacy);
+
+  apply(s, { name: 'DelegatedRevealed', vault: V, blockNumber: 5, logIndex: 0, args: { pid: 7, delegator: B, delegate: A, support: true, weight: 400n } });
+  const p = s.proposals.get(7);
+  assert.equal(p.delegatedForWeight, null, 'a later crank must not turn "unknown" into a wrong number');
+  assert.equal(p.forWeight, 1400n, 'the TALLY still moves -- only the cranked-share figure is unknown');
+  assert.equal(p.revealedWeight, 1000n, 'and quorum is still untouched by the crank (VO-2b)');
+});
+
+test('a snapshot written TODAY round-trips the cranked figure as a number, not null', () => {
+  // The other half: if `null` were returned unconditionally the two tests above would pass while the
+  // field did nothing. This is what separates the migration from a broken field.
+  const s = richState();
+  apply(s, { name: 'DelegatedRevealed', vault: V, blockNumber: 5, logIndex: 0, args: { pid: 7, delegator: B, delegate: A, support: true, weight: 400n } });
+  const back = deserializeState(JSON.parse(JSON.stringify(serializeState(s))));
+  assert.equal(back.proposals.get(7).delegatedForWeight, 400n);
+});
+
+test('the WRITE path survives an unknown cranked figure: resuming from a legacy snapshot and saving again', () => {
+  // THE OTHER HALF OF THE OUTAGE, and it was unpinned: the read path was fixed and `serializeState`'s
+  // `=== null ? null :` guard could be DROPPED entirely with the whole suite green, because no test
+  // ever re-serialized a state already holding `null`. That is not a hypothetical shape -- it is
+  // every checkpoint the daemon writes after resuming from a pre-VO-2b snapshot, so `null.toString()`
+  // would throw on the FIRST save and take the daemon down a second time, one save later than before.
+  const legacy = JSON.parse(JSON.stringify(serializeState(richState())));
+  for (const [, p] of legacy.proposals) delete p.delegatedForWeight;
+  const resumed = deserializeState(legacy);
+  assert.equal(resumed.proposals.get(7).delegatedForWeight, null, 'precondition: the field is unknown');
+
+  const rewritten = serializeState(resumed);
+  const stored = new Map(rewritten.proposals).get(7);
+  assert.equal(stored.delegatedForWeight, null, 'unknown is written as JSON null, not a string and not 0');
+  assert.notEqual(stored.delegatedForWeight, 'null', 'the literal string would deserialize via BigInt and throw');
+  assert.notEqual(stored.delegatedForWeight, '0', '0 would report a sub-five FOR majority the contract refuses');
+  assert.equal(stored.forWeight, '1000', 'the neighbouring bigint fields still serialize as strings');
+
+  // And it round-trips: unknown survives a full save/load cycle rather than degrading on the way out.
+  const again = deserializeState(JSON.parse(JSON.stringify(rewritten)));
+  assert.equal(again.proposals.get(7).delegatedForWeight, null);
+});
+
 test('snapshot survives a file save/load cycle', async () => {
   const path = join(tmpdir(), `idx-${process.pid}-${Date.now()}.json`);
   try {
