@@ -268,6 +268,9 @@ export function assembleLeg(r) {
  */
 
 /** What a leg's safety reads look like before any call has been attempted — unknown, never "fine". */
+/** An address lowercased for comparison, or '' when there is nothing usable to compare. */
+const lcAddr = (a) => (typeof a === 'string' ? a.toLowerCase() : '');
+
 export const LEG_SAFETY_UNREAD = Object.freeze({
   paused: /** @type {PausedState} */ ('unknown'),
   pausedReadAt: null,
@@ -387,6 +390,28 @@ export function assembleVault(r) {
   const legs = r.legs ?? [];
   const weights = weightsBps(legs, navWad);
 
+  /**
+   * Safety records keyed by the address they name, so a leg is matched by IDENTITY rather than by its
+   * position in an array the caller happened to build in some order.
+   *
+   * FAILS CLOSED TWICE OVER. A record with no usable address is dropped, and two records naming the
+   * same address make that address ambiguous — so it maps to nothing and the leg reads `unknown`,
+   * rather than one of the two being picked. Both are "no answer", which is the only safe answer
+   * about whether an asset is paused or blacklisted.
+   */
+  const safetyByAddress = new Map();
+  const ambiguous = new Set();
+  for (const rec of r.legSafety ?? []) {
+    const key = lcAddr(rec?.address);
+    if (!key) continue;
+    if (safetyByAddress.has(key) || ambiguous.has(key)) {
+      safetyByAddress.delete(key);
+      ambiguous.add(key);
+      continue;
+    }
+    safetyByAddress.set(key, rec);
+  }
+
   return {
     address: r.address,
     name: r.name ?? '',
@@ -413,8 +438,15 @@ export function assembleVault(r) {
     // timestamps. A leg whose safety reads were never supplied gets LEG_SAFETY_UNREAD — unknown,
     // not a silent "active"/"clear" — rather than omitting the fields and letting some later
     // `leg.paused === false` read an absence as a clean bill of health.
+    //
+    // MATCHED ON ADDRESS, NEVER ON POSITION. This merged `r.legSafety[i]` by index and threw away the
+    // `address` every safety record already carries. A reordered array then rendered a **paused and
+    // blacklisted** asset as `active` / `clear` with a fresh timestamp — a confident wrong answer,
+    // which is strictly worse than the `unknown` this whole tri-state exists to preserve: the review
+    // that found it demonstrated it live, and the test below only ever passed a perfectly ordered
+    // array, so it asserted the property in the one case where index and identity agree.
     basket: legs.map((l, i) => {
-      const safety = r.legSafety?.[i];
+      const safety = safetyByAddress.get(lcAddr(l.address));
       return {
         ...l,
         weightBps: weights[i],

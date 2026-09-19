@@ -191,7 +191,80 @@ test('pausedReadAt and blacklistedReadAt are carried through unchanged, not stam
   assert.notEqual(leg.pausedReadAt, leg.blacklistedReadAt, 'two calls read seconds apart are two facts, not one');
 });
 
-test('assembleVault merges per-leg safety by basket position, each leg keeping its own timestamps', () => {
+
+test('BLOCKER: a REORDERED safety array cannot hand one leg another leg\'s safety state', () => {
+  // THE FAILURE THIS CLOSES, in the shape it was demonstrated. The merge was `r.legSafety[i]`, so a
+  // caller that assembled the array in a different order than the basket rendered a PAUSED and
+  // BLACKLISTED asset as `active` / `clear` with a fresh timestamp. A confident wrong answer, which is
+  // strictly worse than the `unknown` the tri-state exists to preserve — and the ordered-array test
+  // beside this one could never see it, because index and identity agree there.
+  const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  // Leg B is the dangerous one: paused AND blacklisted.
+  const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
+  const safetyB = assembleLegSafety({ address: '0xcb', pausedValue: true, pausedReadAt: NOW - 4, blacklistedValue: true, blacklistedReadAt: NOW - 3 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [legA, legB],
+    legSafety: [safetyB, safetyA], // REVERSED
+  });
+
+  assert.equal(v.basket[1].paused, 'paused', 'the paused leg must still read paused when the array order differs');
+  assert.equal(v.basket[1].blacklisted, 'blacklisted');
+  assert.equal(v.basket[1].pausedReadAt, NOW - 4, 'and it must keep its OWN timestamp, not the other leg\'s');
+  assert.equal(v.basket[0].paused, 'active');
+  assert.equal(v.basket[0].blacklisted, 'clear');
+  assert.equal(v.basket[0].pausedReadAt, NOW - 10);
+});
+
+test('a safety record for an address that is not in the basket reaches no leg at all', () => {
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const stranger = assembleLegSafety({ address: '0xdeadbeef', pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [stranger],
+  });
+  assert.equal(v.basket[0].paused, 'unknown', 'a record naming another asset must not clear this leg');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+  assert.equal(v.basket[0].pausedReadAt, null);
+});
+
+test('TWO records naming one address make it ambiguous, and ambiguity reads unknown', () => {
+  // Fails closed rather than picking one. "Two answers" about whether an asset is paused is not an
+  // answer, and the one thing that must never come out of this function is a clean bill of health
+  // nobody established.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const first = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const second = assembleLegSafety({ address: WETH, pausedValue: true, pausedReadAt: NOW + 1, blacklistedValue: true, blacklistedReadAt: NOW + 1 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [first, second],
+  });
+  assert.equal(v.basket[0].paused, 'unknown');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+});
+
+test('address matching is case-insensitive, because a checksummed address is the same asset', () => {
+  const leg = assembleLeg({ address: WETH.toLowerCase(), assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const safety = assembleLegSafety({ address: WETH.toUpperCase(), pausedValue: true, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [safety],
+  });
+  assert.equal(v.basket[0].paused, 'paused', 'a checksum difference must not silently lose a paused state');
+});
+
+test('assembleVault merges per-leg safety by ADDRESS, each leg keeping its own timestamps', () => {
   const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
   const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
   const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
