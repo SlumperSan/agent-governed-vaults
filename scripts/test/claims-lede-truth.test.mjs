@@ -589,7 +589,7 @@ test('a surface may say trades need a vote only while the contract still makes t
   // answer differently the moment someone reorders the file.
   const fns = [];
   const sigRe = /function\s+(\w+)\s*\([^)]*\)[^{;]*\{/g;
-  for (const m of sigRe.exec.length ? [...vault.matchAll(sigRe)] : []) {
+  for (const m of vault.matchAll(sigRe)) {
     let depth = 0;
     let i = m.index + m[0].length - 1;
     const start = i;

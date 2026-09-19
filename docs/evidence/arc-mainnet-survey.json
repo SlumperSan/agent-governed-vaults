@@ -33,23 +33,11 @@
         "feedVersion": 6,
         "observedAnswer": 8117020000000,
         "observedAnswerHuman": "$81,170.20",
-        "roundGapsSeconds": [
-          7893,
-          1801,
-          120,
-          180,
-          360,
-          120,
-          14286,
-          1770,
-          2731,
-          10325
-        ],
         "roundGapMedianSeconds": 4352,
         "roundGapMaxSeconds": 86423,
         "heartbeatSeconds": 86400,
         "feedChoiceNote": "BTC / USD, NOT CBBTC / USD — AND THIS FIELD PAIRED cirBTC WITH THE WRONG FEED UNTIL 2026-09-18, WHICH IS WHY THE CORRECTION IS RECORDED HERE RATHER THAN ONLY IN THE CONFIG. It previously carried 0x0baD7926628b6408FeedcABaEc68c1Ea77bd127c, description CBBTC / USD. CBBTC/USD prices Coinbase's cbBTC wrapper; the basket asset is Circle's cirBTC. THREE SEPARATE AUTHORS WROTE `CBBTC / USD` INTO PUBLIC COPY FROM THIS FIELD before it was caught, on three different branches. A stale source does not produce one error — it produces one per author who reads it, and each of those was found and fixed individually while the field that seeded them stayed wrong. That is the whole argument for correcting a source rather than its consumers. THE TWO FEEDS READ 0.07% APART ON THE SAME BLOCK ($81,170.20 against $81,110.58), which is not evidence they track the same thing — it is evidence that two BTC wrappers happen to be near par today, and that is exactly the condition under which a wrong-wrapper feed is invisible. Read on 2026-09-18 from rpc.mainnet.arc.io and cross-checked byte-identical on arc.gateway.tenderly.co: description() 'BTC / USD', decimals() 8, version() 6, 9,571 bytes.",
-        "roundGapNote": "MEASURED ON THIS FEED, not on CBBTC/USD: 199 gaps over a 449 h span, walked back with getRoundData 2026-09-18. Only three of the 199 exceed 86,400 s, by +7 s, +21 s and +23 s. The `roundGapsSeconds` array below is the ORIGINAL eleven-round sample from the first draft and is retained as the record of how short a window it was — it is not the figure to use. See heartbeatNote."
+        "roundGapNote": "MEASURED ON THIS FEED, NOT ON CBBTC/USD, AND THAT DISTINCTION IS WHY THE EARLIER SAMPLE IS GONE RATHER THAN ANNOTATED. 199 gaps over a 449 h span, walked back with getRoundData 2026-09-18; only three of the 199 exceed 86,400 s, by +7 s, +21 s and +23 s, which is what roundGapMedianSeconds and roundGapMaxSeconds above summarise. A roundGapsSeconds array used to sit here holding an eleven-round sample taken from the CBBTC/USD feed, before the feed was corrected. It was left in place when `feed` was repointed, so its numbers described one feed while every field around them described another, and the two summary fields did not summarise it. That is this file's own argument in feedChoiceNote happening one field lower: a stale source does not produce one error, it produces one per reader. The short-window history it was kept for is in heartbeatNote, which carries its own figures and says what each was wrong about."
       }
     ],
     "heartbeatNote": "MEASURE THE CADENCE, NOT THE INSTANTANEOUS AGE, AND MEASURE IT OVER A WINDOW LONGER THAN THE HEARTBEAT ITSELF — this file was wrong about that twice, each time by sampling too little, and the second correction was itself overstated. THE WORST GAP IS 86,423 s (24.01 h) ON BTC/USD AND 86,404 s ON CBBTC/USD, and those are the figures to use. Measured by walking getRoundData back on the feeds themselves, 2026-09-18: BTC/USD 199 gaps over a 449 h span, median 4,352 s; CBBTC/USD 199 gaps over 507 h, median 4,531 s. THE FIGURE IS STABLE, NOT STILL CLIMBING, and this file previously said the opposite. The earlier readings of 4.71 h (11 rounds) and 11.94 h (24 rounds) rose only because each window was SHORTER THAN THE HEARTBEAT and so never contained a quiet stretch. Once the window exceeded it the figure stopped moving: a 169 h walk and a 449 h walk both return 86,423 s, and that worst gap sits 2 s above the runner-up rather than standing off as an outlier. Only three of BTC/USD's 199 gaps exceed 86,400 s at all, by +7 s, +21 s and +23 s. THE BOUND IS ONE HEARTBEAT PERIOD PLUS PUBLISH JITTER, and USDC/USD on the same chain is what shows it: 56 gaps, every one between 86,400 s and 86,467 s, publishing on nothing but its heartbeat because a stablecoin resting at 1.0000 never trips a deviation threshold. So the heartbeat configured for this feed family on Arc IS 86,400 s, the BTC feeds reach it, and the jitter around it is real, positive, and reaches +67 s on the best-sampled feed.",
