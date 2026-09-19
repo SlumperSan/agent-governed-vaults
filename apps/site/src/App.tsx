@@ -47,6 +47,7 @@ export function App() {
         <div className="inner">
           <p className="eyebrow">{HOME.steps.eyebrow}</p>
           <h2 className="measure">{HOME.steps.headline}</h2>
+          <p className="lede measure lede-sub">{HOME.steps.notice}</p>
           <div className="grid-3">
             {HOME.steps.items.map((s) => (
               <article className="card" key={s.n}>
