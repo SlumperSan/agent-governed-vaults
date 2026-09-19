@@ -252,6 +252,59 @@ test('TWO records naming one address make it ambiguous, and ambiguity reads unkn
   assert.equal(v.basket[0].blacklisted, 'unknown');
 });
 
+test('THREE OR MORE records naming one address stay ambiguous - two is the arity that proves nothing', () => {
+  // At exactly two records `safetyByAddress.has(key)` carries the whole check and the `ambiguous`
+  // SET never matters: deleting it leaves two-record ambiguity working. The set exists for the third
+  // record, which finds `has(key)` FALSE - the second one deleted the entry - and would re-insert,
+  // handing the leg a clean bill of health assembled from three contradictory reads. Every arity from
+  // 2 to 5 is checked, because "an odd number of duplicates re-inserts" is the shape of the bug.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const n of [2, 3, 4, 5]) {
+    const records = [];
+    for (let i = 0; i < n; ++i) {
+      records.push(assembleLegSafety({
+        address: i % 2 === 0 ? WETH : WETH.toUpperCase(), // and the duplicate may be checksummed
+        pausedValue: i % 2 === 0,
+        pausedReadAt: NOW + i,
+        blacklistedValue: i % 2 === 0,
+        blacklistedReadAt: NOW + i,
+      }));
+    }
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [leg],
+      legSafety: records,
+    });
+    assert.equal(v.basket[0].paused, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].blacklisted, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].pausedReadAt, null, `${n} records: an ambiguous leg must carry no timestamp either`);
+  }
+});
+
+test('a record with NO address is dropped, and an address-less leg does not collect it', () => {
+  // `if (!key) continue` in the merge. Without it the record is stored under the '' key, and
+  // `lcAddr` returns '' for any leg whose address is missing or not a string - so that leg LOOKS UP
+  // the address-less record and inherits its state. That is blocker 1 of this PR returning by a
+  // different door, and it needs a leg with no address to show, which no other test builds.
+  const namedLeg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const anonLeg = assembleLeg({ address: undefined, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const missing of [undefined, null, '', '   ', 42, {}]) {
+    const orphan = assembleLegSafety({ address: missing, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [namedLeg, anonLeg],
+      legSafety: [orphan],
+    });
+    const why = `address ${JSON.stringify(missing)}`;
+    // 'active'/'clear' is the DANGEROUS answer here: a clean bill of health nobody established.
+    assert.equal(v.basket[0].paused, 'unknown', `${why}: a named leg must not collect an unaddressed record`);
+    assert.equal(v.basket[1].paused, 'unknown', `${why}: an address-less leg must not collect it either`);
+    assert.equal(v.basket[1].blacklisted, 'unknown', `${why}: nor its blacklist state`);
+  }
+});
+
 test('address matching is case-insensitive, because a checksummed address is the same asset', () => {
   const leg = assembleLeg({ address: WETH.toLowerCase(), assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
   const safety = assembleLegSafety({ address: WETH.toUpperCase(), pausedValue: true, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
@@ -274,7 +327,11 @@ test('assembleVault merges per-leg safety by ADDRESS, each leg keeping its own t
     address: VAULT,
     core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
     legs: [legA, legB],
-    legSafety: [safetyA, safetyB],
+    // REVERSED on purpose. With `[safetyA, safetyB]` the array is already in basket order, so the
+    // index merge this PR replaced produces the identical result and the test named "by ADDRESS"
+    // passes with the defect restored. The order has to disagree with the legs for the assertion to
+    // be about identity rather than about position.
+    legSafety: [safetyB, safetyA],
   });
 
   assert.equal(v.basket[0].paused, 'active');
