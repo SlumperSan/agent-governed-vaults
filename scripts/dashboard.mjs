@@ -220,6 +220,10 @@ const PAGE = `<!doctype html>
   .dk{color:var(--t-dim);width:92px;flex:none}
   .dv{min-width:0;overflow-wrap:anywhere}
   .ddesc{font-size:14px;line-height:20px;white-space:pre-wrap;color:var(--t-ink)}
+  /* The frontmatter note leads the Description section and is dimmed a step so the body
+     below it still reads as the main text rather than as a second lead. */
+  .dnote{font-size:14px;line-height:20px;white-space:pre-wrap;color:var(--t-dim);
+         margin-bottom:12px}
   /* Measured: 6px, fully rounded, with the PERCENTAGE AS TEXT to the left of the bar. */
   .ckhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}
   .ckpct{font-size:12px;color:var(--t-dim);min-width:34px}
@@ -314,7 +318,6 @@ const PAGE = `<!doctype html>
   .cm .prio{font-weight:600}
   .p-critical .prio,.p-crit .prio{color:#ff8a80}
   .p-high .prio{color:#ffb4a8}
-  .cn{color:var(--t-dim);font-size:12px;margin-top:6px;line-height:1.4}
   /* AN EMPTY COLUMN IS HEADER PLUS BARE BACKGROUND. No illustration, no "nothing here yet", no
      dashed drop zone -- a drop zone would be wrong twice over, since it is not Trello's empty
      state and it advertises a drop target that does not exist. */
@@ -523,7 +526,10 @@ function render(d){
         + (t.blockedBy.length?'<span class="blk">blocked by '+esc(t.blockedBy.join(', '))+'</span>':'')
         + (unblocks[t.id] ? '<span class="unb">releases '+unblocks[t.id].length+'</span>' : '')
       + '</div>'
-      + (t.note?'<div class="cn">'+esc(t.note)+'</div>':'')
+      // NO DESCRIPTION ON THE CARD FRONT. Trello's card is chips, title and a badge row, and its
+      // whole density proposition is that a column shows ten cards rather than four. Rendering
+      // the note here made cards 125-246px tall against Trello's measured 48-96px. It is not
+      // lost: it opens the Description section of the modal, above the body text.
       + '</div>';
 
     // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
@@ -745,8 +751,14 @@ function drawTask(id){
     + '<h3 class="dtitle">'+esc(t.title)+'</h3>'
     // Section order, per the spec: Labels, Description, Checklist, Meta.
     + (t.labels.length ? dsec('▤','Labels','<div class="dchips">'+labels(t)+'</div>','',true) : '')
-    + (t.description
-        ? dsec('☰','Description','<div class="ddesc">'+esc(t.description)+'</div>')
+    // ONE Description section carrying both prose fields, note first. The note is the frontmatter
+    // one-liner and the description is the body; Trello has a single description, and two prose
+    // sections would not read as a copy of it. Shown when EITHER exists -- the note used to render
+    // on the card front and nowhere else, so gating this on the description alone would drop it.
+    + ((t.note || t.description)
+        ? dsec('☰','Description',
+            (t.note ? '<div class="dnote">'+esc(t.note)+'</div>' : '')
+            + (t.description ? '<div class="ddesc">'+esc(t.description)+'</div>' : ''))
         : '')
     + (t.checklist.length
         ? dsec('☑','Checklist',
