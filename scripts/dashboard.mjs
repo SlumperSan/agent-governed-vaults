@@ -19,7 +19,7 @@ import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
-import { assignNumbers } from './lib/task-numbers.mjs';
+import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -59,6 +59,12 @@ function snapshot(force = false) {
   // else. A file added in Obsidian is numbered on the next poll rather than staying unnameable.
   try {
     assignNumbers(TASKS_DIR);
+    // Also move any suggestion answered BEFORE the answer endpoint learned to move it.
+    // Without this the fix is only prospective and an already-approved card stays sitting in
+    // Suggestions, which reads as the approval not having worked -- which is how it was
+    // reported: "task #42 still hasn't moved to todo".
+    const rec = reconcileAnsweredSuggestions(TASKS_DIR);
+    if (rec.moved.length) console.log('[suggestions] moved:', rec.moved.join(', '));
   } catch (e) {
     // Numbering is a convenience; the board is the point. Never let it take the board down --
     // but say so, because a silently unnumbered board looks like the feature was never built.
@@ -1093,9 +1099,7 @@ function recordAnswer(id, answer, custom) {
   // would either bury an idea he liked or queue one he did not. The answer is on the card for the
   // department to act on.
   if (t.status === 'suggestion') {
-    const moved = /^\s*approve\b/i.test(answer) ? 'backlog'
-                : /^\s*decline\b/i.test(answer) ? 'done'
-                : '';
+    const moved = movedStatusFor(answer);
     if (moved) head = head.replace(/^status:[ \t]*suggestion[ \t]*$/mi, `status: ${moved}`);
   }
   const patched = head + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);

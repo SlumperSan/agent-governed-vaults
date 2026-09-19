@@ -85,3 +85,64 @@ export function assignNumbers(dir) {
 
   return { assigned: unnumbered.length, max: next, skipped };
 }
+
+/**
+ * Where an answered suggestion belongs. THE ONE PLACE THIS IS DECIDED, imported by the board's
+ * answer endpoint and by the reconcile below, so a card answered through the UI and a card
+ * reconciled on startup can never disagree about what "Approve" meant.
+ *
+ * Free text is neither an approval nor a decline and returns '': he has said something the two
+ * buttons could not say, and guessing which way it fell would either bury an idea he liked or
+ * queue one he did not.
+ */
+export function movedStatusFor(answer) {
+  if (/^\s*approve\b/i.test(answer)) return 'backlog';
+  if (/^\s*decline\b/i.test(answer)) return 'done';
+  return '';
+}
+
+/**
+ * Move any suggestion that was ALREADY answered but never moved.
+ *
+ * The answer endpoint recorded `answer:` without touching `status:` until that was fixed, so a
+ * suggestion approved before the fix shipped still sits in the Suggestions column with an approval
+ * written on it. Without this the fix is only prospective and the card that prompted it stays
+ * stuck — which is indistinguishable, to the person looking at the board, from the fix not working.
+ * That is exactly how it was reported: "task #42 still hasn't moved to todo."
+ *
+ * Idempotent: after the move the status is no longer `suggestion`, so the next run skips it.
+ */
+export function reconcileAnsweredSuggestions(dir) {
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.md') && !f.startsWith('_'));
+  } catch {
+    return { moved: [] };
+  }
+  const moved = [];
+  for (const f of files) {
+    const full = path.join(dir, f);
+    let raw;
+    try {
+      raw = readFileSync(full, 'utf8');
+    } catch {
+      continue;
+    }
+    const end = raw.indexOf('\n---', 3);
+    if (!raw.startsWith('---') || end === -1) continue;
+    const head = raw.slice(0, end);
+    // Both reads are scoped to the frontmatter block, so a body line starting "status:" or
+    // "answer:" can never move a card.
+    if (!/^status:[ \t]*suggestion[ \t]*$/im.test(head)) continue;
+    const ans = /^answer:[ \t]*(.+?)[ \t]*$/im.exec(head);
+    if (!ans) continue;
+    const to = movedStatusFor(ans[1]);
+    if (!to) continue;
+    const patched = head.replace(/^status:[ \t]*suggestion[ \t]*$/im, `status: ${to}`) + raw.slice(end);
+    const tmp = `${full}.tmp-${process.pid}`;
+    writeFileSync(tmp, patched, 'utf8');
+    renameSync(tmp, full);
+    moved.push(`${f} -> ${to}`);
+  }
+  return { moved };
+}
