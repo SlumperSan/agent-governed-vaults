@@ -424,7 +424,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "A capacity cap is a per-vault parameter, so each vault's blast radius is bounded by whatever its creator set, but nothing bounds the protocol as a whole. No vault exists yet, so there is no figure on this page to check; read the cap off the vault before you deposit. Do not deposit what you cannot afford to lose entirely."
+        "dd": "A capacity cap is a per-vault parameter, so each vault's blast radius is bounded by whatever its creator set, but nothing bounds the protocol as a whole. <strong>The first Arc vault ships with no cap, by choice.</strong> That is not a promise of room: the market underneath it is thin, and a deposit large enough to matter moves the price against you before it is a capacity question at all. Do not read an absent cap as headroom. Do not deposit what you cannot afford to lose entirely."
       }
     ]
   },
@@ -615,7 +615,7 @@ export const GROUPS_HEADING = "Four groups this is wrong for";
 export const GROUPS: readonly Group[] = [
   {
     "title": "DAO treasuries and larger allocators",
-    "body": "A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no figure to check against; when one does, read its cap directly, and do not assume it is large enough to absorb a treasury allocation."
+    "body": "A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. The first Arc vault ships with no cap, by choice, so there is no figure to read and an absent one is not headroom. A later vault may set one; read it directly if so. Either way the binding constraint on a treasury-sized allocation is the depth of the market underneath, not the cap."
   },
   {
     "title": "Anyone who wants set-and-forget",

@@ -179,7 +179,8 @@ export const ABOUT = {
     {
       t: 'What a vault is',
       d:
-        'A pool of USDC, a basket of assets, and a rule that nothing changes without a vote. The ' +
+        'A pool of USDC, a basket of assets, and a rule that what it invests in is decided by ' +
+        'vote. The ' +
         'holdings are not an opinion anyone published. They are a timestamped record of what an ' +
         'operator proposed and what members were willing to fund.',
     },
