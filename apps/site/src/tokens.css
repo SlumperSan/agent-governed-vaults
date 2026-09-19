@@ -51,6 +51,58 @@
   --down: #ff5470;
   --warn: #ffb020;
 
+  /* ── Controls ──────────────────────────────────────────────────────────
+     A CONTROL IS THE ONE PLACE THE ACCENT HAS A FLOOR TO CLEAR, so it gets
+     its own three values rather than reusing --blue. Added 2026-09-19 after
+     all three button rules were measured against this palette and all three
+     failed; the figures and the fix band are in
+     Findings/2026-09-19-site-button-rules-fail-wcag-aa.
+
+     WHY --blue DID NOT SIMPLY MOVE. It is the brand's blue — the mark's
+     gradient, --blue-soft, --blue-line and every non-text fill read from it,
+     and none of those carries a label, so none of them has a contrast floor.
+     Darkening it to satisfy one component would move the identity to fix a
+     button. The accent stays where it is; the control gets a value chosen for
+     the job.
+
+     WHAT EACH ONE HAS TO SATISFY, and both halves matter: white on the fill
+     for the LABEL (SC 1.4.3, 4.5:1), and the fill against --bg for the
+     control's own EDGE (SC 1.4.11, 3:1). A fill that passes one and fails the
+     other is a legible label on an invisible button, or the reverse. */
+
+  /* #ffffff 5.3650:1 · edge 3.66 / 3.47 / 3.21 on --bg / --surface / --surface-2.
+     Replaces --blue as a labelled fill: #ffffff on --blue is 4.4988:1, which
+     tokens.css itself recorded as "4.50:1, passing by 0.00". That was the
+     rounded figure and the unrounded one is under the bar.
+
+     THE TWO REQUIREMENTS PULL IN OPPOSITE DIRECTIONS and that is why this value
+     is where it is rather than darker. Darkening raises the label's contrast
+     and LOWERS the edge's: #2559d6 carries white at 6.04 and then disappears
+     into --surface-2 at 2.85. The window where both clear is narrow, and this
+     sits inside it with the tightest margin stated rather than discovered. */
+  --blue-control: #2a60e6;
+  /* #ffffff 5.0371:1 · edge 3.90 / 3.70 / 3.42.
+     THE HOVER STEP IS SMALL ON PURPOSE AND THE BORDER CARRIES IT. Inside the
+     window above there is no room for a fill shift a reader would notice, so
+     .btn:hover also brings its transparent border up to --blue-bright: an
+     unmistakable state change that costs the label nothing, because it is a
+     ring rather than a ground.
+
+     What this replaces is the real defect: the rule hovered the FILL to
+     --blue-bright, where white measures 3.1626:1. On a dark ground the bright
+     accent moves toward the label rather than away from it, so "hover goes
+     brighter" halved the contrast of every primary control on the site the
+     moment a pointer touched it. */
+  --blue-control-hover: #2d64ee;
+  /* 4.14:1 on --bg, 3.92:1 on --surface, 3.63:1 on --surface-2 — clears the
+     3:1 non-text floor on all three grounds with room to spare.
+     A BORDER THAT IS A CONTROL'S ONLY IDENTITY IS NOT DECORATION. --line is
+     1.33:1 and correctly called decorative, which is fine for a panel edge
+     beside a filled surface and not fine for .btn-ghost, where the border is
+     the entire affordance. Use this ONLY where a boundary is load-bearing;
+     --line still draws every ordinary rule. */
+  --line-control: #5f739d;
+
   --sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
