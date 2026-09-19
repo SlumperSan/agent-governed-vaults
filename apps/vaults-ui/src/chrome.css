@@ -58,29 +58,28 @@
 }
 
 /* ── The right-hand affordance ─────────────────────────────────────────── */
-/* THE SITE'S .btn RULES ARE DELIBERATELY NOT PORTED, and this is the entry for
-   it. Both of its button variants were measured against this palette on
-   2026-09-19 and neither can be drawn to WCAG 2.2 AA from the tokens as they
-   stand:
+/* THE SITE'S .btn RULES ARE NOT PORTED, and this is the entry for why.
 
-     .btn          #ffffff on --blue is 4.4988:1 against a 4.5:1 requirement.
-                   tokens.css records this as "4.50:1, passing by 0.00"; that is
-                   a rounded figure and the unrounded one is below the line.
-     .btn:hover    #ffffff on --blue-bright is 3.1626:1. Hover is a state SC
-                   1.4.3 covers, so a primary control whose label halves in
-                   contrast when a pointer touches it fails in that state.
-     .btn-ghost    its identity is a 1px --line border, and --line is 1.33:1
-                   against --bg. SC 1.4.11 wants 3:1 for the visual information
-                   that identifies a control.
+   HISTORY, PAST TENSE. When the masthead landed, all three of those rules
+   measured below WCAG 2.2 against this palette: #ffffff on --blue at 4.4988:1,
+   the same on --blue-bright at 3.1626:1 on hover, and .btn-ghost's identifying
+   --line border at 1.3321:1. Porting them would have put a fourth surface under
+   the same failure, so they were left behind and filed. They are now FIXED on
+   apps/site — --blue-control, --blue-control-hover and --line-control, measured
+   against every ground the stylesheet paints and guarded by
+   apps/site/test/contrast.test.mjs. See
+   Findings/2026-09-19-site-button-rules-fail-wcag-aa.
 
-   Those three are properties of apps/site, which ships all of them today; they
-   are filed as a Design finding rather than fixed here, because closing them
-   means choosing new values for the shipped brand and that is a decision with
-   an owner, not a detail of this port. WHAT THIS FILE WILL NOT DO IS CARRY THEM
-   ACROSS. The affordance below is a link that clears AA from existing tokens:
-   full-strength ink against the dim nav links beside it, plus an underline, so
-   it is distinguished by two signals rather than by a boundary that cannot be
-   seen. */
+   THE REASON THEY STAY UNPORTED IS NOW THE ORDINARY ONE, not a defect: this
+   surface renders no filled button and no bordered ghost control, and a rule
+   carried across for something that does not exist here is the same standing
+   permission public/_headers spends its length refusing. WHEN THIS WORKSPACE
+   GROWS A BUTTON, take those three control tokens — they come through the same
+   tokens.css this file already reads — rather than re-deriving values.
+
+   The affordance below is a link, and it clears AA on its own: full-strength
+   ink against the dim nav links beside it, plus an underline, so it is
+   distinguished by two signals rather than by a boundary alone. */
 .nav-site {
   flex-shrink: 0;
   display: inline-flex;
