@@ -54,14 +54,40 @@ const sepolia = JSON.parse(read('contracts', 'config', 'base-sepolia.json'));
  * it is added, without an edit here. `base-sepolia.json` is still named, because it is the ONLY
  * testnet config and a glob for it would be a glob of one.
  */
-const mainnetConfigs = () =>
-  readdirSync(path.join(REPO, 'contracts', 'config'))
+const mainnetConfigs = () => {
+  const found = readdirSync(path.join(REPO, 'contracts', 'config'))
     .filter((f) => f.endsWith('-mainnet.json'))
-    .sort()
-    .map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+    .sort();
+  // THE FLOOR IS ON THE FILTERED SET, NOT ON THE DIRECTORY. `contracts/config/` holds plenty of
+  // files that are not mainnet configs, so a count of the directory stays healthy while this
+  // filter yields nothing -- which is the state that makes every loop below pass over zero
+  // configs. Measured, not argued: with this function returning `[]`, all 20 tests in this file
+  // stayed green, including the one asserting every mainnet `chainlinkOracle.assets` satisfies the
+  // ChainlinkOracle constructor bounds. That guard is what stands between a bad `heartbeatSeconds`
+  // and a broadcast, and it is not hypothetical that this directory changes: 4663's config was
+  // removed from the repository on 2026-09-18.
+  //
+  // TWO, not the exact names: arc-mainnet and base-mainnet are the shipped pair today, and naming
+  // them would turn a deliberate chain retirement into an unrelated red in whatever PR does it.
+  // This is a collapse detector, and that is ALL it is -- it cannot tell you that a THIRD mainnet
+  // config stopped being enumerated.
+  assert.ok(
+    found.length >= 2,
+    `only ${found.length} *-mainnet.json in contracts/config; every per-config assertion in this ` +
+      'file iterates this set, so an empty or collapsed filter makes them all pass over nothing.',
+  );
+  return found.map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+};
 
 /** Mainnet configs plus the one testnet config: the full set the shared assertions apply to. */
-const allConfigs = () => [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+const allConfigs = () => {
+  const all = [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+  // Inherits the floor above, and re-asserts it rather than relying on that: the coupling is a
+  // call, and a future edit that stops building this set from `mainnetConfigs()` would silently
+  // take the floor with it.
+  assert.ok(all.length >= 3, `only ${all.length} configs in the shared set`);
+  return all;
+};
 
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
@@ -414,7 +440,22 @@ function proseFiles() {
       }
     }
   })(REPO);
-  return found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  // Both consumers of this walk are NEGATIVE guards -- "no live prose says X" -- and a negative
+  // guard over an empty corpus is the purest form of a pass that checked nothing. With this
+  // function returning `[]`, the sequencer-fails-closed guard ran in 0.18 ms against a 64 ms
+  // baseline and the allowSubVaults-universal guard in 0.12 ms against 59 ms, both green.
+  //
+  // 151 files today. The floor is loose for the same reason `test-wiring-truth`'s is: tightening it
+  // makes every legitimate deletion an unrelated red, and buys nothing this comment does not
+  // already disclaim. It detects a COLLAPSE -- a SKIP_DIRS entry that swallows the repository, a
+  // walk rooted at the wrong directory -- and it does not detect one directory going missing.
+  const files = found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  assert.ok(
+    files.length >= 50,
+    `the prose walk found only ${files.length} file(s); the negative guards that iterate it would ` +
+      'report "no offending prose" without having read any.',
+  );
+  return files;
 }
 
 /**
