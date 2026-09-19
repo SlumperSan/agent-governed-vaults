@@ -620,16 +620,18 @@ contract Governance is IGovernance {
             // addresses clear `revealedVoterCount * 2 > memberCount` for free (H-8(a), open by
             // design), and a third member's delegation would then supply the stake the gate asks for.
             //
-            // NO TEST ISOLATES BRANCH 1, and that is stated rather than papered over. A head majority
-            // in a sub-five vault leaves AT MOST ONE non-revealer, so if that one is cranked FOR, the
-            // FOR side holds everything except the AGAINST revealers — and passing needs
-            // `forWeight > againstWeight`, hence `forWeight > 50%`, which satisfies branch 2 as well.
-            // Every crank that reaches branch 1 therefore also reaches branch 2, whose test above is
-            // mutation-covered. The one gap in that argument is weight unaccounted for by either side
-            // — `_boundedWeight` is `min(snapshot, current)`, so a post-snapshot exit shrinks a
-            // member's contribution below their snapshot share while `snapshotTotal` stays fixed.
-            // Reachable, not demonstrated. This term is consistency hardening; `forStakeMajority` is
-            // the fix.
+            // BRANCH 1 IS ISOLATED AND MUTATION-COVERED, so this subtraction is LOAD-BEARING and must
+            // not be tidied away as redundant with `forStakeMajority`. The isolating test is
+            // `AuditDelegatedQuorum.t.sol:test_ATTACK_subFive_branchOne_isNotCarriedByCrankedWeight`,
+            // which asserts branch 2 false WITH and WITHOUT the crank, the head gate satisfied, the
+            // raw `forWeight` numerator clearing this stake gate and the self-directed one not: only
+            // this term decides it, and restoring `p.forWeight` here turns it red.
+            // What makes branch 1 reachable without branch 2 is weight accounted to NEITHER side.
+            // `_boundedWeight` is `min(snapshot, current)`, so a member who exits after the snapshot
+            // contributes less than their snapshot share while `snapshotTotal` stays fixed. The test
+            // builds exactly that — four members at 100/100/100/1700 with the large holder settling
+            // out during the commit window — which is why the argument that a sub-five head majority
+            // makes branch 1 imply branch 2 does not hold.
             uint256 selfDirectedFor = p.forWeight - delegatedForWeight[pid];
             bool headMajorityWithStake = p.revealedVoterCount * 2 > p.memberCount
                 && selfDirectedFor * BPS >= uint256(configOf[p.vault].quorumBps) * p.snapshotTotal;

@@ -185,6 +185,39 @@ test('sub-five: cranked FOR weight is subtracted out of both stake terms (VO-2b)
   assert.match(unknown.text, /not exposed/);
 });
 
+test('sub-five BRANCH 1: the subtraction decides the stake gate, with branch 2 false throughout', () => {
+  // The cases above never reach branch 1's stake term. At 3 members with 1 revealer there is no head
+  // majority, so `met` is settled by `!headMajority ? false` and the term is never evaluated; the
+  // 4-member case in the test above that DOES reach it passes `delegatedForWeight: 0n`, so the
+  // subtraction is a no-op there. Computing this gate on raw `forW` therefore survived all 232 node
+  // tests -- the same gap the contract had until
+  // `AuditDelegatedQuorum.t.sol:test_ATTACK_subFive_branchOne_isNotCarriedByCrankedWeight`.
+  //
+  // 4 members, 3 revealed (head majority), quorum 25% of 10,000 = 2,500. Branch 2 is false in every
+  // case below, so branch 1 alone decides each one.
+  const SNAP = 10_000n;
+  const base = { memberCount: 4, snapshotTotal: SNAP, quorumBps: 2500, revealedVoterCount: 3 };
+  // Derived from each case's OWN inputs, never asserted over literals: a comparison of two constants
+  // tests its own arithmetic and would stay green if the inputs below were edited out from under it.
+  const branchTwoIsFalse = ({ forWeight, delegatedForWeight }) => (forWeight - delegatedForWeight) * 2n <= SNAP;
+
+  // RAW forWeight 3,000 clears 2,500; self-directed 2,000 does not. Reverting the subtraction here
+  // flips this to `true` and tells a member they are at quorum that `finalize` will Defeat.
+  const crankedIn = { revealedWeight: 2_000n, forWeight: 3_000n, delegatedForWeight: 1_000n };
+  const cranked = quorumReadout({ ...base, ...crankedIn });
+  assert.ok(branchTwoIsFalse(crankedIn), 'branch 2 must be false here, or branch 1 is not what decides');
+  assert.equal(cranked.met, false, 'a crank must not supply the stake branch 1 asks for');
+  assert.equal(cranked.forBps, 2000, 'and the figure shown is the self-directed one');
+
+  // The other direction, so the term is not merely always-false: self-directed 3,000 clears 2,500 on
+  // its own with a crank still present, and branch 2 is still false.
+  const passesIn = { revealedWeight: 3_000n, forWeight: 4_000n, delegatedForWeight: 1_000n };
+  const passes = quorumReadout({ ...base, ...passesIn });
+  assert.ok(branchTwoIsFalse(passesIn), 'branch 2 must be false here too');
+  assert.equal(passes.met, true, 'branch 1 still passes on self-directed stake alone');
+  assert.equal(passes.forBps, 3000);
+});
+
 test('quorum is unknown, not zero, when the snapshot is not exposed', () => {
   const q = quorumReadout({ revealedWeight: undefined, snapshotTotal: undefined, memberCount: 20 });
   assert.equal(q.met, null);

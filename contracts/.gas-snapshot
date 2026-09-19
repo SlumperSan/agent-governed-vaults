@@ -63,7 +63,7 @@ AuditCreatorGateTrapsTest:test_B_seedingFivePercentOfCapRemovesTheRace() (gas: 9
 AuditCreatorGateTrapsTest:test_C_queuedModeFExitIsNotRegatedAtSettle() (gas: 1007107)
 AuditDelegatedQuorumTest:test_ATTACK_geFive_oneLiveVoterCannotReachQuorum() (gas: 569577)
 AuditDelegatedQuorumTest:test_ATTACK_ruleChange_cranksCannotManufactureFullConsensus() (gas: 6314152)
-AuditDelegatedQuorumTest:test_ATTACK_subFive_branchOne_isNotCarriedByCrankedWeight() (gas: 6258467)
+AuditDelegatedQuorumTest:test_ATTACK_subFive_branchOne_isNotCarriedByCrankedWeight() (gas: 6258639)
 AuditDelegatedQuorumTest:test_ATTACK_subFive_oneLiveVoterCannotCarryForStakeMajority() (gas: 866939)
 AuditDelegatedQuorumTest:test_ATTACK_sybilSplitDoesNotManufactureQuorum() (gas: 1281913)
 AuditDelegatedQuorumTest:test_concentrationCapStillBindsReceivedWeight() (gas: 703404)

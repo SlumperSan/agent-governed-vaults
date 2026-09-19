@@ -349,9 +349,12 @@ contract AuditDelegatedQuorumTest is Test {
         assertGe(forW * 10_000, 2_500 * snap, "the pre-fix numerator would have cleared quorum here");
     }
 
-    /// BRANCH 1 (`headMajorityWithStake`), which r1 hardened and left with ZERO coverage -- I wrote
-    /// "reachable, not demonstrated" in the contract and the reviewer demonstrated it. Mutating the
-    /// branch-1 subtraction survived the entire forge suite until this test existed.
+    /// BRANCH 1 (`headMajorityWithStake`), which r1 hardened and left with ZERO coverage: r1's own
+    /// comment in `finalize` called the term "reachable, not demonstrated ... consistency hardening",
+    /// the reviewer demonstrated it, and that comment has since been replaced by one naming THIS test
+    /// -- so do not go looking for the quoted wording in Governance.sol. Mutating the branch-1
+    /// subtraction back to raw `p.forWeight` survived the entire forge suite until this test existed,
+    /// and reds here now.
     ///
     /// The gap is exactly the one the code names: `_boundedWeight` is `min(snapshot, current)`, so a
     /// POST-SNAPSHOT EXIT shrinks a member's contribution while `snapshotTotal` stays fixed, leaving
@@ -427,7 +430,7 @@ contract AuditDelegatedQuorumTest is Test {
             "branch 1 must not be carried by a crank"
         );
 
-        (,,,,,,,,,,,, uint256 forW,, uint256 revealedW, uint256 voters) = gov.proposals(pid);
+        (,,,,,,,,,,,, uint256 forW, uint256 againstW, uint256 revealedW, uint256 voters) = gov.proposals(pid);
         uint256 cranked = gov.delegatedForWeight(pid);
         assertEq(voters, 3, "a head majority of 4 members DID reveal -- branch 1's head gate is satisfied");
         assertTrue(voters * 2 > members, "so the head gate is not what defeats this");
@@ -437,8 +440,11 @@ contract AuditDelegatedQuorumTest is Test {
         // Pre-fix branch 1 would have passed; the self-directed term does not.
         assertGe(forW * 10_000, 2_500 * snap, "the raw forWeight numerator clears branch 1's stake gate");
         assertLt((forW - cranked) * 10_000, 2_500 * snap, "self-directed FOR does not");
-        // And the weight neither side accounts for is what makes this shape reachable at all.
-        assertLt(forW + revealedW - revealedW, snap, "some snapshot weight is accounted to neither side");
+        // And the weight neither side accounts for is what makes this shape reachable at all. Both
+        // sides SUMMED must fall short of the snapshot -- `forW < snap` alone is implied by branch 2
+        // being false above and would assert nothing new here.
+        assertLt(forW + againstW, snap, "some snapshot weight is accounted to neither side");
+        assertGt(revealedW, 0, "and the self-revealed figure is real, not an empty tally");
     }
 
     // ═════════════════ the legitimate paths, which must still work ═════════════════
