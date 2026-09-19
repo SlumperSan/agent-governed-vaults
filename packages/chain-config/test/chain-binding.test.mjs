@@ -14,7 +14,107 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chainBindingVerdict, assertChainBinding, ChainBindingError } from '../src/chain-binding.mjs';
+
+// --- #293: enumerate createChainReader callers from the filesystem, never from a list ---------
+//
+// The hand-maintained version of this guard said "the three production call sites" in prose and
+// checked exactly one of them (`run.mjs`) at the source level. PR 271 added a fourth —
+// `scripts/soak/drill5-agent-execute.mjs` builds a `createChainReader` and never calls
+// `assertBoundToDeclaredChain` on it — and CI stayed green, because nothing walked the filesystem
+// to notice a caller the list did not name. A human caught it; no guard could.
+//
+// So this walks every `.mjs` source file (never a list) for a call to `createChainReader`, and for
+// each one requires the SAME file to `await <thatVariable>.assertBoundToDeclaredChain(...)`
+// somewhere after it. Test fixtures are excluded on purpose — they inject a `client` and close no
+// gap (see the "an injected client is exempt" test below); it is the RPC-resolving production
+// callers that must reach the assertion.
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', '.claude', 'lib', 'out', 'dist', 'dist-ssr', 'cache', 'broadcast',
+  'coverage', 'artifacts',
+]);
+
+const relPath = (abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/');
+
+/** Strip comments so a mention of `createChainReader(` in prose cannot be mistaken for a call. */
+const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const DEFINITION_LINE = /^\s*(export\s+)?(async\s+)?function\s+createChainReader\b/;
+const CALL_ASSIGN = /(?:^|[^.\w])(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*=\s*createChainReader\s*\(/;
+const BARE_CALL = /(?:^|[^.\w])createChainReader\s*\(/;
+
+/**
+ * Every non-test `.mjs` file that CALLS `createChainReader`, enumerated by walking the repository
+ * -- never read from `packages/chain-config/test/chain-binding.test.mjs`'s own former list, and
+ * never read from this function's own past output, so a call site added today is covered today.
+ * @returns {{file: string, varName: string|null}[]}
+ */
+function findChainReaderCallSites() {
+  const found = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith('.mjs')) continue;
+      if (entry.name.endsWith('.test.mjs')) continue; // test fixtures inject a client; see header
+      if (relPath(full).split('/').includes('test')) continue; // e.g. packages/*/test/helpers.mjs
+      const src = stripComments(readFileSync(full, 'utf8'));
+      for (const line of src.split(/\r?\n/)) {
+        if (DEFINITION_LINE.test(line)) continue; // the export itself, not a caller
+        if (!BARE_CALL.test(line)) continue;
+        const m = CALL_ASSIGN.exec(line);
+        found.push({ file: relPath(full), varName: m ? m[1] : null });
+      }
+    }
+  })(REPO_ROOT);
+  return found;
+}
+
+test('#293: createChainReader callers are enumerated from the filesystem and every one reaches assertBoundToDeclaredChain', () => {
+  const callSites = findChainReaderCallSites();
+
+  // Refuse rather than pass over nothing: an enumeration that finds zero call sites means the walk
+  // is broken (wrong root, wrong extension, an exclusion swallowing real files), not that the
+  // codebase has no callers -- and a guard that reports green either way is the exact defect #293
+  // is about. This repo has already shipped four guards shaped like that in one day.
+  assert.ok(
+    callSites.length > 0,
+    'findChainReaderCallSites() found zero createChainReader call sites -- checked nothing. ' +
+      'This is a broken guard, not a passing one: fix the walk before trusting this test again.',
+  );
+
+  const violations = [];
+  for (const { file, varName } of callSites) {
+    if (!varName) {
+      // A call whose target this walk cannot name (e.g. chained off the return value with no
+      // assignment) is unverifiable by this guard's method -- treated as a violation rather than
+      // silently skipped, per the same rule: an unanalyzable call site must not pass by default.
+      violations.push(`${file}: createChainReader(...) is called without a variable this guard can trace`);
+      continue;
+    }
+    const src = stripComments(readFileSync(path.join(REPO_ROOT, file), 'utf8'));
+    const boundRe = new RegExp(`await\\s+${esc(varName)}\\.assertBoundToDeclaredChain\\s*\\(`);
+    if (!boundRe.test(src)) {
+      violations.push(`${file}: builds "${varName}" via createChainReader(...) but never awaits ${varName}.assertBoundToDeclaredChain()`);
+    }
+  }
+
+  assert.equal(
+    violations.length,
+    0,
+    `chain binding is unenforceable at ${violations.length} call site(s):\n${violations.join('\n')}`,
+  );
+});
 
 // --- the pure decision -----------------------------------------------------
 
@@ -208,22 +308,13 @@ test('a MATCHING rpc binds and the reader keeps working — the refusal is not i
   }
 });
 
-// The three production call sites. `buildIndexer` and `buildCanary` are proven above by being
-// driven; `run.mjs` is a CLI whose rpcUrl branch cannot be entered without standing up the whole
-// agent, so its wiring is asserted at the source level instead. A method nothing calls is the same
-// defect one level up -- which is the lesson `scripts/test/test-wiring-truth.test.mjs` exists for.
-test('reference-agent run.mjs actually CALLS the binding in its --rpc branch', async () => {
-  const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../../reference-agent/src/run.mjs', import.meta.url), 'utf8')
-    // Strip comments so a mention of the call in prose cannot satisfy this.
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-  assert.match(
-    src,
-    /await\s+chainReader\.assertBoundToDeclaredChain\(\)/,
-    'run.mjs must await the binding before reading addresses through --rpc',
-  );
-});
+// `buildIndexer` and `buildCanary` are proven above by being driven through a real socket; every
+// `createChainReader` caller specifically (including `run.mjs`, whose --rpc branch cannot be
+// entered without standing up the whole agent) is proven at the source level, but by the
+// filesystem-enumerated guard above (#293) rather than a hardcoded file list here -- a method
+// nothing calls is the same defect one level up, which is the lesson
+// `scripts/test/test-wiring-truth.test.mjs` exists for, and a hand-maintained count of callers is
+// the defect this file shipped with.
 
 test('an injected client is exempt — it closes no declared-versus-actual gap, and tests rely on it', async () => {
   const { createChainReader } = await import('../../reference-agent/src/chain.mjs');
