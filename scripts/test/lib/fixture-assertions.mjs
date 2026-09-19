@@ -30,14 +30,6 @@ export function broadcastEntries(log) {
   return log.filter((e) => e.kind === 'send' && e.broadcast === true);
 }
 
-/** True only if NOTHING at `sentinelPath` exists — the tripwire for "the loader hook silently
- * failed to redirect node:child_process, and smoke-test.mjs's `cast()` tried to run the real
- * binary". CAST is pointed at a path nothing provides, so a real attempt fails loudly (ENOENT) on
- * its own; this only re-checks the more literal claim, that no process wrote proof of running. */
-export function noSentinel(sentinelPath) {
-  return !fs.existsSync(sentinelPath);
-}
-
 /** No argv logged by the fixture may carry a raw private key flag — the harness's fixture
  * (SMOKE_SIGNER_ARGS) is keystore-shaped by construction, and this is the check that would catch
  * a regression toward a raw key even though nothing here ever dials out. */

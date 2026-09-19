@@ -5,12 +5,15 @@
  * (its own `cast`/`forge` calls) is intercepted, from the moment it starts, by
  * cast-fixture-preload.mjs / cast-fixture-hooks.mjs / cast-fixture-stub.mjs.
  *
- * `CAST` is pointed at a path nothing provides. If the loader hook ever failed to redirect
- * `node:child_process` (the interception itself broken), smoke-test.mjs's own `cast()` would
- * shell out to that path for real and fail loudly with ENOENT on the very first call
- * (preflight's `chain-id`) — a red exit code, not a quiet false green. `BASE_SEPOLIA_RPC` is
- * likewise pointed at an address nothing answers, in case any future code path in smoke-test.mjs
- * ever reaches the network directly instead of through `cast`.
+ * `CAST` is pointed at a path nothing provides (`castPath` below — nothing ever creates it; it is
+ * not a sentinel file to check for, it is a binary that cannot run). If the loader hook ever
+ * failed to redirect `node:child_process` (the interception itself broken), smoke-test.mjs's own
+ * `cast()` would shell out to that path for real and fail with ENOENT on the very first call
+ * (preflight's `chain-id`) — the caller's `status === 0` and `callLog.length > 0` assertions are
+ * what actually catch that: a failed redirect means a nonzero exit AND an empty log (nothing ever
+ * reached the stub to log), so both would fail together rather than either passing vacuously.
+ * `BASE_SEPOLIA_RPC` is likewise pointed at an address nothing answers, in case any future code
+ * path in smoke-test.mjs ever reaches the network directly instead of through `cast`.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -71,7 +74,7 @@ export function runSmokeChild(opts = {}) {
     stderr: result.stderr ?? '',
     timedOut: result.error?.code === 'ETIMEDOUT',
     callLog,
-    sentinelPath: noSuchCast,
+    castPath: noSuchCast,
     runDir,
   };
 }

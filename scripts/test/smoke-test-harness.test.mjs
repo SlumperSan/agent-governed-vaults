@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { runSmokeChild, FIXTURES } from './lib/run-smoke-child.mjs';
-import { addressEq, readCallLog, broadcastEntries, noSentinel, noPrivateKeyLogged } from './lib/fixture-assertions.mjs';
+import { addressEq, readCallLog, broadcastEntries, noPrivateKeyLogged } from './lib/fixture-assertions.mjs';
 import { SIGNER_ADDR, VAULT_ADDR } from './lib/cast-fixture-chain.mjs';
 
 // Copied verbatim from the `send(...)` call sites in scripts/smoke-test.mjs, in lifecycle order —
@@ -66,9 +66,13 @@ test('smoke-test.mjs happy path: full lifecycle runs and reports PASSED, with no
   assert.match(r.stdout, /exit settled Mode I: \d+ USDC units returned \(exact round trip\)/);
 
   // ── THE PRIMARY ASSERTION: nothing was ever actually broadcast ──
-  assert.ok(noSentinel(r.sentinelPath),
-    'CAST pointed at a path nothing provides; its presence would mean the loader hook failed to ' +
-    'intercept node:child_process and smoke-test.mjs shelled out to it for real');
+  // CAST is pointed at a path nothing provides (run-smoke-child.mjs's `castPath`, deliberately
+  // never created by anything). If the loader hook had failed to redirect node:child_process, the
+  // script's own cast() would have shelled out to that nonexistent binary for real on its very
+  // first call and failed with ENOENT before ever reaching the stub — so `status === 0` together
+  // with a non-empty, stub-authored call log is the proof: either one alone could be a fluke, but
+  // a real exec attempt cannot produce BOTH a clean exit and a log only the stub ever writes to.
+  assert.equal(r.status, 0);
   assert.ok(r.callLog.length > 0, 'the fixture must have logged something, or interception itself is unproven');
   assert.ok(noPrivateKeyLogged(r.callLog), 'no logged argv may carry a raw private key');
 
@@ -78,12 +82,20 @@ test('smoke-test.mjs happy path: full lifecycle runs and reports PASSED, with no
   assert.deepEqual(sends.map((s) => s.sig), SEND_SEQUENCE, 'the send sequence must match the script\'s own lifecycle order');
   for (const s of sends) assert.equal(s.receiptStatus, '0x1', `${s.sig}: fixture must have reported a successful receipt`);
 
-  // Corroborate the script's own creator-address assertion against the fixture's independent log,
-  // using addressEq rather than smoke-test.mjs's own eq() — a second, differently-written check.
   const createVault = sends.find((s) => s.sig.startsWith('createVault('));
   assert.ok(createVault, 'createVault send missing from the log');
   assert.ok(r.stdout.includes(VAULT_ADDR), 'vault address from the fixture should appear in the script\'s own log output');
-  assert.ok(addressEq(SIGNER_ADDR, SIGNER_ADDR), 'sanity: the fixture signer address is well-formed');
+
+  // Real cross-check: smoke-test.mjs itself logs the signer it derived from `cast wallet address`
+  // (scripts/smoke-test.mjs:232, `log(\`signer ${state.signer}\`)`). Compare what the SCRIPT
+  // reported against what the FIXTURE returned for that call — two independently produced values,
+  // not one value checked against itself. (On the happy path the two are equal by construction, so
+  // this line cannot itself distinguish addressEq from `() => true`; addressEq's own unit test
+  // above — which asserts its FALSE case — is what is required to catch that mutation, and does.)
+  const signerLine = r.stdout.match(/signer (0x[0-9a-fA-F]+)/);
+  assert.ok(signerLine, `script did not report a derived signer.\nSTDOUT:\n${r.stdout}`);
+  assert.ok(addressEq(signerLine[1], SIGNER_ADDR),
+    `the signer the script derived (${signerLine[1]}) must be the one the fixture returned from 'cast wallet address' (${SIGNER_ADDR})`);
 });
 
 // ────────────────────────────────────── negative controls ──────────────────────────────────────
