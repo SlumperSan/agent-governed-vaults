@@ -336,6 +336,10 @@ function board(vaultRoot) {
 
     tasks.push({
       id: f.replace(/\.md$/, ''),
+      // The spoken identity of a card. Written into the file once by scripts/lib/task-numbers.mjs
+      // and never reused, so "task 14" means the same card next week. 0 means unnumbered, which
+      // renders as no badge rather than as "#0".
+      num: Number(fm.num) || 0,
       title: fm.title,
       department: fm.department || 'Unassigned',
       status: BOARD_COLUMNS.includes(status) ? status : 'backlog',

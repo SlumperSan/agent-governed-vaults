@@ -19,6 +19,7 @@ import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
+import { assignNumbers } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -44,9 +45,25 @@ let cache = { at: 0, data: null };
 // 9s of lag on a board he watches while departments work.
 const TTL_MS = 800;
 
+/** The vault folder the board reads, and the one task numbers are written back into. */
+const TASKS_DIR = path.join(
+  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults',
+  'Tasks',
+);
+
 function snapshot(force = false) {
   const now = Date.now();
   if (!force && cache.data && now - cache.at < TTL_MS) return cache.data;
+  // Number any new task BEFORE reading, so a card he can see is a card he can name. This is the
+  // only place numbering happens; it inserts `num:` into files that have none and touches nothing
+  // else. A file added in Obsidian is numbered on the next poll rather than staying unnameable.
+  try {
+    assignNumbers(TASKS_DIR);
+  } catch (e) {
+    // Numbering is a convenience; the board is the point. Never let it take the board down --
+    // but say so, because a silently unnumbered board looks like the feature was never built.
+    console.error('[task-numbers] not assigned:', e.message);
+  }
   cache = { at: now, data: collect({ gh: !NO_GH }) };
   return cache.data;
 }
@@ -295,6 +312,11 @@ const PAGE = `<!doctype html>
        color:var(--t-dim);display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
   .clh .n{font-weight:400}
   .cardlist{padding:4px}
+  /* THE NUMBER IS THE CARD'S SPOKEN NAME, so it is legible but never the loudest thing on the
+     card -- mono, dim, and ahead of the title so it reads as an identifier rather than as part
+     of the sentence. */
+  .tnum{font-family:var(--mono);font-size:10.5px;color:var(--dim);opacity:.85;margin-right:5px}
+  .card .tnum{display:inline-block;margin-bottom:2px}
   /* SUGGESTIONS AND GOALS READ AS UPSTREAM, not as two more pipeline states. A left rule and a
      tinted header is the whole treatment -- anything louder and the eye starts at the ideas
      column instead of at what is in progress, which inverts what this board is for. */
@@ -571,6 +593,7 @@ function render(d){
       +(t.options.length && !t.answer ? ' needsme':'')+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
       + (withDept?'<div class="cdept">'+esc(t.department)+'</div>':'')
       + chips(t)
+      + (t.num?'<span class="tnum">#'+t.num+'</span>':'')
       + '<div class="ct">'+esc(t.title)+'</div>'
       + '<div class="cm">'
         + (t.priority && t.priority!=='none' ? '<span class="prio">'+esc(t.priority)+'</span>' : '')
@@ -602,6 +625,7 @@ function render(d){
 
     const line = t => '<div class="li s-'+esc(eff(t))+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
       + '<span class="mk">'+MARK[eff(t)]+'</span>'
+      + (t.num?'<span class="tnum">#'+t.num+'</span>':'')
       + '<span class="lt">'+esc(t.title)+'</span>'
       + labels(t) + chip(t) + dueChip(t)
       + (unblocks[t.id] ? '<span class="unb">releases '+unblocks[t.id].length+'</span>' : '')
@@ -673,7 +697,7 @@ function render(d){
         const end=Date.parse(g.due), left=days(end-now), late=end<now;
         const w=Math.max(2, Math.round(Math.min(end-now, span)/span*100));
         return '<div class="tlrow" data-id="'+esc(g.id)+'" role="button" tabindex="0">'
-          +'<span class="tlname">'+esc(g.title)+'</span>'
+          +'<span class="tlname">'+(g.num?'#'+g.num+' ':'')+esc(g.title)+'</span>'
           +'<span class="tltrack"><i class="'+(late?'late':'')+'" style="width:'+(late?100:w)+'%"></i></span>'
           +'<span class="tlwhen'+(late?' late':'')+'">'
           +(late? Math.abs(left)+'d overdue' : left+'d · '+esc(g.due))+'</span></div>';
@@ -852,7 +876,7 @@ function drawTask(id){
   document.getElementById('dbody').innerHTML =
     // Trello's breadcrumb names the list a card is in. A card here belongs to two axes, and the
     // department is the one Trello has no equivalent for, so both are shown.
-    '<div class="dcrumb">'+esc(t.department)+' → '+esc(t.col||STATE_LABEL[t.status]||t.status)+'</div>'
+    '<div class="dcrumb">'+(t.num?'<span class="tnum">#'+t.num+'</span> ':'')+esc(t.department)+' → '+esc(t.col||STATE_LABEL[t.status]||t.status)+'</div>'
     + '<h3 class="dtitle">'+esc(t.title)+'</h3>'
     // Section order, per the spec: Labels, Description, Checklist, Meta.
     + (t.labels.length ? dsec('▤','Labels','<div class="dchips">'+labels(t)+'</div>','',true) : '')
