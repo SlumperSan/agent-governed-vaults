@@ -18,7 +18,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { collect, readBoard } from './lib/project-status.mjs';
+import { collect, readBoard, readCalendar } from './lib/project-status.mjs';
 import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
@@ -93,7 +93,7 @@ function snapshot(force = false) {
 function view() {
   const base = snapshot();
   try {
-    return { ...base, board: readBoard(VAULT_ROOT) };
+    return { ...base, board: readBoard(VAULT_ROOT), calendar: readCalendar(VAULT_ROOT) };
   } catch {
     // Never let the fast path take the board down; the cached board is stale, not wrong.
     return base;
@@ -344,6 +344,43 @@ const PAGE = `<!doctype html>
        color:var(--t-dim);display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
   .clh .n{font-weight:400}
   .cardlist{padding:4px}
+  /* --- content calendar. A day is a heading with its posts under it, because the question is
+     "what goes out and when", and a grid of empty cells answers it worse than a list of the days
+     that actually have something in them. */
+  .cday{margin:14px 0 0}
+  .cdayh{font-size:13px;color:var(--t-dim);padding:0 0 5px;border-bottom:1px solid var(--t-line,#2a2f3a)}
+  .crel{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-left:7px}
+  .crel.past{color:var(--nogo);opacity:.9}
+  .cpost{background:var(--t-card,#1d2230);border-radius:10px;padding:10px 12px;margin:8px 0;
+      display:grid;grid-template-columns:1fr 168px;gap:4px 14px}
+  .cmeta{grid-column:1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .cchan{font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#7e9ce0}
+  .ctime{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .cstat{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:6px;
+      background:rgba(255,255,255,.08);color:var(--t-dim)}
+  .cstat.cs-approved{background:#2c5e3a;color:#c8f0d4}
+  .cstat.cs-posted{background:#2a3a5e;color:#cfe0ff}
+  .cstat.cs-draft{background:#5e4a2a;color:#f3e2c4}
+  .ctitle{grid-column:1;font-size:14px;margin-top:2px}
+  /* The copy is shown IN FULL and pre-wrapped. A calendar that truncates the post is a calendar you
+     cannot approve from, which is the only reason to look at one. */
+  .ccopy{grid-column:1;white-space:pre-wrap;font-size:12.5px;line-height:1.5;color:var(--t-dim);
+      margin-top:4px}
+  .ccopy.none{opacity:.55;font-style:italic}
+  .casset{grid-column:2;grid-row:1 / span 3;display:flex;align-items:flex-start;justify-content:flex-end}
+  .cthumb{max-width:168px;max-height:112px;border-radius:8px;display:block}
+  .cpath,.cnoasset{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;
+      word-break:break-all}
+  .cnoasset{color:var(--nogo);opacity:.75}
+  .cfile{grid-column:1 / -1;font-family:var(--mono);font-size:10px;color:var(--dim);opacity:.6;
+      margin-top:6px}
+  /* The grip is the only affordance: a header that looks draggable and is not, or is and does not
+     look it, are both worse than a two-character handle that says so. */
+  .clh[draggable=true]{cursor:grab}
+  .clh[draggable=true]:active{cursor:grabbing}
+  .cgrip{opacity:.35;margin-right:5px;letter-spacing:-2px;font-size:11px}
+  .col.dragging{opacity:.45}
+  .col.dropbefore{box-shadow:inset 3px 0 0 #5b7fd4}
   /* Delete is quiet until it is armed. A destructive control that looks destructive from the
      start gets misread as the primary action of the panel it sits in. */
   .ddel{margin-top:14px;padding-top:10px;border-top:1px solid var(--t-line,#2a2f3a)}
@@ -627,7 +664,18 @@ function render(d){
     // DONE IS NOT A COLUMN: finished work is the majority of any healthy board and it crowded out
     // the columns that still need a decision. The count stays in every header -- "4 of 11" -- so
     // progress is visible without a parking lot.
-    const COLS=(d.board.columns||[]).filter(k=>k!=='done').map(k=>[k, metaOf(k).label]);
+    // COLUMN ORDER IS HIS, AND IT PERSISTS. Dragging a column header rewrites the order and it is
+    // remembered in localStorage -- a board whose columns jump back on every poll is worse than one
+    // that cannot be reordered at all.
+    //
+    // The stored order is a FILTER OVER the derived list, never a replacement for it: any column it
+    // does not mention is appended rather than dropped, and any name it mentions that no longer
+    // exists is ignored. So a stale preference cannot hide a column, which is the same property the
+    // derivation itself was built for.
+    const stored = (()=>{ try{ return JSON.parse(localStorage.getItem('colOrder')||'[]'); }catch{ return []; } })();
+    const derived=(d.board.columns||[]).filter(k=>k!=='done');
+    const ordered=[...stored.filter(k=>derived.includes(k)), ...derived.filter(k=>!stored.includes(k))];
+    const COLS=ordered.map(k=>[k, metaOf(k).label]);
     // WHAT COUNTS AS WORK. Progress bars and tile counts are about deliverables, so neither a
     // suggestion nor a goal belongs in the denominator: a goal has no terminal state and would
     // sit in "0 of N" forever, making every department read as less finished than it is.
@@ -723,7 +771,8 @@ function render(d){
         // An empty column is its header over bare column background -- no placeholder, no dashed
         // drop zone. A drop zone would be wrong twice: it is not Trello's empty state, and it
         // advertises a drop target this read-only board does not have.
-        h+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
+        h+='<div class="col c-'+key+'" data-col="'+esc(key)+'"><div class="clh" draggable="true" title="Drag to reorder">'
+          + '<span class="cgrip">⋮⋮</span>'+label+' <span class="n">'+inCol.length+'</span></div>'
           + '<div class="cardlist">'+inCol.map(t=>card(t,withDept)).join('')+'</div>'
           +'</div>';
       }
@@ -830,7 +879,10 @@ function render(d){
     }
 
     body+='<div class="tiles">'
-      + ['All',...DEPTS].map(t=>{
+      + ['All','Calendar',...DEPTS].map(t=>{
+          // Calendar's badge is planned posts, not open tasks -- a tile counts what its view
+          // shows, or the number means nothing.
+          if(t==='Calendar') return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="Calendar">Calendar <span class="n">'+((d.calendar&&d.calendar.items.length)||0)+'</span></button>';
           const open=t==='All'? d.board.tasks.filter(x=>isWork(x)&&x.status!=='done').length
                               : d.board.tasks.filter(x=>x.department===t&&isWork(x)&&x.status!=='done').length;
           return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="'+esc(t)+'">'
@@ -842,6 +894,62 @@ function render(d){
       // reader who has just failed to drag something with nothing to do next.
       +'<div class="note" style="margin:-6px 0 10px">Read-only apart from the answer buttons. '
       +'To move a card, edit its task file — the board follows within 5s.</div>';
+
+    // --- content calendar. Read-only, like the board: Marketing writes GTM/Calendar/*.md in the
+    // vault and this renders it.
+    const cal = d.calendar || {items:[], problem:''};
+    const DAYNAME = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dayLabel = iso => {
+      const dt = new Date(iso + 'T12:00:00');
+      if (Number.isNaN(dt.getTime())) return esc(iso);
+      const today = new Date(); today.setHours(12,0,0,0);
+      const days = Math.round((dt - today) / 86400000);
+      const rel = days === 0 ? 'today' : days === 1 ? 'tomorrow'
+                : days < 0 ? Math.abs(days)+'d ago' : 'in '+days+'d';
+      return DAYNAME[dt.getDay()]+' '+esc(iso)+' <span class="crel'+(days<0?' past':'')+'">'+rel+'</span>';
+    };
+    // An asset shows as a thumbnail only when it is an image we can actually load, and as its
+    // path otherwise. NEVER as a broken image: a missing graphic has to look missing, because
+    // approving a post whose asset does not exist is the mistake this view exists to prevent.
+    const assetCell = it => {
+      if (!it.asset) return '<span class="cnoasset">no graphic</span>';
+      const kind = (it.assetKind||'').toLowerCase();
+      const isImg = kind === 'image' || /[.](png|jpe?g|gif|webp|svg)$/i.test(it.asset);
+      const isVid = kind === 'video' || /[.](mp4|mov|webm)$/i.test(it.asset);
+      const url = /^https?:/i.test(it.asset) ? it.asset : '';
+      if (isImg && url) return '<img class="cthumb" src="'+esc(url)+'" alt="" loading="lazy">';
+      return '<span class="cpath">'+(isVid?'\u25B6 ':'\u25A3 ')+esc(it.asset)+'</span>';
+    };
+    const byDay = {};
+    for (const it of cal.items) (byDay[it.date] ||= []).push(it);
+    let cbody = '';
+    if (cal.problem) cbody += '<div class="caveat">'+esc(cal.problem)+'</div>';
+    if (!cal.items.length) cbody += '<div class="note">Nothing planned yet. Marketing adds one file per post to <code>GTM/Calendar/</code> in the vault: frontmatter <code>date</code>, <code>time</code>, <code>channel</code>, <code>status</code>, <code>asset</code>, and the copy in the body.</div>';
+    for (const day of Object.keys(byDay).sort()) {
+      cbody += '<div class="cday"><div class="cdayh">'+dayLabel(day)+'</div>';
+      for (const it of byDay[day]) {
+        cbody += '<div class="cpost">'
+          + '<div class="cmeta"><span class="cchan">'+esc(it.channel)+'</span>'
+          + (it.time ? '<span class="ctime">'+esc(it.time)+'</span>' : '')
+          + '<span class="cstat cs-'+esc(it.status)+'">'+esc(it.status)+'</span></div>'
+          + '<div class="ctitle">'+esc(it.title)+'</div>'
+          + (it.copy ? '<div class="ccopy">'+esc(it.copy)+'</div>' : '<div class="ccopy none">no copy written</div>')
+          + '<div class="casset">'+assetCell(it)+'</div>'
+          + '<div class="cfile">'+esc(it.file)+'</div>'
+          + '</div>';
+      }
+      cbody += '</div>';
+    }
+    if(VIEW==='Calendar'){
+      // The variable body already carries the view switcher, so the tiles stay reachable from here and he
+      // can get back to the board without the browser's back button.
+      S.unshift(sec('Content calendar \u00b7 '+cal.items.length+' planned', body + cbody, 'wide'));
+      const boardSec = S[0] ?? '';
+      const restSec = S.slice(1).join('');
+      document.getElementById('main').innerHTML = boardSec
+        + (restSec ? '<details class="rest"><summary>repo status</summary><div class="restgrid">'+restSec+'</div></details>' : '');
+      return;
+    }
 
     if(VIEW==='All'){
       // Merged: five columns, every department's cards together, each tagged with its department.
@@ -1159,6 +1267,44 @@ document.addEventListener('keydown', e => {
 function sec(title, body, klass){ return '<section class="'+(klass||'')+'"><h2>'+title+'</h2>'+body+'</section>'; }
 function row(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
 
+// --- column drag. Reorder is a view preference: it never touches a task file and never reaches
+// the server, so a mis-drag costs a drag back and nothing else.
+let dragKey = null;
+document.addEventListener('dragstart', e => {
+  const h = e.target.closest('.clh[draggable=true]'); if(!h) return;
+  dragKey = h.closest('.col')?.dataset.col || null;
+  h.closest('.col')?.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  // Firefox refuses to start a drag without payload, even when nothing reads it.
+  try{ e.dataTransfer.setData('text/plain', dragKey || ''); }catch{}
+});
+document.addEventListener('dragover', e => {
+  if(!dragKey) return;
+  const col = e.target.closest('.col'); if(!col) return;
+  e.preventDefault();
+  document.querySelectorAll('.col.dropbefore').forEach(c=>c.classList.remove('dropbefore'));
+  col.classList.add('dropbefore');
+});
+document.addEventListener('drop', e => {
+  if(!dragKey) return;
+  const col = e.target.closest('.col'); if(!col) return;
+  e.preventDefault();
+  const target = col.dataset.col;
+  const keys = [...document.querySelectorAll('.cols .col')].map(c=>c.dataset.col).filter(Boolean);
+  if(target && target !== dragKey){
+    const next = keys.filter(k=>k!==dragKey);
+    next.splice(next.indexOf(target), 0, dragKey);
+    try{ localStorage.setItem('colOrder', JSON.stringify(next)); }catch{}
+  }
+  dragKey = null;
+  document.querySelectorAll('.dragging,.dropbefore').forEach(c=>c.classList.remove('dragging','dropbefore'));
+  if(LAST) render(LAST);
+});
+document.addEventListener('dragend', () => {
+  dragKey = null;
+  document.querySelectorAll('.dragging,.dropbefore').forEach(c=>c.classList.remove('dragging','dropbefore'));
+});
+
 let LAST = null;
 async function tick(){
   try{
@@ -1451,7 +1597,7 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/status') {
-    const body = JSON.stringify(url.searchParams.has('force') ? { ...snapshot(true), board: readBoard(VAULT_ROOT) } : view());
+    const body = JSON.stringify(url.searchParams.has('force') ? { ...snapshot(true), board: readBoard(VAULT_ROOT), calendar: readCalendar(VAULT_ROOT) } : view());
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(body);
   }

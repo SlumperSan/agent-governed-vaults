@@ -326,6 +326,75 @@ function frontmatter(text) {
  * filesystem and costs milliseconds. Separating them lets the cards stay live at poll speed while
  * the git and GitHub half is cached for far longer.
  */
+/**
+ * The content calendar, read from `GTM/Calendar/*.md` in the vault.
+ *
+ * One file per planned post. Marketing writes them; this only reads. Same design rule as the board:
+ * the vault is the store, nothing here writes back, and a file edited in Obsidian appears on the
+ * next poll.
+ *
+ * A file missing `date` is REPORTED rather than skipped. A calendar that silently drops an undated
+ * post tells you the week is emptier than it is, which is the one thing a calendar must never do.
+ */
+export function readCalendar(vaultRoot) {
+  const base = path.join(vaultRoot, 'GTM', 'Calendar');
+  if (!existsSync(base)) {
+    return { problem: '', items: [], dir: base };
+  }
+  const items = [];
+  const skipped = [];
+  for (const f of readdirSync(base)) {
+    // Leading underscore marks a note ABOUT the calendar rather than a post in it -- the same
+    // convention the Tasks folder uses, so _README does not render as a scheduled post.
+    if (!f.endsWith('.md') || f.startsWith('_')) continue;
+    const full = path.join(base, f);
+    let raw = '';
+    try {
+      raw = readFileSync(full, 'utf8');
+    } catch {
+      skipped.push(`${f} (unreadable)`);
+      continue;
+    }
+    const end = raw.indexOf('\n---', 3);
+    if (!raw.startsWith('---') || end === -1) {
+      skipped.push(`${f} (no frontmatter)`);
+      continue;
+    }
+    const head = raw.slice(0, end);
+    const body = raw.slice(end + 4);
+    const fld = (k) => {
+      const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'mi').exec(head);
+      return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+    };
+    const date = fld('date');
+    if (!date) {
+      skipped.push(`${f} (no date)`);
+      continue;
+    }
+    items.push({
+      id: f.replace(/\.md$/, ''),
+      file: full,
+      date,
+      time: fld('time'),
+      channel: fld('channel') || 'unspecified',
+      status: (fld('status') || 'draft').toLowerCase(),
+      title: fld('title') || f.replace(/\.md$/, ''),
+      asset: fld('asset'),
+      assetKind: fld('asset_kind') || fld('assetKind'),
+      // The post itself, not a summary of it. Everything below the frontmatter that is not a
+      // heading, so the copy can be read and approved from the calendar rather than by opening
+      // six files.
+      copy: body
+        .split(/\r?\n/)
+        .filter((l) => !l.startsWith('# '))
+        .join('\n')
+        .trim(),
+    });
+  }
+  items.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  return { problem: skipped.length ? `skipped: ${skipped.join(', ')}` : '', items, dir: base };
+}
+
 export function readBoard(vaultRoot) {
   return board(vaultRoot);
 }
