@@ -58,6 +58,14 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
+  // page is one template literal, so a single stray backtick inside a comment in that literal
+  // terminates the string and the file stops parsing — a class of defect no test here can reach,
+  // because nothing imports this module and the board is started by hand. `node --check` catches
+  // it in 0.3s. Note what the comment above says about this list: it errors on
+  // listed-but-missing and is SILENT about missing-from-list, which is why the file went two
+  // breakages without being covered.
+  'scripts/dashboard.mjs',
 ];
 
 /**

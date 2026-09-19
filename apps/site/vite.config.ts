@@ -32,6 +32,9 @@ export default defineConfig(({ isSsrBuild }) => ({
         rollupOptions: {
           input: {
             index: entry('index.html'),
+            howItWorks: entry('how-it-works.html'),
+            about: entry('about.html'),
+            docs: entry('docs.html'),
             disclaimers: entry('disclaimers.html'),
             notFound: entry('404.html'),
           },

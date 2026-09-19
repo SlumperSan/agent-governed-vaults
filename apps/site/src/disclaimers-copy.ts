@@ -207,7 +207,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is written on this site as ETH and BTC because that is what people call them; it is held as wrapped representations of those assets, priced through ETH/USD and CBBTC/USD. The token addresses on Arc are not yet resolved, so this page does not print any. There is no second provider and no fallback source. This is a named residual risk, not an oversight."
+        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is one asset: cirBTC, priced through the BTC/USD feed &mdash; the underlying cirBTC claims to wrap, not a feed for some other wrapper. cirBTC is issued rather than trustless: its contract can be paused, upgraded, and can blacklist addresses, and those powers sit with whoever controls those roles &mdash; not with this protocol and not with its operator. Its own <code>name()</code> returns &ldquo;Circle Wrapped Bitcoin&rdquo;; who actually holds the keys is not something this page can verify from the chain. There is no ETH leg: of the 26,187 tokens that appear in a Uniswap v3 pool on Arc, 52 carry an ETH- or BTC-family symbol and every one of the 51 that is not cirBTC holds under $452 of depth. There is no second provider and no fallback source, so if that one feed goes stale or implausible the vault stops pricing rather than guess &mdash; and that freeze reaches exits too. This is a named residual risk, not an oversight."
       },
       {
         "dt": "Worst case",
@@ -424,7 +424,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "A capacity cap is a per-vault parameter, so each vault's blast radius is bounded by whatever its creator set, but nothing bounds the protocol as a whole. No vault exists yet, so there is no figure on this page to check; read the cap off the vault before you deposit. Do not deposit what you cannot afford to lose entirely."
+        "dd": "A capacity cap is a per-vault parameter, so each vault's blast radius is bounded by whatever its creator set, but nothing bounds the protocol as a whole. <strong>The first Arc vault ships with no cap, by choice.</strong> That is not a promise of room: the market underneath it is thin, and a deposit large enough to matter moves the price against you before it is a capacity question at all. Do not read an absent cap as headroom. Do not deposit what you cannot afford to lose entirely."
       }
     ]
   },
@@ -615,7 +615,7 @@ export const GROUPS_HEADING = "Four groups this is wrong for";
 export const GROUPS: readonly Group[] = [
   {
     "title": "DAO treasuries and larger allocators",
-    "body": "A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. No vault exists yet, so there is no figure to check against; when one does, read its cap directly, and do not assume it is large enough to absorb a treasury allocation."
+    "body": "A capacity cap is a per-vault parameter, chosen by whoever creates a vault and frozen when it is funded. The first Arc vault ships with no cap, by choice, so there is no figure to read and an absent one is not headroom. A later vault may set one; read it directly if so. Either way the binding constraint on a treasury-sized allocation is the depth of the market underneath, not the cap."
   },
   {
     "title": "Anyone who wants set-and-forget",

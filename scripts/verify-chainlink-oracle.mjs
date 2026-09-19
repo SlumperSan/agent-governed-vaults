@@ -133,7 +133,7 @@ export const SEQUENCER_EXEMPT_REASONS = new Map([
   [84532, 'Base Sepolia — the committed config leaves it empty by design (contracts/config/base-sepolia.json, sequencerUptimeFeedNote); the uptime gate itself is mock-tested in ChainlinkOracle.t.sol'],
   [
     4663,
-    'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage. Two guards survive that, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:294) and the sane-price band (ChainlinkOracle.sol:299). See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
+    'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage. Two guards survive that, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
   ],
 ]);
 export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());

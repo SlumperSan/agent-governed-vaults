@@ -226,6 +226,135 @@ function departments(vaultRoot) {
   return out.sort((a, b) => b.updated - a.updated);
 }
 
+// ---------------------------------------------------------------- the board (vault tasks)
+
+/** The columns, in order. A task whose `status` is none of these lands in `backlog`. */
+export const BOARD_COLUMNS = Object.freeze(['backlog', 'doing', 'review', 'blocked', 'done']);
+
+/** The departments a task may belong to. An unrecognised one is shown as-is rather than dropped. */
+export const BOARD_DEPARTMENTS = Object.freeze(['Tech', 'Marketing', 'Security', 'Design']);
+
+/**
+ * Parse the YAML frontmatter this board needs — and ONLY what it needs.
+ *
+ * NOT A YAML PARSER, deliberately. It reads `key: value` pairs and `key: [a, b]` inline lists out
+ * of the leading `---` block, which is the whole schema a task file uses. Pulling in a YAML
+ * dependency to read six scalar keys would add a tree to a zero-dependency server; writing a
+ * general parser by hand would be worse, because it would look general and not be. A task file that
+ * needs more structure than this has outgrown being a card on a board.
+ */
+function frontmatter(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!m) return null;
+  const out = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(line);
+    if (!kv) continue;
+    let v = kv[2].trim().replace(/^["']|["']$/g, '');
+    if (v.startsWith('[') && v.endsWith(']')) {
+      // Split on commas that are NOT inside quotes. A naive split on ',' tore
+      // "86,400s (MAX_HEARTBEAT)" into two options, and the board rendered both as real choices —
+      // an answer button offering half a sentence is worse than no button.
+      out[kv[1]] = (v.slice(1, -1).match(/"[^"]*"|'[^']*'|[^,]+/g) ?? [])
+        .map((s) => s.trim().replace(/^["']|["']$/g, '').trim())
+        .filter(Boolean);
+    } else {
+      out[kv[1]] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * The task board, read from `Tasks/*.md` in the Obsidian vault.
+ *
+ * WHY THE VAULT AND NOT A DATABASE. Department sessions cannot see each other; the vault is the
+ * only thing they all write to, and they already write files there reliably. A task is therefore a
+ * file, and this function only READS. Nothing here writes back, which is what keeps the concurrent
+ * -write problem — Windows file locking, atomic rename, filename collision — out of the design
+ * entirely. Agents write; the board renders.
+ *
+ * A MISSING FOLDER IS REPORTED, NOT SWALLOWED. `departments()` above returns `[]` when its path is
+ * wrong, and it did exactly that for the whole life of this file because the vault path was missing
+ * a directory segment — a silent empty panel that looked like "no output yet". This returns a
+ * `problem` string instead, and the page prints it.
+ */
+function board(vaultRoot) {
+  const base = path.join(vaultRoot, 'Tasks');
+  if (!existsSync(base)) {
+    return { problem: `no Tasks folder at ${base} — the board has nothing to read`, tasks: [], columns: BOARD_COLUMNS };
+  }
+  const tasks = [];
+  const skipped = [];
+  for (const f of readdirSync(base)) {
+    if (!f.endsWith('.md')) continue;
+    const full = path.join(base, f);
+    let fm = null;
+    let mtime = 0;
+    let raw = '';
+    try {
+      raw = readFileSync(full, 'utf8');
+      fm = frontmatter(raw);
+      mtime = statSync(full).mtimeMs;
+    } catch {
+      skipped.push(`${f} (unreadable)`);
+      continue;
+    }
+    if (!fm || !fm.title) {
+      // A file without frontmatter is a mistake worth seeing, not a file to ignore quietly.
+      skipped.push(`${f} (no frontmatter title)`);
+      continue;
+    }
+    const status = String(fm.status || 'backlog').toLowerCase();
+    const list = (v) => (Array.isArray(v) ? v : v ? String(v).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+    // The body carries the card's detail: `- [ ]` / `- [x]` lines are the checklist, everything
+    // else is the description. Split rather than rendering the raw file, so the checklist can be
+    // counted — "3 of 7" is the number the board is for, and it cannot come from a blob of text.
+    const body = raw.slice(raw.indexOf('\n---', 3) + 4);
+    const checklist = [];
+    const desc = [];
+    for (const line of body.split(/\r?\n/)) {
+      const c = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/.exec(line);
+      if (c) checklist.push({ done: c[1].toLowerCase() === 'x', text: c[2].trim() });
+      else if (!/^#\s/.test(line)) desc.push(line);
+    }
+
+    tasks.push({
+      id: f.replace(/\.md$/, ''),
+      title: fm.title,
+      department: fm.department || 'Unassigned',
+      status: BOARD_COLUMNS.includes(status) ? status : 'backlog',
+      statusRaw: fm.status || '',
+      owner: fm.owner || '',
+      members: list(fm.members || fm.owner),
+      labels: list(fm.labels),
+      due: fm.due || '',
+      created: fm.created || '',
+      priority: String(fm.priority || '').toLowerCase(),
+      blockedBy: list(fm.blocked_by),
+      note: fm.note || '',
+      updated: fm.updated || '',
+      // Owner-answerable tasks declare their own options. The board renders these as buttons
+      // and will not record any answer that is not one of them.
+      options: list(fm.options),
+      // Which department is waiting on this answer. The board records the answer; the
+      // orchestrator reads the outbox and relays it, because an HTTP server cannot talk to
+      // a Claude session.
+      notify: list(fm.notify),
+      answer: fm.answer || '',
+      answeredAt: fm.answered || '',
+      checklist,
+      // Trimmed to keep the payload small; the file is the full record and the card links to it.
+      description: desc.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1200),
+      file: full,
+      mtime,
+    });
+  }
+  tasks.sort((a, b) => b.mtime - a.mtime);
+  return { problem: skipped.length ? `skipped: ${skipped.join(', ')}` : '', tasks, columns: BOARD_COLUMNS };
+}
+
 // ---------------------------------------------------------------- per-head CI
 
 /**
@@ -496,7 +625,10 @@ function rightNow() {
 export function collect(opts = {}) {
   const useGh = opts.gh !== false;
   const useCi = useGh && opts.ci !== false;
-  const vaultRoot = opts.vault ?? 'C:/Users/Micha/desktop/Obsidian Vault/Agent-Governed Vaults';
+  // The `Claude/` segment was missing here, so every vault read silently returned nothing and the
+  // Department panel looked empty rather than broken. Verified against the filesystem, not typed
+  // from memory.
+  const vaultRoot = opts.vault ?? 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
 
   let prs = [];
   let issues = [];
@@ -523,6 +655,7 @@ export function collect(opts = {}) {
     deployments: deployments(),
     sprints: sprints(prs),
     departments: departments(vaultRoot),
+    board: board(vaultRoot),
     now: rightNow(),
     github: { up: ghUp, prs, issues },
     // Its own `up` flag, deliberately: this degrades INDEPENDENTLY of the PR list above, so a
