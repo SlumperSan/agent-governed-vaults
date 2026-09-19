@@ -19,7 +19,7 @@ truth (a duplicate paid endpoint that had settled on the wrong chain, now remove
 Production Map's history), and the freeze is how we avoid creating the next one while that map is
 still settling.
 
-Bug fixes, docs, tests, chores, and work on **existing** surfaces (`apps/site-next`, `apps/app`,
+Bug fixes, docs, tests, chores, and work on **existing** surfaces (`apps/site`, `apps/app`,
 `apps/api`, `apps/web`, and the contracts) are not affected by the freeze.
 
 ## Branch naming
