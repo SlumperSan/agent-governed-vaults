@@ -77,17 +77,17 @@ const HEIGHT = 630;
  * the slowest surface to correct, because it is a PNG and a cache. A line that describes what the
  * product IS cannot go stale the way a line about where it runs does.
  *
- * WHAT IT DOES NOT SAY, deliberately: nothing about a vault. `factory.vaultCount()` was 0 at the
- * record's read block, and a card cannot be re-rendered by the reader who needs that to still be
- * true. "Deployed" is a fact about the singletons and stays true whatever vault #1 does.
+ * WHAT IT DOES NOT SAY, deliberately: nothing about a vault, and nothing about deployment. The
+ * card cannot be re-rendered by the reader who needs a status claim to still be true, so it makes
+ * none. The second line is the product's positioning line, which is also what `apps/site` leads
+ * with — the two agree because they are the same sentence, not because someone kept them in step.
  */
 // RECASED 2026-09-05 by the owner's rename: the site is RWAlly, and the capitals are the joke rather
 // than a typo. The card is the last surface the rename could reach, because its wordmark is drawn
-// into pixels and no claims guard can read a PNG. That is the whole reason this generator exists,
-// and it is why the rename could not simply edit the nine alt attributes and stop: the words on the
-// card and the words describing it move in one commit or they disagree.
+// into pixels and no claims guard can read a PNG. That is the whole reason this generator exists —
+// a false sentence here survives every check in the repository and ships to every link preview.
 const WORDMARK = 'RWAlly';
-const STRAPLINE = 'Deployed on Robinhood Chain.';
+const STRAPLINE = 'Index funds that argue for themselves.';
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
