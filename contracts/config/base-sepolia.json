@@ -67,7 +67,7 @@
       "Sane-price band set (minPriceWad > 0, maxPriceWad >= minPriceWad).",
       "sequencerUptimeFeed empty on this testnet (guard skipped) - acceptable for the testnet exercise ONLY; mainnet requires it.",
       "USDC not also present in assets[].",
-      "Heartbeat and band are BOUNDED ON-CHAIN by the ChainlinkOracle constructor: heartbeatSeconds in [600, 86400]; an enabled band needs minPriceWad > 0, maxPriceWad > minPriceWad, maxPriceWad <= 1000 * minPriceWad, and it must contain the feed's current answer. Off-chain verification is no longer the only thing standing between a typo and a permanently mis-parameterised immutable oracle.",
+      "Heartbeat and band are BOUNDED ON-CHAIN by the ChainlinkOracle constructor: heartbeatSeconds in [MIN_HEARTBEAT, MAX_HEARTBEAT] as ChainlinkOracle declares them (600 s and 90,000 s today; the ceiling was raised from 86,400 s on 2026-09-18, and this note names the constants rather than restating the numbers precisely because the previous literal outlived the value it described - the SAME sentence was wrong in three config files at once, because it describes a SHARED constructor and was only ever corrected in the file someone happened to be editing); an enabled band needs minPriceWad > 0, maxPriceWad > minPriceWad, maxPriceWad <= 1000 * minPriceWad, and it must contain the feed's current answer. Off-chain verification is no longer the only thing standing between a typo and a permanently mis-parameterised immutable oracle.",
       "Run: CONFIG=contracts/config/base-sepolia.json node scripts/verify-chainlink-oracle.mjs"
     ]
   },
