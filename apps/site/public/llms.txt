@@ -6,8 +6,8 @@
 > proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice,
 > or move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc,
 > Circle's chain, where USDC is also the native gas asset. The basket is a single asset, cirBTC,
-> priced from the Chainlink CBBTC / USD feed and settled in USDC. There is no ETH leg: Arc carries
-> no ETH representation of any kind.
+> priced from the Chainlink BTC / USD feed and settled in USDC. There is no ETH leg: Arc carries no
+> ETH representation with any liquidity.
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
 > same immutable bytecode is deployable on any EVM chain; Arc is the target, not a constraint the
 > code enforces. THE PROTOCOL IS NOT DEPLOYED ON ARC, OR ON ANY OTHER MAINNET, AS OF 2026-09-18 --

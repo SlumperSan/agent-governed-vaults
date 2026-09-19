@@ -207,7 +207,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is one asset: cirBTC, a wrapped Bitcoin on Arc, priced through the CBBTC/USD feed. There is no ETH leg, because Arc carries no ETH representation of any kind. There is no second provider and no fallback source, so if that one feed goes stale or implausible the vault stops pricing rather than guess &mdash; and that freeze reaches exits too. This is a named residual risk, not an oversight."
+        "dd": "Each asset is priced from exactly one Chainlink Data Feed. The basket is one asset: cirBTC, a wrapped Bitcoin on Arc, priced through the BTC/USD feed &mdash; the underlying cirBTC claims to wrap, not a feed for some other wrapper. There is no ETH leg, because Arc carries no ETH representation with any liquidity. There is no second provider and no fallback source, so if that one feed goes stale or implausible the vault stops pricing rather than guess &mdash; and that freeze reaches exits too. This is a named residual risk, not an oversight."
       },
       {
         "dt": "Worst case",
