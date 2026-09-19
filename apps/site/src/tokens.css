@@ -38,6 +38,13 @@
   --blue-bright: #5b8cff;
   --blue-soft: rgba(47, 107, 255, 0.14);
   --blue-line: rgba(91, 140, 255, 0.35);
+  /* THE BOUNDARY OF SOMETHING FOCUSED OR SELECTED, and nothing else. --line is
+     1.33:1 against --bg and --blue-line is 1.72:1; both are decoration and
+     neither reaches the 3:1 floor WCAG 2.2 sets for a non-text indicator that
+     carries meaning. A selected row's border is that indicator. Same value as
+     --blue-bright on purpose: interaction has one colour on this palette, and a
+     separate name is what stops a decorative border reaching for it. */
+  --line-focus: #5b8cff;
 
   /* Data semantics ONLY. Never decoration. */
   --up: #2bd67b;
