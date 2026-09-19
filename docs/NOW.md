@@ -146,11 +146,14 @@ re-checked it. Re-check this list before repeating it.
 - **`OperatorRegistry` attestation has no rebind**, so the operator payout address is permanent.
   It should be a Safe, not an EOA.
 - **The oracle is single-provider Chainlink.** Heartbeat + sane-price band + sequencer gate are the
-  only defences against a bad answer on Base. On Arc there would be two of the three, and the
-  heartbeat is an owner decision bounded by the contract's `MAX_HEARTBEAT` of 86,400 s — measured
-  Arc round gaps reach 4.71 h, so it cannot be set from a resting feed age. Assets are limited
-  to WETH + cbBTC; Base has no cbETH/USD feed. A feed deprecation fails that asset *closed*, which
-  is safe but has no fallback.
+  only defences against a bad answer on Base. On Arc there are two of the three, and the heartbeat
+  is 90,000 s — set after `MAX_HEARTBEAT` was raised from 86,400 s on 2026-09-18, because measured
+  Arc round gaps reach **86,423 s (24.01 h)** on BTC/USD over a 449-hour walk and the old ceiling
+  therefore sat 23 s BELOW the worst gap. The figure is stable rather than still climbing: a 169 h
+  walk and a 449 h walk return the same 86,423 s, and the bound is one heartbeat period plus
+  publish jitter. Assets are limited to WETH + cbBTC on Base, which has no cbETH/USD feed; on Arc
+  the basket is cirBTC alone, because Arc has no ETH representation in any form. A feed deprecation
+  fails that asset *closed*, which is safe but has no fallback.
 - **The sequencer guard has never run against a real uptime feed.** Base Sepolia leaves it
   `address(0)` by design, and Arc would too: Arc is an L1 rather than a rollup and Chainlink
   publishes no uptime feed for it. A first real execution waits for a chain that has a feed to
