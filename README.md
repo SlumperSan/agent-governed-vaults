@@ -1,37 +1,89 @@
-# Agent-Governed Index Vault Protocol
+# RWAlly — Agent-Governed Index Vault Protocol
 
-RWAlly is the AI agent trading index.
-Permissionless vaults where members pool USDC into spot crypto index baskets and ratify
-every rebalance by on-chain vote. Proposal rights follow stake, not operatorship: an AI operator
-proposes as a member, and operatorship confers no authority to vote, execute, pause, reprice, or
-move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc, Circle's
-chain, where USDC is also the native gas asset. The contracts carry no chain-specific code, so the
-same immutable bytecode is deployable on any EVM chain; no CEX integrations.
+**Index funds that argue for themselves.**
 
-The basket is ETH and BTC, priced from Chainlink `ETH / USD` and `CBBTC / USD` feeds, with USDC as
-the settlement token. On Arc mainnet (chain id 5042) those feeds are live and USDC is a native
-predeploy at `0x3600…0000`; the survey of what was read off chain 5042 is
-[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json).
+RWAlly is the AI agent trading index. An AI picks the basket. The members whose money it is vote on
+it. What this vault invests in is decided by vote, and every decision stays on-chain where anyone
+can check it.
 
-**Built for Arc, and not yet deployed there.** The contracts are written, audited and tested, and
-no instance of this protocol exists on Arc or on any other mainnet. Read [Status](#status) before
+A vault is a pool of USDC, a basket of spot crypto, and one rule: what it invests in is decided by
+vote.
+Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights follow stake, not
+operatorship — the AI operator proposes as a member, from its own position, and operatorship
+confers no authority to vote, execute, pause, reprice, or move member funds.
+
+Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
+single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `BTC / USD` feed.
+There is no ETH leg: every ETH-named token with a Uniswap v3 pool on Arc holds under $452 of
+depth. The contracts carry no
+chain-specific code, so the same immutable bytecode is deployable on any EVM chain. No centralised
+exchanges anywhere in the design.
+
+**Built for Arc, and not yet deployed there.** The contracts are written, reviewed and tested; no
+instance of this protocol exists on Arc or on any other mainnet. Read [Status](#status) before
 anything else in this file.
 
 ## Why it exists
 
-The S&P 500 tells you what five hundred companies are worth because someone writes the weights
-down and everyone can check them. Nothing tells you what autonomous agents would hold if they had
-to argue for it in public and win a vote.
+The S&P 500 works because someone writes the weights down and everyone can check them. There is no
+such list for AI. Plenty of bots trade — none of them have to explain the position in public and
+win a vote before taking it.
 
-A vault here is one answer to that, made checkable. An agent-operator proposes a basket and a
-weighting. The members whose money it is vote the proposal up or down by commit-reveal. What
-executes is recorded on-chain next to the proposal that asked for it and the votes that carried
-it. So the holdings are not an opinion published by anyone: they are a timestamped record of what
-an operator proposed and what members were willing to fund, on contracts that cannot be edited
-afterwards.
+A vault is that list, made checkable. An operator proposes a basket and a weighting. The members
+vote it up or down by commit-reveal. What executes is recorded on-chain next to the proposal that
+asked for it and the votes that carried it. So the holdings are not an opinion anyone published:
+they are a timestamped record of what an operator proposed and what members were willing to fund,
+on contracts that cannot be edited afterwards.
 
 That record is exactly what it says and nothing more. It is not a claim that the conviction was
 correct, and it is not a forecast.
+
+### What you actually do with one
+
+| Step | Who can do it | What happens |
+| --- | --- | --- |
+| **Put USDC in** | Only you | Your first deposit is held for four hours before it becomes anything. It is not shares yet and it does not vote. You can cancel and take it back at any point in that window — the one action that keeps working even if the vault freezes. |
+| **Activate it** | **You or anyone** | Once the four hours elapse, the deposit can be activated by any caller, not just you. The shares mint to **you** either way — but they are priced at the moment the call is made, not the moment you deposited, so you do not choose that price. |
+| **Vote on every trade** | You, or someone you authorised | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. If you appoint a delegate or set a standing default, anyone may then apply your weight on your behalf — and committing your own vote always overrides it. |
+| **Ask to leave** | Only you | No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
+| **Settle a queued exit** | **You or anyone** | If a live vote queued your exit, settling it is a separate call that anybody can make — and until somebody does, those shares are locked and do not vote. |
+
+**Four calls can be made by a stranger, and you can read which off the signatures.**
+`activate(address)`, `settleQueuedExit(address)`, `revealDelegated(uint256, address)` and
+`applyStandingDefault(uint256, address)` all take *your* address, so any caller may trigger them on
+your behalf — the last two only once you have appointed a delegate or set a standing default.
+`deposit`, `cancelPending`, `skipWindow` and `requestExit` take no address at all; `setDelegate` and
+`setStandingDefault` take a vault address and one more parameter that is never you. All six act on
+whoever calls them, so only you can.
+
+**The test is not "does it take an address" — it is "does a parameter name the member whose position
+or weight is affected".** `claimEscrowed(address asset)` is the case that proves the difference: it
+takes an address, that address is a token, and anyone calling it is paid only their own escrow,
+never yours.
+
+**A permissionless caller cannot redirect your payout**: it goes to you, less the fees the vault
+charges on any exit whether you call it yourself or not. What the caller controls is *when* — and
+timing sets the price, which sets the realised gain, which sets the performance fee. So it is not
+fee-neutral, and that is the part worth knowing.
+
+**Two things delay an exit, and neither is a veto.** If a vote is live, your exit is queued from the
+reveal phase and settles at the price *after* that vote executes — including a vote that goes on to
+be defeated. And if a Chainlink feed goes stale or implausible, the vault freezes rather than price
+off bad data; that freeze includes exits, and it lifts when the feed recovers.
+
+**One thing is a hard block, and it applies only to the vault's creator.** A creator cannot exit
+below 5% of the vault while any other member remains — `_checkCreatorGate` reverts
+`CreatorStakeGate()`, checked when the exit is *requested* rather than when it settles, so it cannot
+be dodged by queueing. That is the creator's skin-in-the-game commitment, it binds nobody else, and
+it is a refusal rather than a delay.
+
+All three are the safety design working, and all three are described exactly in
+[Contracts](#contracts).
+
+Two fees, both readable in the contracts: a **10% performance fee** on realised gains, paid to the
+operator, charged on exit against a high-water mark; and an **exit fee of up to 1%** that decays
+with tenure, retained by the vault so it accrues to the members who stay. A sole holder pays no
+exit fee.
 
 ## Status
 
@@ -113,12 +165,13 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
 - Sub-vaults: depth ≤3, recursion block, stacked-fee cap, recursive look-through NAV.
   **Disabled at launch**. `VaultFactory.allowSubVaults = false` (the C-1 fix: root vaults only),
   so this code is dormant on the launch path.
-- Safety: **one genuine Chainlink Data Feed per asset**, read directly. WETH is priced through
-  ETH/USD and cbBTC through CBBTC/USD; the settlement token, USDC, is
-  pinned to $1.00. There is **no cbETH**, because no cbETH/USD feed was read for either mainnet
-  configuration (Base has only cbETH/ETH, which is not a USD price). There is no median, no quorum
-  and no per-vault source set: each asset maps to exactly one feed, fixed immutably at
-  construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
+- Safety: **one genuine Chainlink Data Feed per asset**, read directly. On Arc the basket is the
+  single asset **cirBTC**, priced through `BTC / USD`; the settlement token, USDC, is
+  pinned to $1.00. **There is no ETH leg on Arc** — every ETH-named token with a Uniswap v3 pool
+  there holds under $452 of depth, so the `ETH / USD` feed Arc publishes prices nothing this
+  protocol holds. There is no
+  median, no quorum and no per-vault source set: each asset maps to exactly one feed, fixed
+  immutably at construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
   an **L2 sequencer uptime gate** with a grace period after recovery, a per-feed **heartbeat**,
   and a **sane-price band**. On Arc only the last two would run: Chainlink publishes no L2
   Sequencer Uptime Feed for Arc — it is an L1, not a rollup — and `_requireSequencerUp` returns
@@ -185,9 +238,9 @@ Chainlink oracle's fail-closed guards, and governance rounds.
 | `packages/reference-agent/` | Reference operator loop: read, decide, propose, act within a budget. |
 | `packages/oplog/` | Shared operational plumbing: structured logging, durability, shutdown, ops checks. |
 | `apps/api/` | x402-metered read API (challenge → EIP-3009 authorize → facilitator settle). |
-| `apps/web/` | Vault Atlas, consumer app: discover, inspect governance/fees, deposit/exit. |
-| `apps/site/` | **Retired.** Superseded by `apps/site-next`; do not deploy (see #267/#268 — deploying this would replace the live site). Kept for history only. |
-| `apps/site-next/` | The public static site that `rwally.com` actually serves: what this is, how it works, and what can go wrong. |
+| `apps/web/` | Vault Atlas: the allocator logic modules, each mirroring a contract term for term. Library, not a deployed app. |
+| `apps/vaults-ui/` | React surface over `apps/web`'s modules: vault list, position, open proposal with its votes, holdings. It implements none of the numbers itself. |
+| `apps/site/` | The marketing site source: what this is, how it works, and what can go wrong. Built and tested by `npm run gate` (`scripts/gate.mjs`, steps `site-build` and `site-test`). |
 | `apps/app/` | The vault explorer at `app.rwally.com`: reads protocol facts live in-browser. |
 | `scripts/` | Operational runners: `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
 | `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
@@ -200,13 +253,12 @@ sub-README, this table wins.
 
 | Surface | Directory | Domain | Status |
 | --- | --- | --- | --- |
-| Marketing site | `apps/site-next/` | `rwally.com` | **Live.** Canonical; the only site that should ever be deployed to this domain. |
-| Marketing site (retired) | `apps/site/` | — | **Not deployed. Do not deploy.** Superseded by `site-next`; deploying it would overwrite the live site (see #267/#268). |
+| Marketing site | `apps/site/` | `rwally.com` | **The only marketing site source in this repository.** `apps/site-next/` was deleted in [#304](https://github.com/SlumperSan/agent-governed-vaults/pull/304) and the site was rebuilt here; `scripts/gate.mjs` builds and tests this directory. **Which build `rwally.com` currently serves is not determinable from this repository** — confirm against the Cloudflare Pages project before any deploy. |
 | Vault explorer | `apps/app/` | `app.rwally.com` | **Live, and reading a chain the protocol is no longer on.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Its live reads must be re-pointed at Arc before it describes anything again. |
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
 | Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** x402 metering is implemented; no facilitator stood up and no public domain chosen yet. Its chain configuration targets Arc. |
-| Paid vault-snapshot endpoint | ~~`apps/site-next/functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of `apps/site-next` removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the single-chain direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
-| Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once `site-next` publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
+| Paid vault-snapshot endpoint | ~~`functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of the marketing site removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the single-chain direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
+| Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once the marketing site publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
 | Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
 | API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
 
@@ -222,7 +274,7 @@ Cloudflare Pages project still serves what was deployed before PR #298: as of 20
 `GET https://rwally.com/api/vaults` answers **402** with a spec-shaped `PAYMENT-REQUIRED` challenge
 quoting USDC on Base mainnet, and `GET https://rwally.com/.well-known/x402` answers **200** with the
 discovery document — both read off the wire, and neither has source in this repository any more. So
-the next `wrangler pages deploy` of `apps/site-next` removes the paid endpoint and the discovery
+the next `wrangler pages deploy` of the marketing site removes the paid endpoint and the discovery
 document from production, which is the intended end state but must not happen by accident while
 `apps/api` has nowhere to serve from. Verify before and after any deploy:
 
