@@ -185,7 +185,7 @@ export function MemberActions({ vault }: Props) {
     if (!parsed.ok) { setExit({ busy: false, message: null, error: parsed.error }); return; }
     setExit({ busy: true, message: null, error: null });
     try {
-      const r = await sendRequestExit(walletClient, address as Address, vaultAddr as Address, parsed.value);
+      const r = await sendRequestExit(publicClient, walletClient, address as Address, vaultAddr as Address, parsed.value);
       setExit({ busy: false, message: `Sent. requestExit ${r.exitHash}`, error: null });
       setExitInput('');
     } catch (e) {
@@ -197,7 +197,7 @@ export function MemberActions({ vault }: Props) {
     if (!connected || !walletClient || !address || !addrs || vault.proposal == null) return;
     setCommit({ busy: true, message: null, error: null });
     try {
-      const r = await sendCommitVote(walletClient, address as Address, addrs.governance, vaultAddr as Address, vault.proposal.pid, support);
+      const r = await sendCommitVote(publicClient, walletClient, address as Address, addrs.governance, vaultAddr as Address, vault.proposal.pid, support);
       setCommit({ busy: false, message: `Committed ${support ? 'FOR' : 'AGAINST'}. commitVote ${r.commitHash}`, error: null });
     } catch (e) {
       setCommit({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
@@ -208,7 +208,7 @@ export function MemberActions({ vault }: Props) {
     if (!connected || !walletClient || !address || !addrs || vault.proposal == null || !custody) return;
     setReveal({ busy: true, message: null, error: null });
     try {
-      const r = await sendRevealVote(walletClient, address as Address, addrs.governance, vault.proposal.pid, custody);
+      const r = await sendRevealVote(publicClient, walletClient, address as Address, addrs.governance, vault.proposal.pid, custody);
       setReveal({ busy: false, message: `Revealed. revealVote ${r.revealHash}`, error: null });
     } catch (e) {
       setReveal({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
