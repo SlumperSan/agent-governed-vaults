@@ -694,6 +694,12 @@ function renderGovernance(x, now) {
     revealedWeight: p.revealedWeight, forWeight: p.forWeight, snapshotTotal: p.snapshotTotal,
     memberCount: p.memberCount, quorumBps: x.vault.governanceConfig?.quorumBps,
     revealedVoterCount: p.revealedVoterCount,
+    // VO-2b: under five members both stake terms are FOR weight MINUS cranked delegated weight,
+    // so without this the readout is `met: null` and the block below prints "cannot be
+    // determined" on every sub-five vault. `assembleProposal` leaves it undefined when the
+    // sibling call was not made, and undefined must stay undefined — 0 means "nothing was
+    // cranked", which is an answer, not the absence of one.
+    delegatedForWeight: p.delegatedForWeight,
   });
   return `${head}
   <div style="font-weight:600;margin-bottom:2px">${esc(p.title)}</div>
