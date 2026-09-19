@@ -7,8 +7,8 @@
 > or move member funds; nothing rebalances until a proposal passes. Settlement in USDC on Arc,
 > Circle's chain, where USDC is also the native gas asset. The basket is a single asset, cirBTC,
 > priced from the Chainlink BTC / USD feed and settled in USDC. There is no ETH leg: of the 26,187
-> tokens on Arc, 52 carry an ETH- or BTC-family symbol, and every one of the 51 that is not cirBTC
-> holds under $452 of depth.
+> tokens that appear in a Uniswap v3 pool on Arc, 52 carry an ETH- or BTC-family symbol, and every
+> one of the 51 that is not cirBTC holds under $452 of depth.
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
 > same immutable bytecode is deployable on any EVM chain; Arc is the target, not a constraint the
 > code enforces. THE PROTOCOL IS NOT DEPLOYED ON ARC, OR ON ANY OTHER MAINNET, AS OF 2026-09-18 --
