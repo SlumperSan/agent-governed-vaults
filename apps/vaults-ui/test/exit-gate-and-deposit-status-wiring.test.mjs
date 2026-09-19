@@ -18,6 +18,7 @@ import { join, dirname } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VAULT_VIEWS } from '../../../packages/canary/src/abis.mjs';
+import { formatUnits, parseUnits } from '../../web/src/format.mjs';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
@@ -163,4 +164,90 @@ test('vite.config.ts aliases @atlas/wallet-refusals and @atlas/deposit-status to
   const src = readFileSync(VITE_CONFIG, 'utf8');
   assert.match(src, /'@atlas\/wallet-refusals':\s*atlas\('wallet-refusals'\)/);
   assert.match(src, /'@atlas\/deposit-status':\s*atlas\('deposit-status'\)/);
+});
+
+// ────────────── "Use full balance": a WAD bigint must never reach the input as-is ──────────────
+// A prior revision did `setExitInput(String(shares))` — shares is a raw WAD bigint, so a plain
+// String() puts the already-scaled integer in the box, and handleExit's own parseUnits(_, 18)
+// scales it AGAIN: one share (1e18) becomes 1e36, and every "use full balance" exit reverts.
+
+test('real round-trip: formatUnits(shares, 18) then parseUnits(_, 18) reproduces the exact bigint, for whole, fractional and dust amounts', () => {
+  for (const shares of [1n, 1_000_000_000_000_000_000n, 2_500_000_000_000_000_000n, 123_456_789_012_345_678n, 999_999_999_999_999_999_999n]) {
+    const display = formatUnits(shares, 18, { minFrac: 0, maxFrac: 18, group: false });
+    const parsed = parseUnits(display, 18, { unit: 'shares' });
+    assert.ok(parsed.ok, `parseUnits rejected formatUnits' own output '${display}': ${parsed.ok ? '' : parsed.error}`);
+    assert.equal(parsed.value, shares, `round trip broke for ${shares}: displayed '${display}', re-parsed to ${parsed.value}`);
+  }
+});
+
+test('the OLD String(shares) path really does overscale by 1e18 — the defect this fix removes, reproduced rather than asserted', () => {
+  const shares = 2_500_000_000_000_000_000n; // 2.5 WAD shares
+  const buggy = parseUnits(String(shares), 18, { unit: 'shares' });
+  assert.ok(buggy.ok);
+  assert.equal(buggy.value, shares * 10n ** 18n, 'String(shares) fed through parseUnits(_, 18) must overscale by exactly 1e18 -- confirms the bug this test guards against was real');
+});
+
+test('"Use full balance" formats shares through formatUnits, not String()', () => {
+  const src = readFileSync(MEMBER_ACTIONS, 'utf8');
+  const start = src.indexOf('Use full balance');
+  assert.ok(start >= 0, "'Use full balance' button not found — did it move or get renamed?");
+  const onClickStart = src.lastIndexOf('onClick', start);
+  const block = src.slice(onClickStart, start);
+  assert.match(
+    block,
+    /setExitInput\(formatUnits\(shares,\s*18/,
+    'must format the raw WAD bigint through formatUnits before it reaches the (decimal-string) input',
+  );
+  assert.doesNotMatch(
+    block,
+    /setExitInput\(String\(shares\)\)/,
+    'setExitInput(String(shares)) puts an unscaled integer where a decimal amount is expected — parseUnits(_, 18) then scales it again',
+  );
+});
+
+// ─────────────────────── Deposit refused while a pending deposit is outstanding ───────────────────────
+// VaultCore.sol:429: `require(pendingDeposit[msg.sender].amountUsdc == 0, PendingExists())`. A
+// second deposit during the four-hour observation window always reverts — the UI must refuse it
+// before a signature is requested, not let a member pay gas to learn it from the contract.
+
+test('the Deposit button is disabled while depositStatus is unread, waiting, or available (a pending deposit)', () => {
+  const src = readFileSync(MEMBER_ACTIONS, 'utf8');
+  const start = src.indexOf("{deposit.busy ? 'Depositing…' : 'Deposit'}");
+  assert.ok(start >= 0, "Deposit button label not found — did it move or get renamed?");
+  const buttonStart = src.lastIndexOf('<button', start);
+  const block = src.slice(buttonStart, start);
+  assert.match(block, /disabled=\{[^}]*depositBlocked[^}]*\}/, 'Deposit must be disabled by depositBlocked');
+  const guard = src.slice(src.indexOf('const depositBlocked'), src.indexOf('const depositBlocked') + 400);
+  for (const state of ['depositStatus == null', "depositStatus.state === 'unknown'", "depositStatus.state === 'waiting'", "depositStatus.state === 'available'"]) {
+    assert.ok(guard.includes(state), `depositBlocked must cover ${state}`);
+  }
+});
+
+test('NON-VACUITY: the pre-fix Deposit button (gated only on addrs) does not match the depositBlocked regex', () => {
+  const preFix = `<button type="button" className="btn" disabled={disabled || deposit.busy || !addrs} onClick={() => void handleDeposit()}>
+          {deposit.busy ? 'Depositing…' : 'Deposit'}
+        </button>`;
+  assert.doesNotMatch(preFix, /disabled=\{[^}]*depositBlocked[^}]*\}/);
+});
+
+// ─────────────────────── the exit-fee ceiling must never silently disappear ───────────────────────
+// exitFeeCeiling can resolve to {kind:'unknown'} when its tenure inputs aren't read. A JSX branch
+// that renders only the 'allowed' case makes the unknown state indistinguishable from "no fee
+// applies" -- absence read as a fact. Read exitGate becoming reachable-while-partial (#345's
+// Promise.allSettled fix) is exactly what makes this state reachable in ordinary operation.
+
+test('the exit-fee ceiling renders an explicit message for BOTH exitFee === null and exitFee.kind === \'unknown\'', () => {
+  const src = readFileSync(MEMBER_ACTIONS, 'utf8');
+  const start = src.indexOf('exit.error ? <p className="note tag-warn">{exit.error}</p>');
+  const sectionStart = src.indexOf('<h3>Exit</h3>');
+  assert.ok(sectionStart >= 0 && start > sectionStart);
+  const block = src.slice(sectionStart, start);
+  assert.match(block, /exitFee\s*==\s*null\s*\?/, 'must render something when exitFee has not been read yet (exitGate still null)');
+  assert.match(block, /exitFee\.kind\s*===\s*'unknown'\s*\?/, "must render something when exitFee resolved to 'unknown'");
+});
+
+test('NON-VACUITY: the pre-fix allowed-only branch matches neither required pattern', () => {
+  const preFix = `{exitFee?.kind === 'allowed' ? <p className="note dim">{exitFee.reason}</p> : null}`;
+  assert.doesNotMatch(preFix, /exitFee\s*==\s*null\s*\?/);
+  assert.doesNotMatch(preFix, /exitFee\.kind\s*===\s*'unknown'\s*\?/);
 });

@@ -4,7 +4,7 @@
  * Components import from here, never from `@atlas/*` directly, so the surface
  * that would have to change if the allocator modules moved is this file alone.
  */
-export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits } from '@atlas/format';
+export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits, formatUnits } from '@atlas/format';
 export type { ParseUnitsResult } from '@atlas/format';
 export { proposalPhase, quorumReadout, PHASES } from '@atlas/governance';
 export { oracleHealth, position, vaultView } from '@atlas/vault-view';

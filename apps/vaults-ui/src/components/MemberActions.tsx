@@ -6,6 +6,7 @@ import {
   classifyDepositStatus,
   creatorGateRefusal,
   exitFeeCeiling,
+  formatUnits,
   parseUnits,
   shortAddress,
   type DepositStatus,
@@ -211,6 +212,17 @@ export function MemberActions({ vault }: Props) {
 
   const disabled = !connected;
 
+  // VaultCore._deposit (VaultCore.sol:429): `require(pendingDeposit[msg.sender].amountUsdc == 0,
+  // PendingExists())` — a SECOND deposit while one is already escrowed in the four-hour
+  // observation window always reverts, contract-first, regardless of amount. Block it in the UI
+  // rather than let a member pay gas to learn it. Also block while the read is missing or
+  // 'unknown' — an unread pending-deposit state must never resolve to "go ahead and deposit".
+  const depositBlocked =
+    depositStatus == null ||
+    depositStatus.state === 'unknown' ||
+    depositStatus.state === 'waiting' ||
+    depositStatus.state === 'available';
+
   // The exit shares typed so far — 0n (not a parse failure) once nothing/invalid is entered, so
   // an empty box reads as "burns nothing" rather than falling through to `creatorGateRefusal`'s
   // own unread-input branch, which is reserved for a chain read that failed, not for user input
@@ -254,7 +266,12 @@ export function MemberActions({ vault }: Props) {
           disabled={disabled || deposit.busy}
           onChange={(e) => setDepositInput(e.target.value)}
         />
-        <button type="button" className="btn" disabled={disabled || deposit.busy || !addrs} onClick={() => void handleDeposit()}>
+        <button
+          type="button"
+          className="btn"
+          disabled={disabled || deposit.busy || !addrs || depositBlocked}
+          onClick={() => void handleDeposit()}
+        >
           {deposit.busy ? 'Depositing…' : 'Deposit'}
         </button>
       </div>
@@ -263,10 +280,18 @@ export function MemberActions({ vault }: Props) {
         4-hour observation window before it mints shares — it does not mint immediately (VaultCore.sol:52).
       </p>
       {depositStatus ? (
-        <p className={depositStatus.state === 'unknown' ? 'note tag-warn' : 'note dim'}>
+        <p
+          className={
+            depositStatus.state === 'unknown' || depositStatus.state === 'waiting' || depositStatus.state === 'available'
+              ? 'note tag-warn'
+              : 'note dim'
+          }
+        >
           {depositStatus.label}. {depositStatus.detail}
         </p>
-      ) : null}
+      ) : (
+        <p className="note dim">Deposit status has not been read yet.</p>
+      )}
       {deposit.message ? <p className="note mono">{deposit.message}</p> : null}
       {deposit.error ? <p className="note tag-warn">{deposit.error}</p> : null}
 
@@ -327,7 +352,17 @@ export function MemberActions({ vault }: Props) {
           onChange={(e) => setExitInput(e.target.value)}
         />
         {shares != null ? (
-          <button type="button" className="btn btn-ghost" disabled={disabled} onClick={() => setExitInput(String(shares))}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={disabled}
+            // shares is a raw WAD bigint (1 share = 10^18), not a human amount. `String(shares)`
+            // would put the scaled integer straight into a box parseUnits(_, 18) then scales
+            // AGAIN — one share becomes 1e36 and the call reverts. formatUnits(shares, 18, ...)
+            // renders it as the exact decimal parseUnits(exitInput, 18) round-trips back to the
+            // same bigint (both are plain decimal-string arithmetic, no float involved).
+            onClick={() => setExitInput(formatUnits(shares, 18, { minFrac: 0, maxFrac: 18, group: false }))}
+          >
             Use full balance
           </button>
         ) : null}
@@ -355,7 +390,15 @@ export function MemberActions({ vault }: Props) {
       ) : creatorGate.kind === 'unknown' ? (
         <p className="note dim">{creatorGate.reason}</p>
       ) : null}
-      {exitFee?.kind === 'allowed' ? <p className="note dim">{exitFee.reason}</p> : null}
+      {exitFee == null ? (
+        <p className="note dim">Exit fee ceiling has not been read yet.</p>
+      ) : exitFee.kind === 'unknown' ? (
+        // Explicit, not omitted: an unshown ceiling reads as "no fee applies", which is worse
+        // than an unread one. Never fall back to a default number here.
+        <p className="note tag-warn">{exitFee.reason}</p>
+      ) : (
+        <p className="note dim">{exitFee.reason}</p>
+      )}
       {exit.message ? <p className="note mono">{exit.message}</p> : null}
       {exit.error ? <p className="note tag-warn">{exit.error}</p> : null}
 
