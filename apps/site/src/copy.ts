@@ -4,9 +4,14 @@
  * VOICE, changed on 2026-09-18 by owner decision: marketing-forward and consumer-friendly. Short
  * sentences. Plain words. Say what it does for a person before saying how it works.
  *
- * WHAT THIS FILE DOES NOT DO, revised 2026-09-18 on the owner's point. It does not repeat that the
- * protocol is not deployed. There is no deposit button, no address and no wallet connect anywhere
- * on these pages, so a reader cannot act on a status line and the sentence only undercuts the copy.
+ * WHAT THIS FILE DOES NOT DO, revised 2026-09-18 on the owner's point and CONDITIONAL since
+ * 2026-09-19. It did not repeat that the protocol is not deployed, on the owner's stated ground
+ * that a reader could not act on a status line: no deposit button, no address, no wallet connect
+ * anywhere on these pages. **That ground expired the day connect-and-sign shipped in `apps/vaults-ui`
+ * and this site's "Open the app" button started leading somewhere a wallet can actually connect.**
+ * `steps.notice` below is the replacement, and it is scoped to the window where a reader can
+ * connect and no vault is live. Remove it when a vault is live, not before, and not because it
+ * reads as a hedge.
  *
  * WHERE THE MARKER STAYS, because this is a different thing: the app renders SAMPLE vaults with
  * figures that look like real ones, and those carry a visible label. Omitting a status line is
@@ -63,6 +68,9 @@ export const HOME = {
   steps: {
     eyebrow: 'Four steps',
     headline: 'Four steps, and the second one is yours to come back for.',
+    notice:
+      'This is how the vault works. It is not something you can do today. No RWAlly vault is ' +
+      'live on any network yet. When one is, this page will name it and say where it runs.',
     items: [
       {
         n: '01',
@@ -119,7 +127,8 @@ export const HOME = {
 
   cta: {
     headline: 'Have a look around.',
-    sub: 'Walk through a vault, a proposal and a vote. Nothing to connect, nothing to sign.',
+    sub: 'Walk through a vault, a proposal and a vote. You can connect a wallet to look around ' +
+      '— there is nothing to deposit into yet.',
     label: 'Open the app',
   },
 } as const;
