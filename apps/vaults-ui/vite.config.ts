@@ -28,5 +28,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    /**
+     * BOTH OF THESE ARE REQUIRED BY public/_headers, not preferences.
+     *
+     * `modulePreload.polyfill` emits an INLINE <script>, and the policy is
+     * `script-src 'self'` with no 'unsafe-inline'. Left on, the browser refuses
+     * the polyfill at load time -- a runtime failure no build step reports.
+     *
+     * `assetsInlineLimit: 0` keeps every asset a file this origin served. The
+     * policy is `img-src 'self'` with no `data:`, so a small image the bundler
+     * decided to inline as a data URI would be refused where the same image at
+     * its own URL is served.
+     */
+    modulePreload: { polyfill: false },
+    assetsInlineLimit: 0,
   },
 });
