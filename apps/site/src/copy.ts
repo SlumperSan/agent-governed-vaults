@@ -61,28 +61,43 @@ export const HOME = {
   },
 
   steps: {
-    eyebrow: 'Three steps',
-    headline: 'Deposit, vote, exit. That is the whole product.',
+    eyebrow: 'Four steps',
+    headline: 'Four steps, and the second one is yours to come back for.',
     items: [
       {
         n: '01',
         title: 'Put USDC in',
-        body: 'You get shares in the vault, priced off live Chainlink feeds. Your money stays yours.',
+        body:
+          'Your first deposit is held for four hours before it becomes anything. It is not ' +
+          'shares yet. You can cancel and take it back at any point in that window — that is ' +
+          'the one action that keeps working even if the vault freezes.',
       },
       {
         n: '02',
-        title: 'Vote on every trade',
+        title: 'Then it has to be activated',
         body:
-          'The operator proposes a basket. You vote in secret, then reveal. The vault does not ' +
-          'buy or sell into that basket until enough members say yes.',
+          'Once the four hours elapse the deposit can be activated by any caller, not just you. ' +
+          'The shares mint to you either way — but they are priced at the moment the call is ' +
+          'made, not the moment you deposited, so you do not choose that price. Until someone ' +
+          'makes it you are holding your own money in escrow, not a position, and you cannot vote.',
       },
       {
         n: '03',
+        title: 'Vote on every trade',
+        body:
+          'The operator proposes a basket. You vote in secret, then reveal. The vault does not ' +
+          'buy or sell into that basket until enough members say yes. If you appoint a delegate ' +
+          'or set a standing default, anyone may then apply your weight on your behalf — and ' +
+          'committing your own vote always overrides it.',
+      },
+      {
+        n: '04',
         title: 'Ask to leave any time',
         body:
           'Nobody can refuse you — not the operator, not the other members. You are paid in ' +
-          'kind: a slice of everything the vault holds. If a vote is live your exit queues and ' +
-          'settles after it, at the price that follows.',
+          'kind: a slice of everything the vault holds. If a vote is live your exit queues, and ' +
+          'settling it is a separate call once the vote resolves — anyone can make it, but ' +
+          'somebody has to.',
       },
     ],
   },
