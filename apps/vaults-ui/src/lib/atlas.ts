@@ -12,8 +12,14 @@
  * `BasketLeg` values are constructed, and it builds them from `assembleVault`/`assembleLeg`/
  * `assembleProposal` below, never from `apps/web/src/fixtures.mjs`.
  */
-export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits, formatUnits } from '@atlas/format';
+export { usdcExact, usdcShort, usdcCompact, wadExact, shortAddress, parseUnits, formatUnits, bpsPct, duration, USDC_SCALAR } from '@atlas/format';
 export type { ParseUnitsResult } from '@atlas/format';
+// What an exit actually pays out (apps/web/src/exit-preview.mjs, P-O12) — mirrors
+// VaultCore._settleExit/_exitFeeBps term for term. MemberActions.tsx calls this rather than
+// asking a member to sign a `requestExit` blind; see that file for the fee-as-a-range rule and
+// the SV-5 child-unwind scope note.
+export { previewExit, exitFeeBps, secondsUntilFeeBps } from '@atlas/exit-preview';
+export type { ExitPreview, ExitPreviewOk, ExitPreviewErr, ExitPreviewSlice } from '@atlas/exit-preview';
 export { proposalPhase, quorumReadout, PHASES } from '@atlas/governance';
 export { oracleHealth, position, vaultView } from '@atlas/vault-view';
 export {

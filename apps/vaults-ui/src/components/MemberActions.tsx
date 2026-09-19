@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Address } from 'viem';
 import {
+  bpsPct,
   canReveal,
   canSign,
   classifyDepositStatus,
@@ -8,9 +9,13 @@ import {
   exitFeeCeiling,
   formatUnits,
   parseUnits,
+  previewExit,
   shortAddress,
+  USDC_SCALAR,
+  usdcShort,
   type DepositStatus,
   type ExitFeeCeiling,
+  type ExitPreview,
   type Refusal,
   type Vault,
   type VoteCustodyState,
@@ -254,6 +259,36 @@ export function MemberActions({ vault }: Props) {
         tenureSec: exitGate.lastDepositTime == null ? null : BigInt(nowSec()) - exitGate.lastDepositTime,
       })
     : null;
+  // What the member would actually RECEIVE (P-O12) — mirrors VaultCore._settleExit/_exitFeeBps
+  // term for term; see exit-preview.mjs for the fee-as-a-range rule and the SV-5 scope note. Only
+  // computed once `shares` has resolved: `previewExit` treats a missing memberShares as an input
+  // error ("cannot preview this exit"), which would be the wrong message for "not read yet" — the
+  // same absent-vs-unknown distinction every other read in this component already keeps.
+  const preview: ExitPreview | null =
+    exitGate && shares !== null
+      ? previewExit({
+          burnShares,
+          memberShares: shares,
+          totalShares: vault.totalShares,
+          idleUsdc: vault.idleUsdc,
+          // exit-preview.mjs wants `decimals`; this app's live basket carries `assetUnit`
+          // instead (VaultCore.sol:97, `assetUnit[a] = 10 ** ad` -- read off the contract rather
+          // than trusted from the token's own decimals()). Always an exact power of ten, so
+          // log10 recovers it exactly for every decimals count this basket can hold.
+          basket: vault.basket.map((leg) => ({
+            symbol: leg.symbol,
+            balance: leg.balance,
+            priceWad: leg.priceWad,
+            decimals: Math.round(Math.log10(Number(leg.assetUnit))),
+          })),
+          costBasisUsdc: exitGate.costBasisUsdc,
+          exitFeeMaxBps: exitGate.exitFeeMaxBps,
+          exitFeeDecayPeriodSec: exitGate.exitFeeDecayPeriod,
+          tenureSec: exitGate.lastDepositTime == null ? null : nowSec() - Number(exitGate.lastDepositTime),
+        })
+      : null;
+  const previewLeg = (min: bigint | null, max: bigint, fmt: (n: bigint) => string) =>
+    min === null || min === max ? fmt(max) : `${fmt(min)} to ${fmt(max)}`;
 
   return (
     <section className="panel">
@@ -404,6 +439,80 @@ export function MemberActions({ vault }: Props) {
       ) : (
         <p className="note dim">{exitFee.reason}</p>
       )}
+
+      {preview == null ? (
+        <p className="note dim">What you would receive has not been read yet.</p>
+      ) : !preview.ok ? (
+        <p className="note dim">{preview.error}</p>
+      ) : (
+        <table className="grid">
+          <tbody>
+            <tr>
+              <th scope="row">
+                USDC
+                <br />
+                <span className="dim">idle stables{preview.perfFee !== null && preview.perfFee.maxUsdc > 0n ? ', before the performance fee below' : ''}</span>
+              </th>
+              <td className="num">{previewLeg(preview.usdcPayMin, preview.usdcPay, (n) => usdcShort(n))}</td>
+            </tr>
+            {preview.slices.map((s) => (
+              <tr key={s.symbol}>
+                <th scope="row">
+                  {s.symbol}
+                  <br />
+                  <span className="dim">paid in the token itself</span>
+                </th>
+                <td className="num">
+                  {previewLeg(s.amountMin, s.amount, (n) => formatUnits(n, s.decimals, { maxFrac: 8 }))} {s.symbol}
+                  {s.valueWad !== null ? <><br /><span className="dim">{usdcShort(s.valueWad / USDC_SCALAR)} before the fee</span></> : null}
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row">
+                Exit fee {bpsPct(preview.feeBps)}
+                {preview.isSoleHolder ? ', waived' : ''}
+                <br />
+                <span className="dim">
+                  {preview.isSoleHolder
+                    ? 'sole member: accrues to those who remain, and there are none'
+                    : 'stays in the vault, never goes to the operator'}
+                </span>
+              </th>
+              <td className="num">{preview.feeValueWad !== null ? `−${usdcShort(preview.feeValueWad / USDC_SCALAR)}` : bpsPct(preview.feeBps)}</td>
+            </tr>
+            {preview.perfFee !== null && preview.perfFee.maxUsdc > 0n ? (
+              <tr>
+                <th scope="row">
+                  Performance fee, up to 10% of gain
+                  <br />
+                  <span className="dim">withheld uniformly from every leg above; the exact figure depends on your loss carry, which is not exposed here</span>
+                </th>
+                <td className="num">−{usdcShort(0n)} to −{usdcShort(preview.perfFee.maxUsdc)}</td>
+              </tr>
+            ) : null}
+            <tr>
+              <th scope="row">Total value{preview.valueComplete ? '' : ': cannot be totalled'}</th>
+              <td className="num">
+                {preview.payoutValueWad !== null
+                  ? previewLeg(
+                      preview.payoutValueMinWad === null ? null : preview.payoutValueMinWad / USDC_SCALAR,
+                      preview.payoutValueWad / USDC_SCALAR,
+                      (n) => usdcShort(n),
+                    )
+                  : '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      {preview?.ok && preview.coversFromChildren ? (
+        <p className="note tag-warn">
+          Part of this exit unwinds child-vault positions — this preview covers the common path only and understates
+          what you would actually receive.
+        </p>
+      ) : null}
+
       {exit.message ? <p className="note mono">{exit.message}</p> : null}
       {exit.error ? <p className="note tag-warn">{exit.error}</p> : null}
 

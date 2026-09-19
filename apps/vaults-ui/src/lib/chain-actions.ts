@@ -52,6 +52,9 @@ export interface ExitGateInputs {
   readonly exitFeeMaxBps: bigint | null;
   readonly exitFeeDecayPeriod: bigint | null;
   readonly lastDepositTime: bigint | null;
+  /** `VaultCore.costBasisUsdc(member)` (P-O12) — `exit-preview.mjs`'s `previewExit` needs this to
+   *  bound the performance-fee range; the six fields above predate it and never needed it. */
+  readonly costBasisUsdc: bigint | null;
 }
 
 const READ_TABLES: Record<string, typeof VAULT_VIEWS> = { VAULT_VIEWS, GOVERNANCE_VIEWS };
@@ -139,9 +142,10 @@ export async function readExitGateInputs(
     read('exitFeeMaxBps'),
     read('exitFeeDecayPeriod'),
     read('lastDepositTime', [member]),
+    read('costBasisUsdc', [member]),
   ]);
   const value = <T>(r: PromiseSettledResult<unknown>): T | null => (r.status === 'fulfilled' ? (r.value as T) : null);
-  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime] = results;
+  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime, costBasisUsdc] = results;
   return {
     creator: value<Address>(creator),
     sharesOf: value<bigint>(sharesOf),
@@ -150,6 +154,7 @@ export async function readExitGateInputs(
     exitFeeMaxBps: value<bigint>(exitFeeMaxBps),
     exitFeeDecayPeriod: value<bigint>(exitFeeDecayPeriod),
     lastDepositTime: value<bigint>(lastDepositTime),
+    costBasisUsdc: value<bigint>(costBasisUsdc),
   };
 }
 
