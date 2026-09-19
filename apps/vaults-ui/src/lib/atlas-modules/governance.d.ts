@@ -3,10 +3,17 @@ export interface ProposalLike {
   readonly pid?: number;
   readonly ptype?: string;
   readonly status?: string;
-  readonly commitDeadline?: number;
-  readonly revealDeadline?: number;
-  readonly executableAt?: number;
-  readonly expiresAt?: number;
+  /**
+   * `| null`, not just `| undefined` — matches `governance.mjs`'s own JSDoc
+   * (`commitDeadline?:number|null` etc. on `proposalPhase`). `assembleProposal`
+   * (`chain-reader.mjs`) returns an explicit `null` for "not set for this proposal type", and this
+   * declaration previously omitted it — invisible with fixture data (cast through `unknown`) and
+   * live from the first live proposal that reached it. Same class of bug PR #336/#338 found here.
+   */
+  readonly commitDeadline?: number | null;
+  readonly revealDeadline?: number | null;
+  readonly executableAt?: number | null;
+  readonly expiresAt?: number | null;
   readonly [k: string]: unknown;
 }
 export interface QuorumReadout {
@@ -25,7 +32,9 @@ export declare const PHASES: readonly string[];
 export interface Phase {
   readonly phase: string;
   readonly index: number;
-  readonly deadline: number;
+  /** `null` for `executed`/`defeated`/`expired` — `governance.mjs` returns it that way; this
+   *  declaration previously said `number`, unreachable-in-practice with fixture data alone. */
+  readonly deadline: number | null;
   readonly deadlineLabel: string;
 }
 export declare function proposalPhase(p: ProposalLike, nowSec: number): Phase;

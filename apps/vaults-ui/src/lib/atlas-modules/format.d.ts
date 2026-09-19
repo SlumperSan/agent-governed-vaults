@@ -6,3 +6,4 @@ export declare function usdcShort(value: unknown): string;
 export declare function usdcCompact(value: unknown): string;
 export declare function wadExact(value: unknown, opts?: { maxFrac?: number }): string;
 export declare function formatUnits(value: unknown, decimals: number, opts?: Record<string, unknown>): string;
+export declare function shortAddress(a: unknown): string;
