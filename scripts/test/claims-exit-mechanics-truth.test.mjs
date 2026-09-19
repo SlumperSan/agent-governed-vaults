@@ -459,7 +459,11 @@ const scan = (patterns, opts = {}) => {
         if (opts.denial && DENIAL_IN_MATCH.test(m[0])) continue;
         if (opts.citation && spans.some(([a, b]) => a <= i && j <= b) && REFUTATION.test(around)) continue;
         if (opts.qualifier && DELAY_QUALIFIER.test(around)) continue;
-        if (opts.skip && opts.skip(m[0], around)) continue;
+        // `skip` receives the whole MATCH OBJECT, not just its text, so a caller reading a captured
+        // figure reads the one the pattern captured. A draft passed `m[0]` and re-parsed the first
+        // `%` out of it, which is a different number whenever the match spans two percentages — see
+        // the note at FEE_CEILING's call site.
+        if (opts.skip && opts.skip(m, around)) continue;
         hits.push({ file, quote: m[0] });
       }
     }
@@ -769,10 +773,14 @@ test('no public surface routes the exit fee to the operator, or inflates its cei
     ...scan([FEE_CEILING], {
       // Only a ceiling ABOVE the protocol cap is unarguably false; `exitFeeMaxBps` is a per-vault
       // immutable, so a lower figure may be a correct statement about one vault (see the header).
-      skip: (quote) => {
-        const m = /(\d+(?:\.\d+)?)\s*%/.exec(quote);
-        return !m || Number(m[1]) <= capPct;
-      },
+      //
+      // READ THE CAPTURE GROUP, NEVER THE MATCH TEXT. FEE_CEILING's gap is lazy and up to 60
+      // characters, so a match can span two percentages: "The exit fee — separate from the 10%
+      // performance fee — is capped at 1%." captures `1` and contains `10`. A draft re-parsed the
+      // first `%` out of `m[0]`, read 10, compared it against the 1% cap and reddened a true
+      // sentence. Nothing in the tree collides today; the shape is one an author writes, and a
+      // guard that cries wolf on true prose is the one that gets weakened.
+      skip: (m) => Number(m[1]) <= capPct,
     }),
   ];
   assert.deepEqual(
@@ -1154,6 +1162,9 @@ test('probe: the fee ceiling is compared against the contract, not against a num
   );
   assert.equal(stated('Exit fee: up to 1%, shrinking the longer you have been in.'), 1);
   assert.equal(stated('exit fee <=1% decaying with tenure'), 1);
+  // The two-percentage sentence: the CAPTURE is the ceiling, and the other figure must not be read
+  // as one. This is the case that made `skip` take the match object rather than its text.
+  assert.equal(stated('The exit fee — separate from the 10% performance fee — is capped at 1%.'), 1);
   assert.ok(stated(`The exit fee is capped at ${cap + 1.5}%.`) > cap, 'an inflated ceiling must exceed the derived cap');
   // A performance fee quoted beside the exit fee must not be read as the exit fee's ceiling.
   assert.equal(stated('10% perf + exit fee, both displayed before you sign'), null);
