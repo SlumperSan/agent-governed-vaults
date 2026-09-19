@@ -215,7 +215,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values that have not been chosen, bounded above by the 86,400 seconds the oracle constructor accepts; this page will print them when there is a deployment to print them from. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
+        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values and they have been chosen for Arc: a 90,000-second heartbeat, and a band of $4,000 to $4,000,000 (<code>contracts/config/arc-mainnet.json</code>). <strong>90,000 seconds is 25 hours, and it is the highest the oracle constructor will accept</strong> &mdash; this deployment sits at the contract&rsquo;s maximum rather than inside it. That is not carelessness and it is not comfort: the BTC/USD feed&rsquo;s worst gap measured on Arc was 86,423 seconds over a 449-hour walk, so a tighter cap would have been one a feed behaving to spec would breach, and a false trip reverts every path that reads NAV, exits included. <strong>Read it as the staleness you are exposed to, not as a bound that protects you:</strong> a price may be up to 25 hours old and still be treated as current. These are the configured values and not yet live ones, because nothing is deployed. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
       }
     ]
   },
@@ -606,7 +606,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "stock-index-needs-different-oracle",
     "term": "The stock index needs a different oracle",
-    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 86,400-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
+    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
   }
 ];
 
