@@ -441,6 +441,27 @@ async function main() {
     }
   }
 
+  // The same principle as the forge preflight above -- "every contract step would be skipped and
+  // the gate would report a meaningless pass" -- applied to the case it missed. That guard protects
+  // against a missing TOOL; this one protects against an empty STEP LIST, which the two filters on
+  // the line above can produce from entirely valid input: every `--only` id is known, yet all of
+  // them are `quickSkip`, so `--quick --only snapshot` selected nothing.
+  //
+  // It mattered because `passed` is computed as `!results.some(r => r.state === 'fail')`, which is
+  // TRUE over an empty array. The run printed GATE PASSED, exited 0, and wrote
+  // `{"passed":true,"steps":[]}` to `.gate-state.json` -- the file `scripts/lib/project-status.mjs`
+  // reads and `npm run cc` surfaces as live state. A gate that checked nothing published a pass.
+  if (steps.length === 0) {
+    console.error(
+      `
+${C.r}no steps selected.${C.x} ${ONLY ? 'Every --only id was dropped by --quick. ' : ''}` +
+        `Refusing to report a pass over zero steps.
+${C.d}(see --list)${C.x}
+`,
+    );
+    process.exit(2);
+  }
+
   const mode = [QUICK && 'quick', RUN_ALL && 'run-all', ONLY && `only=${[...ONLY].join(',')}`].filter(Boolean).join(' ');
   console.log(`\n${C.b}pre-merge gate${C.x} ${C.d}(mirrors ci.yml)${C.x}${mode ? ` ${C.d}[${mode}]${C.x}` : ''}`);
   console.log(`${C.d}${steps.length} steps${QUICK ? ' -- gas snapshot dropped by --quick' : ''}${C.x}\n`);
