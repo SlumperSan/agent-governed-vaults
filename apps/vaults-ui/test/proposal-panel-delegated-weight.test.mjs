@@ -12,10 +12,13 @@
  * (including the sub-five branch-1 case) is proven by `apps/web/test/governance.test.mjs`, which
  * this file does not duplicate. This test proves only the WIRING: that the argument object built
  * at the one call site in this app includes the field bound to `p.delegatedForWeight`, so a value
- * present in the API response actually reaches the readout instead of silently staying "unknown"
- * on every vault forever. Before this fix, `ProposalPanel` never forwarded the field at all --
- * every sub-five vault always rendered "unknown", not wrong, so there was no runtime symptom to
- * catch a regression here except this test.
+ * present in the API response actually reaches the readout. Before this fix, `ProposalPanel` never
+ * forwarded the field, so the readout was always `met: null` on every sub-five vault -- BUT the
+ * render was `readout.met ? 'met' : 'not met'`, and `null` is falsy, so the panel printed a
+ * settled "not met" next to `readout.text` saying the answer was unknown. That was a real runtime
+ * symptom, a false negative on the one line a member reads to know whether a proposal passed --
+ * see #338, which fixes the render and the `.d.ts` declaration that hid the `null` case from
+ * `tsc`. This test proves the forward alone; it does not prove the render is honest about it.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
