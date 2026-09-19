@@ -412,3 +412,61 @@ test('the enumeration and the globs are non-empty, so neither check above is vac
       `${dead.join('\n')}`,
   );
 });
+
+// ---------------------------------------------------------------------------------------------
+// A FILE THAT SPAWNS THE GATE MUST ISOLATE THE GATE'S RECORD.
+//
+// `scripts/gate.mjs` writes its run to `.gate-state.json` at the repo root, which `npm run cc`
+// reads, and it honours `GATE_STATE_PATH` to write somewhere else. That override is what keeps two
+// test files from reading each other's runs — a defect that was real: a gate spawned by one test file
+// was read by another as if it were its own, and the assertion failed naming an invocation the test
+// never made.
+//
+// WITHOUT THIS GUARD THE ISOLATION IS CONVENTION. A docstring saying callers MUST set the variable is
+// the eighth `SKIP_DIRS` — the review finding that produced this block said so in those words. The
+// third file to spawn `gate.mjs` gets no warning from a comment; it gets one from here.
+//
+// Scope, and why it is not wider: REAL concurrent gates still share one record by design, because the
+// board has to have a single file to read. This is about test files, which can and must isolate.
+// ---------------------------------------------------------------------------------------------
+
+/** Every non-test source line that spawns scripts/gate.mjs, with the file it is in. */
+const gateSpawners = () => {
+  const out = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith('.mjs')) continue;
+      const relPath = rel(full);
+      // The wrapper's whole job is to spawn the gate for a human; it deliberately does not isolate,
+      // because a person running `gate:log` wants the board to see that run.
+      if (relPath === 'scripts/gate-logged.mjs') continue;
+      const src = stripJsComments(readFileSync(full, 'utf8'));
+      if (/gate\.mjs/.test(src) && /spawn(Sync)?\s*\(/.test(src)) out.push({ file: relPath, src });
+    }
+  })(REPO);
+  return out;
+};
+
+test('every test file that spawns gate.mjs sets GATE_STATE_PATH, so it cannot read another run', () => {
+  const spawners = gateSpawners();
+  // Refuse rather than pass over nothing: two files spawn the gate today and a walk that finds none
+  // means the detection broke, not that the practice stopped.
+  assert.ok(
+    spawners.length > 0,
+    'found no file spawning scripts/gate.mjs — the walk or the match broke; do not let this pass over zero',
+  );
+  const offenders = spawners
+    .filter(({ src }) => !/GATE_STATE_PATH/.test(src))
+    .map(({ file }) => file);
+  assert.deepEqual(
+    offenders,
+    [],
+    'these spawn scripts/gate.mjs without setting GATE_STATE_PATH, so the run they read may be another '
+      + "file's, and they overwrite the record `npm run cc` reads:\n  " + offenders.join('\n  '),
+  );
+});

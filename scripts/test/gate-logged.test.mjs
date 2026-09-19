@@ -25,7 +25,7 @@
  * is 0 of 4 failing under that mutation — the guard is the code's shape, not this file. Do not read
  * the green as coverage, and do not "simplify" the callback away because the tests stay green.
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,6 +39,7 @@ const WRAPPER = path.join(REPO, 'scripts', 'gate-logged.mjs');
 // repository: a log in the tree is read as prose by every guard that walks it, which is the failure
 // that moved these files out in the first place.
 const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-logs-'));
+after(() => fs.rmSync(LOG_DIR, { recursive: true, force: true }));
 const WIN = process.platform === 'win32';
 
 /** An env whose PATH has `prepend` in front. Every case-variant of the key is deleted first: on
@@ -99,6 +100,39 @@ test('THE CASE THAT WAS MISSING: a failing step leaves the CHILD output on disk,
     !/full output: [^\n]*[/\\]\.gate-logs[/\\]/.test(out),
     'the log must not be written inside the repository: every guard that walks the tree reads it as prose',
   );
+});
+
+test('F1: with GATE_LOG_DIR UNSET, the default lands OUTSIDE the repository', () => {
+  // THIS IS THE ASSERTION THE FIRST VERSION OF THIS FILE CLAIMED AND DID NOT HAVE. Every other case
+  // here sets GATE_LOG_DIR, so the default branch never ran: a review mutation pointed the default
+  // back at `REPO/.gate-logs` and all eight tests stayed green while the original failure — a claims
+  // guard reading the log as prose — came straight back.
+  //
+  // THE PROPERTY, NOT THE NAME. Asserting the path does not contain ".gate-logs" would pass for any
+  // other in-tree directory. What must hold is that the log is not under REPO at all, so that nothing
+  // which walks the tree can reach it — including guards nobody has written yet.
+  const env = envWith(null);
+  delete env.GATE_LOG_DIR;
+  const r = spawnSync(process.execPath, [WRAPPER, '--only', 'syntax'], {
+    cwd: REPO,
+    encoding: 'utf8',
+    timeout: 180_000,
+    env: { ...env, GATE_STATE_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gate-logged-state-')), 'state.json') },
+  });
+  const out = `${r.stdout || ''}${r.stderr || ''}`;
+  const m = /full output: (.+\.log)\s*$/m.exec(out);
+  assert.ok(m, `the run printed no log path:\n${out.slice(-400)}`);
+  const logPath = m[1].trim();
+
+  assert.ok(path.isAbsolute(logPath), `the default path must be absolute, got: ${logPath}`);
+  const rel = path.relative(REPO, logPath);
+  assert.ok(
+    rel.startsWith('..') || path.isAbsolute(rel),
+    `the default log is INSIDE the repository (${rel}); every guard that walks the tree will read it as prose`,
+  );
+  assert.ok(fs.existsSync(logPath), 'the default path was printed but nothing was written there');
+  // Left behind otherwise: this one is in the real default directory, not a temp dir this file owns.
+  fs.rmSync(logPath, { force: true });
 });
 
 test('a passing run is captured too — the run BEFORE the re-run is the one you want to read', () => {

@@ -86,8 +86,20 @@ export function gateCaveats(g, headFull) {
   return { sameCommit, caveats: /** @type {string[]} */ (caveats) };
 }
 
+/**
+ * Where the last run's record is. THE READER HONOURS THE SAME OVERRIDE AS THE WRITER
+ * (`GATE_STATE_PATH` in scripts/gate.mjs), because "where the record lives" cannot have two answers:
+ * a gate pointed at another file would otherwise write there while the board kept reading a stale
+ * default and reporting it as current.
+ */
+function gateStatePath() {
+  return process.env.GATE_STATE_PATH
+    ? path.resolve(process.env.GATE_STATE_PATH)
+    : path.join(REPO, '.gate-state.json');
+}
+
 function gate() {
-  const p = path.join(REPO, '.gate-state.json');
+  const p = gateStatePath();
   if (!existsSync(p)) return null;
   const g = jsonOr(readFileSync(p, 'utf8'), null);
   if (!g) return null;

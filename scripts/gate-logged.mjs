@@ -23,6 +23,7 @@
  * needed gets dropped: the reviewer above lost the failing test name to a `grep` over the tail. The
  * log is the raw stream, in order, and the exit code is the gate's own.
  */
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import os from 'node:os';
@@ -56,12 +57,23 @@ const GATE = path.join(REPO, 'scripts', 'gate.mjs');
  * failure described above.
  */
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+// KEYED ON THE ABSOLUTE PATH, NOT THE BASENAME. Two checkouts whose folder names coincide -- which is
+// ordinary among worktrees -- would otherwise share one log directory however far apart they are. The
+// basename is kept in front of the hash so the directory is still recognisable by eye.
+const repoKey = `${path.basename(REPO)}-${createHash('sha256').update(REPO).digest('hex').slice(0, 8)}`;
 const dir = process.env.GATE_LOG_DIR
   ? path.resolve(process.env.GATE_LOG_DIR)
-  : path.join(os.tmpdir(), 'agv-gate-logs', path.basename(REPO));
+  : path.join(os.tmpdir(), 'agv-gate-logs', repoKey);
 mkdirSync(dir, { recursive: true });
-const logPath = path.join(dir, `gate-${stamp}.log`);
+// PID IN THE NAME, because the stream is opened with `flags: 'a'`: two runs starting in the same
+// millisecond would otherwise append into one file and interleave -- the same "two runs, one record"
+// defect this tool exists to have found one layer up.
+const logPath = path.join(dir, `gate-${stamp}-${process.pid}.log`);
 const log = createWriteStream(logPath, { flags: 'a' });
+// A capture that dies silently is worse than no capture: it would leave a red with no artefact AND no
+// sign that the artefact was missing. Say so on stderr and keep the gate running -- the verdict on the
+// console is still the real product.
+log.on('error', (e) => process.stderr.write(`\ngate-logged: the log could not be written (${e.message})\n`));
 
 const args = process.argv.slice(2);
 log.write(`# npm run gate ${args.join(' ')}\n# started ${new Date().toISOString()}\n\n`);

@@ -23,7 +23,7 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,9 +43,16 @@ const WIN = process.platform === 'win32';
  * exactly that way — `caveats did not say the run checked nothing: ["was --only fmt"]`, another
  * file's run read as if it were its own — intermittently, which is the worst version.
  *
- * So every child here is pointed at its own temp file through `GATE_STATE_PATH`. The repo's real
- * record is never touched, so there is nothing to restore and `npm run cc` cannot be disturbed by a
- * test run at all.
+ * So every child here is pointed at its own temp file through `GATE_STATE_PATH`, and nothing in THIS
+ * FILE touches the repo's real record — which is why there is nothing to restore.
+ *
+ * THAT IS A PROPERTY OF THIS FILE, NOT OF "A TEST RUN", and the distinction was a review finding
+ * against an earlier draft of this comment. `GATE_STATE_PATH` is opt-in: a third test file that
+ * spawns `gate.mjs` without it would write the repo-global record and could be read by this one. What
+ * makes the isolation construction rather than convention is the guard in
+ * `scripts/test/test-wiring-truth.test.mjs` that fails when a file spawns `gate.mjs` without setting
+ * the variable. Concurrent REAL gates — two terminals — still share one record by design, because
+ * `npm run cc` has to have one file to read.
  */
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-executed-state-'));
 let stateSeq = 0;
@@ -186,12 +193,61 @@ test('the board is told a run checked nothing, in words, not just as a false', a
   const { state } = runGate('slither', env);
   assert.ok(state, 'the run must have written a state file for the board to read');
   assert.equal(state.passed, false);
-  const { caveats } = gateCaveats(state, state.commit);
+  // THE HEAD IS READ, NOT BORROWED FROM THE RECORD. An earlier draft passed `state.commit` as the
+  // head, which makes `sameCommit` true by construction and the DIFFERENT-commit assertion below
+  // tautological -- a review mutation set `sameCommit = true` unconditionally and this test stayed
+  // green. Both directions are asserted against a real sha and a deliberately wrong one.
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
+  assert.match(head, /^[0-9a-f]{40}$/, 'could not read a real HEAD to compare the record against');
+
+  const onHead = gateCaveats(state, head);
   assert.ok(
-    caveats.some((c) => /checked NOTHING/.test(c)),
-    `caveats did not say the run checked nothing: ${JSON.stringify(caveats)}`,
+    onHead.caveats.some((c) => /checked NOTHING/.test(c)),
+    `caveats did not say the run checked nothing: ${JSON.stringify(onHead.caveats)}`,
   );
-  // And the same-commit caveat is absent when the shas agree, so the phrase above is not carried in
-  // by an unrelated caveat firing.
-  assert.ok(!caveats.some((c) => /DIFFERENT commit/.test(c)));
+  assert.equal(state.commit, head, 'the run recorded a different commit than HEAD; the tree moved mid-test');
+  assert.ok(!onHead.caveats.some((c) => /DIFFERENT commit/.test(c)), 'the shas agree, so that caveat must be absent');
+  assert.equal(onHead.sameCommit, true);
+
+  const elsewhere = gateCaveats(state, '0'.repeat(40));
+  assert.ok(
+    elsewhere.caveats.some((c) => /DIFFERENT commit/.test(c)),
+    'a record from another commit must say so, or a board green means nothing about this tree',
+  );
+  assert.equal(elsewhere.sameCommit, false);
+});
+
+test('F2: the board WIRES gateCaveats in, not merely defines it', async () => {
+  // `gate()` is what the board calls, and the caveats reach it through one `Object.assign`. A review
+  // mutation deleted that line and every test still passed: the pure function was covered and its
+  // only caller was not. This drives the real reader, through the same `GATE_STATE_PATH` the writer
+  // honours, so the wiring is what is under test rather than the arithmetic.
+  const { collect } = await import('../lib/project-status.mjs');
+  const statePath = path.join(stateDir, 'wiring-state.json');
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify({
+      at: new Date().toISOString(),
+      commit: '0'.repeat(40),
+      treeDirty: false,
+      totalMs: 1,
+      mode: { quick: false, runAll: false, only: null },
+      passed: false,
+      executed: 0,
+      steps: [{ id: 'slither', state: 'skip', ms: 0 }],
+    }),
+  );
+  const before = process.env.GATE_STATE_PATH;
+  process.env.GATE_STATE_PATH = statePath;
+  try {
+    const { gate } = collect({ gh: false });
+    assert.ok(gate, 'the board must read the record at GATE_STATE_PATH');
+    assert.ok(Array.isArray(gate.caveats), 'gate() must attach caveats; nothing else in the board computes them');
+    assert.ok(gate.caveats.some((c) => /checked NOTHING/.test(c)), JSON.stringify(gate.caveats));
+    assert.ok(gate.caveats.some((c) => /DIFFERENT commit/.test(c)), JSON.stringify(gate.caveats));
+    assert.equal(gate.sameCommit, false);
+  } finally {
+    if (before === undefined) delete process.env.GATE_STATE_PATH;
+    else process.env.GATE_STATE_PATH = before;
+  }
 });
