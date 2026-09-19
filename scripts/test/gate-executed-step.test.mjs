@@ -46,13 +46,15 @@ const WIN = process.platform === 'win32';
  * So every child here is pointed at its own temp file through `GATE_STATE_PATH`, and nothing in THIS
  * FILE touches the repo's real record — which is why there is nothing to restore.
  *
- * THAT IS A PROPERTY OF THIS FILE, NOT OF "A TEST RUN", and the distinction was a review finding
- * against an earlier draft of this comment. `GATE_STATE_PATH` is opt-in: a third test file that
- * spawns `gate.mjs` without it would write the repo-global record and could be read by this one. What
- * makes the isolation construction rather than convention is the guard in
- * `scripts/test/test-wiring-truth.test.mjs` that fails when a file spawns `gate.mjs` without setting
- * the variable. Concurrent REAL gates — two terminals — still share one record by design, because
- * `npm run cc` has to have one file to read.
+ * AND IT IS NOT LEFT AS A PROPERTY OF THIS FILE. `gate.mjs` itself refuses to run — exit 2, before
+ * writing anything — when it finds `NODE_TEST_CONTEXT` set and `GATE_STATE_PATH` unset. Node sets
+ * that variable in a test process and children inherit it, so a gate whose ancestry is a test cannot
+ * write the repo-global record however it was started, and a third test file that forgets the
+ * override gets a refusal rather than a silent collision. The test below drives both directions of
+ * that refusal.
+ *
+ * Concurrent REAL gates — two terminals — still share one record by design, because `npm run cc` has
+ * to have one file to read.
  */
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-executed-state-'));
 /** The repo-global record the board reads. Only ever READ here, never written. */
