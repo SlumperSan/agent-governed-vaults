@@ -1,7 +1,7 @@
 # Release checklist
 
 A concrete pre-release checklist for anything shipping from this repository — a contract change,
-a deploy of `apps/site-next` or `apps/app`, or a change to `apps/api`. Not every release touches
+a deploy of `apps/site` or `apps/app`, or a change to `apps/api`. Not every release touches
 every item; check off what applies and say explicitly why an item doesn't apply rather than
 silently skipping it.
 
@@ -62,7 +62,7 @@ silently skipping it.
 State explicitly which of the Production Map's surfaces this release touches — silence here is how
 a deploy target gets missed or an unintended one gets hit:
 
-- [ ] `rwally.com` (`apps/site-next`) — deploying? Y/N.
+- [ ] `rwally.com` (`apps/site`) — deploying? Y/N.
 - [ ] `app.rwally.com` (`apps/app`) — deploying? Y/N.
 - [ ] `apps/api` — deploying/changing its running config? Y/N. (No public domain yet; still worth
       stating if its deployed behavior changes.)
@@ -76,7 +76,7 @@ a deploy target gets missed or an unintended one gets hit:
 
 ## 6. Rollback plan
 
-- [ ] For a **site/app deploy** (`apps/site-next`, `apps/app`): confirm the previous Cloudflare
+- [ ] For a **site/app deploy** (`apps/site`, `apps/app`): confirm the previous Cloudflare
       Pages deployment can be re-promoted from the dashboard, and note its deployment id/commit
       before deploying the new one.
 - [ ] For an **API change** (`apps/api`): confirm the previous version can be redeployed/restarted

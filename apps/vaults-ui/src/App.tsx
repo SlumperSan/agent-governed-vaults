@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Page } from './Shell';
 import { Holdings } from './components/Holdings';
 import { ProposalPanel } from './components/ProposalPanel';
 import { VaultList } from './components/VaultList';
@@ -26,14 +27,14 @@ export function App() {
   );
 
   return (
-    <div className="shell">
+    <Page current="/">
       <header className="masthead">
         <h1>Vault Atlas</h1>
         <p className="note">
           An agent-operator proposes a basket. The members whose money it is vote it up or down by
           commit-reveal. Nothing rebalances until a proposal passes.
         </p>
-        <p className="note dim">
+        <p className="note faint">
           Rendering <code>apps/web/src/fixtures.mjs</code> — the allocator front end&rsquo;s test
           fixtures, not a live chain read.
         </p>
@@ -43,7 +44,7 @@ export function App() {
         <VaultList vaults={vaults} selected={selected} onSelect={setSelected} />
 
         {vault ? (
-          <main className="detail">
+          <div className="detail">
             <section className="panel">
               <h2>{vault.name}</h2>
               <dl className="kv">
@@ -86,13 +87,13 @@ export function App() {
 
             <ProposalPanel vault={vault} nowSec={nowSec} />
             <Holdings vault={vault} nowSec={nowSec} />
-          </main>
+          </div>
         ) : (
-          <main className="detail">
+          <div className="detail">
             <p className="note">Select a vault.</p>
-          </main>
+          </div>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

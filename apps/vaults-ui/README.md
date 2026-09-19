@@ -34,5 +34,40 @@ page says so on screen. Pointing it at a chain means swapping the two imports in
 | `npm run smoke` | Server-renders `App` once and fails if it throws |
 | `npm run build` | typecheck + client bundle |
 
-**None of these are in `npm run gate`.** The root gate does not build or test this app, so a break
-here is not caught by CI. Run them by hand, or wire them in.
+**`typecheck`, `lint` and `smoke` are still not in `npm run gate`.** What IS covered, as of
+2026-09-19, is `test/` — `npm run test:backend` enumerates `apps/vaults-ui/test/*.test.mjs`, so the
+gate's `backend` step runs it, and `test/csp.test.mjs` runs `npm run build` in its own `before`
+hook rather than skipping when `dist/` is absent. **So a broken `vite build` here now fails the
+gate**, and a type error that `tsc` alone would catch still does not. Wiring the rest needs a
+matching pair of steps in `scripts/gate.mjs` and `.github/workflows/ci.yml`, because
+`scripts/test/wired-scripts.test.mjs` refuses a package script that only one of the two invokes.
+
+## Deploying
+
+**Not settled, and it is not this app's call.** Cloudflare Pages needs a project name and a
+hostname, and the open question is whether this workspace takes over `app.rwally.com` from
+`apps/app` (Pages project `rwally-app`) or stands up beside it. That is an owner decision; nothing
+here should guess it, because a `wrangler.toml` with a `name` in it IS the guess.
+
+**What IS settled, so whoever decides does not have to re-derive it:**
+
+- **Output directory is `dist/`**, which is what a Pages project's build output must point at.
+- **`public/_headers` is the edge policy**, and Pages reads it from the root of the SERVED
+  directory, which is why it lives in `public/` and not here. `test/csp.test.mjs` asserts it lands
+  at `dist/_headers` byte-identically and that the policy still matches what the build emits.
+- **There is no `functions/` directory and there should not be one.** `apps/site` keeps its
+  `wrangler.toml` beside `apps/site/functions` because Pages bundles Functions relative to the
+  directory wrangler runs in; with no Functions, that constraint does not apply here and the
+  deploy can run from anywhere. `apps/app/README.md` records the matching hazard from the other
+  side: Pages will pick up a Functions bundle from the working directory if one is there.
+- **The command, once a project exists**, follows `apps/app`'s shape:
+
+  ```bash
+  npm run build --workspace apps/vaults-ui
+  cd apps/vaults-ui && npx wrangler@latest pages deploy dist --project-name=<project> --branch=protocol/main
+  ```
+
+- **One thing to check before the first deploy:** `connect-src` is `'self'`, because this app reads
+  bundled fixtures rather than a chain. The moment it is pointed at `apps/web/src/live-adapter.mjs`,
+  the one RPC origin has to be added to `public/_headers` **in the same commit as the code that
+  calls it**, or every read is refused by the browser.
