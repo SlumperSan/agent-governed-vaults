@@ -71,6 +71,27 @@ function envWithPath({ drop = null, prepend = null } = {}) {
   return env;
 }
 
+/**
+ * ASSERT THE ENVIRONMENT THESE TESTS ASSUME, in the child's own PATH, before trusting a result from
+ * it. Dropping slither's DIRECTORY is coarse: it is `.../Python314/Scripts` on this machine but a
+ * shared `/usr/local/bin` or `~/.local/bin` on a pip-installed CI runner, where the same drop could
+ * take `forge` with it. The gate's missing-forge preflight also exits 2, so that would turn "the
+ * all-skip run exits 2" green FOR THE WRONG REASON -- the single most expensive shape of passing
+ * test. Checked, not assumed, and it fails naming the collision rather than skipping itself.
+ */
+function assertPathShape(env, { forgePresent = true, slitherAbsent = true } = {}) {
+  const find = (bin) => {
+    const r = spawnSync(WIN ? 'where' : 'which', [bin], { encoding: 'utf8', env });
+    return (r.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0] ?? null;
+  };
+  if (forgePresent) {
+    assert.ok(find('forge'), 'forge must still be on the child PATH, or the gate exits 2 on its preflight instead');
+  }
+  if (slitherAbsent) {
+    assert.equal(find('slither'), null, 'slither must be absent from the child PATH, or it runs instead of skipping');
+  }
+}
+
 /** Run the real gate, and read back all three things it publishes. */
 function runGate(only, env) {
   fs.rmSync(STATE, { force: true });
@@ -98,7 +119,9 @@ function forgeShimDir() {
 }
 
 test('THE DEFECT: every selected step skipped is NOT a pass -- exit 2, passed false, executed 0', () => {
-  const { status, out, state } = runGate('slither', envWithPath({ drop: dirOf('slither') }));
+  const env = envWithPath({ drop: dirOf('slither') });
+  assertPathShape(env);
+  const { status, out, state } = runGate('slither', env);
 
   assert.equal(status, 2, 'an all-skip run must not exit 0; 2 is "the gate could not run"');
   assert.match(out, /GATE INCONCLUSIVE/, 'the console must not claim a verdict it does not have');
@@ -116,7 +139,9 @@ test('THE DEFECT: every selected step skipped is NOT a pass -- exit 2, passed fa
 test('MUTATION: a skip ALONGSIDE an executed step is still a pass -- the rule is zero executed, not any skip', () => {
   // A fix of "refuse whenever anything was skipped" would pass the test above and break every
   // normal run on a machine without slither, which is most of them.
-  const { status, out, state } = runGate('slither,syntax', envWithPath({ drop: dirOf('slither') }));
+  const env = envWithPath({ drop: dirOf('slither') });
+  assertPathShape(env);
+  const { status, out, state } = runGate('slither,syntax', env);
 
   assert.equal(status, 0, out);
   assert.match(out, /GATE PASSED/);
@@ -130,7 +155,10 @@ test('MUTATION: a skip ALONGSIDE an executed step is still a pass -- the rule is
 test('MUTATION: a FAILING run is a failure, never inconclusive -- and `notrun` is not "executed"', () => {
   // The other way to get this wrong: classify by "did everything run" and a fail-fast break, which
   // fills the tail with `notrun`, would be reported as inconclusive instead of as the defect it is.
-  const { status, out, state } = runGate('fmt,syntax', envWithPath({ prepend: forgeShimDir() }));
+  // The shim IS forge here, deliberately: only that the name resolves is asserted.
+  const env = envWithPath({ prepend: forgeShimDir() });
+  assertPathShape(env, { slitherAbsent: false });
+  const { status, out, state } = runGate('fmt,syntax', env);
 
   assert.equal(status, 1, 'a real failure keeps exit 1; exit 2 means the gate could not run');
   assert.match(out, /GATE FAILED/);
@@ -143,7 +171,9 @@ test('MUTATION: a FAILING run is a failure, never inconclusive -- and `notrun` i
 test('the board is told a run checked nothing, in words, not just as a false', async () => {
   // `passed: false` alone renders as FAILED, which is a different sentence from "checked nothing".
   const { collect } = await import('../lib/project-status.mjs');
-  runGate('slither', envWithPath({ drop: dirOf('slither') }));
+  const env = envWithPath({ drop: dirOf('slither') });
+  assertPathShape(env);
+  runGate('slither', env);
   const { gate } = collect({ gh: false });
   assert.ok(gate, 'the board must see the state file this run just wrote');
   assert.equal(gate.passed, false);
