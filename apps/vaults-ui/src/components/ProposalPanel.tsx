@@ -39,6 +39,11 @@ export function ProposalPanel({ vault, nowSec }: Props) {
     memberCount: p.memberCount,
     quorumBps: (vault.governanceConfig?.['quorumBps'] as number | undefined) ?? undefined,
     revealedVoterCount: p.revealedVoterCount,
+    // Sub-five vaults measure both stake terms on FOR weight MINUS cranked delegated weight
+    // (VO-2b). Omitting this makes the readout `met: null` rather than wrong — but "unknown" on
+    // every sub-five vault is what shipped before this line existed, so it is forwarded rather
+    // than left implicit.
+    delegatedForWeight: p.delegatedForWeight,
   });
 
   const forW = p.forWeight ?? 0n;
