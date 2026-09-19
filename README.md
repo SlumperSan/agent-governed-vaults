@@ -42,7 +42,8 @@ correct, and it is not a forecast.
 
 | Step | What happens |
 | --- | --- |
-| **Put USDC in** | You get shares, priced off live Chainlink feeds. |
+| **Put USDC in** | Your first deposit is held for four hours before it becomes anything. It is not shares yet. You can cancel and take it back at any point in that window — that is the one action that keeps working even if the vault freezes. |
+| **Come back and activate it** | After the four hours you activate the deposit yourself, and your shares are priced at that moment off live Chainlink feeds. Nothing does this for you. Until you do it you are holding your own money in escrow, not a position — and you cannot vote. |
 | **Vote on every trade** | The operator proposes a basket. You commit a hashed vote, then reveal. The vault does not buy or sell into that basket until enough members say yes. |
 | **Leave whenever** | Ask to exit at any time. No one can refuse you — not the operator, not the other members. (One exception, and it is the vault's creator, not you: see below.) You are paid **in kind**: a pro-rata slice of everything the vault holds, plus its idle USDC. It does not come back as cash without a separate sale. |
 
