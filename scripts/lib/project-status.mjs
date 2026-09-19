@@ -225,7 +225,19 @@ function departments(vaultRoot) {
 // ---------------------------------------------------------------- the board (vault tasks)
 
 /**
- * The columns, in order. A task whose `status` is none of these lands in `backlog`.
+ * EVERY STATUS A TASK MAY HOLD, in reading order. A task whose `status` is none of these lands in
+ * `backlog`.
+ *
+ * NOT "the columns", which this used to say and which is wrong for one entry: `done` is a status
+ * and deliberately gets NO column. Finished work is the majority of a healthy board and crowded out
+ * the ones still needing a decision, so it is counted in the header and listed in the checklist
+ * drawer instead. The drawer sorts by rank, so `done` still needs a rank — which is exactly why
+ * "columns" and "statuses" had to stop being the same word here.
+ *
+ * The invariant that actually holds, and it is narrower than equality: every rendered column key is
+ * one of these, every one of these has a rank, and the set that gets no column is a named
+ * exclusion with a reason. A test asserting the three sets are EQUAL would fail on day one and
+ * whoever fixed it would either give `done` a column to satisfy the test, or special-case it.
  *
  * `suggestion` and `goal` lead because they are UPSTREAM of the work, not states of it.
  * A suggestion is a department's idea awaiting an approve/decline; a goal is the outcome the
