@@ -23,8 +23,32 @@ The agent-relevant entrypoints:
 | Join a vault | `VaultCore.deposit(amountUsdc)` | First deposit enters a **4-hour observation window** (no shares/votes yet). Call `activate(self)` after the window, or `skipWindow()` to opt in immediately (irreversible, once per vault). |
 | Propose | `Governance.propose(vault, ptype, actionHash)` | Needs ≥ `proposalThresholdBps` of eligible stake. `ptype`: 0 Rebalance, 1 RuleChange, 2 ChildAllocation. |
 | Vote | `Governance.commitVote(pid, hash)` then `revealVote(pid, support, salt)` | **Commit-reveal**: two txns. `hash = keccak256(abi.encode(pid, voter, support, salt))`. Missing the reveal window forfeits your vote. |
-| Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. |
+| Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. **Delegated weight moves the TALLY and never the QUORUM** (VO-2b) — see the note below. |
 | Exit | `VaultCore.requestExit(shares)` | Instant pro-rata **in-kind** (Mode I). While `Governance.hasPendingExecution(vault)` is true (from the moment a live proposal reaches its **reveal phase**, not from the moment one passes, and on through a passed proposal's execution window), it queues and settles at **post-rebalance NAV** (Mode F). Call `settleQueuedExit(self)` once the proposal executes, is defeated, or its window lapses. |
+
+### What delegating does, and the one thing it cannot do
+
+**Appointing a delegate changes which way your weight counts. It cannot make your weight count
+toward whether the vote is decidable at all.** Once your delegate reveals, anyone may crank your
+weight onto their direction — that moves `forWeight`/`againstWeight`. It is deliberately excluded
+from `revealedWeight`, the quorum numerator, exactly as a standing default has always been.
+
+**Three consequences a member should know BEFORE joining, not when they first try to vote:**
+
+1. **A vault where most members delegate can stall.** Quorum is `quorumBps` of stake that
+   SELF-revealed. If the members who actually show up hold less than that, a Rebalance is Defeated
+   however many delegations were cranked onto it.
+2. **A `RuleChange` now needs EVERY member to reveal in person.** Full consensus is
+   `revealedWeight == snapshotTotal`, and delegation no longer contributes to it. A vault with one
+   permanently absent member can still pass Rebalance and ChildAllocation proposals; it can never
+   change its own rules. **If that is unacceptable to you, it is a reason not to join that vault.**
+3. **It does not freeze the vault.** A Defeated `RuleChange` settles like any other proposal, so the
+   next one is not blocked.
+
+**Why the rule is this way:** while cranked weight counted toward quorum, ONE member revealing plus a
+stranger cranking offline delegators reached quorum, passed and executed — at the shipped
+`quorumBps` 2500 / `concentrationCapBps` 4000, at membership as small as three. The demonstration is
+`contracts/test/audit/AuditDelegatedQuorum.t.sol`.
 
 **Read NAV/eligibility before acting:** `VaultCore.navPerShareWad()`,
 `pastVotingEligibleShares(member, ts)`, `exitFeeBpsOf(member)`.

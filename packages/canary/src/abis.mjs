@@ -223,6 +223,11 @@ export const GOVERNANCE_VIEWS = Object.freeze([
     { name: 'revealedWeight', type: 'uint256' },
     { name: 'revealedVoterCount', type: 'uint256' },
   ]),
+  // VO-2b. A SEPARATE mapping, not a `Proposal` field - deliberately, so adding it did not change
+  // the `proposals` tuple arity that every reader above destructures by position. `finalize`
+  // subtracts it from `forWeight` in both sub-five stake terms, so a reader that shows a sub-five
+  // FOR majority without it is showing a number the contract does not use.
+  view('delegatedForWeight', ['uint256'], ['uint256']),
   view('configOf', ['address'], [
     { name: 'commitDuration', type: 'uint32' },
     { name: 'revealDuration', type: 'uint32' },

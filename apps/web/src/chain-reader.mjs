@@ -136,12 +136,19 @@ export function planLegs(vault, oracle, assets) {
 }
 
 /**
- * Round 3b — the proposal record. Only planned when `activeProposalOf` returned non-zero.
+ * Round 3b — the proposal record and its cranked-FOR figure. Only planned when `activeProposalOf`
+ * returned non-zero.
  * @param {string} governance
  * @param {number|bigint} pid
  */
 export function planProposal(governance, pid) {
-  return Object.freeze([call(governance, 'GOVERNANCE_VIEWS', 'proposals', [pid])]);
+  return Object.freeze([
+    call(governance, 'GOVERNANCE_VIEWS', 'proposals', [pid]),
+    // VO-2b: `delegatedForWeight` is a separate mapping, and `finalize` subtracts it from
+    // `forWeight` in both sub-five stake terms. Without it `quorumReadout` reports the sub-five
+    // regime as unknown rather than guessing zero, so this call is what makes that regime legible.
+    call(governance, 'GOVERNANCE_VIEWS', 'delegatedForWeight', [pid]),
+  ]);
 }
 
 /**
@@ -331,8 +338,9 @@ export function assembleLegSafety(r) {
  *   expiresAt: number|bigint, status: number|bigint, actionHash: string, snapshotTotal: bigint,
  *   memberCount: bigint, forWeight: bigint, againstWeight: bigint, revealedWeight: bigint,
  *   revealedVoterCount: bigint}} p
+ * @param {bigint|number|null} [delegatedForWeight] from the sibling `delegatedForWeight(pid)` call
  */
-export function assembleProposal(pid, p) {
+export function assembleProposal(pid, p, delegatedForWeight) {
   if (!p || BigInt(pid) === 0n) return null;
   const status = PROPOSAL_STATUS_BY_ORDINAL[Number(p.status)];
   if (status === undefined || status === 'None') return null;
@@ -359,6 +367,12 @@ export function assembleProposal(pid, p) {
     againstWeight: p.againstWeight,
     revealedWeight: p.revealedWeight,
     revealedVoterCount: Number(p.revealedVoterCount),
+    // Left `undefined` when the second call is absent or reverted, NEVER 0n: `quorumReadout` reads
+    // an absent figure as "unknown" and a zero as "no cranked weight", and those are different
+    // answers in the sub-five regime (VO-2b).
+    delegatedForWeight: delegatedForWeight === undefined || delegatedForWeight === null
+      ? undefined
+      : BigInt(delegatedForWeight),
   };
 }
 

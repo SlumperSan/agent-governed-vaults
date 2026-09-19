@@ -449,6 +449,31 @@ test('assembleVault leaves proposal null only when told, never by defaulting a r
   assert.equal(v.proposal, 'unknown');
 });
 
+test('the proposal round reads delegatedForWeight alongside the record (VO-2b)', () => {
+  const plan = planProposal(GOV, 41);
+  assert.equal(plan.length, 2, 'the cranked-FOR figure is a second call, not a Proposal field');
+  const fns = plan.map((c) => c.functionName ?? c.fn ?? c.name);
+  assert.ok(fns.includes('proposals'), `proposals missing from ${JSON.stringify(fns)}`);
+  assert.ok(fns.includes('delegatedForWeight'), `delegatedForWeight missing from ${JSON.stringify(fns)}`);
+  for (const c of plan) assert.deepEqual(c.args, [41], 'both calls are keyed by the same pid');
+});
+
+test('an absent delegatedForWeight stays undefined, and is never read as zero', () => {
+  const rec = {
+    ptype: 0n, proposer: GOV, createdAt: BigInt(NOW - 5 * 3600),
+    commitDeadline: BigInt(NOW - 3600), revealDeadline: BigInt(NOW + 2 * 3600),
+    executableAt: 0n, expiresAt: 0n, status: 1n, actionHash: '0xab',
+    snapshotTotal: wad(4_450_000), memberCount: 3n,
+    forWeight: wad(2_000), againstWeight: 0n, revealedWeight: wad(1_000), revealedVoterCount: 1n,
+  };
+  // 0n and undefined are DIFFERENT answers in the sub-five regime: one says "no cranked weight",
+  // the other says "not read". quorumReadout returns false for the first and null for the second.
+  assert.equal(assembleProposal(41, rec).delegatedForWeight, undefined);
+  assert.equal(assembleProposal(41, rec, null).delegatedForWeight, undefined);
+  assert.equal(assembleProposal(41, rec, 0n).delegatedForWeight, 0n);
+  assert.equal(assembleProposal(41, rec, wad(1_000)).delegatedForWeight, wad(1_000));
+});
+
 test('a live proposal decodes every deadline, and 0 deadlines become null not 1970', () => {
   const p = assembleProposal(41, {
     ptype: 0n,
