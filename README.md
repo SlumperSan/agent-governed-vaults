@@ -13,8 +13,9 @@ operatorship — the AI operator proposes as a member, from its own position, an
 confers no authority to vote, execute, pause, reprice, or move member funds.
 
 Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
-single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `CBBTC / USD` feed.
-There is no ETH leg, because Arc carries no ETH representation of any kind. The contracts carry no
+single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `BTC / USD` feed.
+There is no ETH leg: every ETH-named token with a Uniswap v3 pool on Arc holds under $452 of
+depth. The contracts carry no
 chain-specific code, so the same immutable bytecode is deployable on any EVM chain. No centralised
 exchanges anywhere in the design.
 
@@ -145,9 +146,10 @@ adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, 
   **Disabled at launch**. `VaultFactory.allowSubVaults = false` (the C-1 fix: root vaults only),
   so this code is dormant on the launch path.
 - Safety: **one genuine Chainlink Data Feed per asset**, read directly. On Arc the basket is the
-  single asset **cirBTC**, priced through `CBBTC / USD`; the settlement token, USDC, is
-  pinned to $1.00. **There is no ETH leg on Arc** — the chain carries no ETH representation of any
-  kind, so the `ETH / USD` feed Arc publishes prices nothing this protocol holds. There is no
+  single asset **cirBTC**, priced through `BTC / USD`; the settlement token, USDC, is
+  pinned to $1.00. **There is no ETH leg on Arc** — every ETH-named token with a Uniswap v3 pool
+  there holds under $452 of depth, so the `ETH / USD` feed Arc publishes prices nothing this
+  protocol holds. There is no
   median, no quorum and no per-vault source set: each asset maps to exactly one feed, fixed
   immutably at construction. Three guards stand between a bad answer and NAV, and all three fail **closed**:
   an **L2 sequencer uptime gate** with a grace period after recovery, a per-feed **heartbeat**,
