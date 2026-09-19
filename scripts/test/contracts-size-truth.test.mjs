@@ -132,6 +132,34 @@ function evaluate(contract, which, relation, capToken) {
   return { resolved: true, ok: actual, size, cap, key };
 }
 
+/**
+ * The artifacts this test anchors, and WHO ELSE DEPENDS ON IT — a cross-file dependency that was
+ * invisible until Security's 2026-09-18 guard sweep wrote it down.
+ *
+ * Eight tests in `packages/canary/test/abis.test.mjs` and `packages/reference-agent/test/chain
+ * .test.mjs` carry `skip:` conditions on exactly these files (grep `contracts/out absent`). Those
+ * skips are safe ONLY because this test reds when the build is missing, so the whole family can
+ * never be the only signal. Nobody reading the canary suite would know that, which is why it is
+ * stated at both ends: the same paragraph is in `packages/canary/test/abis.test.mjs`, and a
+ * cleanup that removes this test must go and read them first.
+ *
+ * THE DIRECTORY WAS NOT ENOUGH. Until 2026-09-18 this asserted only that `contracts/out/` exists,
+ * so a PARTIAL build passed the anchor while the family skipped around the missing pieces: if
+ * `Governance.json` alone were absent, `reference-agent/chain.test.mjs` skips its Governance
+ * fragment check and nothing goes red. The list below is per-artifact for that reason.
+ * (`packages/indexer/test/abis.test.mjs` is the exception in that family and needs no anchor: a
+ * missing artifact leaves `compiled.get(frag.name)` undefined and reds on its own.)
+ */
+const ANCHORED_ARTIFACTS = [
+  'VaultCore.sol/VaultCore.json',
+  'Governance.sol/Governance.json',
+  'OperatorRegistry.sol/OperatorRegistry.json',
+  'SubVaultRegistry.sol/SubVaultRegistry.json',
+  'ChainlinkOracle.sol/ChainlinkOracle.json',
+  'ChainlinkOracle.sol/IAggregatorV3Description.json',
+  'IAggregatorV3.sol/IAggregatorV3.json',
+];
+
 test('contracts/out exists — this guard must never skip its way to green', () => {
   assert.ok(
     existsSync(OUT),
@@ -139,6 +167,17 @@ test('contracts/out exists — this guard must never skip its way to green', () 
       `Run \`npm run build:contracts\` (or \`npm run gate\`, which builds first).\n` +
       `This test fails rather than skips on purpose: a skipped size check is indistinguishable ` +
       `from a passing one, which is the false-green shape this file exists to prevent.`
+  );
+
+  const missing = ANCHORED_ARTIFACTS.filter((rel) => !existsSync(path.join(OUT, rel)));
+  assert.deepEqual(
+    missing,
+    [],
+    `contracts/out/ exists but is INCOMPLETE, which the directory check above cannot see.\n` +
+      `Eight tests across packages/canary and packages/reference-agent skip on these exact files\n` +
+      `and rely on this test to red when they are absent, so a partial build would otherwise\n` +
+      `produce a green suite over checks that never ran.\n` +
+      `Run \`npm run build:contracts\`.\nMissing:\n  ${missing.join('\n  ')}`
   );
 });
 

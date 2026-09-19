@@ -1,55 +1,124 @@
 /**
- * THE DIRECTION, DECIDED FIRST AND DEFENDED ON EVERY SECTION.
+ * THE BRAND, DECIDED FIRST AND DEFENDED ON EVERY SECTION.
  *
- * Primary family: ethereal / divine. Accent: hyperpop crystalline.
- * Near-black void, bone white, ONE warm light in the dark, iridescent bloom in the bright frames.
+ * Blue and white on a deep navy base. The reference points are Hyperliquid's vaults surface —
+ * calm, dense, financial — and arc.io's spacing and restraint.
  *
- * THE RULE THAT DOES THE WORK: one accent per section. Gold lives in dark sections, iridescence in
- * light ones, red exactly once on the whole page. A section that reaches for a second accent is a
- * section that has stopped having a point of view, and the fastest way to make this look like every
- * other protocol site is to let gold and violet share a frame.
+ * THE RULE THAT DOES THE WORK, carried over from the previous direction because it is the reason
+ * that one held together: ONE ACCENT PER SECTION. Electric blue is the only accent. Green and red
+ * appear ONLY as data semantics (a return that is up, a return that is down) and never as
+ * decoration — the moment a heading is green because green looks nice, a reader can no longer trust
+ * green to mean anything.
+ *
+ * This replaced a near-black/gold palette on 2026-09-18. It is a full replacement, not a variant:
+ * there is no gold token left to reach for.
  */
 
 :root {
-  /* Base — most of the page is one of these two. */
-  --void: #05060a;
-  --void-raised: #0a0c12;
-  --void-line: #171a22;
-  --bone: #f4f1ea;
+  /* Base — deep navy, not black. Black reads as a terminal; navy reads as a balance sheet. */
+  --bg: #070b18;
+  --surface: #0c1224;
+  --surface-2: #111a33;
+  --line: #1c2745;
+  --line-soft: #161f38;
 
-  /* Divine accent: the one warm light. Dark sections only. */
-  --ember: #ffb24d;
-  --ember-deep: #ff7a18;
+  /* Ink */
+  --ink: #f2f6ff;
+  --ink-dim: #93a3c4;
+  /* 5.16 on --bg, 4.90 on --surface, 4.53 on --surface-2 — clears WCAG AA 4.5:1 on all three.
+     Was #5d6c8c, which is 3.73 / 3.54 / 3.27 and FAILED on every ground. That token carried
+     .foot-legal at 12.5px — legal copy a reader is expected to read — plus four micro-labels at
+     11-12px, none large enough for the 3:1 large-text allowance and none of them incidental. The
+     roles are real, so the fix is the value, not a ban on using it. Keep it clearly below
+     --ink-dim (7.73) or the two levels stop being distinguishable. */
+  --ink-faint: #7183a9;
 
-  /* Crystalline accent: the hyperpop bloom. Bright sections only. */
-  --iris-violet: #8a6bff;
-  --iris-cyan: #4fc3ff;
-  --iris-magenta: #ff6ad5;
+  /* The one accent. */
+  --blue: #2f6bff;
+  --blue-bright: #5b8cff;
+  --blue-soft: rgba(47, 107, 255, 0.14);
+  --blue-line: rgba(91, 140, 255, 0.35);
+  /* THE BOUNDARY OF SOMETHING FOCUSED OR SELECTED, and nothing else. --line is
+     1.33:1 against --bg and --blue-line is 1.72:1; both are decoration and
+     neither reaches the 3:1 floor WCAG 2.2 sets for a non-text indicator that
+     carries meaning. A selected row's border is that indicator. Same value as
+     --blue-bright on purpose: interaction has one colour on this palette, and a
+     separate name is what stops a decorative border reaching for it. */
+  --line-focus: #5b8cff;
 
-  /* Danger. Used ONCE on this page, on the sentence that earns it. */
-  --alarm: #ff2a2a;
+  /* Data semantics ONLY. Never decoration. */
+  --up: #2bd67b;
+  --down: #ff5470;
+  --warn: #ffb020;
 
-  --ink: var(--bone);
-  --ink-dim: #8e94a3;
-  --ink-faint: #5c6270;
+  /* ── Controls ──────────────────────────────────────────────────────────
+     A CONTROL IS THE ONE PLACE THE ACCENT HAS A FLOOR TO CLEAR, so it gets
+     its own three values rather than reusing --blue. Added 2026-09-19 after
+     all three button rules were measured against this palette and all three
+     failed; the figures and the fix band are in
+     Findings/2026-09-19-site-button-rules-fail-wcag-aa.
 
-  /* NO WEBFONT IS FETCHED FROM ANOTHER ORIGIN, and that is a security property rather than a
-     preference. `public/_headers` sets `font-src 'self'` under a `default-src 'none'` floor and
-     states that one request to fonts.googleapis.com or fonts.gstatic.com is a rejection — the
-     site's claim is that it makes no external request at all, and a CDN font would falsify it in
-     the network panel. The two Plex faces are npm packages the bundler emits from this origin;
-     the display face is a system serif, so it costs no request either. */
-  --display: ui-serif, Georgia, "Times New Roman", serif;
+     WHY --blue DID NOT SIMPLY MOVE. It is the brand's blue — the mark's
+     gradient, --blue-soft, --blue-line and every non-text fill read from it,
+     and none of those carries a label, so none of them has a contrast floor.
+     Darkening it to satisfy one component would move the identity to fix a
+     button. The accent stays where it is; the control gets a value chosen for
+     the job.
+
+     WHAT EACH ONE HAS TO SATISFY, and both halves matter: white on the fill
+     for the LABEL (SC 1.4.3, 4.5:1), and the fill against --bg for the
+     control's own EDGE (SC 1.4.11, 3:1). A fill that passes one and fails the
+     other is a legible label on an invisible button, or the reverse. */
+
+  /* #ffffff 5.3650:1 · edge 3.66 / 3.47 / 3.21 on --bg / --surface / --surface-2.
+     Replaces --blue as a labelled fill: #ffffff on --blue is 4.4988:1, which
+     tokens.css itself recorded as "4.50:1, passing by 0.00". That was the
+     rounded figure and the unrounded one is under the bar.
+
+     THE TWO REQUIREMENTS PULL IN OPPOSITE DIRECTIONS and that is why this value
+     is where it is rather than darker. Darkening raises the label's contrast
+     and LOWERS the edge's: #2559d6 carries white at 6.04 and then disappears
+     into --surface-2 at 2.85. The window where both clear is narrow, and this
+     sits inside it with the tightest margin stated rather than discovered. */
+  --blue-control: #2a60e6;
+  /* #ffffff 5.0371:1 · edge 3.90 / 3.70 / 3.42.
+     THE HOVER STEP IS SMALL ON PURPOSE AND THE BORDER CARRIES IT. Inside the
+     window above there is no room for a fill shift a reader would notice, so
+     .btn:hover also brings its transparent border up to --blue-bright: an
+     unmistakable state change that costs the label nothing, because it is a
+     ring rather than a ground.
+
+     What this replaces is the real defect: the rule hovered the FILL to
+     --blue-bright, where white measures 3.1626:1. On a dark ground the bright
+     accent moves toward the label rather than away from it, so "hover goes
+     brighter" halved the contrast of every primary control on the site the
+     moment a pointer touched it. */
+  --blue-control-hover: #2d64ee;
+  /* 4.14:1 on --bg, 3.92:1 on --surface, 3.63:1 on --surface-2 — clears the
+     3:1 non-text floor on all three grounds with room to spare.
+     A BORDER THAT IS A CONTROL'S ONLY IDENTITY IS NOT DECORATION. --line is
+     1.33:1 and correctly called decorative, which is fine for a panel edge
+     beside a filled surface and not fine for .btn-ghost, where the border is
+     the entire affordance. Use this ONLY where a boundary is load-bearing;
+     --line still draws every ordinary rule. */
+  --line-control: #5f739d;
+
   --sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --gutter: clamp(20px, 5vw, 64px);
-  --measure: 62ch;
+  --gutter: clamp(18px, 4.5vw, 56px);
+  --measure: 60ch;
+  --nav-h: 60px;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 32px rgba(0, 0, 0, 0.35);
 
   color-scheme: dark;
 }
 
-/* Motion is weightless by default, and it stops entirely when the reader asks it to. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -57,5 +126,6 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

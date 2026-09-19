@@ -52,7 +52,7 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   `address(0)`, so `_requireSequencerUp` returns early and that trigger cannot fire there — but only
   once a deploy explicitly exempts that chain id; the deploy script fails closed for any id it has
   not been told about. Independent of that, every feed has a per-asset heartbeat capped by
-  `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), and the staleness trigger fires
+  `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:132`), and the staleness trigger fires
   only after a feed has gone stale past whichever heartbeat the deploy actually configures. The
   oracle is immutable per vault, so check
   `VaultCore.oracle()` against the blessed set before you deposit and don't strand funds in a vault

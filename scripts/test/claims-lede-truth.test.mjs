@@ -642,89 +642,121 @@ test('RWLY is absent from contracts/src entirely', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// COVERAGE, NOT A GUARD — the walk must actually REACH the redesign's prerendered pages.
+// COVERAGE, NOT A GUARD — the walk must actually REACH the site's prerendered pages.
 //
 // The header draws this file's scope on two axes, the STORE (repo vs vault) and the FILE TYPE
 // (`PUBLIC_EXT`). There is a third, and it is the one that made every guard above vacuous over the
-// redesign: TIME. The walk enumerates from disk, and `apps/site-next/.gitignore` line 11 ignores
-// `dist`, so `apps/site-next`'s prerendered pages exist only after
-// `npm run build --workspace apps/site-next` has run. Order that build AFTER `npm run test:backend`
+// site once already: TIME. The walk enumerates from disk, and `apps/site/.gitignore` ignores
+// `dist/` on its first line, so the prerendered pages exist only after
+// `npm run build --workspace apps/site` has run. Order that build AFTER `npm run test:backend`
 // — which is where `.github/workflows/ci.yml` had it until this test was written — and on a fresh
-// checkout every guard above walks zero rendered redesign pages and reports a pass. A pass over
-// nothing is indistinguishable from a pass over everything, which is the failure this whole file
-// exists to refuse; the header makes the same point about the vault, for the same reason.
+// checkout every guard above walks zero rendered pages and reports a pass. A pass over nothing is
+// indistinguishable from a pass over everything, which is the failure this whole file exists to
+// refuse; the header makes the same point about the vault, for the same reason.
 //
 // `dist` IS WALKED AND `dist-ssr` IS NOT A SECOND CASE OF IT, so do not read this as "build outputs
-// are walked here". `dist` is walked because the redesign publishes its prose ONLY as build output:
-// skip it and the pages a reader receives are guarded by nothing. `dist-ssr` is the SSR
-// bundle, which `apps/site-next/README.md` records as never deployed (grep `vite build --ssr`, on
-// the line that ends `into dist-ssr/ (never deployed)`); its only two prose files,
-// `llms.txt` and `robots.txt`, are byte-identical copies of `apps/site-next/public/`'s, which are
-// walked whether or not anything has been built (checked 2026-09-04 with `diff`). So it is walked
-// today, it costs no coverage either way, and neither `SKIP_DIRS` here nor the near-identical one
-// in `config-doc-truth.test.mjs` lists it. Adding it belongs in a change that edits both, since a
-// skip list that two sibling guards disagree on is its own drift.
+// are walked here". `dist` is walked because the site publishes its prose ONLY as build output:
+// skip it and the pages a reader receives are guarded by nothing. `dist-ssr` is the SSR bundle
+// written by the `vite build --ssr` half of `apps/site/package.json`'s build script; it contains no
+// HTML at all, and its only two prose files, `llms.txt` and `robots.txt`, are byte-identical copies
+// of `apps/site/public/`'s, which are walked whether or not anything has been built (checked
+// 2026-09-18 with `diff`). So it is walked today, it costs no coverage either way, and neither
+// `SKIP_DIRS` here nor the near-identical one in `config-doc-truth.test.mjs` lists it. Adding it
+// belongs in a change that edits both, since a skip list that two sibling guards disagree on is its
+// own drift.
 //
 // So the ordering is ASSERTED here rather than only documented there. This is the one test in this
 // file that MAY name its files: it is a POSITIVE requirement, and by the rule quoted in the header,
-// requiring too little never lets a falsehood through. The names below are `PAGE_IDS`, declared
-// in `apps/site-next/src/shell/pinned.ts` (grep `export const PAGE_IDS`), re-exported as `pages`
-// by `apps/site-next/src/entry-server.tsx` (grep `export const pages`) and looped over by
-// `apps/site-next/scripts/prerender.mjs` (grep `for (const page of pages)`), which writes one
-// `dist/<page>` per entry. Those citations are grep-able phrases rather than line numbers: a line
-// number in a comment goes stale silently, and this one already had.
+// requiring too little never lets a falsehood through.
+//
+// THE PAGE LIST IS READ FROM `apps/site/src/pages.ts`, NOT COPIED HERE, and that is a deliberate
+// reversal of how this test was first written. A copied list is a second place to edit, and its
+// two failure modes are not symmetric: longer than reality reds honestly, shorter than reality goes
+// silent, which is the under-coverage this test exists to catch. `PAGE_IDS` has been nine entries,
+// then two, and is whatever `pages.ts` says today, so a copy has been wrong on some branch for most
+// of this file's life. `pages.ts` is the same declaration the build itself follows: `entry-server
+// .tsx` re-exports it as `pages` (grep `export const pages`) and `apps/site/scripts/prerender.mjs`
+// loops over that (grep `for (const page of pages)`), writing one `dist/<page>` per entry. Those
+// citations are grep-able phrases rather than line numbers: a line number in a comment goes stale
+// silently, and this one already had.
+//
+// READING THE SOURCE RATHER THAN `dist` IS WHAT KEEPS THIS INDEPENDENT. Enumerating the expectation
+// from the build output would make the test agree with whatever the build happened to produce: a
+// prerender that wrote four of five pages would pass. Read from `pages.ts`, it reds.
+//
+// THE FLOOR IS WHAT STOPS THE DERIVATION GOING VACUOUS. Deriving an expectation from a file means a
+// gutted `PAGE_IDS` shrinks the expectation to nothing and passes — the same false green by another
+// route. `MIN_PAGES` refuses that, and the parse throws rather than returning empty if the
+// declaration stops matching.
 //
 // IT DOES NOT SKIP WHEN THE BUILD IS MISSING, and that is the deliberate break with the two
-// neighbouring suites that read build artefacts: `apps/site-next/test/site.test.mjs` skips its
+// neighbouring suites that read build artefacts: `apps/site/test/site.test.mjs` skips its
 // dist-reading tests (its `BUILT`/`SKIP` pair), and `packages/indexer/test/abis.test.mjs` skips on
 // `contracts/out` absent. Both are right to — they have nothing to say without their input. This
-// test's whole subject IS the missing input, so a skip would reproduce the defect it catches.
+// test's whole subject IS the missing input, so a skip would reproduce the defect it catches. It
+// does not skip on a missing `apps/site` either: the site is not optional, and an early return on
+// an absent directory is exactly how this test spent the life of `apps/site-next`'s deletion
+// reporting a pass over zero assertions.
 // ---------------------------------------------------------------------------------------------
-const SITE_NEXT = 'apps/site-next';
+const SITE = 'apps/site';
 
 /**
- * Every prerendered page, in the build order of `PAGE_IDS`. This list is the count, and the test
- * name deliberately does not repeat it as a word: a page added to `PAGE_IDS` and not added here is
- * a page this test silently stops covering, and a number in the name is a second place to edit.
+ * The fewest pages any shape of this site has published: `index.html`, `disclaimers.html` and the
+ * `404.html` below. A `PAGE_IDS` that parses to less than this is a gutted declaration rather than
+ * a smaller site, and the expectation derived from it would be too weak to mean anything.
+ *
+ * IT IS A TRIPWIRE, NOT A FACT ABOUT THE SITE, and it sits at `protocol/main`'s exact reality with
+ * no margin on purpose. If the site legitimately drops to one page this reds, and the obvious next
+ * move — lowering the number until it goes quiet — is the relax-until-green shape this whole file
+ * exists to refuse. Re-point it or delete it deliberately, in a change that says which.
  */
-//
-// IT WAS NINE PAGES UNTIL 2026-09-05. The website v3 brief of that evening collapsed the site to
-// "ONE cinematic scroll page + the app button + a serious Disclaimers page", and how-it-works,
-// agents, who-its-for, operators, faq, vision and status were retired. `apps/site-next/public/
-// _redirects` 301s every one of their URLs, and `PAGE_IDS` in `apps/site-next/src/shell/pinned.ts`
-// is the two entries below.
-//
-// SHRINKING THIS LIST DOES NOT SHRINK WHAT IS WALKED, which is the thing to understand before
-// editing it. `publicSurfaces()` enumerates the filesystem; it walks whatever `.md`, `.html`,
-// `.txt` and `.json` files exist. This list is not the walk, it is the ASSERTION that the walk
-// reached the pages the redesign actually publishes. Its only failure mode is being longer than
-// reality, which reds honestly, or shorter, which is the silent one. The two names below come from
-// `PAGE_IDS`, so the way to keep it in step is to keep reading them from there.
-//
-// THE THIRD NAME IS NOT A PAGE, AND IT IS HERE ANYWAY. `404.html` is not in
-// `PAGE_IDS` — it is in no nav, no sitemap and none of the per-page guards in
-// `apps/site-next/test/site.test.mjs`, because it is a document the site is
-// never navigated TO. `src/shell/pinned.ts` carries the reason under
-// `NOT_FOUND_ID`: without it in the build output, Cloudflare Pages serves
-// `/index.html` with a 200 for every path that matches no asset, which is the
-// soft-404 measured on the live site on 2026-09-09.
-//
-// It is listed here because THIS test asks a different question from that one.
-// Not "is it a page of the site" but "did the guards above read the prose a
-// reader receives" — and a reader receives this document at every address that
-// does not exist, so its sentences are public surface with exactly the standing
-// of the homepage's. Being outside `PAGE_IDS` is precisely what would have made
-// it the silent omission this test's own comment warns about.
-const PRERENDERED = ['index.html', 'disclaimers.html', '404.html'].map(
-  (page) => `${SITE_NEXT}/dist/${page}`,
-);
+const MIN_PAGES = 3;
 
-test('every prerendered redesign page is inside the walk', () => {
-  // A checkout with no redesign owes nothing. `dist` alone is not the condition to test on: it is
-  // the very thing that goes missing, so gating on it would make this test disappear exactly when
-  // it is needed.
-  if (!existsSync(path.join(REPO, SITE_NEXT))) return;
+/**
+ * Every prerendered page, read from the site's own declaration.
+ *
+ * `404.html` IS NOT A PageId AND IS HERE ANYWAY. It is in no nav, no sitemap and none of the
+ * per-page guards in `apps/site/test/site.test.mjs`, because it is a document the site is never
+ * navigated TO — `pages.ts` carries the reason under `NOT_FOUND_ID`: without it in the build
+ * output, Cloudflare Pages serves `/index.html` with a 200 for every path matching no asset, which
+ * is the soft-404 measured on the live site on 2026-09-09.
+ *
+ * It belongs here because THIS test asks a different question from that one. Not "is it a page of
+ * the site" but "did the guards above read the prose a reader receives" — and a reader receives
+ * this document at every address that does not exist, so its sentences are public surface with
+ * exactly the standing of the homepage's. Being outside `PAGE_IDS` is precisely what would have
+ * made it the silent omission.
+ */
+const prerenderedPages = () => {
+  const src = path.join(REPO, SITE, 'src', 'pages.ts');
+  assert.ok(
+    existsSync(src),
+    `${SITE}/src/pages.ts is missing, so the pages this guard must reach cannot be named.\n` +
+      'This throws rather than skipping: the site is not optional, and an early return here is\n' +
+      'how this test reported a pass over zero assertions for the whole life of the previous\n' +
+      "site directory's deletion.",
+  );
+  const text = readFileSync(src, 'utf8');
 
+  const ids = /export const PAGE_IDS\s*=\s*\[([\s\S]*?)\]/.exec(text);
+  assert.ok(ids, `could not parse PAGE_IDS out of ${SITE}/src/pages.ts — the declaration moved`);
+  const pages = [...ids[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+
+  const notFound = /export const NOT_FOUND_ID\s*=\s*['"]([^'"]+)['"]/.exec(text);
+  assert.ok(notFound, `could not parse NOT_FOUND_ID out of ${SITE}/src/pages.ts`);
+
+  const all = [...pages, notFound[1]];
+  assert.ok(
+    all.length >= MIN_PAGES,
+    `${SITE}/src/pages.ts declares ${all.length} prerendered page(s), fewer than the ${MIN_PAGES}\n` +
+      'this site has ever published. Either the declaration was gutted, or the parse above has\n' +
+      'stopped matching it. Both make the assertion below too weak to mean anything.',
+  );
+  return all.map((page) => `${SITE}/dist/${page}`);
+};
+
+test('every prerendered page is inside the walk', () => {
+  const PRERENDERED = prerenderedPages();
   const walked = new Set(publicSurfaces());
   const missing = PRERENDERED.filter((f) => !walked.has(f));
   assert.deepEqual(
@@ -732,11 +764,11 @@ test('every prerendered redesign page is inside the walk', () => {
     [],
     'The guards above walked none of these pages, so they reported a pass over prose they never\n' +
       'read. Two things cause that, and both are silent:\n' +
-      '  1. THE BUILD HAS NOT RUN. `apps/site-next/.gitignore` ignores `dist`, so the pages exist\n' +
-      '     only after:  npm run build --workspace apps/site-next\n' +
+      '  1. THE BUILD HAS NOT RUN. `apps/site/.gitignore` ignores `dist/`, so the pages exist\n' +
+      '     only after:  npm run build --workspace apps/site\n' +
       '     `.github/workflows/ci.yml` and `scripts/gate.mjs` both run that step BEFORE\n' +
       '     `npm run test:backend`, and each carries the reason at the step. Keep it there.\n' +
-      '  2. `dist` WAS ADDED TO SKIP_DIRS. It is deliberately not on that list. The redesign\n' +
+      '  2. `dist` WAS ADDED TO SKIP_DIRS. It is deliberately not on that list. The site\n' +
       '     publishes its prose only as build output, so skipping build outputs wholesale would\n' +
       '     exempt the pages the reader actually receives.\n' +
       `Not walked:\n  ${missing.join('\n  ')}`,

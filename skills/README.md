@@ -15,5 +15,5 @@ for S in skills/*/; do S=$(basename "$S"); ln -s "../../skills/$S" ".claude/skil
 | skill | when it loads |
 |---|---|
 | `rwally-claims-contract` | before writing or editing any public copy — pinned strings, banned shapes, punctuation-changes-scope |
-| `rwally-design-system` | before designing or building any `apps/site-next` component — CSP envelope, tokens, motion grammar, budgets |
+| `rwally-design-system` | before designing or building any `apps/site` component — CSP envelope, tokens, motion grammar, budgets |
 | `visual-verify-loop` | before calling any UI change done — build, serve, screenshot, network, trace, guards |
