@@ -563,6 +563,10 @@ ${C.d}(see --list)${C.x}
     const first = results.find((r) => r.state === 'fail');
     console.log(`\n${C.r}${C.b}GATE FAILED${C.x} on ${C.b}${first?.s.id}${C.x} ${C.d}(${total})${C.x}`);
     console.log(`${C.d}Re-run just that step: npm run gate -- --only ${first?.s.id}${C.x}`);
+    // A red nobody captured cannot be attributed OR dismissed. On 2026-09-19 a backend failure was
+    // followed by six clean runs with no record of the failing test, which left the red
+    // untrustworthy in both directions. gate:log tees this whole stream to a file.
+    console.log(`${C.d}Capture the full output next time: npm run gate:log${ONLY ? ` -- --only ${[...ONLY].join(',')}` : ''}${C.x}`);
     if (first?.s.id === 'test' || first?.s.id === 'snapshot') {
       // Do not let a genuine finding get filed as "the gate is flaky".
       console.log(
