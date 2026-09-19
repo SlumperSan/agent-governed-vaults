@@ -224,8 +224,50 @@ function departments(vaultRoot) {
 
 // ---------------------------------------------------------------- the board (vault tasks)
 
-/** The columns, in order. A task whose `status` is none of these lands in `backlog`. */
-export const BOARD_COLUMNS = Object.freeze(['backlog', 'doing', 'review', 'blocked', 'done']);
+/**
+ * EVERY STATUS A TASK MAY HOLD, in reading order. A task whose `status` is none of these lands in
+ * `backlog`.
+ *
+ * NOT "the columns", which this used to say and which is wrong for one entry: `done` is a status
+ * and deliberately gets NO column. Finished work is the majority of a healthy board and crowded out
+ * the ones still needing a decision, so it is counted in the header and listed in the checklist
+ * drawer instead. The drawer sorts by rank, so `done` still needs a rank — which is exactly why
+ * "columns" and "statuses" had to stop being the same word here.
+ *
+ * The invariant that actually holds, and it is narrower than equality: every rendered column key is
+ * one of these, every one of these has a rank, and the set that gets no column is a named
+ * exclusion with a reason. A test asserting the three sets are EQUAL would fail on day one and
+ * whoever fixed it would either give `done` a column to satisfy the test, or special-case it.
+ *
+ * `suggestion` and `goal` lead because they are UPSTREAM of the work, not states of it.
+ * A suggestion is a department's idea awaiting an approve/decline; a goal is the outcome the
+ * department is working toward and does not move columns as it progresses. Neither is a
+ * deliverable task, so both are excluded from the board's done/total counts -- see `isWork()`
+ * in scripts/dashboard.mjs.
+ *
+ * ADDING A STATUS HERE WITHOUT ADDING IT TO THAT FILE'S COLS AND ORDER MAPS DELETES THE TASK FROM
+ * THE BOARD. Measured, not reasoned: with a status present here and absent there, 2 tasks in, 1
+ * placed into a column, 1 DROPPED, and no error thrown. Rendering iterates COLS and collects the
+ * tasks matching each key, so a status with no column shows NOWHERE — not as an empty column.
+ * `ORDER[unknown]` is also `undefined`, which makes the sort comparator return `NaN` and hands
+ * `Array.sort` an inconsistent ordering, silently and implementation-defined.
+ *
+ * On a board whose entire purpose is showing what is in flight, a silently absent card is the
+ * worst available failure. **This comment is not a mechanism** — nothing tests these three lists
+ * against each other, and `dashboard.mjs` never imports BOARD_COLUMNS, so its two lists are
+ * independent hardcoded copies. The fix is derivation, not assertion: build COLS and ORDER FROM
+ * this array so drift is impossible rather than merely detected. Until then:
+ * change all three together. `Tasks/board-column-lists-can-drift`.
+ */
+export const BOARD_COLUMNS = Object.freeze([
+  'suggestion',
+  'goal',
+  'backlog',
+  'doing',
+  'review',
+  'blocked',
+  'done',
+]);
 
 /** The departments a task may belong to. An unrecognised one is shown as-is rather than dropped. */
 export const BOARD_DEPARTMENTS = Object.freeze(['Tech', 'Marketing', 'Security', 'Design']);
@@ -318,6 +360,10 @@ function board(vaultRoot) {
 
     tasks.push({
       id: f.replace(/\.md$/, ''),
+      // The spoken identity of a card. Written into the file once by scripts/lib/task-numbers.mjs
+      // and never reused, so "task 14" means the same card next week. 0 means unnumbered, which
+      // renders as no badge rather than as "#0".
+      num: Number(fm.num) || 0,
       title: fm.title,
       department: fm.department || 'Unassigned',
       status: BOARD_COLUMNS.includes(status) ? status : 'backlog',
@@ -334,6 +380,9 @@ function board(vaultRoot) {
       // Owner-answerable tasks declare their own options. The board renders these as buttons
       // and will not record any answer that is not one of them.
       options: list(fm.options),
+      // The option a department recommends, matched by exact string against `options`. Shown as
+      // a badge so he can see the expert answer without opening a findings file to hunt for it.
+      recommended: fm.recommended || '',
       // Which department is waiting on this answer. The board records the answer; the
       // orchestrator reads the outbox and relays it, because an HTTP server cannot talk to
       // a Claude session.
