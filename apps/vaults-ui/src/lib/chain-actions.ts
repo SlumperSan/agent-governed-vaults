@@ -25,8 +25,11 @@
  * signature is requested, and mutation-testing that warning is part of this card's own gate.
  */
 import {
+  BaseError,
+  ContractFunctionRevertedError,
   encodeAbiParameters,
   keccak256,
+  type Abi,
   type Address,
   type Hex,
   type PublicClient,
@@ -52,6 +55,13 @@ export interface ExitGateInputs {
   readonly exitFeeMaxBps: bigint | null;
   readonly exitFeeDecayPeriod: bigint | null;
   readonly lastDepositTime: bigint | null;
+  /** `VaultCore.costBasisUsdc(member)` (P-O12) — `exit-preview.mjs`'s `previewExit` needs this to
+   *  bound the performance-fee range; the six fields above predate it and never needed it. */
+  readonly costBasisUsdc: bigint | null;
+  /** `VaultCore.queuedExitShares(member)` — nonzero means a Mode-F exit is already queued for this
+   *  member (one at a time, VaultCore.sol:553). `vault-state.mjs`'s `actions().exit` needs this to
+   *  refuse a second queue attempt before it ever reaches the frozen/mode checks below it. */
+  readonly queuedExitShares: bigint | null;
 }
 
 const READ_TABLES: Record<string, typeof VAULT_VIEWS> = { VAULT_VIEWS, GOVERNANCE_VIEWS };
@@ -139,9 +149,11 @@ export async function readExitGateInputs(
     read('exitFeeMaxBps'),
     read('exitFeeDecayPeriod'),
     read('lastDepositTime', [member]),
+    read('costBasisUsdc', [member]),
+    read('queuedExitShares', [member]),
   ]);
   const value = <T>(r: PromiseSettledResult<unknown>): T | null => (r.status === 'fulfilled' ? (r.value as T) : null);
-  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime] = results;
+  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime, costBasisUsdc, queuedExitShares] = results;
   return {
     creator: value<Address>(creator),
     sharesOf: value<bigint>(sharesOf),
@@ -150,6 +162,8 @@ export async function readExitGateInputs(
     exitFeeMaxBps: value<bigint>(exitFeeMaxBps),
     exitFeeDecayPeriod: value<bigint>(exitFeeDecayPeriod),
     lastDepositTime: value<bigint>(lastDepositTime),
+    costBasisUsdc: value<bigint>(costBasisUsdc),
+    queuedExitShares: value<bigint>(queuedExitShares),
   };
 }
 
@@ -218,6 +232,144 @@ export async function readVoteCustody(
 
 // ─────────────────────────────────────── writes ───────────────────────────────────────
 
+/**
+ * Every custom error `VaultCore`/`Governance` can revert with, reachable directly or through
+ * `_settleExit`/`_checkCreatorGate`/`navWad` (`StaleOracle`) from the five calls below. Declared
+ * ONLY for revert decoding, never for encoding a call — `VAULT_WRITE_ABI`/`GOVERNANCE_WRITE_ABI`
+ * stay the narrow, borrowed fragments they already were. A superset here is safe (an error this
+ * write path can never actually hit just never matches); a SUBSET would silently under-decode a
+ * real revert back into a raw selector, which is the exact "wallet-level revert" failure mode
+ * simulate-before-sign exists to remove — so this is copied whole from each contract's own `error`
+ * declarations (`VaultCore.sol`, `Governance.sol`, `IOracleAggregator.sol`), PLUS every error
+ * declared by a library VaultCore.sol binds via `using` (`contracts/src/lib/*.sol` — currently
+ * `SafeTransferLib`, `Checkpoints`, `BoundedCall`; `BoundedCall` declares none today). A revert
+ * that bubbles up from inside a `using`-bound library is still a revert on VaultCore's own call
+ * frame — `deposit()`'s `usdc.safeTransferFrom(...)` at VaultCore.sol:420 is exactly this shape —
+ * so those errors belong in the same decode set, not hand-picked by tracing which branch each
+ * call can reach. The coupling guard (`test/simulate-before-sign.test.mjs`) re-derives the
+ * library list from VaultCore.sol's own `using` declarations rather than trusting this comment,
+ * so a future added library is caught even if this list is not updated by hand.
+ */
+const KNOWN_ERRORS_ABI = [
+  // VaultCore.sol
+  { type: 'error', name: 'Reentrancy', inputs: [] },
+  { type: 'error', name: 'ZeroAmount', inputs: [] },
+  { type: 'error', name: 'BelowMinDeposit', inputs: [] },
+  { type: 'error', name: 'CapacityExceeded', inputs: [] },
+  { type: 'error', name: 'PendingExists', inputs: [] },
+  { type: 'error', name: 'NoPending', inputs: [] },
+  { type: 'error', name: 'WindowNotElapsed', inputs: [] },
+  { type: 'error', name: 'AlreadyOptedIn', inputs: [] },
+  { type: 'error', name: 'InsufficientShares', inputs: [] },
+  { type: 'error', name: 'ExitAlreadyQueued', inputs: [] },
+  { type: 'error', name: 'SlippageExceeded', inputs: [] },
+  { type: 'error', name: 'NoQueuedExit', inputs: [] },
+  { type: 'error', name: 'ExecutionStillPending', inputs: [] },
+  { type: 'error', name: 'CreatorStakeGate', inputs: [] },
+  { type: 'error', name: 'NothingToClaim', inputs: [] },
+  { type: 'error', name: 'BadConfig', inputs: [] },
+  { type: 'error', name: 'OnlyGovernance', inputs: [] },
+  { type: 'error', name: 'AdapterNotAllowed', inputs: [] },
+  { type: 'error', name: 'BadSwapToken', inputs: [] },
+  { type: 'error', name: 'InsufficientAssetBalance', inputs: [] },
+  { type: 'error', name: 'SwapSlippage', inputs: [] },
+  { type: 'error', name: 'MinOutTooLow', inputs: [] },
+  { type: 'error', name: 'BadSlippageBound', inputs: [] },
+  { type: 'error', name: 'NotRegisteredChild', inputs: [] },
+  { type: 'error', name: 'TooManyChildren', inputs: [] },
+  { type: 'error', name: 'ChildSettlementPending', inputs: [] },
+  { type: 'error', name: 'ExitNeedsChildSettlement', inputs: [] },
+  // Governance.sol
+  { type: 'error', name: 'OnlyDeployer', inputs: [] },
+  { type: 'error', name: 'AlreadyWiredSubRegistry', inputs: [] },
+  { type: 'error', name: 'ZeroSubRegistry', inputs: [] },
+  { type: 'error', name: 'AlreadyRegistered', inputs: [] },
+  { type: 'error', name: 'NotRegistered', inputs: [] },
+  { type: 'error', name: 'NotVaultCreator', inputs: [] },
+  { type: 'error', name: 'BadGovConfig', inputs: [] },
+  { type: 'error', name: 'ProposalActive', inputs: [] },
+  { type: 'error', name: 'NoActiveProposal', inputs: [] },
+  { type: 'error', name: 'BelowProposalThreshold', inputs: [] },
+  { type: 'error', name: 'Cooldown', inputs: [] },
+  { type: 'error', name: 'WrongPhase', inputs: [] },
+  { type: 'error', name: 'NoWeight', inputs: [] },
+  { type: 'error', name: 'AlreadyCommitted', inputs: [] },
+  { type: 'error', name: 'NoCommit', inputs: [] },
+  { type: 'error', name: 'BadReveal', inputs: [] },
+  { type: 'error', name: 'AlreadyRevealed', inputs: [] },
+  { type: 'error', name: 'NotRebalance', inputs: [] },
+  { type: 'error', name: 'DefaultUnavailable', inputs: [] },
+  { type: 'error', name: 'HasDelegate', inputs: [] },
+  { type: 'error', name: 'DelegateNotRevealed', inputs: [] },
+  { type: 'error', name: 'ConcentrationCap', inputs: [] },
+  { type: 'error', name: 'NotPassed', inputs: [] },
+  { type: 'error', name: 'TimelockActive', inputs: [] },
+  { type: 'error', name: 'ExecutionWindowOver', inputs: [] },
+  { type: 'error', name: 'BadPayload', inputs: [] },
+  { type: 'error', name: 'CannotDelegateDuringProposal', inputs: [] },
+  // IOracleAggregator.sol -- navWad() reaches this from _deposit and _settleExit alike
+  { type: 'error', name: 'StaleOracle', inputs: [{ name: 'asset', type: 'address' }] },
+  // contracts/src/lib/SafeTransferLib.sol -- `using SafeTransferLib for address;` (VaultCore.sol:39).
+  // deposit()'s usdc.safeTransferFrom(...) (VaultCore.sol:420) can revert TransferFromFailed directly
+  // on this call frame; the other two are reachable from the same bound library.
+  { type: 'error', name: 'TransferFailed', inputs: [{ name: 'token', type: 'address' }] },
+  { type: 'error', name: 'TransferFromFailed', inputs: [{ name: 'token', type: 'address' }] },
+  { type: 'error', name: 'ApproveFailed', inputs: [{ name: 'token', type: 'address' }] },
+  // contracts/src/lib/Checkpoints.sol -- `using Checkpoints for Checkpoints.History;` (VaultCore.sol:40).
+  { type: 'error', name: 'ValueOverflow', inputs: [] },
+  // contracts/src/lib/BoundedCall.sol -- `using BoundedCall for address;` (VaultCore.sol:41) declares
+  // no `error`s today; nothing to add here, but the coupling guard still scans it so a future one
+  // added there is caught rather than silently missing from decode.
+] as const satisfies Abi;
+
+/** The message a member sees for a revert this module could not name. Never invented text pretending
+ *  to be a decoded reason -- an unnamed revert stays visibly unnamed. */
+function describeRevert(err: unknown): string {
+  if (err instanceof BaseError) {
+    const reverted = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (reverted instanceof ContractFunctionRevertedError) {
+      const name = reverted.data?.errorName;
+      if (name) return name;
+    }
+    return err.shortMessage ?? err.message;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * SIMULATE, THEN SIGN. Every write in this module goes through this rather than calling
+ * `walletClient.writeContract` directly. `publicClient.simulateContract` runs the call as an
+ * `eth_call` first -- same calldata, same block, no signature -- so a revert that would otherwise
+ * surface only AFTER a member has signed and paid gas (or, worse, after it mines) is caught before
+ * the wallet is ever asked to sign. This is the fix for the class of defect named in the frontend
+ * security pass (row A17/B12): "use full balance" overscaling and a repeat deposit inside the
+ * observation window were each individually caught and fixed; simulate-before-sign catches that
+ * whole class rather than requiring the next one to be anticipated and hand-coded as its own
+ * app-level refusal check.
+ *
+ * On a REVERT, throws with the decoded custom error name (`StaleOracle`, `PendingExists`,
+ * `CreatorStakeGate`, ...) when the ABI above can decode it, or the wallet/RPC's own message
+ * otherwise -- never a guess. The caller (`MemberActions.tsx`) is responsible for turning that
+ * name into member-facing copy; this module's job stops at "which error, if any".
+ */
+async function simulateThenWrite<T extends { abi: Abi; functionName: string; args: readonly unknown[] }>(
+  publicClient: PublicClient,
+  walletClient: WalletClient,
+  params: T & { address: Address; account: Address },
+): Promise<Hex> {
+  let request: unknown;
+  try {
+    ({ request } = await publicClient.simulateContract({
+      ...params,
+      abi: [...params.abi, ...KNOWN_ERRORS_ABI] as Abi,
+      chain: TARGET_CHAIN,
+    } as Parameters<PublicClient['simulateContract']>[0]));
+  } catch (err) {
+    throw new Error(`${params.functionName} would revert: ${describeRevert(err)}`);
+  }
+  return walletClient.writeContract(request as Parameters<WalletClient['writeContract']>[0]);
+}
+
 export interface DepositResult {
   readonly approvalHash: Hex;
   readonly depositHash: Hex;
@@ -236,22 +388,20 @@ export async function sendDeposit(
   amountUsdc: bigint,
 ): Promise<DepositResult> {
   const { usdc } = await readVaultAddresses(publicClient, vault);
-  const approvalHash = await walletClient.writeContract({
+  const approvalHash = await simulateThenWrite(publicClient, walletClient, {
     address: usdc,
     abi: ERC20_WRITE_ABI,
     functionName: 'approve',
     args: [vault, amountUsdc],
     account,
-    chain: TARGET_CHAIN,
   });
   await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-  const depositHash = await walletClient.writeContract({
+  const depositHash = await simulateThenWrite(publicClient, walletClient, {
     address: vault,
     abi: VAULT_WRITE_ABI,
     functionName: 'deposit',
     args: [amountUsdc],
     account,
-    chain: TARGET_CHAIN,
   });
   return { approvalHash, depositHash };
 }
@@ -263,6 +413,7 @@ export async function sendDeposit(
  * change (the requirement this card names explicitly — see `apps/web/src/vote-custody.mjs`).
  */
 export async function sendCommitVote(
+  publicClient: PublicClient,
   walletClient: WalletClient,
   account: Address,
   governance: Address,
@@ -278,13 +429,12 @@ export async function sendCommitVote(
     keccak256,
   });
   const commitment = (await commitmentFor({ pid, voter: account, support, salt, keccak256, encodeAbiParameters })) as Hex;
-  const commitHash = await walletClient.writeContract({
+  const commitHash = await simulateThenWrite(publicClient, walletClient, {
     address: governance,
     abi: GOVERNANCE_WRITE_ABI,
     functionName: 'commitVote',
     args: [BigInt(pid), commitment],
     account,
-    chain: TARGET_CHAIN,
   });
   return { commitHash, commitment };
 }
@@ -293,6 +443,7 @@ export async function sendCommitVote(
  * module trusts to say so; a `mismatch`/`unread`/`none`/`revealed` state throws rather than
  * guessing at a salt or a support value. */
 export async function sendRevealVote(
+  publicClient: PublicClient,
   walletClient: WalletClient,
   account: Address,
   governance: Address,
@@ -302,13 +453,12 @@ export async function sendRevealVote(
   if (!canReveal(state) || state.status !== 'ready') {
     throw new Error(`sendRevealVote: not safe to reveal from state '${state.status}' — ${state.detail}`);
   }
-  const revealHash = await walletClient.writeContract({
+  const revealHash = await simulateThenWrite(publicClient, walletClient, {
     address: governance,
     abi: GOVERNANCE_WRITE_ABI,
     functionName: 'revealVote',
     args: [BigInt(pid), state.support, state.salt as Hex],
     account,
-    chain: TARGET_CHAIN,
   });
   return { revealHash };
 }
@@ -316,18 +466,18 @@ export async function sendRevealVote(
 /** `requestExit` — queues (irrevocably) or settles instantly, entirely as a function of whether
  * the vault currently has a pending execution; see this file's header. */
 export async function sendRequestExit(
+  publicClient: PublicClient,
   walletClient: WalletClient,
   account: Address,
   vault: Address,
   shares: bigint,
 ): Promise<{ exitHash: Hex }> {
-  const exitHash = await walletClient.writeContract({
+  const exitHash = await simulateThenWrite(publicClient, walletClient, {
     address: vault,
     abi: VAULT_WRITE_ABI,
     functionName: 'requestExit',
     args: [shares],
     account,
-    chain: TARGET_CHAIN,
   });
   return { exitHash };
 }
