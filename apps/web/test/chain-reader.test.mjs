@@ -42,6 +42,7 @@ import {
   assembleAllowSubVaults,
   planClaimableEscrow,
   assembleClaimableEscrow,
+  assembleUnreadClaimableEscrow,
 } from '../src/chain-reader.mjs';
 import { MISSING_IN_LIVE } from '../src/live-adapter.mjs';
 import {
@@ -742,6 +743,51 @@ test('multiple nonzero tokens — basket asset AND usdc both escrowed — produc
   assert.equal(out.length, 2, 'the zero-balance third token must not appear at all, and the two nonzero ones must not merge into one');
   assert.deepEqual(out.find((e) => e.asset === WETH), { asset: WETH, amount: 500n, readAt: NOW });
   assert.deepEqual(out.find((e) => e.asset === USDC), { asset: USDC, amount: 250_000n, readAt: NOW + 5 });
+});
+
+// ── Security's review of PR #361: the three claimable states, and that none is lost ────────────
+
+test('the three claimable states each survive to the module\'s output — real zero, confirmed positive, unread/failed', () => {
+  const entries = [
+    { asset: WETH, value: 0n, readAt: NOW }, // confirmed real zero
+    { asset: USDC, value: 12_345n, readAt: NOW }, // confirmed positive
+    { asset: '0xreverted00000000000000000000000000000001', value: null, readAt: NOW }, // reverted
+    { asset: '0xreverted00000000000000000000000000000002', value: undefined, readAt: NOW }, // never answered
+  ];
+  const claimable = assembleClaimableEscrow(entries);
+  const unread = assembleUnreadClaimableEscrow(entries);
+
+  // Confirmed positive: in claimable, not in unread.
+  assert.deepEqual(claimable, [{ asset: USDC, amount: 12_345n, readAt: NOW }]);
+  assert.ok(!unread.some((e) => e.asset === USDC));
+
+  // Confirmed real zero: in NEITHER list — a genuine "you have nothing", not a failure.
+  assert.ok(!claimable.some((e) => e.asset === WETH));
+  assert.ok(!unread.some((e) => e.asset === WETH));
+
+  // Unread/failed: in unread, NEVER in claimable — this is the fix. Distinct from a confirmed zero.
+  assert.deepEqual(unread, [
+    { asset: '0xreverted00000000000000000000000000000001', readAt: NOW },
+    { asset: '0xreverted00000000000000000000000000000002', readAt: NOW },
+  ]);
+  assert.ok(!claimable.some((e) => e.asset.startsWith('0xreverted')));
+});
+
+test('MUTATION: an unread token silently disappearing from BOTH lists must be caught', () => {
+  // Reintroducing the pre-fix collapse (treating "not bigint" as "confirmed zero" everywhere)
+  // would make this entry vanish rather than surface in the unread list. Assert it does not.
+  const entries = [{ asset: WETH, value: 'reverted', readAt: NOW }];
+  const unread = assembleUnreadClaimableEscrow(entries);
+  assert.equal(unread.length, 1, 'an unread token must appear SOMEWHERE — this list exists so it is never silently lost');
+  assert.equal(unread[0].asset, WETH);
+});
+
+test('assembleUnreadClaimableEscrow never reports a resolved token, positive or zero', () => {
+  const out = assembleUnreadClaimableEscrow([
+    { asset: WETH, value: 0n, readAt: NOW },
+    { asset: USDC, value: 999_999n, readAt: NOW },
+  ]);
+  assert.deepEqual(out, [], 'both tokens resolved — neither belongs in the unread list');
 });
 
 // ── The two lists stay complements of each other ────────────────────────────────────────────────

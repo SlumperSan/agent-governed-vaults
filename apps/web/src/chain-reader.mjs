@@ -325,13 +325,13 @@ export function planClaimableEscrow(vault, member, assets) {
 
 /**
  * Assemble the per-token claimable reads. A token's entry appears ONLY when its read resolved to a
- * STRICT positive bigint — a real zero (nothing escrowed) and an unread/failed call collapse to the
- * SAME outcome, "no row for this token", because Row 6b's own spec draws no distinction between
- * them: "Zero or unread renders nothing for that token — never a placeholder row." This is the
- * `assembleLegSafety` discipline in the opposite direction — there, an unread call must never look
- * like the SAFE answer; here, an unread call must never look like the ALARMING one (a phantom
- * claimable balance nobody can actually withdraw). Never sums two entries for the same asset: one
- * call in, at most one entry out, always.
+ * STRICT positive bigint — a confirmed real zero (nothing escrowed) is still correctly omitted here,
+ * same as before. This is the `assembleLegSafety` discipline in the opposite direction — an unread
+ * call must never look like the ALARMING answer (a phantom claimable balance nobody can actually
+ * withdraw) — but an unread call is NO LONGER silently identical to a confirmed zero: see
+ * `assembleUnreadClaimableEscrow` below, which is where that distinction now lives, per
+ * Findings/2026-09-21-row-6b-collapses-unread-into-zero.md and Security's review of this PR. Never
+ * sums two entries for the same asset: one call in, at most one entry out, always.
  *
  * @param {readonly {asset: string, value: unknown, readAt?: number|null}[]} entries
  */
@@ -340,6 +340,32 @@ export function assembleClaimableEscrow(entries) {
   for (const e of entries) {
     if (typeof e.value !== 'bigint' || e.value <= 0n) continue; // unread AND confirmed-zero: no row
     out.push(Object.freeze({ asset: e.asset, amount: e.value, readAt: e.readAt ?? null }));
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * The complement `assembleClaimableEscrow` above cannot carry: every token whose `claimable` read
+ * did NOT resolve to a bigint at all — reverted, timed out, or simply never answered. A confirmed
+ * real zero (`0n`) is NOT in this list either; only genuinely unresolved reads are. Additive, not a
+ * replacement: `assembleClaimableEscrow`'s existing six tests and its own return value are
+ * unchanged by this function's existence — a caller that only wants "what can I claim" still gets
+ * exactly what it got before. A caller that also wants "what could this vault not verify for me"
+ * now has somewhere to get that from, so the per-token distinction the original spec discarded
+ * survives to the module's output instead of being lost before any consumer sees it (Security's
+ * finding on PR #361 — Row 6b was the only Contract tab read that discarded rather than merely
+ * didn't summarise the raw per-field state; Row 4's `assembleWiringLock` was always the exception,
+ * since it keeps every field's own read timestamp regardless of the record's own all-or-nothing
+ * verdict). The UI decides how to render this — e.g. "could not check your escrow for this token,
+ * retry" — this module only reports which tokens are in that state.
+ *
+ * @param {readonly {asset: string, value: unknown, readAt?: number|null}[]} entries
+ */
+export function assembleUnreadClaimableEscrow(entries) {
+  const out = [];
+  for (const e of entries) {
+    if (typeof e.value === 'bigint') continue; // resolved either way (zero or positive) — not unread
+    out.push(Object.freeze({ asset: e.asset, readAt: e.readAt ?? null }));
   }
   return Object.freeze(out);
 }
