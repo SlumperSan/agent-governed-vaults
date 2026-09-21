@@ -60,6 +60,13 @@ export { canSign, requestExitPricingRefusal, creatorGateRefusal, exitFeeCeiling 
 export type { Refusal, ExitFeeCeiling } from '@atlas/wallet-refusals';
 export { classifyDepositStatus } from '@atlas/deposit-status';
 export type { DepositStatus } from '@atlas/deposit-status';
+// The refusal VERDICTS (apps/web/src/vault-state.mjs) — the two traps it refuses beyond what the
+// contract itself forbids (queueing an irrevocable Mode-F exit while frozen; skipWindow() with
+// nothing pending) apply here exactly as they do on the allocator front end, since both read the
+// same live chain state. MemberActions.tsx calls `actions()` to decide whether the exit button
+// signs at all, rather than re-deriving the frozen/Mode-F refusal a second time in the component.
+export { actions, vaultStatus } from '@atlas/vault-state';
+export type { VaultFacts, VaultActions, Verdict, VaultNotice, VaultStatusBadge } from '@atlas/vault-state';
 
 /**
  * A basket leg as `chain-reader.mjs`'s `assembleLeg` shapes it, plus the per-leg safety tri-state

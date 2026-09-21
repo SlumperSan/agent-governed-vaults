@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Address } from 'viem';
 import {
+  actions,
   bpsPct,
   canReveal,
   canSign,
@@ -18,6 +19,7 @@ import {
   type ExitPreview,
   type Refusal,
   type Vault,
+  type VaultActions,
   type VoteCustodyState,
 } from '../lib/atlas';
 import {
@@ -259,6 +261,32 @@ export function MemberActions({ vault }: Props) {
         tenureSec: exitGate.lastDepositTime == null ? null : BigInt(nowSec()) - exitGate.lastDepositTime,
       })
     : null;
+  // The frozen/Mode-F/queued-exit refusal (vault-state.mjs's `actions().exit`) — the same module
+  // apps/web/index.html has always refused against, unwired here until now. `vault.frozen` is a
+  // live navWad()-revert read (chain-reader.mjs), never the tri-state "cannot be read" apps/web's
+  // event-derived path has to allow for — this app's `Vault.frozen` is always a known boolean, so
+  // there is no freeze-unknown case to preserve here (unlike a frozen-vs-unknown notice on the
+  // metered API path). `null` until `exitGate`/`shares` resolve, deliberately: a fact built from a
+  // still-loading `shares` (e.g. `isMember` defaulting to `shares > 0n` on a null `shares`) would
+  // silently misclassify a real member as a non-member rather than as "not yet known".
+  const vaultActions: VaultActions | null =
+    exitGate && shares !== null
+      ? actions({
+          frozen: vault.frozen,
+          attested: vault.attested,
+          exitMode: pendingExecution === true ? 'F' : pendingExecution === false ? 'I' : 'unknown',
+          isMember: shares > 0n,
+          // Only `exit`'s own verdict is rendered below — deposit/activate/skipWindow need
+          // capacity data this component does not read (see atlas.ts's own note on why
+          // `capacityCapUsdc` is not sourced here), so those three facts are inert placeholders
+          // for verdicts this component never displays, not real inputs to a rendered decision.
+          hasPendingDeposit: false,
+          pendingMatured: false,
+          capacityFull: false,
+          hasQueuedExit: (exitGate.queuedExitShares ?? 0n) > 0n,
+          walletConnected: connected,
+        })
+      : null;
   // What the member would actually RECEIVE (P-O12) — mirrors VaultCore._settleExit/_exitFeeBps
   // term for term; see exit-preview.mjs for the fee-as-a-range rule and the SV-5 scope note. Only
   // computed once `shares` has resolved: `previewExit` treats a missing memberShares as an input
@@ -409,12 +437,19 @@ export function MemberActions({ vault }: Props) {
         <button
           type="button"
           className="btn"
-          disabled={disabled || exit.busy || !canSign(creatorGate)}
+          disabled={disabled || exit.busy || !canSign(creatorGate) || vaultActions === null || !vaultActions.exit.available}
           onClick={() => void handleExit()}
         >
           {exit.busy ? 'Exiting…' : 'Request exit'}
         </button>
       </div>
+      {vaultActions && !vaultActions.exit.available ? (
+        // Stated reason, not just a greyed button — vault-state.mjs's own wording, unchanged, so
+        // this app never says something different from apps/web about the same refusal. Covers
+        // the frozen-Mode-F trap (irrevocable queue during a freeze), an outright frozen vault,
+        // "already queued", and "no shares" — none of which this button refused before.
+        <p className={vaultActions.exit.severity === 'info' ? 'note dim' : 'note tag-warn'}>{vaultActions.exit.reason}</p>
+      ) : null}
       {pendingExecution === true ? (
         <p className="note tag-warn">
           A proposal is past its commit deadline: this exit QUEUES — irrevocably, no cancel — and settles later at
