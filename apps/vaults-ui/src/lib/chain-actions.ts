@@ -36,9 +36,10 @@ import {
   type WalletClient,
 } from 'viem';
 import { VAULT_WRITE_ABI, ERC20_WRITE_ABI, GOVERNANCE_WRITE_ABI } from '@chain/act';
-import { VAULT_VIEWS, GOVERNANCE_VIEWS } from '@chain/abis';
+import { VAULT_VIEWS, GOVERNANCE_VIEWS, UNISWAP_V3_FACTORY_VIEWS, UNISWAP_V3_POOL_VIEWS } from '@chain/abis';
 import { canReveal, commitmentFor, deriveSalt, reconstructVoteCustody, type VoteCustodyState } from '@atlas/vote-custody';
 import { assembleVoteCommit, planVoteCommit, type PlannedCall } from '@atlas/chain-reader';
+import { MAX_TICK_WALK, tickBoundaries } from '@atlas/size-impact';
 import { TARGET_CHAIN } from './chains';
 
 /** Every field is independently nullable: `readExitGateInputs` resolves each read on its own
@@ -191,6 +192,174 @@ export async function readDepositStatusInputs(
     publicClient.readContract({ address: vault, abi: VAULT_VIEWS, functionName: 'sharesOf', args: [member] }) as Promise<bigint>,
   ]);
   return { pendingAmountUsdc: pending[0], availableAt: Number(pending[1]), sharesOf };
+}
+
+// ───────────────────────── size-impact notice (#183, plan item 1.2) ─────────────────────────
+
+/** Standard Uniswap v3 fee tiers, in hundredths of a bip — PROBED live via `getPool`, never
+ * assumed. The Decision doc records the cirBTC/USDC pool as "a 0.01% fee tier" (tier 100), but
+ * this probes all four rather than trusting that as a constant: a wrong assumption here would
+ * silently resolve to a DIFFERENT pool (or none), which is exactly the "computed live, never a
+ * constant" acceptance bar this notice exists to hold. */
+const V3_FEE_TIERS = [100, 500, 3000, 10000] as const;
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+/**
+ * `VITE_V3_FACTORY` — the one piece of chain-level plumbing `readPoolSizeImpactInputs` needs
+ * configured, the same shape as `VITE_RPC_URL` (live-vaults.ts): a per-deployment fact set at
+ * build time, never a default that points somewhere. Unset — the case for Base Sepolia, which
+ * has no cirBTC pool at all, and for Arc before this is set in the deploy's build environment —
+ * resolves to `null`, and the notice renders its qualitative-only state, never a stale or
+ * fallback figure. NOT the pool address itself: the actual pool is still resolved live via
+ * `getPool`, so this one address never becomes "the edge".
+ */
+export function v3FactoryAddressFromEnv(): Address | null {
+  const raw = (import.meta.env as Record<string, string | undefined>).VITE_V3_FACTORY;
+  if (!raw || !/^0x[0-9a-fA-F]{40}$/.test(raw)) return null;
+  return raw as Address;
+}
+
+/**
+ * Resolve the USDC/`otherAsset` pool address live through the factory — the same
+ * `factory.getPool(a, b, fee)` call `scripts/build-rebalance-order.mjs` already uses, applied
+ * here instead of a hardcoded pool address (there is no `router()`/pool address on VaultCore
+ * itself to read this from — see this file's own header on what VaultCore does and does not
+ * expose). `factoryAddress` is the one piece of chain-level plumbing this needs configured, the
+ * same shape as `VITE_RPC_URL` — a stable per-deployment fact, not a computed edge.
+ */
+async function resolvePool(
+  publicClient: PublicClient,
+  factoryAddress: Address,
+  usdc: Address,
+  otherAsset: Address,
+): Promise<Address | null> {
+  for (const fee of V3_FEE_TIERS) {
+    try {
+      const pool = (await publicClient.readContract({
+        address: factoryAddress,
+        abi: UNISWAP_V3_FACTORY_VIEWS,
+        functionName: 'getPool',
+        args: [usdc, otherAsset, fee],
+      })) as Address;
+      if (pool && pool.toLowerCase() !== ZERO_ADDRESS) return pool;
+    } catch {
+      // try the next tier — a revert here is not a read failure, just "not this tier"
+    }
+  }
+  return null;
+}
+
+export interface PoolTickRead {
+  readonly tick: number;
+  readonly liquidityNet: bigint | null;
+}
+
+/**
+ * Everything `@atlas/size-impact`'s `sizeForecast` needs for BOTH the deposit and the exit walk,
+ * in one read pass. `ok: false` covers every way the pool cannot be identified or its core state
+ * cannot be read — the caller must render the qualitative-only notice in that case, never a
+ * stale or fallback figure (see Decisions/Deposit size warning is notice-only 2026-09-18.md).
+ * A discriminated union rather than independently-nullable fields (unlike `ExitGateInputs`
+ * above): every field here comes from the SAME pool-core read, so there is no partial-failure
+ * shape to preserve — either all of it resolved or none of it did.
+ *
+ * Deposit and exit walk in OPPOSITE directions from the SAME current tick, each read
+ * independently here (two separate `ticks()` batches) — never one derived from the other.
+ */
+export interface PoolSizeImpactOk {
+  readonly ok: true;
+  readonly liquidity: bigint;
+  readonly sqrtPriceX96: bigint;
+  readonly currentTick: number;
+  readonly usdcIsToken0: boolean;
+  readonly depositTicks: readonly PoolTickRead[];
+  readonly exitTicks: readonly PoolTickRead[];
+}
+export interface PoolSizeImpactFailed {
+  readonly ok: false;
+}
+export type PoolSizeImpactInputs = PoolSizeImpactOk | PoolSizeImpactFailed;
+
+const POOL_READ_FAILED: PoolSizeImpactFailed = { ok: false };
+
+/** One `ticks(int24)` batch, nearest-to-farthest, each boundary read independently
+ * (`Promise.allSettled`) so a single reverting call degrades that ONE tick to `liquidityNet:
+ * null` — which `findMaterialEdge` treats as "nothing past this point is certified" — rather
+ * than failing the whole walk. */
+async function readTicks(publicClient: PublicClient, pool: Address, boundaries: readonly number[]): Promise<PoolTickRead[]> {
+  const results = await Promise.allSettled(
+    boundaries.map((tick) =>
+      publicClient.readContract({
+        address: pool,
+        abi: UNISWAP_V3_POOL_VIEWS,
+        functionName: 'ticks',
+        args: [tick],
+      }) as Promise<readonly [bigint, bigint, bigint, bigint, bigint, bigint, number, boolean]>,
+    ),
+  );
+  return boundaries.map((tick, i) => {
+    const r = results[i];
+    return { tick, liquidityNet: r && r.status === 'fulfilled' ? r.value[1] : null };
+  });
+}
+
+/**
+ * `factoryAddress: null` (no factory configured for this chain — e.g. Base Sepolia, which has no
+ * cirBTC pool at all) resolves straight to the read-failed shape with no RPC call, matching the
+ * "if the read fails, render nothing" rule at zero cost when the feature is simply not
+ * applicable on the connected chain.
+ */
+export async function readPoolSizeImpactInputs(
+  publicClient: PublicClient,
+  factoryAddress: Address | null,
+  usdc: Address,
+  otherAsset: Address,
+): Promise<PoolSizeImpactInputs> {
+  if (!factoryAddress) return POOL_READ_FAILED;
+  const pool = await resolvePool(publicClient, factoryAddress, usdc, otherAsset);
+  if (!pool) return POOL_READ_FAILED;
+
+  let token0: Address;
+  let liquidity: bigint;
+  let tickSpacing: number;
+  let sqrtPriceX96: bigint;
+  let currentTick: number;
+  try {
+    const [token0Read, liquidityRead, tickSpacingRead, slot0] = await Promise.all([
+      publicClient.readContract({ address: pool, abi: UNISWAP_V3_POOL_VIEWS, functionName: 'token0' }) as Promise<Address>,
+      publicClient.readContract({ address: pool, abi: UNISWAP_V3_POOL_VIEWS, functionName: 'liquidity' }) as Promise<bigint>,
+      publicClient.readContract({ address: pool, abi: UNISWAP_V3_POOL_VIEWS, functionName: 'tickSpacing' }) as Promise<number>,
+      publicClient.readContract({ address: pool, abi: UNISWAP_V3_POOL_VIEWS, functionName: 'slot0' }) as Promise<
+        readonly [bigint, number, number, number, number, number, boolean]
+      >,
+    ]);
+    token0 = token0Read;
+    liquidity = liquidityRead;
+    tickSpacing = Number(tickSpacingRead);
+    sqrtPriceX96 = slot0[0];
+    currentTick = Number(slot0[1]);
+  } catch {
+    return POOL_READ_FAILED;
+  }
+  if (!(liquidity > 0n) || !(tickSpacing > 0)) return POOL_READ_FAILED;
+
+  const usdcIsToken0 = token0.toLowerCase() === usdc.toLowerCase();
+  // Deposit gives USDC in: price rises (tick up) when USDC is token1, falls (tick down) when
+  // USDC is token0. Exit gives the OTHER asset in: exactly the opposite direction. Derived from
+  // a live `token0()` read rather than assumed, so this stays correct if the pool's token order
+  // ever differs from what has been measured on the real cirBTC/USDC pool so far.
+  const depositDirection: 1 | -1 = usdcIsToken0 ? -1 : 1;
+  const exitDirection: 1 | -1 = usdcIsToken0 ? 1 : -1;
+
+  const depositBoundaries = tickBoundaries({ currentTick, tickSpacing, direction: depositDirection, count: MAX_TICK_WALK });
+  const exitBoundaries = tickBoundaries({ currentTick, tickSpacing, direction: exitDirection, count: MAX_TICK_WALK });
+  const [depositTicks, exitTicks] = await Promise.all([
+    readTicks(publicClient, pool, depositBoundaries),
+    readTicks(publicClient, pool, exitBoundaries),
+  ]);
+
+  return { ok: true, liquidity, sqrtPriceX96, currentTick, usdcIsToken0, depositTicks, exitTicks };
 }
 
 /**

@@ -120,6 +120,23 @@ const webSrcModules = () => {
 };
 
 /**
+ * Modules verified to carry NO code-level string or template literal at all — grepped by hand,
+ * not merely observed by the tokenizer, so this is a claim about the FILE, not a workaround for
+ * the tokenizer. Every one of the eleven original modules this guard was built against has
+ * member-facing string literals (refusal reasons, labels, notices), which is what makes a
+ * zero-string extraction from any of THOSE a tokenizer defect rather than a clean file — tripwire
+ * 2's whole premise. `size-impact.mjs` (#183) breaks that premise honestly: it is pure
+ * constant-liquidity math returning structured `{ok, pastEdge, ...}` objects, never a thrown or
+ * returned prose string — every word a member reads about it is composed in
+ * `apps/vaults-ui/src/components/MemberActions.tsx`, which this guard does not and should not
+ * reach (`.tsx` is outside `WEB_SRC` by design — see this file's header on scope). Add a file here
+ * ONLY after confirming by hand (not by trusting a red test) that it has zero `'`/`"`/`` ` ``
+ * outside its comments; a module added here that DOES have real strings would hide them from
+ * every check below, which is why the bar is "verified", not "convenient".
+ */
+const NO_STRING_LITERALS_VERIFIED = new Set(['apps/web/src/size-impact.mjs']);
+
+/**
  * Every module's file path alongside its extracted string-literal text, flattened into one
  * haystack per file the same way `claims-lede-truth.test.mjs` flattens hard-wrapped prose — so a
  * banned shape split across two adjacent string-literal fragments (common here: many refusal
@@ -129,15 +146,20 @@ const modulesWithExtractedText = () =>
   webSrcModules().map((file) => {
     const source = readFileSync(path.join(REPO, file), 'utf8');
     const strings = extractStringLiterals(source);
-    // Tripwire 2 — see header. Every module here has member-facing string literals (that is the
-    // entire reason this guard exists), so a module extracting to nothing is a tokenizer defect,
-    // not a clean file, and must be surfaced rather than silently treated as having nothing to say.
+    // Tripwire 2 — see header. Every OTHER module here has member-facing string literals (that is
+    // the entire reason this guard exists), so a module extracting to nothing is a tokenizer
+    // defect, not a clean file, and must be surfaced rather than silently treated as having
+    // nothing to say — UNLESS it is on the narrow, hand-verified exemption list above, in which
+    // case it still counts toward coverage below (an entry present with zero strings), it just
+    // contributes none of its own.
+    if (strings.length === 0 && NO_STRING_LITERALS_VERIFIED.has(file)) return { file, text: '' };
     assert.ok(
       strings.length > 0,
       `${file}: extracted ZERO string literals. This file plainly has strings (it is why this ` +
         'guard exists) — a zero-string extraction means extract-string-literals.mjs failed to ' +
         'tokenize it, and treating that as "nothing to check" is exactly the silent skip this ' +
-        'guard exists to refuse. Fix the tokenizer rather than let this pass.',
+        'guard exists to refuse. Fix the tokenizer rather than let this pass, or add the file to ' +
+        'NO_STRING_LITERALS_VERIFIED above if you have confirmed by hand it truly has none.',
     );
     return { file, text: flat(strings.join(' ')) };
   });
