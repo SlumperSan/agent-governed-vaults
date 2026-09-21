@@ -218,7 +218,7 @@ async function readLegSafety(client: Pick<PublicClient, 'multicall'>, vault: str
 }
 
 /** One vault, all four rounds. Throws on any structural read failure — the caller maps that to `Fetched.error`. */
-async function readOneVault(client: PublicClient, address: string): Promise<AssembledVault> {
+async function readOneVault(client: PublicClient, address: string, name: string): Promise<AssembledVault> {
   const coreResults = await multicallPlan(client, planCore(address));
   // planCore's order: navWad, totalShares, idleUsdc, usdcScalar, totalPendingUsdc, basketLength,
   // childVaultCount, oracle, governance, creator, operatorRegistry — 11 calls, indices 0-10.
@@ -317,13 +317,18 @@ async function readOneVault(client: PublicClient, address: string): Promise<Asse
     proposal,
     governanceConfig,
     attested,
-    // `name`/`operatorName` are left `''` (the default `assembleVault` already applies). Neither
-    // has an on-chain source: VAULT_VIEWS has no `name()`, and the only operator-identifying read
-    // this pipeline makes is `VaultCore.creator` — the immutable payout address (see
+    // `name` HAS NO ON-CHAIN SOURCE: `VAULT_VIEWS` has no `name()` — see card #67, "Nothing holds
+    // what the one v1 vault is called". `fetchLiveVaults` passes it in from `VITE_VAULT_NAME`
+    // (`readLiveConfig`, below), the one home in the repo this string has, rather than each
+    // caller inventing or hardcoding it. Empty when unset, exactly `assembleVault`'s own default,
+    // so an unconfigured build still falls back to `shortAddress` (`atlas.ts`'s `Vault.name`
+    // comment) instead of printing an empty heading.
+    name,
+    // `operatorName` stays `''`: the only operator-identifying read this pipeline makes is
+    // `VaultCore.creator`, the immutable payout address (see
     // `contracts/config/deployments/base-sepolia.json`'s `operatorPayoutNote`), not a registered
-    // display name. `operatorAddress: core.creator` is therefore the one address this data can
-    // honestly attribute the vault to; the UI falls back to a short form of `address` for the
-    // missing `name`, not a fabricated one — see `atlas.ts`'s `Vault.name`/`operatorName` comments.
+    // display name. `operatorAddress: core.creator` is the one address this data can honestly
+    // attribute the vault to.
     operatorAddress: core.creator,
   });
 }
@@ -332,11 +337,22 @@ export interface LiveConfig {
   readonly rpcUrl: string;
   readonly chainId: number;
   readonly vaultAddresses: readonly string[];
+  /**
+   * The one v1 vault's display name — card #67, `Decisions/Vault name is cirBTC Vault 2026-09-19`.
+   * `''` when unset, which is `assembleVault`'s own "no name" value, so an unconfigured build still
+   * falls back to `shortAddress` rather than printing an empty heading. Applied to EVERY configured
+   * address: correct today because the v1 cut line pins exactly one
+   * (`Decisions/v1-cut-line-2026-09-18`), and a config naming more than one vault with one shared
+   * name is a decision for whoever lifts that cut line, not a case this file should silently guess.
+   */
+  readonly vaultName: string;
 }
 
 /**
  * Reads `VITE_RPC_URL` / `VITE_CHAIN_ID` / `VITE_VAULT_ADDRESSES`, all three build-time (Vite
  * inlines `import.meta.env.*` at build, never reads them at runtime from the served page).
+ * `VITE_VAULT_NAME` is a fourth, OPTIONAL variable — unlike the first three, its absence does not
+ * fail the config: a nameless vault renders `shortAddress`, which is honest, not broken.
  *
  * `null` on anything unusable — NOT a default that points somewhere. Nothing is deployed on Arc
  * 5042 yet (`contracts/config/arc-mainnet.json`'s own `status` field says so), so a production
@@ -357,7 +373,8 @@ export function readLiveConfig(): LiveConfig | null {
     .map((s) => s.trim())
     .filter((a) => ADDRESS_RE.test(a));
   if (vaultAddresses.length === 0) return null;
-  return Object.freeze({ rpcUrl, chainId, vaultAddresses });
+  const vaultName = (env.VITE_VAULT_NAME ?? '').trim();
+  return Object.freeze({ rpcUrl, chainId, vaultAddresses, vaultName });
 }
 
 /**
@@ -413,7 +430,9 @@ export async function buildBoundClient(cfg: LiveConfig): Promise<PublicClient> {
 export async function fetchLiveVaults(cfg: LiveConfig, client?: PublicClient): Promise<readonly Vault[]> {
   const c = client ?? (await buildBoundClient(cfg));
   const blockNumber = await c.getBlockNumber();
-  const vaults = await Promise.all(cfg.vaultAddresses.map((address) => readOneVault(c, address)));
+  const vaults = await Promise.all(
+    cfg.vaultAddresses.map((address) => readOneVault(c, address, cfg.vaultName)),
+  );
   return vaults.map((v) => ({ ...v, blockNumber }));
 }
 
