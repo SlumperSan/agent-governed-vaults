@@ -55,6 +55,12 @@ export const VAULT_VIEWS = Object.freeze([
   // no event at all — so a projection cannot carry them and only a chain read can.
   view('queuedExitShares', ['address'], ['uint256']),
   view('costBasisUsdc', ['address'], ['uint256']),
+  // Contract tab Row 6b (#182): a member's per-token escrowed claim — `mapping(address => mapping
+  // (address => uint256)) public claimable` (VaultCore.sol:138), paid out via `claimEscrowed`
+  // (VaultCore.sol:1016). Read per (member, asset); the row's existence on the tab IS the read, so
+  // there is no static half to fall back on — see apps/web/src/chain-reader.mjs's
+  // `planClaimableEscrow`/`assembleClaimableEscrow`.
+  view('claimable', ['address', 'address'], ['uint256']),
   view('totalPendingUsdc', [], ['uint256']),
   // The vault's immutable governance module — how `governance-watch` finds the Governance
   // contract without a second env var, exactly the way `oracle` locates the oracle.
@@ -166,6 +172,30 @@ export const OPERATOR_REGISTRY_VIEWS = Object.freeze([
   view('operatorOf', ['address'], ['uint256']),
   view('operatorAddressOf', ['uint256'], ['address']),
   view('operatorIdOf', ['address'], ['uint256']),
+  // Contract tab Row 4 (#182): `factory` and `feeEngine` are one-shot deploy-time wiring latches
+  // (OperatorRegistry.sol:21,42 — `address public factory`/`address public feeEngine`, written
+  // exactly once by `wire()`, never again). Read to confirm they were actually set, never assumed.
+  view('factory', [], ['address']),
+  view('feeEngine', [], ['address']),
+]);
+
+/**
+ * SubVaultRegistry: Contract tab Row 4 (#182) — `factory` is the same one-shot deploy-time wiring
+ * latch shape as `OperatorRegistry.factory`/`feeEngine` (SubVaultRegistry.sol:22 —
+ * `address public factory`, written exactly once by `wire()`).
+ */
+export const SUBVAULT_REGISTRY_VIEWS = Object.freeze([
+  view('factory', [], ['address']),
+]);
+
+/**
+ * VaultFactory: Contract tab Row 5 (#182) — `allowSubVaults` is `bool public immutable`
+ * (VaultFactory.sol:54), read live from the deployed factory. NEVER inferred from a deploy
+ * script: `Deploy.s.sol` passes `false` and `DeployTestnet.s.sol` hardcodes `true`, and neither is
+ * truth for what a given deployed vault's factory actually holds.
+ */
+export const VAULT_FACTORY_VIEWS = Object.freeze([
+  view('allowSubVaults', [], ['bool']),
 ]);
 
 /** ERC20 balance reads — the independent custody leg of the NAV-backing signal. */
@@ -264,6 +294,10 @@ export const GOVERNANCE_VIEWS = Object.freeze([
     { name: 'concentrationCapBps', type: 'uint16' },
     { name: 'proposalCooldown', type: 'uint32' },
   ]),
+  // Contract tab Row 4 (#182): the other half of the same one-shot latch pair the wiring-lock row
+  // confirms — `address public subVaultRegistry` (Governance.sol:44), written exactly once by
+  // `wireSubVaultRegistry()`, never again.
+  view('subVaultRegistry', [], ['address']),
 ]);
 
 /**

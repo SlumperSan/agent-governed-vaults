@@ -188,6 +188,163 @@ export function planFeeds(feeds) {
 }
 
 /**
+ * Contract tab Row 4 (#182) — the first half of the wiring-lock reads: `OperatorRegistry.factory()`,
+ * `OperatorRegistry.feeEngine()`, and `Governance.subVaultRegistry()`. All three are one-shot
+ * deploy-time latches written exactly once by the deployer (`wire()`/`wireSubVaultRegistry()`) and
+ * never again — not settings to poll for change, but wiring to confirm was actually completed.
+ *
+ * `operatorRegistry` and `governance` are both already read in `planCore` (round 1), so this is a
+ * round-2 read like `planBasketAssets` — it needs an address the previous round returned.
+ *
+ * @param {string} operatorRegistry
+ * @param {string} governance
+ */
+export function planWiringLockCore(operatorRegistry, governance) {
+  return Object.freeze([
+    call(operatorRegistry, 'OPERATOR_REGISTRY_VIEWS', 'factory'),
+    call(operatorRegistry, 'OPERATOR_REGISTRY_VIEWS', 'feeEngine'),
+    call(governance, 'GOVERNANCE_VIEWS', 'subVaultRegistry'),
+  ]);
+}
+
+/**
+ * Contract tab Row 4 (#182) — the second half: `SubVaultRegistry.factory()`. A round-3 read: the
+ * SubVaultRegistry's own address is not known until `planWiringLockCore`'s `Governance.subVaultRegistry()`
+ * call has answered, exactly the dependency shape `planProposal` has on `planProposalId`.
+ *
+ * @param {string} subVaultRegistry
+ */
+export function planWiringLockSubVaultFactory(subVaultRegistry) {
+  return Object.freeze([call(subVaultRegistry, 'SUBVAULT_REGISTRY_VIEWS', 'factory')]);
+}
+
+const ZERO_ADDRESS = '0x' + '0'.repeat(40);
+
+/** An EXACT nonzero address — anything else (wrong shape, null, undefined, the zero address itself,
+ * a decode failure) is not a resolved wiring latch. Mirrors `isBytes32Hex` above: only a well-formed
+ * value earns "known". */
+const isNonZeroAddressHex = (v) =>
+  typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v) && v.toLowerCase() !== ZERO_ADDRESS;
+
+/**
+ * Assemble the wiring-lock reads into either the resolved record or `null`.
+ *
+ * DELIBERATELY ALL-OR-NOTHING, unlike `assembleLegSafety`'s tri-state. The Row 4 requirement is
+ * that "Read now: all four are set" renders ONLY when every one of the four latches is a genuine
+ * nonzero address — a caller showing 3-of-4 would assert a wiring state the contracts do not
+ * jointly confirm. So a genuinely-unset latch (a real zero address, before `wire()` is ever called)
+ * and an unread/failed call collapse to the SAME outcome here — omission — because Row 4's own copy
+ * has no partial-wiring sentence to render either way; there is nothing a tri-state would buy the UI
+ * that this doesn't already give it. Each field still keeps its own read timestamp, carried through
+ * unchanged from whatever the caller stamped, so a caller that DOES want to distinguish "unset" from
+ * "unread" later can do so from the raw round-2/round-3 answers, before they reach this function.
+ *
+ * @param {{
+ *   operatorFactoryValue: unknown, operatorFactoryReadAt: number|null,
+ *   operatorFeeEngineValue: unknown, operatorFeeEngineReadAt: number|null,
+ *   govSubVaultRegistryValue: unknown, govSubVaultRegistryReadAt: number|null,
+ *   subVaultRegistryFactoryValue: unknown, subVaultRegistryFactoryReadAt: number|null,
+ * }} r
+ */
+export function assembleWiringLock(r) {
+  const operatorFactory = isNonZeroAddressHex(r.operatorFactoryValue) ? r.operatorFactoryValue : undefined;
+  const operatorFeeEngine = isNonZeroAddressHex(r.operatorFeeEngineValue) ? r.operatorFeeEngineValue : undefined;
+  const govSubVaultRegistry = isNonZeroAddressHex(r.govSubVaultRegistryValue) ? r.govSubVaultRegistryValue : undefined;
+  const subVaultRegistryFactory = isNonZeroAddressHex(r.subVaultRegistryFactoryValue)
+    ? r.subVaultRegistryFactoryValue
+    : undefined;
+
+  // ANY ONE missing suppresses the WHOLE record — never 3-of-4 shown as if it were the live line.
+  if (!operatorFactory || !operatorFeeEngine || !govSubVaultRegistry || !subVaultRegistryFactory) return null;
+
+  return Object.freeze({
+    operatorFactory,
+    operatorFactoryReadAt: r.operatorFactoryReadAt ?? null,
+    operatorFeeEngine,
+    operatorFeeEngineReadAt: r.operatorFeeEngineReadAt ?? null,
+    govSubVaultRegistry,
+    govSubVaultRegistryReadAt: r.govSubVaultRegistryReadAt ?? null,
+    subVaultRegistryFactory,
+    subVaultRegistryFactoryReadAt: r.subVaultRegistryFactoryReadAt ?? null,
+  });
+}
+
+/**
+ * Contract tab Row 5 (#182) — `VaultFactory.allowSubVaults()`, `bool public immutable`
+ * (VaultFactory.sol:54). One read, always live: the tab must NEVER infer this from a deploy
+ * script, because `Deploy.s.sol` passes `false` and `DeployTestnet.s.sol` hardcodes `true` and
+ * neither is truth for what a specific deployed vault's factory holds.
+ *
+ * `factory` is per-vault config the CALLER resolves (VaultCore carries no `factory()` getter of
+ * its own — only the registries do), never something this module derives from source; that is the
+ * same "transport and address-sourcing is the caller's problem" split every other `plan*` here
+ * already keeps (see `planFeeds`, `planProposal`).
+ *
+ * @param {string} factory
+ */
+export function planAllowSubVaults(factory) {
+  return Object.freeze([call(factory, 'VAULT_FACTORY_VIEWS', 'allowSubVaults')]);
+}
+
+/**
+ * Assemble the `allowSubVaults()` read. Only the EXACT booleans the contract can return resolve to
+ * a definite answer — mirrors `assembleVoteCommit`'s `revealed`/`revealedSupport` handling. This is
+ * what makes the function itself un-hardcodable: it has no branch that returns `true` or `false`
+ * except by echoing exactly what it was given, so a caller that substituted a deploy-script
+ * constant for a live read could only ever get caught by NOT calling this with a genuine chain
+ * answer — see `chain-reader.test.mjs`'s "never inferred from a deploy script" tests, which assert
+ * this echoes `Deploy.s.sol`'s `false` and `DeployTestnet.s.sol`'s `true` identically, because this
+ * function has no opinion of its own about which deployment produced the value.
+ *
+ * @param {unknown} value
+ * @returns {boolean|undefined}
+ */
+export function assembleAllowSubVaults(value) {
+  return value === true ? true : value === false ? false : undefined;
+}
+
+/**
+ * Contract tab Row 6b (#182) — `claimable(member, asset)` on VaultCore, one call per token the
+ * vault touches (every basket asset plus USDC). This row has no static half: its existence on the
+ * page IS the read, so `assembleClaimableEscrow` below returns zero, one, or many entries rather
+ * than a fixed-shape record. No member ⇒ no calls to plan at all, matching `planPosition`'s own
+ * "member-scoped reads need a connected wallet" shape.
+ *
+ * `assets` is caller-resolved (basket asset addresses from `planBasketAssets`'s answers, plus the
+ * vault's own USDC address) — this module names WHICH calls to make, never where the address list
+ * comes from.
+ *
+ * @param {string} vault
+ * @param {string|null|undefined} member
+ * @param {readonly string[]} assets
+ */
+export function planClaimableEscrow(vault, member, assets) {
+  if (!member) return Object.freeze([]);
+  return Object.freeze(assets.map((a) => call(vault, 'VAULT_VIEWS', 'claimable', [member, a])));
+}
+
+/**
+ * Assemble the per-token claimable reads. A token's entry appears ONLY when its read resolved to a
+ * STRICT positive bigint — a real zero (nothing escrowed) and an unread/failed call collapse to the
+ * SAME outcome, "no row for this token", because Row 6b's own spec draws no distinction between
+ * them: "Zero or unread renders nothing for that token — never a placeholder row." This is the
+ * `assembleLegSafety` discipline in the opposite direction — there, an unread call must never look
+ * like the SAFE answer; here, an unread call must never look like the ALARMING one (a phantom
+ * claimable balance nobody can actually withdraw). Never sums two entries for the same asset: one
+ * call in, at most one entry out, always.
+ *
+ * @param {readonly {asset: string, value: unknown, readAt?: number|null}[]} entries
+ */
+export function assembleClaimableEscrow(entries) {
+  const out = [];
+  for (const e of entries) {
+    if (typeof e.value !== 'bigint' || e.value <= 0n) continue; // unread AND confirmed-zero: no row
+    out.push(Object.freeze({ asset: e.asset, amount: e.value, readAt: e.readAt ?? null }));
+  }
+  return Object.freeze(out);
+}
+
+/**
  * Per-member reads. Separate from the vault rounds because they are the only ones that need a
  * connected wallet, and a disconnected visitor must still see the whole vault.
  * @param {string} vault
