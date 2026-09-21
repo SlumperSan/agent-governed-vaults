@@ -41,22 +41,81 @@ test('the masthead carries the testnet disclosure verbatim', () => {
   );
 });
 
+/** JSX comments (`{/* ... *\/}`) removed. They are balanced braces carrying arbitrary prose — the
+ *  disclosure's own comment explains the rule, so leaving them in means the reachability check
+ *  below is partly reading English rather than JSX. */
+const stripJsxComments = (s) => s.replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
+
+/**
+ * Everything between the enclosing component's `return (` and the disclosure element's `<p`.
+ *
+ * THIS IS THE SPAN THAT DECIDES REACHABILITY, and the first version of this guard did not look at
+ * it. That version isolated the `<p>...</p>` slice and checked THAT for `?`/`&&` — so wrapping the
+ * whole element in an external `{fetched.kind === 'ready' && <p ...>...</p>}` passed clean, because
+ * the conditional sits one token to the LEFT of the `<p` the isolation starts at. Security
+ * reproduced exactly that against the real file and the test stayed green. The property claimed
+ * ("it must render every time") and the property asserted ("this element's own markup has no
+ * conditional in it") differ precisely at that boundary.
+ */
+function prefixToDisclosure() {
+  const src = stripJsxComments(APP_TSX);
+  const textIdx = src.indexOf(MASTHEAD_TEXT);
+  assert.ok(textIdx >= 0, 'disclosure text not found');
+  const pStart = src.lastIndexOf('<p', textIdx);
+  assert.ok(pStart >= 0, 'could not find the disclosure element');
+  const returnIdx = src.lastIndexOf('return (', pStart);
+  assert.ok(returnIdx >= 0, "could not find the enclosing component's return");
+  return src.slice(returnIdx + 'return ('.length, pStart);
+}
+
 test('the testnet disclosure is NOT wrapped in any conditional -- it must render every time', () => {
-  const header = mastheadSource();
-  const idx = header.indexOf(MASTHEAD_TEXT);
-  assert.ok(idx >= 0, 'string not found (see the test above)');
-  // The paragraph carrying this string, isolated by its own <p ...> ... </p> boundaries.
-  const pStart = header.lastIndexOf('<p', idx);
-  const pEnd = header.indexOf('</p>', idx) + '</p>'.length;
-  assert.ok(pStart >= 0 && pEnd > pStart, 'could not isolate the paragraph carrying the disclosure');
-  const para = header.slice(pStart, pEnd);
-  assert.doesNotMatch(
-    para,
-    /\{[\s\S]*\?[\s\S]*:[\s\S]*\}/,
-    'the disclosure paragraph contains a ternary -- it must be a plain, unconditional string, ' +
-      'never gated on fetched.kind, freshness, or any other read that can fail',
+  // Every `{` opened on the path from the component's return down to this element must also close
+  // before it. An unclosed one IS an enclosing JSX expression container — `{cond && `, `{cond ? ` —
+  // which is the only way this element can fail to render. Balance, rather than a blanket ban on
+  // `?`/`&&` in the prefix, because a SIBLING conditional earlier in the masthead is balanced and
+  // entirely legitimate; it is the unclosed one that gates this element.
+  const prefix = prefixToDisclosure();
+  let depth = 0;
+  for (const c of prefix) {
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+  }
+  assert.equal(
+    depth,
+    0,
+    'an unclosed JSX expression container encloses the disclosure, so it renders only when that ' +
+      `expression is truthy. Prefix under test:\n${prefix}`,
   );
-  assert.doesNotMatch(para, /&&/, 'the disclosure paragraph is short-circuited on a condition -- it must always render');
+
+  // And the element's own markup stays a plain string too — the narrower property the first version
+  // of this guard checked. Kept, because it is still one of the two ways this can break.
+  const src = stripJsxComments(APP_TSX);
+  const textIdx = src.indexOf(MASTHEAD_TEXT);
+  const pStart = src.lastIndexOf('<p', textIdx);
+  const para = src.slice(pStart, src.indexOf('</p>', textIdx) + '</p>'.length);
+  assert.doesNotMatch(para, /\{[\s\S]*\?[\s\S]*:[\s\S]*\}/, 'the disclosure paragraph contains a ternary');
+  assert.doesNotMatch(para, /&&/, 'the disclosure paragraph is short-circuited on a condition');
+});
+
+test('MUTATION: an EXTERNAL conditional wrapper around the whole element is caught', () => {
+  // Security's exact reproduction: the shape the first version of this guard passed clean on.
+  const wrapped = APP_TSX.replace(
+    `<p className="note tag-warn">${MASTHEAD_TEXT}</p>`,
+    `{fetched.kind === 'ready' && <p className="note tag-warn">${MASTHEAD_TEXT}</p>}`,
+  );
+  assert.notEqual(wrapped, APP_TSX, 'mutation target not found -- update this test if the line moved');
+
+  const src = stripJsxComments(wrapped);
+  const textIdx = src.indexOf(MASTHEAD_TEXT);
+  const pStart = src.lastIndexOf('<p', textIdx);
+  const returnIdx = src.lastIndexOf('return (', pStart);
+  const prefix = src.slice(returnIdx + 'return ('.length, pStart);
+  let depth = 0;
+  for (const c of prefix) {
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+  }
+  assert.ok(depth > 0, 'RED: an external conditional wrapper must leave an unclosed brace in the prefix');
 });
 
 test('MUTATION: removing the testnet disclosure line is caught', () => {
