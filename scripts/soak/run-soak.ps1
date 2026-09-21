@@ -34,6 +34,10 @@
 # Env SET by this script (your value is overwritten): SOAK_SIGNER_ARGS, SOAK_PROBE_MEMBER,
 #                          SOAK_PHASE, AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS, SOAK_AGENT_KEYSTORE,
 #                          SOAK_AGENT_KEYSTORE_PASSWORD
+#                          START_BLOCK - defaulted from startBlock/deployBlock in the SOAK_DEPLOYMENT
+#                          address book, ONLY if not already set in your environment. The script
+#                          refuses to start (throws before launching anything) if that record has no
+#                          usable block, rather than letting the indexer default it to 0.
 
 param(
   [string]$SignerPasswordFile = "$env:USERPROFILE\.soak.pw",
@@ -45,24 +49,35 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$LogDir  = Join-Path $Root 'logs'
+# SOAK_LOG_DIR overrides where the pid file and logs live -- undocumented for normal use (the
+# default is right), but it is what lets a test point a real invocation of THIS script at a throwaway
+# directory instead of the worktree's own logs/, so -Status/-Stop can be exercised for real without
+# colliding with (or leaving behind) state from an actual run.
+$LogDir  = if ($env:SOAK_LOG_DIR) { $env:SOAK_LOG_DIR } else { Join-Path $Root 'logs' }
 $PidFile = Join-Path $LogDir 'soak-pids.txt'
+
+Import-Module -Force (Join-Path $PSScriptRoot 'soak-pidset.psm1')
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Location $Root
 
 # ── -Status / -Stop ──────────────────────────────────────────────────────────
+# Both read ONLY Get-ManagedPidEntries / Test-ManagedProcessAlive (soak-pidset.psm1) -- the same
+# functions every start-or-reuse path below writes through, so what -Stop kills and what -Status
+# reports can never diverge from what this script actually considers "ours".
 
 if ($Status) {
   Write-Host "`n=== running processes ===" -ForegroundColor Cyan
-  if (Test-Path $PidFile) {
-    foreach ($line in Get-Content $PidFile) {
-      $name, $procId = $line -split '=', 2
-      $alive = $null -ne (Get-Process -Id $procId -ErrorAction SilentlyContinue)
+  $entries = Get-ManagedPidEntries $PidFile
+  if ($entries.Count -eq 0) {
+    Write-Host '  (no pid file - nothing was started)'
+  } else {
+    foreach ($e in $entries) {
+      $alive = Test-ManagedProcessAlive -ProcessId $e.ProcessId -Needle $e.Needle
       $tag = if ($alive) { 'RUNNING' } else { 'exited ' }
-      Write-Host ("  [{0}] {1} (pid {2})" -f $tag, $name, $procId)
+      Write-Host ("  [{0}] {1} (pid {2})" -f $tag, $e.Name, $e.ProcessId)
     }
-  } else { Write-Host '  (no pid file - nothing was started)' }
+  }
   Write-Host "`n=== log tails ===" -ForegroundColor Cyan
   Get-ChildItem $LogDir -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object {
     Write-Host "`n--- $($_.Name) ---" -ForegroundColor Yellow
@@ -72,14 +87,20 @@ if ($Status) {
 }
 
 if ($Stop) {
-  if (Test-Path $PidFile) {
-    foreach ($line in Get-Content $PidFile) {
-      $name, $procId = $line -split '=', 2
-      try { Stop-Process -Id $procId -Force -ErrorAction Stop; Write-Host "stopped $name (pid $procId)" }
-      catch { Write-Host "$name (pid $procId) was not running" }
+  $entries = Get-ManagedPidEntries $PidFile
+  if ($entries.Count -eq 0) {
+    Write-Host 'nothing to stop'
+  } else {
+    foreach ($e in $entries) {
+      if (Test-ManagedProcessAlive -ProcessId $e.ProcessId -Needle $e.Needle) {
+        try { Stop-Process -Id $e.ProcessId -Force -ErrorAction Stop; Write-Host "stopped $($e.Name) (pid $($e.ProcessId))" }
+        catch { Write-Host "$($e.Name) (pid $($e.ProcessId)) was not running" }
+      } else {
+        Write-Host "$($e.Name) (pid $($e.ProcessId)) was not running"
+      }
     }
-    Remove-Item $PidFile -Force
-  } else { Write-Host 'nothing to stop' }
+    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+  }
   exit 0
 }
 
@@ -101,10 +122,33 @@ $Book = if ($env:SOAK_DEPLOYMENT) {
           if ([System.IO.Path]::IsPathRooted($env:SOAK_DEPLOYMENT)) { $env:SOAK_DEPLOYMENT }
           else { Join-Path $Root $env:SOAK_DEPLOYMENT }
         } else { Join-Path $Root 'contracts\config\deployments\base-sepolia.json' }
+if (-not (Test-Path $Book)) { throw "deployment record not found: $Book - set SOAK_DEPLOYMENT or fix the default path" }
+$BookJson = Get-Content -Raw $Book | ConvertFrom-Json
 # Read the signer from that book rather than repeating it here. The preflight below unlocks a
 # keystore and compares the derived address against this value, so a second copy that drifted would
 # reject the correct key or accept the wrong one.
-$Deployer = (Get-Content -Raw $Book | ConvertFrom-Json).deployer
+$Deployer = $BookJson.deployer
+
+# START_BLOCK for the indexer this script starts, from the SAME address book as $Deployer above -
+# not from .env, and never defaulted to 0. This is the fix for the 2026-09 soak failure: .env.example
+# ships START_BLOCK=0 as a placeholder, an operator's .env can carry that unedited or omit the line
+# entirely, and index-runner.mjs's own default is 0 - so a normal `cp .env.example .env` produces an
+# indexer that silently starts at the genesis block instead of the deployment's. Measured that day:
+# lastBlock stuck near 2.8M against a chain head of 47.13M, ~2 hours to catch up against this
+# script's own 5-minute deadline below.
+#
+# Setting $env:START_BLOCK here (before Start-Service-Once launches the indexer with
+# --env-file=.env) wins over a stale or absent line in .env: Node's --env-file does NOT override a
+# variable already present in the process environment (verified against the Node version in this
+# worktree: `START_BLOCK=123 node --env-file=<file with START_BLOCK=0> -e "console.log(...)"` prints
+# 123). An operator's own explicit override - set before invoking this script - is still respected.
+$bookStartBlock = $BookJson.startBlock
+if (-not $bookStartBlock) { $bookStartBlock = $BookJson.deployBlock }
+if (-not $bookStartBlock -or [int]$bookStartBlock -le 0) {
+  throw "deployment record $Book has no usable startBlock or deployBlock - refusing to start the indexer, which would otherwise default START_BLOCK to 0 and index the entire chain from genesis. Fix the address book before running the soak."
+}
+if (-not $env:START_BLOCK) { $env:START_BLOCK = "$bookStartBlock" }
+Write-Host "  START_BLOCK = $env:START_BLOCK (from $Book)" -ForegroundColor Green
 
 $env:SOAK_SIGNER_ARGS = "--account deployer --password-file $SignerPasswordFile"
 
@@ -161,12 +205,12 @@ if (Test-Path $PidFile) { Remove-Item $PidFile -Force }
 # NOTE: the argument parameter must NOT be called $Args. PowerShell is case-insensitive and
 # $args is an automatic variable, so a parameter of that name is silently shadowed by the
 # (empty) built-in and Start-Process receives null.
-function Start-Bg([string]$Name, [string]$File, [string[]]$ArgList) {
+function Start-Bg([string]$Name, [string]$File, [string[]]$ArgList, [string]$Needle = '') {
   $out = Join-Path $LogDir "$Name.log"
   $err = Join-Path $LogDir "$Name.err.log"
   $p = Start-Process -FilePath $File -ArgumentList $ArgList -NoNewWindow -PassThru `
        -RedirectStandardOutput $out -RedirectStandardError $err
-  Add-Content -Path $PidFile -Value "$Name=$($p.Id)"
+  Add-ManagedPid -PidFile $PidFile -Name $Name -ProcessId $p.Id -Needle $Needle
   Write-Host ("  started {0,-16} pid {1}" -f $Name, $p.Id) -ForegroundColor Green
   return $p
 }
@@ -213,9 +257,16 @@ function Start-Service-Once([string]$Name, [string]$Script) {
     } else {
       Write-Host ("  {0,-8} already running (pid {1}) - reusing it" -f $Name, $ids) -ForegroundColor Yellow
     }
+    # Record every REUSED pid too, not only freshly-started ones. -Stop and -Status only ever see
+    # $PidFile (via soak-pidset.psm1); a service this invocation is relying on -- because it
+    # skipped starting a duplicate -- but never wrote down cannot be stopped or shown by either.
+    # This is the actual shape of the measured defect: indexer/canary/sampler were "already
+    # running" from an earlier invocation and this branch ran for them, silently, while only the
+    # freshly-started service (that one run: api) ended up in the new $PidFile.
+    foreach ($p in $existing) { Add-ManagedPid -PidFile $PidFile -Name $Name -ProcessId $p.ProcessId -Needle $Script }
     return
   }
-  Start-Bg $Name 'node' ($EnvArg + @($Script)) | Out-Null
+  Start-Bg $Name 'node' ($EnvArg + @($Script)) -Needle $Script | Out-Null
 }
 
 Write-Host "`nstarting read-only services..." -ForegroundColor Cyan

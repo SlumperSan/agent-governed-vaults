@@ -188,6 +188,19 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
     // START_BLOCK will never be discovered (its VaultCore events go unindexed). Set START_BLOCK
     // to the deploy block, not later. Warn so this is never silent.
     line(`⚠ indexer: START_BLOCK=${cfg.startBlock} on a fresh snapshot — vaults created before block ${cfg.startBlock} will NOT be discovered. Use the factory deploy block.`);
+  } else if (fresh && cfg.startBlock === 0) {
+    // START_BLOCK unset (or explicitly 0) on a fresh snapshot means "index from genesis" and was
+    // completely silent here: this branch never ran because `cfg.startBlock > 0` above is false
+    // for 0. On a chain with real history that is the same defect as the `?? 0` shape elsewhere in
+    // this repo — an unset value quietly doing something enormously expensive instead of failing —
+    // and it is exactly what cost a soak run ~2 hours of empty catch-up against a 5-minute deadline.
+    // This process has no notion of "the deployment record", so it cannot refuse outright the way
+    // the soak launcher now does; it can only make the choice loud.
+    logger.warn?.('indexer.startBlock.unsetOnFresh', {
+      detail: 'START_BLOCK is 0 (unset, or explicitly 0) on a fresh snapshot — indexing the ENTIRE chain from genesis',
+      fix: 'set START_BLOCK to the factory deploy block (contracts/config/deployments/<chain>.json: startBlock/deployBlock), unless indexing from genesis is genuinely intended',
+    });
+    line('⚠ indexer: START_BLOCK is 0 (unset) on a fresh snapshot — indexing the ENTIRE chain from genesis. Set START_BLOCK to the factory deploy block unless this is intended.');
   }
 
   const ac = new AbortController();
