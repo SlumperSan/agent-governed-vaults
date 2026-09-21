@@ -54,6 +54,11 @@ function AppShell() {
     <Page current="/">
       <header className="masthead">
         <h1>Vault Atlas</h1>
+        {/* Chairman directive, cutover condition: this line gates app.rwally.com going live on
+         * Base Sepolia. UNCONDITIONAL on purpose — not gated on `fetched.kind`, freshness, or any
+         * other read, because a read that can fail is a disclosure that can vanish, and its
+         * absence here would read as "this is mainnet". Verbatim text, do not paraphrase. */}
+        <p className="note tag-warn">Reading Base Sepolia testnet. No vault holds real funds yet.</p>
         <p className="note">
           An agent-operator proposes a basket. The members whose money it is vote it up or down by
           commit-reveal. Nothing rebalances until a proposal passes.
