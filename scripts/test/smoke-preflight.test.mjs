@@ -370,11 +370,29 @@ test('nothing between the refusal and the process swallows it', () => {
   assert.doesNotMatch(src.slice(0, deriveIdx), /if \(!state\.signer\)/, 'the cached-signer shortcut must not come back');
 });
 
+/**
+ * Each named seam is imported from `./smoke-preflight.mjs` — asserted per NAME, against the parsed
+ * import block, rather than against a fixed adjacency like `/a, b,/`.
+ *
+ * The adjacency form was what these two tests used, and adding a third seam between two of the
+ * names broke both of them while every property they exist to protect still held. A literal that
+ * pins incidental ORDER fails on correct changes and passes a reordering that drops a name, which
+ * is the wrong way round: the property is membership.
+ */
+function assertSeamsImported(src, names) {
+  const block = /import\s*\{([\s\S]*?)\}\s*from\s*'\.\/smoke-preflight\.mjs';/.exec(src);
+  assert.ok(block, "smoke-test.mjs no longer imports from './smoke-preflight.mjs' at all");
+  const imported = block[1].split(',').map((s) => s.trim()).filter(Boolean);
+  for (const n of names) {
+    assert.ok(imported.includes(n), `${n} must be imported from smoke-preflight.mjs — found: ${imported.join(', ')}`);
+  }
+}
+
 test('the runner CALLS the seam, and holds no enforcement of its own to disarm', () => {
   // The source assertions that remain are only about WIRING -- which function is called and where.
   // Everything they used to stand in for is now asserted by calling it, above.
   const src = readFileSync(path.join(import.meta.dirname, '..', 'smoke-test.mjs'), 'utf8');
-  assert.match(src, /requireIntendedCreator, loadDeploymentRecord,/, 'both seams must be imported');
+  assertSeamsImported(src, ['requireIntendedCreator', 'loadDeploymentRecord']);
   assert.match(src, /requireIntendedCreator\(deployment, state\.signer\)/);
   // The BINDING must be fed by the loader, not merely mention it. Asserting the call appears
   // somewhere let `const deployment = {}; const unused = () => loadDeploymentRecord({...})` survive:
@@ -401,12 +419,9 @@ test('the runner CALLS the seam, and holds no enforcement of its own to disarm',
 
 test('smoke-test.mjs consults both verdicts and has no bare catch left to swallow a failed call', () => {
   const src = readFileSync(path.join(import.meta.dirname, '..', 'smoke-test.mjs'), 'utf8');
-  // All THREE verdicts, named individually rather than by a loose pattern: this assertion exists so
-  // that a verdict quietly dropped from the import is a red, and `/import \{[^}]*\}/` would not be.
-  assert.match(
-    src,
-    /requireIntendedCreator, loadDeploymentRecord,/,
-  );
+  // Every verdict, named individually rather than by a loose pattern: this assertion exists so that
+  // a verdict quietly dropped from the import is a red, and `/import \{[^}]*\}/` would not be.
+  assertSeamsImported(src, ['requireIntendedCreator', 'requireCreatorCode', 'loadDeploymentRecord']);
   assert.match(src, /wiringImmutabilityFailure\(attempt\(/);
   assert.match(src, /oracleProbeWarning\(a\.symbol, r\.error\)/);
   // The creator check is consulted BEFORE the transaction, not after: `requireIntendedCreator()` is

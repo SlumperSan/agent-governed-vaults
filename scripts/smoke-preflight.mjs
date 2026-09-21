@@ -227,6 +227,127 @@ export function requireIntendedCreator(deployment, signer) {
   return /** @type {string} */ (deployment.intendedCreator);
 }
 
+/** The account kinds a record may declare for its creator. Anything else is a refusal, not a pass. */
+const CREATOR_KINDS = Object.freeze(['eoa', 'contract']);
+
+/** `eth_getCode` answers for an account with no bytecode. `'0x0'` is not standard but some providers
+ *  return it, and treating it as "has code" is a false pass on the exact thing this checks. */
+const NO_CODE = Object.freeze(['0x', '0x0', '']);
+
+/**
+ * DOES THE DECLARED CREATOR ACTUALLY EXIST, AS THE KIND OF ACCOUNT THE RECORD SAYS IT IS?
+ *
+ * THE DEFECT THIS EXISTS FOR, measured on 2026-09-21. The owner recorded a Gnosis Safe as the Arc
+ * mainnet creator: `0x99e805294F1f1465C96f68e36264E99991Ef9E82`. On chain 5042 (`rpc.mainnet.arc.io`)
+ * `eth_getCode` for it returns `0x` and `eth_getTransactionCount` returns `0x0` — and no bytecode
+ * exists for it on Arc testnet, Base, Base Sepolia, Ethereum, Arbitrum or Optimism either. A Safe's
+ * address is deterministic and knowable BEFORE deployment, so a predicted-but-unactivated address
+ * looks exactly like a real one to any check that compares strings. `requireIntendedCreator` above
+ * compares the address used against the address declared; it never asks whether anything is THERE.
+ * `creator` is immutable with no rotation path, so a first vault created against an unactivated Safe
+ * is the one item on the launch list that cannot be re-run.
+ *
+ * WHY THIS IS NOT "the address must have code", which was the obvious version and is wrong. This
+ * deployment's own `intendedCreator` is `0x0f80606a…9f35`, an EOA, and it is CORRECT — verified
+ * against Base Sepolia on 2026-09-21: `eth_getCode` returns `0x`, exactly as an EOA must. A blanket
+ * code-exists rule refuses the working testnet path. So the record declares WHICH KIND of account it
+ * intends and the chain has to agree, in both directions:
+ *
+ *   `intendedCreatorKind: 'contract'` and no code  → REFUSE. The Arc Safe case: not activated yet.
+ *   `intendedCreatorKind: 'eoa'` and code present  → REFUSE. The declared EOA is really a contract,
+ *                                                    so the operator is wrong about what they hold.
+ *
+ * Constraining identity rather than presence, which is the same correction round 4 of this PR asked
+ * for on the post-broadcast asserts.
+ *
+ * WHY THE CHAIN ID IS AN ARGUMENT. A code read is only an answer about the chain it was taken on.
+ * Reading Base Sepolia and reporting "the Arc creator exists" is the adjacent-property failure this
+ * repository has now paid for five times, and it is easy here because the smoke path routinely holds
+ * two chains at once. So the caller must pass the chain id the SAME connection answered, it must
+ * match the record's own, and a mismatch or an unreadable id refuses rather than proceeding.
+ *
+ * @param {object} p
+ * @param {unknown} p.address the declared `intendedCreator`
+ * @param {unknown} p.code the `eth_getCode` result, as the provider returned it
+ * @param {unknown} p.observedChainId the `eth_chainId` THAT SAME connection answered (hex or number)
+ * @param {unknown} p.declaredChainId the record's own `chainId`
+ * @param {unknown} p.kind the record's `intendedCreatorKind`
+ * @returns {string|null} a refusal, or null when the chain agrees with the declaration
+ */
+export function creatorCodeRefusal({ address, code, observedChainId, declaredChainId, kind }) {
+  const badAddress = addressShapeRefusal('the declared intendedCreator', address);
+  if (badAddress) return `${badAddress} Refusing before asking the chain about it.`;
+
+  // MISSING IS A REFUSAL. An absent `intendedCreatorKind` must not skip this check — that is the
+  // shape where a guard is present and enforces nothing, and it would let the Arc record omit one
+  // field to silently opt out of the check that exists for the Arc record.
+  if (typeof kind !== 'string' || !CREATOR_KINDS.includes(kind.trim().toLowerCase())) {
+    return 'this deployment record declares no usable `intendedCreatorKind` '
+      + `(got ${JSON.stringify(kind)}; expected one of ${CREATOR_KINDS.join(', ')}). Without it there is no `
+      + 'way to tell an unactivated Safe from a correct EOA, because both read back as having no code. '
+      + 'Declare it before creating a vault: `creator` is immutable and a wrong one is permanent.';
+  }
+  const want = kind.trim().toLowerCase();
+
+  const observed = Number(observedChainId);
+  const declared = Number(declaredChainId);
+  if (!Number.isFinite(observed) || observed === 0) {
+    return `the chain id of the connection that read this code is ${JSON.stringify(observedChainId)}, which `
+      + 'is not a usable chain id. A code read is only an answer about the chain it was taken on, so '
+      + 'refusing rather than treating an unknown chain as the right one.';
+  }
+  if (!Number.isFinite(declared) || declared === 0) {
+    return `this deployment record declares chainId ${JSON.stringify(declaredChainId)}, which is not usable, `
+      + 'so the code read cannot be attributed to the chain the record is about.';
+  }
+  if (observed !== declared) {
+    return `REFUSING TO CREATE: the creator's code was read on chain ${observed}, but this deployment `
+      + `record is for chain ${declared}. Whether ${address} exists on ${observed} says nothing about `
+      + `whether it exists on ${declared} — point the RPC at the record's own chain and read again.`;
+  }
+
+  if (typeof code !== 'string') {
+    return `the code read for ${address} on chain ${declared} came back as ${JSON.stringify(code)} rather than `
+      + 'a hex string, so the read failed. Refusing rather than assuming the account exists.';
+  }
+  const hasCode = !NO_CODE.includes(code.trim().toLowerCase());
+
+  if (want === 'contract' && !hasCode) {
+    return `REFUSING TO CREATE: this record declares intendedCreator ${address} as a ${want}, but chain `
+      + `${declared} reports NO BYTECODE at that address (eth_getCode returned ${JSON.stringify(code)}). `
+      + 'A Safe address is deterministic and can be known before it is deployed, so this is what a '
+      + 'predicted-but-never-activated address looks like. Activate it and confirm bytecode exists '
+      + 'before creating the first vault: `creator` is immutable with no rotation path, so a vault '
+      + 'created against an address that is not there cannot be corrected, only replaced.';
+  }
+  if (want === 'eoa' && hasCode) {
+    return `REFUSING TO CREATE: this record declares intendedCreator ${address} as an ${want}, but chain `
+      + `${declared} reports bytecode at that address. It is a contract, so whatever key the operator `
+      + 'holds is not what would own this vault. Correct the record or the address deliberately.';
+  }
+  return null;
+}
+
+/**
+ * The code check as a throw, for the same reason `requireIntendedCreator` is one: the runner that
+ * calls it is `node --check`ed and never executed, so a refusal it merely LOGS is a guard that
+ * provably runs and provably enforces nothing.
+ *
+ * @param {object} p see `creatorCodeRefusal`
+ * @param {unknown} p.address
+ * @param {unknown} p.code
+ * @param {unknown} p.observedChainId
+ * @param {unknown} p.declaredChainId
+ * @param {unknown} p.kind
+ * @returns {string} the verified address
+ * @throws {CreationRefused}
+ */
+export function requireCreatorCode(p) {
+  const refusal = creatorCodeRefusal(p);
+  if (refusal) throw new CreationRefused(refusal);
+  return /** @type {string} */ (p.address);
+}
+
 /**
  * Read the deployment record that declares who may create a vault, and refuse rather than skip.
  *
