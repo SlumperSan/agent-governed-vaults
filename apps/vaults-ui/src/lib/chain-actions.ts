@@ -229,8 +229,15 @@ export async function readVoteCustody(
  * write path can never actually hit just never matches); a SUBSET would silently under-decode a
  * real revert back into a raw selector, which is the exact "wallet-level revert" failure mode
  * simulate-before-sign exists to remove — so this is copied whole from each contract's own `error`
- * declarations (`VaultCore.sol`, `Governance.sol`, `IOracleAggregator.sol`) rather than hand-picked
- * by tracing which branch each call can reach.
+ * declarations (`VaultCore.sol`, `Governance.sol`, `IOracleAggregator.sol`), PLUS every error
+ * declared by a library VaultCore.sol binds via `using` (`contracts/src/lib/*.sol` — currently
+ * `SafeTransferLib`, `Checkpoints`, `BoundedCall`; `BoundedCall` declares none today). A revert
+ * that bubbles up from inside a `using`-bound library is still a revert on VaultCore's own call
+ * frame — `deposit()`'s `usdc.safeTransferFrom(...)` at VaultCore.sol:420 is exactly this shape —
+ * so those errors belong in the same decode set, not hand-picked by tracing which branch each
+ * call can reach. The coupling guard (`test/simulate-before-sign.test.mjs`) re-derives the
+ * library list from VaultCore.sol's own `using` declarations rather than trusting this comment,
+ * so a future added library is caught even if this list is not updated by hand.
  */
 const KNOWN_ERRORS_ABI = [
   // VaultCore.sol
@@ -291,6 +298,17 @@ const KNOWN_ERRORS_ABI = [
   { type: 'error', name: 'CannotDelegateDuringProposal', inputs: [] },
   // IOracleAggregator.sol -- navWad() reaches this from _deposit and _settleExit alike
   { type: 'error', name: 'StaleOracle', inputs: [{ name: 'asset', type: 'address' }] },
+  // contracts/src/lib/SafeTransferLib.sol -- `using SafeTransferLib for address;` (VaultCore.sol:39).
+  // deposit()'s usdc.safeTransferFrom(...) (VaultCore.sol:420) can revert TransferFromFailed directly
+  // on this call frame; the other two are reachable from the same bound library.
+  { type: 'error', name: 'TransferFailed', inputs: [{ name: 'token', type: 'address' }] },
+  { type: 'error', name: 'TransferFromFailed', inputs: [{ name: 'token', type: 'address' }] },
+  { type: 'error', name: 'ApproveFailed', inputs: [{ name: 'token', type: 'address' }] },
+  // contracts/src/lib/Checkpoints.sol -- `using Checkpoints for Checkpoints.History;` (VaultCore.sol:40).
+  { type: 'error', name: 'ValueOverflow', inputs: [] },
+  // contracts/src/lib/BoundedCall.sol -- `using BoundedCall for address;` (VaultCore.sol:41) declares
+  // no `error`s today; nothing to add here, but the coupling guard still scans it so a future one
+  // added there is caught rather than silently missing from decode.
 ] as const satisfies Abi;
 
 /** The message a member sees for a revert this module could not name. Never invented text pretending
