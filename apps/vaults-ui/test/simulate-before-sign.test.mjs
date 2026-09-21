@@ -43,15 +43,28 @@ function abiErrorNames() {
 }
 
 /**
- * Every library name a `using X for Y;` declaration binds, in declaration order. A revert
- * bubbling up from inside a `using`-bound library (e.g. `usdc.safeTransferFrom(...)` at
+ * Every library name a single-library `using X for Y;` declaration binds, in declaration order. A
+ * revert bubbling up from inside a `using`-bound library (e.g. `usdc.safeTransferFrom(...)` at
  * VaultCore.sol:420, bound via `using SafeTransferLib for address;` at VaultCore.sol:39) is still
  * a revert on the caller's own call frame, so its errors belong in the same decode set as the
  * contract's own — this is the scan `KNOWN_ERRORS_ABI`'s header comment previously did NOT cover
  * (confirmed gap: `TransferFromFailed`/`TransferFailed`/`ApproveFailed` were absent).
+ *
+ * Solidity 0.8.13+ also allows the selective form `using {fn1, fn2} for T;`, which this regex
+ * cannot parse (the capture group is `[A-Za-z0-9_]+`, and `{` is not in it). Silently returning
+ * fewer names than there are `using` declarations would recreate the exact "matches what I chose
+ * to scan, not what's reachable" shape this guard exists to close — so this throws on a count
+ * mismatch instead of under-reporting.
  */
 function usingLibraryNames(src) {
-  return [...src.matchAll(/using\s+([A-Za-z0-9_]+)\s+for\s+[^;]+;/g)].map((m) => m[1]);
+  const names = [...src.matchAll(/using\s+([A-Za-z0-9_]+)\s+for\s+[^;]+;/g)].map((m) => m[1]);
+  const totalUsingDeclarations = (src.match(/using\s+[^;]+;/g) ?? []).length;
+  if (totalUsingDeclarations !== names.length) {
+    throw new Error(
+      `usingLibraryNames: found ${totalUsingDeclarations} 'using' declaration(s) but parsed only ${names.length} single-library name(s) — a selective-import form ('using {fn1, fn2} for T;') or other shape this regex cannot parse is present. Extend the parser rather than under-scanning.`,
+    );
+  }
+  return names;
 }
 
 /**
@@ -75,6 +88,28 @@ function readLibrarySources(libDir, names) {
 /** Union of every error name declared across a set of library source texts. */
 function libraryErrorNames(libSources) {
   return libSources.flatMap((src) => declaredErrors(src));
+}
+
+/** Every `error Name(...)` declaration in a Solidity source, mapped to its parameter count. */
+function declaredErrorArities(src) {
+  return Object.fromEntries(
+    [...src.matchAll(/^\s*error\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/gm)].map((m) => {
+      const params = m[2].trim();
+      return [m[1], params.length === 0 ? 0 : params.split(',').length];
+    }),
+  );
+}
+
+/** The `{ type: 'error', name: 'X', inputs: [...] }` entries in `KNOWN_ERRORS_ABI`, each with its
+ * `inputs` arity — a name match alone is not enough: viem decodes by 4-byte selector, which is
+ * derived from the full `Name(type1,type2,...)` signature, so an arity mismatch means the entry
+ * cannot decode that error at all even though `abiErrorNames()` reports the name as "present". */
+function abiErrorEntries() {
+  const block = /const KNOWN_ERRORS_ABI = \[([\s\S]*?)\] as const satisfies Abi;/.exec(CHAIN_ACTIONS);
+  assert.ok(block, 'KNOWN_ERRORS_ABI block not found in chain-actions.ts — did it move or get renamed?');
+  const entries = [...block[1].matchAll(/\{\s*type:\s*'error',\s*name:\s*'([A-Za-z0-9_]+)',\s*inputs:\s*\[([^\]]*)\]\s*\}/g)];
+  assert.ok(entries.length > 0, 'abiErrorEntries: regex matched zero entries — did the KNOWN_ERRORS_ABI entry shape change?');
+  return entries.map((m) => ({ name: m[1], arity: (m[2].match(/\{\s*name:/g) ?? []).length }));
 }
 
 // ─────────────────── coupling: every contract error is decodable ───────────────────
@@ -101,27 +136,46 @@ test('StaleOracle (IOracleAggregator.sol) is decodable — navWad() reaches it f
   assert.ok(abiErrorNames().includes('StaleOracle'));
 });
 
-test('KNOWN_ERRORS_ABI names every error declared by a library VaultCore.sol binds via `using`', () => {
+test('KNOWN_ERRORS_ABI names every error declared by a library VaultCore.sol or Governance.sol binds via `using`', () => {
   // The gap Security found: KNOWN_ERRORS_ABI's own scan was three hand-named contract files, not
-  // VaultCore.sol's actual `using` bindings, so SafeTransferLib's three errors (reachable directly
-  // from deposit()'s usdc.safeTransferFrom(...), VaultCore.sol:420) were silently outside the scan.
-  // This test re-derives the library list from source rather than hand-naming it, so the NEXT
-  // library VaultCore.sol starts `using` is caught the same way.
-  const names = usingLibraryNames(VAULT_CORE_SOL);
-  assert.deepEqual(
-    names,
-    ['SafeTransferLib', 'Checkpoints', 'BoundedCall'],
-    'VaultCore.sol\'s `using` declarations changed — update this guard\'s expectations (VaultCore.sol:39-41)',
-  );
+  // what VaultCore.sol/Governance.sol actually bind via `using`, so SafeTransferLib's three errors
+  // (reachable directly from deposit()'s usdc.safeTransferFrom(...), VaultCore.sol:420) were
+  // silently outside the scan. This test re-derives the library list from source instead of
+  // hand-naming it (see the `usingLibraryNames` doc comment for why an under-parse there throws
+  // rather than silently scanning fewer libraries than actually exist), so the NEXT library either
+  // contract starts `using` is caught the same way. Governance.sol binds none today (confirmed by
+  // grep) but is scanned anyway — commitVote/revealVote write to it, so its reachable reverts
+  // belong in the same decode set, and leaving it unscanned would recreate this exact asymmetry.
+  const names = [...new Set([...usingLibraryNames(VAULT_CORE_SOL), ...usingLibraryNames(GOVERNANCE_SOL)])];
+  assert.ok(names.length >= 1, 'expected at least one using-bound library across VaultCore.sol/Governance.sol');
   const declared = libraryErrorNames(readLibrarySources(CONTRACTS_LIB_DIR, names));
-  assert.ok(declared.length >= 1, 'expected at least one error across the libraries VaultCore.sol binds');
   const listed = abiErrorNames();
   const missing = declared.filter((n) => !listed.includes(n));
   assert.deepEqual(
     missing,
     [],
-    `a library VaultCore.sol binds via 'using' declares errors chain-actions.ts cannot decode: ${missing.join(', ')}`,
+    `a library VaultCore.sol/Governance.sol binds via 'using' declares errors chain-actions.ts cannot decode: ${missing.join(', ')}`,
   );
+});
+
+test('KNOWN_ERRORS_ABI entries decode with the same arity Solidity declares', () => {
+  // A name match alone is not sufficient: viem's decoder keys off the 4-byte selector, which
+  // encodes the full `Name(type1,type2,...)` signature. An entry with the right name but the wrong
+  // `inputs` arity silently fails to decode — the exact "wallet-level raw selector" failure mode
+  // this whole PR exists to remove, and `abiErrorNames()` alone cannot see it because it only reads
+  // the `name:` field. Scoped to VaultCore.sol/Governance.sol/IOracleAggregator.sol, whose errors
+  // are already asserted present by name above; the bound-library errors added in this change
+  // (TransferFailed/TransferFromFailed/ApproveFailed/ValueOverflow) were arity-checked by hand
+  // against SafeTransferLib.sol/Checkpoints.sol when they were added.
+  const declaredArities = {
+    ...declaredErrorArities(VAULT_CORE_SOL),
+    ...declaredErrorArities(GOVERNANCE_SOL),
+    ...declaredErrorArities(ORACLE_IFACE_SOL),
+  };
+  const mismatches = abiErrorEntries()
+    .filter((e) => e.name in declaredArities && e.arity !== declaredArities[e.name])
+    .map((e) => `${e.name}: ABI lists ${e.arity} input(s), Solidity declares ${declaredArities[e.name]}`);
+  assert.deepEqual(mismatches, [], `arity mismatch(es) mean these decode by name only, not by the selector viem actually matches on: ${mismatches.join('; ')}`);
 });
 
 test('MUTATION: a `using` binding to a library with an error absent from KNOWN_ERRORS_ABI reds', () => {
@@ -151,14 +205,17 @@ test('MUTATION: a `using` binding to a library with an error absent from KNOWN_E
 test('MUTATION: the same fixture with the `using` binding removed is GREEN', () => {
   // Same fixture, binding removed — nothing left to scan, so nothing can be reported missing.
   // This is the other direction of the mutation test above: prove the guard does not fire when
-  // there is genuinely no `using` binding to a library with an undecoded error.
+  // there is genuinely no `using` binding to a library with an undecoded error. Runs through the
+  // real `readLibrarySources` (against the real CONTRACTS_LIB_DIR, on an empty name list) rather
+  // than asserting on a hand-built empty array, so this exercises the actual production code path
+  // on the zero-names case instead of restating it.
   const fixtureVaultCoreSrcNoBinding = `
   contract VaultCore {
       // no using declaration
   }`;
   const names = usingLibraryNames(fixtureVaultCoreSrcNoBinding);
   assert.deepEqual(names, [], 'GREEN setup: the fixture must bind no libraries');
-  const declared = libraryErrorNames([]);
+  const declared = libraryErrorNames(readLibrarySources(CONTRACTS_LIB_DIR, names));
   assert.deepEqual(declared, [], 'GREEN: no using binding means nothing to scan, nothing missing');
 });
 
