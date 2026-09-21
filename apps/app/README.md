@@ -103,15 +103,27 @@ page once it is built: `dist` is deliberately absent from that file's `SKIP_DIRS
 its `PUBLIC_EXT`. Build before running the gate, or the guard reports a pass over prose it never
 read.
 
-## Deploy
+## Deploy — DO NOT. This directory is retiring, and deploying it reverts the member surface
 
-```
-node apps/app/build.mjs
-cd apps/app && npx wrangler@latest pages deploy dist --project-name=rwally-app --branch=protocol/main
-```
+**The copy-pasteable command that used to be here is removed rather than annotated.** It was correct
+when written. It is now a way to silently undo the cutover: this directory and `apps/vaults-ui` claim
+the **same** Cloudflare Pages project (`rwally-app`, production branch `protocol/main`), the DNS is
+already pointed, and there is no staging step — so a deploy from here replaces the member surface the
+instant it finishes, with no warning and nothing reding in the gate.
 
-Run the deploy from `apps/app`. Pages picks up a Functions bundle from `./functions` at the working
-directory; there is no such directory here and there should not be one.
+What it would put back: this page, **reading chain 4663, which the protocol is no longer on.** Its
+live reads were never re-pointed at Arc and, per the owner's 2026-09-19 decision that
+`apps/vaults-ui` takes this address, they will not be.
+
+If a genuine rollback is ever wanted it is the owner's call, made knowing it restores a chain the
+protocol left — not something to reconstruct from a runbook. See the
+[README's Production Map](../../README.md#production-map), which is the single source of truth for
+what serves `app.rwally.com`, and [`DEPLOYMENTS.md`](../../DEPLOYMENTS.md).
+
+Build details, for whoever has to read this directory rather than publish it: build with
+`node apps/app/build.mjs` (there is no `package.json` here on purpose — npm workspace glob concerns).
+Pages picks up a Functions bundle from `./functions` at the working directory; there is no such
+directory here and there should not be one.
 
 ## What is deliberately not built
 
