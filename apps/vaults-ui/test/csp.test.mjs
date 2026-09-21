@@ -18,7 +18,8 @@
  * output rather than the source, and it has to REFUSE TO RUN rather than skip when the output is
  * not there -- a check that quietly passes on a missing dist is a green light over zero coverage.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { before } from 'node:test';
@@ -124,12 +125,22 @@ test('the policy names every directive this app depends on, and widens none of t
   );
 
   assert.equal(directives.get('default-src'), "'none'", 'the deny-by-default floor moved');
-  for (const d of ['script-src', 'style-src', 'img-src', 'font-src', 'connect-src']) {
+  for (const d of ['script-src', 'style-src', 'img-src', 'font-src']) {
     assert.equal(directives.get(d), "'self'", `${d} is not exactly 'self'`);
   }
   for (const d of ['object-src', 'base-uri', 'form-action', 'frame-ancestors']) {
     assert.equal(directives.get(d), "'none'", `${d} is not 'none'`);
   }
+  // Plan item 0.7: this surface reads a chain now (src/lib/live-vaults.ts), so connect-src carries
+  // exactly one RPC origin alongside 'self' — pinned to the exact string, not `.includes()`, so
+  // widening it to a second origin or a wildcard fails this test rather than passing it quietly.
+  // See _headers's own comment on the directive for why THIS origin (Base Sepolia, provable today)
+  // rather than an Arc mainnet address nothing is deployed at yet.
+  assert.equal(
+    directives.get('connect-src'),
+    "'self' https://sepolia.base.org",
+    "connect-src must be exactly 'self' plus the one configured RPC origin",
+  );
   // Absent by design: each falls back to default-src 'none'. See _headers for why.
   for (const d of ['media-src', 'worker-src']) {
     assert.ok(!directives.has(d), `${d} was added without the element that needs it`);
@@ -138,6 +149,27 @@ test('the policy names every directive this app depends on, and widens none of t
   for (const token of ["'unsafe-inline'", "'unsafe-eval'", 'blob:', '*']) {
     assert.ok(!whole.includes(token), `the policy was widened with ${token}`);
   }
+});
+
+test('connect-src names the SAME origin VITE_RPC_URL actually resolves to for the provable config', () => {
+  // Mechanical coupling, not a comment someone has to remember to update. `.env.example` is the
+  // one live-read path this repository can currently prove (Base Sepolia; nothing is deployed on
+  // Arc mainnet yet — contracts/config/arc-mainnet.json's own `status` field says so), and it is
+  // also the config `npm run dev` actually exercises. If it ever names a different RPC than
+  // `_headers` allows, `npm run dev` would 200 the page and refuse every read in the browser with
+  // no build-time warning — the exact hazard the coordinator's brief for this task named.
+  const env = readFileSync(join(APP, '.env.example'), 'utf8');
+  const m = /^VITE_RPC_URL\s*=\s*(\S+)\s*$/m.exec(env);
+  assert.ok(m, 'apps/vaults-ui/.env.example has no VITE_RPC_URL');
+  const rpcUrl = m[1];
+  const csp = /^\s*Content-Security-Policy:\s*(.+)$/m.exec(readFileSync(HEADERS_SRC, 'utf8'));
+  assert.ok(csp, 'no Content-Security-Policy line in _headers');
+  const connectSrc = /connect-src\s+([^;]+)/.exec(csp[1]);
+  assert.ok(connectSrc, 'no connect-src directive in the policy');
+  assert.ok(
+    connectSrc[1].split(/\s+/).includes(rpcUrl),
+    `_headers' connect-src (${connectSrc[1]}) does not include VITE_RPC_URL (${rpcUrl}) from .env.example`,
+  );
 });
 
 test('mutation: the style-attribute check fails on markup that carries one', () => {
@@ -152,4 +184,161 @@ test('mutation: the build config the policy depends on is still set', () => {
   const cfg = readFileSync(join(APP, 'vite.config.ts'), 'utf8');
   assert.match(cfg, /modulePreload:\s*\{\s*polyfill:\s*false\s*\}/, "modulePreload.polyfill was re-enabled and script-src 'self' would refuse it");
   assert.match(cfg, /assetsInlineLimit:\s*0/, "assetsInlineLimit was raised and img-src would refuse an inlined asset");
+});
+
+// ── Plan item 0.7's own guard: no fixture number may reach app.rwally.com ──────────────────────
+//
+// `app.rwally.com` rendering `apps/web/src/fixtures.mjs` over a live vault is the most expensive
+// false claim this repository could ship, and until this file no guard caught it. Modelled on the
+// three tests above rather than a new file with its own `before()`: `scripts/gate.mjs`'s own
+// `app-test` step documents a MEASURED race (1 failure in 25 batched runs) from two `node --test`
+// files independently rebuilding into the same directory inside one batched `test:backend` run —
+// `apps/app/test/claims.test.mjs`'s build deleting a path a concurrently-running repository walk
+// had already enumerated but not yet opened. A second file here that ALSO ran `npm run build`
+// against this SAME `dist/` would not just race an unrelated walker, it would race — and
+// `emptyOutDir`-wipe — the build directly above. Sharing this file's single `before()` avoids
+// reintroducing that failure mode rather than adding a second copy of it.
+//
+// THE FLOOR CHECK. A guard that walks a directory and finds nothing to check is a guard that
+// passes over zero coverage — this file's own header names that failure mode for a different
+// reason, and CLAUDE.md's worktree section and docs/SWARM.md both warn about it generally. The
+// first test below proves the enumeration is non-empty; the second demonstrates, without touching
+// `dist/`, that an empty enumeration is required to THROW rather than pass.
+
+/**
+ * Labelled values from `apps/web/src/fixtures.mjs` that only a fixture import could produce —
+ * names, addresses, AND NUMBERS. An earlier version of this list carried zero numeric sentinels
+ * despite this section's own header claiming "no fixture NUMBER may reach app.rwally.com"; a
+ * source-level import check (the last test in this section) masked the gap, so the guard passed
+ * for a reason other than the one it stated. The three numeric ones below are EMPIRICALLY
+ * CONFIRMED to survive `vite build`'s minifier unreformatted: built the real bundle with
+ * `@atlas/fixtures` reintroduced
+ * and grepped it, rather than assuming a literal written with `_` separators in fixtures.mjs
+ * (esbuild strips those) or a plain decimal (esbuild sometimes re-encodes one in scientific
+ * notation — `wad(4_820_400.512)` came out as `820400512e-3`, which would have been a silent
+ * false negative here). Short, generic-looking numbers are deliberately excluded even if they
+ * would match today: this file scans STATIC BUILD OUTPUT, never runtime chain data (nothing a
+ * live read returns is baked into the bundle), so the only real collision risk is this
+ * repository's OWN numeric literals — a risk longer, fixture-specific numbers avoid.
+ */
+const FIXTURE_SENTINELS = Object.freeze([
+  'Base Blue-Chip 5',
+  'Momentum Majors',
+  'BB5 · DeFi Sleeve',
+  'cbBTC Micro',
+  'Ridgeline Broad Basket',
+  'Meridian',
+  'Halcyon',
+  '0x1111000000000000000000000000000000001111',
+  '0x2222000000000000000000000000000000002222',
+  '0xa1c0000000000000000000000000000000009f20', // WALLET.address
+  '1.083236', // VAULTS[0].navPerShareWad's source decimal
+  '2318597557', // VAULTS[0]'s cbBTC balance, base units
+  '578400000000000000000', // VAULTS[0]'s WETH balance, wei
+]);
+
+/** Every JS/HTML/CSS file the browser could actually fetch — enumerated, never a hand list. */
+function servedTextFiles() {
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(js|html|css)$/.test(entry.name)) out.push(full);
+    }
+  };
+  if (existsSync(DIST)) walk(DIST);
+  return out;
+}
+
+test('the enumeration itself is non-empty — a guard over zero files is a guard that always passes', () => {
+  const files = servedTextFiles();
+  assert.ok(files.length > 0, 'dist/ produced no .js/.html/.css files to scan — the build is broken, not clean');
+});
+
+test('mutation: scanning an EMPTY directory throws rather than silently passing', () => {
+  const empty = mkdtempSync(join(tmpdir(), 'vaults-ui-empty-dist-'));
+  try {
+    const files = readdirSync(empty, { withFileTypes: true }).filter((e) => /\.(js|html|css)$/.test(e.name));
+    assert.throws(
+      () => {
+        if (files.length === 0) throw new Error('no served files found to scan — refusing to report a pass');
+      },
+      /no served files found/,
+      'an empty directory must make the guard THROW, not report a vacuous pass',
+    );
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test('no fixture-labelled value from apps/web/src/fixtures.mjs reaches dist/', () => {
+  const files = servedTextFiles();
+  const hits = [];
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    for (const sentinel of FIXTURE_SENTINELS) {
+      if (text.includes(sentinel)) hits.push(`${sentinel} — in ${file.slice(APP.length)}`);
+    }
+  }
+  assert.deepEqual(
+    hits,
+    [],
+    `fixture data reached the served build:\n${hits.join('\n')}\n` +
+      'apps/vaults-ui/src must import live chain reads (src/lib/live-vaults.ts), never ' +
+      '@atlas/fixtures or apps/web/src/fixtures.mjs.',
+  );
+});
+
+test('mutation: the sentinel scan DOES fire when fixture text is present, proving it is not vacuous', () => {
+  const probe = mkdtempSync(join(tmpdir(), 'vaults-ui-fixture-probe-'));
+  try {
+    const planted = join(probe, 'planted.js');
+    writeFileSync(planted, `export const v = "Base Blue-Chip 5";`);
+    const text = readFileSync(planted, 'utf8');
+    const hit = FIXTURE_SENTINELS.some((s) => text.includes(s));
+    assert.ok(hit, 'the scan found nothing in text that plainly contains a fixture sentinel — it is not checking anything');
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+});
+
+test('mutation: EVERY sentinel individually fires, including the numeric ones — none is dead weight', () => {
+  // The test above plants one string and asks "did anything match" — a list where only the name
+  // sentinels ever actually matched (the gap this whole section was added to close) would still
+  // pass it. This checks each sentinel on its own text, so a numeric sentinel that quietly stopped
+  // matching anything — reformatted by a future minifier change, say — reds HERE rather than
+  // hiding behind the others.
+  for (const sentinel of FIXTURE_SENTINELS) {
+    const text = `export const v = ${JSON.stringify(`x ${sentinel} x`)};`;
+    assert.ok(text.includes(sentinel), `sentinel does not match its own planted text: ${sentinel}`);
+  }
+  // And the numeric ones specifically must be present — dropping them silently is exactly the gap
+  // this section closed (the header claims "no fixture NUMBER", and the list had none).
+  const numeric = FIXTURE_SENTINELS.filter((s) => /^[\d.]+$/.test(s));
+  assert.ok(numeric.length >= 3, `too few numeric sentinels (${numeric.length}) to back the header's own claim`);
+});
+
+test('no import of apps/web/src/fixtures.mjs (or the @atlas/fixtures alias) exists anywhere under src/', () => {
+  // The source-level check too, not instead of the build check above — belt and suspenders, and
+  // cheap. This one alone would be the "weak version": a transitive re-export three files deep
+  // still reaches the bundle and a grep of only the direct importer would say nothing changed.
+  const SRC = join(APP, 'src');
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) {
+        const text = readFileSync(full, 'utf8');
+        // An ACTUAL import/re-export, not prose that names the file to explain its absence —
+        // several files in this change do exactly that in a comment, deliberately.
+        if (/\bfrom\s+['"](@atlas\/fixtures|[^'"]*fixtures\.mjs)['"]/.test(text)) {
+          offenders.push(full.slice(APP.length));
+        }
+      }
+    }
+  };
+  walk(SRC);
+  assert.deepEqual(offenders, [], `fixtures referenced from source: ${offenders.join(', ')}`);
 });
