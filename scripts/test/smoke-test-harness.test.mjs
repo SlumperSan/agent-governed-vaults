@@ -104,7 +104,14 @@ test('smoke-test.mjs happy path: full lifecycle runs and reports PASSED, with no
 
 const NEGATIVE_CONTROLS = [
   { scenario: 'bad-status', expect: /transaction reverted/, why: 'createVault receipt.status forced to 0x0' },
-  { scenario: 'bad-creator', expect: /creator in event != signer/, why: 'VaultCreated topics[2] set to a different address than the signer' },
+  // The expected TEXT changed with #329, and deliberately: the old check compared the event's
+  // creator against the signer who had just signed, which is true by construction and passed on
+  // chain 4663 every time. It now compares against the record's DECLARED intendedCreator.
+  { scenario: 'bad-creator', expect: /creator in event is .*declared intendedCreator is/, why: 'VaultCreated topics[2] set to a different address than the declared creator' },
+  // The vault's own creator() disagreeing with the event it emitted — the SECOND, post-broadcast
+  // assertion, which no other scenario reaches because in all of them the two agree and the first
+  // assertion fails first.
+  { scenario: 'creator-reread-differs', expect: /creator\(\) reads .*declared intendedCreator is/, why: "the vault's own creator() returns a different address than the event reported" },
   { scenario: 'bad-roundtrip', expect: /USDC round trip mismatch/, why: 'requestExit does not credit USDC back' },
   { scenario: 'wire-ok', expect: /did NOT revert/, why: 'the wiring probe falsely returns ok instead of reverting' },
   { scenario: 'wire-transport', expect: /UNVERIFIED, not broken/, why: 'the wiring probe fails as a 429, not a confirmed revert' },
@@ -118,6 +125,38 @@ for (const { scenario, expect, why } of NEGATIVE_CONTROLS) {
     assert.match(r.stderr, expect, `STDERR did not contain the expected failure:\n${r.stderr}`);
   });
 }
+
+// ────────────────────── card 179: the declared creator must EXIST on chain ──────────────────────
+// These are the two directions of `creatorCodeRefusal` driven through the REAL runner, which is the
+// thing the unit tests in creator-code.test.mjs cannot reach: that the refusal actually stops the
+// process before `createVault` is broadcast. `gate.mjs` only `node --check`s smoke-test.mjs, so
+// without this harness the only available assertion was a regex over its source — and a regex can
+// see that a call exists and never that it does anything.
+
+test('card 179: a creator declared CONTRACT with no bytecode refuses, and nothing is broadcast', () => {
+  // The live Arc failure: the owner recorded Safe 0x99e805294F1f1465C96f68e36264E99991Ef9E82 as the
+  // mainnet creator and eth_getCode on chain 5042 returns 0x — a Safe address is deterministic, so a
+  // predicted-but-unactivated one passes every string comparison. `creator` is immutable.
+  const r = runSmokeChild({
+    env: { SMOKE_DEPLOYMENT: path.join(FIXTURES, 'deployment-creator-contract.json') },
+  });
+  assert.notEqual(r.status, 0, 'the run must fail rather than create a vault against an address that is not there');
+  assert.match(r.stderr, /NO BYTECODE/, `STDERR did not carry the refusal:\n${r.stderr}`);
+  assert.equal(
+    broadcastEntries(r.callLog).length,
+    0,
+    'NOTHING may be broadcast: the whole point is that this refuses BEFORE the transaction, because afterwards there is nothing to do about it',
+  );
+});
+
+test('card 179: a creator declared EOA that reports bytecode refuses too, and nothing is broadcast', () => {
+  // The other direction, on the REAL shipped record (which declares `eoa`): if the chain reports
+  // code at it, whatever key the operator holds is not what would own the vault.
+  const r = runSmokeChild({ scenario: 'creator-has-code' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /is a contract/, `STDERR did not carry the refusal:\n${r.stderr}`);
+  assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
+});
 
 test('wrong path: DEPLOY_JSON with two VaultFactory CREATE entries -> loadDeployment fails', () => {
   const r = runSmokeChild({ deployJson: path.join(FIXTURES, 'deploy-run-latest-duplicate-factory.json') });
