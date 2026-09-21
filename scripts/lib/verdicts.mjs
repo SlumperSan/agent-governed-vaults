@@ -101,8 +101,14 @@
  */
 export const SELF_WORKFLOW_NAME = 'merge-preflight';
 
-/** The orchestrator declares who is reviewing. Last declaration wins — reviewers can be added. */
-const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]+)\s*-->/g;
+/**
+ * The orchestrator declares who is reviewing. THE LATEST TOKEN IS ALWAYS AUTHORITATIVE — reviewers
+ * can be added, reassigned, or withdrawn to none. `[^\s>]*` (not `+`): `reviewers=` with nothing
+ * after it must still MATCH, because an empty roster is how a dead seat (a department whose
+ * session ended) gets withdrawn. See `parseRoster`'s own comment for why this cannot be used to
+ * clear a standing REJECT.
+ */
+const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
 
 /** A reviewer's machine-readable verdict. The only thing that may clear a blocker. */
 const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=(ACCEPT|REJECT)\s*-->/g;
@@ -153,6 +159,26 @@ function firstHeadingLine(body) {
 }
 
 /**
+ * THE LATEST ROSTER TOKEN WINS, INCLUDING AN EMPTY ONE. Card #352's dead-seat bug: this used to
+ * update `found` only when the new token was non-empty (`if (reviewers.length > 0) found = ...`),
+ * so a later `reviewers=` posted specifically to withdraw a department whose session ended was
+ * silently ignored and `found` stayed on the last non-empty roster forever. The only working
+ * remedy was reassigning to a DIFFERENT live reviewer — which may not exist, which is exactly the
+ * situation (Security/Product/Finance/Design all dark the same day) this fix exists for.
+ *
+ * `{ reviewers: [], at }` (an explicit empty roster) is a REAL, DISTINCT state from `null` (no
+ * roster ever declared) — `roster-declared` blocks on `null`, not on an empty array, so a roster
+ * withdrawn to nobody reads as "a roster was declared, and it currently requires no one," not as
+ * "no review was ever assigned." `roster-resolved` trivially passes an empty roster (nothing to
+ * be missing), which is the correct denominator when nobody is currently required.
+ *
+ * THIS DOES NOT WEAKEN no-standing-reject. That rule (Mode A, in `evaluate` below) blocks on
+ * `latestPerReviewer(verdicts)` — every REVIEW-VERDICT token ever posted, independent of who is
+ * currently on the roster — so a reviewer's standing REJECT still blocks a merge after that
+ * reviewer is dropped from the roster. Only the roster-declared/roster-resolved DENOMINATOR moves
+ * with the latest roster; a verdict already cast keeps its force regardless of roster changes,
+ * per merge-policy.json's own invariant and the #98/#109 incidents behind it.
+ *
  * @param {Comment[]} comments
  * @returns {{reviewers: string[], at: string}|null}
  */
@@ -167,7 +193,10 @@ export function parseRoster(comments) {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      if (reviewers.length > 0) found = { reviewers, at: c.createdAt };
+      // Every match updates `found` — no `reviewers.length > 0` gate. An empty match (reviewers=
+      // with nothing after it) is itself the latest declaration and must take effect, not be
+      // treated as noise.
+      found = { reviewers, at: c.createdAt };
     }
   }
   return found;

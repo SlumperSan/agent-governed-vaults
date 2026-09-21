@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, runsForHead,
+  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, parseRoster, runsForHead,
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 // Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
@@ -721,4 +721,92 @@ test('validateGhPayloads fails CLOSED on every field whose absence would disarm 
   assert.match(String(validateGhPayloads(noState, okRuns(), 0)), /state/);
   assert.ok(validateGhPayloads(okPr(), [{ status: 'completed', conclusion: 'success', workflowName: 'CI' }], 0));
   assert.ok(validateGhPayloads(okPr(), 'not an array', 0));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card #352 — the latest roster token wins, INCLUDING an empty one (the dead-seat bug)
+// ---------------------------------------------------------------------------------------------
+// Real incident: a roster was declared for a reviewer whose session ended, and posting a fresh
+// `<!-- REVIEW-ROSTER reviewers= -->` to withdraw it had no effect — the gate kept reading the
+// dead seat, because `parseRoster` silently dropped every empty match. The only working remedy
+// was reassigning to a DIFFERENT live reviewer, which may not exist (Security/Product/Finance/
+// Design all dark the same day). Fixed: every roster token, empty or not, is the new declaration.
+
+test('parseRoster: a later EMPTY roster overrides an earlier non-empty one', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  assert.deepEqual(parseRoster(comments), { reviewers: [], at: '2026-09-21T14:00:00Z' });
+});
+
+test('parseRoster: a later roster naming a DIFFERENT reviewer fully replaces the old one (not a union)', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security2 -->' },
+  ];
+  assert.deepEqual(parseRoster(comments), { reviewers: ['Security2'], at: '2026-09-21T14:00:00Z' });
+});
+
+test('an empty roster clears roster-declared/roster-resolved in strict mode for a now-withdrawn seat', () => {
+  const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint' };
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    // Security's session ended with no verdict posted. Withdrawing the roster to empty must clear
+    // both roster-declared (a roster WAS declared) and roster-resolved (nobody is now required).
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  const strict = evaluate({ pr, comments, runs: greenOn('feed0001'), mode: 'strict' });
+  assert.deepEqual(ruleIds(strict.blockers), []);
+  assert.equal(strict.clear, true);
+});
+
+test('CRITICAL: a standing REJECT still blocks after its reviewer is dropped from the roster — the roster fix must not launder a REJECT', () => {
+  const pr = { number: 999, state: 'OPEN', headRefOid: 'feed0002', headRefName: 'feat/whatever' };
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T11:00:00Z', body: '## Adversarial review — VERDICT\n\n<!-- REVIEW-VERDICT reviewer=Security verdict=REJECT -->' },
+    // Security's session ends; the roster is withdrawn to empty so the PR is not stuck forever...
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+    const d = evaluate({ pr, comments, runs: greenOn('feed0002'), mode });
+    assert.equal(d.clear, false, `${mode}: withdrawing the roster must NOT clear Security's standing REJECT`);
+    assert.ok(
+      d.blockers.some((b) => b.ruleId === 'no-standing-reject'),
+      `${mode}: no-standing-reject must still fire`,
+    );
+  }
+  // And posting a FRESH roster (even reassigning to nobody, or to a new reviewer) still does not
+  // launder it -- only a newer REVIEW-VERDICT token can, per the invariant this asserts.
+  const withNewRoster = [
+    ...comments,
+    { createdAt: '2026-09-21T15:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=SomeoneElse -->' },
+  ];
+  const d2 = evaluate({ pr, comments: withNewRoster, runs: greenOn('feed0002'), mode: 'strict' });
+  assert.ok(d2.blockers.some((b) => b.ruleId === 'no-standing-reject'), 'a fresh roster must not clear a standing REJECT');
+});
+
+test('MUTATION: reverting parseRoster to drop empty matches (the #352 bug) is caught', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  // Simulate the pre-fix behaviour directly (the bug this test must catch if reintroduced):
+  // an empty match must be SKIPPED, so `found` stays on the last non-empty roster.
+  const preFixParseRoster = (cs) => {
+    const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
+    let found = null;
+    for (const c of cs) {
+      ROSTER_RE.lastIndex = 0;
+      let m;
+      while ((m = ROSTER_RE.exec(c.body)) !== null) {
+        const reviewers = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+        if (reviewers.length > 0) found = { reviewers, at: c.createdAt }; // the bug
+      }
+    }
+    return found;
+  };
+  assert.deepEqual(preFixParseRoster(comments), { reviewers: ['Security'], at: '2026-09-21T10:00:00Z' }, 'RED: the pre-fix shape must keep reading the dead seat');
+  assert.notDeepEqual(parseRoster(comments), preFixParseRoster(comments), 'the real parseRoster must differ from the reintroduced bug on this exact input');
 });
