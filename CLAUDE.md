@@ -11,16 +11,40 @@ The single author identity for this repository is
 email.
 
 **This replaced a personal Gmail address on 2026-09-21, and the change is FORWARD-ONLY.** The
-commits already authored under it keep the old address in their author fields — **943 of them when
-last counted, 2026-09-21**, out of 1,504 commits across all refs. Nothing rewrites those and nobody
-should try: history rewriting on a public repository with active branches costs far more than the
-exposure is worth, and the noreply form exists precisely so future commits stop adding to it.
+commits already authored under it keep the old address in their author fields — **943 across all
+refs, counted 2026-09-21.** That figure is a **closed set**: the address is retired, so nothing new
+joins it and 943 can only fall, as unmerged branches carrying those commits are deleted. Nothing
+rewrites the commits themselves and nobody should try: history rewriting on a public repository
+with active branches costs far more than the exposure is worth, and the noreply form exists
+precisely so future commits stop adding to it.
 
-**Recount before citing either number, with `git log --format='%ae' --all`, not `rev-list --count`.**
-An earlier version of this paragraph gave the *total* commit count as the number carrying the old
-address — true of something adjacent to what the sentence claimed, which overstated the exposure by
-about 57%. Both figures also drift with every push: the total read 1,481, then 1,487, then 1,504
-within one day.
+**A count here is meaningless without its SCOPE and its QUANTITY, and this paragraph has already
+got each wrong once.** The 943 above is `--all` — every ref, including unmerged branches.
+Reproduce it, and see what it is a share of, with:
+
+```
+git log --format='%ae' --all | grep -ci gmail     # 943 — the commits carrying the old address
+git rev-list --count --all                        # every commit; NO figure for it is written here
+```
+
+**The total is deliberately not quoted.** It rises on every push — it read 1,504 while this
+paragraph was being written and 1,505 by the time the commit landed — so any number stated for it
+is stale before it is reviewed. The only figure worth pinning is the closed one.
+
+**Two ways this goes wrong, both observed on 2026-09-21:**
+
+- **Wrong quantity.** An earlier version gave the *total* as the number carrying the old address —
+  true of something adjacent to what the sentence claimed, and it overstated the exposure by
+  about 57%.
+- **Wrong scope, silently.** The same two questions asked against `origin/protocol/main` alone
+  return **273** carrying the address out of **671**. Neither scope is wrong; they answer different
+  questions, and a bare figure does not say which was asked. Four different true totals were
+  produced in one day — 1,481, 1,487 and 1,504 on `--all`, and 671 on `protocol/main` — the widest
+  pair more than double apart, which is how a figure nobody scoped ends up being cited for a claim
+  it was never measured for.
+
+**So do not simply refresh the digits.** Re-state the scope and the quantity alongside whatever
+number you write, or the next reader inherits a figure that is true of something nobody named.
 
 **Setting the local git config is the owner's to do, not an agent's** — this document states the
 identity commits must carry; it does not assert that `git config user.email` has already been
