@@ -215,3 +215,90 @@ test('MUTATION: removing the frozen-preview branch is caught', () => {
   const withoutBranch = MEMBER_ACTIONS.slice(0, start) + '{preview == null ? (' + MEMBER_ACTIONS.slice(end + ') : preview == null ? ('.length);
   assert.doesNotMatch(withoutBranch, /No preview while frozen/, 'RED: the mutation must actually remove the frozen branch');
 });
+
+// ─────────────── the DEPOSIT button carries the same freeze gate (same rule, other flow) ───────────────
+// `VaultCore._deposit` calls `navWad()` UNCONDITIONALLY at VaultCore.sol:412 -- above the
+// `capacityCapUsdc != 0` branch -- so a deposit reverts while frozen on EVERY vault, including an
+// uncapped one that runs no capacity check at all. The deposit button was gated only on
+// pending-deposit state and never referenced `vault.frozen`, so a member could pay gas to learn
+// this. Fixed alongside the exit gate rather than after it: same defect, same component.
+
+/** The `depositBlocked` declaration's full right-hand side, terminated at the first semicolon that
+ *  is actually CODE. A naive `indexOf(';')` stops inside the declaration's own `//` comment the
+ *  moment that prose contains a semicolon -- which it does -- truncating the extraction before the
+ *  operand under test and turning three guards green against a string that never reached it. */
+function depositBlockedSource() {
+  const start = MEMBER_ACTIONS.indexOf('const depositBlocked =');
+  assert.ok(start >= 0, 'depositBlocked declaration not found');
+  let inLineComment = false;
+  for (let i = start; i < MEMBER_ACTIONS.length; i++) {
+    const c = MEMBER_ACTIONS[i];
+    if (inLineComment) {
+      if (c === '\n') inLineComment = false;
+      continue;
+    }
+    if (c === '/' && MEMBER_ACTIONS[i + 1] === '/') { inLineComment = true; i++; continue; }
+    if (c === ';') return MEMBER_ACTIONS.slice(start, i);
+  }
+  throw new Error('depositBlocked declaration never terminates in a code semicolon');
+}
+
+test('the deposit button is blocked while the vault is frozen', () => {
+  assert.match(depositBlockedSource(), /vault\.frozen/, 'depositBlocked must refuse a frozen vault');
+});
+
+test('the deposit freeze gate reads vault.frozen DIRECTLY, not through vaultActions', () => {
+  // The property that matters: `vaultActions` is null whenever an exit-side read fails
+  // (`shares`, `queuedExitShares`). Sourcing the deposit refusal from it would make an unrelated
+  // reverted call silently re-enable deposits on a frozen vault -- a refusal that vanishes.
+  //
+  // Asserted over the CODE with `//` comments stripped, not the raw declaration: the declaration's
+  // own comment names `vaultActions` in order to say it is deliberately NOT used, so a raw scan
+  // reds on the sentence explaining the property it is checking. Same failure the sibling
+  // `apps/web/src` guard (#322) built a whole string-literal extractor to avoid.
+  const code = depositBlockedSource()
+    .split('\n')
+    .map((l) => l.replace(/\/\/.*$/, ''))
+    .join('\n');
+  assert.match(code, /vault\.frozen/, 'precondition: the frozen operand survives comment-stripping');
+  assert.doesNotMatch(code, /vaultActions/, 'depositBlocked must not depend on the exit-side verdict object');
+});
+
+test('MUTATION: dropping vault.frozen from depositBlocked is caught', () => {
+  // Replaced inside the EXTRACTED declaration rather than by matching `|| vault.frozen` in the
+  // raw file: a comment block sits between the operator and the operand, so any regex spanning
+  // the two is really testing the comment's formatting.
+  const src = depositBlockedSource();
+  assert.match(src, /vault\.frozen/, 'precondition: the real declaration gates on frozen');
+  const mutated = MEMBER_ACTIONS.replace(src, src.replace('vault.frozen', 'false'));
+  assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found -- update this test if depositBlocked moved');
+  const start = mutated.indexOf('const depositBlocked =');
+  const mutatedSrc = mutated.slice(start, mutated.indexOf(';', start));
+  assert.doesNotMatch(mutatedSrc, /vault\.frozen/, 'RED: the pre-fix depositBlocked must not gate on frozen');
+});
+
+test('a frozen vault states WHY deposits are refused, next to the deposit button', () => {
+  const idx = MEMBER_ACTIONS.indexOf('{vault.frozen ? (');
+  assert.ok(idx >= 0, 'the frozen-deposit branch was not found');
+  const reasonIdx = MEMBER_ACTIONS.indexOf('vaultActions?.deposit.reason', idx);
+  assert.ok(reasonIdx >= 0, 'the refusal must state its reason, sourced from vault-state.mjs');
+  // ...and it must still say something when the verdict object is null, rather than rendering an
+  // empty paragraph -- the fallback is the same claim in the module's own terms.
+  assert.match(MEMBER_ACTIONS.slice(idx, idx + 800), /\?\?\s*\n?\s*'Frozen —/, 'a null verdict must fall back to stated text, never to nothing');
+});
+
+test('MUTATION: removing the frozen-deposit reason paragraph is caught', () => {
+  const start = MEMBER_ACTIONS.indexOf('{vault.frozen ? (');
+  assert.ok(start >= 0, 'frozen-deposit branch not found');
+  const end = MEMBER_ACTIONS.indexOf('{depositStatus ? (', start);
+  assert.ok(end > start, 'could not find the end of the frozen-deposit branch');
+  const withoutBranch = MEMBER_ACTIONS.slice(0, start) + MEMBER_ACTIONS.slice(end);
+  assert.doesNotMatch(withoutBranch, /vaultActions\?\.deposit\.reason/, 'RED: the mutation must actually remove the reason');
+});
+
+test('the facts fed to actions() encode capacity as UNKNOWN, not as "not full"', () => {
+  const src = actionsCallSource();
+  assert.match(src, /capacityKnown:\s*false/, 'capacity is not read by this app at all, so it must be declared undeterminable');
+  assert.match(src, /hasPendingDeposit:\s*depositStatus\?\./, 'hasPendingDeposit must come from the live depositStatus read, not a hardcoded false');
+  assert.match(src, /pendingMatured:\s*depositStatus\?\./, 'pendingMatured must come from the live depositStatus read, not a hardcoded false');
+});
