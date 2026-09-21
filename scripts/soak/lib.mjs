@@ -802,6 +802,87 @@ export function readProposal(governance, pid) {
   return decodeProposal(call(governance, PROPOSAL_SIG, pid));
 }
 
+/**
+ * Whether an EXISTING `activeProposalOf(vault)` proposal blocks a new governance round on that
+ * vault, and — when it does — the exact, loudest-possible next step.
+ *
+ * This is the third instance of one shape: `START_BLOCK` unset silently meant "index from
+ * genesis"; `-Stop` silently left services running; this silently leaves a proposal `Active`
+ * forever. A 2026-09 soak proposed on the smoke vault, aborted between propose and reveal, and
+ * nothing ever called `finalize` on the way out — `activeProposalOf` never clears itself
+ * (see the comment on `votableNow` above), governance serializes per vault, and every later drill
+ * against that vault failed with a governance-shaped revert for a STALE-PROPOSAL cause, twelve
+ * days after the run that left it. This function is what a STARTUP preflight uses to catch that
+ * BEFORE any drill runs into it, instead of failing confusingly mid-drill.
+ *
+ * `finalize(uint256)` (Governance.sol:577-579) is `external`, callable by ANY account, and its
+ * only precondition is `status == Active && now >= revealDeadline` — so once a proposal is past
+ * its reveal deadline the remedy is one safe, no-special-key transaction. Before that deadline
+ * there is nothing to do but wait: `finalize` reverts `WrongPhase` on the identical call.
+ *
+ * `Passed` is handled too, not because it was the observed defect, but because a preflight that
+ * called a stuck `Passed` proposal "clear to proceed" would just be a second copy of the same
+ * defect one status over. `execute(uint256,bytes)` needs the ORIGINAL payload (Governance.sol:679-
+ * 704), which only the drill that proposed it still has, so there is no generic remedy inside its
+ * execution window; past `expiresAt` the generic remedy is `markExpired(uint256)` (also `external`,
+ * also payload-free, Governance.sol:707-711).
+ *
+ * @param {{status: string, revealDeadline: number, expiresAt: number} | null} p a `readProposal`
+ *   result, or `null` when `activeProposalOf` read `0` (nothing was ever proposed on this vault).
+ * @param {{now: number, pid: string|number|bigint}} ctx `now` is chain time (`chainNow()`), not
+ *   wall-clock time — Base Sepolia's clock is the one every deadline above is measured against.
+ * @returns {{blocking: boolean, state: string, message: string, remedyFn?: string}} `remedyFn` is
+ *   the bare `name(types)` signature to `cast send`, only present when a generic remedy exists.
+ */
+export function proposalPreflightVerdict(p, { now, pid }) {
+  if (!p || p.status === 'None') {
+    return { blocking: false, state: 'none', message: `no active proposal on this vault (activeProposalOf reads 0) — clear to proceed` };
+  }
+  if (['Executed', 'Defeated', 'Expired'].includes(p.status)) {
+    return { blocking: false, state: 'settled', message: `proposal ${pid} is ${p.status} — settled, clear to proceed` };
+  }
+  if (p.status === 'Active') {
+    if (now >= p.revealDeadline) {
+      const ago = now - p.revealDeadline;
+      return {
+        blocking: true,
+        state: 'active-finalizable',
+        message: `proposal ${pid} is Active and PAST its reveal deadline (deadline ${p.revealDeadline}, chain now ${now}, ${ago}s ago) — nothing ever finalized it. Governance serializes per vault, so every drill against this vault is blocked until it is.`,
+        remedyFn: 'finalize(uint256)',
+      };
+    }
+    const eta = p.revealDeadline - now;
+    return {
+      blocking: true,
+      state: 'active-live',
+      message: `proposal ${pid} is Active but NOT yet past its reveal deadline (deadline ${p.revealDeadline}, chain now ${now}, finalizable in ${eta}s, at ${new Date(p.revealDeadline * 1000).toISOString()}) — this is a run still in flight, not a stalled one. Wait for it, or run the drill that owns this vault to carry it through commit/reveal/finalize.`,
+    };
+  }
+  if (p.status === 'Passed') {
+    if (now > p.expiresAt) {
+      return {
+        blocking: true,
+        state: 'passed-expired-unmarked',
+        message: `proposal ${pid} is Passed and past its execution window (expiresAt ${p.expiresAt}, chain now ${now}) but nobody called markExpired — governance still serializes per vault on it.`,
+        remedyFn: 'markExpired(uint256)',
+      };
+    }
+    return {
+      blocking: true,
+      state: 'passed-pending-execution',
+      message: `proposal ${pid} is Passed and within its execution window (expires at ${new Date(p.expiresAt * 1000).toISOString()}) — only the drill that proposed it holds the exact payload execute(uint256,bytes) needs, so there is no generic remedy here. Run that drill to completion, or wait for the window to lapse and re-run this preflight.`,
+    };
+  }
+  // Unreached for a well-formed STATUS table — named as blocking-with-unknown-cause rather than
+  // silently read as clear, the same "a guard that can skip is a guard that will" reasoning as
+  // everywhere else in this file.
+  return {
+    blocking: true,
+    state: 'unknown',
+    message: `proposal ${pid} has status ${p.status}, which this preflight has no rule for — treating it as blocking rather than guessing it is safe.`,
+  };
+}
+
 /** Event topics, computed from the Solidity signatures rather than hardcoded. */
 export const TOPIC = {
   VaultCreated: () => keccakOf('VaultCreated(address,address,address,uint256)'),

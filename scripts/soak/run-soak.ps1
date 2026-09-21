@@ -38,6 +38,10 @@
 #                          address book, ONLY if not already set in your environment. The script
 #                          refuses to start (throws before launching anything) if that record has no
 #                          usable block, rather than letting the indexer default it to 0.
+#
+# Also refuses to start if the smoke vault already carries an unfinalized proposal from an earlier
+# aborted run (scripts/soak/preflight-governance.mjs) -- prints the diagnosis and, where one exists,
+# the exact `cast send ... finalize(uint256) ...` (or markExpired) remedy. Never sends it for you.
 
 param(
   [string]$SignerPasswordFile = "$env:USERPROFILE\.soak.pw",
@@ -167,6 +171,21 @@ if ($LASTEXITCODE -ne 0 -or "$addr".Trim() -ne $Deployer) {
 }
 Write-Host "  OK - signer resolves to $Deployer" -ForegroundColor Green
 Write-Host "  SOAK_SIGNER_ARGS = $env:SOAK_SIGNER_ARGS"
+
+# Governance preflight: refuse loudly, before starting anything, if the smoke vault already
+# carries a proposal from an earlier aborted run that governance's per-vault serialization would
+# block every drill on. Measured 2026-09: track B failed at drill 2 twelve days after a run
+# proposed-then-abandoned, with a message that named the symptom ("proposal 11 in status Active")
+# deep inside drill 2's own preflight rather than the fix, before any drill had even started this
+# time. scripts/soak/preflight-governance.mjs reads the SAME governance state and, when it refuses,
+# prints the exact remedy command using the SOAK_SIGNER_ARGS just proven above -- but it never
+# sends anything itself: finalizing on the operator's behalf, even to clear the script's own mess,
+# is a broadcast this launcher must not make silently.
+Write-Host "`nchecking governance state on the smoke vault..." -ForegroundColor Cyan
+& node (Join-Path $PSScriptRoot 'preflight-governance.mjs')
+if ($LASTEXITCODE -ne 0) {
+  throw 'governance preflight refused to proceed (see the diagnosis and remedy printed above) -- settle it, then re-run'
+}
 
 $runAgent = -not $SkipAgent
 if ($runAgent -and -not (Test-Path $AgentPasswordFile)) {
