@@ -1,6 +1,18 @@
 import type { Vault } from '../lib/atlas';
 import { proposalPhase, quorumReadout, wadExact } from '../lib/atlas';
 
+/**
+ * `quorumReadout.met` HAS THREE STATES AND THIS TAG SHOWS THREE. `null` is "not measurable from
+ * what was read" — the sub-five regime returns it whenever `delegatedForWeight` is absent, and the
+ * stake and RuleChange regimes whenever the snapshot or the vault's own quorum is not exposed.
+ * `met ? 'met' : 'not met'` collapsed that onto the negative, printing a settled "not met" beside
+ * a sentence saying the answer is unknown. Asserting a proposal is short of quorum when the chain
+ * has not been asked is the same class of lie as asserting an exit settles instantly.
+ */
+function quorumTag(met: boolean | null): string {
+  return met === true ? 'met' : met === false ? 'not met' : 'unknown';
+}
+
 interface Props {
   readonly vault: Vault;
   readonly nowSec: number;
@@ -69,7 +81,7 @@ export function ProposalPanel({ vault, nowSec }: Props) {
         <dd className="mono">{p.proposer}</dd>
         <dt>Quorum</dt>
         <dd>
-          <span className={readout.met ? 'tag' : 'tag tag-warn'}>{readout.met ? 'met' : 'not met'}</span>{' '}
+          <span className={readout.met === true ? 'tag' : 'tag tag-warn'}>{quorumTag(readout.met)}</span>{' '}
           <span className="dim">{readout.text}</span>
         </dd>
       </dl>

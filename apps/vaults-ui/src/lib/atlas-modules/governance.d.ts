@@ -18,9 +18,23 @@ export interface ProposalLike {
 }
 export interface QuorumReadout {
   readonly regime: string;
-  readonly met: boolean;
-  readonly bps: number;
-  readonly quorumBps: number;
+  /**
+   * THREE STATES, NOT TWO. `null` means "not measurable from what was read", and
+   * `quorumReadout` returns it on six paths (five literal, one computed) — including the sub-five regime whenever
+   * `delegatedForWeight` was not supplied, because both of that regime's stake terms are
+   * `forWeight` MINUS cranked delegated weight (VO-2b) and neither is knowable without it.
+   * Declaring this `boolean` is what let `ProposalPanel` render an unknown as a definite
+   * "not met" — the mistake this file's siblings exist to prevent, made in this file.
+   */
+  readonly met: boolean | null;
+  /** The >=5-member stake regime only: revealed stake as bps of the snapshot. */
+  readonly bps?: number;
+  /** Sub-five and RuleChange return this in place of `bps`. */
+  readonly forBps?: number;
+  /** RuleChange only. */
+  readonly revealedBps?: number;
+  /** `null` where the vault's own configured quorum was not exposed; absent on other paths. */
+  readonly quorumBps?: number | null;
   /** A finished sentence. Render it; do not reassemble one from the parts. */
   readonly text: string;
 }
