@@ -50,6 +50,16 @@ export default defineConfig({
       // creator gate, the Mode-F exit warning, or the observation-window states a second time.
       '@atlas/wallet-refusals': atlas('wallet-refusals'),
       '@atlas/deposit-status': atlas('deposit-status'),
+      // The frozen/queued-exit/creator-gate refusal VERDICTS themselves (not just the two
+      // standalone checks above) — `actions(facts).exit` is what decides whether the exit button
+      // signs at all, so a frozen vault's irrevocable-Mode-F trap is refused here rather than
+      // re-derived a second time in a component.
+      '@atlas/vault-state': atlas('vault-state'),
+      // The exit-quote math (P-O12) — mirrors VaultCore._settleExit/_exitFeeBps term for term,
+      // already tested under apps/web/test/exit-preview.test.mjs. Before this alias, the member
+      // surface asked someone to request an exit without telling them what they would receive;
+      // the code that could tell them already existed in the sibling app and was never imported.
+      '@atlas/exit-preview': atlas('exit-preview'),
       '@chain/abis': pkg('canary/src/abis.mjs'),
       '@chain/binding': pkg('chain-config/src/chain-binding.mjs'),
       // Write-call ABI fragments (deposit/approve/commitVote/revealVote/requestExit) — the same

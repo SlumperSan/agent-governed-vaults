@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Address } from 'viem';
 import {
+  actions,
+  bpsPct,
   canReveal,
   canSign,
   classifyDepositStatus,
@@ -8,11 +10,16 @@ import {
   exitFeeCeiling,
   formatUnits,
   parseUnits,
+  previewExit,
   shortAddress,
+  USDC_SCALAR,
+  usdcShort,
   type DepositStatus,
   type ExitFeeCeiling,
+  type ExitPreview,
   type Refusal,
   type Vault,
+  type VaultActions,
   type VoteCustodyState,
 } from '../lib/atlas';
 import {
@@ -254,6 +261,82 @@ export function MemberActions({ vault }: Props) {
         tenureSec: exitGate.lastDepositTime == null ? null : BigInt(nowSec()) - exitGate.lastDepositTime,
       })
     : null;
+  // The frozen/Mode-F/queued-exit refusal (vault-state.mjs's `actions().exit`) — the same module
+  // apps/web/index.html has always refused against, unwired here until now. `vault.frozen` is a
+  // live navWad()-revert read (chain-reader.mjs), never the tri-state "cannot be read" apps/web's
+  // event-derived path has to allow for — this app's `Vault.frozen` is always a known boolean, so
+  // there is no freeze-unknown case to preserve here (unlike a frozen-vs-unknown notice on the
+  // metered API path). `null` until `exitGate`/`shares`/`queuedExitShares` resolve, deliberately:
+  // a fact built from a still-loading read (e.g. `isMember` defaulting to `shares > 0n` on a null
+  // `shares`, or `hasQueuedExit` defaulting to `false` on a FAILED `queuedExitShares` read) would
+  // silently misclassify a real member, or a real already-queued exit, as a known-clean state
+  // rather than as "not yet known" — a failed read is not an absence, and treating it as one is
+  // the same shape as every other disclosure-that-vanishes defect this repo keeps re-finding.
+  const vaultActions: VaultActions | null =
+    exitGate && shares !== null && exitGate.queuedExitShares !== null
+      ? actions({
+          frozen: vault.frozen,
+          attested: vault.attested,
+          exitMode: pendingExecution === true ? 'F' : pendingExecution === false ? 'I' : 'unknown',
+          isMember: shares > 0n,
+          // Only `exit`'s own verdict is rendered below — deposit/activate/skipWindow need
+          // capacity data this component does not read (see atlas.ts's own note on why
+          // `capacityCapUsdc` is not sourced here), so those three facts are inert placeholders
+          // for verdicts this component never displays, not real inputs to a rendered decision.
+          hasPendingDeposit: false,
+          pendingMatured: false,
+          capacityFull: false,
+          hasQueuedExit: exitGate.queuedExitShares > 0n,
+          walletConnected: connected,
+        })
+      : null;
+  // The one case `vaultActions === null` needs its OWN stated reason rather than a silent
+  // disabled button: `exitGate` resolved (so `creatorGate`'s own UNKNOWN_REFUSAL message, which
+  // covers "exitGate is still null", does not fire) but `queuedExitShares` specifically failed.
+  const queuedExitUnread = exitGate !== null && shares !== null && exitGate.queuedExitShares === null;
+  // What the member would actually RECEIVE (P-O12) — mirrors VaultCore._settleExit/_exitFeeBps
+  // term for term; see exit-preview.mjs for the fee-as-a-range rule and the SV-5 scope note. Only
+  // computed once `shares` has resolved: `previewExit` treats a missing memberShares as an input
+  // error ("cannot preview this exit"), which would be the wrong message for "not read yet" — the
+  // same absent-vs-unknown distinction every other read in this component already keeps.
+  //
+  // EXPLICITLY gated on `!vault.frozen`, not left to fall out of pricing. `previewExit` itself has
+  // no `frozen` parameter — it degrades a null-priced leg into `valueComplete:false`, which today
+  // happens to cover a frozen vault only because this basket is a single asset (cirBTC): the one
+  // stale leg's `priceWad` goes null, so the total suppresses itself. That is a correct answer for
+  // the wrong reason. `usdcPay` and any OTHER, still-healthy leg's value are computed from balances
+  // and prices that have nothing to do with `frozen` and would render as confident numbers next to
+  // a button `vaultActions.exit` has already refused — add a second basket asset whose oracle is
+  // still fresh and the accidental coverage stops covering the leg that IS fresh, no test would
+  // catch it, and the preview starts asserting a settlement the contract would revert. apps/web's
+  // own dialog avoids this the same way, one level up: `openExit` never renders the exit surface
+  // at all unless `x.actions.exit.available` (index.html:1019-1020) — this is that same gate,
+  // applied here instead of at a dialog boundary this component does not have.
+  const preview: ExitPreview | null =
+    !vault.frozen && exitGate && shares !== null
+      ? previewExit({
+          burnShares,
+          memberShares: shares,
+          totalShares: vault.totalShares,
+          idleUsdc: vault.idleUsdc,
+          // exit-preview.mjs wants `decimals`; this app's live basket carries `assetUnit`
+          // instead (VaultCore.sol:97, `assetUnit[a] = 10 ** ad` -- read off the contract rather
+          // than trusted from the token's own decimals()). Always an exact power of ten, so
+          // log10 recovers it exactly for every decimals count this basket can hold.
+          basket: vault.basket.map((leg) => ({
+            symbol: leg.symbol,
+            balance: leg.balance,
+            priceWad: leg.priceWad,
+            decimals: Math.round(Math.log10(Number(leg.assetUnit))),
+          })),
+          costBasisUsdc: exitGate.costBasisUsdc,
+          exitFeeMaxBps: exitGate.exitFeeMaxBps,
+          exitFeeDecayPeriodSec: exitGate.exitFeeDecayPeriod,
+          tenureSec: exitGate.lastDepositTime == null ? null : nowSec() - Number(exitGate.lastDepositTime),
+        })
+      : null;
+  const previewLeg = (min: bigint | null, max: bigint, fmt: (n: bigint) => string) =>
+    min === null || min === max ? fmt(max) : `${fmt(min)} to ${fmt(max)}`;
 
   return (
     <section className="panel">
@@ -374,12 +457,24 @@ export function MemberActions({ vault }: Props) {
         <button
           type="button"
           className="btn"
-          disabled={disabled || exit.busy || !canSign(creatorGate)}
+          disabled={disabled || exit.busy || !canSign(creatorGate) || vaultActions === null || !vaultActions.exit.available}
           onClick={() => void handleExit()}
         >
           {exit.busy ? 'Exiting…' : 'Request exit'}
         </button>
       </div>
+      {vaultActions && !vaultActions.exit.available ? (
+        // Stated reason, not just a greyed button — vault-state.mjs's own wording, unchanged, so
+        // this app never says something different from apps/web about the same refusal. Covers
+        // the frozen-Mode-F trap (irrevocable queue during a freeze), an outright frozen vault,
+        // "already queued", and "no shares" — none of which this button refused before.
+        <p className={vaultActions.exit.severity === 'info' ? 'note dim' : 'note tag-warn'}>{vaultActions.exit.reason}</p>
+      ) : queuedExitUnread ? (
+        // A FAILED queuedExitShares read, not an absence of one — `?? 0n` on this field would
+        // silently read a real already-queued exit as "clear to queue another", the same
+        // vanishing-disclosure shape this repo keeps finding. Stated as unknown, not as clean.
+        <p className="note tag-warn">Whether you already have a queued exit could not be read from chain — do not sign against this until it resolves.</p>
+      ) : null}
       {pendingExecution === true ? (
         <p className="note tag-warn">
           A proposal is past its commit deadline: this exit QUEUES — irrevocably, no cancel — and settles later at
@@ -404,6 +499,114 @@ export function MemberActions({ vault }: Props) {
       ) : (
         <p className="note dim">{exitFee.reason}</p>
       )}
+
+      {vault.frozen ? (
+        // Explicit, not a side effect of an unpriced leg: see `preview`'s own comment above for
+        // why "the total already suppresses itself" is not the same claim as "this is frozen".
+        <p className="note tag-warn">
+          No preview while frozen — settlement prices this exit through the oracle, and the oracle is stale.
+        </p>
+      ) : preview == null ? (
+        <p className="note dim">What you would receive has not been read yet.</p>
+      ) : !preview.ok ? (
+        <p className="note dim">{preview.error}</p>
+      ) : (
+        <table className="grid">
+          <tbody>
+            <tr>
+              <th scope="row">
+                USDC
+                <br />
+                <span className={preview.perfFee === null ? 'tag-warn' : 'dim'}>
+                  idle stables
+                  {preview.perfFee !== null && preview.perfFee.maxUsdc > 0n
+                    ? ', before the performance fee below'
+                    : preview.perfFee === null
+                      ? // Matches apps/web/index.html's identical branch: the fee could not be
+                        // BOUNDED (costBasisUsdc unread, an unpriced leg, or a child unwind), never
+                        // that no fee applies. Not rendering this here is the exact defect PR #350's
+                        // review found -- a member-facing Total that reads as final when it is not.
+                        '. The 10% performance fee is withheld from this leg and from every slice ' +
+                        'below, and could not be bounded from the data here, so these are pre-fee ' +
+                        'figures, not receipts'
+                      : ''}
+                </span>
+              </th>
+              <td className="num">{previewLeg(preview.usdcPayMin, preview.usdcPay, (n) => usdcShort(n))}</td>
+            </tr>
+            {preview.slices.map((s) => (
+              <tr key={s.symbol}>
+                <th scope="row">
+                  {s.symbol}
+                  <br />
+                  <span className="dim">paid in the token itself</span>
+                </th>
+                <td className="num">
+                  {previewLeg(s.amountMin, s.amount, (n) => formatUnits(n, s.decimals, { maxFrac: 8 }))} {s.symbol}
+                  {s.valueWad !== null ? <><br /><span className="dim">{usdcShort(s.valueWad / USDC_SCALAR)} before the fee</span></> : null}
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row">
+                Exit fee {bpsPct(preview.feeBps)}
+                {preview.isSoleHolder ? ', waived' : ''}
+                <br />
+                <span className="dim">
+                  {preview.isSoleHolder
+                    ? 'sole member: accrues to those who remain, and there are none'
+                    : 'stays in the vault, never goes to the operator'}
+                </span>
+              </th>
+              <td className="num">{preview.feeValueWad !== null ? `−${usdcShort(preview.feeValueWad / USDC_SCALAR)}` : bpsPct(preview.feeBps)}</td>
+            </tr>
+            {preview.perfFee !== null && preview.perfFee.maxUsdc > 0n ? (
+              <tr>
+                <th scope="row">
+                  Performance fee, up to 10% of gain
+                  <br />
+                  <span className="dim">withheld uniformly from every leg above; the exact figure depends on your loss carry, which is not exposed here</span>
+                </th>
+                <td className="num">−{usdcShort(0n)} to −{usdcShort(preview.perfFee.maxUsdc)}</td>
+              </tr>
+            ) : null}
+            <tr>
+              <th scope="row">Total value{preview.valueComplete ? '' : ': cannot be totalled'}</th>
+              <td className="num">
+                {preview.payoutValueWad !== null
+                  ? previewLeg(
+                      preview.payoutValueMinWad === null ? null : preview.payoutValueMinWad / USDC_SCALAR,
+                      preview.payoutValueWad / USDC_SCALAR,
+                      (n) => usdcShort(n),
+                    )
+                  : '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      {preview?.ok && preview.coversFromChildren ? (
+        <p className="note tag-warn">
+          Part of this exit unwinds child-vault positions — this preview covers the common path only and understates
+          what you would actually receive.
+        </p>
+      ) : null}
+      {preview?.ok &&
+      preview.perfFee === null &&
+      preview.valueComplete &&
+      !preview.coversFromChildren &&
+      preview.payoutValueWad !== null &&
+      preview.payoutValueWad > 0n ? (
+        // The one case previewExit CAN price a gain but cannot bound the performance fee taken from
+        // it — costBasisUsdc failed to read independently of everything else above. Every other
+        // null-perfFee cause already has its own warning (coversFromChildren) or its own label
+        // (valueComplete driving "cannot be totalled"), so reaching here means specifically this.
+        <p className="note tag-warn">
+          The Total above is pre-fee, not a receipt — the 10% performance fee could not be bounded from
+          what was read, so it is not shown as a range here the way it is on the leg rows.
+        </p>
+      ) : null}
+
       {exit.message ? <p className="note mono">{exit.message}</p> : null}
       {exit.error ? <p className="note tag-warn">{exit.error}</p> : null}
 

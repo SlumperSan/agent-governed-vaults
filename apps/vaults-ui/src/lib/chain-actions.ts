@@ -52,6 +52,13 @@ export interface ExitGateInputs {
   readonly exitFeeMaxBps: bigint | null;
   readonly exitFeeDecayPeriod: bigint | null;
   readonly lastDepositTime: bigint | null;
+  /** `VaultCore.costBasisUsdc(member)` (P-O12) — `exit-preview.mjs`'s `previewExit` needs this to
+   *  bound the performance-fee range; the six fields above predate it and never needed it. */
+  readonly costBasisUsdc: bigint | null;
+  /** `VaultCore.queuedExitShares(member)` — nonzero means a Mode-F exit is already queued for this
+   *  member (one at a time, VaultCore.sol:553). `vault-state.mjs`'s `actions().exit` needs this to
+   *  refuse a second queue attempt before it ever reaches the frozen/mode checks below it. */
+  readonly queuedExitShares: bigint | null;
 }
 
 const READ_TABLES: Record<string, typeof VAULT_VIEWS> = { VAULT_VIEWS, GOVERNANCE_VIEWS };
@@ -139,9 +146,11 @@ export async function readExitGateInputs(
     read('exitFeeMaxBps'),
     read('exitFeeDecayPeriod'),
     read('lastDepositTime', [member]),
+    read('costBasisUsdc', [member]),
+    read('queuedExitShares', [member]),
   ]);
   const value = <T>(r: PromiseSettledResult<unknown>): T | null => (r.status === 'fulfilled' ? (r.value as T) : null);
-  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime] = results;
+  const [creator, sharesOf, totalShares, nonCreatorMemberCount, exitFeeMaxBps, exitFeeDecayPeriod, lastDepositTime, costBasisUsdc, queuedExitShares] = results;
   return {
     creator: value<Address>(creator),
     sharesOf: value<bigint>(sharesOf),
@@ -150,6 +159,8 @@ export async function readExitGateInputs(
     exitFeeMaxBps: value<bigint>(exitFeeMaxBps),
     exitFeeDecayPeriod: value<bigint>(exitFeeDecayPeriod),
     lastDepositTime: value<bigint>(lastDepositTime),
+    costBasisUsdc: value<bigint>(costBasisUsdc),
+    queuedExitShares: value<bigint>(queuedExitShares),
   };
 }
 
