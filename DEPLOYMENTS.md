@@ -59,23 +59,50 @@ curl -s -o /dev/null -w "%{http_code}
 Do not describe deploying the removed endpoint, and do not re-add a paid endpoint under
 `apps/site` — `apps/api` is the one metered read API going forward.
 
-## Vault explorer — `apps/app/` → `app.rwally.com` (live)
+## Member surface — `app.rwally.com` — TWO directories claim this address, and only one may deploy
 
-```bash
-node apps/app/build.mjs
-cd apps/app && npx wrangler@latest pages deploy dist --project-name=rwally-app --branch=protocol/main
-```
+`apps/vaults-ui/wrangler.toml` and `apps/app/` both carry the Cloudflare Pages project
+**`rwally-app`**, production branch `protocol/main`, and they point at different source directories.
+The owner decided on 2026-09-19 that **`apps/vaults-ui` takes the address and `apps/app` retires
+into it** — one member surface, one address. The DNS is already pointed, so whichever directory
+deploys last is what members see, immediately, with no staging step.
 
-From [`apps/app/README.md`](apps/app/README.md):
+**This page carried a copy-pasteable `apps/app` production deploy command until 2026-09-21.** It is
+removed rather than annotated, because the command was correct when written and became a way to
+silently revert the member surface: same project, same production branch, no warning, no
+confirmation. Running it after the cutover puts the retired explorer — reading chain 4663, which the
+protocol is no longer on — back on `app.rwally.com`, and nothing reds.
 
-- Cloudflare Pages project `rwally-app`, production branch `protocol/main`.
-- Run the deploy from `apps/app`. There is no `functions/` directory here and there should not be
-  one — Pages would otherwise pick up a Functions bundle from the working directory.
-- The page reads chain 4663 live, in-browser (`connect-src` names exactly one origin,
-  `https://rpc.mainnet.chain.robinhood.com`); nothing server-side to deploy beyond the static
-  build.
-- There is no `package.json` in this directory on purpose (npm workspace glob concerns) — build
-  with `node apps/app/build.mjs`, not `npm run build`.
+### `apps/vaults-ui/` — the member surface
+
+Built by `npm run gate`. **The cutover is the owner's call, not a deployer's**, and the deploy
+command lives with the owner rather than on this page for the reason above: the next
+`pages deploy` against `rwally-app` replaces what is live the instant it finishes.
+
+- Project `rwally-app`, production branch `protocol/main`, `pages_build_output_dir = "dist"`.
+- `public/_headers` is copied into `dist/` by the build and read by Pages from the root of the
+  SERVED directory; `test/csp.test.mjs` asserts it lands at `dist/_headers` byte-identically, so a
+  deploy that would have shipped no policy reds in the gate instead.
+- `connect-src` names the one RPC origin this app reads, and must change in the SAME commit as any
+  code that calls a different one — or every read is refused by the browser and the page renders
+  empty with no build-time warning.
+- No `functions/` directory, and one must not appear casually: Pages bundles Functions from
+  `./functions` relative to the directory wrangler runs in, not from inside the uploaded assets.
+
+See [`apps/vaults-ui/wrangler.toml`](apps/vaults-ui/wrangler.toml)'s own header, which is the source
+for every line above.
+
+### `apps/app/` — retiring, do not deploy
+
+Still live at `app.rwally.com` until the cutover, and **reading chain 4663, which the protocol is no
+longer on** — its live reads were never re-pointed at Arc and, per the decision above, will not be.
+Deploying it is the revert described above, not a rollback anyone has asked for. If a genuine
+rollback is ever needed it is the owner's decision, made with the knowledge that it restores a
+chain the protocol left.
+
+Build details are kept in [`apps/app/README.md`](apps/app/README.md) for whoever has to read the
+directory; they are not repeated here, so this page stops being somewhere the revert command can be
+copied from.
 
 ## Metered read API — `apps/api/` (the one paid API — not yet publicly deployed)
 
