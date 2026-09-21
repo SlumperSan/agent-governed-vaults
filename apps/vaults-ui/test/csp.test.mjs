@@ -53,10 +53,21 @@ before(() => {
 });
 
 const html = () => readFileSync(join(DIST, 'index.html'), 'utf8');
-const cssFiles = () =>
-  readdirSync(join(DIST, 'assets'))
-    .filter((f) => f.endsWith('.css'))
-    .map((f) => readFileSync(join(DIST, 'assets', f), 'utf8'));
+const cssFiles = () => {
+  // THE FILTER IS WHAT CAN GO EMPTY, NOT THE DIRECTORY. `assets/` going missing throws here and
+  // reds; `assets/` full of JS with no stylesheet in it does not. Vite inlining CSS, or emitting
+  // it under a different directory, produces exactly that -- and the `img-src data:` guard that
+  // reads these files then reports a clean scan over zero stylesheets. Measured: with this
+  // function returning `[]`, all 8 tests in this file stayed green.
+  const files = readdirSync(join(DIST, 'assets')).filter((f) => f.endsWith('.css'));
+  assert.ok(
+    files.length >= 1,
+    'no .css emitted into apps/vaults-ui/dist/assets, so the stylesheet guards below scan nothing. ' +
+      'If the build legitimately stopped emitting a separate stylesheet, this guard has to be ' +
+      'repointed at wherever the CSS now lives rather than left green over an empty list.',
+  );
+  return files.map((f) => readFileSync(join(DIST, 'assets', f), 'utf8'));
+};
 
 test("style-src 'self': the served markup carries no style attribute", () => {
   const m = html().match(/\sstyle\s*=\s*["']/g);
@@ -104,6 +115,12 @@ test('_headers is syntactically what Cloudflare Pages parses, not prose that loo
     else headers.push(line.trim());
   }
   assert.ok(patterns.includes('/*'), 'no /* rule — the policy would apply to nothing');
+  // `headers.every(...)` below is TRUE over an empty array. `patterns` cannot be empty here — the
+  // line above requires `/*` in it — but nothing required `headers` to hold anything, so a
+  // `_headers` that had lost every indented line would have satisfied the shape assertion while
+  // carrying no header at all. The realistic corruption is caught downstream by the CSP test, which
+  // is why this is a floor and not a finding.
+  assert.ok(headers.length >= 1, '_headers declares a path pattern and no headers under it');
   assert.ok(
     patterns.every((p) => p.startsWith('/')),
     `a column-0 line is not a path: ${patterns.filter((p) => !p.startsWith('/')).join(' | ')}`,
