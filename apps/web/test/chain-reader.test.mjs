@@ -35,10 +35,18 @@ import {
   planProposal,
   planProposalId,
   weightsBps,
+  planWiringLockCore,
+  planWiringLockSubVaultFactory,
+  assembleWiringLock,
+  planAllowSubVaults,
+  assembleAllowSubVaults,
+  planClaimableEscrow,
+  assembleClaimableEscrow,
 } from '../src/chain-reader.mjs';
 import { MISSING_IN_LIVE } from '../src/live-adapter.mjs';
 import {
   VAULT_VIEWS, GOVERNANCE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, TOKEN_SAFETY_VIEWS,
+  OPERATOR_REGISTRY_VIEWS, SUBVAULT_REGISTRY_VIEWS, VAULT_FACTORY_VIEWS,
 } from '../../../packages/canary/src/abis.mjs';
 
 const WAD = 10n ** 18n;
@@ -56,7 +64,27 @@ const TABLES = {
   CHAINLINK_ORACLE_VIEWS,
   AGGREGATOR_V3_VIEWS,
   TOKEN_SAFETY_VIEWS,
+  OPERATOR_REGISTRY_VIEWS,
+  SUBVAULT_REGISTRY_VIEWS,
+  VAULT_FACTORY_VIEWS,
 };
+
+// A self-verifying 40-hex-char address, so the wiring-lock tests below (which validate their inputs
+// with a strict /^0x[0-9a-fA-F]{40}$/ regex, same as assembleWiringLock itself) never fail on a
+// hand-counted placeholder string.
+const hexAddr = (suffix) => '0x' + suffix.padStart(40, '0');
+
+const OPERATOR_REGISTRY = '0x0perator000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const SUBVAULT_REGISTRY = '0xsubvault0000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const FACTORY = '0xfactory00000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const MEMBER = '0xmember00000000000000000000000000000001'.padEnd(42, '0').slice(0, 42);
+const USDC = hexAddr('5c6');
+// Four genuinely valid, distinct hex addresses for the wiring-lock success/failure cases.
+const OP_FACTORY_ADDR = hexAddr('a1');
+const OP_FEE_ENGINE_ADDR = hexAddr('a2');
+const GOV_SUBVAULT_REGISTRY_ADDR = hexAddr('a3');
+const SUBVAULT_FACTORY_ADDR = hexAddr('a4');
+const ZERO_ADDR_FOR_TESTS = hexAddr('0');
 
 // ── The planner names only functions that exist ────────────────────────────────────────────────
 
@@ -70,6 +98,10 @@ test('every planned call names a real fragment in the table it claims', () => {
     ...planProposal(GOV, 41),
     ...planFeeds(['0xfeed000000000000000000000000000000000001']),
     ...planPosition(VAULT, '0xmember00000000000000000000000000000001'.padEnd(42, '0').slice(0, 42)),
+    ...planWiringLockCore(OPERATOR_REGISTRY, GOV),
+    ...planWiringLockSubVaultFactory(SUBVAULT_REGISTRY),
+    ...planAllowSubVaults(FACTORY),
+    ...planClaimableEscrow(VAULT, MEMBER, [WETH, USDC]),
   ];
   assert.ok(planned.length > 0);
 
@@ -549,6 +581,221 @@ test('assembled NAV equals idle plus every leg, the way VaultCore.navWad sums it
   assert.equal(v.basket.reduce((a, l) => a + l.weightBps, 0) < 10_000, true, 'idle cash holds the remainder');
   assert.equal(v.blockNumber, 1234n, 'freshness travels with the data');
   assert.equal(v.chainRead, true);
+});
+
+// ── Contract tab Row 4 (#182): wiring-lock reads ────────────────────────────────────────────────
+
+test('planWiringLockCore plans OperatorRegistry.factory()/feeEngine() and Governance.subVaultRegistry(), in order', () => {
+  const calls = planWiringLockCore(OPERATOR_REGISTRY, GOV);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [OPERATOR_REGISTRY, 'factory', []],
+      [OPERATOR_REGISTRY, 'feeEngine', []],
+      [GOV, 'subVaultRegistry', []],
+    ],
+  );
+});
+
+test('planWiringLockSubVaultFactory plans exactly one call, SubVaultRegistry.factory()', () => {
+  const calls = planWiringLockSubVaultFactory(SUBVAULT_REGISTRY);
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].address, calls[0].fn, calls[0].args], [SUBVAULT_REGISTRY, 'factory', []]);
+});
+
+const wiringInput = (overrides = {}) => ({
+  operatorFactoryValue: OP_FACTORY_ADDR, operatorFactoryReadAt: NOW,
+  operatorFeeEngineValue: OP_FEE_ENGINE_ADDR, operatorFeeEngineReadAt: NOW + 1,
+  govSubVaultRegistryValue: GOV_SUBVAULT_REGISTRY_ADDR, govSubVaultRegistryReadAt: NOW + 2,
+  subVaultRegistryFactoryValue: SUBVAULT_FACTORY_ADDR, subVaultRegistryFactoryReadAt: NOW + 3,
+  ...overrides,
+});
+
+test('all four resolved: the wiring-lock record renders, each field with its own read timestamp', () => {
+  const r = assembleWiringLock(wiringInput());
+  assert.ok(r, 'all four latches nonzero must produce a record');
+  assert.equal(r.operatorFactory, OP_FACTORY_ADDR);
+  assert.equal(r.operatorFactoryReadAt, NOW);
+  assert.equal(r.operatorFeeEngine, OP_FEE_ENGINE_ADDR);
+  assert.equal(r.operatorFeeEngineReadAt, NOW + 1);
+  assert.equal(r.govSubVaultRegistry, GOV_SUBVAULT_REGISTRY_ADDR);
+  assert.equal(r.govSubVaultRegistryReadAt, NOW + 2);
+  assert.equal(r.subVaultRegistryFactory, SUBVAULT_FACTORY_ADDR);
+  assert.equal(r.subVaultRegistryFactoryReadAt, NOW + 3);
+});
+
+test('BLOCKER: any ONE of the four unread/failed suppresses the WHOLE live line, never 3-of-4', () => {
+  const fields = [
+    'operatorFactoryValue', 'operatorFeeEngineValue', 'govSubVaultRegistryValue', 'subVaultRegistryFactoryValue',
+  ];
+  for (const failedField of fields) {
+    for (const bogus of [null, undefined, 0]) {
+      const r = assembleWiringLock(wiringInput({ [failedField]: bogus }));
+      assert.equal(
+        r, null,
+        `${failedField} failing as ${JSON.stringify(bogus)} must omit the whole record, not show the other three`,
+      );
+    }
+  }
+});
+
+test('a genuinely UNSET latch (the real zero address) also suppresses the record, not just an unread call', () => {
+  const r = assembleWiringLock(wiringInput({ operatorFeeEngineValue: ZERO_ADDR_FOR_TESTS }));
+  assert.equal(r, null, 'the zero address is a real "not wired yet" fact, and Row 4 has no partial-wiring sentence for it');
+});
+
+test('total failure: all four unread produces the same omission as a partial failure', () => {
+  const r = assembleWiringLock(wiringInput({
+    operatorFactoryValue: null, operatorFeeEngineValue: undefined,
+    govSubVaultRegistryValue: null, subVaultRegistryFactoryValue: undefined,
+  }));
+  assert.equal(r, null);
+});
+
+test('a malformed value (wrong shape, not a decode failure the caller null-ed) is also treated as unread', () => {
+  for (const bogus of [42, '', 'notanaddress', {}, [], OP_FACTORY_ADDR.toUpperCase().replace('0X', '0x-')]) {
+    const r = assembleWiringLock(wiringInput({ operatorFactoryValue: bogus }));
+    assert.equal(r, null, `${JSON.stringify(bogus)} must not be treated as a resolved latch`);
+  }
+});
+
+// ── Contract tab Row 5 (#182): allowSubVaults() ─────────────────────────────────────────────────
+
+test('planAllowSubVaults plans exactly one call, VaultFactory.allowSubVaults(), against the vault\'s OWN factory', () => {
+  const calls = planAllowSubVaults(FACTORY);
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].address, calls[0].fn, calls[0].args], [FACTORY, 'allowSubVaults', []]);
+});
+
+test('assembleAllowSubVaults resolves only the exact booleans the contract can return', () => {
+  assert.equal(assembleAllowSubVaults(true), true);
+  assert.equal(assembleAllowSubVaults(false), false);
+  for (const bogus of [null, undefined, 0, 1, '', 'true', 'false', {}, []]) {
+    assert.equal(assembleAllowSubVaults(bogus), undefined, `${JSON.stringify(bogus)} must read as unread, not coerced`);
+  }
+});
+
+test('NEVER inferred from a deploy script: assembleAllowSubVaults only ever echoes what it is GIVEN, so a caller must actually read the chain', () => {
+  // Read straight from the two deploy scripts' own literals (contracts/script/Deploy.s.sol:79 passes
+  // `false` for mainnet root-only launch; contracts/script/DeployTestnet.s.sol:157 hardcodes `true`
+  // so the SV soak drills can run) — the two disagree with each other, which is exactly why neither
+  // is a source of truth for what a SPECIFIC deployed vault's factory holds on-chain.
+  const DEPLOY_S_SOL_LITERAL = false;
+  const DEPLOY_TESTNET_S_SOL_LITERAL = true;
+  assert.notEqual(
+    DEPLOY_S_SOL_LITERAL, DEPLOY_TESTNET_S_SOL_LITERAL,
+    'the two scripts must keep disagreeing, or this test stops proving anything',
+  );
+  // A caller that hardcoded/inferred the value from either script, instead of calling the chain,
+  // would pass one of these two literals in place of a genuine `eth_call` answer. The function must
+  // not have any special-cased branch for either: it can only echo an EXACT boolean it was handed.
+  assert.equal(assembleAllowSubVaults(DEPLOY_S_SOL_LITERAL), false);
+  assert.equal(assembleAllowSubVaults(DEPLOY_TESTNET_S_SOL_LITERAL), true);
+  // The failure mode this guards: a caller that skipped the read and defaulted to "undefined means
+  // mainnet, so assume Deploy.s.sol's false" — or the testnet mirror of that mistake. Neither may
+  // ever happen; an unread call must stay unread.
+  assert.notEqual(assembleAllowSubVaults(undefined), DEPLOY_S_SOL_LITERAL);
+  assert.notEqual(assembleAllowSubVaults(undefined), DEPLOY_TESTNET_S_SOL_LITERAL);
+  assert.equal(assembleAllowSubVaults(undefined), undefined);
+});
+
+// ── Contract tab Row 6b (#182): per-token claimable escrow ─────────────────────────────────────
+
+test('planClaimableEscrow plans claimable(member, asset) once per asset, and nothing at all with no member', () => {
+  const calls = planClaimableEscrow(VAULT, MEMBER, [WETH, USDC]);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [VAULT, 'claimable', [MEMBER, WETH]],
+      [VAULT, 'claimable', [MEMBER, USDC]],
+    ],
+  );
+  for (const noMember of [null, undefined, '']) {
+    assert.equal(planClaimableEscrow(VAULT, noMember, [WETH, USDC]).length, 0, 'no wallet ⇒ no calls planned at all');
+  }
+});
+
+test('a zero-balance token produces zero entries in either list, never a placeholder row', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 0n, readAt: NOW }]);
+  assert.deepEqual(out.claimable, []);
+  assert.deepEqual(out.unread, [], 'a confirmed real zero is not an unread token either');
+});
+
+test('an unread/failed token read never produces a claimable row — it surfaces in `unread` instead, never silently identical to a zero', () => {
+  for (const bogus of [null, undefined, 'reverted', 0]) {
+    const out = assembleClaimableEscrow([{ asset: WETH, value: bogus, readAt: NOW }]);
+    assert.deepEqual(out.claimable, [], `${JSON.stringify(bogus)} must not render a claimable row`);
+    assert.deepEqual(out.unread, [{ asset: WETH, readAt: NOW }], `${JSON.stringify(bogus)} must surface in unread, not vanish`);
+  }
+});
+
+test('a single nonzero token produces exactly one claimable entry with the correct fields, and nothing unread', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 12_345n, readAt: NOW }]);
+  assert.equal(out.claimable.length, 1);
+  assert.deepEqual(out.claimable[0], { asset: WETH, amount: 12_345n, readAt: NOW });
+  assert.deepEqual(out.unread, []);
+});
+
+test('multiple nonzero tokens — basket asset AND usdc both escrowed — produce one claimable entry EACH, never combined', () => {
+  const out = assembleClaimableEscrow([
+    { asset: WETH, value: 500n, readAt: NOW },
+    { asset: USDC, value: 250_000n, readAt: NOW + 5 },
+    { asset: '0xzero000000000000000000000000000000zero0', value: 0n, readAt: NOW }, // a third, zero-balance token
+  ]);
+  assert.equal(out.claimable.length, 2, 'the zero-balance third token must not appear at all, and the two nonzero ones must not merge into one');
+  assert.deepEqual(out.claimable.find((e) => e.asset === WETH), { asset: WETH, amount: 500n, readAt: NOW });
+  assert.deepEqual(out.claimable.find((e) => e.asset === USDC), { asset: USDC, amount: 250_000n, readAt: NOW + 5 });
+  assert.deepEqual(out.unread, []);
+});
+
+// ── Security's review of PR #361, round 3: ONE door — a caller cannot reach `claimable` without ──
+// ── also being handed `unread` on the very same object, so the round-2 gap (a caller who only ────
+// ── knew to call the obvious function) no longer exists as a possible shape at all. ──────────────
+
+test('assembleClaimableEscrow returns exactly one object with BOTH `claimable` and `unread` — there is no variant that omits either', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 500n, readAt: NOW }]);
+  assert.deepEqual(Object.keys(out).sort(), ['claimable', 'unread'], 'the return shape must always carry both lists together, structurally, not by convention');
+});
+
+test('the three claimable states each survive to the SAME call\'s output — real zero, confirmed positive, unread/failed', () => {
+  const entries = [
+    { asset: WETH, value: 0n, readAt: NOW }, // confirmed real zero
+    { asset: USDC, value: 12_345n, readAt: NOW }, // confirmed positive
+    { asset: '0xreverted00000000000000000000000000000001', value: null, readAt: NOW }, // reverted
+    { asset: '0xreverted00000000000000000000000000000002', value: undefined, readAt: NOW }, // never answered
+  ];
+  const { claimable, unread } = assembleClaimableEscrow(entries);
+
+  // Confirmed positive: in claimable, not in unread.
+  assert.deepEqual(claimable, [{ asset: USDC, amount: 12_345n, readAt: NOW }]);
+  assert.ok(!unread.some((e) => e.asset === USDC));
+
+  // Confirmed real zero: in NEITHER list — a genuine "you have nothing", not a failure.
+  assert.ok(!claimable.some((e) => e.asset === WETH));
+  assert.ok(!unread.some((e) => e.asset === WETH));
+
+  // Unread/failed: in unread, NEVER in claimable — this is the fix. Distinct from a confirmed zero.
+  assert.deepEqual(unread, [
+    { asset: '0xreverted00000000000000000000000000000001', readAt: NOW },
+    { asset: '0xreverted00000000000000000000000000000002', readAt: NOW },
+  ]);
+  assert.ok(!claimable.some((e) => e.asset.startsWith('0xreverted')));
+});
+
+test('MUTATION: an unread token silently disappearing from BOTH lists must be caught', () => {
+  // Reintroducing the pre-fix collapse (treating "not bigint" as "confirmed zero" everywhere)
+  // would make this entry vanish rather than surface in `unread`. Assert it does not.
+  const { unread } = assembleClaimableEscrow([{ asset: WETH, value: 'reverted', readAt: NOW }]);
+  assert.equal(unread.length, 1, 'an unread token must appear SOMEWHERE — this list exists so it is never silently lost');
+  assert.equal(unread[0].asset, WETH);
+});
+
+test('unread never reports a resolved token, positive or zero', () => {
+  const { unread } = assembleClaimableEscrow([
+    { asset: WETH, value: 0n, readAt: NOW },
+    { asset: USDC, value: 999_999n, readAt: NOW },
+  ]);
+  assert.deepEqual(unread, [], 'both tokens resolved — neither belongs in the unread list');
 });
 
 // ── The two lists stay complements of each other ────────────────────────────────────────────────
