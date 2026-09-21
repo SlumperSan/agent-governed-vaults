@@ -36,6 +36,7 @@ export default defineConfig(({ isSsrBuild }) => ({
             about: entry('about.html'),
             docs: entry('docs.html'),
             disclaimers: entry('disclaimers.html'),
+            correctionLog: entry('correction-log.html'),
             notFound: entry('404.html'),
           },
         },

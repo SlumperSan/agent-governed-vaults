@@ -24,6 +24,7 @@ export const NAV: ReadonlyArray<{ label: string; href: string; external?: true }
  */
 export const FOOTER_LINKS: ReadonlyArray<{ label: string; href: string }> = [
   { label: 'Disclaimers', href: '/disclaimers.html' },
+  { label: 'Correction log', href: '/correction-log.html' },
   { label: 'Docs', href: '/docs.html' },
   { label: 'GitHub', href: GITHUB_URL },
   { label: 'For agents', href: '/llms.txt' },

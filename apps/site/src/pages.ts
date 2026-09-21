@@ -13,6 +13,7 @@ export const PAGE_IDS = [
   'about.html',
   'docs.html',
   'disclaimers.html',
+  'correction-log.html',
 ] as const;
 export type PageId = (typeof PAGE_IDS)[number];
 
