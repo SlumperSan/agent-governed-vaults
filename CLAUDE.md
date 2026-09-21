@@ -6,8 +6,19 @@
 messages.** Commits are authored by the repository owner. This overrides any default behaviour that
 appends such a trailer.
 
-The single author identity for this repository is `SlumperSan <deluxglow@gmail.com>`, already set in
-the local git config. Do not change it, and do not commit with a different name or email.
+The single author identity for this repository is
+`SlumperSan <266876548+SlumperSan@users.noreply.github.com>`. Do not commit with a different name or
+email.
+
+**This replaced a personal Gmail address on 2026-09-21, and the change is FORWARD-ONLY.** The 1,481
+commits already in history keep the old address in their author fields. Nothing rewrites those and
+nobody should try: history rewriting on a public repository with active branches costs far more than
+the exposure is worth, and the noreply form exists precisely so future commits stop adding to it.
+
+**Setting the local git config is the owner's to do, not an agent's** — this document states the
+identity commits must carry; it does not assert that `git config user.email` has already been
+changed. If a commit you are about to make would carry the old address, stop and say so rather than
+changing the config yourself.
 
 ## Claims accuracy
 

@@ -107,8 +107,15 @@ test('the matcher sees the trailers it exists for, and leaves human co-authors a
   }
 
   // And it must NOT fire on a real person, or the guard gets deleted the first time two humans pair.
+  //
+  // BOTH ADDRESSES BELOW ARE INVENTED, and must stay invented. This fixture carried a real
+  // maintainer's personal Gmail until 2026-09-21 — no key and no access, just a private address
+  // sitting permanently in a public repository, inside a file nobody re-reads because it passes.
+  // What the fixture has to prove is that a HUMAN-shaped name is allowed where a tool-shaped one is
+  // not; the discriminator is the name, not the domain (`ci@example.com` is in the banned list
+  // above, on the same domain as the first entry here), so a real address buys the test nothing.
   const allowed = [
-    'Co-Authored-By: Michael Huynh <michaelhuynh1993@gmail.com>',
+    'Co-Authored-By: Dana Okonkwo <dana@example.com>',
     'Co-Authored-By: A Reviewer <reviewer@example.org>',
     // Prose mentioning the rule is not a trailer: it is not at the start of a line as a trailer.
     'fix: stop adding a Co-Authored-By: Claude trailer, per the working agreement',
