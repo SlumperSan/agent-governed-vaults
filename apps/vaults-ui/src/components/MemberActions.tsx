@@ -266,11 +266,14 @@ export function MemberActions({ vault }: Props) {
   // live navWad()-revert read (chain-reader.mjs), never the tri-state "cannot be read" apps/web's
   // event-derived path has to allow for — this app's `Vault.frozen` is always a known boolean, so
   // there is no freeze-unknown case to preserve here (unlike a frozen-vs-unknown notice on the
-  // metered API path). `null` until `exitGate`/`shares` resolve, deliberately: a fact built from a
-  // still-loading `shares` (e.g. `isMember` defaulting to `shares > 0n` on a null `shares`) would
-  // silently misclassify a real member as a non-member rather than as "not yet known".
+  // metered API path). `null` until `exitGate`/`shares`/`queuedExitShares` resolve, deliberately:
+  // a fact built from a still-loading read (e.g. `isMember` defaulting to `shares > 0n` on a null
+  // `shares`, or `hasQueuedExit` defaulting to `false` on a FAILED `queuedExitShares` read) would
+  // silently misclassify a real member, or a real already-queued exit, as a known-clean state
+  // rather than as "not yet known" — a failed read is not an absence, and treating it as one is
+  // the same shape as every other disclosure-that-vanishes defect this repo keeps re-finding.
   const vaultActions: VaultActions | null =
-    exitGate && shares !== null
+    exitGate && shares !== null && exitGate.queuedExitShares !== null
       ? actions({
           frozen: vault.frozen,
           attested: vault.attested,
@@ -283,17 +286,34 @@ export function MemberActions({ vault }: Props) {
           hasPendingDeposit: false,
           pendingMatured: false,
           capacityFull: false,
-          hasQueuedExit: (exitGate.queuedExitShares ?? 0n) > 0n,
+          hasQueuedExit: exitGate.queuedExitShares > 0n,
           walletConnected: connected,
         })
       : null;
+  // The one case `vaultActions === null` needs its OWN stated reason rather than a silent
+  // disabled button: `exitGate` resolved (so `creatorGate`'s own UNKNOWN_REFUSAL message, which
+  // covers "exitGate is still null", does not fire) but `queuedExitShares` specifically failed.
+  const queuedExitUnread = exitGate !== null && shares !== null && exitGate.queuedExitShares === null;
   // What the member would actually RECEIVE (P-O12) — mirrors VaultCore._settleExit/_exitFeeBps
   // term for term; see exit-preview.mjs for the fee-as-a-range rule and the SV-5 scope note. Only
   // computed once `shares` has resolved: `previewExit` treats a missing memberShares as an input
   // error ("cannot preview this exit"), which would be the wrong message for "not read yet" — the
   // same absent-vs-unknown distinction every other read in this component already keeps.
+  //
+  // EXPLICITLY gated on `!vault.frozen`, not left to fall out of pricing. `previewExit` itself has
+  // no `frozen` parameter — it degrades a null-priced leg into `valueComplete:false`, which today
+  // happens to cover a frozen vault only because this basket is a single asset (cirBTC): the one
+  // stale leg's `priceWad` goes null, so the total suppresses itself. That is a correct answer for
+  // the wrong reason. `usdcPay` and any OTHER, still-healthy leg's value are computed from balances
+  // and prices that have nothing to do with `frozen` and would render as confident numbers next to
+  // a button `vaultActions.exit` has already refused — add a second basket asset whose oracle is
+  // still fresh and the accidental coverage stops covering the leg that IS fresh, no test would
+  // catch it, and the preview starts asserting a settlement the contract would revert. apps/web's
+  // own dialog avoids this the same way, one level up: `openExit` never renders the exit surface
+  // at all unless `x.actions.exit.available` (index.html:1019-1020) — this is that same gate,
+  // applied here instead of at a dialog boundary this component does not have.
   const preview: ExitPreview | null =
-    exitGate && shares !== null
+    !vault.frozen && exitGate && shares !== null
       ? previewExit({
           burnShares,
           memberShares: shares,
@@ -449,6 +469,11 @@ export function MemberActions({ vault }: Props) {
         // the frozen-Mode-F trap (irrevocable queue during a freeze), an outright frozen vault,
         // "already queued", and "no shares" — none of which this button refused before.
         <p className={vaultActions.exit.severity === 'info' ? 'note dim' : 'note tag-warn'}>{vaultActions.exit.reason}</p>
+      ) : queuedExitUnread ? (
+        // A FAILED queuedExitShares read, not an absence of one — `?? 0n` on this field would
+        // silently read a real already-queued exit as "clear to queue another", the same
+        // vanishing-disclosure shape this repo keeps finding. Stated as unknown, not as clean.
+        <p className="note tag-warn">Whether you already have a queued exit could not be read from chain — do not sign against this until it resolves.</p>
       ) : null}
       {pendingExecution === true ? (
         <p className="note tag-warn">
@@ -475,7 +500,13 @@ export function MemberActions({ vault }: Props) {
         <p className="note dim">{exitFee.reason}</p>
       )}
 
-      {preview == null ? (
+      {vault.frozen ? (
+        // Explicit, not a side effect of an unpriced leg: see `preview`'s own comment above for
+        // why "the total already suppresses itself" is not the same claim as "this is frozen".
+        <p className="note tag-warn">
+          No preview while frozen — settlement prices this exit through the oracle, and the oracle is stale.
+        </p>
+      ) : preview == null ? (
         <p className="note dim">What you would receive has not been read yet.</p>
       ) : !preview.ok ? (
         <p className="note dim">{preview.error}</p>

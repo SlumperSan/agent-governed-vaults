@@ -137,5 +137,81 @@ test('MUTATION: dropping queuedExitShares from the Promise.allSettled batch is c
 });
 
 test('vaultActions facts derive hasQueuedExit from the live queuedExitShares read, not a hardcoded false', () => {
-  assert.match(actionsCallSource(), /hasQueuedExit:\s*\(exitGate\.queuedExitShares \?\? 0n\) > 0n/, 'hasQueuedExit must be threaded from the live read');
+  assert.match(actionsCallSource(), /hasQueuedExit:\s*exitGate\.queuedExitShares > 0n/, 'hasQueuedExit must be threaded from the live read');
+});
+
+// ─────── a FAILED queuedExitShares read must not collapse into "not queued" (Security finding) ───────
+// `(exitGate.queuedExitShares ?? 0n) > 0n` reads a null (a reverted/failed call) the same as a
+// genuine zero -- a member whose read failed would silently pass the "already queued" check as if
+// it had succeeded and come back clean. Same shape as every other vanishing-disclosure defect this
+// repo has found: a failed read is not an absence, and only ONE of the two renders as safe.
+
+test('vaultActions is null (not computed with a defaulted fact) when queuedExitShares failed to read', () => {
+  const m = /const vaultActions: VaultActions \| null =\s*\n\s*([^\n]*)\n/.exec(MEMBER_ACTIONS);
+  assert.ok(m, 'vaultActions declaration not found');
+  assert.match(m[1], /exitGate\.queuedExitShares !== null/, 'the guard must require a successfully-read queuedExitShares before computing any verdict');
+});
+
+test('MUTATION: dropping the queuedExitShares-not-null guard from vaultActions is caught', () => {
+  const guardLine = /exitGate && shares !== null && exitGate\.queuedExitShares !== null/;
+  assert.match(MEMBER_ACTIONS, guardLine, 'the three-part guard was not found as expected');
+  const mutated = MEMBER_ACTIONS.replace(guardLine, 'exitGate && shares !== null');
+  assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
+  assert.doesNotMatch(mutated, /exitGate\.queuedExitShares !== null/, 'RED: the pre-fix guard must not require a successful read');
+});
+
+test('a failed queuedExitShares read renders its own stated-unknown message, not silence', () => {
+  assert.match(MEMBER_ACTIONS, /queuedExitUnread/, 'the unread-queued-exit state must be tracked and rendered');
+  assert.match(
+    MEMBER_ACTIONS,
+    /Whether you already have a queued exit could not be read from chain/,
+    'the failed-read case must state that it is unknown, not stay silent',
+  );
+});
+
+test('MUTATION: removing the queuedExitUnread message is caught', () => {
+  const idx = MEMBER_ACTIONS.indexOf('Whether you already have a queued exit could not be read from chain');
+  assert.ok(idx >= 0, 'message not found');
+  const lineStart = MEMBER_ACTIONS.lastIndexOf('\n', MEMBER_ACTIONS.lastIndexOf('\n', idx) - 1);
+  const lineEnd = MEMBER_ACTIONS.indexOf('\n', idx);
+  const withoutMsg = MEMBER_ACTIONS.slice(0, lineStart) + MEMBER_ACTIONS.slice(lineEnd);
+  assert.doesNotMatch(withoutMsg, /Whether you already have a queued exit could not be read from chain/, 'RED: the mutation must actually remove the message');
+});
+
+// ─────────────────── the settlement preview's frozen dependency must be explicit ───────────────────
+// `previewExit` itself has no `frozen` parameter; today's basket is single-asset, so a frozen
+// vault's one leg goes unpriced and `valueComplete` happens to go false -- correct total, wrong
+// reason. `usdcPay` and any OTHER, still-healthy leg's value have no relationship to `frozen` at
+// all. Security's finding: make the dependency explicit rather than relying on that coincidence.
+
+test('preview is explicitly gated on !vault.frozen, not left to fall out of pricing', () => {
+  const m = /const preview: ExitPreview \| null =\s*\n\s*([^\n]*)\n/.exec(MEMBER_ACTIONS);
+  assert.ok(m, 'preview declaration not found');
+  assert.match(m[1], /!vault\.frozen && exitGate && shares !== null/, 'preview must require !vault.frozen before calling previewExit at all');
+});
+
+test('MUTATION: dropping the !vault.frozen guard from preview is caught', () => {
+  const guardLine = /!vault\.frozen && exitGate && shares !== null/;
+  assert.match(MEMBER_ACTIONS, guardLine, 'the frozen guard was not found as expected');
+  const mutated = MEMBER_ACTIONS.replace(guardLine, 'exitGate && shares !== null');
+  assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
+  assert.doesNotMatch(mutated, /!vault\.frozen && exitGate/, 'RED: the pre-fix preview must not depend on frozen at all');
+});
+
+test('a frozen vault renders an explicit no-preview message ahead of the table, not a computed one', () => {
+  const frozenIdx = MEMBER_ACTIONS.indexOf('{vault.frozen ? (');
+  assert.ok(frozenIdx >= 0, 'the frozen-preview guard was not found');
+  const msgIdx = MEMBER_ACTIONS.indexOf('No preview while frozen', frozenIdx);
+  assert.ok(msgIdx >= 0, 'the frozen case must render its own explicit message');
+  const previewNullIdx = MEMBER_ACTIONS.indexOf('preview == null', frozenIdx);
+  assert.ok(previewNullIdx > msgIdx, 'the frozen branch must be checked BEFORE the preview==null/table branches, not after');
+});
+
+test('MUTATION: removing the frozen-preview branch is caught', () => {
+  const start = MEMBER_ACTIONS.indexOf('{vault.frozen ? (');
+  assert.ok(start >= 0, 'frozen branch not found');
+  const end = MEMBER_ACTIONS.indexOf(') : preview == null ? (', start);
+  assert.ok(end >= 0, 'end of frozen branch not found');
+  const withoutBranch = MEMBER_ACTIONS.slice(0, start) + '{preview == null ? (' + MEMBER_ACTIONS.slice(end + ') : preview == null ? ('.length);
+  assert.doesNotMatch(withoutBranch, /No preview while frozen/, 'RED: the mutation must actually remove the frozen branch');
 });
