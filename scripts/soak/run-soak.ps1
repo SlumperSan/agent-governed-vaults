@@ -250,7 +250,14 @@ if ($LASTEXITCODE -ne 0) {
 # indexer (poll.failed) and blinding the canary (DETECTOR BROKEN) for hours. A DIFFERENT failure
 # from the pruning one lib.mjs already guards -- see the script's own header for why, and why this
 # fires a bounded concurrent burst rather than either hammering the endpoint or asking once.
-Write-Host "`nchecking the RPC endpoint sustains this run's concurrency..." -ForegroundColor Cyan
+#
+# HONEST SCOPE, stated here because this is where an operator actually reads it: this is a
+# ~1-2s STARTUP TRIPWIRE, not a sustained-load guarantee. A clean result rules out an endpoint
+# that is already struggling right now; it says nothing about throttling that only emerges after
+# hours of continuous concurrent polling, which is the actual failure this preflight exists
+# because of. Do not reword the line below back toward "sustains"/"survives the run" -- that
+# wording is exactly the defect this preflight was written to stop happening one level up.
+Write-Host "`nprobing whether the RPC endpoint serves this run's concurrency right now (startup tripwire, not a sustained-load guarantee)..." -ForegroundColor Cyan
 & node (Join-Path $PSScriptRoot 'preflight-rpc-concurrency.mjs')
 if ($LASTEXITCODE -ne 0) {
   throw 'RPC concurrency preflight refused to proceed (see the diagnosis and remedy printed above) -- point SOAK_RPC at a dedicated endpoint, or SOAK_RPC_CONCURRENCY_CHECK=skip to proceed anyway'

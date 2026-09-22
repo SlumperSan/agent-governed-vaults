@@ -43,7 +43,17 @@
  * It does not retry, back off, or change how the indexer/canary/sampler poll — those are runtime
  * behaviors, not preflight behaviors, and are out of scope here. It does not silently pass on a
  * measurement it could not complete (see `reason: 'unmeasurable'` below) — an RPC that is simply
- * unreachable is not evidence it will not also rate-limit once reachable.
+ * unreachable is not evidence it will not also rate-limit once reachable. **And a pass here is not
+ * evidence the endpoint sustains the soak's load: this fires one ~1-2s concurrent burst at
+ * startup, not a sustained series over hours.** It is a STARTUP TRIPWIRE — it catches an endpoint
+ * that is already struggling right now, the same way the mid-soak failure this guards against
+ * would already be visible if it fired this early. It cannot see, and does not claim to rule out,
+ * throttling that only emerges after hours of continuous concurrent polling (the actual measured
+ * failure: `over rate limit` appeared mid-soak, not at t=0). Do not let a future edit reword the
+ * success message back toward "sustains"/"survives the run"/similar — `formatOkMessage` below is
+ * pinned by `scripts/test/soak-rpc-concurrency-preflight.test.mjs` for exactly this reason. The
+ * caveat belongs here, in `run-soak.ps1`'s own progress text, and in the emitted message itself —
+ * not only in a PR description nobody re-reads at 3am.
  *
  * Run:  node scripts/soak/preflight-rpc-concurrency.mjs
  * Env:  SOAK_RPC (or BASE_SEPOLIA_RPC) — the endpoint to test, same resolution as every other
@@ -107,6 +117,29 @@ async function defaultRun(args) {
   return execFileAsync(CAST_BIN, args, { windowsHide: true });
 }
 
+/**
+ * The operator-facing success line. Pulled out and exported so
+ * `scripts/test/soak-rpc-concurrency-preflight.test.mjs` can pin its wording directly, rather than
+ * relying on eyes catching a re-inflated claim in review. `elapsedMs` is measured around the real
+ * burst in `main()` — never hardcoded — so the honesty of "startup burst" stays true even if the
+ * concurrency or the endpoint's latency changes later.
+ *
+ * MUST call this a STARTUP TRIPWIRE, not sustained-load proof: it says what N calls over the
+ * measured wall-clock window ruled out (an endpoint already struggling right now) and explicitly
+ * NOT what it cannot (throttling that only appears after hours of continuous concurrent polling —
+ * see the module docstring's "What this explicitly does NOT do"). A future edit that claims this
+ * "sustains" or "survives" the run is the exact defect this function exists to prevent; the test
+ * file asserts against that wording on purpose.
+ *
+ * @param {{concurrency: number, elapsedMs: number}} args
+ */
+export function formatOkMessage({ concurrency, elapsedMs }) {
+  const seconds = (elapsedMs / 1000).toFixed(1);
+  return `OK — ${concurrency} concurrent eth_getLogs calls returned cleanly in a ${seconds}s `
+    + `startup tripwire. This rules out an endpoint already struggling right now; it is NOT `
+    + `evidence the endpoint will hold up under this run's concurrency over the next 14 hours.`;
+}
+
 function main() {
   if (process.env.SOAK_RPC_CONCURRENCY_CHECK === 'skip') {
     log('RPC concurrency preflight SKIPPED — SOAK_RPC_CONCURRENCY_CHECK=skip was set explicitly');
@@ -126,10 +159,12 @@ function main() {
   // range size the indexer itself actually requests per poll.
   const fromBlock = Math.max(0, head - 2000);
 
+  const startedAt = Date.now();
   measureRpcConcurrency({ rpc: RPC, address: dep.factory, fromBlock, toBlock: head })
     .then((result) => {
+      const elapsedMs = Date.now() - startedAt;
       if (result.ok) {
-        log(`OK — ${result.concurrency} concurrent eth_getLogs calls all returned cleanly`);
+        log(formatOkMessage({ concurrency: result.concurrency, elapsedMs }));
         process.exit(0);
       }
       console.error('\n[soak] RPC CONCURRENCY PREFLIGHT REFUSED\n');

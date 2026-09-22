@@ -14,7 +14,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { measureRpcConcurrency, SOAK_RPC_CONCURRENCY } from '../soak/preflight-rpc-concurrency.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { measureRpcConcurrency, SOAK_RPC_CONCURRENCY, formatOkMessage } from '../soak/preflight-rpc-concurrency.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const RUN_SOAK_PS1 = path.join(HERE, '..', 'soak', 'run-soak.ps1');
 
 const ARGS = { rpc: 'https://example.invalid', address: '0x' + '1'.repeat(40), fromBlock: 100, toBlock: 2100 };
 
@@ -97,4 +103,39 @@ test('fires exactly `concurrency` calls, not more and not fewer', async () => {
   const run = async () => { calls += 1; return { stdout: '[]' }; };
   await measureRpcConcurrency({ ...ARGS, concurrency: 7, run });
   assert.equal(calls, 7);
+});
+
+// ── operator-facing wording: REJECTED once (PR #364) for claiming sustained-load safety from a
+// ~1.2s startup burst. These pin the honest wording so a future edit cannot quietly re-inflate it.
+// Mutation-tested by hand: reverting formatOkMessage's body to the old
+// `` `OK — ${concurrency} concurrent eth_getLogs calls all returned cleanly` `` and run-soak.ps1's
+// announcement to `"checking the RPC endpoint sustains this run's concurrency..."` turns both
+// assertions below RED; restoring the current wording turns them GREEN.
+
+test('formatOkMessage: names what N calls over the measured window ruled out', () => {
+  const msg = formatOkMessage({ concurrency: 5, elapsedMs: 1193 });
+  assert.match(msg, /\b5\b/, 'must report the actual concurrency measured');
+  assert.match(msg, /1\.2s/, 'must report the actual elapsed wall-clock time, not a hardcoded estimate');
+  assert.match(msg, /startup tripwire/i, 'must name itself as a startup tripwire');
+});
+
+test('formatOkMessage: does NOT claim sustained-load safety', () => {
+  const msg = formatOkMessage({ concurrency: 5, elapsedMs: 1193 });
+  // The exact defect Security rejected PR #364 for: a startup burst reported in the language of
+  // "sustains"/"survives" the run. A pass here proves the endpoint is not ALREADY struggling; it
+  // proves nothing about the next 14 hours, and the message must say so, not just avoid claiming
+  // the opposite.
+  assert.doesNotMatch(msg, /\bsustains?\b/i, 'must not claim the endpoint "sustains" the run — that is the rejected wording');
+  assert.doesNotMatch(msg, /\bsurvives?\b/i, 'must not claim the endpoint "survives" the run');
+  assert.match(msg, /not evidence/i, 'must explicitly disclaim sustained-load evidence, not merely omit the claim');
+});
+
+test('run-soak.ps1: the RPC preflight announcement names it a startup tripwire, not a sustained-load claim', () => {
+  const src = fs.readFileSync(RUN_SOAK_PS1, 'utf8');
+  const announcementLine = src.split('\n').find((l) => /Write-Host/.test(l) && /RPC endpoint/.test(l));
+  assert.ok(announcementLine, 'expected to find the RPC concurrency preflight announcement in run-soak.ps1');
+  assert.doesNotMatch(announcementLine, /sustains this run's concurrency/,
+    'REJECTED wording (PR #364): claims sustained-load safety from a one-time startup burst');
+  assert.match(announcementLine, /startup tripwire|not a sustained-load/i,
+    'announcement must carry the honest scope, not just the check name');
 });

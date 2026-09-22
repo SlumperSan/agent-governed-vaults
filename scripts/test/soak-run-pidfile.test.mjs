@@ -190,12 +190,17 @@ test('the CIM-dependent surface this suite skips on non-Windows still exists', (
   assert.ok(fs.existsSync(MODULE), `expected ${MODULE} to exist`);
   const moduleSrc = fs.readFileSync(MODULE, 'utf8');
   assert.ok(moduleSrc.trim().length > 0, `${MODULE} must not be empty`);
-  assert.match(moduleSrc, /function Test-ManagedProcessAlive/, 'soak-pidset.psm1 must still define Test-ManagedProcessAlive');
+  // (?![\w-]) is a real word boundary for PowerShell identifiers (letters/digits/_/-): plain \b
+  // does not fire between two word characters, so a PREFIX-EXTENDING rename like
+  // `Test-ManagedProcessAliveRENAMED` still contains the literal substring `Test-ManagedProcessAlive`
+  // and would silently satisfy a boundary-less (or \b-only) match. The lookahead requires the name
+  // NOT be immediately followed by another identifier character, so an extending rename is caught.
+  assert.match(moduleSrc, /function Test-ManagedProcessAlive(?![\w-])/, 'soak-pidset.psm1 must still define Test-ManagedProcessAlive');
   assert.match(moduleSrc, /Get-CimInstance/, 'Test-ManagedProcessAlive must still be the CIM-based check the Windows-only tests exercise');
   const scriptSrc = fs.readFileSync(SCRIPT, 'utf8');
   assert.ok(scriptSrc.trim().length > 0, `${SCRIPT} must not be empty`);
-  assert.match(scriptSrc, /Get-ManagedPidEntries/, 'run-soak.ps1 must still drive -Status/-Stop through Get-ManagedPidEntries');
-  assert.match(scriptSrc, /Test-ManagedProcessAlive/, 'run-soak.ps1 must still drive -Status/-Stop through Test-ManagedProcessAlive');
+  assert.match(scriptSrc, /Get-ManagedPidEntries(?![\w-])/, 'run-soak.ps1 must still drive -Status/-Stop through Get-ManagedPidEntries');
+  assert.match(scriptSrc, /Test-ManagedProcessAlive(?![\w-])/, 'run-soak.ps1 must still drive -Status/-Stop through Test-ManagedProcessAlive');
 });
 
 // ── the module directly: the pid/service-set derivation, as a pure(ish) unit ─────────────────

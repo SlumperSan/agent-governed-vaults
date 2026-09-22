@@ -72,7 +72,11 @@ endpoint — switching to publicnode to dodge throttling walks straight into pru
 `assertLogsServed()`'s single sequential positive-control read cannot see a concurrency-only
 failure by construction; `scripts/soak/preflight-rpc-concurrency.mjs` is the guard that fires a
 short concurrent burst at soak startup instead (see its own header for why a bounded burst, not a
-single request or an unbounded hammer).
+single request or an unbounded hammer). **Read its result as a startup tripwire, not a sustained-load
+guarantee**: a clean pass is a ~1-2s burst ruling out an endpoint already struggling at t=0, and says
+nothing about throttling that only appears after hours of continuous concurrent polling — which is
+exactly the failure shape measured above. It cannot be made to prove the latter without itself
+becoming the sustained concurrent load it is trying to detect.
 
 ## 3. Deploy (one command)
 
