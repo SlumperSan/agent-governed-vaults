@@ -18,6 +18,43 @@
  * are facts about the OS, not a mock's opinion of them — the same reason the module talks to
  * `Get-CimInstance Win32_Process`, not a fake process table.
  *
+ * PLATFORM SPLIT — this suite does not run identically everywhere, and that split is load-bearing,
+ * not incidental (measured cause of a red CI: this file shelled to the literal `powershell.exe`,
+ * which does not exist on GitHub's Linux runner):
+ *
+ * - The interpreter is resolved ONCE, at module load, by `resolvePwsh()`, trying `pwsh`
+ *   (PowerShell Core — present on GitHub's `ubuntu-latest` runners, confirmed against
+ *   actions/runner-images' own Ubuntu 24.04 readme, which lists "PowerShell 7.6.5") before
+ *   Windows `powershell.exe`. Every spawn site in this file goes through that one result — no
+ *   call site hardcodes either name. The probe requires a working `$PSVersionTable.PSVersion`
+ *   read, not merely "the process spawned", so a broken shim on PATH can't false-positive.
+ * - If NEITHER resolves, every test that needs a shell is SKIPPED with an explicit, named reason
+ *   (`NO_PWSH_SKIP`) rather than the file throwing — but that skip is never the only thing on
+ *   record: the anchor test below runs UNCONDITIONALLY, with no dependency on any interpreter at
+ *   all, and fails if `run-soak.ps1`/`soak-pidset.psm1` are missing, renamed, or empty. An
+ *   interpreter-missing environment therefore always shows up as a definite red, just via the
+ *   anchor rather than the PowerShell-driven tests themselves.
+ * - Most of this suite is PORTABLE — needs only a resolved interpreter, not Windows — and is gated
+ *   on `NO_PWSH_SKIP` alone: the `Add-ManagedPid`/`Get-ManagedPidEntries` round-trip (plain
+ *   `Add-Content`/`Get-Content`/`-split`), `-Stop`/`-Status` with an empty or absent pid file
+ *   (`Get-ManagedPidEntries` returns `@()` before the `foreach` that would call
+ *   `Test-ManagedProcessAlive` ever runs), and both `Start-ManagedProcess` tests
+ *   (`Start-Process`/`.Refresh()`/`.HasExited` are plain .NET Process members, no CIM anywhere in
+ *   that path).
+ * - A smaller set additionally needs `Test-ManagedProcessAlive` — the two liveness/needle unit
+ *   tests, and the two end-to-end `-Status`/`-Stop` tests against a pid file with real entries —
+ *   which calls `Get-CimInstance -ClassName Win32_Process`. That is Windows-OS WMI with no Linux
+ *   implementation, in EITHER PowerShell host: `pwsh` itself resolves and runs fine on the Linux
+ *   CI runner, so this is deliberately NOT folded into `NO_PWSH_SKIP` — an interpreter being
+ *   present is not evidence this WMI class is. This subset is gated on `process.platform ===
+ *   'win32'` (`WINDOWS_ONLY_SKIP`), nothing looser, with its own loud reason, because the soak
+ *   launcher is itself a Windows-only operational tool (runs on the operator's own Windows
+ *   machine, never in CI) — a real platform boundary, not a compromise.
+ * - Either skip's silent-permanence risk is closed by the same anchor test: it reads both files'
+ *   source unconditionally and fails on every platform, with or without an interpreter, if
+ *   `run-soak.ps1` stops importing the module's CIM-dependent functions or either file goes
+ *   missing, empty, or renamed.
+ *
  * What is NOT covered here, stated rather than implied: the actual service-START path
  * (`Start-Service-Once`'s reuse branch) requires the script's full preflight — a deployer keystore,
  * a password file, a live RPC — none of which this suite has. That branch is exercised by hand-
@@ -40,14 +77,59 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SCRIPT = path.join(ROOT, 'scripts', 'soak', 'run-soak.ps1');
 const MODULE = path.join(ROOT, 'scripts', 'soak', 'soak-pidset.psm1');
 
+const IS_WINDOWS = process.platform === 'win32';
+
+/**
+ * The interpreter to drive `run-soak.ps1` and `soak-pidset.psm1` with. `pwsh` (PowerShell Core) is
+ * tried first so the PORTABLE subset of this suite (below) actually executes on CI's Linux runner
+ * instead of being skipped for a reason that has nothing to do with what it tests; Windows
+ * `powershell.exe` is the fallback for a machine that only has that. Neither name is hardcoded
+ * into a call site — every spawn below goes through this one resolution.
+ *
+ * The probe cannot false-positive: it asks the candidate for `$PSVersionTable.PSVersion.Major`
+ * and requires BOTH exit 0 AND a parsable integer on stdout, not merely "spawn did not throw" (a
+ * `pwsh` shim on PATH that exists but is broken, or a non-PowerShell binary that happens to share
+ * the name, would pass a bare "spawn succeeded" check and then fail every real test confusingly).
+ */
+function resolvePwsh() {
+  for (const exe of ['pwsh', 'powershell.exe']) {
+    const probe = spawnSync(exe, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.Major'], { encoding: 'utf8' });
+    if (!probe.error && probe.status === 0 && Number.isInteger(Number(probe.stdout.trim()))) return exe;
+  }
+  return null;
+}
+const PWSH = resolvePwsh();
+const NO_PWSH_SKIP = PWSH
+  ? false
+  : 'SKIPPED — neither `pwsh` (PowerShell Core, tried first) nor `powershell.exe` resolved on ' +
+    'PATH with a working $PSVersionTable probe. This is a real environment gap, not a platform ' +
+    "boundary, so it is never silent: the anchor test below still runs unconditionally and fails " +
+    "if run-soak.ps1 or soak-pidset.psm1 is missing or renamed, so a rename can't hide behind a " +
+    'missing interpreter either.';
+
+const WINDOWS_ONLY_SKIP =
+  NO_PWSH_SKIP ||
+  (IS_WINDOWS
+    ? false
+    : 'SKIPPED — needs Get-CimInstance Win32_Process (Windows-only WMI; no Linux implementation in ' +
+      'PowerShell Core, so this is NOT keyed on interpreter availability — pwsh itself resolves ' +
+      'fine on the Linux CI runner, only this one WMI class does not exist there). Keyed on ' +
+      'process.platform, nothing looser. The soak launcher is a Windows-only operational tool, so ' +
+      'this platform boundary is correct rather than a gap; see the anchor test below, which still ' +
+      "runs here and fails if run-soak.ps1's CIM-dependent surface is renamed or removed.");
+
 function runSoak(args, logDir) {
   const res = spawnSync(
-    'powershell.exe',
+    PWSH,
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...args],
     { cwd: ROOT, env: { ...process.env, SOAK_LOG_DIR: logDir }, encoding: 'utf8', timeout: 30_000 },
   );
   if (res.error) throw res.error;
   return `${res.stdout}\n${res.stderr}`;
+}
+
+function runPwshCommand(script, opts = {}) {
+  return spawnSync(PWSH, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { encoding: 'utf8', ...opts });
 }
 
 /** A real background process with a findable, distinctive command line. */
@@ -96,13 +178,36 @@ async function rmDirRetrying(dir, { attempts = 10, delayMs = 200 } = {}) {
   }
 }
 
+// ── the anchor: guards BOTH skips above from ever going silent ───────────────────────────────
+//
+// Runs on EVERY platform UNCONDITIONALLY — no `skip` option, no dependency on PWSH resolving at
+// all, since it never spawns a shell; it only reads the two files with node:fs. That is deliberate:
+// it is the one thing on record even in the worst case (no interpreter AND non-Windows), so a
+// rename, deletion, or emptying of either file is never hidden behind either skip reason.
+
+test('the CIM-dependent surface this suite skips on non-Windows still exists', () => {
+  assert.ok(fs.existsSync(SCRIPT), `expected ${SCRIPT} to exist`);
+  assert.ok(fs.existsSync(MODULE), `expected ${MODULE} to exist`);
+  const moduleSrc = fs.readFileSync(MODULE, 'utf8');
+  assert.ok(moduleSrc.trim().length > 0, `${MODULE} must not be empty`);
+  assert.match(moduleSrc, /function Test-ManagedProcessAlive/, 'soak-pidset.psm1 must still define Test-ManagedProcessAlive');
+  assert.match(moduleSrc, /Get-CimInstance/, 'Test-ManagedProcessAlive must still be the CIM-based check the Windows-only tests exercise');
+  const scriptSrc = fs.readFileSync(SCRIPT, 'utf8');
+  assert.ok(scriptSrc.trim().length > 0, `${SCRIPT} must not be empty`);
+  assert.match(scriptSrc, /Get-ManagedPidEntries/, 'run-soak.ps1 must still drive -Status/-Stop through Get-ManagedPidEntries');
+  assert.match(scriptSrc, /Test-ManagedProcessAlive/, 'run-soak.ps1 must still drive -Status/-Stop through Test-ManagedProcessAlive');
+});
+
 // ── the module directly: the pid/service-set derivation, as a pure(ish) unit ─────────────────
 //
 // -Status and -Stop, and every start-or-reuse call site, all go through exactly these three
 // functions. This is "the pid/service-set derivation that decides it" — tested standalone,
 // without the surrounding script's control flow, per the addendum's own framing.
+//
+// PORTABLE: Add-ManagedPid and Get-ManagedPidEntries are plain Add-Content/Get-Content/-split —
+// no CIM call anywhere in this test, so it runs on every platform pwsh/powershell.exe resolves on.
 
-test('soak-pidset.psm1: Add-ManagedPid / Get-ManagedPidEntries round-trip name, pid and needle', () => {
+test('soak-pidset.psm1: Add-ManagedPid / Get-ManagedPidEntries round-trip name, pid and needle', { skip: NO_PWSH_SKIP }, () => {
   const dir = mkTmpDir('module-roundtrip');
   try {
     const pidFile = path.join(dir, 'soak-pids.txt');
@@ -115,7 +220,7 @@ test('soak-pidset.psm1: Add-ManagedPid / Get-ManagedPidEntries round-trip name, 
       '$e[0].Name; $e[0].ProcessId; $e[0].Needle',
       '$e[1].Name; $e[1].ProcessId; "<empty:$($e[1].Needle -eq \'\')>"',
     ].join('; ');
-    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { encoding: 'utf8' });
+    const res = runPwshCommand(script);
     assert.equal(res.status, 0, `module script failed: ${res.stderr}`);
     const lines = res.stdout.trim().split(/\r?\n/);
     assert.deepEqual(lines, ['2', 'indexer', '111', 'index-runner.mjs', 'api', '222', '<empty:True>']);
@@ -124,25 +229,28 @@ test('soak-pidset.psm1: Add-ManagedPid / Get-ManagedPidEntries round-trip name, 
   }
 });
 
-test('soak-pidset.psm1: Test-ManagedProcessAlive is true for a live pid and false once it exits', async () => {
+// WINDOWS-ONLY: Test-ManagedProcessAlive calls Get-CimInstance -ClassName Win32_Process, which
+// has no Linux implementation in PowerShell Core. Gated on process.platform, nothing looser.
+
+test('soak-pidset.psm1: Test-ManagedProcessAlive is true for a live pid and false once it exits', { skip: WINDOWS_ONLY_SKIP }, async () => {
   const proc = spawnDummy();
   try {
     const aliveScript = `Import-Module -Force '${MODULE}'; Test-ManagedProcessAlive -ProcessId ${proc.pid}`;
-    const aliveRes = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', aliveScript], { encoding: 'utf8' });
+    const aliveRes = runPwshCommand(aliveScript);
     assert.equal(aliveRes.stdout.trim(), 'True', `expected alive, got: ${aliveRes.stdout} ${aliveRes.stderr}`);
 
     process.kill(proc.pid);
     await waitUntil(() => !isAlive(proc.pid));
 
     const deadScript = `Import-Module -Force '${MODULE}'; Test-ManagedProcessAlive -ProcessId ${proc.pid}`;
-    const deadRes = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', deadScript], { encoding: 'utf8' });
+    const deadRes = runPwshCommand(deadScript);
     assert.equal(deadRes.stdout.trim(), 'False', `expected dead, got: ${deadRes.stdout} ${deadRes.stderr}`);
   } finally {
     try { process.kill(proc.pid); } catch { /* already dead */ }
   }
 });
 
-test('soak-pidset.psm1: Test-ManagedProcessAlive is false for a live pid whose command line does not match the needle', () => {
+test('soak-pidset.psm1: Test-ManagedProcessAlive is false for a live pid whose command line does not match the needle', { skip: WINDOWS_ONLY_SKIP }, () => {
   // The recycled-pid guard: a pid that is genuinely alive right now must NOT read as "our
   // service" if its command line does not contain what we recorded when we started it. Without
   // this, a pid the OS reassigned to an unrelated process after our service exited would report
@@ -150,7 +258,7 @@ test('soak-pidset.psm1: Test-ManagedProcessAlive is false for a live pid whose c
   const proc = spawnDummy();
   try {
     const script = `Import-Module -Force '${MODULE}'; Test-ManagedProcessAlive -ProcessId ${proc.pid} -Needle 'totally-unrelated-script.mjs'`;
-    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { encoding: 'utf8' });
+    const res = runPwshCommand(script);
     assert.equal(res.stdout.trim(), 'False', `expected a needle mismatch to read as not-ours, got: ${res.stdout} ${res.stderr}`);
   } finally {
     try { process.kill(proc.pid); } catch { /* already dead */ }
@@ -158,8 +266,11 @@ test('soak-pidset.psm1: Test-ManagedProcessAlive is false for a live pid whose c
 });
 
 // ── the real run-soak.ps1 -Status / -Stop, end to end ─────────────────────────────────────────
+//
+// PORTABLE: with no pid file (or an empty one), Get-ManagedPidEntries returns @() and the foreach
+// that would call Test-ManagedProcessAlive never runs — no CIM call, so these run everywhere.
 
-test('-Stop with nothing running says so, and does not error', () => {
+test('-Stop with nothing running says so, and does not error', { skip: NO_PWSH_SKIP }, () => {
   const dir = mkTmpDir('stop-nothing');
   try {
     const out = runSoak(['-Stop'], dir);
@@ -169,7 +280,7 @@ test('-Stop with nothing running says so, and does not error', () => {
   }
 });
 
-test('-Status with nothing running says so', () => {
+test('-Status with nothing running says so', { skip: NO_PWSH_SKIP }, () => {
   const dir = mkTmpDir('status-nothing');
   try {
     const out = runSoak(['-Status'], dir);
@@ -179,7 +290,10 @@ test('-Status with nothing running says so', () => {
   }
 });
 
-test('-Status and -Stop on a PARTIALLY-STARTED set: one alive service, one already-exited one', async () => {
+// WINDOWS-ONLY: a pid file with real entries drives -Status/-Stop into the foreach that calls
+// Test-ManagedProcessAlive for each one — CIM again, gated the same way as above.
+
+test('-Status and -Stop on a PARTIALLY-STARTED set: one alive service, one already-exited one', { skip: WINDOWS_ONLY_SKIP }, async () => {
   // This is the measured shape: not every entry in the pid file is still running. -Status must
   // say which is which, truthfully, and -Stop must kill the live one and say the dead one "was
   // not running" rather than erroring or silently doing nothing about either.
@@ -219,8 +333,11 @@ test('-Status and -Stop on a PARTIALLY-STARTED set: one alive service, one alrea
 // exec. These drive the REAL Start-ManagedProcess (soak-pidset.psm1) against a real process that
 // dies within milliseconds and a real one that survives, and check both the console report AND
 // the pid file — the same two places the original defect lied in.
+//
+// PORTABLE: Start-ManagedProcess is Start-Process/.Refresh()/.HasExited — plain .NET Process
+// members, no CIM call anywhere in this path — so both tests run on every platform.
 
-test('Start-ManagedProcess: a process that exits immediately is reported FAILED and is NOT recorded as running', () => {
+test('Start-ManagedProcess: a process that exits immediately is reported FAILED and is NOT recorded as running', { skip: NO_PWSH_SKIP }, () => {
   const dir = mkTmpDir('start-managed-dead');
   try {
     const pidFile = path.join(dir, 'soak-pids.txt');
@@ -229,7 +346,7 @@ test('Start-ManagedProcess: a process that exits immediately is reported FAILED 
       `$p = Start-ManagedProcess -PidFile '${pidFile}' -LogDir '${dir}' -Name deadsvc -File '${process.execPath}' -ArgList @('-e','process.exit(7)') -SettleMs 800`,
       '"<result:$($p -eq $null)>"',
     ].join('; ');
-    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { encoding: 'utf8', timeout: 20_000 });
+    const res = runPwshCommand(script, { timeout: 20_000 });
     assert.equal(res.status, 0, `module script errored: ${res.stderr}`);
     assert.match(res.stdout, /<result:True>/, `Start-ManagedProcess must return $null for a dead-on-arrival process, got:\n${res.stdout}\n${res.stderr}`);
     assert.match(res.stdout, /FAILED - exited/, `must print a loud FAILED line, not a quiet one, got:\n${res.stdout}`);
@@ -242,7 +359,7 @@ test('Start-ManagedProcess: a process that exits immediately is reported FAILED 
   }
 });
 
-test('Start-ManagedProcess: a process that survives is reported started and IS recorded, with its needle', async () => {
+test('Start-ManagedProcess: a process that survives is reported started and IS recorded, with its needle', { skip: NO_PWSH_SKIP }, async () => {
   const dir = mkTmpDir('start-managed-alive');
   let pid = null;
   try {
@@ -260,26 +377,30 @@ test('Start-ManagedProcess: a process that survives is reported started and IS r
       `$p = Start-ManagedProcess -PidFile '${pidFile}' -LogDir '${dir}' -Name alivesvc -File '${process.execPath}' -ArgList @('${sleeperScript}') -Needle 'sleep-forever' -SettleMs 800`,
       '"<pid:$($p.Id)>"',
     ].join('; ');
-    // stdio: 'ignore' on THIS spawnSync, output redirected to a file INSIDE the PowerShell script
-    // (`*>`), not captured through a pipe Node reads: Start-ManagedProcess's whole point is that
-    // the child it starts OUTLIVES this statement, and on Windows a still-running grandchild
-    // inherits the parent's stdout PIPE handle -- so a piped spawnSync (`encoding: 'utf8'`) blocks
-    // reading that pipe until the grandchild exits too, i.e. forever, timing out instead of
-    // returning the moment the PowerShell script itself finishes. Confirmed by direct repro
-    // before writing this comment: identical script, piped stdio hung to the timeout; file-
-    // redirected stdio with `stdio: 'ignore'` returned in ~1s.
-    const wrapped = `${script} *> '${harnessOut}'`;
-    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', wrapped], { stdio: 'ignore', timeout: 20_000 });
+    // stdio: 'ignore' on THIS spawnSync, output redirected to a file INSIDE the PowerShell script,
+    // not captured through a pipe Node reads: Start-ManagedProcess's whole point is that the child
+    // it starts OUTLIVES this statement, and on Windows a still-running grandchild inherits the
+    // parent's stdout PIPE handle -- so a piped spawnSync (`encoding: 'utf8'`) blocks reading that
+    // pipe until the grandchild exits too, i.e. forever, timing out instead of returning the moment
+    // the PowerShell script itself finishes. Confirmed by direct repro before writing this comment:
+    // identical script, piped stdio hung to the timeout; file-redirected stdio with
+    // `stdio: 'ignore'` returned in ~1s.
+    //
+    // The redirect goes through `Out-File -Encoding utf8` EXPLICITLY, not the bare `*>` operator:
+    // Windows PowerShell 5.1's default encoding for `*>`/Out-File is UTF-16LE, while PowerShell 7
+    // (pwsh, what CI's Linux runner uses) defaults to UTF-8 — reading the file with one hardcoded
+    // Node encoding would be correct on exactly one of the two hosts this suite now runs under.
+    // Pinning the encoding on the PowerShell side removes the ambiguity instead of guessing it on
+    // the Node side.
+    const wrapped = `& { ${script} } *>&1 | Out-File -FilePath '${harnessOut}' -Encoding utf8`;
+    const res = spawnSync(PWSH, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', wrapped], { stdio: 'ignore', timeout: 20_000 });
     assert.equal(res.status, 0, `module script errored (exit ${res.status}, signal ${res.signal})`);
-    // PowerShell 5.1's `*>`/Out-File default encoding is UTF-16LE. `Write-Host` (the "started ..."
-    // line) does not reliably land in a `*>`-redirected file in this PS host — confirmed by direct
-    // repro — so this test's evidence for success is the two artifacts that actually matter and
-    // ARE reliably captured: the returned process object's pid, and the pid-file line
-    // Add-ManagedPid wrote. Those are also exactly what -Status/-Stop read; the console line is
-    // not (the "started ..." TEXT is instead covered by the sibling "FAILED" test below, whose
-    // process exits quickly enough that piped stdio capture works without the hang this test
-    // works around).
-    const out = fs.readFileSync(harnessOut, 'utf16le');
+    // This test's evidence for success is the two artifacts that actually matter and are reliably
+    // captured regardless of host: the returned process object's pid, and the pid-file line
+    // Add-ManagedPid wrote. Those are also exactly what -Status/-Stop read; the console "started
+    // ..." TEXT is instead covered by the sibling "FAILED" test above, whose process exits quickly
+    // enough that piped stdio capture works without the hang this test works around.
+    const out = fs.readFileSync(harnessOut, 'utf8');
     const m = /<pid:(\d+)>/.exec(out);
     assert.ok(m, `expected the returned process object to carry a pid, got:\n${out}`);
     pid = Number(m[1]);
@@ -295,7 +416,10 @@ test('Start-ManagedProcess: a process that survives is reported started and IS r
   }
 });
 
-test('-Status reflects a service killed EXTERNALLY (not via -Stop), without lying that it is still running', async () => {
+// WINDOWS-ONLY: same as the partial-set test above — a pid file with a real entry drives -Status
+// into Test-ManagedProcessAlive, which is CIM.
+
+test('-Status reflects a service killed EXTERNALLY (not via -Stop), without lying that it is still running', { skip: WINDOWS_ONLY_SKIP }, async () => {
   const dir = mkTmpDir('external-kill');
   const proc = spawnDummy();
   try {
