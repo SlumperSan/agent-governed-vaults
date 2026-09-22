@@ -963,12 +963,18 @@ const LC_STATE_CLASS = { green:'go', amber:'warn', red:'nogo', unknown:'idle' };
 const LC_STATE_LABEL = { green:'PASS', amber:'CHECK', red:'FAIL', unknown:'UNKNOWN' };
 
 function renderLaunchChecks(byId){
+  // byId === null means "never checked" (the initial render). Any OTHER value means a check was
+  // just attempted — so a row missing from it (an empty/short rows array, not just a row that
+  // threw) must render as UNKNOWN, loudly, the same as a row whose own state came back 'unknown'.
+  // Falling through to "NOT CHECKED YET" here would be the same vanishing-disclosure defect one
+  // more layer out: a row a real response failed to cover reading as merely never clicked.
+  const attempted = byId !== null;
   document.getElementById('lc-rows').innerHTML = LC_ROWS.map(meta => {
     const r = byId && byId[meta.id];
-    const state = r ? r.state : null;
+    const state = r ? r.state : (attempted ? 'unknown' : null);
     const pillClass = state ? LC_STATE_CLASS[state] : 'idle';
     const pillLabel = state ? LC_STATE_LABEL[state] : 'NOT CHECKED YET';
-    const detail = r ? esc(r.detail) : 'Click Check to run this read.';
+    const detail = r ? esc(r.detail) : (attempted ? 'row missing from the check response — treat as unknown' : 'Click Check to run this read.');
     const remedy = r && r.remedy
       ? '<div class="lcremedy"><code id="lc-cmd-'+meta.id+'">'+esc(r.remedy)+'</code>'
         + '<button class="lccopy" type="button" data-copy="lc-cmd-'+meta.id+'">Copy</button></div>'
@@ -995,6 +1001,13 @@ document.getElementById('lc-check').addEventListener('click', async () => {
     document.getElementById('lc-stamp').textContent =
       'checked '+new Date(data.at).toISOString().slice(0,19).replace('T',' ')+'Z';
   }catch(e){
+    // A failed fetch/parse must not leave whatever pills were already on screen — a glance at a
+    // panel showing stale PASS from the last successful click is a false all-clear. Render every
+    // row as UNKNOWN, loudly, rather than leaving stale state or falling back to the "NOT CHECKED
+    // YET" idle look, which reads as pending rather than failed.
+    const byId = Object.fromEntries(LC_ROWS.map(meta =>
+      [meta.id, { id:meta.id, state:'unknown', detail:'check failed — '+e.message, remedy:null }]));
+    renderLaunchChecks(byId);
     document.getElementById('lc-stamp').innerHTML = '<span class="nogo">check failed — '+esc(e.message)+'</span>';
   }finally{
     btn.disabled = false; btn.textContent = 'Check';

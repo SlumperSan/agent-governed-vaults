@@ -16,6 +16,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   checkCreatorSafe, checkStaleProposal, checkDeployerBalance, checkArcDeployment, checkMemberSurface,
   runLaunchChecks,
@@ -476,4 +477,49 @@ test('every row is a well-formed object regardless of outcome', async () => {
     assert.equal(typeof r.detail, 'string');
     assert.ok(r.remedy === null || typeof r.remedy === 'string');
   }
+});
+
+test('runLaunchChecks: a row that THROWS (escapes its own try/catch) is reported under its REAL id, never the array index — PR #366 Product REJECT, reproduced with the live BigInt("0xzz") case', async () => {
+  // A block header whose timestamp is a syntactically-string-but-malformed hex value passes
+  // checkStaleProposal's `typeof !== 'string'` guard, then `BigInt('0xzz')` throws uncaught —
+  // this is the exact live reproduction from the Product review, not a synthetic one.
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: () => ({ timestamp: '0xzz' }),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline: 1 } } }),
+  });
+  const rows = await runLaunchChecks(fetchImpl);
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  assert.ok(byId['proposal'], 'the thrown row must be reachable by its real id "proposal" — the client keys off this exact id');
+  assert.equal(byId['proposal'].state, 'unknown');
+  assert.match(byId['proposal'].detail, /check threw/);
+  // The rejected shape used the array index (checkStaleProposal is settled index 1) as a fallback
+  // id — assert that never happens, under any stringified index.
+  for (let i = 0; i < rows.length; i++) assert.notEqual(byId[String(i)], rows[i], `row must not be reachable only by index ${i}`);
+  assert.equal(byId['1'], undefined, 'must never fall back to the array index "1" as this row\'s id');
+});
+
+test('the fix is present in the shipped source — the fallback keys off the row\'s own descriptor, never the array index', () => {
+  const src = readFileSync(new URL('../lib/launch-checks.mjs', import.meta.url), 'utf8');
+  assert.match(src, /row\(CHECKS\[i\]\.id, CHECKS\[i\]\.name/,
+    'the fallback must derive its id/name from CHECKS[i] (one descriptor, id+name+run bound together), not from the array index');
+  assert.doesNotMatch(src, /row\(String\(i\)/, 'must not regress to the rejected String(i) fallback id');
+  // Three separate parallel arrays (a call list, an ids list, a names list) is the same defect
+  // one layer out: nothing stops them drifting apart under a reorder. Assert there is exactly one
+  // ids-bearing array construct feeding runLaunchChecks, not three.
+  assert.doesNotMatch(src, /const ids = \[/, 'must not reintroduce a separate ids array parallel to a separate names array');
+});
+
+test('runLaunchChecks: every fulfilled row\'s own id matches its CHECKS descriptor\'s id — a reorder of CHECKS cannot surface one row under a different row\'s name', async () => {
+  const { checkArcDeployment } = await import('../lib/launch-checks.mjs');
+  const fetchImpl = stubFetch({
+    eth_getCode: () => '0x00',
+    eth_chainId: () => '0x13b2',
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: governanceResolver({ count: 0 }),
+    eth_getBalance: () => '0x0',
+  });
+  const rows = await runLaunchChecks(fetchImpl);
+  const expectedOrder = ['safe', 'proposal', 'balance', 'arc-deploy', 'member-surface'];
+  assert.deepEqual(rows.map((r) => r.id), expectedOrder,
+    'each settled row must report the id matching its position\'s own check, not a neighbour\'s');
 });

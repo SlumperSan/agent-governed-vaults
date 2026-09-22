@@ -500,20 +500,38 @@ function row(id, name, state, detail, remedy) {
 }
 
 /**
+ * One entry per row — id, display name, and the function that runs it — kept as ONE array rather
+ * than three parallel ones. Three separate lists (a call array, an ids array, a names array),
+ * aligned only by sharing the same index, is the same defect this file exists to prevent one
+ * layer up: nothing stops them drifting apart if a row is reordered or inserted, and a row moved
+ * this way would surface under a DIFFERENT row's id and name — a wrong-row-named vanishing
+ * disclosure. Binding id+name+run together in one element makes that impossible by construction:
+ * whatever order this array is in, `CHECKS[i]` is always the descriptor for `settled[i]`.
+ * @type {{id:string, name:string, run:(f:typeof fetch)=>Promise<ReturnType<typeof row>>}[]}
+ */
+const CHECKS = [
+  { id: 'safe', name: 'Creator Safe live on Arc mainnet', run: (f) => checkCreatorSafe(f) },
+  { id: 'proposal', name: 'Stale governance proposal blocking the soak', run: (f) => checkStaleProposal(f) },
+  { id: 'balance', name: 'Deployer balance margin', run: (f) => checkDeployerBalance(f) },
+  { id: 'arc-deploy', name: 'Arc deployment', run: () => Promise.resolve(checkArcDeployment()) },
+  { id: 'member-surface', name: 'What app.rwally.com and rwally.com are serving', run: (f) => checkMemberSurface(f) },
+];
+
+/**
  * Every row, run in parallel. One row throwing (a bug in this module, not an RPC failure — every
  * RPC failure is already caught above) must not take the rest down with it, so each is wrapped.
+ *
+ * The fallback for a thrown row is keyed off `CHECKS[i]`'s own id and name — NOT the array index.
+ * A fallback keyed on index (`String(i)`) is the exact defect this module exists to prevent one
+ * layer up: the client looks a row up by its real id (`scripts/dashboard.mjs`'s `byId[meta.id]`),
+ * so an id of "0".."4" makes a genuinely-thrown row invisible to that lookup and the panel renders
+ * it as "NOT CHECKED YET" — an unknown rendered as silence — instead of the UNKNOWN pill the
+ * failed read earned. PR #366's Product review caught this for real via `BigInt('0xzz')` throwing
+ * inside `checkStaleProposal`.
  * @param {typeof fetch} [fetchImpl]
  */
 export async function runLaunchChecks(fetchImpl = fetch) {
-  const settled = await Promise.allSettled([
-    checkCreatorSafe(fetchImpl),
-    checkStaleProposal(fetchImpl),
-    checkDeployerBalance(fetchImpl),
-    Promise.resolve(checkArcDeployment()),
-    checkMemberSurface(fetchImpl),
-  ]);
-  const names = ['Creator Safe live on Arc mainnet', 'Stale governance proposal blocking the soak',
-    'Deployer balance margin', 'Arc deployment', 'What app.rwally.com and rwally.com are serving'];
+  const settled = await Promise.allSettled(CHECKS.map((c) => c.run(fetchImpl)));
   return settled.map((s, i) =>
-    s.status === 'fulfilled' ? s.value : row(String(i), names[i], 'unknown', `check threw: ${s.reason?.message ?? s.reason}`, null));
+    s.status === 'fulfilled' ? s.value : row(CHECKS[i].id, CHECKS[i].name, 'unknown', `check threw: ${s.reason?.message ?? s.reason}`, null));
 }
