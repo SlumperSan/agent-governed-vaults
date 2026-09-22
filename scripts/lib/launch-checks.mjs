@@ -2,9 +2,10 @@
 /**
  * Launch-readiness checks for the dashboard's "Launch checks" panel — read-only, on demand.
  *
- * EVERY CHECK HERE IS ONE OF: `eth_call`, `eth_getCode`, `eth_chainId`, `eth_getBalance`, or a
- * file/HTTP read. NOTHING HERE SIGNS, BROADCASTS, OR TOUCHES A KEY. Where the remedy for a red
- * row is a transaction, this module returns the exact command as a string for the owner to run
+ * EVERY CHECK HERE IS ONE OF: `eth_call`, `eth_getCode`, `eth_chainId`, `eth_getBalance`,
+ * `eth_getBlockByNumber`, or a file/HTTP read. NOTHING HERE SIGNS, BROADCASTS, OR TOUCHES A KEY.
+ * Where the remedy for a red row is a transaction, this module returns the exact command as a
+ * string for the owner to run
  * himself — it never runs one. `docs/SWARM.md` §10 puts "anything requiring a private key, a
  * funded account, or a `--broadcast`" on the escalate-do-not-act list, and a "run" button here
  * would cross it. If you are tempted to add one, stop and read that section first.
@@ -53,10 +54,9 @@ const SAFE_ADDR = '0x99e805294F1f1465C96f68e36264E99991Ef9E82';
 const ARC_MAINNET_RPC = 'https://rpc.mainnet.arc.io';
 const ARC_MAINNET_CHAIN_ID_HEX = '0x13b2'; // 5042 decimal
 
-/** The proposal id the launch soak is currently stalled on. Not derivable from any file in this
- * repo — it is the operational fact this row exists to check — so it is given here and the row
- * reads its CURRENT state live rather than trusting this number to still be the stuck one. */
-const STALLED_PROPOSAL_ID = 11;
+/** There is deliberately NO hardcoded proposal id here — see `checkStaleProposal`'s own doc
+ * comment for why PR #366 was rejected for having one, and why `proposalCount()` (a public
+ * monotonic counter, `Governance.sol:144`) is read fresh on every click instead. */
 
 const APP_MARKER = '<title>App | RWAlly</title>'; // apps/app, retiring
 const VAULTS_UI_MARKER = 'Vault Atlas'; // apps/vaults-ui, the replacement
@@ -198,84 +198,178 @@ export async function checkCreatorSafe(fetchImpl) {
 
 // ───────────────────────── row 2 — stale governance proposal ─────────────────────────────────
 
+/** Upper bound on how many proposal ids one click will enumerate. `proposalCount()` has never
+ * been observed above single digits on this testnet as of 2026-09-21, so this is generous
+ * headroom, not a tuned limit — its job is only to bound one click to a fixed number of RPC
+ * calls. If the real count ever exceeds it, the row below renders 'unknown' rather than silently
+ * scanning a subset and calling that complete. */
+const PROPOSAL_SCAN_CAP = 500;
+/** Calls per JSON-RPC batch while scanning — keeps any one HTTP request to a size public
+ * providers reliably accept, rather than one `PROPOSAL_SCAN_CAP`-sized batch. */
+const PROPOSAL_SCAN_CHUNK = 100;
+
 /**
- * Reads `proposals(11)` on Base Sepolia's Governance, decodes it with the SAME decoder
- * `scripts/smoke-test.mjs` and the soak runner use (`scripts/lib/proposal-decode.mjs`), and
- * cross-reads `activeProposalOf(vault)` to confirm 11 is still the vault's current proposal
- * rather than one superseded since. Green only when there is no Active proposal past its reveal
- * deadline. The `finalize` remedy is offered ONLY once the proposal is past that deadline —
- * offered earlier it would revert `WrongPhase` (`Governance.sol:579`), which is a confusing way
- * to learn the timing was wrong.
+ * Stale governance proposal blocking the soak.
+ *
+ * WHY THIS PROPERTY, NOT A PID (PR #366's REJECT). The previous version of this row hardcoded
+ * `proposals(11)` and only cross-checked `activeProposalOf(vault)` — and only inside the RED
+ * branch — so once proposal 11 resolved, a NEW stuck proposal rendered green. That happened for
+ * real, hours after the row was written: proposal 11 resolved (Defeated) and proposal 12 went
+ * Active and sat past its reveal deadline with zero reveals, stranding a soak drill — and the
+ * pid-11 check would have shown PASS throughout.
+ *
+ * `activeProposalOf` alone is not a safe replacement either: `Governance.sol` assigns it once
+ * inside `propose` (line 343) and NEVER clears it on settlement (see `scripts/soak/lib.mjs`'s
+ * `votableNow` doc comment for the incident that already cost a soak run over this), so it
+ * always names the LAST pid ONE vault ever had — it cannot, by itself, prove nothing is stuck
+ * for any OTHER vault.
+ *
+ * WHAT THIS ROW READS INSTEAD: `Governance.proposalCount` (line 144) is a public monotonic
+ * counter, and every `propose()` call does `pid = ++proposalCount` (line 330) — so proposal ids
+ * are EXACTLY the contiguous range `1..proposalCount`, with no gaps and none outside it, by
+ * construction. Reading `proposalCount()` fresh and then every `proposals(i)` for `i` in that
+ * range reaches every proposal that has ever existed, for every vault — never a remembered or
+ * hardcoded id.
+ *
+ * WHAT "STUCK" MEANS, AND WHY IT ENTAILS "BLOCKING THE SOAK" — the property checked, not an
+ * adjacent one. `finalize(uint256)` (`Governance.sol:577-579`) requires exactly
+ * `p.status == Status.Active && block.timestamp >= p.revealDeadline`; that is this row's own
+ * predicate, copied from the contract's own precondition for the one function that unsticks a
+ * proposal. Nothing else moves an `Active` proposal off that status on its own —
+ * `_refreshStatus` (line 718) only auto-expires a proposal already `Passed`, never `Active` — so
+ * a proposal meeting this predicate stays stuck until someone calls `finalize`. And it actually
+ * blocks: `propose()` (lines 312-315) and delegation (lines 562-565) both refuse to proceed for a
+ * vault whose `activeProposalOf` entry is not yet settled.
+ *
+ * THE ROW LABEL SAYS "blocking the soak", SINGULAR AND SOAK-SCOPED; THE SCAN IS REPO-WIDE, ACROSS
+ * EVERY VAULT. That is deliberate, not a drift between the label and the property: the soak
+ * shares one Governance deployment with every vault this repo has registered, any one of them
+ * stuck blocks that vault's own governance, and there is no cheaper query that is scoped to "the
+ * soak's vault" without reintroducing a hardcoded vault address — the same defect shape as the
+ * hardcoded pid, one property over.
+ *
+ * BOTH BRANCHES EARN THEIR VERDICT THE SAME WAY. There is one code path below: scan every
+ * proposal `1..proposalCount`, and green and red are both computed from that same complete scan
+ * — unlike the rejected version, there is no cheaper path to green that skips the check the red
+ * branch does.
+ *
+ * UNKNOWN, LOUDLY, WHENEVER THE SCAN CANNOT BE TRUSTED COMPLETE: `proposalCount()` unreadable,
+ * the chain's own clock (`eth_getBlockByNumber('latest').timestamp`, read on the same connection
+ * as the count) unreadable, any single `proposals(i)` read failing or malformed, a decoded status
+ * byte out of range, or `proposalCount()` itself exceeding `PROPOSAL_SCAN_CAP`. A partial scan, or
+ * a fallback to this machine's own clock instead of the chain's, could hide the one stuck
+ * proposal, so either is never reported as green.
  * @param {typeof fetch} fetchImpl
  */
 export async function checkStaleProposal(fetchImpl) {
-  const proposalsCall = await rpcCall(
-    fetchImpl, BASE_SEPOLIA_RPC, 'eth_call',
-    [{ to: GOVERNANCE_ADDR, data: encodeCall('0x013cf08b', STALLED_PROPOSAL_ID) }, 'latest'],
-  );
-  if (!proposalsCall.ok) {
-    return row('proposal', 'Stale governance proposal blocking the soak', 'unknown', proposalsCall.reason, null);
+  // proposalCount() and the chain's OWN clock, batched onto the same connection — Governance
+  // gates `finalize` on `block.timestamp`, not wall-clock time (`Governance.sol:579`), and this
+  // machine's clock is not guaranteed to agree with the chain's. Using `Date.now()` here would be
+  // the same species of defect this fix exists to remove: a predicate that approximates the
+  // contract's own precondition instead of reading it. If a local clock ran behind chain time, an
+  // actually-stuck proposal would read "still within its reveal window" and this row would say
+  // green — the corroborating read the green branch would not otherwise have earned.
+  const { results: headerResults } = await rpcBatch(fetchImpl, BASE_SEPOLIA_RPC, [
+    { method: 'eth_call', params: [{ to: GOVERNANCE_ADDR, data: '0xda35c664' }, 'latest'] },
+    { method: 'eth_getBlockByNumber', params: ['latest', false] },
+  ]);
+  const [countCall, blockCall] = headerResults;
+  if (!countCall.ok) {
+    return row('proposal', 'Stale governance proposal blocking the soak', 'unknown', `proposalCount(): ${countCall.reason}`, null);
   }
-  const data = proposalsCall.result;
-  if (typeof data !== 'string' || data.length < 2 + 16 * 64) {
+  if (typeof countCall.result !== 'string' || countCall.result.length < 66) {
     return row('proposal', 'Stale governance proposal blocking the soak', 'unknown',
-      `proposals(${STALLED_PROPOSAL_ID}) returned a short/malformed tuple`, null);
+      'proposalCount() returned a short/malformed result', null);
   }
-
-  const fields = [
-    wordAsAddress(data, P.VAULT),
-    String(wordAsBigInt(data, P.PTYPE)),
-    wordAsAddress(data, P.PROPOSER),
-    String(wordAsBigInt(data, P.CREATED_AT)),
-    String(wordAsBigInt(data, P.COMMIT_DEADLINE)),
-    String(wordAsBigInt(data, P.REVEAL_DEADLINE)),
-    String(wordAsBigInt(data, P.EXECUTABLE_AT)),
-    String(wordAsBigInt(data, P.EXPIRES_AT)),
-    String(wordAsBigInt(data, P.STATUS)),
-    '0x' + word(data, P.ACTION_HASH),
-    String(wordAsBigInt(data, P.SNAPSHOT_TOTAL)),
-    String(wordAsBigInt(data, P.MEMBER_COUNT)),
-    String(wordAsBigInt(data, P.FOR_WEIGHT)),
-    String(wordAsBigInt(data, P.AGAINST_WEIGHT)),
-    String(wordAsBigInt(data, P.REVEALED_WEIGHT)),
-    String(wordAsBigInt(data, P.REVEALED_VOTER_COUNT)),
-  ];
-  const p = decodeProposal(fields);
-  if (p.status === undefined) {
+  if (!blockCall.ok) {
+    return row('proposal', 'Stale governance proposal blocking the soak', 'unknown', `eth_getBlockByNumber (chain clock): ${blockCall.reason}`, null);
+  }
+  if (!blockCall.result || typeof blockCall.result.timestamp !== 'string') {
     return row('proposal', 'Stale governance proposal blocking the soak', 'unknown',
-      `proposal ${STALLED_PROPOSAL_ID} decoded a status byte out of range`, null);
+      'eth_getBlockByNumber returned no usable block.timestamp — cannot read the chain\'s own clock', null);
   }
+  const nowSec = Number(hexToBigInt(blockCall.result.timestamp));
+  const count = hexToBigInt(countCall.result);
 
-  const nowSec = Math.floor(Date.now() / 1000);
-  const pastDeadline = p.status === 'Active' && nowSec >= p.revealDeadline;
-  const remedy = `cast send ${GOVERNANCE_ADDR} "finalize(uint256)" ${STALLED_PROPOSAL_ID} --rpc-url ${BASE_SEPOLIA_RPC} --account <account>`;
-
-  if (p.status !== 'Active') {
+  if (count === 0n) {
     return row('proposal', 'Stale governance proposal blocking the soak', 'green',
-      `proposal ${STALLED_PROPOSAL_ID} is ${p.status}, not Active — nothing blocking`, null);
+      'proposalCount() reads 0 — no proposal has ever been created, so none can be stuck', null);
   }
-  if (!pastDeadline) {
-    const eta = new Date(p.revealDeadline * 1000).toISOString();
+  if (count > BigInt(PROPOSAL_SCAN_CAP)) {
+    return row('proposal', 'Stale governance proposal blocking the soak', 'unknown',
+      `proposalCount() reads ${count}, above this row's scan cap of ${PROPOSAL_SCAN_CAP} — cannot enumerate every proposal to confirm none are stuck (a scan-completeness limit, not a health verdict)`, null);
+  }
+
+  const total = Number(count);
+  /** @type {({ok:true,result:any}|{ok:false,reason:string})[]} */
+  const results = [];
+  for (let start = 1; start <= total; start += PROPOSAL_SCAN_CHUNK) {
+    const end = Math.min(start + PROPOSAL_SCAN_CHUNK - 1, total);
+    const calls = [];
+    for (let pid = start; pid <= end; pid++) {
+      calls.push({ method: 'eth_call', params: [{ to: GOVERNANCE_ADDR, data: encodeCall('0x013cf08b', pid) }, 'latest'] });
+    }
+    const { results: chunk } = await rpcBatch(fetchImpl, BASE_SEPOLIA_RPC, calls);
+    results.push(...chunk);
+  }
+
+  const failed = [];
+  const stuck = [];
+  let activeWithinWindow = 0;
+  for (let i = 0; i < total; i++) {
+    const pid = i + 1;
+    const r = results[i];
+    if (!r.ok) { failed.push(`#${pid}: ${r.reason}`); continue; }
+    const data = r.result;
+    if (typeof data !== 'string' || data.length < 2 + 16 * 64) { failed.push(`#${pid}: short/malformed tuple`); continue; }
+    const fields = [
+      wordAsAddress(data, P.VAULT),
+      String(wordAsBigInt(data, P.PTYPE)),
+      wordAsAddress(data, P.PROPOSER),
+      String(wordAsBigInt(data, P.CREATED_AT)),
+      String(wordAsBigInt(data, P.COMMIT_DEADLINE)),
+      String(wordAsBigInt(data, P.REVEAL_DEADLINE)),
+      String(wordAsBigInt(data, P.EXECUTABLE_AT)),
+      String(wordAsBigInt(data, P.EXPIRES_AT)),
+      String(wordAsBigInt(data, P.STATUS)),
+      '0x' + word(data, P.ACTION_HASH),
+      String(wordAsBigInt(data, P.SNAPSHOT_TOTAL)),
+      String(wordAsBigInt(data, P.MEMBER_COUNT)),
+      String(wordAsBigInt(data, P.FOR_WEIGHT)),
+      String(wordAsBigInt(data, P.AGAINST_WEIGHT)),
+      String(wordAsBigInt(data, P.REVEALED_WEIGHT)),
+      String(wordAsBigInt(data, P.REVEALED_VOTER_COUNT)),
+    ];
+    const p = decodeProposal(fields);
+    if (p.status === undefined) { failed.push(`#${pid}: status byte out of range`); continue; }
+    if (p.status === 'Active' && nowSec >= p.revealDeadline) {
+      stuck.push({ pid, vault: p.vault, revealDeadline: p.revealDeadline });
+    } else if (p.status === 'Active') {
+      activeWithinWindow++;
+    }
+  }
+
+  // A read gap could be hiding the one stuck proposal — never reported as green.
+  if (failed.length > 0) {
+    return row('proposal', 'Stale governance proposal blocking the soak', 'unknown',
+      `${failed.length}/${total} proposal read(s) failed, so this scan cannot be trusted complete — ${failed.join('; ')}`, null);
+  }
+
+  if (stuck.length === 0) {
+    const withinWindowNote = activeWithinWindow > 0
+      ? ` (${activeWithinWindow} currently Active but still within its/their reveal window — finalize would revert WrongPhase before then, so no remedy is offered for those)`
+      : '';
     return row('proposal', 'Stale governance proposal blocking the soak', 'green',
-      `proposal ${STALLED_PROPOSAL_ID} is Active but still within its reveal window (deadline ${eta}) — finalize would revert WrongPhase before then, so no remedy is offered yet`, null);
+      `scanned every proposal 1..${total} (proposalCount()) — none are Active past their reveal deadline${withinWindowNote}`, null);
   }
 
-  // Corroborate with activeProposalOf(vault) — same read pattern as row 1's "same connection"
-  // rule, here spent on "same vault" instead: confirms 11 has not already been superseded.
-  const activeCall = await rpcCall(
-    fetchImpl, BASE_SEPOLIA_RPC, 'eth_call',
-    [{ to: GOVERNANCE_ADDR, data: encodeCall('0xdce22376', p.vault) }, 'latest'],
-  );
-  let corroboration = '';
-  if (activeCall.ok && typeof activeCall.result === 'string' && activeCall.result.length >= 66) {
-    const activePid = wordAsBigInt(activeCall.result, 0);
-    corroboration = activePid === BigInt(STALLED_PROPOSAL_ID)
-      ? ` · activeProposalOf(vault) confirms ${STALLED_PROPOSAL_ID} is still the vault's active proposal`
-      : ` · activeProposalOf(vault) now reads ${activePid}, not ${STALLED_PROPOSAL_ID} — re-check which pid is actually stuck before running the remedy below`;
-  }
-
+  const [first, ...rest] = stuck;
+  const remedy = `cast send ${GOVERNANCE_ADDR} "finalize(uint256)" ${first.pid} --rpc-url ${BASE_SEPOLIA_RPC} --account <account>`;
+  const others = rest.length > 0
+    ? ` · ${rest.length} more stuck proposal(s): ${rest.map((s) => `#${s.pid} (vault ${s.vault})`).join(', ')}`
+    : '';
   return row('proposal', 'Stale governance proposal blocking the soak', 'red',
-    `proposal ${STALLED_PROPOSAL_ID} is Active and past its reveal deadline (${new Date(p.revealDeadline * 1000).toISOString()})${corroboration}`,
+    `proposal #${first.pid} (vault ${first.vault}) is Active and past its reveal deadline (${new Date(first.revealDeadline * 1000).toISOString()})${others}`,
     remedy);
 }
 

@@ -77,6 +77,32 @@ const throwingFetch = async () => { throw new Error('ECONNREFUSED (simulated)');
 const httpErrorFetch = (status) => async () => ({ ok: false, status, json: async () => ({}), text: async () => '' });
 const malformedJsonFetch = async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad json'); }, text: async () => 'not json' });
 
+/** `eth_getBlockByNumber` resolver returning a chain timestamp — `checkStaleProposal` reads THIS,
+ * never `Date.now()`, for "is a proposal past its reveal deadline". */
+const blockHeaderResolver = (ts) => () => ({ timestamp: '0x' + BigInt(ts).toString(16) });
+
+/**
+ * `eth_call` resolver for the whole `checkStaleProposal` scan: dispatches on the selector rather
+ * than the method (both `proposalCount()` and every `proposals(i)` are `eth_call`). Any pid not
+ * named in `proposals` answers with a settled (Executed) tuple, so a test only has to say what is
+ * DIFFERENT from "everything else is resolved and boring".
+ * @param {{count:number, proposals?:Record<number, object|'ERROR'|'MALFORMED'>}} spec
+ */
+function governanceResolver({ count, proposals = {} }) {
+  return (params) => {
+    const data = params[0].data;
+    if (data.startsWith('0xda35c664')) return '0x' + uintWord(count); // proposalCount()
+    if (data.startsWith('0x013cf08b')) { // proposals(uint256)
+      const pid = Number(BigInt('0x' + data.slice(10)));
+      const spec = proposals[pid];
+      if (spec === 'ERROR') return { __error: { message: `execution reverted (pid ${pid})` } };
+      if (spec === 'MALFORMED') return '0x1234';
+      return proposalTuple(spec ?? { status: 4 }); // default: Executed — settled, never stuck
+    }
+    throw new Error(`unexpected eth_call selector: ${data.slice(0, 10)}`);
+  };
+}
+
 // ───────────────────────────────────── row 1 — Creator Safe ──────────────────────────────────
 
 test('Creator Safe: code present, matching chain id, threshold decoded — green', async () => {
@@ -167,57 +193,172 @@ test('Creator Safe reads eth_getCode against SAFE_ADDR and eth_chainId on the sa
 });
 
 // ───────────────────────── row 2 — stale governance proposal ─────────────────────────────────
+//
+// PR #366's REJECT, and the point of every test below: the old version hardcoded `proposals(11)`
+// and only cross-checked `activeProposalOf` inside the RED branch, so once #11 resolved, a NEW
+// stuck proposal rendered green. `checkStaleProposal` now derives the pid range from
+// `proposalCount()` and scans ALL of it, so there is no hardcoded id left to go stale.
 
-test('Stale proposal: Active and past its reveal deadline — red, offers the exact finalize command', async () => {
-  const past = Math.floor(Date.now() / 1000) - 3600;
+test('Stale proposal: prior proposal resolved, a NEW proposal is Active past its reveal deadline — red, names the REAL stuck pid (the exact incident #366 was rejected over)', async () => {
+  // Live numbers from the incident: proposal 11 Defeated, proposal 12 Active, revealDeadline
+  // 1790042522, chain now 1790046852 (4,330s past deadline), zero reveals.
+  const chainNow = 1790046852;
+  const revealDeadline = 1790042522;
+  const stuckVault = '0x3333333333333333333333333333333333333333';
   const fetchImpl = stubFetch({
-    eth_call: (params) => {
-      const data = params[0].data;
-      if (data.startsWith('0x013cf08b')) return proposalTuple({ status: 1, revealDeadline: past });
-      if (data.startsWith('0xdce22376')) return '0x' + uintWord(11);
-      throw new Error('unexpected selector');
-    },
+    eth_getBlockByNumber: blockHeaderResolver(chainNow),
+    eth_call: governanceResolver({
+      count: 12,
+      proposals: {
+        11: { status: 3 }, // Defeated — resolved, the OLD check's hardcoded id
+        12: { status: 1, revealDeadline, vault: stuckVault }, // the actual stuck proposal
+      },
+    }),
   });
   const r = await checkStaleProposal(fetchImpl);
-  assert.equal(r.state, 'red');
-  assert.ok(r.remedy, 'a red past-deadline row must carry a remedy');
-  assert.equal(r.remedy, `cast send ${GOVERNANCE_ADDR} "finalize(uint256)" 11 --rpc-url https://sepolia.base.org --account <account>`);
+  assert.equal(r.state, 'red', 'a hardcoded-pid-11 check would have read proposal 11 (Defeated) and reported green here');
+  assert.match(r.detail, /#12/);
+  assert.match(r.detail, new RegExp(stuckVault, 'i'));
+  assert.equal(r.remedy, `cast send ${GOVERNANCE_ADDR} "finalize(uint256)" 12 --rpc-url https://sepolia.base.org --account <account>`,
+    'the remedy must name the pid that is ACTUALLY stuck, not 11');
 });
 
-test('Stale proposal: Active but still within its reveal window — green, NO remedy offered (would revert WrongPhase)', async () => {
-  const future = Math.floor(Date.now() / 1000) + 3600;
+test('Stale proposal: every proposal resolved — green', async () => {
   const fetchImpl = stubFetch({
-    eth_call: (params) => {
-      const data = params[0].data;
-      if (data.startsWith('0x013cf08b')) return proposalTuple({ status: 1, revealDeadline: future });
-      throw new Error('unexpected selector — activeProposalOf should not be read before a deadline verdict');
-    },
-  });
-  const r = await checkStaleProposal(fetchImpl);
-  assert.equal(r.state, 'green');
-  assert.equal(r.remedy, null, 'offering finalize before the deadline would send the owner into a WrongPhase revert');
-});
-
-test('Stale proposal: status Passed (not Active) — green', async () => {
-  const fetchImpl = stubFetch({
-    eth_call: (params) => {
-      if (params[0].data.startsWith('0x013cf08b')) return proposalTuple({ status: 2 });
-      throw new Error('unexpected call');
-    },
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: governanceResolver({ count: 3, proposals: { 1: { status: 2 }, 2: { status: 3 }, 3: { status: 5 } } }),
   });
   const r = await checkStaleProposal(fetchImpl);
   assert.equal(r.state, 'green');
   assert.equal(r.remedy, null);
 });
 
-test('Stale proposal: RPC error on proposals() — unknown, not green', async () => {
-  const fetchImpl = stubFetch({ eth_call: () => ({ __error: { message: 'execution reverted' } }) });
+test('Stale proposal: a healthy proposal — Active but still within its reveal window — does NOT trip the check: green, no remedy', async () => {
+  const chainNow = 5000;
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(chainNow),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline: chainNow + 3600 } } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'green');
+  assert.equal(r.remedy, null, 'offering finalize before the deadline would send the owner into a WrongPhase revert');
+  assert.match(r.detail, /within its\/their reveal window/);
+});
+
+test('Stale proposal: Active exactly AT the reveal deadline (>=, matching finalize\'s own require) — red', async () => {
+  const chainNow = 5000;
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(chainNow),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline: chainNow } } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'red');
+});
+
+test('Stale proposal: reads the CHAIN\'s clock, not this machine\'s wall clock', async () => {
+  // revealDeadline is in the future by wall-clock time (Date.now()), so a Date.now()-based
+  // predicate would call this "still within window" and report green. The chain's own block
+  // timestamp is already past it, and Governance.finalize gates on block.timestamp, not wall time.
+  const wallNow = Math.floor(Date.now() / 1000);
+  const revealDeadline = wallNow + 100_000;
+  const chainNow = revealDeadline + 500;
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(chainNow),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline } } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'red', 'must judge the deadline against the chain\'s block.timestamp, not Date.now()');
+});
+
+test('Stale proposal: two DIFFERENT vaults each have a stuck proposal — red, both named, remedy names the lowest pid', async () => {
+  const chainNow = 10_000;
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(chainNow),
+    eth_call: governanceResolver({
+      count: 5,
+      proposals: {
+        2: { status: 1, revealDeadline: chainNow - 10, vault: '0xaaaa000000000000000000000000000000aaaa' },
+        4: { status: 1, revealDeadline: chainNow - 5, vault: '0xbbbb000000000000000000000000000000bbbb' },
+      },
+    }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'red');
+  assert.match(r.detail, /#2/);
+  assert.match(r.detail, /#4/);
+  assert.match(r.remedy, /"finalize\(uint256\)" 2 /);
+});
+
+test('Stale proposal: proposalCount() is 0 — green, and no proposals(i) read is attempted', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: (params) => {
+      if (params[0].data.startsWith('0xda35c664')) return '0x' + uintWord(0);
+      throw new Error('must not read any proposals(i) when proposalCount() is 0');
+    },
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'green');
+});
+
+test('Stale proposal: proposalCount() exceeds the scan cap — unknown, loudly, never a silent partial scan', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: (params) => {
+      if (params[0].data.startsWith('0xda35c664')) return '0x' + uintWord(501);
+      throw new Error('must not scan any proposal when proposalCount() is over the cap');
+    },
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'unknown');
+  assert.match(r.detail, /501/);
+});
+
+test('Stale proposal: proposalCount() RPC error — unknown, not green', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: (params) => {
+      if (params[0].data.startsWith('0xda35c664')) return { __error: { message: 'execution reverted' } };
+      throw new Error('should not read proposals before proposalCount() succeeds');
+    },
+  });
   const r = await checkStaleProposal(fetchImpl);
   assert.equal(r.state, 'unknown');
 });
 
-test('Stale proposal: short/malformed tuple — unknown', async () => {
-  const fetchImpl = stubFetch({ eth_call: () => '0x1234' });
+test('Stale proposal: chain clock (eth_getBlockByNumber) RPC error — unknown, never falls back to wall clock', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: () => ({ __error: { message: 'block not found' } }),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline: 1 } } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'unknown');
+});
+
+test('Stale proposal: eth_getBlockByNumber returns no usable timestamp — unknown', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: () => ({ number: '0x1' }), // no timestamp field
+    eth_call: governanceResolver({ count: 1, proposals: { 1: { status: 1, revealDeadline: 1 } } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'unknown');
+});
+
+test('Stale proposal: one proposals(i) read fails mid-scan — unknown, never a partial green that could be hiding a stuck one', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: governanceResolver({ count: 3, proposals: { 2: 'ERROR' } }),
+  });
+  const r = await checkStaleProposal(fetchImpl);
+  assert.equal(r.state, 'unknown');
+  assert.match(r.detail, /#2/);
+});
+
+test('Stale proposal: one proposals(i) tuple is short/malformed — unknown', async () => {
+  const fetchImpl = stubFetch({
+    eth_getBlockByNumber: blockHeaderResolver(5000),
+    eth_call: governanceResolver({ count: 1, proposals: { 1: 'MALFORMED' } }),
+  });
   const r = await checkStaleProposal(fetchImpl);
   assert.equal(r.state, 'unknown');
 });
