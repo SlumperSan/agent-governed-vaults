@@ -26,6 +26,8 @@
  *   DEPLOY_JSON        forge broadcast output
  *                      (default: contracts/broadcast/DeployTestnet.s.sol/84532/run-latest.json)
  *   SMOKE_CONFIG       chain config       (default: contracts/config/base-sepolia.json)
+ *   SMOKE_DEPLOYMENT   deployment record  (default: contracts/config/deployments/base-sepolia.json)
+ *                      -- a DIFFERENT file from SMOKE_CONFIG; it declares intendedCreator
  *   SMOKE_STATE        state file         (default: scripts/.smoke-state.json)
  *   SMOKE_RESET=1      discard prior state and start a fresh lifecycle
  *   CAST               cast binary        (default: "cast" on PATH)
@@ -37,7 +39,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROPOSAL_SIG, decodeProposal } from './lib/proposal-decode.mjs';
 import { classifyProposal } from './proposal-recovery.mjs';
-import { wiringImmutabilityFailure, oracleProbeWarning } from './smoke-preflight.mjs';
+import {
+  wiringImmutabilityFailure, oracleProbeWarning, normAddr,
+  requireIntendedCreator, requireCreatorCode, loadDeploymentRecord, signerCacheRefusal,
+} from './smoke-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // NOT publicnode: it prunes logs and receipts, and this script decodes phase results FROM
@@ -47,6 +52,13 @@ const CAST = process.env.CAST ?? 'cast';
 const DEPLOY_JSON = process.env.DEPLOY_JSON
   ?? path.join(ROOT, 'contracts', 'broadcast', 'DeployTestnet.s.sol', '84532', 'run-latest.json');
 const CONFIG_PATH = process.env.SMOKE_CONFIG ?? path.join(ROOT, 'contracts', 'config', 'base-sepolia.json');
+// The DEPLOYMENT RECORD, which is not `SMOKE_CONFIG`: the chain config carries launch parameters,
+// the record carries what was deployed and WHO MAY CREATE A VAULT (`intendedCreator`). r1 of this
+// check read `dep.intendedCreator` off the forge broadcast artifact, which has no such key, so the
+// verdict refused every input - failing closed, but a guard that refuses everything is an outage
+// diagnosed on deploy night by someone under time pressure who will be tempted to delete it.
+const DEPLOYMENT_PATH = process.env.SMOKE_DEPLOYMENT
+  ?? path.join(ROOT, 'contracts', 'config', 'deployments', 'base-sepolia.json');
 const STATE_PATH = process.env.SMOKE_STATE ?? path.join(ROOT, 'scripts', '.smoke-state.json');
 
 // ────────────────────────────── small utilities ──────────────────────────────
@@ -144,7 +156,9 @@ function send(label, to, sig, ...args) {
 const keccakOf = (data) => cast(['keccak', data]);
 const abiEncode = (sig, ...args) => cast(['abi-encode', sig, ...args.map(String)]);
 const topicToAddress = (t) => '0x' + t.slice(26);
-const eq = (a, b) => a.toLowerCase() === b.toLowerCase();
+// The SAME normaliser `intendedCreatorRefusal` uses. Not a second lowercase: when the verdict
+// trimmed and this did not, a padded declaration passed the refusal and failed after broadcasting.
+const eq = (a, b) => normAddr(a) === normAddr(b) && normAddr(a) !== '';
 
 function chainNow() {
   return Number(cast(['block', 'latest', '-f', 'timestamp', '--rpc-url', RPC]));
@@ -163,7 +177,19 @@ async function waitUntilChainTime(target, label) {
 // ─────────────────────────── config + deployment + state ───────────────────────────
 
 const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+const deployment = loadDeploymentRecord({
+  deploymentPath: DEPLOYMENT_PATH, configPath: CONFIG_PATH, readFileSync: fs.readFileSync, existsSync: fs.existsSync,
+});
 const smoke = cfg.smoke;
+
+/**
+ * The deployment record. The reading, the refusal on absence and the chain cross-check all live in
+ * `smoke-preflight.loadDeploymentRecord`, where a test CALLS them -- `gate.mjs` only `node --check`s
+ * this file, so anything asserted here can only ever be asserted by a regex over its source, and a
+ * regex cannot see whether a check does anything. Round 2 proved that: the chain cross-check was
+ * disarmable with `true ||` and the existsSync ban was evadable by respelling it, both with 17/17
+ * green. Only the wiring stays here.
+ */
 
 function loadDeployment() {
   assert(fs.existsSync(DEPLOY_JSON), `deploy output not found at ${DEPLOY_JSON} — run the DeployTestnet forge script first (see docs/TESTNET-CHECKLIST.md)`);
@@ -225,11 +251,17 @@ function preflight() {
   const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
   assert(chainId === cfg.chainId, `RPC chain id ${chainId} != config chainId ${cfg.chainId}`);
 
-  if (!state.signer) {
-    state.signer = cast(['wallet', 'address', ...SIGNER_ARGS], { interactive: true }).split('\n').pop().trim();
-    save();
-  }
-  log(`signer ${state.signer}`);
+  // DERIVED EVERY RUN, never read back from the state file. `send()` broadcasts with the live
+  // SMOKE_SIGNER_ARGS, so a cached signer means the creation guard validates a string while a
+  // different key is on the wire -- see signerCacheRefusal for the reproduction. The cost is that
+  // `cast wallet address` may prompt for a password on a resumed run; validating a stale signer is
+  // not an acceptable price for skipping that prompt.
+  const derivedSigner = cast(['wallet', 'address', ...SIGNER_ARGS], { interactive: true }).split('\n').pop().trim();
+  const signerRefusal = signerCacheRefusal(derivedSigner, state.signer);
+  assert(!signerRefusal, signerRefusal);
+  state.signer = derivedSigner;
+  save();
+  log(`signer ${state.signer} (derived this run from SMOKE_SIGNER_ARGS)`);
 
   const eth = BigInt(cast(['balance', state.signer, '--rpc-url', RPC]));
   assert(eth >= 10n ** 16n, `signer needs at least 0.01 test ETH for gas (has ${eth} wei) — see docs/TESTNET-CHECKLIST.md for faucets`);
@@ -262,14 +294,63 @@ function preflight() {
   log('preflight OK');
 }
 
+/**
+ * WHO CREATES THE VAULT IS PERMANENT, SO IT IS CHECKED BEFORE THE TRANSACTION, NOT AFTER.
+ *
+ * `VaultCore.createVault` fixes `msg.sender` as the vault's immutable creator and attested operator.
+ * No later transaction can correct it. On chain 4663 both vaults were created by the deployer EOA
+ * while the deployment record named the creator Safe, and **nothing compared the two** - the
+ * divergence surfaced when a human read the record months later, and the remedy was a new vault.
+ *
+ * The check this replaces compared the creator in the emitted event against the signer that had just
+ * signed - true by construction, and it would have passed on 4663 every time. Its text is not quoted
+ * here: `smoke-preflight.test.mjs` bans that string from this file so the old check cannot come back,
+ * and a comment reproducing it to explain it would trip the same guard. This compares both against a
+ * DECLARED intent, and refuses BEFORE broadcasting rather than reporting afterwards - because
+ * afterwards there is nothing to do about it.
+ */
 function stepCreateVault() {
+  // DOES THE DECLARED CREATOR ACTUALLY EXIST, as the kind of account the record declares? Checked
+  // FIRST, before who-may-act-for-it, because an address with no code at all is a different, more
+  // basic finding than a routing gap — a Safe's address is deterministic and knowable before
+  // deployment, so a predicted-but-unactivated Safe would otherwise be reported as an authorisation
+  // problem it is not. `creator` is immutable with no rotation path.
+  //
+  // The chain id is read from the SAME connection as the code, and passed in, because a code read is
+  // only an answer about the chain it was taken on and this path routinely holds two chains at once.
+  // Enforcement is inside `requireCreatorCode`, in smoke-preflight.mjs, where a test can call it.
+  requireCreatorCode({
+    address: deployment.intendedCreator,
+    code: cast(['code', deployment.intendedCreator, '--rpc-url', RPC]),
+    observedChainId: cast(['chain-id', '--rpc-url', RPC]),
+    declaredChainId: deployment.chainId,
+    kind: deployment.intendedCreatorKind,
+  });
+  // THROWS on a missing record, a missing or wrong declaration, an unknown signer, or a contract-kind
+  // declaration this script cannot route a transaction through (see requireIntendedCreator's own doc
+  // for why a contract-kind creator refuses unconditionally rather than being compared to the
+  // signer). There is no `assert` here to replace with a log line: the enforcement is inside the
+  // function, which is the whole point of it living in smoke-preflight.mjs where a test can call it.
+  const intendedCreator = requireIntendedCreator(deployment, state.signer);
   const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
   const r = send('factory.createVault', dep.factory,
     'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params);
   const created = r.logs.find((l) => l.topics?.[0] === T_VAULT_CREATED);
   assert(created, 'VaultCreated event not found in receipt');
   state.vault = topicToAddress(created.topics[1]);
-  assert(eq(topicToAddress(created.topics[2]), state.signer), 'creator in event != signer');
+  // Against the DECLARED address, not against the signer. The event and the signer agree by
+  // construction, so comparing them proves nothing about whether the right party created it.
+  assert(
+    eq(topicToAddress(created.topics[2]), intendedCreator),
+    `creator in event is ${topicToAddress(created.topics[2])}, declared intendedCreator is ${intendedCreator}`,
+  );
+  // And re-read it from the vault itself rather than trusting the log: the event is emitted by the
+  // factory, `creator()` is the value the protocol will act on for the life of the vault.
+  const onChainCreator = call(state.vault, 'creator()(address)')[0];
+  assert(
+    eq(onChainCreator, intendedCreator),
+    `the vault's own creator() reads ${onChainCreator}, declared intendedCreator is ${intendedCreator}`,
+  );
   const opId = callU(dep.registry, 'operatorOf(address)(uint256)', state.vault);
   assert(opId !== 0n, 'vault not attested in OperatorRegistry');
   log(`vault ${state.vault} created and attested (operator id ${opId})`);

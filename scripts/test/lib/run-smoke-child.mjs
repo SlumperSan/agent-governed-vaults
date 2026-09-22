@@ -29,11 +29,24 @@ const PRELOAD = path.join(HERE, 'cast-fixture-preload.mjs');
 export const FIXTURES = path.join(ROOT, 'scripts', 'test', 'fixtures');
 export const REAL_CONFIG = path.join(ROOT, 'contracts', 'config', 'base-sepolia.json');
 export const HAPPY_DEPLOY_JSON = path.join(FIXTURES, 'deploy-run-latest.json');
+/**
+ * The DEPLOYMENT RECORD the runner validates its signer against — a fixture, not the real one.
+ *
+ * `SMOKE_DEPLOYMENT` was unset here, so the runner fell back to the committed
+ * `contracts/config/deployments/base-sepolia.json`, which declares the real deployer EOA as
+ * `intendedCreator` while this harness signs as the fake chain's own `SIGNER_ADDR`.
+ * `requireIntendedCreator` refuses that disagreement — correctly. The two landed on separate
+ * branches (the harness in #342, the creator check in #329) and nothing reconciled them until they
+ * were merged, at which point the happy path and four negative controls all refused before reaching
+ * what they were testing.
+ */
+export const HAPPY_DEPLOYMENT = path.join(FIXTURES, 'deployment-happy.json');
 
 /**
  * @param {object} opts
  * @param {string} [opts.deployJson]  DEPLOY_JSON path; defaults to the happy-path fixture
  * @param {string} [opts.config]      SMOKE_CONFIG path; defaults to the real base-sepolia config
+ * @param {string} [opts.deployment]  SMOKE_DEPLOYMENT path; defaults to the happy-path fixture record
  * @param {string} [opts.scenario]    fixture scenario name (see cast-fixture-chain.mjs)
  * @param {object} [opts.env]         extra/overriding env vars, applied last
  */
@@ -50,6 +63,7 @@ export function runSmokeChild(opts = {}) {
     SMOKE_SIGNER_ARGS: '--account smoketest-fixture',
     DEPLOY_JSON: opts.deployJson ?? HAPPY_DEPLOY_JSON,
     SMOKE_CONFIG: opts.config ?? REAL_CONFIG,
+    SMOKE_DEPLOYMENT: opts.deployment ?? HAPPY_DEPLOYMENT,
     SMOKE_STATE: statePath,
     SMOKE_RESET: '1',
     SMOKE_FIXTURE_LOG: logPath,
