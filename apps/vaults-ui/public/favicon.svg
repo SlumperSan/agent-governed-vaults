@@ -1,0 +1,23 @@
+<!-- The tab icon. Not a new design — the placeholder `.brand-mark` in src/chrome.css already
+     ships (shipped since #317): a rounded gradient square beside the wordmark, deliberately
+     non-pictorial. Pictorial marks are banned (Design/mark-elimination-record-2026-09-18) and a
+     considered brand pass is deferred to Phase 2 by Chairman directive, so this is that same
+     placeholder wired into the tab rather than a second mark someone had to design.
+
+     Values copied literally from apps/site/src/tokens.css — the file src/styles.css already
+     `@import`s and chrome.css's own header says is canonical for both surfaces — because this file
+     cannot read a CSS custom property: --bg #070b18, --blue-bright #5b8cff, --blue #2f6bff, at the
+     masthead mark's own proportions (19px square, 5px radius -> 1024 canvas, 560 square, ~147
+     radius, centered: (1024-560)/2 = 232). No path element and no text element — a rect and a
+     gradient are the whole drawing, so there is no letterform the mark-elimination ban could ever
+     apply to. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RWAlly">
+  <rect width="1024" height="1024" fill="#070b18"/>
+  <rect x="232" y="232" width="560" height="560" rx="147" fill="url(#mark)"/>
+  <defs>
+    <linearGradient id="mark" x1="190" y1="232" x2="834" y2="792" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b8cff"/>
+      <stop offset="1" stop-color="#2f6bff"/>
+    </linearGradient>
+  </defs>
+</svg>
