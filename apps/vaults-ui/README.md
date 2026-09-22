@@ -42,6 +42,13 @@ project, **and** update `public/_headers`' `connect-src` to the production RPC o
 commit — see that file's own comment on the directive, and `test/csp.test.mjs`'s coupling test,
 which fails if `.env.example`'s `VITE_RPC_URL` and `_headers`' `connect-src` disagree.
 
+**`VITE_VAULT_ADDRESSES` is cross-checked against `contracts/config/deployments/*.json` in
+`npm run gate` and CI** (`scripts/vault-addresses-lint.mjs`, card A2), BLOCKING, not advisory. Every
+address you set here must name a real deployed vault, on the chain this file's own `VITE_CHAIN_ID`
+declares — an address that exists but on a different chain fails distinctly from a plain typo, since
+it is the worse mistake. Before hand-editing this value on deploy day, run
+`node scripts/vault-addresses-lint.mjs` (or just `npm run gate`) rather than trusting the edit.
+
 **Not wired here:** a connected wallet's own position (shares, cost basis, queued exit,
 pending-deposit and vote-custody reads — `chain-reader.mjs`'s `planPosition`/`planVoteCommit`).
 `feat/wallet-connect-and-sign` adds the wallet connection this app needs before those reads have a
