@@ -53,6 +53,7 @@ import { randomBytes } from 'node:crypto';
 import {
   ROOT, RPC, log, assert, eq, call, callU, send, tryCall, chainNow, waitUntilChainTime,
   openState, runSteps, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
+  decideReveal, finalizeDeadRound, waitOutProposalCooldown,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
@@ -96,7 +97,10 @@ function preflight() {
   assert(shares > 0n,
     `signer holds no shares in ${vault} — drill 1 must have completed its activate step`);
   const queued = callU(vault, 'queuedExitShares(address)(uint256)', state.signer);
-  assert(queued === 0n || state.steps.requestExit?.done,
+  // KEY BUG FIXED: this used to check `state.steps.requestExit`, a step name this drill never
+  // writes (the actual step is `requestExitModeF`) — so the resume guard below was always false
+  // and a legitimate resume holding queued shares from a completed run tripped this assertion.
+  assert(queued === 0n || state.steps.requestExitModeF?.done,
     `signer already has ${queued} shares queued for exit — resolve that before running this drill`);
 
   assert(call(dep.governance, 'vaultRegistered(address)(bool)', vault)[0] === 'true',
@@ -164,17 +168,124 @@ function stepCommit() {
   save();
 }
 
-async function stepReveal() {
-  await waitUntilChainTime(state.commitDeadline, 'commit phase end (1h)');
-  // Reveal BEFORE exiting: queued shares leave eligible stake immediately, so exiting first
-  // would forfeit this vote and the proposal would fail quorum.
-  const r = send('governance.revealVote(FOR)', dep.governance,
-    'revealVote(uint256,bool,bytes32)', state.pid, 'true', state.salt);
-  const p = readProposal(dep.governance, state.pid);
-  assert(p.revealedVoterCount >= 1, `reveal did not register (revealedVoterCount ${p.revealedVoterCount})`);
-  log(`revealed FOR — revealedWeight ${p.revealedWeight}, voters ${p.revealedVoterCount}`);
-  state.steps.reveal = { done: true, tx: r.transactionHash, revealedVoterCount: p.revealedVoterCount };
+/**
+ * A round may be auto-restarted at most this many times per process — same cap and same reason
+ * as drill 2's (#369): unbounded restarts would burn gas forever if something keeps killing the
+ * round before it can be won.
+ */
+const MAX_ROUND_RESTARTS = 2;
+/** Cap for `waitOutProposalCooldown` (lib.mjs) — mirrors drill 2's. */
+const MAX_COOLDOWN_WAIT_SEC = 2 * 3600;
+
+/**
+ * Settle a dead round (via `finalizeDeadRound`, lib.mjs) and discard this drill's round-scoped
+ * state so `voteRound()` re-enters from `propose` — measured live 2026-09-21/22: proposal 13
+ * resumed with `reveal` PENDING, `commitDeadline=1790050702`, `revealDeadline=1790054302`, the
+ * identical shape drill 2's proposal 12 hit three days earlier.
+ *
+ * TWO THINGS DRILL 2's VERSION DOES NOT NEED, BOTH SPECIFIC TO MODE-F:
+ *
+ * 1. `proveModeIWindow` MUST be cleared along with the round-scoped keys. It is the drill's
+ *    negative-half assertion (`now < commitDeadline`, Governance.sol:519's reveal-phase-opens-
+ *    Mode-F boundary) checked against THIS proposal's `commitDeadline`. Clearing only
+ *    `commit`/`reveal` and leaving `proveModeIWindow.done` true would let the restarted round
+ *    complete having proved the negative half against a proposal that no longer exists — merely
+ *    completing, not proving what the drill exists to prove.
+ * 2. A restart must be REFUSED once the Mode-F exit has queued. `votingEligibleShares` is
+ *    `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028,1039-1041, confirmed by reading both
+ *    call sites), so a signer with shares locked in the queue could never supply quorum to a
+ *    fresh round again. This is checked live rather than assumed reachable: in THIS drill's step
+ *    order `reveal` always precedes `requestExitModeF`, so a stale-reveal restart should never
+ *    observe a non-zero queue — the guard exists to fail loudly if that invariant is ever broken
+ *    (e.g. by a future reordering, or a hand-edited state file) rather than restart into a round
+ *    that can structurally never pass.
+ */
+async function recoverStaleRound(pid, p, now) {
+  const priorRestarts = state.roundRestartCount ?? 0;
+  assert(priorRestarts < MAX_ROUND_RESTARTS,
+    `Mode-F round ${pid} is unrecoverable (status ${p.status}, revealDeadline ${p.revealDeadline}, ` +
+    `chain now ${now}) and has already been auto-restarted ${priorRestarts} time(s) — refusing to ` +
+    `restart again (cap ${MAX_ROUND_RESTARTS}). Something is repeatedly killing this round before ` +
+    'its vote can be revealed; investigate rather than retrying blindly.');
+
+  const queued = callU(state.vault, 'queuedExitShares(address)(uint256)', state.signer);
+  assert(queued === 0n,
+    `cannot restart the Mode-F round: signer already has ${queued} shares queued for exit on ` +
+    `${state.vault} — a fresh round could never reach quorum (votingEligibleShares = sharesOf - ` +
+    'queuedExitShares, VaultCore.sol:1025-1028,1039-1041). This should be structurally impossible ' +
+    'at this step (reveal precedes requestExitModeF in this drill) — investigate rather than restart.');
+
+  log('──────────────────────────────────────────────');
+  log(`Mode-F round: RESTARTING (auto-restart ${priorRestarts + 1}/${MAX_ROUND_RESTARTS})`);
+  log(`  proposal ${pid}: status=${p.status}, commitDeadline=${p.commitDeadline}, ` +
+    `revealDeadline=${p.revealDeadline}, chain now=${now}` +
+    (p.status === 'Active' && now >= p.revealDeadline
+      ? ` — ${now - p.revealDeadline}s PAST the reveal deadline`
+      : ''));
+  log('  this drill was almost certainly stopped and resumed after the reveal window closed');
+  log('──────────────────────────────────────────────');
+
+  await finalizeDeadRound(dep.governance, pid, 'Mode-F round');
+
+  for (const key of ['pid', 'commitDeadline', 'revealDeadline', 'salt', 'executableAt']) delete state[key];
+  for (const step of ['propose', 'proveModeIWindow', 'commit', 'reveal']) delete state.steps[step];
+  state.roundRestartCount = priorRestarts + 1;
   save();
+}
+
+/**
+ * Propose, prove the Mode-I negative, commit and reveal — one unit, so a stale-round restart can
+ * re-enter from `propose` and re-prove `proveModeIWindow` against the new proposal (see
+ * `recoverStaleRound`'s doc comment). Registered as ONE step (`voteRound`) in the step list below
+ * so `runSteps`'s own resume-skip works whether the process is starting fresh, resuming mid-round
+ * (this drill's old flat step names — `propose`, `proveModeIWindow`, `commit`, `reveal` — are kept
+ * so an EXISTING state file, like tonight's `.state-drill3.json`, resumes correctly), or resuming
+ * after this function has already recorded `voteRound` done.
+ */
+async function voteRound() {
+  if (!state.pid) await waitOutProposalCooldown(dep.governance, state.vault, state.signer, MAX_COOLDOWN_WAIT_SEC);
+  if (!state.steps.propose?.done) stepPropose();
+  if (!state.steps.proveModeIWindow?.done) stepProveModeIWindow();
+  if (!state.steps.commit?.done) stepCommit();
+
+  if (!state.steps.reveal?.done) {
+    await waitUntilChainTime(state.commitDeadline, 'commit phase end (1h)');
+
+    // RE-READ CHAIN TRUTH BEFORE REVEALING — see decideReveal's doc comment (lib.mjs) and the
+    // 2026-09-21/22 proposal-13 stranding (measured live: reveal PENDING, resumed with the track
+    // A process dead) this exists to catch.
+    const p = readProposal(dep.governance, state.pid);
+    const now = chainNow();
+    const hasCommit = callU(dep.governance, 'commitOf(uint256,address)(bytes32)', state.pid, state.signer) !== 0n;
+    const alreadyRevealed = call(dep.governance, 'revealedOf(uint256,address)(bool)', state.pid, state.signer)[0] === 'true';
+    const { action, reason } = decideReveal(p, { now, hasCommit, alreadyRevealed });
+
+    if (action === 'already-revealed') {
+      log('revealedOf[pid][signer] is already true on-chain — recording without re-sending');
+      state.steps.reveal = { done: true, tx: '(recovered: already revealed on-chain)' };
+      save();
+    } else if (action === 'reveal') {
+      // Reveal BEFORE exiting: queued shares leave eligible stake immediately, so exiting first
+      // would forfeit this vote and the proposal would fail quorum.
+      const r = send('governance.revealVote(FOR)', dep.governance,
+        'revealVote(uint256,bool,bytes32)', state.pid, 'true', state.salt);
+      const p2 = readProposal(dep.governance, state.pid);
+      assert(p2.revealedVoterCount >= 1, `reveal did not register (revealedVoterCount ${p2.revealedVoterCount})`);
+      log(`revealed FOR — revealedWeight ${p2.revealedWeight}, voters ${p2.revealedVoterCount}`);
+      state.steps.reveal = { done: true, tx: r.transactionHash, revealedVoterCount: p2.revealedVoterCount };
+      save();
+    } else if (action === 'restart') {
+      await recoverStaleRound(state.pid, p, now);
+      return voteRound();
+    } else {
+      assert(false, `cannot reveal proposal ${state.pid} and this is not a stale-window case — ${reason}`);
+    }
+  }
+
+  if (!state.steps.voteRound?.done) {
+    state.steps.voteRound = { done: true };
+    save();
+  }
 }
 
 /**
@@ -313,10 +424,7 @@ function stepSettleQueued() {
 log('DRILL 3 — Mode-F exit: the K-1 seam, live on vault B');
 preflight();
 await runSteps([
-  ['propose', stepPropose],
-  ['proveModeIWindow', stepProveModeIWindow],
-  ['commit', stepCommit],
-  ['reveal', stepReveal],
+  ['voteRound', voteRound],
   ['requestExitModeF', stepRequestExitModeF],
   ['proveSettleBlocked', stepProveSettleBlocked],
   ['finalize', stepFinalize],
