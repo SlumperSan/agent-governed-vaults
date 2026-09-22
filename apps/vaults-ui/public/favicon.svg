@@ -11,7 +11,7 @@
      radius, centered: (1024-560)/2 = 232). No path element and no text element — a rect and a
      gradient are the whole drawing, so there is no letterform the mark-elimination ban could ever
      apply to. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Vault Atlas">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RWAlly">
   <rect width="1024" height="1024" fill="#070b18"/>
   <rect x="232" y="232" width="560" height="560" rx="147" fill="url(#mark)"/>
   <defs>
