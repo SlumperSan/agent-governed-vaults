@@ -210,19 +210,68 @@ export class CreationRefused extends Error {
 }
 
 /**
- * Throw unless `signer` is the creator this deployment record declares. Returns the declared address
- * so the caller compares its post-broadcast reads against the DECLARATION rather than against the
- * signer — comparing the emitted creator to the signer who just signed is true by construction and
+ * WHY A SECOND REFUSAL, AND WHY IT NEVER PASSES. `intendedCreatorRefusal` compares the SIGNER's own
+ * address against the declared creator — correct when the declared creator is an EOA, because under a
+ * direct `cast send`, `msg.sender` for `createVault` IS the signer. It is the WRONG comparison when
+ * the declared creator is a CONTRACT: `msg.sender` only becomes the contract when the transaction is
+ * ROUTED THROUGH IT (a Safe's `execTransaction` calling `createVault` internally, for example) — the
+ * signer is at most an OWNER of it, never equal to it, by construction. Address equality therefore
+ * refuses EVERY contract-kind declaration, including a correctly authorised one: the owner recorded
+ * creator Safe 0x99e805294F1f1465C96f68e36264E99991Ef9E82 on Arc on 2026-09-21, and the old check
+ * refused every Safe-routed creation attempt regardless of who signed.
+ *
+ * THE FIX IS NOT "compare against the contract's owners instead". This script's `send()` only ever
+ * broadcasts a DIRECT transaction signed by the EOA — there is no `execTransaction` path here, so
+ * `msg.sender` for `createVault` can never be the declared contract no matter who signs or how
+ * authorised they are to act for it. An owner-of-the-contract probe could not change that outcome
+ * under direct routing, so it would add a chain read and a branch that can never flip pass/refuse —
+ * exactly the "property asserted vs property claimed" shape this PR keeps being rejected for. So a
+ * contract-kind declaration refuses UNCONDITIONALLY, and the message says why: no routed-execution
+ * path exists, not "the signer typed the wrong thing" (which is what the address-equality message
+ * would otherwise imply, and did, for card 179's read).
+ *
+ * KIND-DERIVED, NOT ADDRESS-DERIVED. This refuses any contract-kind creator, not the one Safe address
+ * by name — a second Safe declared tomorrow refuses for the identical reason without this file naming
+ * it, and `requireCreatorCode` is what confirms `kind` actually matches what the chain reports.
+ *
+ * @param {unknown} intended the declared intendedCreator (already established as kind "contract")
+ * @returns {string} a refusal — there is no passing outcome for this branch under direct-send routing
+ */
+export function contractCreatorRoutingRefusal(intended) {
+  return `REFUSING TO CREATE: this deployment record declares intendedCreator ${intended} as a `
+    + 'CONTRACT (intendedCreatorKind "contract"), but this script only broadcasts createVault as a '
+    + 'DIRECT transaction signed by SMOKE_SIGNER_ARGS -- msg.sender would be that EOA, not the '
+    + 'declared contract, no matter who signs or whether they are authorised to act for it. Creating '
+    + 'on behalf of a contract creator needs the transaction ROUTED THROUGH IT (e.g. a Safe '
+    + 'execTransaction that itself calls createVault), which this script does not do. Execute '
+    + 'createVault through the contract directly, or extend this script with a routed-send path '
+    + 'before using it against a contract-kind record.';
+}
+
+/**
+ * Throw unless `signer` may become the creator this deployment record declares. Returns the declared
+ * address so the caller compares its post-broadcast reads against the DECLARATION rather than against
+ * the signer — comparing the emitted creator to the signer who just signed is true by construction and
  * passed on 4663 every time.
  *
- * @param {{intendedCreator?: unknown}|null|undefined} deployment the deployment record
+ * `intendedCreatorKind` is what selects the comparison: "contract" routes to
+ * `contractCreatorRoutingRefusal`, which never passes (see its own doc). Anything else — including a
+ * record with no kind at all — keeps the original address-equality check, so every existing EOA-kind
+ * record and every test written against this function before kind existed is unaffected.
+ *
+ * @param {{intendedCreator?: unknown, intendedCreatorKind?: unknown}|null|undefined} deployment
  * @param {unknown} signer the address that would broadcast
  * @returns {string} the declared intendedCreator
- * @throws {CreationRefused} on a missing record, a missing declaration, an unknown signer, or a
- *   mismatch. There is no return path that does not either throw or hand back a verified address.
+ * @throws {CreationRefused} on a missing record, a missing declaration, an unknown signer, a
+ *   mismatch, or a contract-kind declaration. There is no return path that does not either throw or
+ *   hand back a verified address.
  */
 export function requireIntendedCreator(deployment, signer) {
-  const refusal = intendedCreatorRefusal(deployment?.intendedCreator, signer);
+  const kind = typeof deployment?.intendedCreatorKind === 'string'
+    ? deployment.intendedCreatorKind.trim().toLowerCase() : undefined;
+  const refusal = kind === 'contract'
+    ? contractCreatorRoutingRefusal(deployment?.intendedCreator)
+    : intendedCreatorRefusal(deployment?.intendedCreator, signer);
   if (refusal) throw new CreationRefused(refusal);
   return /** @type {string} */ (deployment.intendedCreator);
 }

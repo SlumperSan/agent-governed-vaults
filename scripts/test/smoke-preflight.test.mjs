@@ -23,6 +23,7 @@ import path from 'node:path';
 import {
   wiringImmutabilityFailure, oracleProbeWarning, intendedCreatorRefusal, normAddr,
   requireIntendedCreator, loadDeploymentRecord, CreationRefused, signerCacheRefusal, addressShapeRefusal,
+  contractCreatorRoutingRefusal,
 } from '../smoke-preflight.mjs';
 
 const REVERTS = [
@@ -157,6 +158,56 @@ test('the shipped Base Sepolia record declares an intendedCreator, so the check 
   );
   assert.match(record.intendedCreator ?? '', /^0x[0-9a-fA-F]{40}$/, 'base-sepolia.json declares no intendedCreator');
   assert.equal(intendedCreatorRefusal(record.intendedCreator, record.intendedCreator), null);
+});
+
+// ── the Arc gap: a CONTRACT-kind creator can never equal the signer, and must not be told it does ──
+//
+// The owner recorded creator Safe 0x99e805294F1f1465C96f68e36264E99991Ef9E82 on Arc on 2026-09-21.
+// `intendedCreatorRefusal` compares the signer's own address to the declared creator, which is right
+// for an EOA (msg.sender for a direct send IS the signer) and wrong for a contract (msg.sender only
+// becomes the contract when the call is ROUTED THROUGH IT, which this script never does) -- so it
+// refused every Safe-routed creation, with a message that reads as "wrong signer" when the real
+// problem is "no routing path exists". `contractCreatorRoutingRefusal` is the kind-aware replacement.
+
+test('contractCreatorRoutingRefusal refuses UNCONDITIONALLY -- there is no signer that passes it', () => {
+  const safe = '0x99e805294F1f1465C96f68e36264E99991Ef9E82';
+  const refusal = contractCreatorRoutingRefusal(safe);
+  assert.ok(refusal, 'a contract-kind creator must always refuse under direct-send routing');
+  assert.match(refusal, /REFUSING TO CREATE/);
+  assert.match(refusal, /execTransaction/, 'must name the missing routed-execution path, not report a mismatch');
+  assert.ok(refusal.includes(safe), 'must name the declared contract');
+  assert.doesNotMatch(refusal, /the signer is/i, 'must not read as a wrong-signer finding -- that is the bug this replaces');
+});
+
+test('requireIntendedCreator routes on intendedCreatorKind: "contract" refuses even when the signer owns the Safe', () => {
+  // THE EXACT ARC SHAPE. Even the deployer EOA itself -- who really is the Safe's sole owner --
+  // cannot pass this: ownership does not change what msg.sender would be under a direct send.
+  const safe = '0x99e805294F1f1465C96f68e36264E99991Ef9E82';
+  const ownerEoa = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
+  assert.throws(
+    () => requireIntendedCreator({ intendedCreator: safe, intendedCreatorKind: 'contract' }, ownerEoa),
+    (err) => {
+      assert.ok(err instanceof CreationRefused);
+      assert.match(err.message, /execTransaction/);
+      return true;
+    },
+    'a contract-kind record must refuse regardless of who signs',
+  );
+  // Case/whitespace on the kind must not be a way to slip past the branch.
+  assert.throws(
+    () => requireIntendedCreator({ intendedCreator: safe, intendedCreatorKind: '  Contract  ' }, ownerEoa),
+    CreationRefused,
+  );
+});
+
+test('requireIntendedCreator with NO kind, or kind "eoa", keeps the original address-equality check', () => {
+  // Backward compatibility, asserted rather than assumed: every record and test written before
+  // intendedCreatorKind existed -- including the shipped base-sepolia.json, which declares "eoa" --
+  // must be completely unaffected by the contract branch.
+  const a = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
+  assert.equal(requireIntendedCreator({ intendedCreator: a }, a), a, 'no kind at all: unchanged');
+  assert.equal(requireIntendedCreator({ intendedCreator: a, intendedCreatorKind: 'eoa' }, a), a, 'kind "eoa": unchanged');
+  assert.throws(() => requireIntendedCreator({ intendedCreator: a }, '0x1111111111111111111111111111111111111111'), CreationRefused);
 });
 
 test('requireIntendedCreator THROWS rather than reporting — the enforcement is callable now', () => {

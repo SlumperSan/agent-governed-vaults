@@ -158,6 +158,39 @@ test('card 179: a creator declared EOA that reports bytecode refuses too, and no
   assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
 });
 
+// ─────────────── the Arc gap: a live, correctly-declared CONTRACT creator still refuses ───────────────
+// Card 179 confirms the declared identity EXISTS as the kind claimed. This confirms what happens once
+// it does: the owner's own Arc Safe (0x99e805294F1f1465C96f68e36264E99991Ef9E82) IS deployed today, so
+// the question this PR was rejected over is what the check does once the "no bytecode" finding is no
+// longer true -- and the old address-equality check refused every one of these regardless, with a
+// message that reads as a wrong signer rather than a missing execTransaction path.
+
+test('a LIVE contract-kind creator still refuses, naming the missing routed-execution path, not a mismatch', () => {
+  const r = runSmokeChild({
+    env: { SMOKE_DEPLOYMENT: path.join(FIXTURES, 'deployment-creator-contract.json') },
+    scenario: 'creator-has-code', // the Safe now HAS bytecode -- card 179's finding no longer applies
+  });
+  assert.notEqual(r.status, 0, 'this script cannot route a transaction through a contract creator');
+  assert.match(r.stderr, /execTransaction/, `STDERR did not carry the routing refusal:\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /NO BYTECODE/, 'the Safe has code in this scenario -- card 179 must not be what fires');
+  assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
+});
+
+// ─────────────────── the 4663 shape, driven end to end, not just through a unit test ───────────────────
+// Every negative control above faults something AFTER stepCreateVault's first guard (the receipt, the
+// emitted event, the re-read, a probe). None of them exercises requireIntendedCreator's OWN refusal
+// through the real runner -- so a helper that swallowed only that one throw, leaving requireCreatorCode
+// untouched, reached BROADCAST at full green against every test that existed before this one.
+
+test('THE 4663 CASE end to end: a declared EOA creator that is not the signer refuses before broadcast', () => {
+  const r = runSmokeChild({
+    env: { SMOKE_DEPLOYMENT: path.join(FIXTURES, 'deployment-creator-mismatch.json') },
+  });
+  assert.notEqual(r.status, 0, 'the signer must not be allowed to create a vault against a creator it is not');
+  assert.match(r.stderr, /REFUSING TO CREATE/, `STDERR did not carry the refusal:\n${r.stderr}`);
+  assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
+});
+
 test('wrong path: DEPLOY_JSON with two VaultFactory CREATE entries -> loadDeployment fails', () => {
   const r = runSmokeChild({ deployJson: path.join(FIXTURES, 'deploy-run-latest-duplicate-factory.json') });
   assert.notEqual(r.status, 0);

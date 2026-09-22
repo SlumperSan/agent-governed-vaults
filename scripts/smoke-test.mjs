@@ -310,26 +310,28 @@ function preflight() {
  * afterwards there is nothing to do about it.
  */
 function stepCreateVault() {
-  // THROWS on a missing record, a missing or wrong declaration, or an unknown signer. There is no
-  // `assert` here to replace with a log line: the enforcement is inside the function, which is the
-  // whole point of it living in smoke-preflight.mjs where a test can call it.
-  const intendedCreator = requireIntendedCreator(deployment, state.signer);
-  // AND DOES THAT ADDRESS ACTUALLY EXIST, as the kind of account the record declares? The check
-  // above compares the address used against the address declared; it never asks whether anything is
-  // there. A Safe's address is deterministic and knowable before deployment, so a
-  // predicted-but-unactivated Safe passes every string comparison — which is the live state of the
-  // Arc mainnet creator as of 2026-09-21. `creator` is immutable with no rotation path.
+  // DOES THE DECLARED CREATOR ACTUALLY EXIST, as the kind of account the record declares? Checked
+  // FIRST, before who-may-act-for-it, because an address with no code at all is a different, more
+  // basic finding than a routing gap — a Safe's address is deterministic and knowable before
+  // deployment, so a predicted-but-unactivated Safe would otherwise be reported as an authorisation
+  // problem it is not. `creator` is immutable with no rotation path.
   //
   // The chain id is read from the SAME connection as the code, and passed in, because a code read is
   // only an answer about the chain it was taken on and this path routinely holds two chains at once.
   // Enforcement is inside `requireCreatorCode`, in smoke-preflight.mjs, where a test can call it.
   requireCreatorCode({
-    address: intendedCreator,
-    code: cast(['code', intendedCreator, '--rpc-url', RPC]),
+    address: deployment.intendedCreator,
+    code: cast(['code', deployment.intendedCreator, '--rpc-url', RPC]),
     observedChainId: cast(['chain-id', '--rpc-url', RPC]),
     declaredChainId: deployment.chainId,
     kind: deployment.intendedCreatorKind,
   });
+  // THROWS on a missing record, a missing or wrong declaration, an unknown signer, or a contract-kind
+  // declaration this script cannot route a transaction through (see requireIntendedCreator's own doc
+  // for why a contract-kind creator refuses unconditionally rather than being compared to the
+  // signer). There is no `assert` here to replace with a log line: the enforcement is inside the
+  // function, which is the whole point of it living in smoke-preflight.mjs where a test can call it.
+  const intendedCreator = requireIntendedCreator(deployment, state.signer);
   const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
   const r = send('factory.createVault', dep.factory,
     'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params);
