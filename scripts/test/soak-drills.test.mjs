@@ -848,7 +848,10 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow, cooldownWait } from '../soak/lib.mjs';
+import {
+  withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow, cooldownWait,
+  decideReveal,
+} from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -1470,44 +1473,135 @@ test('revealableNow refuses rather than guesses when now is not supplied', () =>
   assert.match(r.reason, /now was not supplied/);
 });
 
-// ───────── drill2-subvault.mjs: the reveal-window recovery path itself ─────────
+// ───────── decideReveal: the shared reveal-recovery decision (drill 2, drill 3, drill 5 companion) ─────────
+//
+// Pure, so unlike the drills themselves it can be called directly rather than pinned as source
+// text. It is the ONE place all three call sites decide "reveal, no-op, restart, or bug" — see
+// its doc comment in lib.mjs for why three separate copies of this branch is exactly the drift
+// this repo's CLAUDE.md warns about.
+
+function proposalAt(overrides = {}) {
+  return { status: 'Active', commitDeadline: 1_000, revealDeadline: 2_000, ...overrides };
+}
+
+test('decideReveal: already revealed is a silent no-op, checked before anything else', () => {
+  // Deliberately handed a proposal that would ALSO look revealable, to prove alreadyRevealed is
+  // checked first rather than falling through to revealableNow's own (matching) check.
+  const r = decideReveal(proposalAt(), { now: 1_500, hasCommit: true, alreadyRevealed: true });
+  assert.deepEqual(r, { action: 'already-revealed', reason: '' });
+});
+
+test('decideReveal: a genuinely revealable round says reveal — the non-firing branch', () => {
+  const r = decideReveal(proposalAt(), { now: 1_500, hasCommit: true, alreadyRevealed: false });
+  assert.deepEqual(r, { action: 'reveal', reason: '' });
+});
+
+test('decideReveal: THE MEASURED LIVE INCIDENT — proposal 13, resumed with reveal PENDING past revealDeadline', () => {
+  // Reconstructed from tonight's .state-drill3.json: pid=13, commitDeadline=1790050702,
+  // revealDeadline=1790054302, steps done propose/proveModeIWindow/commit, reveal PENDING, the
+  // track A process dead. A resume reading chain time comfortably past revealDeadline must be
+  // classified 'restart', never 'reveal' (which would send revealVote and revert WrongPhase,
+  // exactly like drill 2's proposal 12).
+  const p = proposalAt({ commitDeadline: 1_790_050_702, revealDeadline: 1_790_054_302 });
+  const resumedNow = 1_790_054_302 + 300; // 5 minutes after the reveal window closed
+  const r = decideReveal(p, { now: resumedNow, hasCommit: true, alreadyRevealed: false });
+  assert.equal(r.action, 'restart', 'a resume past revealDeadline with zero reveals must trigger recovery, not a bare revealVote send');
+  assert.match(r.reason, /reveal window closed 300s ago/);
+});
+
+test('decideReveal: the healthy in-window resume must NOT trigger recovery — the non-firing branch, restated at the boundary', () => {
+  const p = proposalAt({ commitDeadline: 1_790_050_702, revealDeadline: 1_790_054_302 });
+  const stillInWindow = 1_790_050_702 + 60; // 1 minute into the reveal phase
+  const r = decideReveal(p, { now: stillInWindow, hasCommit: true, alreadyRevealed: false });
+  assert.deepEqual(r, { action: 'reveal', reason: '' }, 'a resume still inside the reveal window must send revealVote normally, not restart');
+});
+
+test('decideReveal: a settled proposal (activeProposalOf still names it) is also a restart, not a bug', () => {
+  const r = decideReveal(proposalAt({ status: 'Defeated' }), { now: 1_500, hasCommit: true, alreadyRevealed: false });
+  assert.equal(r.action, 'restart');
+});
+
+test('decideReveal: no commitment recorded, but the round is still live, is a BUG — must not restart blindly', () => {
+  const r = decideReveal(proposalAt(), { now: 1_500, hasCommit: false, alreadyRevealed: false });
+  assert.equal(r.action, 'bug', 'a live round with no commitment is a real defect, not a stale-resume; restarting would hide it');
+  assert.match(r.reason, /no commitment is recorded/);
+});
+
+test('decideReveal: MUTATION CHECK — a version that skips the guard always says reveal, which is exactly the pre-fix defect', () => {
+  // Not a test of decideReveal itself (already covered above) but a written record of the
+  // mutation: reverting decideReveal's body to `return { action: 'reveal', reason: '' };`
+  // unconditionally reproduces the pre-#369/#(this PR) shape and turns the proposal-13
+  // reconstruction test above RED (it asserts 'restart', not 'reveal'). Restoring the real
+  // body turns it GREEN again — verified by hand while preparing this change (reintroduce the
+  // unguarded reveal, run the suite, confirm red; restore, confirm green).
+  const p = proposalAt({ commitDeadline: 1_790_050_702, revealDeadline: 1_790_054_302 });
+  const resumedNow = 1_790_054_302 + 300;
+  const guarded = decideReveal(p, { now: resumedNow, hasCommit: true, alreadyRevealed: false });
+  const unguarded = { action: 'reveal', reason: '' }; // what the pre-fix drills always did
+  assert.notDeepEqual(guarded, unguarded, 'the guard must diverge from the unconditional-reveal shape on a dead round');
+});
+
+// ───────── finalizeDeadRound / waitOutProposalCooldown: lifted out of drill 2 into lib.mjs ─────────
+//
+// Both are impure (send/call/chainNow reach a live `cast`), so — like `send`/`cast` themselves —
+// they are not unit-called here. These pin their presence and contract in lib.mjs, the single
+// definition every call site below is checked to use rather than a copy of.
+
+test('finalizeDeadRound lives in lib.mjs and only finalizes when the contract\'s own gate is met, matching Governance.sol:577', () => {
+  const lib = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'lib.mjs'), 'utf8');
+  assert.match(lib, /export function finalizeDeadRound\(governance, pid, label\)/);
+  assert.match(lib, /fresh\.status === 'Active' && freshNow >= fresh\.revealDeadline/,
+    'finalize must only be sent when the contract\'s own gate (status Active, now >= revealDeadline) is met');
+  assert.match(lib, /settled\.status === 'Defeated'/,
+    'the recovery finalize must verify the dead round actually settled Defeated, not assume it');
+});
+
+test('waitOutProposalCooldown lives in lib.mjs and reads proposalCooldown/lastProposalAt live, never hardcoded', () => {
+  const lib = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'lib.mjs'), 'utf8');
+  assert.match(lib, /export async function waitOutProposalCooldown\(governance, vault, proposer, maxWaitSec\)/);
+  assert.match(lib, /'configOf\(address\)\(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32\)'/,
+    'proposalCooldown must be read live from configOf, matching the GovConfig struct order');
+  assert.match(lib, /'lastProposalAt\(address,address\)\(uint64\)'/,
+    'lastAt must be read live from lastProposalAt(vault, proposer), not assumed');
+  assert.doesNotMatch(lib, /proposalCooldown = 3600/,
+    'the cooldown value itself must never be hardcoded — it is validated only within a FLOOR..CAP range and can differ per vault');
+});
+
+// ───────── drill2-subvault.mjs: the reveal-window recovery path, now delegating to lib.mjs ─────────
 //
 // drill2-subvault.mjs executes its drill at import (same reason drill5's votableNow wiring is
 // pinned as source text above rather than imported and run), so this is a source-text pin over
-// the same instrument: it catches an edit that quietly re-introduces the pre-fix shape.
+// the same instrument: it catches an edit that quietly re-introduces the pre-fix shape, OR that
+// grows a second, drifted copy of the decision logic instead of calling the shared one.
 
-test('govRound reads chain truth and consults revealableNow before revealing, not the persisted deadline blindly', () => {
+test('drill2 govRound reads chain truth and consults decideReveal before revealing, not the persisted deadline blindly', () => {
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
   assert.match(drill2, /const p = readProposal\(dep\.governance, pid\);\s*\n\s*const now = chainNow\(\);/,
     'the reveal step must re-read the proposal and the chain clock before deciding, not trust the saved deadline');
-  assert.match(drill2, /revealableNow\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
-    'the reveal step must consult revealableNow rather than calling revealVote unconditionally');
+  assert.match(drill2, /decideReveal\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
+    'the reveal step must consult the SHARED decideReveal rather than reimplementing the branch or calling revealVote unconditionally');
+  assert.doesNotMatch(drill2, /function decideReveal/, 'drill2 must import decideReveal from lib.mjs, not define its own copy');
 });
 
-test('the recovery path only restarts when the round is genuinely unrecoverable, never on a plain revert', () => {
+test('drill2 recovery only restarts on decideReveal\'s restart verdict, and fails loudly on a bug verdict', () => {
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
-  assert.match(drill2, /p\.status !== 'Active' \|\| now >= p\.revealDeadline/,
-    'restart must be gated on status no longer Active OR the reveal window having closed — anything else is a bug, not a stale resume');
+  assert.match(drill2, /\} else if \(action === 'restart'\) \{/,
+    'restart must be driven by decideReveal\'s own verdict, not a re-derived condition');
   assert.match(drill2, /assert\(false, `\$\{label\}: cannot reveal proposal \$\{pid\} and this is not a stale-window case/,
-    'a non-stale-window failure to reveal must fail the drill loudly, not restart blindly');
+    'a bug verdict must fail the drill loudly, not restart blindly');
 });
 
-test('the restart is bounded and the drill fails with a clear message once the cap is hit', () => {
+test('drill2 restart is bounded and calls the shared finalizeDeadRound rather than a local copy', () => {
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
   assert.match(drill2, /const MAX_ROUND_RESTARTS = 2;/, 'the restart cap must exist as a named, bounded constant');
   assert.match(drill2, /assert\(priorRestarts < MAX_ROUND_RESTARTS,/,
     'recovery must assert the cap BEFORE restarting again, or the loop is unbounded');
+  assert.match(drill2, /await finalizeDeadRound\(dep\.governance, pid, label\);/,
+    'recovery must call the shared finalizeDeadRound rather than sending its own finalize');
+  assert.doesNotMatch(drill2, /governance\.finalize\(stale/, 'the finalize-a-stale-round tx must be sent from inside finalizeDeadRound, not duplicated in drill2');
 });
 
-test('recovery finalizes the dead round only when the contract actually permits it, matching Governance.sol:577', () => {
-  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
-  assert.match(drill2, /fresh\.status === 'Active' && freshNow >= fresh\.revealDeadline/,
-    'finalize must only be sent when the contract\'s own gate (status Active, now >= revealDeadline) is met');
-  assert.match(drill2, /settled\.status === 'Defeated'/,
-    'the recovery finalize must verify the dead round actually settled Defeated, not assume it');
-});
-
-test('recovery discards exactly this round\'s persisted keys and steps, not the whole state file', () => {
+test('drill2 recovery discards exactly this round\'s persisted keys and steps, not the whole state file', () => {
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
   assert.match(drill2, /\['Pid', 'CommitDeadline', 'RevealDeadline', 'Salt', 'ExecutableAt'\]/,
     'recovery must discard the round-scoped keys the doc comment promises to discard');
@@ -1515,12 +1609,159 @@ test('recovery discards exactly this round\'s persisted keys and steps, not the 
     'recovery must discard the round-scoped step flags, or the resumed round thinks steps are already done');
 });
 
-test('the normal-path Finalize assertion is untouched: a round that fails to pass still fails the drill', () => {
+test('drill2 normal-path Finalize assertion is untouched: a round that fails to pass still fails the drill', () => {
   // The one assertion this change must NOT weaken. Distinct from the recovery path's own
-  // Defeated-on-purpose finalize.
+  // Defeated-on-purpose finalize (that one lives inside finalizeDeadRound now).
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
   assert.match(drill2, /assert\(p\.status === 'Passed', `\$\{label\} finalized as \$\{p\.status\}, expected Passed`\);/,
     'the normal governance-round Finalize step must still demand Passed, not accept anything the recovery path would produce');
+});
+
+test('drill2 propose (initial and every restart) waits out the shared proposal cooldown', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /await waitOutProposalCooldown\(dep\.governance, PARENT, state\.signer, MAX_COOLDOWN_WAIT_SEC\);\s*\n\s*const r = send\(`governance\.propose/,
+    'propose must be preceded by the shared cooldown wait, on every call — the very first one and every restart');
+  assert.match(drill2, /const MAX_COOLDOWN_WAIT_SEC = 2 \* 3600;/,
+    'the affordability cap must exist as a named, bounded constant');
+});
+
+// ───────── drill3-modef.mjs: the identical defect, ported, plus two Mode-F-specific guards ─────────
+//
+// Same reasoning as drill2's pins above: drill3 executes at import, so its recovery wiring is
+// verified as source text. Measured live 2026-09-21/22: proposal 13, `.state-drill3.json` with
+// pid=13, commitDeadline=1790050702, revealDeadline=1790054302, steps done
+// propose/proveModeIWindow/commit, reveal PENDING, the track A process dead — the identical
+// WrongPhase shape drill 2's proposal 12 hit three days earlier.
+
+test('drill3 voteRound consults the shared decideReveal, not a reimplementation', () => {
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /const p = readProposal\(dep\.governance, state\.pid\);\s*\n\s*const now = chainNow\(\);/,
+    'the reveal step must re-read the proposal and chain clock, not trust the persisted deadline');
+  assert.match(drill3, /decideReveal\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
+    'drill3 must consult the SAME shared decideReveal drill2 uses, not grow its own copy');
+  assert.doesNotMatch(drill3, /function decideReveal/, 'drill3 must import decideReveal from lib.mjs, not define its own copy');
+});
+
+test('drill3 restart re-enters from propose, so proveModeIWindow is re-proved against the NEW proposal', () => {
+  // The Mode-F-specific guard #1: merely completing after a restart is not enough — the drill
+  // exists to prove the negative half of the mode boundary (Governance.sol:519), and that must
+  // be re-proved against the restarted proposal's own commitDeadline, not skipped because an OLD
+  // proposal's proveModeIWindow.done is still sitting in state.
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /for \(const step of \['propose', 'proveModeIWindow', 'commit', 'reveal'\]\) delete state\.steps\[step\];/,
+    'restart must clear proveModeIWindow along with propose/commit/reveal, or the restarted round never re-proves the Mode-I negative');
+  assert.match(drill3, /if \(!state\.steps\.propose\?\.done\) stepPropose\(\);/,
+    'voteRound must be able to re-enter from propose on a restart, not only resume from reveal');
+});
+
+test('drill3 restart refuses once the Mode-F exit has queued, rather than restarting into an unreachable quorum', () => {
+  // The Mode-F-specific guard #2: votingEligibleShares = sharesOf - queuedExitShares
+  // (VaultCore.sol:1025-1028,1039-1041), so a restart against a signer with queued shares could
+  // never supply quorum again. Structurally unreachable at this step (reveal precedes
+  // requestExitModeF), but checked live rather than assumed.
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /const queued = callU\(state\.vault, 'queuedExitShares\(address\)\(uint256\)', state\.signer\);\s*\n\s*assert\(queued === 0n,/,
+    'recovery must read queuedExitShares live and refuse to restart if any are queued');
+  assert.match(drill3, /votingEligibleShares = sharesOf -/,
+    'the refusal must name the reason a restart would be unwinnable, not just fail opaquely');
+  assert.match(drill3, /queuedExitShares, VaultCore\.sol:1025-1028,1039-1041/,
+    'the refusal must cite the contract lines backing the claim');
+});
+
+test('drill3 restart is bounded and calls the shared finalizeDeadRound rather than a local copy', () => {
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /const MAX_ROUND_RESTARTS = 2;/, 'the restart cap must exist as a named, bounded constant');
+  assert.match(drill3, /assert\(priorRestarts < MAX_ROUND_RESTARTS,/,
+    'recovery must assert the cap BEFORE restarting again, or the loop is unbounded');
+  assert.match(drill3, /await finalizeDeadRound\(dep\.governance, pid, 'Mode-F round'\);/,
+    'recovery must call the shared finalizeDeadRound rather than sending its own finalize');
+});
+
+test('drill3 voteRound is registered as one resumable step, backward-compatible with tonight\'s existing state-file step names', () => {
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /\['voteRound', voteRound\],/,
+    'the step list must register voteRound as one step, so runSteps\'s own skip-gate works on resume');
+  assert.doesNotMatch(drill3, /\['propose', stepPropose\]/,
+    'propose/proveModeIWindow/commit/reveal must no longer be separate top-level runSteps entries — voteRound owns their sequencing so a restart can re-enter from propose');
+});
+
+test('drill3 preflight resume-guard checks the step it actually writes (requestExitModeF), not a name it never sets', () => {
+  // The adjacent bug: preflight used to check state.steps.requestExit, a key this drill never
+  // writes (the real step is requestExitModeF) — so the guard against re-queuing an exit on
+  // resume was always false. Fixed in this same change since it is the same resume-correctness
+  // family as the reveal recovery above, in the same file.
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /queued === 0n \|\| state\.steps\.requestExitModeF\?\.done/,
+    'the preflight resume-guard must check the step name the drill actually sets');
+  assert.doesNotMatch(drill3, /state\.steps\.requestExit\?\.done/,
+    'the old wrong-key check must be gone entirely, not left as a second (dead) condition');
+});
+
+test('drill3 THE central assertion — proposal must finalize Passed against real quorum — is unweakened by the recovery path', () => {
+  const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
+  assert.match(drill3, /assert\(p\.status === 'Passed',\s*\n\s*`proposal finalized as \$\{p\.status\}, expected Passed\./,
+    'stepFinalize must still demand Passed against real quorum, exactly as before this change — the recovery path only ever produces Defeated, on a DIFFERENT (discarded) proposal');
+});
+
+// ───────── drill5-gov-companion.mjs: the same defect, fixed WITHOUT auto-restart ─────────
+//
+// This round is co-driven with drill5-agent-execute.mjs (same pid, agent polls hasRevealed on
+// it), so unlike drill2/drill3 a dead round here must NOT trigger a fresh propose — see the doc
+// comment at the reveal step for why. Verified as source text for the same reason as the drills
+// above: this script executes at import.
+
+test('drill5-gov-companion reveal step consults the shared decideReveal before sending revealVote', () => {
+  const companion = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill5-gov-companion.mjs'), 'utf8');
+  assert.match(companion, /const p = readProposal\(dep\.governance, state\.pid\);\s*\n\s*const now = chainNow\(\);/,
+    'the reveal step must re-read chain truth before deciding, not trust the persisted deadline');
+  assert.match(companion, /decideReveal\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
+    'the companion must consult the same shared decideReveal drill2/drill3 use');
+});
+
+test('drill5-gov-companion finalizes a dead round but does NOT restart it — the deliberate deviation from drill2/drill3', () => {
+  const companion = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill5-gov-companion.mjs'), 'utf8');
+  assert.match(companion, /await finalizeDeadRound\(dep\.governance, state\.pid, 'deployer reveal \(companion\)'\);/,
+    'a dead round must still be finalized, so the vault is not left permanently blocked for the next governance round');
+  assert.match(companion, /assert\(false,\s*\n\s*`proposal \$\{state\.pid\} died while this drill was stopped/,
+    'a dead round must fail the drill loudly rather than silently re-propose — restarting here would desynchronize drill5-agent-execute.mjs, which is committed to THIS pid');
+  assert.doesNotMatch(companion, /return govRound|return voteRound/,
+    'the companion must not recurse back into a propose/vote cycle from the restart branch');
+  const proposeCalls = companion.match(/propose\(address,uint8,bytes32\)/g) ?? [];
+  assert.equal(proposeCalls.length, 1,
+    `the companion must send propose exactly once — found ${proposeCalls.length}; a second call would mean the restart branch re-proposes`);
+});
+
+// ───────── corpus: every drill that ever calls revealVote must be accounted for ─────────
+//
+// DERIVED, not listed — the same discipline the claims-lede-truth guard and the merge-policy
+// exemption both enforce elsewhere in this repo (a hand-picked subset is the #349/#351 defect
+// shape). `grep -ln "revealVote" scripts/soak/*.mjs` is the literal corpus command; this test
+// reproduces it via fs so a FUTURE drill that grows an unguarded revealVote call trips this
+// suite rather than shipping silently uncovered.
+
+test('every scripts/soak/*.mjs file that calls revealVote is one this suite has fix-pinned, or is lib.mjs itself', () => {
+  const soakDir = path.join(LIB_ROOT, 'scripts', 'soak');
+  const files = fs.readdirSync(soakDir).filter((f) => f.endsWith('.mjs'));
+  const callsRevealVote = files.filter((f) => /revealVote/.test(fs.readFileSync(path.join(soakDir, f), 'utf8')));
+
+  // lib.mjs matches in JSDoc prose (documenting Governance.sol's revealVote requires), not a
+  // call site — named and dismissed rather than silently excluded.
+  const drills = callsRevealVote.filter((f) => f !== 'lib.mjs');
+  assert.deepEqual(
+    new Set(drills),
+    new Set(['drill2-subvault.mjs', 'drill3-modef.mjs', 'drill5-gov-companion.mjs']),
+    'the set of drills calling revealVote has changed — a new one needs the same decideReveal wiring ' +
+    '(or an explicit, recorded reason it does not need it, like drill5-agent-execute.mjs\'s agent-loop ' +
+    'delegation), not silent omission from this suite',
+  );
+
+  // drill5-agent-execute.mjs delegates reveal-sending to agent.loop() (packages/, not scripts/soak),
+  // and polls hasRevealed() with a bounded MAX_TICKS that already fails naming the harness/agent
+  // cause rather than reverting raw — a structurally different shape, not an oversight. Pinned here
+  // so a future edit that starts calling revealVote directly from that file is caught by the
+  // assertion above rather than silently falling outside the corpus.
+  assert.ok(!callsRevealVote.includes('drill5-agent-execute.mjs'),
+    'drill5-agent-execute.mjs is not expected to call revealVote directly (see agent.loop() delegation) — if this now fails, it has grown a direct call and needs the same fix, not a shrug');
 });
 
 // ───────── cooldownWait: propose's SECOND require, the one a restart can also hit ─────────
@@ -1604,25 +1845,11 @@ test('cooldownWait refuses rather than guesses when a term is not supplied', () 
   assert.match(missingMax.reason, /maxWaitSec was not supplied/);
 });
 
-test('drill2-subvault.mjs reads proposalCooldown and lastProposalAt live before every propose call, never a hardcoded cooldown', () => {
-  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
-  assert.match(drill2, /await waitOutProposalCooldown\(PARENT, state\.signer\);\s*\n\s*const r = send\(`governance\.propose/,
-    'propose must be preceded by the cooldown wait, on every call — the very first one and every restart');
-  assert.match(drill2, /'configOf\(address\)\(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32\)'/,
-    'proposalCooldown must be read live from configOf, matching the GovConfig struct order');
-  assert.match(drill2, /'lastProposalAt\(address,address\)\(uint64\)'/,
-    'lastAt must be read live from lastProposalAt(vault, proposer), not assumed');
-  assert.doesNotMatch(drill2, /proposalCooldown = 3600/,
-    'the cooldown value itself must never be hardcoded — it is validated only within a FLOOR..CAP range and can differ per vault');
-});
-
-test('the cooldown wait is bounded, matching PROPOSAL_COOLDOWN_CAP being 30 days', () => {
-  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
-  assert.match(drill2, /const MAX_COOLDOWN_WAIT_SEC = 2 \* 3600;/,
-    'the affordability cap must exist as a named, bounded constant, not be left to cooldownWait alone');
-  assert.match(drill2, /assert\(affordable, `propose\(\$\{vault\}\) for proposer \$\{proposer\}: \$\{reason\}`\);/,
-    'an unaffordable cooldown must fail the drill loudly rather than await it or ignore it');
-});
+// The two source-pins that used to live here (drill2 reading proposalCooldown/lastProposalAt
+// live, and the cooldown wait being bounded) now live in the "waitOutProposalCooldown lives in
+// lib.mjs..." and "drill2 propose (initial and every restart) waits out the shared proposal
+// cooldown" tests above, since #369's per-drill implementation was lifted into lib.mjs by this
+// change and drill2's call site shrank to a 4-argument call into the shared function.
 
 // ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────
 //

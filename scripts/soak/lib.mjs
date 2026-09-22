@@ -676,6 +676,99 @@ export function cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec }) {
 }
 
 /**
+ * Decide what a reveal attempt should do RIGHT NOW, given live chain truth. Wraps `revealableNow`
+ * with the two outer branches drill 2's recovery (#369) already needed: an already-revealed
+ * voter is a silent no-op (the tx may have landed in a run that crashed before recording it, and
+ * re-sending would revert `AlreadyRevealed`), and a round that is genuinely not revealable but
+ * still `Active` and before its `revealDeadline` is a BUG to fail on, never a stale-resume to
+ * paper over.
+ *
+ * ONE DEFINITION for a decision now needed at three call sites — drill 2, drill 3, and the drill
+ * 5 governance companion all resume a reveal step after a possibly-long stop, and all three hit
+ * the identical `WrongPhase` shape measured live 2026-09-21/22 (drill 2, proposal 12; drill 3,
+ * proposal 13). Three copies of this branch is the drift this repo's CLAUDE.md warns about, not a
+ * hypothetical.
+ *
+ * @param {ReturnType<typeof decodeProposal>|null} p a live `readProposal` result
+ * @param {{now:number, hasCommit:boolean, alreadyRevealed:boolean}} ctx
+ * @returns {{action:'already-revealed'|'reveal'|'restart'|'bug', reason:string}}
+ *   `reason` is '' for 'already-revealed' and 'reveal'; it explains why otherwise. 'restart' means
+ *   the round is dead (settled, or past its reveal deadline) and safe to recover by finalizing and
+ *   re-proposing. 'bug' means reveal is currently impossible for some OTHER reason (no commitment
+ *   recorded, wrong phase gate) while the round is still live — that must fail loudly, not restart.
+ */
+export function decideReveal(p, { now, hasCommit, alreadyRevealed }) {
+  if (alreadyRevealed) return { action: 'already-revealed', reason: '' };
+  const { revealable, reason } = revealableNow(p, { now, hasCommit, alreadyRevealed });
+  if (revealable) return { action: 'reveal', reason: '' };
+  const stale = !p || p.status !== 'Active' || now >= p.revealDeadline;
+  return { action: stale ? 'restart' : 'bug', reason };
+}
+
+/**
+ * Finalize a round `decideReveal` has classified as `'restart'` — settling `Defeated` with zero
+ * reveals per `Governance.sol:577` (every quorum branch there is false when `revealedWeight` is
+ * 0) — and verify it actually landed that way. Re-reads chain state rather than trusting the
+ * caller's `p`/`now`: this only runs after a real chain wait, but the decision to SEND `finalize`
+ * must be made against the freshest read available.
+ *
+ * Lifted out of drill 2's `recoverStaleRound` (#369) so drill 3 and the drill 5 governance
+ * companion share this rather than growing their own copies of "when is it safe to finalize a
+ * dead round, and what must it settle as".
+ *
+ * @param {string} governance
+ * @param {string} pid
+ * @param {string} label human description for the log
+ * @returns {ReturnType<typeof decodeProposal>} the settled (or already-settled) proposal
+ */
+export function finalizeDeadRound(governance, pid, label) {
+  const fresh = readProposal(governance, pid);
+  const freshNow = chainNow();
+  if (fresh.status === 'Active' && freshNow >= fresh.revealDeadline) {
+    send(`governance.finalize(stale ${label})`, governance, 'finalize(uint256)', pid);
+    const settled = readProposal(governance, pid);
+    assert(settled.status === 'Defeated',
+      `expected the stale round to settle Defeated with zero reveals, got ${settled.status} — ` +
+      'investigate before restarting; a status other than Defeated means something revealed that this recovery path did not expect');
+    log(`  finalized stale proposal ${pid} -> ${settled.status} (revealedVoterCount ${settled.revealedVoterCount})`);
+    return settled;
+  }
+  log(`  proposal ${pid} is already ${fresh.status} — not calling finalize again`);
+  return fresh;
+}
+
+/**
+ * Wait out `propose`'s per-proposer cooldown (`Governance.sol:318`, `Cooldown()`) live, before
+ * every `propose` call that can be reached more than once per process — drill 2's two rounds,
+ * drill 3's round restart. See `cooldownWait`'s doc comment for why a restart can land inside the
+ * SAME proposer's cooldown window from its own prior `propose`.
+ *
+ * `proposalCooldown` and `lastProposalAt` are read live, never hardcoded: `proposalCooldown` is
+ * validated only within a floor..cap range and can differ per vault (`Governance.sol:293-296`),
+ * and `lastProposalAt` is keyed `[vault][proposer]` (`Governance.sol:162,317,344`).
+ *
+ * @param {string} governance
+ * @param {string} vault
+ * @param {string} proposer
+ * @param {number} maxWaitSec
+ */
+export async function waitOutProposalCooldown(governance, vault, proposer, maxWaitSec) {
+  const cfg = call(
+    governance,
+    'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)',
+    vault,
+  );
+  const proposalCooldown = Number(cfg[7]);
+  const lastAt = Number(callU(governance, 'lastProposalAt(address,address)(uint64)', vault, proposer));
+  const now = chainNow();
+  const { waitSec, affordable, reason } = cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec });
+  assert(affordable, `propose(${vault}) for proposer ${proposer}: ${reason}`);
+  if (waitSec === 0) return;
+  log(`propose(${vault}): ${reason} — waiting ${waitSec}s rather than reverting Cooldown()`);
+  await waitUntilChainTime(now + waitSec, 'proposer cooldown');
+}
+
+/**
  * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
  *
  * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through
