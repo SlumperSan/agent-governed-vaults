@@ -2112,7 +2112,9 @@ test('the launcher takes the signer and the endpoint from the same places the dr
   // copies of something the drills resolve differently, so a run repointed at another chain would
   // have had its preflight compare the unlocked key against Base Sepolia's deployer and reject it.
   // No node test can execute PowerShell in CI (ubuntu-latest), so these are text pins.
-  assert.match(RUN_SOAK, /\$Deployer = \(Get-Content -Raw \$Book \| ConvertFrom-Json\)\.deployer/,
+  assert.match(RUN_SOAK, /\$BookJson = Get-Content -Raw \$Book \| ConvertFrom-Json/,
+    'the address book must still be read once, from $Book');
+  assert.match(RUN_SOAK, /\$Deployer = \$BookJson\.deployer/,
     'the signer must come from the address book, not a second copy in the launcher');
   assert.doesNotMatch(RUN_SOAK, /\$Deployer = '0x/, 'no hardcoded deployer address may return');
   assert.match(RUN_SOAK, /\$env:SOAK_DEPLOYMENT/, '$Book must honour the same override the drills read');
@@ -2134,7 +2136,7 @@ test('reading the address book cannot break -Stop, because it happens after that
   const iExit = RUN_SOAK.indexOf('exit 0', iStop);
   assert.ok(iExit > iStop, 'the -Stop block must still end in an early exit');
   const iBook = anchorAt(/\$Book = if \(\$env:SOAK_DEPLOYMENT\)/, 'the address-book resolution');
-  const iDeployer = anchorAt(/\$Deployer = \(Get-Content -Raw \$Book/, 'the signer read');
+  const iDeployer = anchorAt(/\$Deployer = \$BookJson\.deployer/, 'the signer read');
   assert.ok(iBook > iExit, '$Book must resolve only after -Stop has already exited');
   assert.ok(iDeployer > iBook, 'the signer is read from $Book, so it comes after it');
 });
@@ -2193,7 +2195,13 @@ test('the companion logs beside the other drills, and its pid is in the file -St
   assert.match(RUN_SOAK, /Join-Path \$LogDir 'gov-companion\.log'/);
   assert.match(RUN_SOAK, /Join-Path \$LogDir 'gov-companion\.err\.log'/);
   assert.match(RUN_SOAK, /Add-Content -Path '\$PidFile' -Value \('gov-companion='/);
-  assert.match(RUN_SOAK, /if \(\$Stop\) \{[\s\S]*?Get-Content \$PidFile[\s\S]*?Stop-Process/,
+  // -Stop now reads the pid file through Get-ManagedPidEntries (scripts/soak/soak-pidset.psm1),
+  // not a raw Get-Content — the SAME function every start-or-reuse path writes through, which is
+  // what fixed -Stop losing track of services Start-Service-Once found already running instead of
+  // starting. The companion's own line above (Add-Content, 2-field `name=pid`) still parses under
+  // that function: Needle just comes back empty, which Test-ManagedProcessAlive treats as "skip
+  // the command-line cross-check."
+  assert.match(RUN_SOAK, /if \(\$Stop\) \{[\s\S]*?Get-ManagedPidEntries \$PidFile[\s\S]*?Stop-Process/,
     '-Stop must still be the thing that reads the pid file');
 });
 
