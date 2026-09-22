@@ -848,7 +848,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow, cooldownWait } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -1361,6 +1361,267 @@ test('votableNow refuses on a missing snapshotWeight too, rather than falling th
   const neither = votableNow(p, { now: 100 });
   assert.equal(neither.votable, false);
   assert.match(neither.reason, /snapshotWeight and currentWeight were not supplied/);
+});
+
+// ───────── revealableNow: the reveal-phase analogue of votableNow (drill 2) ─────────
+//
+// Measured live 2026-09-21/22: drill 2 resumed after a long stop, re-read its OWN persisted
+// revealDeadline, and called revealVote straight into a WrongPhase revert — proposal 12,
+// revealDeadline=1790042522, chain now at the failing call 1790046852, 4330s (72 min) past it.
+// The guard the commit window already had (votableNow, above) had no equivalent for reveal.
+
+test('revealableNow rejects a settled proposal that activeProposalOf still names', () => {
+  const r = revealableNow(
+    { status: 'Defeated', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 2500, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /status is Defeated/);
+  assert.match(r.reason, /never clears that mapping/, 'the reason must name the mechanism, not just the symptom');
+});
+
+test('revealableNow rejects THE MEASURED DEFECT: an Active proposal whose reveal window has closed', () => {
+  // Proposal 12, verbatim: revealDeadline=1790042522, chain now at the failing call 1790046852.
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1790038922, revealDeadline: 1790042522 },
+    { now: 1790046852, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /reveal window closed 4330s ago/, 'say how stale, not just that it is stale');
+});
+
+test('revealableNow rejects too-early: still in the commit phase', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 500, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /still in the commit phase/);
+});
+
+test('revealableNow rejects at the EXACT reveal deadline, matching revealVote (< not <=)', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  assert.equal(revealableNow(p, { now: 2000, hasCommit: true, alreadyRevealed: false }).revealable, false,
+    'now === revealDeadline is CLOSED');
+  assert.equal(revealableNow(p, { now: 1999, hasCommit: true, alreadyRevealed: false }).revealable, true,
+    'one second earlier is open');
+  assert.equal(revealableNow(p, { now: 1000, hasCommit: true, alreadyRevealed: false }).revealable, true,
+    'now === commitDeadline is already OPEN (revealVote requires >=)');
+  assert.equal(revealableNow(p, { now: 999, hasCommit: true, alreadyRevealed: false }).revealable, false,
+    'one second before commitDeadline is still the commit phase');
+});
+
+test('revealableNow rejects when no commitment was recorded', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 1500, hasCommit: false, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /no commitment is recorded/);
+  assert.match(r.reason, /NoCommit/, 'name the revert the voter would actually hit');
+});
+
+test('revealableNow rejects a voter who has already revealed', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 1500, hasCommit: true, alreadyRevealed: true },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /already revealed/);
+  assert.match(r.reason, /AlreadyRevealed/, 'name the revert the voter would actually hit');
+});
+
+test('revealableNow accepts a genuinely revealable round, and only then — the non-firing branch', () => {
+  // A healthy in-window reveal must NOT trigger recovery. This is the case drill 2 hits on every
+  // normal, non-interrupted run, so it must stay green.
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  assert.deepEqual(
+    revealableNow(p, { now: 1500, hasCommit: true, alreadyRevealed: false }),
+    { revealable: true, reason: '' },
+  );
+  assert.equal(revealableNow(null, { now: 1500, hasCommit: true, alreadyRevealed: false }).revealable, false);
+});
+
+test('revealableNow refuses rather than guesses when alreadyRevealed is not supplied', () => {
+  // FAIL CLOSED ON A MISSING INPUT, matching votableNow's convention: `undefined` read as falsy
+  // would silently mean "not yet revealed" — the fail-OPEN direction — so this must refuse by
+  // name rather than fall through as votable.
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { now: 1500, hasCommit: true });
+  assert.equal(r.revealable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /alreadyRevealed was not supplied/, 'name the missing input, not a symptom');
+});
+
+test('revealableNow refuses on a missing hasCommit too, rather than falling through it', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { now: 1500, alreadyRevealed: false });
+  assert.equal(r.revealable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /hasCommit was not supplied/, 'name the term that is missing, not the other one');
+  assert.doesNotMatch(r.reason, /alreadyRevealed was not supplied/, 'alreadyRevealed WAS supplied — naming it sends the reader to the wrong caller');
+
+  const neither = revealableNow(p, { now: 1500 });
+  assert.match(neither.reason, /hasCommit and alreadyRevealed were not supplied/);
+});
+
+test('revealableNow refuses rather than guesses when now is not supplied', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { hasCommit: true, alreadyRevealed: false });
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /now was not supplied/);
+});
+
+// ───────── drill2-subvault.mjs: the reveal-window recovery path itself ─────────
+//
+// drill2-subvault.mjs executes its drill at import (same reason drill5's votableNow wiring is
+// pinned as source text above rather than imported and run), so this is a source-text pin over
+// the same instrument: it catches an edit that quietly re-introduces the pre-fix shape.
+
+test('govRound reads chain truth and consults revealableNow before revealing, not the persisted deadline blindly', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const p = readProposal\(dep\.governance, pid\);\s*\n\s*const now = chainNow\(\);/,
+    'the reveal step must re-read the proposal and the chain clock before deciding, not trust the saved deadline');
+  assert.match(drill2, /revealableNow\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
+    'the reveal step must consult revealableNow rather than calling revealVote unconditionally');
+});
+
+test('the recovery path only restarts when the round is genuinely unrecoverable, never on a plain revert', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /p\.status !== 'Active' \|\| now >= p\.revealDeadline/,
+    'restart must be gated on status no longer Active OR the reveal window having closed — anything else is a bug, not a stale resume');
+  assert.match(drill2, /assert\(false, `\$\{label\}: cannot reveal proposal \$\{pid\} and this is not a stale-window case/,
+    'a non-stale-window failure to reveal must fail the drill loudly, not restart blindly');
+});
+
+test('the restart is bounded and the drill fails with a clear message once the cap is hit', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const MAX_ROUND_RESTARTS = 2;/, 'the restart cap must exist as a named, bounded constant');
+  assert.match(drill2, /assert\(priorRestarts < MAX_ROUND_RESTARTS,/,
+    'recovery must assert the cap BEFORE restarting again, or the loop is unbounded');
+});
+
+test('recovery finalizes the dead round only when the contract actually permits it, matching Governance.sol:577', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /fresh\.status === 'Active' && freshNow >= fresh\.revealDeadline/,
+    'finalize must only be sent when the contract\'s own gate (status Active, now >= revealDeadline) is met');
+  assert.match(drill2, /settled\.status === 'Defeated'/,
+    'the recovery finalize must verify the dead round actually settled Defeated, not assume it');
+});
+
+test('recovery discards exactly this round\'s persisted keys and steps, not the whole state file', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /\['Pid', 'CommitDeadline', 'RevealDeadline', 'Salt', 'ExecutableAt'\]/,
+    'recovery must discard the round-scoped keys the doc comment promises to discard');
+  assert.match(drill2, /\['Commit', 'Reveal', 'Finalize', 'Execute'\]/,
+    'recovery must discard the round-scoped step flags, or the resumed round thinks steps are already done');
+});
+
+test('the normal-path Finalize assertion is untouched: a round that fails to pass still fails the drill', () => {
+  // The one assertion this change must NOT weaken. Distinct from the recovery path's own
+  // Defeated-on-purpose finalize.
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /assert\(p\.status === 'Passed', `\$\{label\} finalized as \$\{p\.status\}, expected Passed`\);/,
+    'the normal governance-round Finalize step must still demand Passed, not accept anything the recovery path would produce');
+});
+
+// ───────── cooldownWait: propose's SECOND require, the one a restart can also hit ─────────
+//
+// Flagged by an independent chain read against the live soak governance
+// (0xD963f553e3eCd1872aF1622b3e4664f133A51805, parent 0xB940d71b0D695e2BA2b5853bF565C69DaA3E3C98):
+// configOf reads proposalCooldown=3600 (1h, PER-PROPOSER — lastProposalAt is keyed [vault][proposer],
+// Governance.sol:162,317,344), and the drill 2 restart in recoverStaleRound re-proposes without
+// ever checking it. Restart #1 for tonight's stuck proposal 12 is safe (createdAt was ~3.2h before
+// the restart), but a restart is not guaranteed to land outside the window in general — see the
+// scenario the "restart #2" test below documents.
+
+test('cooldownWait: a proposer who has never proposed on this vault needs no wait', () => {
+  assert.deepEqual(
+    cooldownWait({ now: 1000, lastAt: 0, proposalCooldown: 3600, maxWaitSec: 7200 }),
+    { waitSec: 0, affordable: true, reason: '' },
+  );
+});
+
+test('cooldownWait: past the cooldown already needs no wait', () => {
+  const r = cooldownWait({ now: 5000, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.deepEqual(r, { waitSec: 0, affordable: true, reason: '' }, 'now (5000) is already >= lastAt+cooldown (4600)');
+});
+
+test('cooldownWait rejects at the EXACT cooldown boundary, matching propose (>= not >)', () => {
+  // Governance requires `lastAt == 0 || block.timestamp >= lastAt + cfg.proposalCooldown` — so
+  // equality already clears it, the opposite boundary direction from commitDeadline/revealDeadline.
+  //
+  // deepEqual on the WHOLE result, not just waitSec: at exactly the boundary a mutant that
+  // weakens `>=` to `>` still computes waitSec as `earliest - now === 0` on the fall-through path,
+  // so a waitSec-only check passes on both the correct code and the mutant. The `reason` field is
+  // what actually differs — '' on the fast path, a non-empty "inside cooldown" string on the
+  // fall-through — so asserting the full object is what catches the off-by-one.
+  assert.deepEqual(
+    cooldownWait({ now: 4600, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 }),
+    { waitSec: 0, affordable: true, reason: '' },
+    'now === lastAt + cooldown is already OPEN, with no "inside cooldown" reason attached',
+  );
+  const oneEarly = cooldownWait({ now: 4599, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(oneEarly.waitSec, 1, 'one second earlier still needs a 1s wait');
+  assert.equal(oneEarly.affordable, true);
+  assert.notEqual(oneEarly.reason, '', 'a real wait must carry an explanatory reason');
+});
+
+test('cooldownWait: THE MEASURED LIVE CONFIG — restart #2 landing inside a 1h cooldown after a fast-dying restart #1', () => {
+  // The scenario the coordinator's review names: restart #1 re-proposes at T, and if THAT new
+  // round also dies before its commit window closes (status stops being Active for some other
+  // reason), restart #2 can be attempted as early as commitDeadline — inside the SAME proposer's
+  // 1h cooldown from restart #1's own propose, if commitDuration < proposalCooldown.
+  const T = 1_790_000_000;
+  const commitDuration = 1800; // shorter than the 3600s cooldown, unlike tonight's 1:1 live config
+  const r = cooldownWait({ now: T + commitDuration, lastAt: T, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(r.affordable, true, 'inside the affordability cap, so the drill must wait, not refuse');
+  assert.equal(r.waitSec, 3600 - commitDuration, 'wait exactly the remaining cooldown, not the whole hour again');
+  assert.match(r.reason, /per-proposer cooldown/);
+  assert.match(r.reason, /Cooldown\(\)/, 'name the revert this wait exists to avoid');
+});
+
+test('cooldownWait refuses rather than silently stalling when the wait exceeds maxWaitSec', () => {
+  // proposalCooldown can be configured up to PROPOSAL_COOLDOWN_CAP (30 days, Governance.sol:253).
+  // A drill must fail plainly rather than hang for anywhere near that long.
+  const r = cooldownWait({ now: 1000, lastAt: 1000, proposalCooldown: 30 * 86400, maxWaitSec: 7200 });
+  assert.equal(r.affordable, false, 'a 30-day cooldown must not be silently awaited');
+  assert.equal(r.waitSec, 30 * 86400);
+  assert.match(r.reason, /affordability cap/);
+  assert.match(r.reason, /7200s affordability cap/);
+});
+
+test('cooldownWait refuses rather than guesses when a term is not supplied', () => {
+  const missingNow = cooldownWait({ lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(missingNow.affordable, false);
+  assert.match(missingNow.reason, /now was not supplied/);
+
+  const missingLastAt = cooldownWait({ now: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.match(missingLastAt.reason, /lastAt was not supplied/);
+
+  const missingCooldown = cooldownWait({ now: 1000, lastAt: 1000, maxWaitSec: 7200 });
+  assert.match(missingCooldown.reason, /proposalCooldown was not supplied/);
+
+  const missingMax = cooldownWait({ now: 1000, lastAt: 1000, proposalCooldown: 3600 });
+  assert.match(missingMax.reason, /maxWaitSec was not supplied/);
+});
+
+test('drill2-subvault.mjs reads proposalCooldown and lastProposalAt live before every propose call, never a hardcoded cooldown', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /await waitOutProposalCooldown\(PARENT, state\.signer\);\s*\n\s*const r = send\(`governance\.propose/,
+    'propose must be preceded by the cooldown wait, on every call — the very first one and every restart');
+  assert.match(drill2, /'configOf\(address\)\(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32\)'/,
+    'proposalCooldown must be read live from configOf, matching the GovConfig struct order');
+  assert.match(drill2, /'lastProposalAt\(address,address\)\(uint64\)'/,
+    'lastAt must be read live from lastProposalAt(vault, proposer), not assumed');
+  assert.doesNotMatch(drill2, /proposalCooldown = 3600/,
+    'the cooldown value itself must never be hardcoded — it is validated only within a FLOOR..CAP range and can differ per vault');
+});
+
+test('the cooldown wait is bounded, matching PROPOSAL_COOLDOWN_CAP being 30 days', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const MAX_COOLDOWN_WAIT_SEC = 2 \* 3600;/,
+    'the affordability cap must exist as a named, bounded constant, not be left to cooldownWait alone');
+  assert.match(drill2, /assert\(affordable, `propose\(\$\{vault\}\) for proposer \$\{proposer\}: \$\{reason\}`\);/,
+    'an unaffordable cooldown must fail the drill loudly rather than await it or ignore it');
 });
 
 // ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────
