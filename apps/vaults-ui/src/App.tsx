@@ -53,7 +53,7 @@ function AppShell() {
   return (
     <Page current="/">
       <header className="masthead">
-        <h1>Vault Atlas</h1>
+        <h1>RWAlly</h1>
         {/* Chairman directive, cutover condition: this line gates app.rwally.com going live on
          * Base Sepolia. UNCONDITIONAL on purpose — not gated on `fetched.kind`, freshness, or any
          * other read, because a read that can fail is a disclosure that can vanish, and its
