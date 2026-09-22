@@ -76,6 +76,26 @@ function mkTmpDir(label) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `soak-pidfile-${label}-`));
 }
 
+/**
+ * `fs.rmSync` retried with backoff. Windows does not release a just-killed process's open file
+ * handles (its own stdout/stderr redirect files, here) the instant `process.kill`/`Stop-Process`
+ * returns — confirmed by direct repro: even after polling `isAlive` to false, an IMMEDIATE
+ * `rmSync` intermittently threw `EPERM`, and the same call succeeded once given ~1-1.5s. This is
+ * a Windows file-handle-release race in the TEST HARNESS's own cleanup, not a defect in
+ * `Start-ManagedProcess` — nothing here retries a PRODUCTION path.
+ */
+async function rmDirRetrying(dir, { attempts = 10, delayMs = 200 } = {}) {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if (i === attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 // ── the module directly: the pid/service-set derivation, as a pure(ish) unit ─────────────────
 //
 // -Status and -Stop, and every start-or-reuse call site, all go through exactly these three
@@ -188,6 +208,90 @@ test('-Status and -Stop on a PARTIALLY-STARTED set: one alive service, one alrea
     try { process.kill(alive.pid); } catch { /* already dead */ }
     try { process.kill(toKill.pid); } catch { /* already dead */ }
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Start-ManagedProcess: a pid is not evidence a process survived ───────────────────────────
+//
+// Measured: the api crashed inside resolveApiConfig on a missing required env var, and
+// run-soak.ps1 printed "started api pid 23120" anyway — because the old code recorded the pid
+// and declared victory the instant Start-Process returned, which only proves the OS accepted the
+// exec. These drive the REAL Start-ManagedProcess (soak-pidset.psm1) against a real process that
+// dies within milliseconds and a real one that survives, and check both the console report AND
+// the pid file — the same two places the original defect lied in.
+
+test('Start-ManagedProcess: a process that exits immediately is reported FAILED and is NOT recorded as running', () => {
+  const dir = mkTmpDir('start-managed-dead');
+  try {
+    const pidFile = path.join(dir, 'soak-pids.txt');
+    const script = [
+      `Import-Module -Force '${MODULE}'`,
+      `$p = Start-ManagedProcess -PidFile '${pidFile}' -LogDir '${dir}' -Name deadsvc -File '${process.execPath}' -ArgList @('-e','process.exit(7)') -SettleMs 800`,
+      '"<result:$($p -eq $null)>"',
+    ].join('; ');
+    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { encoding: 'utf8', timeout: 20_000 });
+    assert.equal(res.status, 0, `module script errored: ${res.stderr}`);
+    assert.match(res.stdout, /<result:True>/, `Start-ManagedProcess must return $null for a dead-on-arrival process, got:\n${res.stdout}\n${res.stderr}`);
+    assert.match(res.stdout, /FAILED - exited/, `must print a loud FAILED line, not a quiet one, got:\n${res.stdout}`);
+    assert.doesNotMatch(res.stdout, /started\s+deadsvc/i, 'must never print a "started" line for a process that did not survive');
+
+    const entries = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8').trim() : '';
+    assert.equal(entries, '', `a dead-on-arrival process must not be written to the pid file, got: ${JSON.stringify(entries)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Start-ManagedProcess: a process that survives is reported started and IS recorded, with its needle', async () => {
+  const dir = mkTmpDir('start-managed-alive');
+  let pid = null;
+  try {
+    const pidFile = path.join(dir, 'soak-pids.txt');
+    const harnessOut = path.join(dir, 'harness-out.txt');
+    // A real script FILE, not an inline `-e` one-liner: PowerShell's ArgumentList command-line
+    // quoting mangles an inline snippet containing both parens and a comma (observed: it arrived
+    // at node truncated mid-expression, "Unexpected end of input") -- a file path sidesteps that
+    // entirely and is also closer to how Start-ManagedProcess is actually called in run-soak.ps1
+    // (always a script path, never inline code).
+    const sleeperScript = path.join(dir, 'sleep-forever.mjs');
+    fs.writeFileSync(sleeperScript, 'setInterval(() => {}, 1000);\n');
+    const script = [
+      `Import-Module -Force '${MODULE}'`,
+      `$p = Start-ManagedProcess -PidFile '${pidFile}' -LogDir '${dir}' -Name alivesvc -File '${process.execPath}' -ArgList @('${sleeperScript}') -Needle 'sleep-forever' -SettleMs 800`,
+      '"<pid:$($p.Id)>"',
+    ].join('; ');
+    // stdio: 'ignore' on THIS spawnSync, output redirected to a file INSIDE the PowerShell script
+    // (`*>`), not captured through a pipe Node reads: Start-ManagedProcess's whole point is that
+    // the child it starts OUTLIVES this statement, and on Windows a still-running grandchild
+    // inherits the parent's stdout PIPE handle -- so a piped spawnSync (`encoding: 'utf8'`) blocks
+    // reading that pipe until the grandchild exits too, i.e. forever, timing out instead of
+    // returning the moment the PowerShell script itself finishes. Confirmed by direct repro
+    // before writing this comment: identical script, piped stdio hung to the timeout; file-
+    // redirected stdio with `stdio: 'ignore'` returned in ~1s.
+    const wrapped = `${script} *> '${harnessOut}'`;
+    const res = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', wrapped], { stdio: 'ignore', timeout: 20_000 });
+    assert.equal(res.status, 0, `module script errored (exit ${res.status}, signal ${res.signal})`);
+    // PowerShell 5.1's `*>`/Out-File default encoding is UTF-16LE. `Write-Host` (the "started ..."
+    // line) does not reliably land in a `*>`-redirected file in this PS host — confirmed by direct
+    // repro — so this test's evidence for success is the two artifacts that actually matter and
+    // ARE reliably captured: the returned process object's pid, and the pid-file line
+    // Add-ManagedPid wrote. Those are also exactly what -Status/-Stop read; the console line is
+    // not (the "started ..." TEXT is instead covered by the sibling "FAILED" test below, whose
+    // process exits quickly enough that piped stdio capture works without the hang this test
+    // works around).
+    const out = fs.readFileSync(harnessOut, 'utf16le');
+    const m = /<pid:(\d+)>/.exec(out);
+    assert.ok(m, `expected the returned process object to carry a pid, got:\n${out}`);
+    pid = Number(m[1]);
+    const entries = fs.readFileSync(pidFile, 'utf8').trim();
+    assert.equal(entries, `alivesvc=${pid}=sleep-forever`, 'the pid file line must match Add-ManagedPid\'s own format exactly');
+    assert.ok(isAlive(pid), 'the pid Start-ManagedProcess recorded must be the process it actually started');
+  } finally {
+    if (pid) {
+      try { process.kill(pid); } catch { /* already dead */ }
+      await waitUntil(() => !isAlive(pid));
+    }
+    await rmDirRetrying(dir);
   }
 });
 

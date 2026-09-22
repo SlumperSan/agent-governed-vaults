@@ -60,4 +60,50 @@ function Test-ManagedProcessAlive {
   return [bool]($proc.CommandLine -and $proc.CommandLine -like "*$Needle*")
 }
 
-Export-ModuleMember -Function Add-ManagedPid, Get-ManagedPidEntries, Test-ManagedProcessAlive
+# Start a process, and only report/record it as "started" once it has SURVIVED a moment --
+# recording a pid is not evidence a process survived. Measured: the api crashed at startup
+# (`resolveApiConfig` threw on missing PRICE_ASSET/PRICE_PAYTO) and run-soak.ps1 printed
+# "started api pid 23120" anyway, because the old Start-Bg recorded the pid and printed success
+# the instant Start-Process returned -- which only proves the OS accepted the exec, not that the
+# process is doing anything. A `node ... serve.mjs` that throws inside a synchronous config
+# resolution at the top of `main()` exits within milliseconds, well inside any human's ability to
+# notice from a stream of green "started" lines.
+#
+# Returns the process object on success, or $null on a confirmed-dead-on-arrival launch -- $null,
+# not a thrown error, because the CALLER decides whether this particular service is load-bearing
+# enough to abort the whole run over (see run-soak.ps1: the four core services do; the drill
+# tracks do not, since New-NodeStep already aborts a track on its own first non-zero exit).
+function Start-ManagedProcess {
+  param(
+    [Parameter(Mandatory)][string]$PidFile,
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$File,
+    [string[]]$ArgList = @(),
+    [string]$Needle = '',
+    [Parameter(Mandatory)][string]$LogDir,
+    [int]$SettleMs = 1200
+  )
+  $out = Join-Path $LogDir "$Name.log"
+  $err = Join-Path $LogDir "$Name.err.log"
+  $p = Start-Process -FilePath $File -ArgumentList $ArgList -NoNewWindow -PassThru `
+       -RedirectStandardOutput $out -RedirectStandardError $err
+
+  Start-Sleep -Milliseconds $SettleMs
+  $p.Refresh()
+  if ($p.HasExited) {
+    Write-Host ("  {0,-16} FAILED - exited {1}ms after launch, exit code {2}" -f $Name, $SettleMs, $p.ExitCode) -ForegroundColor Red
+    if (Test-Path $err) {
+      Write-Host "  --- $Name.err.log (tail) ---" -ForegroundColor Red
+      Get-Content $err -Tail 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    } else {
+      Write-Host "  (no $Name.err.log was written)" -ForegroundColor Red
+    }
+    return $null
+  }
+
+  Add-ManagedPid -PidFile $PidFile -Name $Name -ProcessId $p.Id -Needle $Needle
+  Write-Host ("  started {0,-16} pid {1}" -f $Name, $p.Id) -ForegroundColor Green
+  return $p
+}
+
+Export-ModuleMember -Function Add-ManagedPid, Get-ManagedPidEntries, Test-ManagedProcessAlive, Start-ManagedProcess

@@ -54,6 +54,19 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 // that never happened, and it cost a full round of wrong conclusions written into this repo as
 // fact — see the smokeVault note in `soak-vaults.json`. `assertLogsServed()` below exists so it
 // cannot happen silently again.
+//
+// SEPOLIA.BASE.ORG (the default above) HAS ITS OWN FAILURE MODE, AND IT IS THE OPPOSITE ONE.
+// Measured on a live soak: `over rate limit` from this endpoint on `eth_getLogs`, once the
+// indexer, the canary, the oracle sampler and two drill tracks were all polling it at once —
+// `poll.failed` on the indexer, `DETECTOR BROKEN` on five canary signals across two vaults. This
+// is NOT the pruning failure above: this endpoint serves history CORRECTLY, including under a
+// single request, and only degrades under this launcher's own concurrency. Same symptom shape (an
+// `eth_getLogs` call that should have worked came back wrong) and OPPOSITE remedy — pruning means
+// "stop using this endpoint"; throttling means "this endpoint is fine alone, reduce concurrency or
+// get a dedicated one." Switching to publicnode to escape throttling walks straight into pruning
+// instead. `scripts/soak/preflight-rpc-concurrency.mjs` is the guard for this one: a short
+// concurrent burst at startup, not a single sequential read (which `assertLogsServed` already is,
+// and which cannot see a concurrency-only failure by construction).
 export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 
