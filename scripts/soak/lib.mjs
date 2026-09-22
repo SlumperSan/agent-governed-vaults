@@ -604,6 +604,78 @@ export function revealableNow(p, { now, hasCommit, alreadyRevealed }) {
 }
 
 /**
+ * How long must THIS proposer wait before `propose` will accept it on THIS vault, right now — and
+ * is that wait affordable?
+ *
+ * `propose` (Governance.sol:308-346) has a SECOND require one line below the settlement check
+ * `recoverStaleRound` in drill2-subvault.mjs already handles:
+ *
+ *     require(lastAt == 0 || block.timestamp >= lastAt + cfg.proposalCooldown, Cooldown()); // :318
+ *
+ * `lastProposalAt` is `mapping(address => mapping(address => uint64)) ... // vault ⇒ proposer`
+ * (Governance.sol:162), read and written at `:317` and `:344` as
+ * `lastProposalAt[vault][msg.sender]` — keyed PER-PROPOSER, per vault. The `_validateConfig`
+ * comment at `:291-292` states this in as many words: "lastAt is keyed PER-PROPOSER". Confirmed by
+ * reading the mapping declaration and both call sites, not assumed.
+ *
+ * WHY A ROUND RECOVERY CAN HIT THIS. A restart's `propose` can land inside the SAME proposer's
+ * cooldown window from its own PRIOR `propose` — e.g. a restart triggered by the proposal's status
+ * changing away from Active can fire as early as `commitDeadline`, and if a vault's
+ * `commitDuration` is shorter than its `proposalCooldown` that is still inside the window. Without
+ * this check the restart's `propose` reverts `Cooldown()` — a governance-shaped revert for a
+ * scheduling cause, the exact failure mode `votableNow`'s doc comment describes for the
+ * 2026-09-04 drill-5 stall.
+ *
+ * `proposalCooldown` MUST be read live (`configOf`), never hardcoded: it is validated only
+ * between `PROPOSAL_COOLDOWN_FLOOR` (1h) and `PROPOSAL_COOLDOWN_CAP` (30 days)
+ * (Governance.sol:248,253,293-296), and a different vault's config can disagree with this
+ * deployment's.
+ *
+ * BOUNDED. Silently awaiting up to the 30-day cap would stall the drill far past anything it
+ * could plausibly afford, so a wait past `maxWaitSec` is reported unaffordable rather than
+ * awaited — a clear refusal beats both a revert and a multi-day hang.
+ *
+ * Pure so it can be tested: the drill executes at import, so this could not be defined there.
+ *
+ * @param {{now: number, lastAt: number, proposalCooldown: number, maxWaitSec: number}} ctx
+ *   `lastAt` is `lastProposalAt[vault][proposer]`, `proposalCooldown` is `configOf[vault]`'s
+ *   field, both read live. `lastAt === 0` means this proposer has never proposed on this vault.
+ * @returns {{waitSec: number, affordable: boolean, reason: string}}
+ *   `waitSec` is 0 when propose would already succeed. `reason` is '' only in that case; it is a
+ *   descriptive "why waiting" message when affordable, or the unaffordable-refusal text otherwise.
+ */
+export function cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec }) {
+  for (const [name, v] of [
+    ['now', now], ['lastAt', lastAt], ['proposalCooldown', proposalCooldown], ['maxWaitSec', maxWaitSec],
+  ]) {
+    if (typeof v !== 'number') {
+      return { waitSec: 0, affordable: false, reason: `${name} was not supplied — a missing term cannot be read as "no wait needed"` };
+    }
+  }
+  if (lastAt === 0) {
+    return { waitSec: 0, affordable: true, reason: '' };
+  }
+  const earliest = lastAt + proposalCooldown;
+  if (now >= earliest) {
+    return { waitSec: 0, affordable: true, reason: '' };
+  }
+  const waitSec = earliest - now;
+  if (waitSec > maxWaitSec) {
+    return {
+      waitSec, affordable: false,
+      reason: `would need to wait ${waitSec}s for the per-proposer cooldown (lastAt ${lastAt} + ` +
+        `proposalCooldown ${proposalCooldown}s = ${earliest}, chain now ${now}), past the ` +
+        `${maxWaitSec}s affordability cap — propose would revert Cooldown() if attempted now`,
+    };
+  }
+  return {
+    waitSec, affordable: true,
+    reason: `inside the per-proposer cooldown until ${earliest} (lastAt ${lastAt} + proposalCooldown ` +
+      `${proposalCooldown}s), chain now ${now} — propose would revert Cooldown() if attempted now`,
+  };
+}
+
+/**
  * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
  *
  * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through

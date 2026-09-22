@@ -848,7 +848,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow, cooldownWait } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -1521,6 +1521,107 @@ test('the normal-path Finalize assertion is untouched: a round that fails to pas
   const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
   assert.match(drill2, /assert\(p\.status === 'Passed', `\$\{label\} finalized as \$\{p\.status\}, expected Passed`\);/,
     'the normal governance-round Finalize step must still demand Passed, not accept anything the recovery path would produce');
+});
+
+// ───────── cooldownWait: propose's SECOND require, the one a restart can also hit ─────────
+//
+// Flagged by an independent chain read against the live soak governance
+// (0xD963f553e3eCd1872aF1622b3e4664f133A51805, parent 0xB940d71b0D695e2BA2b5853bF565C69DaA3E3C98):
+// configOf reads proposalCooldown=3600 (1h, PER-PROPOSER — lastProposalAt is keyed [vault][proposer],
+// Governance.sol:162,317,344), and the drill 2 restart in recoverStaleRound re-proposes without
+// ever checking it. Restart #1 for tonight's stuck proposal 12 is safe (createdAt was ~3.2h before
+// the restart), but a restart is not guaranteed to land outside the window in general — see the
+// scenario the "restart #2" test below documents.
+
+test('cooldownWait: a proposer who has never proposed on this vault needs no wait', () => {
+  assert.deepEqual(
+    cooldownWait({ now: 1000, lastAt: 0, proposalCooldown: 3600, maxWaitSec: 7200 }),
+    { waitSec: 0, affordable: true, reason: '' },
+  );
+});
+
+test('cooldownWait: past the cooldown already needs no wait', () => {
+  const r = cooldownWait({ now: 5000, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.deepEqual(r, { waitSec: 0, affordable: true, reason: '' }, 'now (5000) is already >= lastAt+cooldown (4600)');
+});
+
+test('cooldownWait rejects at the EXACT cooldown boundary, matching propose (>= not >)', () => {
+  // Governance requires `lastAt == 0 || block.timestamp >= lastAt + cfg.proposalCooldown` — so
+  // equality already clears it, the opposite boundary direction from commitDeadline/revealDeadline.
+  //
+  // deepEqual on the WHOLE result, not just waitSec: at exactly the boundary a mutant that
+  // weakens `>=` to `>` still computes waitSec as `earliest - now === 0` on the fall-through path,
+  // so a waitSec-only check passes on both the correct code and the mutant. The `reason` field is
+  // what actually differs — '' on the fast path, a non-empty "inside cooldown" string on the
+  // fall-through — so asserting the full object is what catches the off-by-one.
+  assert.deepEqual(
+    cooldownWait({ now: 4600, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 }),
+    { waitSec: 0, affordable: true, reason: '' },
+    'now === lastAt + cooldown is already OPEN, with no "inside cooldown" reason attached',
+  );
+  const oneEarly = cooldownWait({ now: 4599, lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(oneEarly.waitSec, 1, 'one second earlier still needs a 1s wait');
+  assert.equal(oneEarly.affordable, true);
+  assert.notEqual(oneEarly.reason, '', 'a real wait must carry an explanatory reason');
+});
+
+test('cooldownWait: THE MEASURED LIVE CONFIG — restart #2 landing inside a 1h cooldown after a fast-dying restart #1', () => {
+  // The scenario the coordinator's review names: restart #1 re-proposes at T, and if THAT new
+  // round also dies before its commit window closes (status stops being Active for some other
+  // reason), restart #2 can be attempted as early as commitDeadline — inside the SAME proposer's
+  // 1h cooldown from restart #1's own propose, if commitDuration < proposalCooldown.
+  const T = 1_790_000_000;
+  const commitDuration = 1800; // shorter than the 3600s cooldown, unlike tonight's 1:1 live config
+  const r = cooldownWait({ now: T + commitDuration, lastAt: T, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(r.affordable, true, 'inside the affordability cap, so the drill must wait, not refuse');
+  assert.equal(r.waitSec, 3600 - commitDuration, 'wait exactly the remaining cooldown, not the whole hour again');
+  assert.match(r.reason, /per-proposer cooldown/);
+  assert.match(r.reason, /Cooldown\(\)/, 'name the revert this wait exists to avoid');
+});
+
+test('cooldownWait refuses rather than silently stalling when the wait exceeds maxWaitSec', () => {
+  // proposalCooldown can be configured up to PROPOSAL_COOLDOWN_CAP (30 days, Governance.sol:253).
+  // A drill must fail plainly rather than hang for anywhere near that long.
+  const r = cooldownWait({ now: 1000, lastAt: 1000, proposalCooldown: 30 * 86400, maxWaitSec: 7200 });
+  assert.equal(r.affordable, false, 'a 30-day cooldown must not be silently awaited');
+  assert.equal(r.waitSec, 30 * 86400);
+  assert.match(r.reason, /affordability cap/);
+  assert.match(r.reason, /7200s affordability cap/);
+});
+
+test('cooldownWait refuses rather than guesses when a term is not supplied', () => {
+  const missingNow = cooldownWait({ lastAt: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.equal(missingNow.affordable, false);
+  assert.match(missingNow.reason, /now was not supplied/);
+
+  const missingLastAt = cooldownWait({ now: 1000, proposalCooldown: 3600, maxWaitSec: 7200 });
+  assert.match(missingLastAt.reason, /lastAt was not supplied/);
+
+  const missingCooldown = cooldownWait({ now: 1000, lastAt: 1000, maxWaitSec: 7200 });
+  assert.match(missingCooldown.reason, /proposalCooldown was not supplied/);
+
+  const missingMax = cooldownWait({ now: 1000, lastAt: 1000, proposalCooldown: 3600 });
+  assert.match(missingMax.reason, /maxWaitSec was not supplied/);
+});
+
+test('drill2-subvault.mjs reads proposalCooldown and lastProposalAt live before every propose call, never a hardcoded cooldown', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /await waitOutProposalCooldown\(PARENT, state\.signer\);\s*\n\s*const r = send\(`governance\.propose/,
+    'propose must be preceded by the cooldown wait, on every call — the very first one and every restart');
+  assert.match(drill2, /'configOf\(address\)\(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32\)'/,
+    'proposalCooldown must be read live from configOf, matching the GovConfig struct order');
+  assert.match(drill2, /'lastProposalAt\(address,address\)\(uint64\)'/,
+    'lastAt must be read live from lastProposalAt(vault, proposer), not assumed');
+  assert.doesNotMatch(drill2, /proposalCooldown = 3600/,
+    'the cooldown value itself must never be hardcoded — it is validated only within a FLOOR..CAP range and can differ per vault');
+});
+
+test('the cooldown wait is bounded, matching PROPOSAL_COOLDOWN_CAP being 30 days', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const MAX_COOLDOWN_WAIT_SEC = 2 \* 3600;/,
+    'the affordability cap must exist as a named, bounded constant, not be left to cooldownWait alone');
+  assert.match(drill2, /assert\(affordable, `propose\(\$\{vault\}\) for proposer \$\{proposer\}: \$\{reason\}`\);/,
+    'an unaffordable cooldown must fail the drill loudly rather than await it or ignore it');
 });
 
 // ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────

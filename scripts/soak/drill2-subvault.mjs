@@ -47,7 +47,7 @@ import { randomBytes } from 'node:crypto';
 import {
   ROOT, RPC, log, assert, eq, call, callU, send, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
-  revealableNow,
+  revealableNow, cooldownWait,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
@@ -307,10 +307,34 @@ async function recoverStaleRound(key, label, pid, p, now) {
   save();
 }
 
+/**
+ * Read `configOf(vault).proposalCooldown` and `lastProposalAt[vault][proposer]` live and wait out
+ * the per-proposer cooldown if `propose` would otherwise revert `Cooldown()` — see `cooldownWait`
+ * in `lib.mjs` for why a restart can hit this and why the wait is bounded.
+ */
+const MAX_COOLDOWN_WAIT_SEC = 2 * 3600;
+
+async function waitOutProposalCooldown(vault, proposer) {
+  const cfg = call(
+    dep.governance,
+    'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)',
+    vault,
+  );
+  const proposalCooldown = Number(cfg[7]);
+  const lastAt = Number(callU(dep.governance, 'lastProposalAt(address,address)(uint64)', vault, proposer));
+  const now = chainNow();
+  const { waitSec, affordable, reason } = cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec: MAX_COOLDOWN_WAIT_SEC });
+  assert(affordable, `propose(${vault}) for proposer ${proposer}: ${reason}`);
+  if (waitSec === 0) return;
+  log(`propose(${vault}): ${reason} — waiting ${waitSec}s rather than reverting Cooldown()`);
+  await waitUntilChainTime(now + waitSec, 'proposer cooldown');
+}
+
 /** Run one ChildAllocation governance round. `key` namespaces its state across two rounds. */
 async function govRound(key, label, payload) {
   const actionHash = keccakOf(payload);
   if (!state[`${key}Pid`]) {
+    await waitOutProposalCooldown(PARENT, state.signer);
     const r = send(`governance.propose(ChildAllocation: ${label})`, dep.governance,
       'propose(address,uint8,bytes32)', PARENT, 2, actionHash);
     const pid = callU(dep.governance, 'activeProposalOf(address)(uint256)', PARENT);
