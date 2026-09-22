@@ -127,9 +127,11 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     rmDir(build.outDir);
   });
 
+  let usdcBeforeDeposit;
   await t.test('setup: fund throwaway signer on the fork only', () => {
     setEthBalance(fork.rpcUrl, member, `0x${(100n * ONE_ETH).toString(16)}`);
     dealErc20(fork.rpcUrl, cfg.usdc, member, 20_000_000n); // 20 USDC, well over the smoke deposit
+    usdcBeforeDeposit = BigInt(spawnSyncCast(fork.rpcUrl, ['call', cfg.usdc, 'balanceOf(address)(uint256)', member]).split(' ')[0]);
   });
 
   let deployed;
@@ -166,7 +168,11 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     });
     assert.equal(r.ok, false, 'RED expected: a wallet on the wrong chain must not be allowed to write');
     assert.match(r.error, /chain/i, `expected a chain-mismatch error, got: ${r.error}`);
-    const sends = sendSequence(r.log ?? []);
+    // No `?? []` here on purpose: ui-smoke.ts's failure branch must emit the real captured log
+    // (see its own comment at the module-scope `log` declaration). If it ever stops doing that,
+    // `r.log` is `undefined` and this must throw loudly rather than silently reading as `[]` —
+    // an assertion that can only ever pass is worse than no assertion (card 176 / PR #373 REJECT).
+    const sends = sendSequence(r.log);
     assert.deepEqual(sends, [], 'no approve/deposit send should have reached the chain on a chain-id mismatch');
   });
 
@@ -298,6 +304,14 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
 
     const sharesLeft = spawnSyncCast(fork.rpcUrl, ['call', vault, 'sharesOf(address)(uint256)', member]).split(' ')[0];
     assert.equal(BigInt(sharesLeft), 0n, 'sole holder exit must fully burn shares');
+
+    // "Exact round trip" means the USDC too, not just the shares — a share count of zero says
+    // nothing about whether the member got their money back. Sole-holder exit waives the exit
+    // fee (VaultCore.sol's `_settleExit`: "fee would route to self; last-member waiver per
+    // EE-8/EE-9") and this is a no-op rebalance (zero orders, so no realized gain or loss), so
+    // the member's USDC balance after exit must equal exactly what it was before the deposit.
+    const usdcAfterExit = BigInt(spawnSyncCast(fork.rpcUrl, ['call', cfg.usdc, 'balanceOf(address)(uint256)', member]).split(' ')[0]);
+    assert.equal(usdcAfterExit, usdcBeforeDeposit, 'sole-holder exact round trip must return the exact USDC deposited, not just burn the shares');
   });
 });
 
@@ -363,6 +377,37 @@ test('MUTATION: checkChainIdConsistent reds when a logged eth_chainId disagrees 
 
   const greenLog = [{ method: 'eth_chainId', params: [], result: '0x14a34' }];
   assert.equal(checkChainIdConsistent(greenLog, '0x14a34'), null);
+});
+
+test('NON-VACUITY: the chain-id-mismatch MUTATION test\'s own assertion actually reds when a send leaks through', () => {
+  // This is PR #373's REJECT finding, pinned as a permanent regression guard. The live MUTATION
+  // test above (`sendSequence(r.log)`, asserted `deepEqual([])`) can only prove the chain-id guard
+  // works if that assertion is CAPABLE of failing. Before the fix, `ui-smoke.ts`'s failure branch
+  // never emitted the module-scope `log` it captured, so the test read it through `r.log ?? []`
+  // and the assertion was fed `[]` regardless of what actually happened on chain — it could not go
+  // red for ANY behaviour, including a send that reached the chain. This reproduces exactly that
+  // leaked-send shape (an approve+deposit pair that DID get sent) directly against `sendSequence`
+  // and the real assertion line, independent of anvil/forge/cast, so it runs on every CI pass.
+  const approveData = encodeFunctionData({ abi: APPROVE_ABI, functionName: 'approve', args: [VAULT, 5_000_000n] });
+  const depositData = encodeFunctionData({ abi: DEPOSIT_ABI, functionName: 'deposit', args: [5_000_000n] });
+  const leakedLog = [
+    callEntry(VAULT, approveData),
+    sendEntry(VAULT, approveData),
+    callEntry(VAULT, depositData),
+    sendEntry(VAULT, depositData),
+  ];
+  const sends = sendSequence(leakedLog);
+  assert.deepEqual(sends, ['approve', 'deposit'], 'sendSequence must read a real approve/deposit pair back, not an empty sequence');
+  assert.throws(
+    () => assert.deepEqual(sends, [], 'no approve/deposit send should have reached the chain on a chain-id mismatch'),
+    assert.AssertionError,
+    'RED expected: the live MUTATION test\'s own assertion must throw when fed a log where a send leaked through',
+  );
+
+  // And the vacuous pre-fix path, pinned so it can never silently come back: if `r.log` were ever
+  // `undefined` again and read through `?? []`, the same leaked-send scenario would wrongly pass.
+  const vacuousSends = sendSequence(undefined ?? []);
+  assert.deepEqual(vacuousSends, [], 'documents the exact vacuity: `undefined ?? []` always reads as an empty, always-passing sequence');
 });
 
 test('non-firing branch: a correctly-ordered, correctly-bounded, correctly-addressed log trips none of the checkers', () => {

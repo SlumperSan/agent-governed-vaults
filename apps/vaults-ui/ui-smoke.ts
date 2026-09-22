@@ -119,6 +119,10 @@ function jsonSafe(v: unknown): unknown {
 
 main().catch((e: unknown) => {
   const message = e instanceof Error ? e.message : String(e);
-  console.log(`UI_SMOKE_RESULT ${JSON.stringify({ ok: false, error: message })}`);
+  // `log` is module-scope precisely so this branch can emit whatever the recording provider
+  // captured up to the throw (see the comment at its declaration) — a negative-control scenario
+  // (e.g. the chain-id-mismatch mutation) needs the real log even, in fact especially, when the
+  // action fails, so the test can assert nothing reached the chain rather than assuming it.
+  console.log(`UI_SMOKE_RESULT ${JSON.stringify({ ok: false, error: message, log })}`);
   process.exitCode = 1;
 });
