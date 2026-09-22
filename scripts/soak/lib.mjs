@@ -537,6 +537,73 @@ export function votableNow(p, { now, snapshotWeight, currentWeight, wantPtype })
 }
 
 /**
+ * Can THIS voter reveal into THIS proposal RIGHT NOW?
+ *
+ * THE IDENTICAL DEFECT SHAPE `votableNow` DOCUMENTS FOR THE COMMIT WINDOW, one phase later.
+ * `revealVote` (Governance.sol:399-409) requires:
+ *
+ *     require(p.status == Status.Active && block.timestamp >= p.commitDeadline
+ *             && block.timestamp < p.revealDeadline, WrongPhase());
+ *     require(c != bytes32(0), NoCommit());
+ *     require(!revealedOf[pid][msg.sender], AlreadyRevealed());
+ *     require(c == keccak256(abi.encode(pid, msg.sender, support, salt)), BadReveal());
+ *
+ * The fourth (`BadReveal`) is not modelled here: it checks that the CALLER'S OWN ARGUMENTS
+ * (support, salt) match its own persisted commitment, which is a fact about the call the drill is
+ * about to make, not a fact about chain state this predicate can observe in advance.
+ *
+ * Measured live on 2026-09-21/22 (drill 2, proposal 12): a drill stopped for hours resumed,
+ * re-read its OWN persisted `revealDeadline` from `.state-drill2.json`, and called `revealVote`
+ * against it without ever asking whether the chain had since moved past that deadline —
+ * `revealDeadline=1790042522`, chain time at the failing call `1790046852`, 4330s (72 min) past
+ * it, reverting `WrongPhase` (`0xe2586bcc`). Proposal 11, the same shape three days earlier,
+ * settled `Defeated` with `revealedVoterCount=0` — the same round dying the same way, unnoticed
+ * because nothing asked before reveal whether the round could still be won.
+ *
+ * `hasCommit` and `alreadyRevealed` are REQUIRED, not defaulted, for the same reason
+ * `votableNow`'s weight terms are: a caller that omits either gets a refusal naming the missing
+ * one. Reading a missing `alreadyRevealed` as falsy would silently mean "not yet revealed" — the
+ * FAIL-OPEN direction — so it is checked for `typeof … !== 'boolean'` rather than by falsiness.
+ *
+ * Pure so it can be tested: the drill executes at import, so a predicate defined there could not
+ * be (the same reason `votableNow` lives here rather than in a drill file).
+ *
+ * @param {{status: string, commitDeadline: number, revealDeadline: number}} p a `readProposal` result
+ * @param {{now: number, hasCommit: boolean, alreadyRevealed: boolean}} ctx
+ *   `hasCommit` is `commitOf[pid][voter] != bytes32(0)`; `alreadyRevealed` is `revealedOf[pid][voter]`.
+ * @returns {{revealable: boolean, reason: string}} reason is '' when revealable
+ */
+export function revealableNow(p, { now, hasCommit, alreadyRevealed }) {
+  if (!p) return { revealable: false, reason: 'no proposal was read' };
+  if (typeof now !== 'number') {
+    return { revealable: false, reason: 'now was not supplied — a missing chain time cannot be read as "still in the reveal window"' };
+  }
+  if (p.status !== 'Active') {
+    return { revealable: false, reason: `status is ${p.status}, not Active — activeProposalOf still names it because Governance never clears that mapping on settlement` };
+  }
+  if (now < p.commitDeadline) {
+    return { revealable: false, reason: `still in the commit phase (commitDeadline ${p.commitDeadline}, chain now ${now}) — revealVote would revert WrongPhase` };
+  }
+  if (now >= p.revealDeadline) {
+    const ago = now - p.revealDeadline;
+    return { revealable: false, reason: `the reveal window closed ${ago}s ago (revealDeadline ${p.revealDeadline}, chain now ${now}) — revealVote would revert WrongPhase` };
+  }
+  if (typeof hasCommit !== 'boolean' || typeof alreadyRevealed !== 'boolean') {
+    const missing = typeof hasCommit !== 'boolean'
+      ? (typeof alreadyRevealed !== 'boolean' ? 'hasCommit and alreadyRevealed were' : 'hasCommit was')
+      : 'alreadyRevealed was';
+    return { revealable: false, reason: `${missing} not supplied — revealVote gates on commitOf being non-zero and on !revealedOf (Governance.sol:406-408), so a one-term answer cannot be given` };
+  }
+  if (!hasCommit) {
+    return { revealable: false, reason: 'no commitment is recorded for this voter on this proposal — commitOf[pid][voter] is zero, revealVote would revert NoCommit' };
+  }
+  if (alreadyRevealed) {
+    return { revealable: false, reason: 'this voter has already revealed on this proposal — revealedOf[pid][voter] is true, revealVote would revert AlreadyRevealed' };
+  }
+  return { revealable: true, reason: '' };
+}
+
+/**
  * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
  *
  * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through

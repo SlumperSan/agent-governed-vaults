@@ -848,7 +848,7 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
 // calls collided and both drills died. Cross-process exclusion is verified separately by
 // running two node processes; these cover the in-process contract.
 
-import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow } from '../soak/lib.mjs';
+import { withSendLock, ROOT as LIB_ROOT, budgetExhaustedFailure, votableNow, revealableNow } from '../soak/lib.mjs';
 
 const LOCK = path.join(LIB_ROOT, 'data', '.soak-send.lock');
 
@@ -1361,6 +1361,166 @@ test('votableNow refuses on a missing snapshotWeight too, rather than falling th
   const neither = votableNow(p, { now: 100 });
   assert.equal(neither.votable, false);
   assert.match(neither.reason, /snapshotWeight and currentWeight were not supplied/);
+});
+
+// ───────── revealableNow: the reveal-phase analogue of votableNow (drill 2) ─────────
+//
+// Measured live 2026-09-21/22: drill 2 resumed after a long stop, re-read its OWN persisted
+// revealDeadline, and called revealVote straight into a WrongPhase revert — proposal 12,
+// revealDeadline=1790042522, chain now at the failing call 1790046852, 4330s (72 min) past it.
+// The guard the commit window already had (votableNow, above) had no equivalent for reveal.
+
+test('revealableNow rejects a settled proposal that activeProposalOf still names', () => {
+  const r = revealableNow(
+    { status: 'Defeated', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 2500, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /status is Defeated/);
+  assert.match(r.reason, /never clears that mapping/, 'the reason must name the mechanism, not just the symptom');
+});
+
+test('revealableNow rejects THE MEASURED DEFECT: an Active proposal whose reveal window has closed', () => {
+  // Proposal 12, verbatim: revealDeadline=1790042522, chain now at the failing call 1790046852.
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1790038922, revealDeadline: 1790042522 },
+    { now: 1790046852, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /reveal window closed 4330s ago/, 'say how stale, not just that it is stale');
+});
+
+test('revealableNow rejects too-early: still in the commit phase', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 500, hasCommit: true, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /still in the commit phase/);
+});
+
+test('revealableNow rejects at the EXACT reveal deadline, matching revealVote (< not <=)', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  assert.equal(revealableNow(p, { now: 2000, hasCommit: true, alreadyRevealed: false }).revealable, false,
+    'now === revealDeadline is CLOSED');
+  assert.equal(revealableNow(p, { now: 1999, hasCommit: true, alreadyRevealed: false }).revealable, true,
+    'one second earlier is open');
+  assert.equal(revealableNow(p, { now: 1000, hasCommit: true, alreadyRevealed: false }).revealable, true,
+    'now === commitDeadline is already OPEN (revealVote requires >=)');
+  assert.equal(revealableNow(p, { now: 999, hasCommit: true, alreadyRevealed: false }).revealable, false,
+    'one second before commitDeadline is still the commit phase');
+});
+
+test('revealableNow rejects when no commitment was recorded', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 1500, hasCommit: false, alreadyRevealed: false },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /no commitment is recorded/);
+  assert.match(r.reason, /NoCommit/, 'name the revert the voter would actually hit');
+});
+
+test('revealableNow rejects a voter who has already revealed', () => {
+  const r = revealableNow(
+    { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 },
+    { now: 1500, hasCommit: true, alreadyRevealed: true },
+  );
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /already revealed/);
+  assert.match(r.reason, /AlreadyRevealed/, 'name the revert the voter would actually hit');
+});
+
+test('revealableNow accepts a genuinely revealable round, and only then — the non-firing branch', () => {
+  // A healthy in-window reveal must NOT trigger recovery. This is the case drill 2 hits on every
+  // normal, non-interrupted run, so it must stay green.
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  assert.deepEqual(
+    revealableNow(p, { now: 1500, hasCommit: true, alreadyRevealed: false }),
+    { revealable: true, reason: '' },
+  );
+  assert.equal(revealableNow(null, { now: 1500, hasCommit: true, alreadyRevealed: false }).revealable, false);
+});
+
+test('revealableNow refuses rather than guesses when alreadyRevealed is not supplied', () => {
+  // FAIL CLOSED ON A MISSING INPUT, matching votableNow's convention: `undefined` read as falsy
+  // would silently mean "not yet revealed" — the fail-OPEN direction — so this must refuse by
+  // name rather than fall through as votable.
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { now: 1500, hasCommit: true });
+  assert.equal(r.revealable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /alreadyRevealed was not supplied/, 'name the missing input, not a symptom');
+});
+
+test('revealableNow refuses on a missing hasCommit too, rather than falling through it', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { now: 1500, alreadyRevealed: false });
+  assert.equal(r.revealable, false, 'an unanswerable question must not be answered "yes"');
+  assert.match(r.reason, /hasCommit was not supplied/, 'name the term that is missing, not the other one');
+  assert.doesNotMatch(r.reason, /alreadyRevealed was not supplied/, 'alreadyRevealed WAS supplied — naming it sends the reader to the wrong caller');
+
+  const neither = revealableNow(p, { now: 1500 });
+  assert.match(neither.reason, /hasCommit and alreadyRevealed were not supplied/);
+});
+
+test('revealableNow refuses rather than guesses when now is not supplied', () => {
+  const p = { status: 'Active', commitDeadline: 1000, revealDeadline: 2000 };
+  const r = revealableNow(p, { hasCommit: true, alreadyRevealed: false });
+  assert.equal(r.revealable, false);
+  assert.match(r.reason, /now was not supplied/);
+});
+
+// ───────── drill2-subvault.mjs: the reveal-window recovery path itself ─────────
+//
+// drill2-subvault.mjs executes its drill at import (same reason drill5's votableNow wiring is
+// pinned as source text above rather than imported and run), so this is a source-text pin over
+// the same instrument: it catches an edit that quietly re-introduces the pre-fix shape.
+
+test('govRound reads chain truth and consults revealableNow before revealing, not the persisted deadline blindly', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const p = readProposal\(dep\.governance, pid\);\s*\n\s*const now = chainNow\(\);/,
+    'the reveal step must re-read the proposal and the chain clock before deciding, not trust the saved deadline');
+  assert.match(drill2, /revealableNow\(p, \{ now, hasCommit, alreadyRevealed \}\)/,
+    'the reveal step must consult revealableNow rather than calling revealVote unconditionally');
+});
+
+test('the recovery path only restarts when the round is genuinely unrecoverable, never on a plain revert', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /p\.status !== 'Active' \|\| now >= p\.revealDeadline/,
+    'restart must be gated on status no longer Active OR the reveal window having closed — anything else is a bug, not a stale resume');
+  assert.match(drill2, /assert\(false, `\$\{label\}: cannot reveal proposal \$\{pid\} and this is not a stale-window case/,
+    'a non-stale-window failure to reveal must fail the drill loudly, not restart blindly');
+});
+
+test('the restart is bounded and the drill fails with a clear message once the cap is hit', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /const MAX_ROUND_RESTARTS = 2;/, 'the restart cap must exist as a named, bounded constant');
+  assert.match(drill2, /assert\(priorRestarts < MAX_ROUND_RESTARTS,/,
+    'recovery must assert the cap BEFORE restarting again, or the loop is unbounded');
+});
+
+test('recovery finalizes the dead round only when the contract actually permits it, matching Governance.sol:577', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /fresh\.status === 'Active' && freshNow >= fresh\.revealDeadline/,
+    'finalize must only be sent when the contract\'s own gate (status Active, now >= revealDeadline) is met');
+  assert.match(drill2, /settled\.status === 'Defeated'/,
+    'the recovery finalize must verify the dead round actually settled Defeated, not assume it');
+});
+
+test('recovery discards exactly this round\'s persisted keys and steps, not the whole state file', () => {
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /\['Pid', 'CommitDeadline', 'RevealDeadline', 'Salt', 'ExecutableAt'\]/,
+    'recovery must discard the round-scoped keys the doc comment promises to discard');
+  assert.match(drill2, /\['Commit', 'Reveal', 'Finalize', 'Execute'\]/,
+    'recovery must discard the round-scoped step flags, or the resumed round thinks steps are already done');
+});
+
+test('the normal-path Finalize assertion is untouched: a round that fails to pass still fails the drill', () => {
+  // The one assertion this change must NOT weaken. Distinct from the recovery path's own
+  // Defeated-on-purpose finalize.
+  const drill2 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill2-subvault.mjs'), 'utf8');
+  assert.match(drill2, /assert\(p\.status === 'Passed', `\$\{label\} finalized as \$\{p\.status\}, expected Passed`\);/,
+    'the normal governance-round Finalize step must still demand Passed, not accept anything the recovery path would produce');
 });
 
 // ───────── decodeProposal: the impure step that feeds votableNow (issue #178) ─────────
