@@ -52,7 +52,9 @@ export const CORRECTION_ENTRIES: readonly CorrectionEntry[] = [
   {
     date: '2026-09-18',
     claim:
-      'Public copy (the disclaimers page and the README) described this vault’s basket as a ' +
+      'Five public surfaces — the homepage, the disclaimers page, the README, and both copies of ' +
+      '`llms.txt` (the site’s and the repository’s, written to be read by AI crawlers) — ' +
+      'described this vault’s basket as a ' +
       'two-asset mix carried over from the Robinhood Chain configuration — a wrapped-ETH-plus-' +
       'wrapped-BTC pairing, priced off both an ETH feed and a BTC feed.',
     whatWasWrong:
@@ -70,8 +72,9 @@ export const CORRECTION_ENTRIES: readonly CorrectionEntry[] = [
   {
     date: '2026-09-18',
     claim:
-      'Three sentences on the homepage — the hero line, the second how-it-works step, and a ' +
-      'trust bullet — described the vault in unscoped terms: broadly, that nothing about the ' +
+      'Five sentences on two public surfaces — three on the homepage (the hero line, the second ' +
+      'how-it-works step, and a trust bullet) and two in the README (the intro and the "Vote on ' +
+      'every trade" row) — described the vault in unscoped terms: broadly, that nothing about the ' +
       'vault moves, and no trade happens, until a governance vote passes.',
     whatWasWrong:
       'The claim was true of rebalances but false as a statement about the vault generally. ' +
