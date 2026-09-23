@@ -69,6 +69,20 @@ const MUTATIONS = [
     from: "subRegItem.predictedAddress, vaultDeployerItem.predictedAddress, false, `[${oracleAddr}]`],",
     to: "subRegItem.predictedAddress, vaultDeployerItem.predictedAddress, true, `[${oracleAddr}]`],",
   },
+  {
+    // V-381-r1-8083f497 mutation S1: "advanceSentItems marks done WITHOUT calling verifyReceipt"
+    // kept 38/38 of #381's original tests green. This is that exact mutation, now caught.
+    name: 'advanceSentItems: verifyReceipt call removed — a matching from/to but WRONG input would confirm (V-381-r1 mutation S1)',
+    file: 'scripts/lib/sign-queue-server.mjs', target: 'scripts/test/sign-queue-server.test.mjs',
+    from: 'const reason = verifyReceipt({ item, tx: txR.result, receipt });',
+    to: 'const reason = null;',
+  },
+  {
+    name: 'originGateRefusal: the Origin/Host/Content-Type gate disarmed (always passes) — the CSRF fix from V-381-r1',
+    file: 'scripts/lib/sign-queue-server.mjs', target: 'scripts/test/sign-queue-server.test.mjs',
+    from: 'export function originGateRefusal(headers, port) {',
+    to: 'export function originGateRefusal(headers, port) { return null;',
+  },
 ];
 
 const results = [];

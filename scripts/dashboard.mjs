@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs
 import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
-import { buildSignQueueResponse, recordSentHash } from './lib/sign-queue-server.mjs';
+import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -1347,6 +1347,18 @@ const server = createServer((req, res) => {
   // add, edit, or remove an item.
   const signHashMatch = /^\/api\/sign-queue\/([a-zA-Z0-9_-]+)\/hash$/.exec(url.pathname);
   if (signHashMatch && req.method === 'POST') {
+    // V-381-r1-8083f497 (Security): refuse anything that did not come from this dashboard's own
+    // page — Host/Origin/Content-Type, checked BEFORE the body is even read. See
+    // originGateRefusal's own header for exactly what each check stops.
+    const gateRefusal = originGateRefusal(
+      { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
+      PORT,
+    );
+    if (gateRefusal) {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(`refused: ${gateRefusal}`);
+      return;
+    }
     let body = '';
     req.on('data', (c) => {
       body += c;

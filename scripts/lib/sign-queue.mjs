@@ -274,6 +274,36 @@ export function verifyReceipt({ item, tx, receipt }) {
   return null;
 }
 
+/**
+ * Is `tx` simply NOT this item's transaction at all — a foreign or junk hash, confirmed or
+ * otherwise, whose `from`/`to`/`input` disagree with what this item recorded at send time? This is
+ * deliberately narrower than `verifyReceipt`: it never looks at `status` or logs, because a
+ * genuinely-the-item's-own transaction that reverted on chain is a real `failed` outcome, not a
+ * foreign hash — see `advanceSentItems` (`scripts/lib/sign-queue-server.mjs`), which uses this to
+ * decide "revert to pending, signable again" (foreign) vs "failed" (ours, but it reverted).
+ *
+ * V-381-r1-8083f497 (Security, PR #381): the un-authenticated POST endpoint let any website freeze
+ * a `pending` item at `sent` with a made-up hash, which then NEVER confirmed and left the item
+ * stuck — the owner's real click got a 409 and every dependent stayed blocked. The Origin/Host/
+ * content-type gate (`scripts/dashboard.mjs`) is the fix for the POST itself; this function is the
+ * recovery path for whatever gets through anyway (a mistake, or a gate that is itself defeated).
+ *
+ * @param {QueueItem} item
+ * @param {{from:string,to:string|null,input:string}} tx
+ * @returns {boolean}
+ */
+export function isForeignTx(item, tx) {
+  if (typeof item.sentData !== 'string') return true;
+  if (normAddr(tx.from) !== normAddr(item.from)) return true;
+  if (item.to === null) {
+    if (tx.to !== null && tx.to !== undefined) return true;
+  } else if (normAddr(tx.to) !== normAddr(item.to)) {
+    return true;
+  }
+  if (normAddr(tx.input) !== normAddr(item.sentData)) return true;
+  return false;
+}
+
 /** `ExecutionSuccess(bytes32,uint256)` / `ExecutionFailure(bytes32,uint256)` — Safe.sol / SafeL2.sol.
  * Re-derived independently by `scripts/test/sign-queue.test.mjs` via a real `cast keccak`, the same
  * discipline `scripts/smoke-test.mjs`'s own `T_EXEC_SUCCESS`/`T_EXEC_FAILURE` computes at runtime;

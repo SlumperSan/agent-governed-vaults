@@ -16,7 +16,7 @@ import {
 import { finalizePreconditionRefusal, nonceGateRefusal, safeRoutedRefusal } from './sign-queue-preconditions.mjs';
 import { resolveItemData } from './sign-queue-resolve.mjs';
 import {
-  QUEUE_PATH, EVENT_LOG_FIELDS, normAddr, readQueue, verifyReceipt, writeQueueAtomic,
+  QUEUE_PATH, EVENT_LOG_FIELDS, isForeignTx, normAddr, readQueue, verifyReceipt, writeQueueAtomic,
 } from './sign-queue.mjs';
 import { CREATE_VAULT_SIG, REGISTER_VAULT_SIG } from '../smoke-preflight.mjs';
 
@@ -47,15 +47,37 @@ function receiptSummary(tx, receipt) {
   };
 }
 
+/** How long a `sent` item may sit with an UNFINDABLE hash (never located by
+ * `eth_getTransactionByHash` at all) before it is treated as never going to confirm and reverted
+ * to `pending` — signable again. A genuinely just-broadcast transaction can take a few seconds to
+ * propagate to the RPC endpoint this polls; a made-up or foreign hash never resolves, ever. Kept
+ * generous specifically so a real, merely-slow-to-propagate send is never reverted out from under
+ * the owner while it is still in flight. */
+const UNFINDABLE_GRACE_MS = 10 * 60 * 1000;
+
+/** Revert a `sent` item to `pending` — signable again — clearing everything that made it look
+ * sent. Used ONLY for a hash this module can prove is not the item's own transaction (foreign,
+ * per `isForeignTx`) or one that has never resolved at all within `UNFINDABLE_GRACE_MS`. A
+ * genuine on-chain revert of the item's OWN transaction (from/to/input all match, but
+ * `status != 1`) is a different, terminal outcome — see the `failed` branch below — because
+ * re-signing the identical calldata would very likely fail again for the same reason. */
+function revertToPending(item, note) {
+  item.status = 'pending';
+  item.txHash = null;
+  item.sentData = null;
+  item.sentAt = null;
+  item.verifyNote = note;
+}
+
 /**
- * Poll every `sent` item for a receipt, and advance it to `done`/`failed` when `verifyReceipt`
- * (or, for the non-signing `arc-readback` item, a direct set of reads) confirms it. Mutates and
- * persists `queue.items` in place when anything changed. Never throws — a single item's failed
- * read is recorded on that item and the rest of the queue is still processed.
+ * Poll every `sent` item for a receipt, and advance it to `done`/`failed`/back-to-`pending` when
+ * the chain settles the question. Mutates and persists `queue.items` in place when anything
+ * changed. Never throws — a single item's failed read is recorded on that item and the rest of
+ * the queue is still processed.
  * @param {{items: import('./sign-queue.mjs').QueueItem[]}} queue
  * @param {typeof fetch} fetchImpl
  */
-async function advanceSentItems(queue, fetchImpl) {
+export async function advanceSentItems(queue, fetchImpl, queuePath = QUEUE_PATH) {
   let changed = false;
   for (const item of queue.items) {
     if (item.status !== 'sent' || !item.txHash) continue;
@@ -70,24 +92,37 @@ async function advanceSentItems(queue, fetchImpl) {
       continue;
     }
     if (!txR.result || !rcptR.result) {
-      item.verifyNote = 'transaction not yet mined (no receipt)';
+      const ageMs = item.sentAt ? Date.now() - Date.parse(item.sentAt) : 0;
+      if (ageMs > UNFINDABLE_GRACE_MS) {
+        revertToPending(item, `hash ${item.txHash} was never found on chain after ${Math.round(ageMs / 60000)} minutes — this was a foreign or junk hash, not a real send. Signable again.`);
+        changed = true;
+      } else {
+        item.verifyNote = 'transaction not yet mined (no receipt)';
+      }
+      continue;
+    }
+    // A tx WAS found for this hash. First: is it even OUR transaction? A confirmed receipt for a
+    // hash that belongs to someone else's transaction entirely (the CSRF shape this exists for)
+    // must never sit at `sent` forever — it is provably not what this item asked for.
+    if (isForeignTx(item, txR.result)) {
+      revertToPending(item, `hash ${item.txHash} resolved to a transaction whose from/to/input do not match this item — not this item's send. Signable again.`);
+      changed = true;
       continue;
     }
     const receipt = receiptSummary(txR.result, rcptR.result);
     const reason = verifyReceipt({ item, tx: txR.result, receipt });
     if (reason) {
-      // A confirmed but MISMATCHED receipt "changes nothing" — status stays `sent`, never `done`,
-      // per the design doc. A genuine on-chain revert is the one case that DOES advance status,
-      // to `failed`, since that is true regardless of which hash produced it.
-      const reverted = receipt.status !== '0x1' && receipt.status !== 1;
-      if (reverted) { item.status = 'failed'; item.receipt = receipt; item.verifyNote = reason; changed = true; }
-      else if (item.verifyNote !== reason) { item.verifyNote = reason; changed = true; }
+      // It IS this item's own transaction (from/to/input matched above), but it did not confirm
+      // the way this item expects — a genuine on-chain revert, an ExecutionFailure, a CREATE that
+      // landed at an unpredicted address, or a missing expected log. Terminal: re-signing the
+      // identical calldata would very likely reproduce the same outcome.
+      item.status = 'failed'; item.receipt = receipt; item.verifyNote = reason; changed = true;
       continue;
     }
     item.status = 'done'; item.receipt = receipt; item.doneAt = new Date().toISOString(); item.verifyNote = null;
     changed = true;
   }
-  if (changed) writeQueueAtomic(queue);
+  if (changed) writeQueueAtomic(queue, queuePath);
   return changed;
 }
 
@@ -182,20 +217,66 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
 }
 
 /**
+ * Refuses a `POST /api/sign-queue/:id/hash` request that did not come from THIS dashboard's own
+ * page — V-381-r1-8083f497 (Security, PR #381): with no check at all, any website the owner has
+ * open could `fetch('http://127.0.0.1:<port>/api/sign-queue/<id>/hash', {method:'POST', ...})` —
+ * a `no-cors` cross-origin POST is PERMITTED by the browser, it just cannot read the response —
+ * and freeze a `pending` item at `sent` with a made-up hash, blocking the owner's real click with
+ * a 409 until the queue file was hand-edited.
+ *
+ * Three checks, ALL must pass, any failure is a flat refusal (never "changes nothing" — the
+ * request never reaches `recordSentHash` at all):
+ *   - `Host` must be exactly `127.0.0.1:<port>`. This is what stops DNS rebinding — an attacker
+ *     page served from a hostname that later re-resolves to 127.0.0.1 still sends `Host:
+ *     attacker.example`, and the browser does not let a page override that header.
+ *   - `Origin`, if the request sent one at all (browsers omit it for a plain top-level
+ *     navigation, but a `fetch`/`XHR` POST — exactly the CSRF shape here — always sends one),
+ *     must equal `http://127.0.0.1:<port>` exactly.
+ *   - `Content-Type` must be `application/json`. A `no-cors` cross-origin request is restricted to
+ *     the CORS-safelisted content types (`text/plain`, `application/x-www-form-urlencoded`,
+ *     `multipart/form-data`) — it CANNOT set `application/json` without a preflight, and this
+ *     server answers no `OPTIONS` route, so a preflighted request fails before it ever arrives
+ *     here. Requiring this header is what turns "the browser permits this" into "the browser
+ *     cannot actually send this cross-origin".
+ *
+ * @param {{host?: string, origin?: string, 'content-type'?: string}} headers lower-cased header map
+ * @param {number} port this server's own listening port
+ * @returns {string|null} a refusal reason, or null when the request may proceed
+ */
+export function originGateRefusal(headers, port) {
+  const wantHost = `127.0.0.1:${port}`;
+  const wantOrigin = `http://127.0.0.1:${port}`;
+  const host = (headers.host ?? '').trim();
+  if (host !== wantHost) {
+    return `Host is ${JSON.stringify(host)}, expected ${JSON.stringify(wantHost)}`;
+  }
+  const origin = headers.origin;
+  if (origin !== undefined && origin.trim() !== wantOrigin) {
+    return `Origin is ${JSON.stringify(origin)}, expected absent or ${JSON.stringify(wantOrigin)}`;
+  }
+  const contentType = (headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    return `Content-Type is ${JSON.stringify(headers['content-type'] ?? '')}, expected application/json`;
+  }
+  return null;
+}
+
+/**
  * `GET /api/sign-queue`'s whole handler body. Polls every `sent` item for a receipt, resolves
  * every item's `data` (template or literal), computes `ready`, and returns the enriched list. No
  * argument mutates anything the caller did not already own (the queue file itself).
  * @param {typeof fetch} fetchImpl
  * @param {(args: string[]) => string} castFn
+ * @param {string} [queuePath] override for tests only — the dashboard always uses the default
  */
-export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast) {
-  const queue = readQueue();
-  await advanceSentItems(queue, fetchImpl);
+export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH) {
+  const queue = readQueue(queuePath);
+  await advanceSentItems(queue, fetchImpl, queuePath);
 
   const itemsById = new Map(queue.items.map((it) => [it.id, it]));
   if (itemsById.has('arc-readback')) {
     const changed = await checkArcReadback(itemsById.get('arc-readback'), itemsById, fetchImpl);
-    if (changed) writeQueueAtomic(queue);
+    if (changed) writeQueueAtomic(queue, queuePath);
   }
 
   const enriched = [];
@@ -237,13 +318,14 @@ export async function buildSignQueueResponse(fetchImpl = fetch, castFn = default
  * @param {{hash: unknown, from: unknown}} body
  * @param {typeof fetch} fetchImpl
  * @param {(args: string[]) => string} castFn
+ * @param {string} [queuePath] override for tests only — the dashboard always uses the default
  */
-export async function recordSentHash(id, body, fetchImpl = fetch, castFn = defaultCast) {
+export async function recordSentHash(id, body, fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH) {
   const hash = typeof body.hash === 'string' ? body.hash : '';
   const from = typeof body.from === 'string' ? body.from : '';
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return { code: 400, msg: 'hash is not a 32-byte 0x-hex tx hash' };
 
-  const queue = readQueue();
+  const queue = readQueue(queuePath);
   const item = queue.items.find((it) => it.id === id);
   if (!item) return { code: 404, msg: `no queue item ${id}` };
   if (item.status !== 'pending') return { code: 409, msg: `item is already ${item.status}` };
@@ -257,7 +339,7 @@ export async function recordSentHash(id, body, fetchImpl = fetch, castFn = defau
   if (!resolved.ok) return { code: 409, msg: `cannot resolve item data: ${resolved.reason}` };
 
   item.status = 'sent'; item.txHash = hash; item.sentData = resolved.resolved; item.sentAt = new Date().toISOString();
-  writeQueueAtomic(queue);
+  writeQueueAtomic(queue, queuePath);
   return { code: 200, msg: 'recorded — polling the chain for confirmation' };
 }
 
