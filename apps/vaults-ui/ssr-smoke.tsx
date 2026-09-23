@@ -22,7 +22,7 @@ import { App } from './src/App';
 const html = renderToString(<App />);
 
 const MUST_CONTAIN = [
-  'Vault Atlas', // the masthead
+  'RWAlly', // the masthead
   'commit-reveal', // the masthead's one-line explainer, unrelated to any data source
   'Reading the chain', // the loading state useLiveVaults starts in — renderToString runs no effects
   // WalletConnect (#345) sits in the header, outside the loading/ready branch, so it renders on

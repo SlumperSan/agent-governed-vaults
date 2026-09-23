@@ -178,6 +178,21 @@ const STEPS = [
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
+    id: 'vault-addresses',
+    title: 'vault-addresses-lint (apps/vaults-ui vs contracts/config/deployments)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-addresses-lint.mjs')],
+    cwd: REPO,
+    // BLOCKING, unlike vault-lint (a local machine path absent from CI) and deployment-currency
+    // (advisory because both recorded deployments are KNOWINGLY behind mainline -- a fact no PR can
+    // fix). Every input here -- apps/vaults-ui/.env* and contracts/config/deployments/*.json -- is
+    // checked into this repository, so there is no environment where this is expected to be red for
+    // a reason other than a real config error. VITE_VAULT_ADDRESSES is hand-edited on deploy day
+    // with zero prior cross-check against what is actually deployed; a typo, a stale address, or an
+    // address from the wrong chain would silently ship. Card A2.
+    why: 'Does VITE_VAULT_ADDRESSES name a real deployed vault, on the chain VITE_CHAIN_ID declares? Card A2.',
+  },
+  {
     id: 'deployment-currency',
     title: 'verify-deployment-currency (advisory)',
     cmd: process.execPath,

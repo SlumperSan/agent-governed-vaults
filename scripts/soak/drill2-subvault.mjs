@@ -47,6 +47,7 @@ import { randomBytes } from 'node:crypto';
 import {
   ROOT, RPC, log, assert, eq, call, callU, send, chainNow, waitUntilChainTime, pollUntil,
   openState, runSteps, topicToAddress, TOPIC, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal,
+  decideReveal, finalizeDeadRound, waitOutProposalCooldown,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
@@ -234,10 +235,75 @@ async function stepParentActivate() {
   save();
 }
 
+/**
+ * A round may be auto-restarted at most this many times per process. Unbounded restarts would
+ * burn gas on every dead reveal window forever if something keeps killing the round before it can
+ * be won.
+ */
+const MAX_ROUND_RESTARTS = 2;
+
+/**
+ * The reveal window closed before this drill got its vote revealed, or the round is otherwise no
+ * longer Active — measured live on 2026-09-21/22 (proposal 12): resumed 4330s (72 min) past
+ * `revealDeadline` and `revealVote` reverted `WrongPhase`.
+ *
+ * `finalize` (Governance.sol:577) gates ONLY on `p.status == Status.Active && block.timestamp >=
+ * p.revealDeadline` — it does not require a single reveal to have happened. With
+ * `revealedWeight == 0` every quorum branch in `finalize` (:581-660) is false, so it settles
+ * `Defeated` rather than reverting. Confirmed against proposal 11, the same shape three days
+ * earlier: `status=Defeated`, `revealedVoterCount=0`.
+ *
+ * That settlement, not clearing `activeProposalOf`, is what frees the vault: `propose`
+ * (Governance.sol:312-316) allows a new proposal once the OLD one is `_isSettled`
+ * (Defeated/Executed/Expired) via `_refreshStatus` + `_isSettled`, and never requires
+ * `activeProposalOf` itself to be zero — `votableNow`'s doc comment above already records that
+ * Governance never clears that mapping on settlement. So finalizing the dead round, not touching
+ * the mapping, is what unblocks the next `propose` call this function makes by discarding this
+ * round's state and letting `govRound` re-enter from its top.
+ *
+ * Bounded by `MAX_ROUND_RESTARTS`. Logs loudly with the measured numbers before doing anything —
+ * a silent restart is worse than the crash it replaces. The finalize-and-verify itself is
+ * `finalizeDeadRound` (lib.mjs), shared with drill 3 and the drill 5 governance companion so this
+ * repo has exactly one place that decides "when is it safe to finalize a dead round".
+ */
+async function recoverStaleRound(key, label, pid, p, now) {
+  const priorRestarts = state[`${key}RestartCount`] ?? 0;
+  assert(priorRestarts < MAX_ROUND_RESTARTS,
+    `${label}: round ${pid} is unrecoverable (status ${p.status}, revealDeadline ${p.revealDeadline}, ` +
+    `chain now ${now}) and has already been auto-restarted ${priorRestarts} time(s) — refusing to ` +
+    `restart again (cap ${MAX_ROUND_RESTARTS}). Something is repeatedly killing this round before ` +
+    'its vote can be revealed; investigate rather than retrying blindly.');
+
+  log('──────────────────────────────────────────────');
+  log(`${label}: RESTARTING ROUND (auto-restart ${priorRestarts + 1}/${MAX_ROUND_RESTARTS})`);
+  log(`  proposal ${pid}: status=${p.status}, commitDeadline=${p.commitDeadline}, ` +
+    `revealDeadline=${p.revealDeadline}, chain now=${now}` +
+    (p.status === 'Active' && now >= p.revealDeadline
+      ? ` — ${now - p.revealDeadline}s PAST the reveal deadline`
+      : ''));
+  log('  this drill was almost certainly stopped and resumed after the reveal window closed');
+  log('──────────────────────────────────────────────');
+
+  await finalizeDeadRound(dep.governance, pid, label);
+
+  for (const suffix of ['Pid', 'CommitDeadline', 'RevealDeadline', 'Salt', 'ExecutableAt']) {
+    delete state[`${key}${suffix}`];
+  }
+  for (const step of ['Commit', 'Reveal', 'Finalize', 'Execute']) {
+    delete state.steps[`${key}${step}`];
+  }
+  state[`${key}RestartCount`] = priorRestarts + 1;
+  save();
+}
+
+/** Cap for `waitOutProposalCooldown` (lib.mjs) — see its doc comment for why a restart can hit this. */
+const MAX_COOLDOWN_WAIT_SEC = 2 * 3600;
+
 /** Run one ChildAllocation governance round. `key` namespaces its state across two rounds. */
 async function govRound(key, label, payload) {
   const actionHash = keccakOf(payload);
   if (!state[`${key}Pid`]) {
+    await waitOutProposalCooldown(dep.governance, PARENT, state.signer, MAX_COOLDOWN_WAIT_SEC);
     const r = send(`governance.propose(ChildAllocation: ${label})`, dep.governance,
       'propose(address,uint8,bytes32)', PARENT, 2, actionHash);
     const pid = callU(dep.governance, 'activeProposalOf(address)(uint256)', PARENT);
@@ -260,10 +326,37 @@ async function govRound(key, label, payload) {
 
   if (!state.steps[`${key}Reveal`]?.done) {
     await waitUntilChainTime(state[`${key}CommitDeadline`], `${label} commit phase end (1h)`);
-    const r = send(`governance.revealVote(FOR, ${label})`, dep.governance,
-      'revealVote(uint256,bool,bytes32)', pid, 'true', state[`${key}Salt`]);
-    state.steps[`${key}Reveal`] = { done: true, tx: r.transactionHash };
-    save();
+
+    // RE-READ CHAIN TRUTH BEFORE REVEALING. A resume after a long stop must not trust the
+    // deadlines this state file persisted at propose time — see decideReveal's doc comment
+    // (lib.mjs) and the 2026-09-21/22 proposal-12 WrongPhase revert it exists to catch.
+    const p = readProposal(dep.governance, pid);
+    const now = chainNow();
+    const hasCommit = callU(dep.governance, 'commitOf(uint256,address)(bytes32)', pid, state.signer) !== 0n;
+    const alreadyRevealed = call(dep.governance, 'revealedOf(uint256,address)(bool)', pid, state.signer)[0] === 'true';
+    const { action, reason } = decideReveal(p, { now, hasCommit, alreadyRevealed });
+
+    if (action === 'already-revealed') {
+      // Not the stale-window recovery below — the ordinary "trust the chain over our own state
+      // file" rule the rest of this drill follows. The reveal tx may have landed in a prior run
+      // that crashed before this step was saved; re-sending would revert AlreadyRevealed.
+      log(`${label}: revealedOf[pid][signer] is already true on-chain — recording without re-sending`);
+      state.steps[`${key}Reveal`] = { done: true, tx: '(recovered: already revealed on-chain)' };
+      save();
+    } else if (action === 'reveal') {
+      const r = send(`governance.revealVote(FOR, ${label})`, dep.governance,
+        'revealVote(uint256,bool,bytes32)', pid, 'true', state[`${key}Salt`]);
+      state.steps[`${key}Reveal`] = { done: true, tx: r.transactionHash };
+      save();
+    } else if (action === 'restart') {
+      // UNRECOVERABLE: the round died while this drill was stopped. Settle it and start over.
+      await recoverStaleRound(key, label, pid, p, now);
+      return govRound(key, label, payload);
+    } else {
+      // Some other reason (e.g. no commit recorded) — a genuine bug, not the stale-resume case
+      // this recovery path handles. Fail loudly rather than restart blindly.
+      assert(false, `${label}: cannot reveal proposal ${pid} and this is not a stale-window case — ${reason}`);
+    }
   }
 
   if (!state.steps[`${key}Finalize`]?.done) {
