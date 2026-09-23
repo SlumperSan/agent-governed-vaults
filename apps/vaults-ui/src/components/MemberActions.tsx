@@ -578,7 +578,7 @@ export function MemberActions({ vault }: Props) {
                 <span className="dim">
                   {preview.isSoleHolder
                     ? 'sole member: accrues to those who remain, and there are none'
-                    : 'stays in the vault, never goes to the operator'}
+                    : 'stays in the vault, adding to every remaining share'}
                 </span>
               </th>
               <td className="num">{preview.feeValueWad !== null ? `−${usdcShort(preview.feeValueWad / USDC_SCALAR)}` : bpsPct(preview.feeBps)}</td>

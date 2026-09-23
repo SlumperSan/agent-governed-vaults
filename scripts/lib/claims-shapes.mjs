@@ -102,3 +102,24 @@ export const RWLY_ATTRIBUTION = [
 
 /** "backed by the vault(s)" as a description of RWLY — sentence-scoped. */
 export const RWLY_BACKED_BY_VAULT = /\bbacked\s+by\s+the\s+vaults?\b/i;
+
+// ---------------------------------------------------------------------------------------------
+// Guard 9 shape — never claim a fee (or anything else) bypasses the operator AS A PERSON.
+//
+// The operator is a member: the creator holds a >=5% stake lock (THREAT-MODEL CM-1), so it receives
+// the exit fee pro rata through its own shares like anyone who stays (EE-9). "Never to the operator"
+// is therefore false, and it shipped on four member-facing surfaces before this guard existed.
+//
+// WHAT IT SPARES, deliberately: the ROUTING form. "never routed to the operator" / "never routes to
+// the operator" is true (no code path transfers the fee to the operator's address) and is how
+// EE-9, CANARY.md and the engineering docs say it. The identity form — "never goes to", "never to",
+// "members, not the operator" — is the misreading EE-9 was written to prevent.
+// ---------------------------------------------------------------------------------------------
+export const FEE_BYPASSES_OPERATOR = [
+  // "never to the operator", "never goes to the operator", "is never paid to the operator"
+  /\bnever\s+(?:(?:goes|go|is\s+paid|paid|given|sent|flows)\s+)?to\s+(?:the\s+)?operator\b/gi,
+  // "never reaches the operator", "does not reach the operator"
+  /\b(?:not|never)\s+reach(?:es)?\s+(?:the\s+)?operator\b/gi,
+  // "paid to the members who stay, not the operator", "accrues to members, never the operator"
+  /\b(?:accrues?|accrue|goes|paid|flows?)\s+to\s+(?:the\s+)?(?:remaining\s+)?members?\b[^.;]{0,50}?,\s*(?:not|never)\s+(?:to\s+)?(?:the\s+)?operator\b/gi,
+];
