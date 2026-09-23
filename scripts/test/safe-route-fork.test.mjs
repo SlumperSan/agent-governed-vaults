@@ -46,11 +46,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   requireBin, startFork, generateThrowawayAccount, setEthBalance, dealErc20, deployProtocol,
-  deploySafe, readSafe, cast, clean, topicToAddress, CONTRACTS_DIR,
+  deploySafe, readSafe, cast, clean, topicToAddress, CONTRACTS_DIR, BASE_SEPOLIA_CHAIN_ID,
 } from './lib/safe-fork-chain.mjs';
 import {
-  readSafeState, buildPlan, safeTransactionHash, signAsOwner, packSignatures, execTransactionArgs,
-  SAFE_EXEC_TRANSACTION_SIG,
+  readSafeState, buildPlan, safeTransactionHash, safeTransactionHashLocal, signAsOwner, packSignatures,
+  execTransactionArgs, SAFE_EXEC_TRANSACTION_SIG,
 } from '../lib/safe-exec.mjs';
 
 const ROOT = path.resolve(CONTRACTS_DIR, '..');
@@ -181,6 +181,35 @@ test('2-of-3: the real runner collects exactly the required threshold and the re
   assert.equal(onChainCreator.toLowerCase(), safe2.toLowerCase());
 });
 
+// ═══ KNOWN VECTOR: the local EIP-712 recompute vs a REAL deployed SafeL2 v1.4.1's own getTransactionHash ═══
+// Card 208 / 2026-09-23 MAJOR-1 fix. `safeTransactionHashLocal` builds the EIP-712 digest ENTIRELY
+// LOCALLY (no RPC) from `plan` -- this proves it against the REAL, canonical SafeL2 v1.4.1 bytecode
+// deployed on this fork (scripts/test/lib/safe-fork-chain.mjs's own header: the same mastercopy the
+// Arc mainnet creator Safe points at), not against a second hand-written mock of Safe's own encoding.
+
+test('known vector: safeTransactionHashLocal exactly matches a REAL deployed SafeL2 v1.4.1\'s own getTransactionHash', () => {
+  // callHelper/callU are function DECLARATIONS defined later in this file and hoisted module-wide,
+  // so they are already usable here.
+  const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
+  const plan = buildPlan({ safe: safe1, to: dep.factory, data: createVaultCalldata(), nonce });
+
+  const onChain = callHelper(
+    plan.safe, 'getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)(bytes32)',
+    plan.to, plan.value, plan.data, plan.operation, plan.safeTxGas, plan.baseGas,
+    plan.gasPrice, plan.gasToken, plan.refundReceiver, plan.nonce,
+  )[0];
+  const local = safeTransactionHashLocal({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID });
+  assert.equal(local.toLowerCase(), onChain.toLowerCase(), 'the local EIP-712 recompute must exactly match the real deployed Safe\'s own getTransactionHash()');
+
+  // MUTATION-TEST TARGET (recorded in the PR body): swapping the field order inside
+  // safeTransactionHashLocal's struct abi-encode (or buildSafeTypedData's SafeTx type array) must
+  // make this assertion fail -- it is not a tautology against a second copy of the same encoding.
+
+  // And the combined function, which is what production actually calls, must agree and not throw.
+  const verified = safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID });
+  assert.equal(verified.toLowerCase(), onChain.toLowerCase());
+});
+
 // ═══════════════════ mutations, layer 1: this repository's OWN guard, before broadcast ═══════════════════
 
 test('too few signatures for a 2-of-3 Safe: the runner\'s OWN check refuses before broadcast, nonce unchanged', async () => {
@@ -232,8 +261,8 @@ function sendExecTransaction(safeAddr, plan, packedSigs, broadcasterKey) {
 test('the real Safe rejects too few signatures for its own threshold, independent of this repo\'s guard', () => {
   const { nonce } = readSafeState({ call: callHelper, callU, safe: safe2 });
   const plan = buildPlan({ safe: safe2, to: dep.factory, data: createVaultCalldata(), nonce });
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const oneSig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]); // threshold is 2
+  safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw: proves nothing about this mutation
+  const oneSig = packSignatures([signAsOwner({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerA.privateKey] })]); // threshold is 2
   assert.throws(() => sendExecTransaction(safe2, plan, oneSig, broadcaster.privateKey), /GS0|revert|invalid|signatures/i);
 });
 
@@ -241,8 +270,8 @@ test('the real Safe rejects a signature from a non-owner, independent of this re
   const stranger = generateThrowawayAccount();
   const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
   const plan = buildPlan({ safe: safe1, to: dep.factory, data: createVaultCalldata(), nonce });
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const badSig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', stranger.privateKey] })]);
+  safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw
+  const badSig = packSignatures([signAsOwner({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', stranger.privateKey] })]);
   assert.throws(() => sendExecTransaction(safe1, plan, badSig, broadcaster.privateKey), /GS0|revert|invalid|signatures/i);
 });
 
@@ -253,10 +282,10 @@ test('RESTORE TO GREEN: after both real-Safe rejections above, the SAME safes st
   // still succeeds.
   const { nonce: nonce2 } = readSafeState({ call: callHelper, callU, safe: safe2 });
   const plan2 = buildPlan({ safe: safe2, to: dep.factory, data: createVaultCalldata(), nonce: nonce2 });
-  const hash2 = safeTransactionHash({ call: callHelper, plan: plan2 });
+  safeTransactionHash({ call: callHelper, cast, plan: plan2, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw
   const goodSigs2 = packSignatures([
-    signAsOwner({ cast, hash: hash2, signerArgs: ['--private-key', ownerB.privateKey] }),
-    signAsOwner({ cast, hash: hash2, signerArgs: ['--private-key', ownerC.privateKey] }),
+    signAsOwner({ cast, plan: plan2, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerB.privateKey] }),
+    signAsOwner({ cast, plan: plan2, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerC.privateKey] }),
   ]);
   const r2 = sendExecTransaction(safe2, plan2, goodSigs2, broadcaster.privateKey);
   assert.ok(r2.status === '0x1' || r2.status === 1, 'a correctly-signed 2-of-3 execTransaction must still succeed');
@@ -276,8 +305,8 @@ test('wrong factory: the real Safe happily routes createVault at a genuinely dif
   // not dep's, so calldata built from dep's addresses would fail factory2's allowlist check for a
   // reason that has nothing to do with the mutation this test exists to prove.
   const plan = buildPlan({ safe: safe1, to: factory2, data: createVaultCalldata(dep2), nonce }); // <-- wrong factory, on purpose
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const sig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw
+  const sig = packSignatures([signAsOwner({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerA.privateKey] })]);
   const receipt = sendExecTransaction(safe1, plan, sig, broadcaster.privateKey);
   assert.ok(receipt.status === '0x1' || receipt.status === 1, 'the Safe executes a call to ANY contract; it enforces nothing about which one');
 
@@ -305,8 +334,8 @@ function registerVaultCalldata(g = smokeCfg.smoke.gov) {
 function createVaultViaSafe1() {
   const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
   const plan = buildPlan({ safe: safe1, to: dep.factory, data: createVaultCalldata(), nonce });
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const sig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw
+  const sig = packSignatures([signAsOwner({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerA.privateKey] })]);
   const receipt = sendExecTransaction(safe1, plan, sig, broadcaster.privateKey);
   const T_VAULT_CREATED = cast(['keccak', 'VaultCreated(address,address,address,uint256)']);
   const created = receipt.logs.find((l) => l.topics?.[0] === T_VAULT_CREATED && l.address?.toLowerCase() === dep.factory.toLowerCase());
@@ -337,8 +366,8 @@ test('registerVault routed at the WRONG governance succeeds there (the real cont
   const data = cast(['calldata', sig, vault, tuple]);
   const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
   const plan = buildPlan({ safe: safe1, to: dep2.governance, data, nonce }); // <-- wrong governance, on purpose
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const sigPacked = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  safeTransactionHash({ call: callHelper, cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID }); // must not throw
+  const sigPacked = packSignatures([signAsOwner({ cast, plan, chainId: BASE_SEPOLIA_CHAIN_ID, signerArgs: ['--private-key', ownerA.privateKey] })]);
   const receipt = sendExecTransaction(safe1, plan, sigPacked, broadcaster.privateKey);
   assert.ok(receipt.status === '0x1' || receipt.status === 1, 'msg.sender == vault.creator() holds regardless of WHICH Governance instance is called, so the wrong one genuinely accepts it');
 
