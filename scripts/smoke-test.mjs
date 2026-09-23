@@ -464,10 +464,16 @@ function routeThroughSafe({ action, expectedTo, sig, params, label }) {
     value: plan.value, safeTxGas: plan.safeTxGas, baseGas: plan.baseGas, gasPrice: plan.gasPrice,
   });
 
-  const hash = safeTransactionHash({ call, plan });
+  // safeTransactionHash recomputes the EIP-712 digest LOCALLY from `plan` and throws unless it
+  // agrees with the Safe's own getTransactionHash() — see scripts/lib/safe-exec.mjs's header
+  // (MAJOR-1, 2026-09-23): a bare RPC-supplied hash is not trusted alone. `deployment.chainId` is
+  // the DECLARED record's chain id, already cross-checked against `cfg.chainId`, which is itself
+  // cross-checked against this same RPC's own eth_chainId in preflight — never taken from this RPC
+  // call alone.
+  const hash = safeTransactionHash({ call, cast, plan, chainId: deployment.chainId });
   log(`safeTxHash ${hash} (nonce ${nonce}) — collecting ${threshold} of ${signers.length} supplied signature(s)`);
   const toSign = signers.slice(0, Number(threshold));
-  const sigs = toSign.map(({ args }) => signAsOwner({ cast, hash, signerArgs: args }));
+  const sigs = toSign.map(({ args }) => signAsOwner({ cast, plan, chainId: deployment.chainId, signerArgs: args }));
   const packed = packSignatures(sigs);
 
   const r = send(label, safe, SAFE_EXEC_TRANSACTION_SIG, ...execTransactionArgs(plan, packed));
