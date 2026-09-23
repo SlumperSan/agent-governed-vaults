@@ -163,6 +163,7 @@ import {
   ONCHAIN_MEMBER_GATE,
   POWER_CLAIM,
   ENUMERATION_FOLLOWS,
+  FEE_BYPASSES_OPERATOR,
   RWLY_ATTRIBUTION,
   RWLY_BACKED_BY_VAULT,
 } from '../lib/claims-shapes.mjs';
@@ -623,6 +624,64 @@ test('probe: the RWLY attribution ban catches the shape and spares the approved 
     'The treasury intends to use the protocol’s fees to acquire official Robinhood Stock Tokens.',
   ]) {
     assert.equal(caught(ok), false, `the guard reds the deck's own approved copy: ${ok}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Guard 9 — nothing is said to bypass the operator AS A PERSON. The operator is a member (the
+// creator's >=5% stake lock, THREAT-MODEL CM-1), so the exit fee reaches it pro rata through its
+// own shares (EE-9). The ROUTING form stays legal and is how the engineering docs say it; see
+// FEE_BYPASSES_OPERATOR in `../lib/claims-shapes.mjs` for exactly what is spared and why.
+// ---------------------------------------------------------------------------------------------
+test('no public surface says a fee never reaches the operator, who is a member', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of FEE_BYPASSES_OPERATOR) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    'The exit fee stays in the vault and lifts the value of every remaining share (VaultCore\n' +
+      '_settleExit burns the full share amount but pays out only burnShares * keepBps). The\n' +
+      'operator holds a position — the creator has a >=5% stake lock, THREAT-MODEL CM-1 — so it\n' +
+      'receives the fee pro rata like any member who stays (EE-9). "Never to the operator" is false.\n' +
+      'Say the mechanism instead: "it stays in the vault, adding to the value of every remaining\n' +
+      'share". If you mean that no code path transfers it to the operator\'s ADDRESS, say "never\n' +
+      'routed to the operator" — that form is true and this guard leaves it alone.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the fee-bypass ban catches the shipped forms and spares the routing form', () => {
+  const caught = (s) =>
+    FEE_BYPASSES_OPERATOR.some((re) => {
+      re.lastIndex = 0; // /g patterns reused across probe cases
+      return re.test(flat(s));
+    });
+  // Every form that actually shipped on a member-facing surface, verbatim, plus the obvious variants.
+  for (const bad of [
+    'It goes to the members who stay, never to the operator.',
+    'Paid to the members who stay, never to the operator.',
+    'This stays in the vault and raises NAV/share for the members who remain. It never goes to the operator.',
+    'stays in the vault, never goes to the operator',
+    'exit fees accrue to members, not the operator',
+    'The exit fee is never paid to the operator.',
+    'The fee never reaches the operator.',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
+  // The true routing form the engineering docs rely on, and the replacement wording now shipped.
+  for (const ok of [
+    'Never routed to the operator; waived when the redeemer is the last member.',
+    'Exit fees never route to the operator at all.',
+    'it accrues to the members who remain, and can never be routed to the operator.',
+    'It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position.',
+    'The 10% performance fee goes to the operator.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds true copy: ${ok}`);
   }
 });
 
