@@ -59,8 +59,16 @@ const looksLikeAddress = (s) => typeof s === 'string' && /^0x[0-9a-fA-F]{40}$/.t
  * @param {import('viem').Account} opts.account
  * @param {number} [opts.chainIdOverride] MUTATION HOOK: report a chain id other than the real one
  *   from `eth_chainId`, without touching a single line of `wallet.tsx`/`chain-actions.ts`. Proves
- *   `simulateThenWrite`'s `chain: TARGET_CHAIN` viem argument actually rejects a mismatched wallet
- *   rather than trusting it.
+ *   viem's own `assertCurrentChain` guard (in `sendTransaction`, which `walletClient.writeContract`
+ *   calls) actually rejects a mismatched wallet rather than trusting it — fed by the `chain` this
+ *   harness's `publicClient`/`walletClient` are constructed with in `ui-smoke.ts` (mirroring
+ *   `wallet.tsx`), which `chain-actions.ts`'s own per-call `chain: TARGET_CHAIN` argument on
+ *   `simulateThenWrite` only reinforces. Live mutation runs (this card's #373 comment records the
+ *   table) confirmed BOTH layers actually enforce it independently — stripping the client-level
+ *   `chain` alone (ui-smoke.ts) stayed green, and stripping the per-call argument alone
+ *   (chain-actions.ts) also stayed green — and that removing the per-call argument via `chain: null`
+ *   (not simply omitting the key, which falls back to the client's own configured chain) is what
+ *   actually lets a send reach the chain.
  * @returns {{ provider: import('viem').EIP1193Provider, log: LogEntry[] }}
  */
 export function createRecordingProvider({ rpcUrl, account, chainIdOverride }) {

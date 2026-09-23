@@ -49,6 +49,17 @@ export function sendSequence(log) {
   return decodedSends(log).map((s) => s.functionName);
 }
 
+/** Every `eth_sendTransaction` entry, raw — decodable or not. Unlike `sendSequence`, this cannot
+ * undercount: `decodedSends` deliberately DROPS a send it cannot decode against its five-function
+ * ABI mirror (a drifted mirror, or garbled/no calldata) rather than misreport it, which means
+ * `sendSequence` can read back as empty even when a real send reached the chain. The wrong-chain-id
+ * MUTATION test's own claim — "no send reached the chain" — is checked against this, not against
+ * `sendSequence`, for exactly that reason (found auditing this PR's own PR #373 fix for the same
+ * vacuity shape one level down). */
+export function rawSends(log) {
+  return log.filter((e) => e.method === 'eth_sendTransaction');
+}
+
 /**
  * The approval this harness sent must be for the EXACT deposit amount, at the vault as spender —
  * never `type(uint256).max` (an unbounded approval `chain-actions.ts`'s header explicitly rejects:

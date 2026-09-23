@@ -52,6 +52,7 @@ import {
   checkChainIdConsistent,
   checkEverySendSimulated,
   checkRecipient,
+  rawSends,
   sendSequence,
 } from './lib/ui-smoke-assertions.mjs';
 
@@ -132,6 +133,12 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     setEthBalance(fork.rpcUrl, member, `0x${(100n * ONE_ETH).toString(16)}`);
     dealErc20(fork.rpcUrl, cfg.usdc, member, 20_000_000n); // 20 USDC, well over the smoke deposit
     usdcBeforeDeposit = BigInt(spawnSyncCast(fork.rpcUrl, ['call', cfg.usdc, 'balanceOf(address)(uint256)', member]).split(' ')[0]);
+    // NON-VACUITY: the exit round trip below asserts `usdcAfterExit === usdcBeforeDeposit`. That
+    // equality holds trivially if both reads ever collapsed to the same wrong value (e.g. the
+    // masked-empty-read shape `spawnSyncCast` now throws on above) — pin the baseline to the exact
+    // amount `dealErc20` just funded, so the round-trip assertion is checking a known-real number,
+    // not two possibly-equal unknowns.
+    assert.equal(usdcBeforeDeposit, 20_000_000n, 'pre-deposit USDC balance must be exactly what dealErc20 funded');
   });
 
   let deployed;
@@ -166,13 +173,51 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
       UI_SMOKE_AMOUNT_USDC: String(cfg.smoke.depositUsdc),
       UI_SMOKE_CHAIN_ID_OVERRIDE: '1', // Ethereum mainnet — never this app's TARGET_CHAIN
     });
-    assert.equal(r.ok, false, 'RED expected: a wallet on the wrong chain must not be allowed to write');
-    assert.match(r.error, /chain/i, `expected a chain-mismatch error, got: ${r.error}`);
     // No `?? []` here on purpose: ui-smoke.ts's failure branch must emit the real captured log
     // (see its own comment at the module-scope `log` declaration). If it ever stops doing that,
-    // `r.log` is `undefined` and this must throw loudly rather than silently reading as `[]` —
-    // an assertion that can only ever pass is worse than no assertion (card 176 / PR #373 REJECT).
-    const sends = sendSequence(r.log);
+    // `r.log` is `undefined` — this named assertion is what should name that, rather than an
+    // unlabelled TypeError several lines later from calling `.filter`/`.some` on `undefined`
+    // (mutation-tested: removing `log` from ui-smoke.ts's `ok: false` payload reds HERE).
+    assert.ok(Array.isArray(r.log), `ui-smoke.ts's failure branch must emit the captured log, got: ${JSON.stringify(r.log)}`);
+    const log = r.log;
+
+    // THE CLAIM UNDER TEST, checked FIRST and against the RAW log — this is what PR #373's REJECT
+    // was about, checked ahead of `r.ok`/`r.error` on purpose. A live mutation run against this
+    // exact test (this PR's #373 comment records the mutation table) found that disabling viem's
+    // chain guard at the write-action layer (`chain: null` on `simulateThenWrite`'s
+    // `simulateContract` call, which rides through the `request` object into `walletClient
+    // .writeContract`) lets a real send actually reach the chain — which flips `r.ok` to `true`,
+    // not `false`. If that ever regresses again, THIS assertion must be the one that names it, not
+    // a generic ok/false mismatch several lines later that a reader has to go correlate with "did a
+    // send leak" by hand.
+    //
+    // Raw `eth_sendTransaction` count (`rawSends`, ui-smoke-assertions.mjs), not `sendSequence`'s
+    // decoded functionName list: `decodedSends` silently DROPS any send it cannot decode against its
+    // five-function ABI mirror — a drifted mirror, or a send with no/garbled calldata, would read
+    // back as zero decoded sends even though a real send reached the chain. Count every attempted
+    // send, decodable or not.
+    const leaked = rawSends(log);
+    assert.deepEqual(leaked, [], `no eth_sendTransaction should have reached the chain on a chain-id mismatch, found ${leaked.length}`);
+
+    // NON-VACUITY anchor, checked second (not first): prove the override hook actually fired, for a
+    // case `rawSends` alone cannot catch — a throw in `main()` before `log = recording.log` runs
+    // (ui-smoke.ts) leaves the module-scope default `log = []`, which reads as "no sends" regardless
+    // of whether the override ever reached the app. Not reproduced by any of this PR's live mutation
+    // runs (every one of them got at least as far as answering `eth_chainId`, see the #373 comment's
+    // table) — guarded here on principle, the same way the other checkers guard shapes that have not
+    // been observed live, rather than left unguarded because nothing has hit it yet.
+    assert.ok(log.some((e) => e.method === 'eth_chainId' && e.result === '0x1'), 'the chain-id-override hook must have answered eth_chainId as chain 1 at least once');
+
+    assert.equal(r.ok, false, 'RED expected: a wallet on the wrong chain must not be allowed to write');
+    // Tightened from a bare /chain/i, which also matches viem's unrelated `ChainNotFoundError`
+    // ("No chain was provided to the request...") — a client MISCONFIGURATION, not a caught
+    // mismatch, verified empirically (this PR's #373 comment) to also make `r.ok === false` and
+    // satisfy /chain/i. `does not match the target chain` is viem's `ChainMismatchError`-only
+    // wording (node_modules/viem/_esm/errors/chain.js), so this can't be satisfied by that other
+    // error.
+    assert.match(r.error, /does not match the target chain/, `expected a genuine chain-ID MISMATCH error (not viem's unrelated "no chain configured" error), got: ${r.error}`);
+
+    const sends = sendSequence(log);
     assert.deepEqual(sends, [], 'no approve/deposit send should have reached the chain on a chain-id mismatch');
   });
 
@@ -198,6 +243,10 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     );
     assert.equal(checkRecipient(depositLog, { functionName: 'deposit', expectedTo: vault }), null);
     assert.equal(checkEverySendSimulated(depositLog), null, 'every send must be preceded by an eth_call (simulateThenWrite)');
+    // NON-VACUITY: checkChainIdConsistent returns null both when every eth_chainId answer matches
+    // AND when the log holds zero eth_chainId entries at all (an empty filter has no wrong entries
+    // either) — pin that this run actually exercised the check, not that it had nothing to check.
+    assert.ok(depositLog.some((e) => e.method === 'eth_chainId'), 'depositLog must contain at least one eth_chainId entry for checkChainIdConsistent to actually check');
     assert.equal(checkChainIdConsistent(depositLog, CHAIN_ID_HEX), null);
   });
 
@@ -322,7 +371,13 @@ function spawnSyncCast(rpcUrl, args) {
   const bin = requireBin('cast');
   const r = spawnSync(bin, [...args, '--rpc-url', rpcUrl], { encoding: 'utf8', windowsHide: true });
   if (r.status !== 0) throw new Error(`cast ${args.join(' ')} failed: ${r.stderr}`);
-  return r.stdout.trim();
+  const out = r.stdout.trim();
+  // `BigInt('')` is `0n`, not a throw — an empty-but-exit-0 `cast call` would silently read as a
+  // real zero everywhere this helper feeds `BigInt(...)` (balances, share counts), making the
+  // exact-round-trip and full-burn assertions pass on a value that was never actually read. Same
+  // shape as the PR #373 REJECT one level down: refuse to let an empty read pass as data.
+  if (!out) throw new Error(`cast ${args.join(' ')} produced no output (exit 0, empty stdout) — refusing to read this as zero`);
+  return out;
 }
 
 // ─────────────────────── fixture-based mutation tests of the CHECKERS themselves ───────────────────────
@@ -404,10 +459,37 @@ test('NON-VACUITY: the chain-id-mismatch MUTATION test\'s own assertion actually
     'RED expected: the live MUTATION test\'s own assertion must throw when fed a log where a send leaked through',
   );
 
-  // And the vacuous pre-fix path, pinned so it can never silently come back: if `r.log` were ever
-  // `undefined` again and read through `?? []`, the same leaked-send scenario would wrongly pass.
-  const vacuousSends = sendSequence(undefined ?? []);
-  assert.deepEqual(vacuousSends, [], 'documents the exact vacuity: `undefined ?? []` always reads as an empty, always-passing sequence');
+  // NOTE on what is deliberately NOT asserted here: `sendSequence(undefined ?? [])` is always `[]`
+  // — that is a fact about `??`'s own semantics, true independent of any application state, so an
+  // `assert.deepEqual` on it cannot fail and would itself be exactly the tautological-assertion
+  // shape this test exists to guard against. The real regression guard is the `assert.throws` above
+  // (the leaked-send log fed through the REAL, un-fallback'd assertion line) plus `r.log` no longer
+  // carrying a `?? []` at its one call site (grep it — `ui-smoke.test.mjs`'s only defined `sends`
+  // comes from `sendSequence(r.log)`, not `sendSequence(r.log ?? [])`).
+});
+
+test('NON-VACUITY: the wrong-chain-id MUTATION test\'s raw-send-count check catches what sendSequence alone would miss', () => {
+  // Found auditing this PR's own fix for the same vacuity shape one level down. `decodedSends`
+  // (ui-smoke-assertions.mjs) silently DROPS any `eth_sendTransaction` entry it cannot decode
+  // against its five-function ABI mirror (`if (!tx?.data) continue` / `catch { /* leave undecoded */ }`)
+  // — by design, so it never MISREPORTS an unknown send as a known one, but that means `sendSequence`
+  // undercounts: a send whose calldata does not match any of the five known selectors reads back as
+  // zero decoded sends even though a real send reached the chain. A log with exactly one such send
+  // (garbage, undecodable calldata) proves the gap: `sendSequence` reports it as absent while
+  // `rawSends` (ui-smoke-assertions.mjs) — what the wrong-chain-id test now checks first — still
+  // sees it. Run against the SAME exported functions the live test calls, and through an
+  // `assert.throws`, the same way the sibling NON-VACUITY test above does: a bare length check on a
+  // hand-built one-element array would itself be a constant expression incapable of failing,
+  // exactly the shape this test exists to guard against.
+  const undecodableLog = [sendEntry(VAULT, '0xdeadbeef')];
+  assert.deepEqual(sendSequence(undecodableLog), [], 'sendSequence cannot decode this calldata against any of the five known functions, and correctly does not guess');
+  const leaked = rawSends(undecodableLog);
+  assert.equal(leaked.length, 1, 'rawSends must still see the send sendSequence silently dropped');
+  assert.throws(
+    () => assert.deepEqual(leaked, [], 'no eth_sendTransaction should have reached the chain on a chain-id mismatch'),
+    assert.AssertionError,
+    'RED expected: the live MUTATION test\'s raw-send-count assertion must throw when fed a log holding an undecodable send',
+  );
 });
 
 test('non-firing branch: a correctly-ordered, correctly-bounded, correctly-addressed log trips none of the checkers', () => {
