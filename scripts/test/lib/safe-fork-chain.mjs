@@ -25,6 +25,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,34 +145,84 @@ export function dealErc20(rpcUrl, token, address, amount) {
 
 // ─────────────────────────────────────────── deploy ───────────────────────────────────────────
 
+/**
+ * A cross-process mutex around `deployProtocol`, added when scripts/test/safe-tx-builder-fork.test.mjs
+ * and scripts/test/safe-tx-builder-refusals.test.mjs started calling this function alongside
+ * scripts/test/safe-route-fork.test.mjs's own calls. `node --test` runs separate test FILES as
+ * separate processes, and `forge script --broadcast` always writes to the SAME fixed path
+ * (`contracts/broadcast/DeployTestnet.s.sol/84532/run-latest.json`) regardless of which process
+ * invoked it -- with a single caller this was safe (this function's own snapshot-immediately-after
+ * comment already documents the ONE-caller race it guards against), but two DIFFERENT processes
+ * running `forge script --broadcast` at overlapping times can interleave their writes to that one
+ * path, and the reader here has no way to tell a torn/foreign write from its own. Measured directly:
+ * running safe-route-fork.test.mjs together with the two files above reproduced
+ * "registry.wire() did NOT revert" and "Cannot read properties of undefined (reading 'topics')" --
+ * failures with no connection to what either file's own logic does, which is what a cross-process
+ * write race on a shared fixed path looks like. A simple exclusive-create lock file, retried with
+ * backoff, serializes every `deployProtocol` call machine-wide for the duration of the deploy +
+ * read, which is the only window that matters -- callers still snapshot their own copy immediately
+ * after, exactly as before, so nothing DOWNSTREAM of this function needs to change.
+ */
+const DEPLOY_LOCK_PATH = path.join(os.tmpdir(), 'agv-safe-fork-chain-deploy-protocol.lock');
+
+function withDeployLock(fn) {
+  const deadline = Date.now() + 90_000;
+  let fd;
+  for (;;) {
+    try {
+      fd = fs.openSync(DEPLOY_LOCK_PATH, 'wx'); // atomic exclusive create; throws EEXIST if held
+      break;
+    } catch (e) {
+      if (/** @type {any} */ (e).code !== 'EEXIST') throw e;
+      if (Date.now() > deadline) {
+        throw new Error(`withDeployLock: timed out waiting for ${DEPLOY_LOCK_PATH} -- a previous holder may have crashed without releasing it; delete the file by hand if so.`);
+      }
+      // Synchronous backoff: this runs inside a `before()` hook, not inside the event loop's own
+      // async work, so a busy-wait via Atomics.wait (the same primitive scripts/smoke-test.mjs's own
+      // sleepSync uses) is simpler here than threading a real async retry through every caller.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+      continue;
+    }
+  }
+  try {
+    fs.closeSync(fd);
+    return fn();
+  } finally {
+    try { fs.unlinkSync(DEPLOY_LOCK_PATH); } catch { /* already gone, or never fully created */ }
+  }
+}
+
 /** `forge script DeployTestnet.s.sol --broadcast`, UNMODIFIED, against the local fork. Returns the
- *  singleton addresses parsed from its own broadcast receipt. */
+ *  singleton addresses parsed from its own broadcast receipt. Serialized machine-wide by
+ *  `withDeployLock` (see its own doc) against every other concurrent caller of this function. */
 export function deployProtocol(rpcUrl, privateKey) {
-  run('forge', [
-    'script', 'script/DeployTestnet.s.sol:DeployTestnet',
-    '--rpc-url', rpcUrl, '--private-key', privateKey, '--broadcast', '--non-interactive',
-  ], { cwd: CONTRACTS_DIR, timeout: 120_000 });
-  const deployJson = path.join(CONTRACTS_DIR, 'broadcast', 'DeployTestnet.s.sol', String(BASE_SEPOLIA_CHAIN_ID), 'run-latest.json');
-  if (!fs.existsSync(deployJson)) throw new Error(`deployProtocol: expected forge to write ${deployJson}`);
-  const j = JSON.parse(fs.readFileSync(deployJson, 'utf8'));
-  const byName = {};
-  for (const tx of j.transactions ?? []) if (tx.transactionType === 'CREATE' && tx.contractName) (byName[tx.contractName] ??= []).push(tx.contractAddress);
-  const one = (name) => {
-    const a = byName[name] ?? [];
-    if (a.length !== 1) throw new Error(`deployProtocol: expected exactly one ${name}, found ${a.length}`);
-    return a[0];
-  };
-  return {
-    registry: one('OperatorRegistry'),
-    governance: one('Governance'),
-    feeEngine: one('FeeEngine'),
-    subVaultRegistry: one('SubVaultRegistry'),
-    vaultDeployer: one('VaultDeployer'),
-    factory: one('VaultFactory'),
-    aggregator: one('ChainlinkOracle'),
-    adapter: one('AggregationRouterAdapter'),
-    deployJsonPath: deployJson,
-  };
+  return withDeployLock(() => {
+    run('forge', [
+      'script', 'script/DeployTestnet.s.sol:DeployTestnet',
+      '--rpc-url', rpcUrl, '--private-key', privateKey, '--broadcast', '--non-interactive',
+    ], { cwd: CONTRACTS_DIR, timeout: 120_000 });
+    const deployJson = path.join(CONTRACTS_DIR, 'broadcast', 'DeployTestnet.s.sol', String(BASE_SEPOLIA_CHAIN_ID), 'run-latest.json');
+    if (!fs.existsSync(deployJson)) throw new Error(`deployProtocol: expected forge to write ${deployJson}`);
+    const j = JSON.parse(fs.readFileSync(deployJson, 'utf8'));
+    const byName = {};
+    for (const tx of j.transactions ?? []) if (tx.transactionType === 'CREATE' && tx.contractName) (byName[tx.contractName] ??= []).push(tx.contractAddress);
+    const one = (name) => {
+      const a = byName[name] ?? [];
+      if (a.length !== 1) throw new Error(`deployProtocol: expected exactly one ${name}, found ${a.length}`);
+      return a[0];
+    };
+    return {
+      registry: one('OperatorRegistry'),
+      governance: one('Governance'),
+      feeEngine: one('FeeEngine'),
+      subVaultRegistry: one('SubVaultRegistry'),
+      vaultDeployer: one('VaultDeployer'),
+      factory: one('VaultFactory'),
+      aggregator: one('ChainlinkOracle'),
+      adapter: one('AggregationRouterAdapter'),
+      deployJsonPath: deployJson,
+    };
+  });
 }
 
 // ─────────────────────────────────────────── Safe deployment ───────────────────────────────────────────

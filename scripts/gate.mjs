@@ -58,6 +58,13 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-23, same reasoning as build-rebalance-order.mjs immediately above: this is run BY
+  // HAND against a live chain (the owner, importing its output at app.safe.global) once Arc 5042 is
+  // deployed, and nothing in CI executes the file directly — scripts/test/safe-tx-builder-fork.test.mjs
+  // and scripts/test/safe-tx-builder-refusals.test.mjs only ever SPAWN it as a child process with a
+  // controlled env, which parses it incidentally on whichever code path each test happens to reach,
+  // never the whole file up front the way `node --check` does.
+  'scripts/build-safe-tx-builder.mjs',
   // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
   // page is one template literal, so a single stray backtick inside a comment in that literal
   // terminates the string and the file stops parsing — a class of defect no test here can reach,
