@@ -79,8 +79,11 @@ function createVaultViaSafe1Against(factoryDep) {
   const data = cast(['calldata', 'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params]);
   const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
   const plan = buildPlan({ safe: safe1, to: factoryDep.factory, data, nonce });
-  const hash = safeTransactionHash({ call: callHelper, plan });
-  const sig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  // #378: the digest is recomputed locally and must equal the Safe's own getTransactionHash;
+  // signing is over the typed data, never over an RPC-supplied hash.
+  const chainId = cast(['chain-id', '--rpc-url', fork.rpcUrl]).trim();
+  safeTransactionHash({ call: callHelper, cast, plan, chainId });
+  const sig = packSignatures([signAsOwner({ cast, plan, chainId, signerArgs: ['--private-key', ownerA.privateKey] })]);
   const out = cast(['send', safe1, SAFE_EXEC_TRANSACTION_SIG, ...execTransactionArgs(plan, sig).map(String), '--rpc-url', fork.rpcUrl, '--private-key', broadcaster.privateKey, '--json']);
   const receipt = JSON.parse(out.slice(out.indexOf('{')));
   const T_VAULT_CREATED = cast(['keccak', 'VaultCreated(address,address,address,uint256)']);
