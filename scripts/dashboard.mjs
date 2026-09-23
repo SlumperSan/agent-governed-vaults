@@ -19,6 +19,7 @@ import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
+import { runLaunchChecks } from './lib/launch-checks.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -108,6 +109,30 @@ const PAGE = `<!doctype html>
   .pill{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid currentColor;
         font-size:11px;font-family:var(--mono);white-space:nowrap}
   .scroll{overflow-x:auto}
+  /* --- launch checks. On-demand, never polled: every row starts idle and only changes when the
+     owner clicks Check. A row that silently went green on its own would be indistinguishable from
+     one he actually verified. */
+  #launchchecks{margin:0 0 16px}
+  .lchead{display:flex;align-items:baseline;gap:10px;margin-bottom:2px}
+  .lchead h2{margin:0}
+  #lc-check{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:6px 14px;
+             font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+  #lc-check:hover{filter:brightness(1.08)}
+  #lc-check:disabled{opacity:.6;cursor:default}
+  #lc-stamp{color:var(--dim);font-size:11.5px;font-family:var(--mono)}
+  .lcrow{padding:9px 0;border-bottom:1px solid var(--line)}
+  .lcrow:last-child{border-bottom:0}
+  .lcrow-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .lcname{font-weight:600;font-size:13px}
+  .lcdetail{color:var(--dim);font-size:12.5px;margin-top:4px;overflow-wrap:anywhere}
+  .lcremedy{margin-top:7px;display:flex;gap:8px;align-items:flex-start}
+  .lcremedy code{font-family:var(--mono);font-size:11.5px;background:var(--bg);color:var(--ink);
+                 border:1px solid var(--line);border-radius:6px;padding:7px 9px;flex:1;min-width:0;
+                 overflow-wrap:anywhere;user-select:all}
+  .lccopy{background:var(--panel);color:var(--dim);border:1px solid var(--line);border-radius:6px;
+          padding:6px 10px;font:inherit;font-size:11.5px;cursor:pointer;flex:none}
+  .lccopy:hover{color:var(--ink);border-color:var(--dim)}
+  .lc-pill{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
   table{border-collapse:collapse;width:100%;font-size:13px}
   td,th{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
   th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
@@ -379,6 +404,21 @@ const PAGE = `<!doctype html>
   <span class="meta" id="stamp">loading…</span>
   <span class="meta" id="err" class="nogo"></span>
 </header>
+<section id="launchchecks" class="wide">
+  <div class="lchead">
+    <h2>Launch checks</h2>
+    <button id="lc-check" type="button">Check</button>
+    <span id="lc-stamp"></span>
+  </div>
+  <div id="lc-rows">
+    <!-- Filled by JS. Rows start idle — nothing here has been read yet — and this panel is never
+         driven by the 1s /api/status poll: it only runs when clicked, so a public RPC and two live
+         websites are not hit once a second for a page that may sit open all day. -->
+  </div>
+  <div class="note">Every row is a read — <code>eth_call</code>, <code>eth_getCode</code>,
+    <code>eth_chainId</code>, or a file/HTTP fetch. Nothing here signs or broadcasts. Where the fix
+    is a transaction, the exact command is shown below the row for you to copy and run yourself.</div>
+</section>
 <main id="main"></main>
 
 <!-- THE MODAL LIVES INSIDE THE SCRIM, which is what lets it centre and lets a tall card scroll
@@ -907,6 +947,88 @@ async function tick(){
   }
 }
 tick(); setInterval(tick, 1000);
+
+// ---- launch checks -----------------------------------------------------------------------
+// Deliberately NOT part of tick()/render() and NOT on the 1s poll. This is the one panel on the
+// page that reaches a public RPC and two live websites, so it runs only when clicked — a page
+// left open all day must not hammer either.
+const LC_ROWS = [
+  { id:'safe', name:'Creator Safe live on Arc mainnet' },
+  { id:'proposal', name:'Stale governance proposal blocking the soak' },
+  { id:'balance', name:'Deployer balance margin' },
+  { id:'arc-deploy', name:'Arc deployment' },
+  { id:'member-surface', name:'What app.rwally.com and rwally.com are serving' },
+];
+const LC_STATE_CLASS = { green:'go', amber:'warn', red:'nogo', unknown:'idle' };
+const LC_STATE_LABEL = { green:'PASS', amber:'CHECK', red:'FAIL', unknown:'UNKNOWN' };
+
+function renderLaunchChecks(byId){
+  // byId === null means "never checked" (the initial render). Any OTHER value means a check was
+  // just attempted — so a row missing from it (an empty/short rows array, not just a row that
+  // threw) must render as UNKNOWN, loudly, the same as a row whose own state came back 'unknown'.
+  // Falling through to "NOT CHECKED YET" here would be the same vanishing-disclosure defect one
+  // more layer out: a row a real response failed to cover reading as merely never clicked.
+  const attempted = byId !== null;
+  document.getElementById('lc-rows').innerHTML = LC_ROWS.map(meta => {
+    const r = byId && byId[meta.id];
+    const state = r ? r.state : (attempted ? 'unknown' : null);
+    const pillClass = state ? LC_STATE_CLASS[state] : 'idle';
+    const pillLabel = state ? LC_STATE_LABEL[state] : 'NOT CHECKED YET';
+    const detail = r ? esc(r.detail) : (attempted ? 'row missing from the check response — treat as unknown' : 'Click Check to run this read.');
+    const remedy = r && r.remedy
+      ? '<div class="lcremedy"><code id="lc-cmd-'+meta.id+'">'+esc(r.remedy)+'</code>'
+        + '<button class="lccopy" type="button" data-copy="lc-cmd-'+meta.id+'">Copy</button></div>'
+      : '';
+    return '<div class="lcrow">'
+      + '<div class="lcrow-top"><span class="pill lc-pill '+pillClass+'">'+pillLabel+'</span>'
+      + '<span class="lcname">'+esc(meta.name)+'</span></div>'
+      + '<div class="lcdetail">'+detail+'</div>'
+      + remedy
+      + '</div>';
+  }).join('');
+}
+renderLaunchChecks(null);
+
+document.getElementById('lc-check').addEventListener('click', async () => {
+  const btn = document.getElementById('lc-check');
+  btn.disabled = true; btn.textContent = 'checking…';
+  try{
+    const r = await fetch('/api/launch-checks');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    const byId = Object.fromEntries((data.rows||[]).map(row => [row.id, row]));
+    renderLaunchChecks(byId);
+    document.getElementById('lc-stamp').textContent =
+      'checked '+new Date(data.at).toISOString().slice(0,19).replace('T',' ')+'Z';
+  }catch(e){
+    // A failed fetch/parse must not leave whatever pills were already on screen — a glance at a
+    // panel showing stale PASS from the last successful click is a false all-clear. Render every
+    // row as UNKNOWN, loudly, rather than leaving stale state or falling back to the "NOT CHECKED
+    // YET" idle look, which reads as pending rather than failed.
+    const byId = Object.fromEntries(LC_ROWS.map(meta =>
+      [meta.id, { id:meta.id, state:'unknown', detail:'check failed — '+e.message, remedy:null }]));
+    renderLaunchChecks(byId);
+    document.getElementById('lc-stamp').innerHTML = '<span class="nogo">check failed — '+esc(e.message)+'</span>';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Check';
+  }
+});
+
+document.getElementById('lc-rows').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-copy]');
+  if(!btn) return;
+  const text = document.getElementById(btn.dataset.copy)?.textContent || '';
+  try{
+    await navigator.clipboard.writeText(text);
+    const prev = btn.textContent; btn.textContent = 'copied';
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  }catch{
+    // Clipboard API can refuse (permissions, non-secure context edge cases). The command text is
+    // already selectable in the box above the button, so this is a convenience failing, not a
+    // dead end.
+    btn.textContent = 'select & copy';
+  }
+});
 </script>
 </body></html>`;
 
@@ -1006,6 +1128,22 @@ const server = createServer((req, res) => {
       res.writeHead(out.code, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(out.msg);
     });
+    return;
+  }
+
+  // Read-only, on demand, never cached: the owner clicked Check and wants THIS read, not a
+  // snapshot from up to TTL_MS ago. See scripts/lib/launch-checks.mjs's header for why every row
+  // here is an eth_call/eth_getCode/eth_chainId/file/HTTP read and never a signed transaction.
+  if (url.pathname === '/api/launch-checks') {
+    runLaunchChecks()
+      .then((rows) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ at: new Date().toISOString(), rows }));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`launch-checks failed: ${/** @type {Error} */ (e).message}`);
+      });
     return;
   }
 
