@@ -615,10 +615,27 @@ async function stepActivate() {
 }
 
 function buildPayload() {
-  // No-op rebalance: the allow-listed adapter with ZERO orders. Voters approve exactly
-  // these bytes (actionHash pins them); execution exercises governance → VaultCore →
-  // adapter-allowlist checks without moving a token.
-  state.payload = abiEncode('f(address,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, '[]');
+  // No-op rebalance: the allow-listed adapter, a THREE-field payload, ZERO orders. Voters
+  // approve exactly these bytes (actionHash pins them); execution exercises governance →
+  // VaultCore → adapter-allowlist checks without moving a token.
+  //
+  // THREE fields, not two (card 207): Governance.execute's Rebalance branch decodes
+  // `(address adapter, uint256 maxSlippageBps, IExecutionAdapter.SwapOrder[] orders)` —
+  // contracts/src/Governance.sol's `abi.decode(payload, (address, uint256,
+  // IExecutionAdapter.SwapOrder[]))`, which mirrors VaultCore's `executeRebalance` signature
+  // exactly. A 2-field encode here (missing maxSlippageBps) decodes on that contract as
+  // garbage — the array's offset word gets read as maxSlippageBps and everything downstream
+  // shifts — reproduced live as a bare Panic(0x41). scripts/test/rebalance-payload-shape.test.mjs
+  // asserts this encode matches the compiled VaultCore ABI's executeRebalance inputs, so a
+  // re-drift here fails in CI instead of on a testnet run.
+  //
+  // maxSlippageBps = 100 (1%): VaultCore's executeRebalance rejects 0 outright
+  // (BadSlippageBound — "a bound of zero would demand exact oracle parity and make every real
+  // swap unexecutable"), and the ceiling is MAX_REBALANCE_SLIPPAGE_BPS (2%). Orders stays
+  // empty either way, so no swap is attempted — this bound only has to be IN RANGE for
+  // VaultCore.executeRebalance to accept the payload. Same value the card-176 UI smoke
+  // harness uses for the identical no-op (apps/vaults-ui/test/lib/ui-smoke-chain.mjs).
+  state.payload = abiEncode('f(address,uint256,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, 100, '[]');
   state.actionHash = keccakOf(state.payload);
 }
 

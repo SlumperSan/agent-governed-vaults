@@ -121,8 +121,16 @@ function preflight() {
 function buildPayload() {
   // Same no-op shape Sprint 9 proved: allow-listed adapter, zero orders. Voters approve
   // exactly these bytes; actionHash pins them.
+  //
+  // THREE-field payload, not two (card 207): Governance.execute's Rebalance branch decodes
+  // `(address adapter, uint256 maxSlippageBps, IExecutionAdapter.SwapOrder[] orders)`. A
+  // 2-field encode here decodes on-chain as garbage and Panics. maxSlippageBps = 100 (1%):
+  // VaultCore.executeRebalance rejects 0 outright (BadSlippageBound) and the ceiling is
+  // MAX_REBALANCE_SLIPPAGE_BPS (2%); orders stays empty either way, so no swap is attempted —
+  // this bound only has to be IN RANGE. Same value scripts/smoke-test.mjs and
+  // apps/vaults-ui/test/lib/ui-smoke-chain.mjs use for the identical no-op.
   const payload = saveFirst('payload',
-    abiEncode('f(address,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, '[]'));
+    abiEncode('f(address,uint256,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, 100, '[]'));
   saveFirst('actionHash', keccakOf(payload));
 }
 

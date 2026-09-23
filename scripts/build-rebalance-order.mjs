@@ -58,9 +58,38 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RPC = process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
 const BPS = 10000n;
+
+/**
+ * The exact `abi.decode` shape Governance.execute's Rebalance branch destructures a payload
+ * into (contracts/src/Governance.sol), read off the COMPILED CONTRACT
+ * (contracts/out/VaultCore.sol/VaultCore.json's `executeRebalance` ABI -- typed identically,
+ * since Governance.sol's Rebalance branch calls `IVaultExecution.executeRebalance` with the
+ * decoded values) rather than typed out by hand here a second time. Card 207: this script's own
+ * hand-assembled payload below used to omit `maxSlippageBps` entirely -- a 2-field payload that
+ * decoded on-chain as garbage and its own round-trip check decoded with the same stale 2-field
+ * signature, so the check passed on a payload that would Panic(0x41) on Governance.execute.
+ */
+function rebalanceDecodeSig() {
+  const artifactPath = path.join(ROOT, 'contracts', 'out', 'VaultCore.sol', 'VaultCore.json');
+  const abi = JSON.parse(fs.readFileSync(artifactPath, 'utf8')).abi;
+  const fn = abi.find((e) => e.type === 'function' && e.name === 'executeRebalance');
+  if (!fn) throw new Error('executeRebalance not found in the compiled VaultCore ABI');
+  const typeOf = (input) => {
+    if (input.type.startsWith('tuple')) {
+      const suffix = input.type.slice('tuple'.length);
+      return `(${input.components.map(typeOf).join(',')})${suffix}`;
+    }
+    return input.type;
+  };
+  return `f(${fn.inputs.map(typeOf).join(',')})`;
+}
 
 // SwapRouter02's exactInputSingle: the 7-field params struct, WITHOUT the `deadline` member the
 // original SwapRouter carried. That difference is why the selector is 0x04e45aaf and not
@@ -414,21 +443,25 @@ async function main() {
   const routeData = EXACT_INPUT_SINGLE
     + [usdc, tokenOut, feeTier, adapter, amountIn, minAmountOut, 0n].map(word).join('');
 
-  // abi.encode(address, SwapOrder[]). SwapOrder is dynamic because of `bytes routeData`, so this
-  // one has offsets, and it is verified by decoding it back rather than by inspection.
+  // abi.encode(address, uint256, SwapOrder[]) -- THREE head words (adapter, maxSlipBps, offset
+  // to the array), not two (card 207). SwapOrder is dynamic because of `bytes routeData`, so the
+  // array itself has offsets, and the whole thing is verified by decoding it back rather than by
+  // inspection. The array's tail now starts at 0x60 (3 head words * 32), not 0x40 -- the earlier
+  // 2-field version's offset is exactly what a fixed maxSlipBps word here shifts past.
   const orderBody = [usdc, tokenOut, amountIn, minAmountOut, deadline].map(word).join('')
     + word(0xc0n)
     + word(BigInt((routeData.length - 2) / 2))
     + pad32(routeData.slice(2));
-  const payload = '0x' + word(adapter) + word(0x40n) + word(1n) + word(0x20n) + orderBody;
+  const payload = '0x' + word(adapter) + word(maxSlipBps) + word(0x60n) + word(1n) + word(0x20n) + orderBody;
 
   // Compare the VALUES, not just the adapter's presence. An earlier version substring-matched the
   // adapter address, which also appears inside routeData as `recipient` — so it would have passed
-  // on a payload whose amounts were wrong.
-  const rt = castPure(
-    'abi-decode', '--input',
-    'f(address,(address,address,uint256,uint256,uint256,bytes)[])', payload,
-  );
+  // on a payload whose amounts were wrong. The decode signature itself is read off the compiled
+  // contract (rebalanceDecodeSig, above) rather than hand-typed here a second time -- that
+  // hand-typed second copy is what drifted from Governance.execute's real 3-field decode in the
+  // first place (card 207).
+  const decodeSig = rebalanceDecodeSig();
+  const rt = castPure('abi-decode', '--input', decodeSig, payload);
   // `\d+`, not `\d{4,}`. The four-digit floor was a false NEGATIVE: `--amount-in 100` produces a
   // correct payload that this check then rejected. It failed safe, but a verifier that reds on
   // good input is one people learn to bypass. Hex bodies are stripped first so the digits inside
