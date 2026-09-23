@@ -343,3 +343,37 @@ export function execTransactionArgs(plan, packedSignatures) {
     plan.gasPrice, plan.gasToken, plan.refundReceiver, packedSignatures,
   ];
 }
+
+/**
+ * A "pre-validated" owner signature — Safe v1.4.1 `Safe.sol` `checkNSignatures`'s `v == 1` branch
+ * (`contracts/Safe.sol`, `safe-global/safe-smart-account` tag `v1.4.1`, the signature-decoding loop
+ * a few lines below the `v == 0` contract-signature branch): for a packed 65-byte signature with
+ * `v == 1`, `currentOwner = address(uint160(uint256(r)))` and the check passes when
+ * `msg.sender == currentOwner` — `s` is never read on this branch. NO ECDSA SIGNING HAPPENS: this
+ * is the documented shortcut for "the owner is the one calling `execTransaction` right now", which
+ * is exactly the dashboard Sign queue's shape (MetaMask submits the transaction with `from` equal
+ * to the Safe owner) and needs no private key held anywhere outside the owner's own wallet.
+ *
+ * WHY THIS DOES NOT REOPEN MAJOR-1 (`Obsidian Vault/Agent-Governed Vaults/Verdicts/
+ * 2026-09-23-security-safe-signing-path.md`, `scripts/lib/safe-exec.mjs`'s own file-header fix on
+ * branch `fix/safe-exec-local-eip712`). MAJOR-1 is about a SIGNED HASH whose preimage the signer
+ * never saw — a malicious RPC could return the hash of a different SafeTx and collect a valid
+ * signature over it. There is no signed hash here at all: `Safe.execTransaction` computes
+ * `getTransactionHash` itself, ON CHAIN, from the exact `(to,value,data,...)` calldata the caller
+ * (the browser's `eth_sendTransaction`) supplies directly — nothing this repository resolved or
+ * displayed off-chain is trusted for what gets hashed. The owner's authorisation is `msg.sender`,
+ * enforced by the EVM itself, not a signature this file or an RPC could be tricked about.
+ *
+ * @param {string} owner a Safe owner address (20 bytes)
+ * @returns {string} 65-byte `0x`-prefixed signature: `pad32(owner) ‖ 0x00×32 ‖ 0x01`
+ */
+export function preValidatedSignature(owner) {
+  const addr = String(owner).trim().toLowerCase().replace(/^0x/, '');
+  if (!/^[0-9a-f]{40}$/.test(addr)) {
+    throw new Error(`preValidatedSignature: ${JSON.stringify(owner)} is not a 20-byte address`);
+  }
+  const r = addr.padStart(64, '0');
+  const s = '0'.repeat(64);
+  const v = '01';
+  return `0x${r}${s}${v}`;
+}
