@@ -202,10 +202,14 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     // NON-VACUITY anchor, checked second (not first): prove the override hook actually fired, for a
     // case `rawSends` alone cannot catch — a throw in `main()` before `log = recording.log` runs
     // (ui-smoke.ts) leaves the module-scope default `log = []`, which reads as "no sends" regardless
-    // of whether the override ever reached the app. Not reproduced by any of this PR's live mutation
-    // runs (every one of them got at least as far as answering `eth_chainId`, see the #373 comment's
-    // table) — guarded here on principle, the same way the other checkers guard shapes that have not
-    // been observed live, rather than left unguarded because nothing has hit it yet.
+    // of whether the override ever reached the app. This is not hypothetical: a live mutation run
+    // with `chain: null` on `chain-actions.ts`'s per-call argument (this PR's #373 comment, table row
+    // 3) hit exactly this shape — viem's `sendTransaction` never calls `getChainId` when `chain` is
+    // explicitly `null`, so `eth_chainId` was never asked, and THIS anchor is what went red (ordered
+    // ahead of `rawSends` in that run). Once the checks were reordered `rawSends`-first to match the
+    // claim under test, a rerun of the same mutation aborted at `rawSends` before ever reaching this
+    // line — so this anchor still guards a shape one call ordering away from firing again, not a
+    // shape nothing has ever hit.
     assert.ok(log.some((e) => e.method === 'eth_chainId' && e.result === '0x1'), 'the chain-id-override hook must have answered eth_chainId as chain 1 at least once');
 
     assert.equal(r.ok, false, 'RED expected: a wallet on the wrong chain must not be allowed to write');
