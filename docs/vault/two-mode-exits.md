@@ -36,7 +36,7 @@ selling, so no slippage borne by remainers; the exiter carries their own executi
   assembly, gas-capped, bounded to one returndata word (MO-2); malformed results degrade to escrow
   rather than reverting ([[safetransferlib]]).
 
-## Exit fee (stays in the vault, never to operator)
+## Exit fee (stays in the vault, never routed to operator)
 
 ```
 fee(t) = feeMax × max(0, 1 − t / decayPeriod)     feeMax ≤ EXIT_FEE_CAP_BPS = 100 (1% cap)
