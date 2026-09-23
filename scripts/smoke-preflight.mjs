@@ -283,6 +283,46 @@ export const EXPECTED_CREATE_VAULT_SELECTOR = '0x49af0336';
 export const EXPECTED_REGISTER_VAULT_SELECTOR = '0x1a8cd97f';
 
 /**
+ * `createVault`'s inner-call parameter tuple, as the ONE string every caller hands to
+ * `cast calldata CREATE_VAULT_SIG <this>`. ONE construction, not four: before this, `smoke-test.mjs`
+ * built this exact template literal separately in `stepCreateVault` (direct send) and
+ * `stepCreateVaultRouted` (Safe-routed) — a duplicated shape is how a builder and a checker drift.
+ * `scripts/build-safe-tx-builder.mjs` (the offline Safe Transaction Builder batch generator) is a
+ * THIRD caller, and it is load-bearing there that the calldata it emits for the owner to sign is
+ * byte-identical to what a live `smoke-test.mjs` run would send — reusing this function is how that
+ * identity is guaranteed rather than merely intended.
+ *
+ * @param {object} p
+ * @param {string} p.usdc
+ * @param {string[]} p.tokens the vault's basket assets, in order
+ * @param {string} p.aggregator the oracle address
+ * @param {string|number} p.capacityCapUsdc
+ * @param {string|number} p.minDepositUsdc
+ * @param {string|number} p.exitFeeMaxBps
+ * @param {string|number} p.exitFeeDecayPeriod
+ * @param {string} p.adapter the sole allow-listed execution adapter
+ * @returns {string} the `VaultParams` tuple, e.g. `(0xUSDC,[0xA,0xB],0xORACLE,1,2,3,4,[0xADAPTER])`
+ */
+export function createVaultParamsTuple({
+  usdc, tokens, aggregator, capacityCapUsdc, minDepositUsdc, exitFeeMaxBps, exitFeeDecayPeriod, adapter,
+}) {
+  return `(${usdc},[${tokens.join(',')}],${aggregator},${capacityCapUsdc},${minDepositUsdc},${exitFeeMaxBps},${exitFeeDecayPeriod},[${adapter}])`;
+}
+
+/**
+ * `Governance.registerVault`'s `GovConfig` tuple, the same de-duplication as `createVaultParamsTuple`
+ * above — `smoke-test.mjs` built this identically in both `stepRegisterGov` and
+ * `stepRegisterGovRouted` before this extraction, and `scripts/build-safe-tx-builder.mjs` is now a
+ * third caller that needs the identical bytes.
+ *
+ * @param {object} g `cfg.smoke.gov` — see contracts/config/base-sepolia.json
+ * @returns {string} the `GovConfig` tuple
+ */
+export function registerVaultConfigTuple(g) {
+  return `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
+}
+
+/**
  * The closed set of routed actions this file will ever check a plan for, keyed by the caller-facing
  * name — deliberately NOT "any selector the caller names". A plan-checker that accepted an arbitrary
  * `expectedSelector`/`expectedTo` pair from its caller would be trivially satisfiable by a caller

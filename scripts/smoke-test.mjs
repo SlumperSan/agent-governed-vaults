@@ -47,7 +47,7 @@ import { classifyProposal } from './proposal-recovery.mjs';
 import {
   wiringImmutabilityFailure, oracleProbeWarning, normAddr,
   requireIntendedCreator, requireCreatorCode, loadDeploymentRecord, signerCacheRefusal,
-  CREATE_VAULT_SIG, REGISTER_VAULT_SIG,
+  CREATE_VAULT_SIG, REGISTER_VAULT_SIG, createVaultParamsTuple, registerVaultConfigTuple,
 } from './smoke-preflight.mjs';
 import {
   readSafeState, buildPlan, safeTransactionHash, signAsOwner, packSignatures, execTransactionArgs,
@@ -366,7 +366,11 @@ function stepCreateVault() {
   // signer). There is no `assert` here to replace with a log line: the enforcement is inside the
   // function, which is the whole point of it living in smoke-preflight.mjs where a test can call it.
   const intendedCreator = requireIntendedCreator(deployment, state.signer);
-  const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
+  const params = createVaultParamsTuple({
+    usdc: USDC, tokens: TOKENS, aggregator: dep.aggregator, capacityCapUsdc: smoke.capacityCapUsdc,
+    minDepositUsdc: smoke.minDepositUsdc, exitFeeMaxBps: smoke.exitFeeMaxBps,
+    exitFeeDecayPeriod: smoke.exitFeeDecayPeriod, adapter: dep.adapter,
+  });
   const r = send('factory.createVault', dep.factory,
     'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', params);
   const created = r.logs.find((l) => l.topics?.[0] === T_VAULT_CREATED);
@@ -496,7 +500,11 @@ function routeThroughSafe({ action, expectedTo, sig, params, label }) {
  */
 function stepCreateVaultRouted() {
   const safe = deployment.intendedCreator;
-  const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
+  const params = createVaultParamsTuple({
+    usdc: USDC, tokens: TOKENS, aggregator: dep.aggregator, capacityCapUsdc: smoke.capacityCapUsdc,
+    minDepositUsdc: smoke.minDepositUsdc, exitFeeMaxBps: smoke.exitFeeMaxBps,
+    exitFeeDecayPeriod: smoke.exitFeeDecayPeriod, adapter: dep.adapter,
+  });
   const r = routeThroughSafe({
     action: 'createVault', expectedTo: dep.factory, sig: CREATE_VAULT_SIG, params: [params],
     label: 'safe.execTransaction(createVault)',
@@ -544,7 +552,7 @@ function stepRegisterGov() {
   }
 
   const g = smoke.gov;
-  const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
+  const tuple = registerVaultConfigTuple(g);
   const r = send('governance.registerVault', dep.governance,
     'registerVault(address,(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32))', state.vault, tuple);
   readUntilEq('true', 'vault not registered', dep.governance, 'vaultRegistered(address)(bool)', state.vault);
@@ -565,7 +573,7 @@ function stepRegisterGov() {
 function stepRegisterGovRouted() {
   const safe = deployment.intendedCreator;
   const g = smoke.gov;
-  const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
+  const tuple = registerVaultConfigTuple(g);
   const r = routeThroughSafe({
     action: 'registerVault', expectedTo: dep.governance, sig: REGISTER_VAULT_SIG, params: [state.vault, tuple],
     label: 'safe.execTransaction(registerVault)',
