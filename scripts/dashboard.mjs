@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs
 import path from 'node:path';
 import { collect } from './lib/project-status.mjs';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
+import { buildSignQueueResponse, recordSentHash } from './lib/sign-queue-server.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -396,6 +397,26 @@ const PAGE = `<!doctype html>
   #drawer .qskip{border-color:#ffffff2b}
   #drawer .qskip:hover{color:var(--t-ink);border-color:var(--t-dim)}
   #drawer .dfile{font-size:12px}
+
+  /* --- Sign queue --- */
+  #sq-account{font-family:var(--mono)}
+  #sq-connect{margin-left:auto}
+  .lchead{display:flex;align-items:center;gap:10px}
+  .sqitem{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--bg)}
+  .sqitem .sqhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sqitem .sqorder{font-family:var(--mono);color:var(--dim);min-width:2.2em}
+  .sqitem .sqwhat{flex:1;min-width:200px}
+  .sqfields .row{padding:3px 0}
+  .sqitem details{margin-top:6px}
+  .sqitem details summary{cursor:pointer;color:var(--dim);font-size:12px}
+  .sqitem .sqdata{display:block;word-break:break-all;font-size:11.5px;background:var(--panel);
+    border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin:4px 0}
+  .sqblocked{color:var(--warn);font-size:12px;margin-top:6px}
+  .sqactions{display:flex;gap:8px;margin-top:8px}
+  .sqtx{font-size:12px;margin-top:6px;font-family:var(--mono)}
+  .sqitem.status-done{border-color:var(--go)}
+  .sqitem.status-failed{border-color:var(--nogo)}
+  .sqitem.status-sent{border-color:var(--warn)}
 </style>
 </head><body>
 <header>
@@ -418,6 +439,23 @@ const PAGE = `<!doctype html>
   <div class="note">Every row is a read — <code>eth_call</code>, <code>eth_getCode</code>,
     <code>eth_chainId</code>, or a file/HTTP fetch. Nothing here signs or broadcasts. Where the fix
     is a transaction, the exact command is shown below the row for you to copy and run yourself.</div>
+</section>
+<section id="signqueue" class="wide">
+  <div class="lchead">
+    <h2>Sign</h2>
+    <span id="sq-account" class="meta"></span>
+    <button id="sq-connect" type="button">Connect MetaMask</button>
+    <span id="sq-stamp" class="meta"></span>
+  </div>
+  <div id="sq-items">
+    <!-- Filled by JS, refreshed every 5s. Every item is a read on this end too: the server never
+         signs or broadcasts anything. Sign opens MetaMask in the browser; the server only records
+         the hash it reports and then confirms it by polling the chain for the receipt. -->
+  </div>
+  <div class="note">The server confirms every send itself by polling the chain for the receipt —
+    <code>status</code>, <code>from</code>/<code>to</code> (or the predicted <code>CREATE</code>
+    address) and <code>input</code> must all match what was actually shown here. A foreign or
+    mismatched hash changes nothing.</div>
 </section>
 <main id="main"></main>
 
@@ -1029,6 +1067,147 @@ document.getElementById('lc-rows').addEventListener('click', async e => {
     btn.textContent = 'select & copy';
   }
 });
+
+// ─────────────────────────── Sign queue ───────────────────────────
+// NO BACKTICK TEMPLATE LITERALS BELOW. This whole <script> block lives inside scripts/dashboard.mjs's
+// OWN backtick template literal (the PAGE constant) — gate.mjs's own header explains why a stray
+// backtick here has twice taken the board down. String concatenation only, matching every other
+// renderer already in this file (see e.g. the lcremedy line above).
+var SQ_CHAINS = {
+  5042: { hex: '0x13b2', name: 'Arc', rpcUrls: ['https://rpc.mainnet.arc.io'],
+    nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+    blockExplorerUrls: ['https://explorer.arc.io'] },
+  84532: { hex: '0x14a34', name: 'Base Sepolia', rpcUrls: ['https://sepolia.base.org'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    blockExplorerUrls: ['https://sepolia.basescan.org'] },
+};
+var sqItemsById = {};
+
+function sqPill(status){
+  if (status === 'done') return 'go';
+  if (status === 'failed') return 'nogo';
+  if (status === 'sent') return 'warn';
+  return 'idle';
+}
+
+function renderSignQueue(items){
+  sqItemsById = {};
+  var html = '';
+  for (var i = 0; i < items.length; i++){
+    var it = items[i];
+    sqItemsById[it.id] = it;
+    var dataId = 'sqd-' + it.id;
+    var dataText = it.resolvedData || it.data || '(unresolved — ' + (it.blockedReason || 'no data yet') + ')';
+    var toText = it.to === null ? '(contract creation)' : it.to;
+    html += '<div class="sqitem status-' + it.status + '" data-id="' + esc(it.id) + '">'
+      + '<div class="sqhead">'
+      +   '<span class="sqorder">#' + it.order + '</span>'
+      +   '<span class="pill">' + esc(it.chainName) + '</span>'
+      +   '<span class="sqwhat">' + esc(it.what) + '</span>'
+      +   '<span class="pill ' + sqPill(it.status) + '">' + esc(it.status) + '</span>'
+      + '</div>'
+      + '<div class="sqfields">'
+      +   (it.from ? '<div class="row"><span class="k">from</span><span class="v mono">' + esc(it.from) + '</span></div>' : '')
+      +   '<div class="row"><span class="k">to</span><span class="v mono">' + esc(toText) + '</span></div>'
+      +   '<div class="row"><span class="k">value</span><span class="v mono">' + esc(it.value) + '</span></div>'
+      + '</div>'
+      + '<details><summary>data</summary><code id="' + dataId + '" class="sqdata mono">' + esc(dataText) + '</code>'
+      +   (it.resolvedData || it.data ? ' <button type="button" data-copy="' + dataId + '">copy</button>' : '')
+      + '</details>'
+      + (it.status === 'pending' && it.blockedReason ? '<div class="sqblocked">blocked: ' + esc(it.blockedReason) + '</div>' : '')
+      + (it.txHash ? '<div class="sqtx">tx: ' + esc(it.txHash) + (it.verifyNote ? ' — ' + esc(it.verifyNote) : '') + '</div>' : '')
+      + (it.from ? '<div class="sqactions"><button type="button" class="sq-sign"' + (it.ready ? '' : ' disabled') + '>Sign</button></div>' : '')
+      + '</div>';
+  }
+  document.getElementById('sq-items').innerHTML = html;
+}
+
+async function refreshSignQueue(){
+  try{
+    var r = await fetch('/api/sign-queue');
+    var body = await r.json();
+    renderSignQueue(body.items);
+    document.getElementById('sq-stamp').textContent =
+      'checked ' + new Date(body.at).toISOString().slice(0,19).replace('T',' ') + 'Z';
+  }catch(e){
+    document.getElementById('sq-stamp').innerHTML = '<span class="nogo">check failed — ' + esc(e.message) + '</span>';
+  }
+}
+refreshSignQueue();
+setInterval(refreshSignQueue, 5000);
+
+document.getElementById('sq-connect').addEventListener('click', async () => {
+  if (!window.ethereum) { alert('MetaMask not found — install the extension first.'); return; }
+  try{
+    var accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    document.getElementById('sq-account').textContent = accts[0] || '';
+  }catch(e){
+    alert('Connect failed: ' + (e && e.message ? e.message : String(e)));
+  }
+});
+
+document.getElementById('sq-items').addEventListener('click', async (e) => {
+  var copyBtn = e.target.closest('[data-copy]');
+  if (copyBtn){
+    var text = document.getElementById(copyBtn.dataset.copy)?.textContent || '';
+    try{
+      await navigator.clipboard.writeText(text);
+      var prev = copyBtn.textContent; copyBtn.textContent = 'copied';
+      setTimeout(() => { copyBtn.textContent = prev; }, 1200);
+    }catch{ copyBtn.textContent = 'select & copy'; }
+    return;
+  }
+  var signBtn = e.target.closest('.sq-sign');
+  if (!signBtn) return;
+  var card = e.target.closest('.sqitem');
+  var id = card && card.dataset.id;
+  var item = id && sqItemsById[id];
+  if (!item) return;
+  var prevLabel = signBtn.textContent;
+  signBtn.disabled = true;
+  try{
+    if (!window.ethereum) throw new Error('MetaMask not found');
+    var accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    var account = accts[0];
+    if (!account || account.toLowerCase() !== String(item.from).toLowerCase()){
+      throw new Error('connected account ' + account + ' does not match the required signer ' + item.from);
+    }
+    var chain = SQ_CHAINS[item.chainId];
+    if (!chain) throw new Error('unknown chain ' + item.chainId);
+    try{
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chain.hex }] });
+    }catch(switchErr){
+      if (switchErr && switchErr.code === 4902){
+        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{
+          chainId: chain.hex, chainName: chain.name, nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls, blockExplorerUrls: chain.blockExplorerUrls,
+        }] });
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chain.hex }] });
+      } else { throw switchErr; }
+    }
+    var liveChainId = await window.ethereum.request({ method: 'eth_chainId' });
+    if (String(liveChainId).toLowerCase() !== chain.hex.toLowerCase()){
+      throw new Error('wallet is on chain ' + liveChainId + ', expected ' + chain.hex);
+    }
+    var data = item.resolvedData || item.data;
+    if (!data) throw new Error('no resolved data for this item yet');
+    var txParams = { from: item.from, value: '0x' + BigInt(item.value || '0').toString(16), data: data };
+    // Omit the 'to' key entirely for a CREATE — a present 'to: null' is not the same shape as an
+    // absent key to every wallet's own eth_sendTransaction validation.
+    if (item.to !== null) txParams.to = item.to;
+    var hash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [txParams] });
+    var resp = await fetch('/api/sign-queue/' + encodeURIComponent(id) + '/hash', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hash: hash, from: account }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await refreshSignQueue();
+  }catch(err){
+    alert('Sign failed: ' + (err && err.message ? err.message : String(err)));
+  }finally{
+    signBtn.disabled = false; signBtn.textContent = prevLabel;
+  }
+});
 </script>
 </body></html>`;
 
@@ -1144,6 +1323,51 @@ const server = createServer((req, res) => {
         res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
         res.end(`launch-checks failed: ${/** @type {Error} */ (e).message}`);
       });
+    return;
+  }
+
+  // Read-only on this server's end: every field is either a stored queue value or a live chain
+  // read. Nothing here signs or broadcasts — see scripts/lib/sign-queue-server.mjs's own header.
+  if (url.pathname === '/api/sign-queue' && req.method === 'GET') {
+    buildSignQueueResponse()
+      .then((body) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(body));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`sign-queue failed: ${/** @type {Error} */ (e).message}`);
+      });
+    return;
+  }
+
+  // The ONLY endpoint that writes queue lifecycle state, and it can only ever move ONE item from
+  // pending to sent, recording a hash the browser reported — see recordSentHash's own header for
+  // every refusal this enforces (wrong signer, unmet dependency, already sent/done). It can never
+  // add, edit, or remove an item.
+  const signHashMatch = /^\/api\/sign-queue\/([a-zA-Z0-9_-]+)\/hash$/.exec(url.pathname);
+  if (signHashMatch && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      let parsed;
+      try { parsed = JSON.parse(body); } catch (e) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+        return res.end(`bad JSON: ${/** @type {Error} */ (e).message}`);
+      }
+      recordSentHash(signHashMatch[1], parsed)
+        .then((out) => {
+          res.writeHead(out.code, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(out.msg);
+        })
+        .catch((e) => {
+          res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(`sign-queue hash record failed: ${/** @type {Error} */ (e).message}`);
+        });
+    });
     return;
   }
 
