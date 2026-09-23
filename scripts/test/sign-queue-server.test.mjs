@@ -159,6 +159,16 @@ test('advanceSentItems: a hash not found for a LONG time (past the grace period)
   assert.equal(queue.items[0].status, 'pending');
 });
 
+test('advanceSentItems: a REAL tx found but still unmined past the grace period stays sent — never re-signable (V-381-r2 duplicate-vault regression)', async () => {
+  const hash = `0x${'66'.repeat(32)}`;
+  const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago, well past grace
+  const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: longAgo })] };
+  const tx = { hash, from: FROM, to: TO, input: DATA, blockNumber: null };
+  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx, receipt: null } }), tmpQueuePath());
+  assert.equal(changed, false);
+  assert.equal(queue.items[0].status, 'sent', 'a found, unmined send must not go back to pending');
+});
+
 // ─────────────────────────────── recordSentHash ───────────────────────────────
 
 const HASH = `0x${'aa'.repeat(32)}`;

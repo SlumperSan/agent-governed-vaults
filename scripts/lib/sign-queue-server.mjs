@@ -91,13 +91,27 @@ export async function advanceSentItems(queue, fetchImpl, queuePath = QUEUE_PATH)
       item.verifyNote = `could not confirm yet: ${!txR.ok ? txR.reason : rcptR.reason}`;
       continue;
     }
-    if (!txR.result || !rcptR.result) {
+    // Only a hash with NO transaction behind it may be recovered to pending. A transaction that
+    // EXISTS but has no receipt yet is a real, unmined send: reverting it would re-enable Sign while
+    // it can still mine, and for the Safe-routed items a second execTransaction with the
+    // pre-validated signature would execute too (it binds msg.sender, not the Safe nonce), creating
+    // a duplicate vault (Security V-381-r2). It stays `sent` however long it takes.
+    if (!txR.result) {
       const ageMs = item.sentAt ? Date.now() - Date.parse(item.sentAt) : 0;
       if (ageMs > UNFINDABLE_GRACE_MS) {
         revertToPending(item, `hash ${item.txHash} was never found on chain after ${Math.round(ageMs / 60000)} minutes — this was a foreign or junk hash, not a real send. Signable again.`);
         changed = true;
       } else {
-        item.verifyNote = 'transaction not yet mined (no receipt)';
+        item.verifyNote = 'transaction not found yet';
+      }
+      continue;
+    }
+    if (!rcptR.result) {
+      if (isForeignTx(item, txR.result)) {
+        revertToPending(item, `hash ${item.txHash} resolved to a transaction whose from/to/input do not match this item — not this item's send. Signable again.`);
+        changed = true;
+      } else {
+        item.verifyNote = 'transaction found, not yet mined — stays sent until it mines';
       }
       continue;
     }
@@ -203,7 +217,7 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
     const expectedTo = dep?.receipt?.contractAddress ?? dep?.predictedAddress;
     if (!expectedTo) return `${depId} has no known address yet`;
     return safeRoutedRefusal(fetchImpl, {
-      safe: t.safe, owner: t.safeOwner,
+      safe: t.safe, owner: t.safeOwner, expectedSafeNonce: t.safeNonce,
       plan: {
         to: t.to, action: planAction, expectedTo, data: `${selector}${'0'.repeat(64)}`,
         operation: 0, value: 0, safeTxGas: 0, baseGas: 0, gasPrice: 0,

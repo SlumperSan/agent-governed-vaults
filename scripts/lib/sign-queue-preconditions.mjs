@@ -54,7 +54,7 @@ export async function nonceGateRefusal(fetchImpl, rpcUrl, from, expectedNonce) {
  * @param {typeof fetch} fetchImpl
  * @param {{safe:string, owner:string, plan:{to:string,action:string,expectedTo:string,data:string,operation:number,value:string|number,safeTxGas:string|number,baseGas:string|number,gasPrice:string|number}}} p
  */
-export async function safeRoutedRefusal(fetchImpl, { safe, owner, plan }) {
+export async function safeRoutedRefusal(fetchImpl, { safe, owner, plan, expectedSafeNonce }) {
   const [codeR, chainR] = await Promise.all([
     ethGetCode(fetchImpl, ARC_RPC, safe), ethChainId(fetchImpl, ARC_RPC),
   ]);
@@ -88,6 +88,19 @@ export async function safeRoutedRefusal(fetchImpl, { safe, owner, plan }) {
   const owners = Array.from({ length: len }, (_, i) => decodeAddr(hex.slice(128 + i * 64, 128 + (i + 1) * 64)));
   if (owners.length !== 1 || owners[0].toLowerCase() !== owner.toLowerCase()) {
     return `Safe ${safe} owners are [${owners.join(', ')}], expected exactly [${owner}]`;
+  }
+  // The Safe-nonce gate (V-381-r2). The pre-validated signature authorises by msg.sender alone, so
+  // nothing in the Safe stops the SAME execTransaction running twice. The item was built for one
+  // Safe nonce; once any Safe transaction has executed at it, this item must never be signable
+  // again. Throws rather than skipping when the expected nonce is absent.
+  if (expectedSafeNonce === undefined || expectedSafeNonce === null) {
+    return 'this Safe-routed item carries no expected Safe nonce — refusing rather than risking a duplicate execution';
+  }
+  const nonceR = await ethCall(fetchImpl, ARC_RPC, safe, '0xaffed0e0'); // nonce()
+  if (!nonceR.ok) return `could not read Safe.nonce(): ${nonceR.reason}`;
+  const live = BigInt(nonceR.result);
+  if (live !== BigInt(expectedSafeNonce)) {
+    return `Safe ${safe} nonce is ${live}, this item was built for Safe nonce ${expectedSafeNonce} — a Safe transaction has already executed at that nonce (possibly this very one), so signing again could execute a duplicate`;
   }
   return null;
 }
