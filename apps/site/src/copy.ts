@@ -183,7 +183,7 @@ export const HOW = {
     headline: 'Two, and you can read both.',
     items: [
       { t: 'Performance fee', d: '10% of realised gains, paid to the vault operator. Charged when you exit, on the gain only, with a high-water mark so you are not charged twice for the same rise.' },
-      { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It goes to the members who stay, never to the operator. A sole holder pays nothing.' },
+      { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position. A sole holder pays nothing.' },
     ],
   },
 } as const;

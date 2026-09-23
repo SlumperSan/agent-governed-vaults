@@ -656,7 +656,7 @@ function renderPositionStrip(x) {
         <div class="v"${p.voting.eligibleShares < p.shares ? ' data-sev="warn"' : ''}>${esc(wadExact(p.voting.eligibleShares, { maxFrac: 6 }))}</div></div>
       <div class="row"><div>Value today</div><div class="v">${p.valueUsdc !== null ? esc(usdcExact(p.valueUsdc)) : 'Unknown while frozen'}</div></div>
       <div class="row"><div>Cost basis</div><div class="v">${p.costBasisUsdc !== null ? esc(usdcExact(p.costBasisUsdc)) : '—'}</div></div>
-      <div class="row"><div>Exit fee today<small>${esc(duration(p.tenureSec))} of tenure. ${p.isSoleHolder ? 'Waived: you are the only member, and the fee accrues to remaining members.' : 'Paid to the members who stay, never to the operator.'}</small></div>
+      <div class="row"><div>Exit fee today<small>${esc(duration(p.tenureSec))} of tenure. ${p.isSoleHolder ? 'Waived: you are the only member, and the fee accrues to remaining members.' : 'Stays in the vault, adding to the value of every remaining share.'}</small></div>
         <div class="v">${esc(bpsPct(p.feeBpsNow))}</div></div>`;
   }
   if (pend) {
@@ -1084,7 +1084,7 @@ function renderExit(x) {
         ${pv.slices.map((sl) => `<div class="row"><div>${esc(sl.symbol)}<small>Paid in the token itself, not sold for you: you carry your own execution cost, and nobody remaining is diluted by your exit.</small></div>
           <div class="v">${esc(leg(sl.amountMin, sl.amount, (n) => tokenAmount(n, sl.decimals, 8)))} ${esc(sl.symbol)}${sl.valueWad !== null ? `<br><span style="color:var(--faint);font-size:11px">${esc(usdcShort(sl.valueWad / USDC_SCALAR))} before the fee</span>` : '<br><span style="color:var(--faint);font-size:11px">unpriced</span>'}</div></div>`).join('')}
         <div class="row"><div>Exit fee ${bpsPct(pv.feeBps)}${pv.isSoleHolder ? ', waived' : ''}
-          <small>${pv.isSoleHolder ? 'You are the only member, and the fee accrues to remaining members: there are none.' : `${duration(p.tenureSec)} of tenure. This stays in the vault and raises NAV/share for the members who remain. It never goes to the operator.`}</small></div>
+          <small>${pv.isSoleHolder ? 'You are the only member, and the fee accrues to remaining members: there are none.' : `${duration(p.tenureSec)} of tenure. This stays in the vault and raises NAV/share for every member who remains, the operator included if it holds a position.`}</small></div>
           <div class="v">${pv.feeValueWad !== null ? '−' + esc(usdcShort(pv.feeValueWad / USDC_SCALAR)) : bpsPct(pv.feeBps)}</div></div>
         ${feeRange ? `<div class="row"><div>Performance fee: up to 10% of realised profit
           <small>Withheld <strong>uniformly</strong> from the USDC leg and from every token slice above, which is why both are shown as ranges. The exact figure turns on the losses you have already realised under this operator: they carry forward against your high-water mark, and no projection exposes them. It is nothing if that carry still covers this gain.</small></div>
