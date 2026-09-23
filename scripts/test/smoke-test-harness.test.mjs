@@ -158,21 +158,44 @@ test('card 179: a creator declared EOA that reports bytecode refuses too, and no
   assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
 });
 
-// ─────────────── the Arc gap: a live, correctly-declared CONTRACT creator still refuses ───────────────
-// Card 179 confirms the declared identity EXISTS as the kind claimed. This confirms what happens once
-// it does: the owner's own Arc Safe (0x99e805294F1f1465C96f68e36264E99991Ef9E82) IS deployed today, so
-// the question this PR was rejected over is what the check does once the "no bytecode" finding is no
-// longer true -- and the old address-equality check refused every one of these regardless, with a
-// message that reads as a wrong signer rather than a missing execTransaction path.
+// ─────────────── the Arc gap: a live, correctly-declared CONTRACT creator ───────────────
+// Card 179 confirms the declared identity EXISTS as the kind claimed. Through card 329 this then
+// confirmed the script COULD NOT create a vault against it at all -- no routed-send path existed, so
+// a live contract-kind creator refused unconditionally, regardless of who signed.
+//
+// Card 208 CLOSES that gap: stepCreateVault now dispatches a contract-kind creator to
+// stepCreateVaultRouted, which builds a Safe execTransaction instead of refusing outright. What THIS
+// test now demonstrates is the first guard inside that new function -- SMOKE_SAFE_OWNER_SIGNERS is
+// mandatory, checked before a single Safe-state read -- not that routing is impossible; it no longer
+// is. `contractCreatorRoutingRefusal`'s unconditional refusal still exists and is still exercised
+// directly above (smoke-preflight.test.mjs) and by the DIRECT-send branch of stepCreateVault, which
+// this deployment record never reaches because its kind is "contract".
 
-test('a LIVE contract-kind creator still refuses, naming the missing routed-execution path, not a mismatch', () => {
+test('a LIVE contract-kind creator with no SMOKE_SAFE_OWNER_SIGNERS refuses before any Safe read, and nothing is broadcast', () => {
   const r = runSmokeChild({
     env: { SMOKE_DEPLOYMENT: path.join(FIXTURES, 'deployment-creator-contract.json') },
     scenario: 'creator-has-code', // the Safe now HAS bytecode -- card 179's finding no longer applies
   });
-  assert.notEqual(r.status, 0, 'this script cannot route a transaction through a contract creator');
-  assert.match(r.stderr, /execTransaction/, `STDERR did not carry the routing refusal:\n${r.stderr}`);
+  assert.notEqual(r.status, 0, 'routing needs owner signatures; none were supplied');
+  assert.match(r.stderr, /SMOKE_SAFE_OWNER_SIGNERS is required/, `STDERR did not carry the routing refusal:\n${r.stderr}`);
   assert.doesNotMatch(r.stderr, /NO BYTECODE/, 'the Safe has code in this scenario -- card 179 must not be what fires');
+  assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
+});
+
+test('SMOKE_SAFE_OWNER_SIGNERS deriving the same signer address twice refuses before any Safe read', () => {
+  // The fixture chain's `cast wallet address` answers every signer-flag set with the SAME address
+  // (SIGNER_ADDR) regardless of the flags -- which is exactly the shape stepCreateVaultRouted's own
+  // dedup check exists to catch: two DIFFERENT credential sets that resolve to the SAME key would
+  // otherwise look like two independent owners toward the Safe's threshold.
+  const r = runSmokeChild({
+    env: {
+      SMOKE_DEPLOYMENT: path.join(FIXTURES, 'deployment-creator-contract.json'),
+      SMOKE_SAFE_OWNER_SIGNERS: '--account fixture-owner-a;--account fixture-owner-b',
+    },
+    scenario: 'creator-has-code',
+  });
+  assert.notEqual(r.status, 0, 'the same derived signer twice must not count as two owners');
+  assert.match(r.stderr, /derives the same signer address more than once/, `STDERR did not carry the dedup refusal:\n${r.stderr}`);
   assert.equal(broadcastEntries(r.callLog).length, 0, 'nothing may be broadcast');
 });
 

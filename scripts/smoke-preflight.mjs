@@ -248,30 +248,246 @@ export function contractCreatorRoutingRefusal(intended) {
     + 'before using it against a contract-kind record.';
 }
 
+/** Safe's `Enum.Operation`, duplicated from `scripts/lib/safe-exec.mjs` as a primitive constant (not
+ *  re-imported) so this file keeps its existing property of being callable with no chain, no `cast`,
+ *  and no dependency beyond `classifyCallError` — the property `smoke-preflight.test.mjs` already
+ *  relies on to test every verdict here without executing anything. */
+const SAFE_OPERATION_CALL = 0;
+
+/** `createVault`'s own 4-byte selector, independent of whatever calldata a caller hands this
+ *  function — see `safeRoutingPlanRefusal`'s doc for why it is a caller-supplied constant rather
+ *  than sliced from the SAME `data` this function is checking (that would make the check
+ *  tautological: a mutated `data` and a selector read off that mutated `data` always agree). */
+export const CREATE_VAULT_SIG = 'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))';
+
+/** `Governance.registerVault`'s own 4-byte selector, same independence reasoning as
+ *  `CREATE_VAULT_SIG`. Added when card 208 was extended to cover `registerVault` as well as
+ *  `createVault`: `Governance.sol:223` gates it on `msg.sender == vault.creator()`, so once the
+ *  creator is a Safe, `registerVault` needs the identical routed-send treatment `createVault` does
+ *  — a vault the Safe created but the EOA cannot register would be created-but-stuck, permanently
+ *  (VaultFactory records `creator` immutably, and `Governance.propose` requires
+ *  `vaultRegistered[vault]`, so an unregistered vault is not governable either). */
+export const REGISTER_VAULT_SIG = 'registerVault(address,(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32))';
+
+/** `keccak256(CREATE_VAULT_SIG)[:4]` — `0x49af0336`, measured with `cast sig` against this exact
+ *  signature string. This file stays chain-free and `cast`-free by design (the property
+ *  `smoke-preflight.test.mjs` already relies on to test every verdict here without executing
+ *  anything), so this is a literal rather than a runtime derivation — but not an UNVERIFIED one:
+ *  `scripts/test/safe-routing-plan.test.mjs` re-derives it independently via a real `cast sig`
+ *  call and asserts the two agree, so a hand-transcription error or a future signature change that
+ *  forgets to update this line fails loudly in that test rather than passing silently here. */
+export const EXPECTED_CREATE_VAULT_SELECTOR = '0x49af0336';
+
+/** `keccak256(REGISTER_VAULT_SIG)[:4]` — `0x1a8cd97f`, same measurement and same independent
+ *  re-derivation discipline as `EXPECTED_CREATE_VAULT_SELECTOR` (`scripts/test/safe-routing-plan.test.mjs`). */
+export const EXPECTED_REGISTER_VAULT_SELECTOR = '0x1a8cd97f';
+
 /**
- * Throw unless `signer` may become the creator this deployment record declares. Returns the declared
- * address so the caller compares its post-broadcast reads against the DECLARATION rather than against
- * the signer — comparing the emitted creator to the signer who just signed is true by construction and
- * passed on 4663 every time.
+ * The closed set of routed actions this file will ever check a plan for, keyed by the caller-facing
+ * name — deliberately NOT "any selector the caller names". A plan-checker that accepted an arbitrary
+ * `expectedSelector`/`expectedTo` pair from its caller would be trivially satisfiable by a caller
+ * that just repeats whatever the plan already contains, which is the exact "property asserted vs
+ * property claimed" shape this file's own header warns about. So `action` below must be one of these
+ * two names, and EACH is pinned to both its own selector (independently derived, see
+ * `CREATE_VAULT_SIG`/`REGISTER_VAULT_SIG` above) and which deployed singleton it targets.
  *
- * `intendedCreatorKind` is what selects the comparison: "contract" routes to
- * `contractCreatorRoutingRefusal`, which never passes (see its own doc). Anything else — including a
- * record with no kind at all — keeps the original address-equality check, so every existing EOA-kind
- * record and every test written against this function before kind existed is unaffected.
+ *   "createVault"    -> VaultFactory.createVault    -- card 208's original gap
+ *   "registerVault"  -> Governance.registerVault     -- Governance.sol:223 gates this on
+ *                        `msg.sender == vault.creator()`, so once the creator is a Safe this needs
+ *                        the identical routed-send treatment: a vault the Safe created but the EOA
+ *                        cannot register is created-but-stuck (creator is immutable, and
+ *                        `Governance.propose` requires `vaultRegistered[vault]`, so an unregistered
+ *                        vault is not governable either).
+ */
+export const ROUTED_ACTIONS = Object.freeze({
+  createVault: { sig: CREATE_VAULT_SIG, selector: EXPECTED_CREATE_VAULT_SELECTOR, targetLabel: 'the deployed VaultFactory' },
+  registerVault: { sig: REGISTER_VAULT_SIG, selector: EXPECTED_REGISTER_VAULT_SELECTOR, targetLabel: 'the deployed Governance' },
+});
+
+/**
+ * Does an already-CONSTRUCTED Safe `execTransaction` plan actually route the NAMED action
+ * (`createVault` or `registerVault`, see `ROUTED_ACTIONS` above) through the declared contract
+ * creator, at that action's own correct target singleton, as a plain external call?
+ *
+ * WHY THIS EXISTS ALONGSIDE `contractCreatorRoutingRefusal` RATHER THAN REPLACING IT.
+ * `contractCreatorRoutingRefusal` is correct and unconditional under DIRECT send — there is no
+ * routing at all, so nothing to check, and it must keep refusing every direct-send attempt at a
+ * contract-kind creator exactly as before. This function only runs once a caller has actually built
+ * a ROUTED plan, and it asks a different question: address equality between the SIGNER and the
+ * declared creator is the wrong comparison again, in the other direction — the Safe's OWN deployed
+ * bytecode enforces who may sign and how many signatures are required (`scripts/lib/safe-exec.mjs`
+ * reads that hash and collects those signatures; nothing here reimplements Safe's signature check).
+ * What nothing else checks is whether the PLAN ITSELF routes through the right Safe, at the right
+ * target, calling the right function, as a real external call rather than a DELEGATECALL that would
+ * run the target's code inside the Safe's own storage instead of calling it as the Safe.
+ *
+ * NOT SPECIALISED TO ANY ONE SAFE, ANY ONE FACTORY, OR ANY ONE GOVERNANCE. Every comparison is
+ * against `p.intended` and `p.expectedTo`, values the caller supplies from the deployment record and
+ * the live deployment — not a literal address written into this function. A second Safe declared
+ * tomorrow, or a second deployment, is covered by the same code without naming either.
+ *
+ * @param {object} p
+ * @param {unknown} p.intended the declared intendedCreator (a Safe, already established as kind "contract")
+ * @param {unknown} p.safe the Safe address this plan would `execTransaction` against
+ * @param {unknown} p.to the plan's inner call target
+ * @param {keyof typeof ROUTED_ACTIONS} p.action which routed action this plan is claimed to be — must be a name in `ROUTED_ACTIONS`, not a free-form selector
+ * @param {unknown} p.expectedTo the singleton `action` must target (the factory for createVault, the governance for registerVault)
+ * @param {unknown} p.data the plan's inner calldata
+ * @param {unknown} p.operation the plan's Safe operation code (0 = Call, 1 = DelegateCall)
+ * @param {unknown} p.value the plan's inner call value, in wei
+ * @param {unknown} p.safeTxGas the plan's `safeTxGas` field
+ * @param {unknown} p.baseGas the plan's `baseGas` field
+ * @param {unknown} p.gasPrice the plan's `gasPrice` field
+ * @returns {string|null} a refusal, or null when the plan routes correctly
+ */
+export function safeRoutingPlanRefusal({ intended, safe, to, action, expectedTo, data, operation, value, safeTxGas, baseGas, gasPrice }) {
+  const badIntended = addressShapeRefusal('the declared intendedCreator', intended);
+  if (badIntended) return `${badIntended} Refusing before checking a routing plan against it.`;
+
+  const badSafe = addressShapeRefusal("the routing plan's safe", safe);
+  if (badSafe) return `${badSafe} Refusing rather than routing through an address that is not one.`;
+  if (normAddr(safe) !== normAddr(intended)) {
+    return `REFUSING TO CREATE: this plan would execTransaction against ${safe}, but the deployment `
+      + `record declares intendedCreator ${intended}. Routing through the wrong contract records the `
+      + 'wrong permanent creator just as surely as a direct send from the wrong signer would.';
+  }
+
+  const known = ROUTED_ACTIONS[/** @type {string} */ (action)];
+  if (!known) {
+    return `REFUSING TO CREATE: this plan claims action ${JSON.stringify(action)}, which is not one of `
+      + `the routed actions this file knows how to check (${Object.keys(ROUTED_ACTIONS).join(', ')}). `
+      + 'A plan-checker that accepted an arbitrary action name would accept anything, which is the '
+      + 'same failure as accepting any selector.';
+  }
+
+  const badTo = addressShapeRefusal("the routing plan's inner call target", to);
+  if (badTo) return `${badTo} Refusing rather than routing an inner call at an address that is not one.`;
+  const badExpectedTo = addressShapeRefusal(known.targetLabel, expectedTo);
+  if (badExpectedTo) return `${badExpectedTo} Refusing rather than checking a routing plan against it.`;
+  if (normAddr(to) !== normAddr(expectedTo)) {
+    return `REFUSING TO CREATE: this plan's inner call targets ${to}, but ${known.targetLabel} is `
+      + `${expectedTo}. A Safe execTransaction routed at any other address would not reach `
+      + `${action} at all, whatever it does.`;
+  }
+
+  if (Number(operation) !== SAFE_OPERATION_CALL) {
+    return `REFUSING TO CREATE: this plan's Safe operation is ${JSON.stringify(operation)}, not CALL `
+      + `(${SAFE_OPERATION_CALL}). A DELEGATECALL would run the target's code AS the Safe, inside `
+      + "the Safe's own storage, rather than calling it — msg.sender inside the call would not be "
+      + "the Safe address at all, and the Safe's storage could be corrupted by code that was never "
+      + 'meant to run there.';
+  }
+
+  const selector = typeof data === 'string' ? data.trim().toLowerCase().slice(0, 10) : '';
+  if (selector !== known.selector) {
+    return `REFUSING TO CREATE: this plan's inner calldata begins with selector `
+      + `${JSON.stringify(selector)}, not ${action}'s ${known.selector} `
+      + `(derived independently from \`${known.sig}\`, not sliced from this same calldata). `
+      + `Routed through the right Safe at the right target is not enough if the inner call is not `
+      + `actually ${action}.`;
+  }
+
+  let v;
+  try { v = typeof value === 'bigint' ? value : BigInt(/** @type {any} */ (value) ?? 0); }
+  catch { return `REFUSING TO CREATE: this plan's inner call value ${JSON.stringify(value)} is not a usable number.`; }
+  if (v !== 0n) {
+    return `REFUSING TO CREATE: this plan sends ${v} wei of value with the inner call. ${action} `
+      + 'needs none, and a nonzero value on a misrouted plan would drain the Safe rather than merely fail.';
+  }
+
+  // WHY safeTxGas AND gasPrice MUST BOTH BE ZERO, AND THIS IS NOT MERELY A STYLE PREFERENCE.
+  // Safe.execTransaction CATCHES the inner call's revert internally and emits ExecutionFailure
+  // rather than reverting the outer transaction, whenever the gas it forwards is enough for that
+  // catch machinery to run to completion (Safe.sol's own execute()/handlePayment path). With
+  // gasPrice == 0 the payment branch is skipped entirely, and with safeTxGas == 0 the FULL
+  // remaining gas is forwarded to the inner call, so a real out-of-gas on createVault becomes
+  // vanishingly unlikely and any genuine revert surfaces as ExecutionFailure with the OUTER
+  // transaction's receipt still reading status 0x1. A caller that only checked `receipt.status`
+  // would read a failed createVault as a successful one — this is the same "true by construction"
+  // shape #329 was written against, one layer down. A nonzero safeTxGas could starve the inner
+  // call of gas it needs and produce the identical false-success shape from the other direction.
+  let sg;
+  try { sg = typeof safeTxGas === 'bigint' ? safeTxGas : BigInt(/** @type {any} */ (safeTxGas) ?? 0); }
+  catch { return `REFUSING TO CREATE: this plan's safeTxGas ${JSON.stringify(safeTxGas)} is not a usable number.`; }
+  if (sg !== 0n) {
+    return `REFUSING TO CREATE: this plan sets safeTxGas to ${sg}, not 0. A nonzero safeTxGas caps `
+      + `the gas ${action}'s inner call receives, independent of what the broadcaster supplies, `
+      + 'and a starved call fails as ExecutionFailure — the outer transaction still succeeds, so a '
+      + 'caller trusting receipt.status alone would record a failed call as a successful one.';
+  }
+  let gp;
+  try { gp = typeof gasPrice === 'bigint' ? gasPrice : BigInt(/** @type {any} */ (gasPrice) ?? 0); }
+  catch { return `REFUSING TO CREATE: this plan's gasPrice ${JSON.stringify(gasPrice)} is not a usable number.`; }
+  if (gp !== 0n) {
+    return `REFUSING TO CREATE: this plan sets gasPrice to ${gp}, not 0. A nonzero gasPrice routes `
+      + "this execution through Safe's refund/payment branch instead of skipping it, which changes "
+      + 'what gas the inner call is guaranteed to receive and who is paid for running it — neither is '
+      + `wanted for a plain ${action} call.`;
+  }
+  let bg;
+  try { bg = typeof baseGas === 'bigint' ? baseGas : BigInt(/** @type {any} */ (baseGas) ?? 0); }
+  catch { return `REFUSING TO CREATE: this plan's baseGas ${JSON.stringify(baseGas)} is not a usable number.`; }
+  if (bg !== 0n) {
+    return `REFUSING TO CREATE: this plan sets baseGas to ${bg}, not 0. With gasPrice 0 it pays `
+      + 'nobody, but a nonzero value here is a sign the plan was not built by this repository\'s own '
+      + '`buildPlan` (scripts/lib/safe-exec.mjs), which always sets it to 0 — refusing rather than '
+      + 'trusting a plan whose provenance this check cannot otherwise confirm.';
+  }
+  return null;
+}
+
+/**
+ * `safeRoutingPlanRefusal` as a throw, for the same reason `requireCreatorCode` is one: the runner
+ * that calls it is `node --check`ed and never executed by the gate, so a refusal it merely returned
+ * would need every caller to remember to check it — the throw is what makes a forgotten check
+ * impossible rather than merely discouraged.
+ *
+ * @param {Parameters<typeof safeRoutingPlanRefusal>[0]} p
+ * @returns {string} the verified safe address
+ * @throws {CreationRefused}
+ */
+export function requireSafeRoutingPlan(p) {
+  const refusal = safeRoutingPlanRefusal(p);
+  if (refusal) throw new CreationRefused(refusal);
+  return /** @type {string} */ (p.safe);
+}
+
+/**
+ * Throw unless `signer` (direct send) or `routing` (a Safe-routed plan) may create the vault this
+ * deployment record declares. Returns the declared address so the caller compares its post-broadcast
+ * reads against the DECLARATION rather than against the signer — comparing the emitted creator to
+ * the signer who just signed is true by construction and passed on 4663 every time.
+ *
+ * `intendedCreatorKind` is what selects the comparison. "contract" WITH NO `routing` argument keeps
+ * routing to `contractCreatorRoutingRefusal`, which never passes under direct send (see its own
+ * doc) — a caller that has not built a routed plan gets exactly the refusal it got before this
+ * parameter existed. "contract" WITH a `routing` argument checks that plan with
+ * `safeRoutingPlanRefusal` instead — a NEW capability, not a relaxation: the direct-send refusal is
+ * still there, unconditionally, for every caller that does not supply one. Anything else — including
+ * a record with no kind at all — keeps the original address-equality check untouched, so every
+ * existing EOA-kind record and every test written against this function before `routing` existed is
+ * unaffected: calling it with two arguments is calling it with `routing` undefined.
  *
  * @param {{intendedCreator?: unknown, intendedCreatorKind?: unknown}|null|undefined} deployment
- * @param {unknown} signer the address that would broadcast
+ * @param {unknown} signer the address that would broadcast a DIRECT transaction
+ * @param {{safe?: unknown, to?: unknown, action?: unknown, expectedTo?: unknown, data?: unknown, operation?: unknown, value?: unknown,
+ *   safeTxGas?: unknown, baseGas?: unknown, gasPrice?: unknown}} [routing]
+ *   a constructed Safe execTransaction plan, or omitted for direct-send routing
  * @returns {string} the declared intendedCreator
  * @throws {CreationRefused} on a missing record, a missing declaration, an unknown signer, a
- *   mismatch, or a contract-kind declaration. There is no return path that does not either throw or
- *   hand back a verified address.
+ *   mismatch, a contract-kind declaration with no routing plan, or a routing plan that does not
+ *   route through the declared creator. There is no return path that does not either throw or hand
+ *   back a verified address.
  */
-export function requireIntendedCreator(deployment, signer) {
+export function requireIntendedCreator(deployment, signer, routing) {
   const kind = typeof deployment?.intendedCreatorKind === 'string'
     ? deployment.intendedCreatorKind.trim().toLowerCase() : undefined;
-  const refusal = kind === 'contract'
-    ? contractCreatorRoutingRefusal(deployment?.intendedCreator)
-    : intendedCreatorRefusal(deployment?.intendedCreator, signer);
+  if (kind === 'contract') {
+    if (!routing) throw new CreationRefused(contractCreatorRoutingRefusal(deployment?.intendedCreator));
+    requireSafeRoutingPlan({ intended: deployment?.intendedCreator, ...routing });
+    return /** @type {string} */ (deployment.intendedCreator);
+  }
+  const refusal = intendedCreatorRefusal(deployment?.intendedCreator, signer);
   if (refusal) throw new CreationRefused(refusal);
   return /** @type {string} */ (deployment.intendedCreator);
 }
