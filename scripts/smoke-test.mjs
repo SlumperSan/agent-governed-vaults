@@ -47,7 +47,7 @@ import { classifyProposal } from './proposal-recovery.mjs';
 import {
   wiringImmutabilityFailure, oracleProbeWarning, normAddr,
   requireIntendedCreator, requireCreatorCode, loadDeploymentRecord, signerCacheRefusal,
-  CREATE_VAULT_SIG,
+  CREATE_VAULT_SIG, REGISTER_VAULT_SIG,
 } from './smoke-preflight.mjs';
 import {
   readSafeState, buildPlan, safeTransactionHash, signAsOwner, packSignatures, execTransactionArgs,
@@ -393,24 +393,32 @@ function stepCreateVault() {
 }
 
 /**
- * CARD 208 — THE ROUTED-SEND PATH `contractCreatorRoutingRefusal` NAMES AS MISSING. Reached only
- * from `stepCreateVault` when `deployment.intendedCreatorKind` is "contract"; direct send still
- * refuses that kind unconditionally (`requireIntendedCreator(deployment, state.signer)`, no third
- * argument, immediately above) — this function does not touch that branch or weaken it.
+ * Shared machinery for routing ONE named action (`createVault` or `registerVault`, see
+ * `ROUTED_ACTIONS` in scripts/smoke-preflight.mjs) through the declared contract-kind creator Safe.
+ * Collects `SMOKE_SAFE_OWNER_SIGNERS` (the SAME env var for both actions — it is the same Safe,
+ * generally the same owners, for both), checks them against the Safe's own live `getOwners()`/
+ * `getThreshold()` BEFORE building anything, builds and checks the plan (THROWS via
+ * `requireIntendedCreator`'s routing argument before a single signature is collected), signs, sends,
+ * and confirms `ExecutionSuccess` rather than trusting `receipt.status` alone (see the
+ * `T_EXEC_SUCCESS`/`T_EXEC_FAILURE` comment above `stepCreateVaultRouted`'s original doc for why).
+ * Returns the receipt; callers assert their own action-specific post-conditions.
  *
- * Builds a Safe `execTransaction` whose inner call IS `createVault`, so `msg.sender` inside
- * `VaultFactory.createVault` really is the declared Safe — not the EOA that happens to sign. Every
- * fact about the Safe (threshold, owners, nonce, the exact hash it will accept a signature over) is
- * READ FROM THE SAFE ITSELF via scripts/lib/safe-exec.mjs; nothing here is specific to the Arc
- * mainnet Safe (`0x99e8…`) or to 1-of-1 — a second Safe, or the same Safe after the owner raises its
- * threshold, is handled identically because every comparison below is against what the chain and
- * the deployment record say, never a literal address.
+ * @param {object} p
+ * @param {keyof typeof import('./smoke-preflight.mjs').ROUTED_ACTIONS} p.action
+ * @param {string} p.expectedTo the singleton this action must target
+ * @param {string} p.sig the action's full function signature, for `cast calldata`
+ * @param {string[]} p.params `sig`'s arguments, ONE ARRAY ELEMENT PER PARAMETER — `cast calldata`
+ *   takes each argument separately; `registerVault(address,(tuple))` needs two elements
+ *   (`[vault, tuple]`), `createVault((tuple))` needs one (`[tuple]`). Passing the whole thing as a
+ *   single joined string is exactly the bug this shape exists to prevent (found by this file's own
+ *   end-to-end fork test: `cast calldata` reported "encode length mismatch: expected 2 types, got 1").
+ * @param {string} p.label a short label for the `send()` log line
  */
-function stepCreateVaultRouted() {
+function routeThroughSafe({ action, expectedTo, sig, params, label }) {
   const safe = deployment.intendedCreator;
   const raw = process.env.SMOKE_SAFE_OWNER_SIGNERS ?? '';
   assert(raw.trim().length > 0,
-    'SMOKE_SAFE_OWNER_SIGNERS is required to route createVault through a contract-kind creator '
+    `SMOKE_SAFE_OWNER_SIGNERS is required to route ${action} through a contract-kind creator `
       + '(e.g. "--account owner1 --password-file .pw1;--account owner2 --password-file .pw2") — '
       + 'one \';\'-separated set of cast signer flags per Safe owner who will sign.');
   const ownerSignerSets = raw.split(';').map((s) => tokenize(s.trim())).filter((a) => a.length > 0);
@@ -428,7 +436,7 @@ function stepCreateVaultRouted() {
   const { threshold, owners, nonce } = readSafeState({ call, callU, safe });
   assert(threshold > 0n, `Safe ${safe} reports getThreshold() 0 — not a usable Safe`);
   assert(owners.length > 0, `Safe ${safe} reports getOwners() empty — not a usable Safe`);
-  log(`Safe ${safe}: threshold ${threshold}/${owners.length} owners, nonce ${nonce}`);
+  log(`Safe ${safe}: threshold ${threshold}/${owners.length} owners, nonce ${nonce} (routing ${action})`);
 
   const ownerSet = new Set(owners.map(normAddr));
   for (const s of signers) {
@@ -441,15 +449,14 @@ function stepCreateVaultRouted() {
     `Safe ${safe} requires ${threshold} signature(s) but SMOKE_SAFE_OWNER_SIGNERS supplies only `
       + `${signers.length} — gather enough owner signer sets before running this.`);
 
-  const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
-  const data = cast(['calldata', CREATE_VAULT_SIG, params]);
-  const plan = buildPlan({ safe, to: dep.factory, data, nonce });
+  const data = cast(['calldata', sig, ...params]);
+  const plan = buildPlan({ safe, to: expectedTo, data, nonce });
 
-  // THROWS unless this PLAN routes through the declared Safe, at the declared factory, calling
-  // createVault, as a plain CALL with zero value/safeTxGas/baseGas/gasPrice — checked BEFORE a
-  // single signature is collected (scripts/smoke-preflight.mjs's safeRoutingPlanRefusal).
+  // THROWS unless this PLAN routes through the declared Safe, at `expectedTo`, calling `action`, as
+  // a plain CALL with zero value/safeTxGas/baseGas/gasPrice — checked BEFORE a single signature is
+  // collected (scripts/smoke-preflight.mjs's safeRoutingPlanRefusal).
   requireIntendedCreator(deployment, state.signer, {
-    safe: plan.safe, to: plan.to, factory: dep.factory, data: plan.data, operation: plan.operation,
+    safe: plan.safe, to: plan.to, action, expectedTo, data: plan.data, operation: plan.operation,
     value: plan.value, safeTxGas: plan.safeTxGas, baseGas: plan.baseGas, gasPrice: plan.gasPrice,
   });
 
@@ -459,19 +466,41 @@ function stepCreateVaultRouted() {
   const sigs = toSign.map(({ args }) => signAsOwner({ cast, hash, signerArgs: args }));
   const packed = packSignatures(sigs);
 
-  const r = send('safe.execTransaction(createVault)', safe, SAFE_EXEC_TRANSACTION_SIG,
-    ...execTransactionArgs(plan, packed));
+  const r = send(label, safe, SAFE_EXEC_TRANSACTION_SIG, ...execTransactionArgs(plan, packed));
 
   // `send()` already asserted receipt.status === 0x1, but execTransaction CATCHES an inner-call
   // revert internally and emits ExecutionFailure rather than reverting the outer transaction — see
   // the T_EXEC_SUCCESS/T_EXEC_FAILURE comment above. A plan with safeTxGas == 0 && gasPrice == 0
   // (enforced above) makes that catch reachable on any genuine revert, so this is not a redundant
-  // check: without it, a failed createVault inside a successful outer transaction would read as a
-  // pass.
+  // check: without it, a failed call inside a successful outer transaction would read as a pass.
   const execSuccess = r.logs.find((l) => l.topics?.[0] === T_EXEC_SUCCESS && eq(l.address, safe));
   const execFailure = r.logs.find((l) => l.topics?.[0] === T_EXEC_FAILURE && eq(l.address, safe));
-  assert(!execFailure, `Safe ${safe} reported ExecutionFailure for this execTransaction (tx ${r.transactionHash}) — the outer transaction succeeded but the inner createVault call reverted`);
+  assert(!execFailure, `Safe ${safe} reported ExecutionFailure for this execTransaction (tx ${r.transactionHash}) — the outer transaction succeeded but the inner ${action} call reverted`);
   assert(execSuccess, `Safe ${safe} emitted neither ExecutionSuccess nor ExecutionFailure for this execTransaction (tx ${r.transactionHash}) — cannot confirm the inner call ran`);
+  return r;
+}
+
+/**
+ * CARD 208 — THE ROUTED-SEND PATH `contractCreatorRoutingRefusal` NAMES AS MISSING. Reached only
+ * from `stepCreateVault` when `deployment.intendedCreatorKind` is "contract"; direct send still
+ * refuses that kind unconditionally (`requireIntendedCreator(deployment, state.signer)`, no third
+ * argument, immediately above) — this function does not touch that branch or weaken it.
+ *
+ * Builds a Safe `execTransaction` whose inner call IS `createVault`, so `msg.sender` inside
+ * `VaultFactory.createVault` really is the declared Safe — not the EOA that happens to sign. Every
+ * fact about the Safe (threshold, owners, nonce, the exact hash it will accept a signature over) is
+ * READ FROM THE SAFE ITSELF via scripts/lib/safe-exec.mjs; nothing here is specific to the Arc
+ * mainnet Safe (`0x99e8…`) or to 1-of-1 — a second Safe, or the same Safe after the owner raises its
+ * threshold, is handled identically because every comparison below is against what the chain and
+ * the deployment record say, never a literal address.
+ */
+function stepCreateVaultRouted() {
+  const safe = deployment.intendedCreator;
+  const params = `(${USDC},[${TOKENS.join(',')}],${dep.aggregator},${smoke.capacityCapUsdc},${smoke.minDepositUsdc},${smoke.exitFeeMaxBps},${smoke.exitFeeDecayPeriod},[${dep.adapter}])`;
+  const r = routeThroughSafe({
+    action: 'createVault', expectedTo: dep.factory, sig: CREATE_VAULT_SIG, params: [params],
+    label: 'safe.execTransaction(createVault)',
+  });
 
   // The emitter, not only the topic — `smoke-test.mjs`'s direct-send path does not check this
   // (a pre-existing gap out of scope here), but a routed plan can be misdirected at a WRONG
@@ -506,11 +535,53 @@ function stepRegisterGov() {
     save();
     return;
   }
+
+  const kind = typeof deployment.intendedCreatorKind === 'string'
+    ? deployment.intendedCreatorKind.trim().toLowerCase() : undefined;
+  if (kind === 'contract') {
+    stepRegisterGovRouted();
+    return;
+  }
+
   const g = smoke.gov;
   const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
   const r = send('governance.registerVault', dep.governance,
     'registerVault(address,(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32))', state.vault, tuple);
   readUntilEq('true', 'vault not registered', dep.governance, 'vaultRegistered(address)(bool)', state.vault);
+  state.steps.registerGov = { done: true, tx: r.transactionHash };
+  save();
+}
+
+/**
+ * `Governance.registerVault` (Governance.sol:223) gates on `msg.sender == vault.creator()` — the
+ * SAME immutable-creator shape `createVault` itself is gated by, one call later. Once the creator is
+ * a Safe, `registerVault` sent directly from an EOA reverts `NotVaultCreator()` exactly the way a
+ * direct `createVault` would have refused before card 208: a vault the Safe created but nothing can
+ * register is created-but-stuck (`creator` is immutable, and `Governance.propose` itself requires
+ * `vaultRegistered[vault]`, so an unregistered vault is not governable either — there is no
+ * side door). This routes the SAME way `stepCreateVaultRouted` does, through the SAME machinery,
+ * reusing `safeRoutingPlanRefusal`'s `registerVault` action rather than a second plan-checker.
+ */
+function stepRegisterGovRouted() {
+  const safe = deployment.intendedCreator;
+  const g = smoke.gov;
+  const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
+  const r = routeThroughSafe({
+    action: 'registerVault', expectedTo: dep.governance, sig: REGISTER_VAULT_SIG, params: [state.vault, tuple],
+    label: 'safe.execTransaction(registerVault)',
+  });
+
+  // Post-check against the DECLARATION, the same discipline as createVault's: read the two fields
+  // Governance.sol actually sets (vaultRegistered[vault], configOf[vault]) rather than trusting the
+  // outer transaction's success alone.
+  readUntilEq('true', 'vault not registered', dep.governance, 'vaultRegistered(address)(bool)', state.vault);
+  const cfg = call(dep.governance, 'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)', state.vault);
+  const declared = [g.commitDuration, g.revealDuration, g.timelockDuration, g.executionWindow, g.quorumBps, g.proposalThresholdBps, g.concentrationCapBps, g.proposalCooldown].map(String);
+  assert(
+    cfg.every((v, i) => v === declared[i]),
+    `configOf(${state.vault}) reads [${cfg.join(', ')}] but the declared gov config is [${declared.join(', ')}] — the Safe registered a different config than the one intended`,
+  );
+  log(`vault ${state.vault} registered via Safe ${safe}, config confirmed on-chain`);
   state.steps.registerGov = { done: true, tx: r.transactionHash };
   save();
 }

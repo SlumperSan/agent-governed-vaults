@@ -8,25 +8,35 @@
  * `cast wallet new` keypair, funded only on the fork via `anvil_setBalance`/`anvil_setStorageAt`.
  *
  * WHAT THIS PROVES. The REAL, UNMODIFIED `scripts/smoke-test.mjs` — spawned as a genuine child
- * `node` process, never reimplemented — building and sending a real Safe `execTransaction` whose
- * inner call is `createVault`, against real deployed bytecode: the real Safe's own
- * `getTransactionHash`/`checkNSignatures`/`execute` accept it, `msg.sender` inside `createVault`
- * really is the Safe, and the vault's own `creator()` reads back the Safe's address. Both 1-of-1 and
- * 2-of-3 thresholds. Two layers are distinguished deliberately (see the mutation groups below): this
- * repository's OWN pre-broadcast guard (`requireIntendedCreator`/`safeRoutingPlanRefusal`,
- * scripts/smoke-preflight.mjs) refusing before a signature is ever collected, and the Safe's OWN
- * deployed bytecode refusing independently of that guard — proven by calling
+ * `node` process, never reimplemented — building and sending a real Safe `execTransaction` for BOTH
+ * `createVault` AND `registerVault`, against real deployed bytecode: the real Safe's own
+ * `getTransactionHash`/`checkNSignatures`/`execute` accept it, `msg.sender` inside each call really
+ * is the Safe, and the vault's own `creator()` / `Governance.vaultRegistered`/`configOf` read back
+ * what was declared. Both 1-of-1 and 2-of-3 thresholds, and the full create-then-register SEQUENCE
+ * (the one the owner will actually run) through one continuous unmodified runner process. Two layers
+ * are distinguished deliberately (see the mutation groups below): this repository's OWN pre-broadcast
+ * guard (`requireIntendedCreator`/`safeRoutingPlanRefusal`, scripts/smoke-preflight.mjs) refusing
+ * before a signature is ever collected, and the Safe's OWN deployed bytecode — and Governance's own
+ * `NotVaultCreator` gate — refusing independently of that guard, proven by calling
  * scripts/lib/safe-exec.mjs's low-level functions directly, bypassing the guard on purpose, exactly
  * so a deleted guard could not hide behind "the chain would have caught it anyway" without that
  * claim being checked.
  *
+ * `registerVault` WAS ADDED TO THIS SUITE because `Governance.sol:223` gates it on
+ * `msg.sender == vault.creator()` — the identical immutable-creator shape `createVault` itself is
+ * gated by, one call later. A first vault created through the Safe but never registered is
+ * created-but-stuck: `creator` is immutable and `Governance.propose` requires
+ * `vaultRegistered[vault]`, so there is no side door.
+ *
  * WHAT THIS DOES NOT PROVE. Arc mainnet execution, the real Arc Safe's actual owner keys, a public
  * broadcast, or Ledger-based signing (a Ledger cannot blind-sign a raw hash the way
  * `cast wallet sign --no-hash` does here — a real run against the Arc Safe needs a signer that can
- * sign an already-computed digest). `Governance.registerVault`'s own access control is NOT exercised
- * here — card 208 is createVault only; whether registerVault is creator-gated and would need routing
- * TOO is a separate, unresolved question, flagged in this PR's findings rather than assumed either
- * way.
+ * sign an already-computed digest). Two further creator gates exist and are NOT routed here, because
+ * neither applies to the first vault: `VaultFactory.sol:220` (`createChildVault`, `NotParentCreator`)
+ * only fires for sub-vaults, which are disabled at launch (`allowSubVaults` false); `VaultCore.sol:602`
+ * (`_checkCreatorGate`, `CreatorStakeGate`) is not a call gate at all — it requires the CREATOR keep
+ * >=5% of shares while non-creator members remain, which is a consequence of the Safe being the
+ * stake-locked member once it deposits, not something this PR routes or could route.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,7 +59,7 @@ const REAL_CONFIG = path.join(ROOT, 'contracts', 'config', 'base-sepolia.json');
 const smokeCfg = JSON.parse(fs.readFileSync(REAL_CONFIG, 'utf8'));
 
 const PORT = 8940 + (process.pid % 500); // spread across concurrent gate runs on the same machine
-let fork, broadcaster, ownerA, ownerB, ownerC, dep, dep2, factory2, safe1, safe2;
+let fork, broadcaster, ownerA, ownerB, ownerC, dep, dep2, factory2, safe1, safe2, safe3;
 
 before(async () => {
   for (const bin of ['anvil', 'forge', 'cast']) requireBin(bin);
@@ -85,6 +95,7 @@ before(async () => {
 
   safe1 = deploySafe(fork.rpcUrl, broadcaster.privateKey, [ownerA.address], 1); // 1-of-1, the Arc shape
   safe2 = deploySafe(fork.rpcUrl, broadcaster.privateKey, [ownerA.address, ownerB.address, ownerC.address], 2); // 2-of-3
+  safe3 = deploySafe(fork.rpcUrl, broadcaster.privateKey, [ownerA.address], 1); // dedicated to the create-then-register sequence tests, so their nonce/state reasoning never depends on what other tests already did to safe1/safe2
 });
 
 after(() => { fork?.stop(); });
@@ -279,4 +290,96 @@ test('wrong factory: the real Safe happily routes createVault at a genuinely dif
   // finds NOTHING here, because the event came from factory2, not dep.factory.
   const fromDeclaredFactory = receipt.logs.find((l) => l.topics?.[0] === T_VAULT_CREATED && l.address?.toLowerCase() === dep.factory.toLowerCase());
   assert.equal(fromDeclaredFactory, undefined, 'checking only topics[0] (not the emitter) would have wrongly accepted this vault as belonging to the declared deployment');
+});
+
+// ═══════════════════ registerVault: Governance.sol:223's own creator gate ═══════════════════
+
+function registerVaultCalldata(g = smokeCfg.smoke.gov) {
+  const tuple = `(${g.commitDuration},${g.revealDuration},${g.timelockDuration},${g.executionWindow},${g.quorumBps},${g.proposalThresholdBps},${g.concentrationCapBps},${g.proposalCooldown})`;
+  return { tuple, sig: 'registerVault(address,(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32))' };
+}
+
+/** Creates one vault through `safe1` via the low-level bypass path (mirrors the layer-2 mutation
+ *  tests above) -- a fixture for the registerVault tests below, independent of whatever earlier
+ *  tests already did to safe1's nonce or vault count. */
+function createVaultViaSafe1() {
+  const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
+  const plan = buildPlan({ safe: safe1, to: dep.factory, data: createVaultCalldata(), nonce });
+  const hash = safeTransactionHash({ call: callHelper, plan });
+  const sig = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  const receipt = sendExecTransaction(safe1, plan, sig, broadcaster.privateKey);
+  const T_VAULT_CREATED = cast(['keccak', 'VaultCreated(address,address,address,uint256)']);
+  const created = receipt.logs.find((l) => l.topics?.[0] === T_VAULT_CREATED && l.address?.toLowerCase() === dep.factory.toLowerCase());
+  return topicToAddress(created.topics[1]);
+}
+
+test('registerVault sent DIRECTLY from an EOA, for a vault the Safe created, reverts NotVaultCreator -- Governance.sol:223, real bytecode', () => {
+  const vault = createVaultViaSafe1();
+  const { sig, tuple } = registerVaultCalldata();
+  assert.throws(
+    () => cast(['send', dep.governance, sig, vault, tuple, '--rpc-url', fork.rpcUrl, '--private-key', broadcaster.privateKey, '--json']),
+    /revert|NotVaultCreator|0x[0-9a-f]{8}/i,
+    'Governance.registerVault must refuse an EOA that is not the vault\'s creator, even though the same EOA broadcast the Safe\'s own execTransaction',
+  );
+  assert.equal(
+    clean(cast(['call', dep.governance, 'vaultRegistered(address)(bool)', vault, '--rpc-url', fork.rpcUrl])),
+    'false',
+    'the failed direct attempt must not have registered the vault',
+  );
+});
+
+test('registerVault routed at the WRONG governance succeeds there (the real contract does not know which deployment it belongs to) -- only the post-check on the DECLARED governance catches it', () => {
+  // Mirrors the wrong-factory test above, one call later: dep2 is a full second, independently-real
+  // deployment, so dep2.governance is genuinely a different, correctly-functioning Governance -- not
+  // a mock, not an EOA that would just revert and prove nothing.
+  const vault = createVaultViaSafe1();
+  const { sig, tuple } = registerVaultCalldata();
+  const data = cast(['calldata', sig, vault, tuple]);
+  const { nonce } = readSafeState({ call: callHelper, callU, safe: safe1 });
+  const plan = buildPlan({ safe: safe1, to: dep2.governance, data, nonce }); // <-- wrong governance, on purpose
+  const hash = safeTransactionHash({ call: callHelper, plan });
+  const sigPacked = packSignatures([signAsOwner({ cast, hash, signerArgs: ['--private-key', ownerA.privateKey] })]);
+  const receipt = sendExecTransaction(safe1, plan, sigPacked, broadcaster.privateKey);
+  assert.ok(receipt.status === '0x1' || receipt.status === 1, 'msg.sender == vault.creator() holds regardless of WHICH Governance instance is called, so the wrong one genuinely accepts it');
+
+  assert.equal(
+    clean(cast(['call', dep2.governance, 'vaultRegistered(address)(bool)', vault, '--rpc-url', fork.rpcUrl])),
+    'true',
+    'it really did register in the WRONG governance -- this is what makes the mutation meaningful',
+  );
+  assert.equal(
+    clean(cast(['call', dep.governance, 'vaultRegistered(address)(bool)', vault, '--rpc-url', fork.rpcUrl])),
+    'false',
+    'the DECLARED governance must still show this vault as unregistered -- stepRegisterGovRouted reads THIS mapping, not dep2\'s',
+  );
+});
+
+// ═════════════ end to end: the exact sequence the owner will run, through the unmodified runner ═════════════
+
+test('end to end: createVault then registerVault, in ONE continuous unmodified-runner process, on a dedicated Safe', async () => {
+  const before3 = readSafe(fork.rpcUrl, safe3);
+  const r = await runSmokeAgainstFork({
+    safeAddr: safe3, ownerSignerKeys: [ownerA.privateKey],
+    untilMatch: /registered via Safe/, maxWaitMs: 45_000,
+  });
+  assert.match(r.stdout, /created via Safe/, `expected createVault's success line:\n${r.stdout}\n---stderr---\n${r.stderr}`);
+  assert.match(r.stdout, /registered via Safe/, `expected registerVault's success line:\n${r.stdout}\n---stderr---\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /ExecutionFailure/);
+
+  const after3 = readSafe(fork.rpcUrl, safe3);
+  assert.equal(after3.nonce, before3.nonce + 2n, 'exactly two execTransactions -- createVault, then registerVault -- should have landed');
+
+  const m = /vault (0x[0-9a-fA-F]{40}) created via Safe/.exec(r.stdout);
+  assert.ok(m, 'could not find the created vault address in stdout');
+  const vault = m[1];
+  assert.equal(
+    clean(cast(['call', dep.governance, 'vaultRegistered(address)(bool)', vault, '--rpc-url', fork.rpcUrl])),
+    'true',
+    'the vault the runner created must read as registered on the DECLARED governance',
+  );
+  const cfg = cast(['call', dep.governance, 'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)', vault, '--rpc-url', fork.rpcUrl])
+    .split('\n').map(clean);
+  const g = smokeCfg.smoke.gov;
+  const declared = [g.commitDuration, g.revealDuration, g.timelockDuration, g.executionWindow, g.quorumBps, g.proposalThresholdBps, g.concentrationCapBps, g.proposalCooldown].map(String);
+  assert.deepEqual(cfg, declared, 'the registered config must match what smoke.gov declares, not merely register SOME config');
 });
