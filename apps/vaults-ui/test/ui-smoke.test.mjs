@@ -199,17 +199,17 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
     const leaked = rawSends(log);
     assert.deepEqual(leaked, [], `no eth_sendTransaction should have reached the chain on a chain-id mismatch, found ${leaked.length}`);
 
-    // NON-VACUITY anchor, checked second (not first): prove the override hook actually fired, for a
-    // case `rawSends` alone cannot catch — a throw in `main()` before `log = recording.log` runs
-    // (ui-smoke.ts) leaves the module-scope default `log = []`, which reads as "no sends" regardless
-    // of whether the override ever reached the app. This is not hypothetical: a live mutation run
-    // with `chain: null` on `chain-actions.ts`'s per-call argument (this PR's #373 comment, table row
-    // 3) hit exactly this shape — viem's `sendTransaction` never calls `getChainId` when `chain` is
-    // explicitly `null`, so `eth_chainId` was never asked, and THIS anchor is what went red (ordered
-    // ahead of `rawSends` in that run). Once the checks were reordered `rawSends`-first to match the
-    // claim under test, a rerun of the same mutation aborted at `rawSends` before ever reaching this
-    // line — so this anchor still guards a shape one call ordering away from firing again, not a
-    // shape nothing has ever hit.
+    // NON-VACUITY anchor, checked second: proves the override hook was actually consulted. Its
+    // unique job is a case `rawSends` cannot catch — a throw in `main()` before `log =
+    // recording.log` runs (ui-smoke.ts) leaves the module-scope default `log = []`, which reads as
+    // "no sends" regardless of whether the override ever reached the app. That early-throw case has
+    // not been reproduced live. What HAS been shown live: this anchor is capable of going red. In
+    // the `chain: null` mutation (this PR's #373 comment, table row 3), ordered ahead of `rawSends`,
+    // `eth_chainId` was never answered and this exact line fired — verified against viem's own
+    // source (`sendTransaction.js`: `if (chain !== null) { ... await getChainId(...) ... }`, so an
+    // explicit `null` skips the `eth_chainId` call entirely). Sends had also leaked in that same run
+    // (a real approve+deposit reached anvil); with `rawSends` now ordered first, that is what catches
+    // it, before this anchor ever runs.
     assert.ok(log.some((e) => e.method === 'eth_chainId' && e.result === '0x1'), 'the chain-id-override hook must have answered eth_chainId as chain 1 at least once');
 
     assert.equal(r.ok, false, 'RED expected: a wallet on the wrong chain must not be allowed to write');
