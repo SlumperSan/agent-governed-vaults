@@ -16,9 +16,9 @@
  * remote listener -- do not "helpfully" change the bind address.
  */
 import { createServer } from 'node:http';
+import { Worker } from 'node:worker_threads';
 import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
-import { collect } from './lib/project-status.mjs';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
 
@@ -46,11 +46,28 @@ let cache = { at: 0, data: null };
 // 9s of lag on a board he watches while departments work.
 const TTL_MS = 800;
 
-function snapshot(force = false) {
-  const now = Date.now();
-  if (!force && cache.data && now - cache.at < TTL_MS) return cache.data;
-  cache = { at: now, data: collect({ gh: !NO_GH }) };
-  return cache.data;
+// collect() runs in a worker (scripts/lib/project-status-worker.mjs has the measured reason): on
+// this thread its synchronous git/gh calls froze every other request, the Sign queue's chain reads
+// included. One collection at a time; a request never waits on one when a snapshot exists.
+let refreshing = null;
+function refreshSnapshot() {
+  if (refreshing) return refreshing;
+  refreshing = new Promise((resolve, reject) => {
+    const w = new Worker(new URL('./lib/project-status-worker.mjs', import.meta.url), { workerData: { gh: !NO_GH } });
+    w.once('message', (data) => { cache = { at: Date.now(), data }; resolve(data); });
+    w.once('error', reject);
+    w.once('exit', (code) => { if (code !== 0) reject(new Error(`status worker exited ${code}`)); });
+  }).finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+/** A fresh snapshot if one is cached, else the last one while a refresh runs in the background.
+ * Only the very first request (no snapshot yet) or a forced one waits for the worker. */
+async function getSnapshot(force = false) {
+  const fresh = cache.data && Date.now() - cache.at < TTL_MS;
+  if (fresh && !force) return cache.data;
+  if (cache.data && !force) { refreshSnapshot().catch(() => {}); return cache.data; }
+  return refreshSnapshot();
 }
 
 const esc = (s) =>
@@ -417,8 +434,14 @@ const PAGE = `<!doctype html>
   .sqitem.status-done{border-color:var(--go)}
   .sqitem.status-failed{border-color:var(--nogo)}
   .sqitem.status-sent{border-color:var(--warn)}
+  nav.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--line)}
+  nav.tabs .tab{padding:8px 14px;border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;color:var(--dim);text-decoration:none;background:var(--bg)}
+  body:not([data-view="sign"]) .tab-tasks, body[data-view="sign"] .tab-sign{color:var(--ink);background:var(--panel);font-weight:600}
+  body:not([data-view="sign"]) #signqueue{display:none}
+  body[data-view="sign"] #launchchecks, body[data-view="sign"] #main, body[data-view="sign"] header{display:none}
 </style>
 </head><body>
+<nav class="tabs"><a href="/" class="tab tab-tasks">Tasks</a><a href="/sign" class="tab tab-sign">Signatures</a></nav>
 <header>
   <h1>Board</h1>
   <span class="meta" id="repo"></span>
@@ -984,7 +1007,8 @@ async function tick(){
     document.getElementById('err').innerHTML='<span class="nogo">stale — '+esc(e.message)+'</span>';
   }
 }
-tick(); setInterval(tick, 1000);
+const VIEW = document.body.dataset.view === 'sign' ? 'sign' : 'tasks';
+if (VIEW === 'tasks') { tick(); setInterval(tick, 1000); }
 
 // ---- launch checks -----------------------------------------------------------------------
 // Deliberately NOT part of tick()/render() and NOT on the 1s poll. This is the one panel on the
@@ -1133,8 +1157,10 @@ async function refreshSignQueue(){
     document.getElementById('sq-stamp').innerHTML = '<span class="nogo">check failed — ' + esc(e.message) + '</span>';
   }
 }
-refreshSignQueue();
-setInterval(refreshSignQueue, 5000);
+// Only on the Signatures tab, and never overlapping: the next check starts 5s after the last one
+// finished, so a slow chain read cannot stack requests behind it.
+async function signQueueLoop(){ await refreshSignQueue(); setTimeout(signQueueLoop, 5000); }
+if (VIEW === 'sign') signQueueLoop();
 
 document.getElementById('sq-connect').addEventListener('click', async () => {
   if (!window.ethereum) { alert('MetaMask not found — install the extension first.'); return; }
@@ -1227,8 +1253,7 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
  * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
  * listener. Do not widen the bind address to "make it reachable from my phone".
  */
-function recordAnswer(id, answer, custom) {
-  const tasks = snapshot(true).board?.tasks ?? [];
+function recordAnswer(id, answer, custom, tasks) {
   const t = tasks.find((x) => x.id === id);
   if (!t) return { code: 404, msg: `no task ${id}` };
   // A listed option must match exactly; a free-text answer is accepted as written. The option list
@@ -1279,13 +1304,16 @@ function recordAnswer(id, answer, custom) {
     );
   } catch (e) {
     // Say so rather than reporting a clean success: the decision IS saved, but nobody was told.
-    cache = { at: 0, data: null };
+    cache.at = 0; // stale, so the next poll refreshes; the last board still serves meanwhile
     return { code: 200, msg: `recorded, but NOT queued for routing: ${/** @type {Error} */ (e).message}` };
   }
 
-  cache = { at: 0, data: null };
+  cache.at = 0; // stale, so the next poll refreshes; the last board still serves meanwhile
   return { code: 200, msg: t.notify.length ? `recorded, routing to ${t.notify.join(', ')}` : 'recorded' };
 }
+
+/** @type {Promise<any>|null} */
+let signQueueInflight = null;
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
@@ -1296,11 +1324,13 @@ const server = createServer((req, res) => {
       body += c;
       if (body.length > 4096) req.destroy(); // a decision is short; anything larger is not one
     });
-    req.on('end', () => {
+    req.on('end', async () => {
       let out;
       try {
         const { id, answer, custom } = JSON.parse(body);
-        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom));
+        // A fresh read of the board, as before: the task must exist and be unanswered NOW.
+        const snap = await getSnapshot(true);
+        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom), snap?.board?.tasks ?? []);
       } catch (e) {
         out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
       }
@@ -1329,7 +1359,9 @@ const server = createServer((req, res) => {
   // Read-only on this server's end: every field is either a stored queue value or a live chain
   // read. Nothing here signs or broadcasts — see scripts/lib/sign-queue-server.mjs's own header.
   if (url.pathname === '/api/sign-queue' && req.method === 'GET') {
-    buildSignQueueResponse()
+    // Single-flight: concurrent polls share one build instead of stacking chain reads.
+    signQueueInflight ??= buildSignQueueResponse().finally(() => { signQueueInflight = null; });
+    signQueueInflight
       .then((body) => {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
         res.end(JSON.stringify(body));
@@ -1384,13 +1416,22 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/status') {
-    const body = JSON.stringify(snapshot(url.searchParams.has('force')));
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(body);
+    getSnapshot(url.searchParams.has('force'))
+      .then((snap) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(snap));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`status failed: ${/** @type {Error} */ (e).message}`);
+      });
+    return;
   }
-  if (url.pathname === '/') {
+  // Two tabs over one page: / is the task board, /sign is the Sign queue alone. The view is a body
+  // attribute, so each tab polls only its own endpoint (see VIEW in the page script).
+  if (url.pathname === '/' || url.pathname === '/sign') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(PAGE);
+    return res.end(url.pathname === '/sign' ? PAGE.replace('</head><body>', '</head><body data-view="sign">') : PAGE);
   }
   res.writeHead(404, { 'content-type': 'text/plain' });
   res.end('not found\n');
@@ -1409,5 +1450,5 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  Command center  ->  http://${HOST}:${PORT}`);
   console.log(`  refreshes every 5s · Ctrl+C to stop${NO_GH ? ' · --no-gh' : ''}\n`);
   // Warm the cache so the first page load is instant rather than waiting on git and gh.
-  snapshot(true);
+  refreshSnapshot().catch((e) => console.error(`status warm-up failed: ${e.message}`));
 });

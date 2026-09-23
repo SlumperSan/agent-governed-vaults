@@ -25,9 +25,18 @@ const RPC_BY_CHAIN = {
   84532: 'https://sepolia.base.org',
 };
 
-/** Default `cast` runner — a thin wrapper so tests can inject a stub instead. */
+/** Default `cast` runner — a thin wrapper so tests can inject a stub instead. Memoised: the
+ * server only calls pure, offline subcommands through it (`sig`, `calldata`, `abi-encode`), so a
+ * given argv always yields the same output. Each spawn is synchronous and costs hundreds of ms on
+ * Windows; re-spawning for every item on every 5 s poll blocked the server. Anything that reaches
+ * the network must not use this runner. */
+const castMemo = new Map();
 export function defaultCast(args) {
-  return execFileSync(process.env.CAST ?? 'cast', args, { encoding: 'utf8', windowsHide: true }).trim();
+  const key = JSON.stringify(args);
+  if (!castMemo.has(key)) {
+    castMemo.set(key, execFileSync(process.env.CAST ?? 'cast', args, { encoding: 'utf8', windowsHide: true }).trim());
+  }
+  return castMemo.get(key);
 }
 
 const encodeAddr = (a) => a.replace(/^0x/, '').toLowerCase().padStart(64, '0');
