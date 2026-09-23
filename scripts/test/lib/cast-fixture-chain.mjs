@@ -209,8 +209,15 @@ export function createFakeChain({ configPath, deployJsonPath, logPath, scenario 
     }
     if (cmd === 'keccak') return castKeccak(rest[0]);
     if (cmd === 'abi-encode') {
-      const out = fakeAbiEncode(rest[0], rest.slice(1));
-      if (rest[0].startsWith('f(address,')) { payload = out; actionHash = castKeccak(out); }
+      const sig = rest[0];
+      const encodeArgs = rest.slice(1);
+      // Logged (not just returned) so a test can re-derive the REAL abi-encoding of what
+      // smoke-test.mjs actually invoked -- see rebalance-payload-shape.test.mjs, which needs
+      // the true sig+args because fakeAbiEncode()'s own output below is a placeholder, not
+      // real ABI bytes (this fake chain has no EVM to decode it against).
+      appendLog({ kind: 'abi-encode', sig, args: encodeArgs });
+      const out = fakeAbiEncode(sig, encodeArgs);
+      if (sig.startsWith('f(address,')) { payload = out; actionHash = castKeccak(out); }
       return out;
     }
     if (cmd === 'call') {
