@@ -7,9 +7,10 @@
  * imported rather than re-typed, per that file's own "derived rather than copied" discipline) —
  * card 208, the exact routed-send shape `scripts/smoke-preflight.mjs`'s `requireIntendedCreator`/
  * `safeRoutingPlanRefusal` and `scripts/smoke-test.mjs`'s `routeThroughSafe` already implement for
- * the CLI smoke path. This builder produces the SAME inner calldata (via
- * `scripts/lib/vault-params.mjs`, shared with `smoke-test.mjs`) but signs with a PRE-VALIDATED
- * owner signature (`preValidatedSignature`, `scripts/lib/safe-exec.mjs`) instead of collecting a
+ * the CLI smoke path. This builder produces the SAME inner calldata — `createVaultParamsTuple`/
+ * `registerVaultConfigTuple`, `scripts/smoke-preflight.mjs` (#379; the ONE construction
+ * `smoke-test.mjs`, `scripts/build-safe-tx-builder.mjs` and this builder all now share, rather than
+ * a fourth copy) — but signs with a PRE-VALIDATED
  * real ECDSA signature — MetaMask itself, with `from` equal to the Safe owner, IS the
  * authorisation; see that function's own header for why this does not reopen MAJOR-1.
  *
@@ -28,8 +29,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeBuiltItems, readQueue, writeQueueAtomic } from '../lib/sign-queue.mjs';
-import { CREATE_VAULT_SIG, REGISTER_VAULT_SIG } from '../smoke-preflight.mjs';
-import { createVaultParamsTuple, registerVaultGovTuple } from '../lib/vault-params.mjs';
+import {
+  CREATE_VAULT_SIG, REGISTER_VAULT_SIG, createVaultParamsTuple, registerVaultConfigTuple,
+} from '../smoke-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CAST = process.env.CAST ?? 'cast';
@@ -70,11 +72,15 @@ export function build() {
   const usdc = cfg.usdc;
   const smoke = cfg.smoke;
 
+  // #379's createVaultParamsTuple takes ONE `aggregator` (the oracle) and ONE `adapter` — Arc's
+  // vault has exactly one of each, so this is not a narrowing versus the array shape this file
+  // used before the rebase.
   const createParams = createVaultParamsTuple({
-    usdc, tokens, oracle, capacityCapUsdc: smoke.capacityCapUsdc, minDepositUsdc: smoke.minDepositUsdc,
-    exitFeeMaxBps: smoke.exitFeeMaxBps, exitFeeDecayPeriod: smoke.exitFeeDecayPeriod, adapters: [adapter],
+    usdc, tokens, aggregator: oracle, capacityCapUsdc: smoke.capacityCapUsdc,
+    minDepositUsdc: smoke.minDepositUsdc, exitFeeMaxBps: smoke.exitFeeMaxBps,
+    exitFeeDecayPeriod: smoke.exitFeeDecayPeriod, adapter,
   });
-  const govTuple = registerVaultGovTuple(smoke.gov);
+  const govTuple = registerVaultConfigTuple(smoke.gov);
 
   const existing = readQueue();
   const existingCreate = existing.items.find((it) => it.builder === BUILDER_NAME && it.id === 'arc-first-vault-create');

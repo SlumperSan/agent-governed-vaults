@@ -8,18 +8,32 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   advanceSentItems, originGateRefusal, recordSentHash,
 } from '../lib/sign-queue-server.mjs';
-import { readQueue, writeQueueAtomic } from '../lib/sign-queue.mjs';
+import { QUEUE_PATH, readQueue, writeQueueAtomic } from '../lib/sign-queue.mjs';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'sign-queue-server-test-'));
 after(() => { try { rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
 let n = 0;
 const tmpQueuePath = () => path.join(TMP, `q${n++}.json`);
+
+// GUARD AGAINST THIS FILE'S OWN PAST DEFECT: an earlier draft of the `advanceSentItems` tests below
+// omitted the `tmpQueuePath()` third argument, so every `changed:true` case (done/foreign-revert/
+// failed/grace-period-revert) defaulted to the REAL `QUEUE_PATH` and overwrote the live Sign-queue
+// file with a single fake test item â€” caught only by manually re-inspecting the real file after a
+// run, not by anything in this suite. Snapshot the real file's bytes before any test here runs, and
+// assert in `after` that not one byte changed. Every test in this file MUST pass an explicit
+// `tmpQueuePath()` to any function that can write.
+const REAL_QUEUE_BEFORE = existsSync(QUEUE_PATH) ? readFileSync(QUEUE_PATH, 'utf8') : null;
+after(() => {
+  const nowExists = existsSync(QUEUE_PATH);
+  const now = nowExists ? readFileSync(QUEUE_PATH, 'utf8') : null;
+  assert.equal(now, REAL_QUEUE_BEFORE, 'a test in this file wrote to the REAL Sign-queue file â€” every write-capable call must pass an explicit tmpQueuePath()');
+});
 
 const FROM = '0xF000000000000000000000000000000000000f';
 const TO = '0xA000000000000000000000000000000000000a';
@@ -87,7 +101,7 @@ test('advanceSentItems: a matching, successful receipt moves the item to done â€
     receipt: { status: '0x1', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: good }));
+  const changed = await advanceSentItems(queue, stubFetch({ [hash]: good }), tmpQueuePath());
   assert.equal(changed, true);
   assert.equal(queue.items[0].status, 'done');
 
@@ -97,7 +111,7 @@ test('advanceSentItems: a matching, successful receipt moves the item to done â€
     receipt: { status: '0x1', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue2 = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  await advanceSentItems(queue2, stubFetch({ [hash]: wrongInput }));
+  await advanceSentItems(queue2, stubFetch({ [hash]: wrongInput }), tmpQueuePath());
   assert.notEqual(queue2.items[0].status, 'done');
 });
 
@@ -108,7 +122,7 @@ test('advanceSentItems: a FOREIGN tx (from does not match) reverts the item to p
     receipt: { status: '0x1', from: '0x9999999999999999999999999999999999999a', to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: foreign }));
+  const changed = await advanceSentItems(queue, stubFetch({ [hash]: foreign }), tmpQueuePath());
   assert.equal(changed, true);
   const it = queue.items[0];
   assert.equal(it.status, 'pending');
@@ -124,14 +138,14 @@ test('advanceSentItems: a matching tx that genuinely REVERTED on chain goes to f
     receipt: { status: '0x0', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  await advanceSentItems(queue, stubFetch({ [hash]: reverted }));
+  await advanceSentItems(queue, stubFetch({ [hash]: reverted }), tmpQueuePath());
   assert.equal(queue.items[0].status, 'failed');
 });
 
 test('advanceSentItems: a hash not yet found stays sent (still might just be propagating) â€” no premature revert', async () => {
   const hash = `0x${'44'.repeat(32)}`;
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }));
+  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), tmpQueuePath());
   assert.equal(changed, false);
   assert.equal(queue.items[0].status, 'sent');
 });
@@ -140,7 +154,7 @@ test('advanceSentItems: a hash not found for a LONG time (past the grace period)
   const hash = `0x${'55'.repeat(32)}`;
   const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: longAgo })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }));
+  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), tmpQueuePath());
   assert.equal(changed, true);
   assert.equal(queue.items[0].status, 'pending');
 });
