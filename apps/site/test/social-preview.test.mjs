@@ -39,6 +39,34 @@ const PAGE_IDS = [...readFileSync(path.join(APP, 'src', 'pages.ts'), 'utf8').mat
   .map((m) => m[1])
   .filter((id) => id !== '404.html');
 
+/**
+ * THE WORDS THE CARD ACTUALLY DRAWS, read out of the generator that draws them.
+ *
+ * `og:image:alt` describes an image whose text lives in `scripts/build-og-card.mjs`. Asserting the
+ * attribute is merely NON-EMPTY leaves the two pinned to each other by eye — change `STRAPLINE`
+ * there and five alt attributes keep describing a card that no longer exists, on the surface read
+ * by exactly the people who cannot see the image. That drift is invisible to every other guard.
+ *
+ * READ BY REGEX RATHER THAN IMPORTED, deliberately: `build-og-card.mjs` executes at module top
+ * level — it launches headless Chrome and writes the PNG — so importing it from a test would run a
+ * browser. Parsing its source keeps the single source of truth without the side effect.
+ *
+ * A FAILED PARSE THROWS. If either constant is renamed or reshaped this must go red, never quietly
+ * skip the comparison: a guard that cannot find what it compares against has stopped comparing.
+ */
+const cardWords = () => {
+  const src = readFileSync(path.join(path.dirname(path.dirname(APP)), 'scripts', 'build-og-card.mjs'), 'utf8');
+  const wordmark = /^const WORDMARK = '([^']+)';$/m.exec(src);
+  const strapline = /^const STRAPLINE = '([^']+)';$/m.exec(src);
+  assert.ok(
+    wordmark && strapline,
+    'could not parse WORDMARK/STRAPLINE out of scripts/build-og-card.mjs — the declarations moved, '
+      + 'so the alt text can no longer be checked against the words the card draws. Fix the parse; '
+      + 'do not delete the check.',
+  );
+  return `${wordmark[1]} — ${strapline[1]}`;
+};
+
 test('every real page links the favicon, both forms', () => {
   assert.ok(PAGE_IDS.length > 0, 'no pages found in src/pages.ts — the derivation is broken');
   for (const page of [...PAGE_IDS, '404.html']) {
@@ -63,7 +91,17 @@ test('every real page carries an og:image, sized and described, plus a twitter:i
     assert.ok(img, `${page}: no og:image tag`);
     assert.match(html, /<meta property="og:image:width" content="1200"\s*\/?>/, `${page}: og:image:width missing or wrong`);
     assert.match(html, /<meta property="og:image:height" content="630"\s*\/?>/, `${page}: og:image:height missing or wrong`);
-    assert.match(html, /<meta property="og:image:alt" content="[^"]+"\s*\/?>/, `${page}: og:image:alt missing`);
+    const alt = /<meta property="og:image:alt" content="([^"]+)"\s*\/?>/.exec(html);
+    assert.ok(alt, `${page}: og:image:alt missing`);
+    // Equality, not non-emptiness — see `cardWords` above. This is what makes changing the card's
+    // words a two-file commit the gate enforces, rather than one kept in step by eye.
+    assert.equal(
+      alt[1],
+      cardWords(),
+      `${page}: og:image:alt describes different words than the card draws. Update this attribute `
+        + 'on every page, or change the card back — a shared link that names a strapline the image '
+        + 'does not show misleads the readers who cannot see it.',
+    );
     assert.match(
       html,
       new RegExp(`<meta name="twitter:image" content="${img[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*/?>`),
