@@ -321,7 +321,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const head = String(pr.data.headRefOid).slice(0, 8);
   process.stdout.write(`\nmerge-preflight #${pr.data.number} (${opts.mode}) — ${pr.data.headRefName} @ ${head}\n`);
-  process.stdout.write(`  roster:   ${decision.roster ? decision.roster.join(', ') : '(none declared)'}\n`);
+  process.stdout.write(`  roster:   ${decision.roster ? decision.roster.join(', ') : '(none declared)'}${decision.rosterDefaulted ? ' (defaulted — card 167, no REVIEW-ROSTER token posted)' : ''}\n`);
   const vs = Object.entries(decision.latestVerdicts);
   process.stdout.write(`  verdicts: ${vs.length ? vs.map(([r, v]) => `${r}=${v.verdict}`).join(', ') : '(no tokens)'}\n\n`);
 

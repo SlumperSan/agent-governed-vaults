@@ -1,10 +1,15 @@
 {
   "version": 1,
   "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed, and a fifth (#121/#117) showed that a conflict resolution can introduce a defect no review ever sees. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "defaultRoster": {
+    "reviewers": ["Security"],
+    "appliesWhen": "no REVIEW-ROSTER token has ever been posted on the PR (parseRoster returns null, not an explicit empty roster)",
+    "why": "Card 167. Eight REVIEW-ROSTER tokens were posted by hand in one evening, every one mechanical -- 'whoever did not write it', and the author is always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. Rather than wait on the orchestrator to type a token, the roster defaults to this list so review starts immediately; an explicit token posted at any time still overrides it, per the roster's own 'latest token wins' rule. Mirrored in scripts/lib/verdicts.mjs's DEFAULT_ROSTER -- keep the two in sync. Does NOT weaken roster-resolved: the default still has to be resolved by an actual REVIEW-VERDICT token before a strict-mode PR clears."
+  },
   "tokens": {
     "roster": {
       "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
-      "postedBy": "the orchestrator, when it spawns reviewers",
+      "postedBy": "the orchestrator, when it spawns reviewers, or -- since card 167 -- nobody at all, in which case defaultRoster applies",
       "purpose": "makes 'assigned but not yet posted' a computable state. The roster is the denominator; verdicts are the numerator."
     },
     "verdict": {
@@ -67,18 +72,18 @@
       "modes": [
         "strict"
       ],
-      "title": "a review roster must have been declared",
-      "blocksWhen": "no REVIEW-ROSTER token appears on the PR",
-      "why": "Mode B, half one. Without a declared roster there is no denominator, so 'nobody has objected' and 'nobody has looked' are the same observation. #109 merged 5.5 minutes before its review existed."
+      "title": "a review roster is in force -- declared, or defaulted",
+      "blocksWhen": "never, as of card 167 -- a roster is always in force: the orchestrator's explicit REVIEW-ROSTER token if one was posted, or defaultRoster if not. Kept as a rule id (and reported as a note, not a blocker, when the default applies) because roster-resolved's denominator has to come from somewhere, and this is where that denominator's source is recorded.",
+      "why": "Mode B, half one. Before card 167: without a declared roster there was no denominator, so 'nobody has objected' and 'nobody has looked' were the same observation, and #109 merged 5.5 minutes before its review existed. Eight REVIEW-ROSTER tokens were then posted by hand in one evening -- all mechanical, the author always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. Card 167 makes the absence of a token a default (defaultRoster) instead of an unresolved question, so review starts immediately; roster-resolved (below) still blocks until the roster IN FORCE, default or explicit, is fully resolved, so this does not weaken Mode B -- 'no roster' can no longer mean 'nobody needs to review'."
     },
     {
       "id": "roster-resolved",
       "modes": [
         "strict"
       ],
-      "title": "every rostered reviewer must have posted a verdict",
-      "blocksWhen": "any name in the roster has no REVIEW-VERDICT token",
-      "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'."
+      "title": "every reviewer on the roster IN FORCE must have posted a verdict",
+      "blocksWhen": "any name in the roster -- explicit, or defaultRoster when no REVIEW-ROSTER token was ever posted -- has no REVIEW-VERDICT token",
+      "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'. Since card 167 the complement is never empty by omission: a PR with no posted roster is judged against defaultRoster, so this rule is what actually stops a silent no-roster PR from merging."
     },
     {
       "id": "base-current",
