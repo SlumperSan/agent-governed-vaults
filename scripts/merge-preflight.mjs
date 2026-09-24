@@ -219,6 +219,16 @@ export function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  // Card #59, REPORT-ONLY: review OBJECTS (`gh pr review`), distinct from the issue comments above.
+  // Deliberately a SEPARATE call and NOT part of PR_FIELDS/validateGhPayloads — a token here can
+  // never clear or block anything (the gate reads issue comments only, see merge-policy.json's
+  // `enforcement.nativeReviewsUnavailable`), so this must never become a new way to fail CLOSED.
+  // Best-effort: if it fails, judge the PR anyway and simply skip the one note that needed it.
+  const reviewsReq = gh(['pr', 'view', opts.pr, '--repo', opts.repo, '--json', 'reviews']);
+  const reviews = reviewsReq.ok
+    ? (reviewsReq.data.reviews ?? []).map((/** @type {any} */ r) => ({ author: r.author?.login ?? '', body: r.body ?? '' }))
+    : [];
+
   // Fail CLOSED on a payload that cannot answer the rules. See the field contract above: five of
   // the twelve rule-bearing values silently DISARM a rule when absent rather than blocking, so a
   // partial payload does not produce a wrong-looking answer — it produces a confident CLEAR.
@@ -249,6 +259,7 @@ export function main(argv = process.argv.slice(2)) {
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({
       headSha: r.headSha, status: r.status, conclusion: r.conclusion, name: r.workflowName,
     })),
+    reviews,
     mode: opts.mode,
   });
 
