@@ -85,7 +85,7 @@ export function Disclaimers() {
 
         <hr className="rule" />
 
-        {/* Register: the fifteen entries, each as What it is / Worst case / What is done. */}
+        {/* Register: every entry, each as What it is / Worst case / What is done. */}
         <section>
           <div className="inner">
             {REGISTER_ENTRIES.map((entry) => (

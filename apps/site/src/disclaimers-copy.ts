@@ -156,11 +156,15 @@ export const CONTENTS_ENTRIES: readonly ContentsEntry[] = [
   {
     "id": "r15",
     "text": "15. There is no oracle rotation path"
+  },
+  {
+    "id": "r16",
+    "text": "16. A vault's creator chooses its trading adapters"
   }
 ];
 
 /* ---------------------------------------------------------------------------
- * Register: the fifteen-entry risk register
+ * Register: the sixteen-entry risk register
  * ------------------------------------------------------------------------ */
 
 export const REGISTER_ENTRIES: readonly RiskEntry[] = [
@@ -446,6 +450,25 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       {
         "dt": "What is done",
         "dd": "Nothing, deliberately. The alternative is an address able to bless a new oracle, which is an address able to bless a fake price feed. That is the exact attack the allowlist exists to close, and such an address would be the protocol's first standing privileged role. Creating a new vault against a dead feed fails loudly rather than producing a brick, so the failure mode is \"that asset becomes unlistable until a new factory is published\", never \"broken vaults ship\". Publishing a new factory also restarts the operator registry, the leaderboard and the loss carryforward in a fresh registry."
+      }
+    ]
+  },
+  {
+    "id": "r16",
+    "severityLabel": "Partially mitigated",
+    "heading": "16. A vault's creator chooses its trading adapters",
+    "rows": [
+      {
+        "dt": "What it is",
+        "dd": "A vault can trade only through the execution adapters its creator listed when it was created, and that list is fixed for the life of the vault. Unlike oracles, adapters are not curated by the factory: any creator can list any adapter contract, reviewed or not. <strong>The live cirBTC Vault lists exactly one adapter, the reviewed AggregationRouterAdapter at <code>0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1</code></strong>, read from the vault's own creation transaction."
+      },
+      {
+        "dt": "Worst case",
+        "dd": "A future vault, created by someone else, lists an adapter that is faulty or hostile. That adapter still cannot move anything on its own: the vault calls an adapter only to execute a rebalance its members voted for. On each leg of that rebalance, the most it can take is the slippage bound the vote approved, which the contract caps at 2% of that leg&rsquo;s oracle-priced value."
+      },
+      {
+        "dt": "What is done",
+        "dd": "The same checks run on every leg, whichever adapter is listed. The vault refuses an order whose minimum output is worth less than the voted slippage bound allows, priced by its own oracle. It measures what actually arrived from its own balance rather than taking the adapter&rsquo;s word, resets the adapter&rsquo;s token approval to zero after the swap, and returns any input the swap did not spend. Before depositing in any vault other than the cirBTC Vault, check which adapters its creation transaction lists."
       }
     ]
   }
