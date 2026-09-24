@@ -5,7 +5,9 @@ each with a verifiable artifact. **Verdict for Base mainnet: NO-GO**, but no lon
 reasons: every security gate is now cleared and what remains is operational. This board covers no
 other chain. A prior mainnet deployment on a since-abandoned chain was never put to it, and §0 of
 the source document lists gate by gate what was and was not run there. That deployment was fully
-exited on 2026-09-18 and holds nothing; the protocol is built for Arc, not yet deployed there.
+exited on 2026-09-18 and holds nothing. The protocol is now deployed on Arc since 2026-09-24
+(`contracts/config/deployments/arc-mainnet.json`), but that deployment was not put to this board
+either — none of these nine gates carry over from a chain they were never run against.
 
 > **⚠ [LAUNCH-READINESS.md](../LAUNCH-READINESS.md) is authoritative; this note is a mirror.** Rows
 > 0, 1 and 5 below were corrected on 2026-08-30 after the C-6 pivot shipped and the owner's audit
