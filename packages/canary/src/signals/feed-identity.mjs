@@ -97,6 +97,13 @@ import { ok, alert, skipped, detectorBroken, signalId, shortAddr } from '../sign
  */
 export const SIGNAL = 'feed-identity';
 
+/**
+ * Transition-key suffix for the harmless aggregator-swap NOTICE, so it is tracked apart from the
+ * latching harm findings for the same asset. Exported because `applyIdentityObservations` has to
+ * strip it to find the asset's pin, and the tests assert on both ids.
+ */
+export const SWAP_KEY_SUFFIX = ':swap';
+
 /** Consecutive unreadable sweeps before a blind leg is escalated. See the header. */
 export const UNREADABLE_SWEEPS = 3;
 
@@ -192,7 +199,9 @@ export async function checkFeedIdentity({ reader, vault, oracle, assets, pins = 
 
   const out = [];
   for (const asset of assets) {
-    out.push(await assetIdentity({ reader, vault, oracle, asset, pins }));
+    // TWO results per asset: the latching harm finding, and the self-clearing swap notice on its
+    // own key. Never one — see `assetIdentity`.
+    out.push(...(await assetIdentity({ reader, vault, oracle, asset, pins })));
   }
   return out;
 }
@@ -200,20 +209,37 @@ export async function checkFeedIdentity({ reader, vault, oracle, assets, pins = 
 /** @returns {Promise<import('../signal.mjs').SignalResult>} */
 async function assetIdentity({ reader, vault, oracle, asset, pins }) {
   const base = { signal: SIGNAL, vault, key: asset };
+  // The swap NOTICE gets its own transition key, and therefore its own tracked id. It used to share
+  // `asset` with the harm legs, and `transitions.mjs` keys state by id and status alone — so a
+  // benign swap ALERT followed on the next sweep by a latching decimals drift was `alert -> alert`
+  // and emitted NOTHING AT ALL. The drift did not route to the wrong tier; it was never dispatched,
+  // and `sinks.mjs`'s CONDITIONAL_PAGE predicate was never consulted. Two severities under one key
+  // can only ever deliver the first one.
+  const swapBase = { signal: SIGNAL, vault, key: `${asset}${SWAP_KEY_SUFFIX}` };
   const id = signalId(SIGNAL, vault, asset);
   const pin = pins?.[id] ?? null;
   const blind = (message, detail) => detectorBroken({
     ...base, message, detail: { vault, oracle, asset, minConsecutive: UNREADABLE_SWEEPS, ...detail },
   });
+  const swapBlind = (message, detail) => detectorBroken({
+    ...swapBase, message, detail: { vault, oracle, asset, minConsecutive: UNREADABLE_SWEEPS, ...detail },
+  });
 
   const cfgRead = await reader.tryRead(oracle, CHAINLINK_ORACLE_VIEWS, 'feedOf', [asset]);
   if (!cfgRead.ok) {
-    return blind(
+    // Both keys, on this path too: an id that stops being observed keeps its last status forever
+    // (`transitions.mjs` never prunes), so the swap key has to say "blind" rather than go quiet.
+    return [blind(
       cfgRead.kind === 'revert'
         ? `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}) even though the oracle answered as a ChainlinkOracle, so the cached scale this check compares against cannot be read. This asset is UNMONITORED for aggregator-swap drift, not clean`
         : `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} could not be read (${cfgRead.error}) — the call did not reach the chain, so no revert was observed and the cached scale this check compares against is unavailable. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
       { error: cfgRead.error ?? null, kind: cfgRead.kind ?? null },
-    );
+    ), swapBlind(
+      cfgRead.kind === 'revert'
+        ? `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} reverts (${cfgRead.error}), so the pinned aggregator cannot be compared and a swap cannot be observed. This asset is UNMONITORED for aggregator-swap drift, not clean`
+        : `FEED IDENTITY DETECTOR BLIND for asset ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() on ${shortAddr(oracle)} could not be read (${cfgRead.error}), so the pinned aggregator cannot be compared and a swap cannot be observed this sweep. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
+      { error: cfgRead.error ?? null, kind: cfgRead.kind ?? null },
+    )];
   }
   const cfg = normalizeFeedConfig(cfgRead.value);
 
@@ -222,11 +248,15 @@ async function assetIdentity({ reader, vault, oracle, asset, pins }) {
     // `oracle-freshness` is already paging, because priceWad reverts permanently — or it is the
     // oracle's pinned USDC leg, which has no feed and therefore no identity to drift. Reported
     // once, never escalated, exactly like the other "another signal owns this" skips.
-    return skipped({
+    return [skipped({
       ...base,
       message: `feed identity cannot be checked for ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() lists no feed for it. Either the asset is unlisted — in which case oracle-freshness is paging, since priceWad reverts permanently — or it is the oracle's pinned USDC leg, which has no aggregator behind it`,
       detail: { vault, oracle, asset, listed: false, attributedTo: 'oracle-freshness' },
-    });
+    }), skipped({
+      ...swapBase,
+      message: `no aggregator swap check for ${shortAddr(asset)} on vault ${shortAddr(vault)}: feedOf() lists no feed for it, so there is no aggregator behind it to swap`,
+      detail: { vault, oracle, asset, listed: false, attributedTo: 'oracle-freshness' },
+    })];
   }
 
   // One round trip for the four proxy reads. tryRead never throws, so a partial failure is data.
@@ -253,90 +283,113 @@ async function assetIdentity({ reader, vault, oracle, asset, pins }) {
     observedIdentity,
   };
 
-  // HARM LEGS FIRST, in the constructor's own order (`_requireUsdQuote`, then `decimals`). Order
-  // decides which cause a responder chases — the Dev11 lesson, applied here too.
-  if (!desc.ok || !dec.ok) {
-    // "did not answer" is a claim about the FEED, so only a confirmed revert from every read that
-    // failed may make it — the same rule `:212` already applies to `feedOf()`. The guard is `||`
-    // above, so one of the two may have succeeded; a succeeded read carries no `kind` and must not
-    // drag the wording neutral on its own.
-    const answered = (desc.ok || desc.kind === 'revert') && (dec.ok || dec.kind === 'revert');
-    const which = `${!desc.ok ? 'description()' : ''}${!desc.ok && !dec.ok ? ' or ' : ''}${!dec.ok ? 'decimals()' : ''}`;
-    const why = (desc.error ?? dec.error) || 'no error text';
-    return blind(
-      answered
-        ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} did not answer ${which} (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift, not clean`
-        : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${which} on the feed at ${shortAddr(cfg.feed)} could not be read (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
-      {
-        ...detail,
-        descriptionError: desc.error ?? null, decimalsError: dec.error ?? null,
-        descriptionKind: desc.ok ? null : desc.kind ?? null,
-        decimalsKind: dec.ok ? null : dec.kind ?? null,
-      },
-    );
-  }
+  // THE SWAP NOTICE, evaluated on its own key so it can never mask a harm finding and a harm
+  // finding can never mask it. Both results are returned on EVERY path below — ok, harm, blind
+  // alike — because `transitions.mjs` never prunes an id that stops being observed: a key emitted
+  // only sometimes would strand its last status (an `alert`, typically) in `tracker.unhealthy()`,
+  // the heartbeat summary and `ops-check` forever, with nothing that could ever clear it.
+  const harmLegsRan = desc.ok && dec.ok;
+  const harmClean = harmLegsRan
+    && isUsdQuoted(String(desc.value))
+    && scaleForDecimals(Number(dec.value)) === cfg.scale;
+  const swapDetail = { ...detail, swapped: false, harm: null };
 
-  const description = String(desc.value);
-  if (!isUsdQuoted(description)) {
-    return alert({
-      ...base,
-      message: `FEED DENOMINATION DRIFT for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} now describes itself as ${JSON.stringify(description)}, which is NOT USD-quoted. ChainlinkOracle proved this feed was USD-quoted once, at construction, and its config is immutable — every price it has served since the change is denominated in something else, and NAV, deposits and exits are all wrong rather than frozen. Verify against Chainlink's announcement and treat the vault as mispriced`,
-      measured: JSON.stringify(description), threshold: 'a description ending in "USD" as a whole word',
-      detail: { ...detail, usdQuoted: false, harm: 'denomination' },
+  /** @returns {import('../signal.mjs').SignalResult} */
+  function swapNotice() {
+    if (!agg.ok && !phase.ok) {
+      // Same rule as the harm leg's blind branch: "answered neither" is a claim about the feed, so
+      // only a confirmed revert from both reads may make it.
+      const answered = agg.kind === 'revert' && phase.kind === 'revert';
+      const why = (agg.error ?? phase.error) || 'no error text';
+      const harmTail = harmClean ? 'The denomination and cached-scale checks DID pass this sweep — the harm checks are working; it is the swap NOTICE that is blind' : harmLegsRan ? 'The denomination and cached-scale checks ran but did NOT come back clean — read the companion line for this asset FIRST' : 'The denomination and cached-scale checks could not run either — see the companion line for this asset';
+      return swapBlind(
+        answered
+          ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} answered neither aggregator() nor phaseId() (${why}), so an aggregator swap cannot be observed at all. ${harmTail}`
+          : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: neither aggregator() nor phaseId() on the feed at ${shortAddr(cfg.feed)} could be read (${why}), so an aggregator swap cannot be observed this sweep. ${harmTail}`,
+        {
+          ...detail,
+          aggregatorError: agg.error ?? null, phaseIdError: phase.error ?? null,
+          aggregatorKind: agg.ok ? null : agg.kind ?? null, phaseIdKind: phase.ok ? null : phase.kind ?? null,
+        },
+      );
+    }
+    const swap = convictSwap(pin, observedIdentity);
+    if (swap) {
+      return alert({
+        ...swapBase,
+        message: `AGGREGATOR SWAPPED behind the feed for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${swap}. This is LEGITIMATE routine Chainlink operation and there is nothing to fix on-chain — but it is the only event that can invalidate the oracle's cached scale, so verify it against Chainlink's announcement (a deprecation is announced off-chain and looks like ordinary staleness only AFTER the response window closes). ${harmClean ? 'The denomination and cached-scale checks passed against the NEW aggregator on this same sweep, which is what says the swap was harmless; this notice clears itself next sweep' : 'The harm checks did NOT come back clean on this sweep — read the companion line for this asset FIRST: this swap is not established as harmless'}`,
+        measured: `aggregator ${observedIdentity.aggregator ?? 'unreadable'} / phaseId ${observedIdentity.phaseId ?? 'unreadable'}`,
+        threshold: `aggregator ${pin?.aggregator ?? 'unpinned'} / phaseId ${pin?.phaseId ?? 'unpinned'}`,
+        detail: { ...detail, swapped: true, harm: null, harmClean },
+      });
+    }
+    const partial = observedIdentity.aggregator == null || observedIdentity.phaseId == null;
+    return ok({
+      ...swapBase,
+      message: pin
+        ? `no aggregator swap behind the feed for ${shortAddr(asset)} on vault ${shortAddr(vault)}: aggregator ${observedIdentity.aggregator ?? 'unreadable this sweep'} phaseId ${observedIdentity.phaseId ?? 'unreadable this sweep'} still match the pin`
+        : `feed identity PINNED for ${shortAddr(asset)} on vault ${shortAddr(vault)} on first sight: aggregator ${observedIdentity.aggregator ?? 'unreadable'} phaseId ${observedIdentity.phaseId ?? 'unreadable'}. A swap that happened BEFORE this pin is invisible to this leg — the decimals and denomination checks do not depend on it and cover the harm regardless; scripts/verify-chainlink-oracle.mjs compares against the config's own aggregatorPin, which is the half that survives a canary restart`,
+      detail: { ...swapDetail, pinned: pin != null, identityPartial: partial },
     });
   }
 
-  const liveDecimals = Number(dec.value);
-  const expectedScale = scaleForDecimals(liveDecimals);
-  if (expectedScale == null || expectedScale !== cfg.scale) {
-    const factor = expectedScale == null ? null : ratio(expectedScale, cfg.scale);
-    return alert({
+  // HARM LEGS, in the constructor's own order (`_requireUsdQuote`, then `decimals`). Order decides
+  // which cause a responder chases — the Dev11 lesson, applied here too.
+  /** @returns {import('../signal.mjs').SignalResult} */
+  function harmFinding() {
+    if (!harmLegsRan) {
+      // "did not answer" is a claim about the FEED, so only a confirmed revert from every read that
+      // failed may make it — the same rule the `cfgRead` branch above already applies. One of the
+      // two may have succeeded; a succeeded read carries no `kind` and must not drag the wording
+      // neutral on its own.
+      const answered = (desc.ok || desc.kind === 'revert') && (dec.ok || dec.kind === 'revert');
+      const which = `${!desc.ok ? 'description()' : ''}${!desc.ok && !dec.ok ? ' or ' : ''}${!dec.ok ? 'decimals()' : ''}`;
+      const why = (desc.error ?? dec.error) || 'no error text';
+      return blind(
+        answered
+          ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} did not answer ${which} (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift, not clean`
+          : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${which} on the feed at ${shortAddr(cfg.feed)} could not be read (${why}), so neither the denomination nor the cached-scale check could run. This asset is UNMONITORED for aggregator-swap drift this sweep, not clean`,
+        {
+          ...detail,
+          descriptionError: desc.error ?? null, decimalsError: dec.error ?? null,
+          descriptionKind: desc.ok ? null : desc.kind ?? null,
+          decimalsKind: dec.ok ? null : dec.kind ?? null,
+        },
+      );
+    }
+
+    const description = String(desc.value);
+    if (!isUsdQuoted(description)) {
+      return alert({
+        ...base,
+        message: `FEED DENOMINATION DRIFT for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} now describes itself as ${JSON.stringify(description)}, which is NOT USD-quoted. ChainlinkOracle proved this feed was USD-quoted once, at construction, and its config is immutable — every price it has served since the change is denominated in something else, and NAV, deposits and exits are all wrong rather than frozen. Verify against Chainlink's announcement and treat the vault as mispriced`,
+        measured: JSON.stringify(description), threshold: 'a description ending in "USD" as a whole word',
+        detail: { ...detail, usdQuoted: false, harm: 'denomination' },
+      });
+    }
+
+    const liveDecimals = Number(dec.value);
+    const expectedScale = scaleForDecimals(liveDecimals);
+    if (expectedScale == null || expectedScale !== cfg.scale) {
+      const factor = expectedScale == null ? null : ratio(expectedScale, cfg.scale);
+      return alert({
+        ...base,
+        message: `FEED DECIMALS DRIFT for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} now reports ${liveDecimals} decimals, but the oracle cached scale ${cfg.scale}${expectedScale == null ? ' and no cacheable scale exists for that many decimals (scale is 10**(18-decimals), which requires decimals <= 18)' : ` when the correct scale for ${liveDecimals} decimals is ${expectedScale}`}. Every price this asset has served since the change is mis-scaled${factor ? ` by ${factor}` : ''} — the vault is NOT frozen, it is silently WRONG, and nothing else in the canary can see it because nav-backing recomputes through the same priceWad. The oracle's config is immutable: this cannot be repaired, only evacuated`,
+        measured: `decimals ${liveDecimals}`,
+        threshold: `the cached scale ${cfg.scale} (decimals ${scaleToDecimals(cfg.scale) ?? '?'})`,
+        detail: { ...detail, expectedScale: expectedScale == null ? null : expectedScale.toString(), harm: 'decimals' },
+      });
+    }
+
+    return ok({
       ...base,
-      message: `FEED DECIMALS DRIFT for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} now reports ${liveDecimals} decimals, but the oracle cached scale ${cfg.scale}${expectedScale == null ? ' and no cacheable scale exists for that many decimals (scale is 10**(18-decimals), which requires decimals <= 18)' : ` when the correct scale for ${liveDecimals} decimals is ${expectedScale}`}. Every price this asset has served since the change is mis-scaled${factor ? ` by ${factor}` : ''} — the vault is NOT frozen, it is silently WRONG, and nothing else in the canary can see it because nav-backing recomputes through the same priceWad. The oracle's config is immutable: this cannot be repaired, only evacuated`,
-      measured: `decimals ${liveDecimals}`,
-      threshold: `the cached scale ${cfg.scale} (decimals ${scaleToDecimals(cfg.scale) ?? '?'})`,
-      detail: { ...detail, expectedScale: expectedScale == null ? null : expectedScale.toString(), harm: 'decimals' },
+      message: `feed identity unchanged for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${liveDecimals} decimals matching the cached scale ${cfg.scale}, ${JSON.stringify(description)} still USD-quoted`,
+      measured: `decimals ${liveDecimals}`, threshold: `the cached scale ${cfg.scale}`,
+      detail: { ...detail, pinned: pin != null, harm: null },
     });
   }
 
-  // IDENTITY LEG. Harm-free by itself, and only reached once both harm legs have passed.
-  if (!agg.ok && !phase.ok) {
-    // "answered neither" is the same claim about the feed as the harm leg's "did not answer", and
-    // carries the same condition: both reads must have come back as confirmed reverts.
-    const answered = agg.kind === 'revert' && phase.kind === 'revert';
-    const why = (agg.error ?? phase.error) || 'no error text';
-    return blind(
-      answered
-        ? `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: the feed at ${shortAddr(cfg.feed)} answered neither aggregator() nor phaseId() (${why}), so an aggregator swap cannot be observed at all. The denomination and cached-scale checks DID pass this sweep — the harm checks are running; it is the swap NOTICE that is blind`
-        : `FEED IDENTITY DETECTOR BLIND for ${shortAddr(asset)} on vault ${shortAddr(vault)}: neither aggregator() nor phaseId() on the feed at ${shortAddr(cfg.feed)} could be read (${why}), so an aggregator swap cannot be observed this sweep. The denomination and cached-scale checks DID pass this sweep — the harm checks are running; it is the swap NOTICE that is blind`,
-      {
-        ...detail,
-        aggregatorError: agg.error ?? null, phaseIdError: phase.error ?? null,
-        aggregatorKind: agg.kind ?? null, phaseIdKind: phase.kind ?? null,
-      },
-    );
-  }
-
-  const swap = convictSwap(pin, observedIdentity);
-  if (swap) {
-    return alert({
-      ...base,
-      message: `AGGREGATOR SWAPPED behind the feed for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${swap}. This is LEGITIMATE routine Chainlink operation and there is nothing to fix on-chain — but it is the only event that can invalidate the oracle's cached scale, so verify it against Chainlink's announcement (a deprecation is announced off-chain and looks like ordinary staleness only AFTER the response window closes). The denomination and cached-scale checks passed against the NEW aggregator on this same sweep, which is what says the swap was harmless; this alert clears itself next sweep`,
-      measured: `aggregator ${observedIdentity.aggregator ?? 'unreadable'} / phaseId ${observedIdentity.phaseId ?? 'unreadable'}`,
-      threshold: `aggregator ${pin?.aggregator ?? 'unpinned'} / phaseId ${pin?.phaseId ?? 'unpinned'}`,
-      detail: { ...detail, swapped: true, harm: null },
-    });
-  }
-
-  const partial = observedIdentity.aggregator == null || observedIdentity.phaseId == null;
-  return ok({
-    ...base,
-    message: pin
-      ? `feed identity unchanged for ${shortAddr(asset)} on vault ${shortAddr(vault)}: ${liveDecimals} decimals matching the cached scale ${cfg.scale}, ${JSON.stringify(description)} still USD-quoted, aggregator ${observedIdentity.aggregator ?? 'unreadable this sweep'} phaseId ${observedIdentity.phaseId ?? 'unreadable this sweep'}`
-      : `feed identity PINNED for ${shortAddr(asset)} on vault ${shortAddr(vault)} on first sight: aggregator ${observedIdentity.aggregator ?? 'unreadable'} phaseId ${observedIdentity.phaseId ?? 'unreadable'}, ${liveDecimals} decimals matching the cached scale ${cfg.scale}. A swap that happened BEFORE this pin is invisible to the identity leg — the decimals and denomination checks above do not depend on it and cover the harm regardless; scripts/verify-chainlink-oracle.mjs compares against the config's own aggregatorPin, which is the half that survives a canary restart`,
-    measured: `decimals ${liveDecimals}`, threshold: `the cached scale ${cfg.scale}`,
-    detail: { ...detail, pinned: pin != null, identityPartial: partial },
-  });
+  return [harmFinding(), swapNotice()];
 }
 
 /**
@@ -385,12 +438,19 @@ export function applyIdentityObservations(pins, results) {
     if (r?.signal !== SIGNAL) continue;
     const obs = r.detail?.observedIdentity;
     if (!obs) continue; // a blind or skipped leg observed nothing; keep whatever is pinned
-    const merged = { ...(next[r.id] ?? {}) };
+    // Key off the ASSET, never off `r.id`. Two results now share one asset and their ids differ by
+    // the swap suffix, while `assetIdentity` reads the pin under the bare-asset id — keying on
+    // `r.id` would file the swap notice's observation under `…:swap`, where the next sweep would
+    // never look, so a benign swap would be re-convicted forever and could never self-clear. For
+    // every result that existed before the split this resolves to exactly the old id, so no pin in
+    // an existing `canary-state.json` moves.
+    const pinId = r.detail?.asset ? signalId(SIGNAL, r.vault, r.detail.asset) : r.id;
+    const merged = { ...(next[pinId] ?? {}) };
     for (const field of ['feed', 'aggregator', 'phaseId']) {
       if (obs[field] != null) merged[field] = obs[field];
     }
     if (merged.feed == null && merged.aggregator == null && merged.phaseId == null) continue;
-    next[r.id] = merged;
+    next[pinId] = merged;
   }
   return next;
 }
