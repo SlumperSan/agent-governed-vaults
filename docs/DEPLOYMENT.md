@@ -1,8 +1,9 @@
 # Deployment Runbook
 
 Sprint 9. Covers testnet bring-up (Base Sepolia) and the mandatory wiring order, post-deploy
-verification, and canary monitoring for a future Arc (chain 5042) mainnet deploy — the protocol is
-not deployed on Arc or any mainnet today. Contracts are immutable — there is no upgrade path, so
+verification, and canary monitoring, written for the Arc (chain 5042) mainnet deploy that landed
+2026-09-24 — see [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+for what actually shipped. Contracts are immutable — there is no upgrade path, so
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
 
@@ -42,22 +43,21 @@ unwired registry cannot be fixed after the fact).
   [`base-mainnet.json`](../contracts/config/base-mainnet.json) and described in §3; **UNVERIFIED-ON-CHAIN**
   and not for a mainnet launch.
 
-### Arc is the target chain, and nothing is deployed on it (2026-09-18)
+### Arc is deployed (2026-09-24)
 
-**There is no mainnet deployment of this protocol, on Arc or anywhere else**, so there is no
-address book in `contracts/config/deployments/` for a mainnet. Base Sepolia's record is the only
-deployment record in this repository.
+**The protocol is deployed on Arc mainnet (chain 5042)**, so the address book for it is
+[`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+in `contracts/config/deployments/`, alongside Base Sepolia's record. Every address in it was
+re-read independently from the chain and cross-checked on two RPC endpoints. Re-verify any address
+you act on directly against the chain before transacting; this file is not authorization on its
+own.
 
-What exists for Arc is a survey rather than a configuration:
-[`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) records the chain
-binding (5042), the USDC predeploy at `0x3600…0000` with 6 decimals, and four Chainlink feeds —
-each read off chain 5042 by read-only JSON-RPC rather than copied from documentation. It is filed
-under `docs/evidence/` and NOT under `contracts/config/` deliberately: the shared guards hold every
-`*-mainnet.json` there to the `ChainlinkOracle` constructor bounds, and this file cannot meet them
-because the Uniswap router and the basket token addresses on Arc are still unresolved. When those
-are resolved it graduates into `contracts/config/arc-mainnet.json` and the guards cover it from that
-day. Until then, read
-[`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md) for what is blocking.
+[`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) records the raw chain
+reads — the chain binding (5042), the USDC predeploy at `0x3600…0000` with 6 decimals, and the
+Chainlink feeds — that the deploy configuration was built from, and is superseded by
+[`contracts/config/arc-mainnet.json`](../contracts/config/arc-mainnet.json) and the deployment
+record above where the two disagree. The steps that were followed to get from survey to deploy are
+[`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
 
 **On Arc, USDC is also the native gas asset** — an 18-decimal native view and the 6-decimal ERC-20
 view are one pool of funds, not two assets. Nothing in `contracts/` reads a native balance, so vault
@@ -377,9 +377,10 @@ Run each check against the live addresses:
     Nobody has resolved this value yet; do not guess it.
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
-    **No facilitator is deployed for chain 5042, `apps/api` is not deployed anywhere, and the
-    protocol itself is not deployed on Arc or any mainnet** — this bullet describes a
-    configuration to complete before any of that exists, not a running service.
+    **No facilitator is deployed for chain 5042, and `apps/api` is not deployed anywhere** — the
+    protocol itself IS deployed on Arc (see `contracts/config/deployments/arc-mainnet.json`), but
+    that has no bearing on this bullet, which describes a facilitator/API configuration to
+    complete before either of those exists, not a running service.
 
 ## 7. Canary monitoring (post-launch)
 
@@ -471,13 +472,15 @@ Do **not** deploy to mainnet before: (a) an external audit consuming
 staged-value guardrail period on testnet, (d) `capacityCapUsdc` set conservatively for the
 initial vaults.
 
-**Nothing has been satisfied for a mainnet deployment yet.** The protocol is not deployed on Arc,
-or on any mainnet: there is no live factory, no live vault anywhere, and no `capacityCapUsdc` has
-been set. A prior mainnet deployment on the chain this project has since moved away from was fully
-exited on 2026-09-18 and holds nothing. Gates (a)–(d) above must be satisfied fresh, against Arc
-(chain 5042), before any future deployment — none of them carry over from that abandoned chain,
-and gates 3 and 6 in particular have no current evidence on any chain: the five drills and the
-canary alongside them ran on Base Sepolia on 2026-08-24/25 and passed 5/5
+**A deployment now exists, and it does not by itself satisfy gates (a)–(d) above.** The protocol is
+deployed on Arc (chain 5042) since 2026-09-24 — a live factory and one live vault, see
+`contracts/config/deployments/arc-mainnet.json` — and `capacityCapUsdc` was set to 0 (uncapped) by
+owner decision, not "conservatively" in the sense (d) above means. A prior mainnet deployment on
+the chain this project has since moved away from was fully exited on 2026-09-18 and holds nothing.
+Gates (a)–(d) above were not run fresh against this Arc deployment before it shipped — none of them
+carry over from the abandoned chain, and gates 3 and 6 in particular have no current evidence on
+any chain: the five drills and the canary alongside them ran on Base Sepolia on 2026-08-24/25 and
+passed 5/5
 ([SOAK-REPORT.md](SOAK-REPORT.md)), but against bytecode that has since changed, and they have not
 been re-run.
 
