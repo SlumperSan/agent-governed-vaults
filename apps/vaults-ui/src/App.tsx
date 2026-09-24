@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Page } from './Shell';
+import { ContractTab } from './components/ContractTab';
 import { EscrowClaims } from './components/EscrowClaims';
 import { Holdings } from './components/Holdings';
 import { MemberActions } from './components/MemberActions';
@@ -153,6 +154,7 @@ function AppShell() {
                 </p>
               </section>
 
+              <ContractTab vault={vault} />
               <ProposalPanel vault={vault} nowSec={nowSec} />
               <Holdings vault={vault} nowSec={nowSec} />
               {vault.manifestVerified === 'verified' ? (
