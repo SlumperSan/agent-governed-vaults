@@ -103,6 +103,31 @@ test('buildSignQueueResponse: with the nonce satisfied, a persona-deposit item f
   assert.match(item.blockedReason, /seeded-addresses\.json/);
 });
 
+test('buildSignQueueResponse: the SECOND persona deposit is blocked by the ordering gate until the first persona activate is done (V-398-r1 wiring)', async () => {
+  // Reaches the real call site in preconditionRefusal: nonce satisfied, first activate still pending.
+  // Replacing the call site with `if (false)` falls through to the seeded-address gate instead, whose
+  // message this does not match, so the test goes red.
+  const qp = tmpQueuePath();
+  const FIRST = '0x2222222222222222222222222222222222222222';
+  writeQueueAtomic({ items: [
+    personaItem({ id: 'persona-ballast-activate', from: FIRST, personaAction: 'activate', status: 'pending', expectedNonce: 7 }),
+    personaItem({ id: 'persona-momentum-deposit', persona: 'Momentum', personaAction: 'deposit', expectedNonce: 5,
+      orderingGate: { firstActivateId: 'persona-ballast-activate', firstPersonaFrom: FIRST } }),
+  ] }, qp);
+  const fetchImpl = async (_url, opts) => {
+    const { method, params, id } = JSON.parse(opts.body);
+    if (method === 'eth_getTransactionCount') {
+      const who = String(params[0]).toLowerCase();
+      return { ok: true, json: async () => ({ jsonrpc: '2.0', id, result: who === FIRST.toLowerCase() ? '0x7' : '0x5' }) };
+    }
+    return { ok: true, json: async () => ({ jsonrpc: '2.0', id, result: `0x${word(0)}` }) };
+  };
+  const res = await buildSignQueueResponse(fetchImpl, () => { throw new Error('unused'); }, qp);
+  const item = res.items.find((it) => it.id === 'persona-momentum-deposit');
+  assert.equal(item.ready, false);
+  assert.match(item.blockedReason, /waiting on the first persona .* to activate before a second persona may deposit/);
+});
+
 // ─────────────────────────────── recordPersonaPostCheck (via advanceSentItems) ───────────────────────────────
 
 test('advanceSentItems: once a persona-deposit item confirms done, its postCheck is recorded from sharesOf/totalShares/navWad/idleUsdc/balanceOf reads', async () => {

@@ -78,8 +78,15 @@ test('personaDepositPreconditionRefusal: the APPROVE item needs GAS HEADROOM abo
   assert.match(String(r), /headroom for this item's own gas/);
 });
 
-test('personaDepositPreconditionRefusal: the DEPOSIT item does NOT need the gas headroom — exactly `amount` funded passes (its own gas is already spent by the time this runs)', async () => {
+test('personaDepositPreconditionRefusal: the DEPOSIT item needs gas headroom too — exactly `amount` refuses, because Arc takes the deposit gas in USDC from the same balance before transferFrom (V-398-r1)', async () => {
   const r = await personaDepositPreconditionRefusal(depositStub({ balance: AMOUNT, allowance: AMOUNT }), {
+    vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: true,
+  });
+  assert.match(String(r), /headroom for this item's own gas/);
+});
+
+test('personaDepositPreconditionRefusal: the DEPOSIT item passes with amount + 1 USDC headroom funded', async () => {
+  const r = await personaDepositPreconditionRefusal(depositStub({ balance: AMOUNT + 1_000_000n, allowance: AMOUNT }), {
     vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: true,
   });
   assert.equal(r, null);

@@ -200,12 +200,12 @@ export async function personaDepositPreconditionRefusal(fetchImpl, {
   }
   if (!balR.ok) return `could not read USDC.balanceOf(${from}): ${balR.reason}`;
   const balance = BigInt(balR.result);
-  const balanceNeeded = checkAllowance ? amount : amount + GAS_HEADROOM_RAW;
+  // Headroom on BOTH items: Arc pays gas in USDC out of the same balance, so a balance of exactly
+  // `amount` pays the deposit's gas first and then reverts on the transferFrom (V-398-r1).
+  const balanceNeeded = amount + GAS_HEADROOM_RAW;
   if (balance < balanceNeeded) {
-    return checkAllowance
-      ? `${from}'s USDC balance is ${balance}, below the ${amount} this item needs — deposit would revert on the transferFrom`
-      : `${from}'s USDC balance is ${balance}, below ${balanceNeeded} (the ${amount} deposit plus `
-        + `${GAS_HEADROOM_RAW} headroom for this item's own gas — Arc pays gas in USDC) — fund more before approving`;
+    return `${from}'s USDC balance is ${balance}, below ${balanceNeeded} (the ${amount} deposit plus `
+      + `${GAS_HEADROOM_RAW} headroom for this item's own gas — Arc pays gas in USDC) — fund more before ${checkAllowance ? 'depositing' : 'approving'}`;
   }
   if (!navR.ok) {
     return `vault.navWad() reverted (${navR.reason}) — the oracle breaker looks tripped, so the vault is frozen for deposits`;

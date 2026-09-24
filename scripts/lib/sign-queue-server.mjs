@@ -303,6 +303,18 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
     if (typeof item.expectedNonce !== 'number') return 'item has no expectedNonce recorded — refusing rather than skipping the nonce gate';
     const nonceRefusal = await nonceGateRefusal(fetchImpl, RPC_BY_CHAIN[5042], item.from, item.expectedNonce);
     if (nonceRefusal) return nonceRefusal;
+    // The ordering gate runs before the other persona gates. Every gate must pass either way, so the
+    // order changes nothing about what is signable; it makes this call site reachable in a wiring
+    // test without a real seeded persona (V-398-r1: replacing it with `if (false)` stayed green).
+    if (item.personaAction === 'deposit' && item.orderingGate) {
+      const firstActivate = itemsById.get(item.orderingGate.firstActivateId);
+      const r = await personaOrderingGateRefusal(fetchImpl, {
+        vault: item.vault, firstPersonaFrom: item.orderingGate.firstPersonaFrom,
+        firstActivateDone: firstActivate?.status === 'done',
+        firstActivatePostCheck: firstActivate?.postCheck,
+      });
+      if (r) return r;
+    }
     const seeded = seededPersonaRefusal(item.from, item.persona);
     if (seeded) return seeded;
     if (item.personaAction === 'approve' || item.personaAction === 'deposit') {
@@ -314,15 +326,6 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
     }
     if (item.personaAction === 'activate') {
       const r = await personaActivatePreconditionRefusal(fetchImpl, { vault: item.vault, from: item.from });
-      if (r) return r;
-    }
-    if (item.personaAction === 'deposit' && item.orderingGate) {
-      const firstActivate = itemsById.get(item.orderingGate.firstActivateId);
-      const r = await personaOrderingGateRefusal(fetchImpl, {
-        vault: item.vault, firstPersonaFrom: item.orderingGate.firstPersonaFrom,
-        firstActivateDone: firstActivate?.status === 'done',
-        firstActivatePostCheck: firstActivate?.postCheck,
-      });
       if (r) return r;
     }
     return null;
