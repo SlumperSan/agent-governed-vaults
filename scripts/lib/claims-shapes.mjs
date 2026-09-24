@@ -168,13 +168,32 @@ export const FEE_BYPASSES_OPERATOR = [
 // inside one gap token. This is not a hypothetical: it is the shape a real Engineering plant would
 // take, and the mutation test below exercises exactly that string in a real component.
 const GAP = '[\\w$.,%{}()]+';
+// "settle(s/d/ing)" is in the verb alternation below for a reason worth recording: the L1 vault
+// row chip's LIVE, TRUE copy is "Settles in kind" (exit-payout-copy-2026-09-18.md §7.2), and its
+// one-word flip — "Settles in USDC" — is the single most likely plant on this card, because it
+// reuses the exact verb the true chip already ships with. Verified with `node` before this was
+// added: neither "Settles in USDC" nor "Your exit settles in USDC." matched any shape here, since
+// "settle" was in no verb list and the bare form has no "exit"/"you" subject for pattern 1 to
+// anchor on at all. Two fixes, not one: the verb alternation below catches "exit ... settles ...
+// USDC" (a subject present), and the bare `/\bsettles?\s+in\s+USDC\b/gi` two lines down catches
+// the chip's own subjectless form.
 export const EXIT_PAYS_USDC_UNCONDITIONALLY = [
-  new RegExp(`\\bexits?\\b(?:\\s+${GAP}){0,4}\\s+(?:pay|pays|paying|paid)\\b(?:\\s+${GAP}){0,3}\\s+(?:in\\s+|out\\s+in\\s+)?USDC\\b`, 'gi'),
+  new RegExp(`\\bexits?\\b(?:\\s+${GAP}){0,4}\\s+(?:pay|pays|paying|paid|settle|settles|settled|settling)\\b(?:\\s+${GAP}){0,3}\\s+(?:in\\s+|out\\s+in\\s+)?USDC\\b`, 'gi'),
   new RegExp(`\\b(?:redeem|redeems|redeeming|redeemed|redemptions?|withdraw|withdraws|withdrawing|withdrawn|withdrawals?)\\b(?:\\s+${GAP}){0,4}\\s+(?:for|in|into|to)\\s+USDC\\b`, 'gi'),
   new RegExp(`\\bcash(?:es|ing)?\\s+out\\b(?:\\s+${GAP}){0,3}\\s+(?:in|for|into)\\s+USDC\\b`, 'gi'),
   new RegExp(`\\byou\\s+(?:will\\s+)?(?:receive|get|are\\s+paid|are\\s+given)\\b(?:\\s+${GAP}){0,3}\\s+USDC\\b`, 'gi'),
   /\bUSDC[- ]settled\b/gi,
   /\bpaid\s+(?:out\s+)?in\s+USDC\b/gi,
+  // "Deposits are USDC-only and always were" (exit-swaps-to-usdc-puts-three-claims-on-notice.md)
+  // is TRUE and unconditional — a deposit really does settle in USDC, always, no qualifier
+  // needed. A bare subject-free "settles in USDC" pattern cannot tell that sentence from the
+  // banned exit claim by shape alone, so the exclusion is a NEGATIVE LOOKBEHIND scoped to this
+  // one pattern (not a general EXIT_USDC_QUALIFIER entry): adding "deposit" as a qualifier
+  // anywhere in the window would let an EARLIER, unrelated deposit sentence exempt a LATER, real
+  // exit claim within 40 characters of it — the same laundering shape "queued" was removed for
+  // above. Scoping the exclusion to immediately before THIS match closes the deposit false
+  // positive without reopening that hole.
+  /(?<!deposits?\s{0,4})\bsettles?\s+in\s+USDC\b/gi,
 ];
 
 /** Blank out HTML/JSX tags (opening, closing, self-closing) to a single space so a claim split
@@ -213,9 +232,19 @@ export const EXIT_PAYS_USDC_UNCONDITIONALLY = [
  * zero-attribute tag. `Record<Asset, bigint>` is left untouched (the comma cannot start an
  * attribute). Neither behaviour is a rule worth relying on, and both are lower-stakes than the
  * attribute-value limit above: the raw-text pass covers this one too, since a generic never
- * carries a claim of its own that only the stripped pass could see. */
+ * carries a claim of its own that only the stripped pass could see.
+ *
+ * ALSO NORMALIZES JSX'S EXPLICIT-SPACE IDIOM, `{' '}` / `{" "}`, to a real space. `apps/vaults-ui`
+ * uses it repeatedly (`{v.frozen ? '...' : ...} ·{' '}`) to force whitespace JSX would
+ * otherwise collapse between two elements — a claim split as "Exits pay{' '}<strong>USDC</strong>"
+ * would read as "Exits pay" + "USDC" with no space between "pay" and the tag at all once the tag
+ * itself is stripped, and `\s+` in the shapes above requires a REAL whitespace character to cross
+ * that gap. Same JOIN-only reasoning as the tag stripping above: this can only turn two runs of
+ * text markup split into one, never hide anything, so it is applied unconditionally alongside it. */
 export const stripTags = (s) =>
-  s.replace(/<\/?[A-Za-z][\w.-]*(?:\s+[A-Za-z][\w-]*(?:=(?:"[^"]*"|'[^']*'|\{[^{}]*\}))?)*\s*\/?>/g, ' ');
+  s
+    .replace(/\{\s*(['"])(\s+)\1\s*\}/g, ' ')
+    .replace(/<\/?[A-Za-z][\w.-]*(?:\s+[A-Za-z][\w-]*(?:=(?:"[^"]*"|'[^']*'|\{[^{}]*\}))?)*\s*\/?>/g, ' ');
 
 /** Co-occurring qualifier that makes a matched claim TRUE: names the in-kind leg, or the
  * condition Design B's held copy would need before it could name USDC without qualification.

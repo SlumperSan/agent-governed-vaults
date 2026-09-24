@@ -39,23 +39,34 @@
  *       bounds the PRICE of converting one, and a member past the pool's usable depth still
  *       degrades to in-kind every time, swap or no swap.
  *
- * ## Why raw file text, not an extracted-string-literal tokenizer
+ * ## Why every shape runs over BOTH raw text and stripped text, not a tokenizer, and not either
+ * text alone
  *
  * `claims-web-prose-truth.test.mjs` tokenizes `.mjs` source to skip comments, because several of
  * its modules narrate banned shapes in their own docstrings to explain why they are refused. This
- * guard reads the raw file text instead for every extension it walks, the same way
- * `claims-lede-truth.test.mjs` reads `.md`/`.html`/`.txt` — full text, comments included — because
- * that pattern (a comment narrating one of these two shapes to explain a refusal) does not exist
- * anywhere in these three trees today, and building a second extraction path to spare a
- * hypothetical comment is one more place the walk could silently under-read. The one thing this
- * file DOES strip is inline HTML/JSX tags (`stripTags`, from the shared shapes module) — not to
- * hide anything, but because a real rendered sentence can be split by markup ("Exits pay
- * <strong>USDC</strong>.") and a regex over the untouched source would read that as two runs of
- * text instead of one. `stripTags`'s own doc in `claims-shapes.mjs` states the verified limit of
- * this precisely: matching a real HTML/JSX attribute LIST rather than "any non-`<>` characters" is
- * what keeps a comparison expression (`n<max ? '...' : n>0`) from being misread as a tag and
- * swallowing a claim inside it — that shape was a genuine hole, found in review and closed, not
- * merely documented. Read that doc before changing this function; do not assume it is inert.
+ * guard does not build a second extraction path to spare a hypothetical comment — that pattern (a
+ * comment narrating one of these two shapes to explain a refusal) does not exist anywhere in these
+ * three trees today, and it is one more place the walk could silently under-read.
+ *
+ * What this file DOES do, via `allSurfaces` below, is run every shape TWICE per file: once over
+ * the raw text, once over `stripTags`-processed text (which also blanks tags and normalizes JSX's
+ * `{' '}` idiom to a real space — see that function's own doc in `claims-shapes.mjs`), and unions
+ * the hits. Neither text alone is safe to rely on:
+ *   - The RAW text is what a claim inside an HTML/JSX ATTRIBUTE VALUE needs to be caught by —
+ *     `stripTags` blanks `<span title="Exits pay USDC">` WHOLE, value included, because the value
+ *     is genuinely part of the tag's own syntax and the function cannot tell that apart from
+ *     decoration. `title`, `aria-label`, `alt` and `placeholder` are member-facing, not
+ *     decoration, and this is a stated LIMIT of `stripTags`, not a bug — the raw pass is the
+ *     mitigation, not an afterthought.
+ *   - The STRIPPED text is what a claim split ACROSS a tag boundary needs to be caught by —
+ *     "Exits pay <strong>USDC</strong>." reads as two unmatched runs ("Exits pay" / "USDC") in
+ *     the raw text alone, with no whitespace even implied between "pay" and the tag once JSX's
+ *     `{' '}` idiom is in play ("Exits pay{' '}<strong>USDC</strong>").
+ * `stripTags`'s own doc also states the comparison-operator limit it was fixed against
+ * (`n<max ? '...' : n>0` reading as a tag and swallowing a claim inside it — a genuine hole,
+ * found in review and closed, not merely documented) and the lower-stakes TypeScript-generic
+ * limit. Read that doc before changing this function; do not assume it is inert in either
+ * direction.
  *
  * ## Why the qualifier check is a character WINDOW, not `sentencesOf`
  *
@@ -342,6 +353,15 @@ test('probe: shape A catches the wide, unqualified claim and spares the qualifie
     // ATTRIBUTE VALUE: stripTags blanks a real attribute's value WHOLE (see its own doc) — the
     // raw-text pass is what has to catch this, and this case exists to prove it still does.
     '<span title="Exits pay USDC">x</span>',
+    // THE ONE-WORD FLIP of the live, TRUE L1 chip (exit-payout-copy-2026-09-18.md §7.2: "Settles
+    // in kind") — the single most likely plant on this card, since it reuses the true chip's own
+    // verb. Both the subject-bearing and the bare, subjectless chip form must be caught.
+    'Settles in USDC',
+    'Your exit settles in USDC.',
+    // JSX'S EXPLICIT-SPACE IDIOM (`{' '}`, used repeatedly in apps/vaults-ui to force whitespace
+    // between elements) must not defeat the tag-boundary join above by removing the ONLY
+    // whitespace between the claim and the tag.
+    "Exits pay{' '}<strong>USDC</strong>.",
   ]) {
     assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
   }
@@ -351,6 +371,10 @@ test('probe: shape A catches the wide, unqualified claim and spares the qualifie
     'You will receive 3.2 cirBTC and 140 USDC. Not cash for the whole amount — the vault pays you your share of what it actually holds.',
     'Estimated USDC out: $500 — an estimate, not a promise. If the market is moving too far from the vault’s price floor, you are paid in cirBTC and USDC instead.',
     'Paid in cirBTC and USDC. The market could not fill at a fair price, so the vault paid you your share directly instead.',
+    // "Deposits are USDC-only and always were" is TRUE and unconditional — see the scoped
+    // exclusion's own note in claims-shapes.mjs for why this is a lookbehind on the bare
+    // "settles in USDC" pattern rather than a general EXIT_USDC_QUALIFIER entry.
+    'Your deposit settles in USDC.',
   ]) {
     assert.equal(caught(ok), false, `the guard reds the approved, qualified copy: ${ok}`);
   }
@@ -395,6 +419,9 @@ test('probe: stripTags joins a claim split across markup, and does not swallow o
   // vacuous "no USDC in the output" check on an input that never contained USDC.
   assert.equal(stripTags('type Balances = Array<string>;'), 'type Balances = Array ;');
   assert.equal(stripTags('type Balances = Record<Asset, bigint>;'), 'type Balances = Record<Asset, bigint>;');
+  // JSX's explicit-space idiom must become a real space, not vanish, or the tag-boundary join
+  // above loses the only whitespace between the claim and the tag it was supposed to restore.
+  assert.equal(stripTags("Exits pay{' '}<strong>USDC</strong>."), 'Exits pay  USDC .');
 });
 
 test('probe: this guard throws rather than passing if a root yields zero files', () => {
