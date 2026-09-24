@@ -9,15 +9,19 @@ import {
   creatorGateRefusal,
   exitFeeCeiling,
   formatUnits,
+  isSeeded,
   parseUnits,
   previewExit,
+  SEEDED_ADDRESSES,
   shortAddress,
+  sizeForecast,
   USDC_SCALAR,
   usdcShort,
   type DepositStatus,
   type ExitFeeCeiling,
   type ExitPreview,
   type Refusal,
+  type SizeForecast,
   type Vault,
   type VaultActions,
   type VoteCustodyState,
@@ -27,13 +31,16 @@ import {
   readExitGateInputs,
   readHasPendingExecution,
   readMemberShares,
+  readPoolSizeImpactInputs,
   readVaultAddresses,
   readVoteCustody,
   sendCommitVote,
   sendDeposit,
   sendRequestExit,
   sendRevealVote,
+  v3FactoryAddressFromEnv,
   type ExitGateInputs,
+  type PoolSizeImpactInputs,
 } from '../lib/chain-actions';
 import { useWallet } from '../lib/wallet';
 
@@ -102,6 +109,10 @@ export function MemberActions({ vault }: Props) {
   const [custodyErr, setCustodyErr] = useState<string | null>(null);
   const [reveal, setReveal] = useState<FlowState>(IDLE);
 
+  // The deposit/exit size-impact notice (#183). `null` until read; `{ok:false}` on any read
+  // failure — both render the qualitative-only notice, never a stale or fallback figure.
+  const [poolInputs, setPoolInputs] = useState<PoolSizeImpactInputs | null>(null);
+
   // Live reads, refreshed whenever the connected member or the selected vault changes. Every read
   // here is independent at the TOP level — one of these four calls failing never blocks the
   // others. readExitGateInputs carries the same independence one level DEEPER, across its own
@@ -162,6 +173,23 @@ export function MemberActions({ vault }: Props) {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, address, addrs, vaultAddr, vault.proposal?.pid, publicClient, walletClient]);
+
+  // The size-impact notice's own pool read (#183) — deliberately independent of the member reads
+  // above: it needs the vault's USDC address (from `addrs`, once known) and the basket asset, but
+  // nothing member-scoped and nothing oracle-scoped. It runs even while `vault.frozen` — the pool
+  // itself is not frozen, only the oracle is (see the `preview`/`exitAmountsForPool` split below).
+  // Scoped to v1's one-basket-leg shape; a future multi-asset vault has no single pool to ask.
+  const basketLeg = vault.basket.length === 1 ? vault.basket[0] : null;
+  const otherAsset = basketLeg && isAddress(basketLeg.address) ? basketLeg.address : null;
+  useEffect(() => {
+    if (!addrs || !otherAsset) { setPoolInputs(null); return; }
+    let cancelled = false;
+    const factory = v3FactoryAddressFromEnv();
+    readPoolSizeImpactInputs(publicClient, factory, addrs.usdc, otherAsset)
+      .then((r) => { if (!cancelled) setPoolInputs(r); })
+      .catch(() => { if (!cancelled) setPoolInputs({ ok: false }); });
+    return () => { cancelled = true; };
+  }, [addrs, otherAsset, publicClient]);
 
   if (!isAddress(vaultAddr)) {
     return (
@@ -312,20 +340,15 @@ export function MemberActions({ vault }: Props) {
   // error ("cannot preview this exit"), which would be the wrong message for "not read yet" — the
   // same absent-vs-unknown distinction every other read in this component already keeps.
   //
-  // EXPLICITLY gated on `!vault.frozen`, not left to fall out of pricing. `previewExit` itself has
-  // no `frozen` parameter — it degrades a null-priced leg into `valueComplete:false`, which today
-  // happens to cover a frozen vault only because this basket is a single asset (cirBTC): the one
-  // stale leg's `priceWad` goes null, so the total suppresses itself. That is a correct answer for
-  // the wrong reason. `usdcPay` and any OTHER, still-healthy leg's value are computed from balances
-  // and prices that have nothing to do with `frozen` and would render as confident numbers next to
-  // a button `vaultActions.exit` has already refused — add a second basket asset whose oracle is
-  // still fresh and the accidental coverage stops covering the leg that IS fresh, no test would
-  // catch it, and the preview starts asserting a settlement the contract would revert. apps/web's
-  // own dialog avoids this the same way, one level up: `openExit` never renders the exit surface
-  // at all unless `x.actions.exit.available` (index.html:1019-1020) — this is that same gate,
-  // applied here instead of at a dialog boundary this component does not have.
-  const preview: ExitPreview | null =
-    !vault.frozen && exitGate && shares !== null
+  // ONE previewExit call, UNCONDITIONAL on `vault.frozen` — feeds both the settlement table below
+  // (`preview`, still withheld while frozen, see the gate right after this) and the size-impact
+  // notice's exit-side TOKEN AMOUNT (below), which needs no price/oracle read at all (see
+  // exit-preview.mjs: a basket leg's `amount` is computed from balances/shares/fee-bps alone) and
+  // so must stay available while frozen — the POOL is not frozen, only the oracle is. Kept as one
+  // call site rather than two: apps/vaults-ui/test/exit-preview-wired.test.mjs's own mutation
+  // guard checks that removing THE previewExit call removes all of them.
+  const exitAmounts: ExitPreview | null =
+    exitGate && shares !== null
       ? previewExit({
           burnShares,
           memberShares: shares,
@@ -347,8 +370,100 @@ export function MemberActions({ vault }: Props) {
           tenureSec: exitGate.lastDepositTime == null ? null : nowSec() - Number(exitGate.lastDepositTime),
         })
       : null;
+  // EXPLICITLY gated on `!vault.frozen`, not left to fall out of pricing. `previewExit` itself has
+  // no `frozen` parameter — it degrades a null-priced leg into `valueComplete:false`, which today
+  // happens to cover a frozen vault only because this basket is a single asset (cirBTC): the one
+  // stale leg's `priceWad` goes null, so the total suppresses itself. That is a correct answer for
+  // the wrong reason. `usdcPay` and any OTHER, still-healthy leg's value are computed from balances
+  // and prices that have nothing to do with `frozen` and would render as confident numbers next to
+  // a button `vaultActions.exit` has already refused — add a second basket asset whose oracle is
+  // still fresh and the accidental coverage stops covering the leg that IS fresh, no test would
+  // catch it, and the preview starts asserting a settlement the contract would revert. apps/web's
+  // own dialog avoids this the same way, one level up: `openExit` never renders the exit surface
+  // at all unless `x.actions.exit.available` (index.html:1019-1020) — this is that same gate,
+  // applied here instead of at a dialog boundary this component does not have.
+  const preview: ExitPreview | null = vault.frozen ? null : exitAmounts;
   const previewLeg = (min: bigint | null, max: bigint, fmt: (n: bigint) => string) =>
     min === null || min === max ? fmt(max) : `${fmt(min)} to ${fmt(max)}`;
+
+  // ── size-impact notice (#183) ── computed live every render from `poolInputs` (one pool read,
+  // shared by both sides) and whatever the member has typed so far. Deposit and exit are two
+  // INDEPENDENT calls into the same pure `sizeForecast` — never one derived from the other by a
+  // ratio (see apps/web/src/size-impact.mjs's header and 2026-09-19-corridor-moved-... finding).
+  const depositParsedForPool = parseUnits(depositInput, 6, { unit: 'USDC' });
+  const depositAmountRaw = depositParsedForPool.ok && depositParsedForPool.value > 0n ? Number(depositParsedForPool.value) : null;
+  const depositForecast: SizeForecast | null =
+    poolInputs?.ok
+      ? sizeForecast({
+          liquidity: poolInputs.liquidity,
+          sqrtPriceX96: poolInputs.sqrtPriceX96,
+          currentTick: poolInputs.currentTick,
+          // Deposit gives USDC in: price rises when USDC is token1, falls when USDC is token0.
+          direction: poolInputs.usdcIsToken0 ? -1 : 1,
+          tokenInIsToken0: poolInputs.usdcIsToken0,
+          ticks: poolInputs.depositTicks,
+          requestedAmountInRaw: depositAmountRaw,
+        })
+      : null;
+
+  // The exit side's SIZE is the cirBTC token amount from `exitAmounts` above (computed
+  // unconditionally on `vault.frozen`, unlike `preview`) — never a USDC-equivalent figure derived
+  // through navPerShareWad/the oracle, which prices through a DIFFERENT basis than the pool and is
+  // exactly the ratio-shaped error the finding retracted.
+  const exitTokenAmountRaw =
+    exitAmounts?.ok && exitAmounts.slices.length === 1 && exitAmounts.slices[0]
+      ? Number(exitAmounts.slices[0].amount)
+      : null;
+  const exitForecast: SizeForecast | null =
+    poolInputs?.ok
+      ? sizeForecast({
+          liquidity: poolInputs.liquidity,
+          sqrtPriceX96: poolInputs.sqrtPriceX96,
+          currentTick: poolInputs.currentTick,
+          // Exit gives the OTHER asset in: exactly the opposite direction from deposit.
+          direction: poolInputs.usdcIsToken0 ? 1 : -1,
+          tokenInIsToken0: !poolInputs.usdcIsToken0,
+          ticks: poolInputs.exitTicks,
+          requestedAmountInRaw: exitTokenAmountRaw,
+        })
+      : null;
+  // DEPOSIT is a FORECAST, never a quote — "a deposit like this would move price by roughly X%
+  // today", never "your deposit will do X" — per Decisions/Deposit size warning is notice-only
+  // 2026-09-18.md. An IMMEDIATE exit is a genuine quote ("this exit would move..."); a QUEUED
+  // exit (this vault's Mode F, see `pendingExecution` above) takes the deposit's forecast wording
+  // and re-renders after settlement with what actually happened — the settlement side of that is
+  // the existing `preview`/`pendingExecution` machinery above, unchanged by this notice.
+  const sizeImpactNotice = (forecast: SizeForecast | null, kind: 'deposit' | 'exit-quote' | 'exit-forecast') => {
+    if (!poolInputs) return <p className="note dim">Pool price-impact read has not resolved yet.</p>;
+    if (!poolInputs.ok || !forecast || !forecast.ok) {
+      return <p className="note dim">Price impact could not be read from the cirBTC/USDC pool — no figure shown.</p>;
+    }
+    if (forecast.pastEdge) {
+      return (
+        <p className="note tag-warn">
+          This size is past where this notice can still verify the pool&rsquo;s depth — the impact could be
+          material. No number is shown here because none can be trusted at this size.
+        </p>
+      );
+    }
+    if (forecast.impactFrac === null) {
+      // A pool read resolved but no size has been entered/derived yet — nothing to estimate.
+      return null;
+    }
+    const pct = (forecast.impactFrac * 100).toFixed(forecast.impactFrac < 0.01 ? 3 : 2);
+    const sentence =
+      kind === 'deposit' || kind === 'exit-forecast'
+        ? <>a {kind === 'deposit' ? 'deposit' : 'exit'} like this would move the cirBTC/USDC pool&rsquo;s price by roughly{' '}
+            <strong>{pct}%</strong> today &mdash; realised later, at a depth not yet knowable, since liquidity and spot both drift.</>
+        : <>this exit would move the cirBTC/USDC pool&rsquo;s price by roughly <strong>{pct}%</strong> right now, in this transaction.</>;
+    // Escalating in prominence by size, per Decisions/Deposit size warning is notice-only
+    // 2026-09-18.md — never a gate, so this is the ONLY mitigation and its prominence is
+    // load-bearing. Only classes styles.css actually defines: `dim` (calm/info) below 1%,
+    // default `note` tone from 1%, `tag-warn` (the same strong tone the frozen/queued-exit
+    // notices above already use) from 3%.
+    const className = forecast.impactFrac >= 0.03 ? 'note tag-warn' : forecast.impactFrac >= 0.01 ? 'note' : 'note dim';
+    return <p className={className}>{sentence}</p>;
+  };
 
   return (
     <section className="panel">
@@ -375,6 +490,10 @@ export function MemberActions({ vault }: Props) {
           {deposit.busy ? 'Depositing…' : 'Deposit'}
         </button>
       </div>
+      {/* Above the fold, never collapsible, never a gate — the notice is the entire mitigation
+          for depth risk here (no deposit cap), so its prominence is load-bearing. See
+          Decisions/Deposit size warning is notice-only 2026-09-18.md. */}
+      {sizeImpactNotice(depositForecast, 'deposit')}
       <p className="note dim">
         Two signatures: an ERC-20 approve, then <code>deposit(amountUsdc)</code>. A first-time deposit escrows for a
         4-hour observation window before it mints shares — it does not mint immediately (VaultCore.sol:52).
@@ -453,6 +572,11 @@ export function MemberActions({ vault }: Props) {
       )}
 
       <h3>Exit</h3>
+      {/* P-O13: rendered unconditionally, before any deposit — not only once a freeze is live. */}
+      <p className="note dim" data-testid="exit-stale-oracle-disclosure">
+        If the price feed goes stale, everything that reads NAV reverts, including your exit. There is no
+        fallback price source, and the freeze lasts for as long as the feed stays stale.
+      </p>
       <div className="act-row">
         <input
           type="text"
@@ -498,6 +622,16 @@ export function MemberActions({ vault }: Props) {
         // vanishing-disclosure shape this repo keeps finding. Stated as unknown, not as clean.
         <p className="note tag-warn">Whether you already have a queued exit could not be read from chain — do not sign against this until it resolves.</p>
       ) : null}
+      {/* Above the fold, never collapsible. An IMMEDIATE exit is a genuine quote; a queued exit
+          (Mode F) takes the deposit's forecast wording and re-renders once `preview` reflects
+          what actually settled — see this file's own note on `sizeImpactNotice` above. Withheld
+          entirely while `pendingExecution` itself is still unread, so the wording is never
+          guessed at ("quote" vs "forecast") from an unresolved mode. */}
+      {pendingExecution === true
+        ? sizeImpactNotice(exitForecast, 'exit-forecast')
+        : pendingExecution === false
+          ? sizeImpactNotice(exitForecast, 'exit-quote')
+          : null}
       {pendingExecution === true ? (
         <p className="note tag-warn">
           A proposal is past its commit deadline: this exit QUEUES — irrevocably, no cancel — and settles later at
@@ -633,7 +767,12 @@ export function MemberActions({ vault }: Props) {
       {exit.message ? <p className="note mono">{exit.message}</p> : null}
       {exit.error ? <p className="note tag-warn">{exit.error}</p> : null}
 
-      {address ? <p className="note dim">Acting as {shortAddress(address)}.</p> : null}
+      {address ? (
+        <p className="note dim">
+          Acting as {shortAddress(address)}
+          {isSeeded(address, SEEDED_ADDRESSES) ? ' — seeded by the RWAlly team' : ''}.
+        </p>
+      ) : null}
     </section>
   );
 }
