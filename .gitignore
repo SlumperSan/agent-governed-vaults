@@ -12,6 +12,7 @@ scripts/.smoke-state.json
 # make scripts/slither_baseline_check.py silently grade a stale run instead of the real one.
 contracts/.venv/
 contracts/slither-report.json
+__pycache__/
 
 # Keystore password files. Unattended soak/smoke runs use `--password-file`;
 # these must never be committed, whatever they are named.
