@@ -346,3 +346,109 @@ export async function personaOrderingGateRefusal(fetchImpl, {
   if (!navR.ok) return `vault.navWad() is not readable right now (${navR.reason}) — refusing the second persona's deposit until NAV is readable`;
   return null;
 }
+
+// Selectors the intent check below rebuilds calldata from — `cast sig`, re-derived independently in
+// scripts/test/persona-deposit-intent.test.mjs.
+const SEL_APPROVE = '0x095ea7b3'; // approve(address,uint256)
+const SEL_DEPOSIT_1 = '0xb6b55f25'; // deposit(uint256) — NOT the (uint256,uint256) slippage overload
+const SEL_ACTIVATE = '0x1c5a9d9c'; // activate(address)
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+/** The one address normaliser the intent check uses for every comparison. */
+const normIntentAddr = (a) => (typeof a === 'string' && ADDR_RE.test(a.trim()) ? a.trim().toLowerCase() : null);
+
+/**
+ * The #329 lesson applied to persona deposits (Chairman, via the CEO, 2026-09-24): check the
+ * transaction the owner will ACTUALLY sign against a DECLARED intent the builder did not write.
+ * Every other persona gate reads the builder's own side-fields (`item.vault`, `item.amountUsdcRaw`),
+ * so a builder that encoded different bytes than those fields would pass all of them — the same
+ * "true by construction" comparison #329 removed from vault creation.
+ *
+ * The declarations, none of which `persona-deposit.mjs` writes:
+ * - `docs/seeded-addresses.json` entry for `item.from`: `persona` and `intendedDeposit`
+ *   (`{vault, amountUsdcRaw}`) — reviewed in the PR that adds the funded address.
+ * - `contracts/config/deployments/arc-mainnet.json`: `chainId` and `firstVault.address`.
+ * - `contracts/config/arc-mainnet.json`: `usdc`.
+ *
+ * The page sends `from`, `to`, `value` and `resolvedData || data` (scripts/dashboard.mjs's Sign
+ * send block; `resolveItemData` returns `item.data` verbatim when it is a string), so exactly those
+ * are checked: `to` and `data` must equal the calldata rebuilt from the declarations, byte for byte
+ * (which fixes the selector, the length, the spender/member and the amount), and `value` must be 0 —
+ * on Arc a non-zero value moves the persona's USDC. The side-fields the chain-read gates use must
+ * equal the same declarations, so what those gates read and what is signed cannot diverge.
+ *
+ * Synchronous (files only). Every missing declaration is a refusal, never a skip: a persona with
+ * no `intendedDeposit` (the watch-only Contrarian and Auditor) can never have a deposit signed.
+ * @param {Record<string, any>} item @param {string} [root] injectable for tests only
+ * @returns {string|null}
+ */
+export function personaIntentRefusal(item, root = ROOT) {
+  const readJson = (rel) => {
+    const p = path.join(root, ...rel.split('/'));
+    if (!existsSync(p)) return { err: `${rel} not found — refusing without the declared intent` };
+    try { return { doc: JSON.parse(readFileSync(p, 'utf8')) }; } catch (e) { return { err: `${rel} is not valid JSON: ${/** @type {Error} */ (e).message}` }; }
+  };
+  if (item.dataTemplate != null) return 'a persona item must carry literal calldata, not a dataTemplate — refusing';
+  if (item.resolvedData != null) return 'a persona item must not carry a stored resolvedData (the page would send it instead of data) — refusing';
+  if (item.chainId !== ARC_CHAIN_ID) return `item chainId ${item.chainId} is not Arc (${ARC_CHAIN_ID}) — refusing`;
+  let value;
+  try { value = BigInt(item.value); } catch { return `item value ${JSON.stringify(item.value)} is not a number — refusing`; }
+  if (value !== 0n) return `item value is ${value}, not 0 — on Arc a value transfer moves the persona's USDC; refusing`;
+  const from = normIntentAddr(item.from);
+  if (!from) return `item from ${JSON.stringify(item.from)} is not an address — refusing`;
+
+  const seeded = readJson('docs/seeded-addresses.json');
+  if (seeded.err) return seeded.err;
+  const entry = Array.isArray(seeded.doc?.addresses)
+    ? seeded.doc.addresses.find((e) => normIntentAddr(e?.address) === from) : undefined;
+  if (!entry) return `${item.from} is not listed in docs/seeded-addresses.json — no declared intent; refusing`;
+  if (entry.persona !== item.persona) return `docs/seeded-addresses.json declares ${item.from} as "${entry.persona}", not "${item.persona}" — refusing`;
+  const intent = entry.intendedDeposit;
+  if (!intent || typeof intent !== 'object') {
+    return `docs/seeded-addresses.json declares no intendedDeposit for ${entry.persona} (${item.from}) — a watch-only persona never deposits; refusing`;
+  }
+  const declaredVault = normIntentAddr(intent.vault);
+  if (!declaredVault) return `${entry.persona}'s intendedDeposit.vault is not an address — refusing`;
+  if (typeof intent.amountUsdcRaw !== 'string' || !/^[1-9]\d*$/.test(intent.amountUsdcRaw)) {
+    return `${entry.persona}'s intendedDeposit.amountUsdcRaw must be a positive integer string of raw USDC units — refusing`;
+  }
+  const amount = BigInt(intent.amountUsdcRaw);
+
+  const dep = readJson('contracts/config/deployments/arc-mainnet.json');
+  if (dep.err) return dep.err;
+  if (dep.doc?.chainId !== ARC_CHAIN_ID) return `deployments/arc-mainnet.json chainId is ${dep.doc?.chainId}, not ${ARC_CHAIN_ID} — refusing`;
+  const recordVault = normIntentAddr(dep.doc?.firstVault?.address);
+  if (!recordVault) return 'deployments/arc-mainnet.json has no usable firstVault.address — refusing';
+  if (declaredVault !== recordVault) {
+    return `${entry.persona}'s declared vault ${intent.vault} is not the deployment record's firstVault ${dep.doc.firstVault.address} — refusing`;
+  }
+  const cfg = readJson('contracts/config/arc-mainnet.json');
+  if (cfg.err) return cfg.err;
+  const usdc = normIntentAddr(cfg.doc?.usdc);
+  if (!usdc) return 'contracts/config/arc-mainnet.json has no usable usdc address — refusing';
+
+  // The side-fields the chain-read gates read must be the declared ones.
+  if (normIntentAddr(item.vault) !== recordVault) return `item.vault ${item.vault} is not the declared vault ${intent.vault} — refusing`;
+  if (normIntentAddr(item.usdc) !== usdc) return `item.usdc ${item.usdc} is not arc-mainnet.json's usdc ${cfg.doc.usdc} — refusing`;
+  if (String(item.amountUsdcRaw) !== intent.amountUsdcRaw) {
+    return `item.amountUsdcRaw ${item.amountUsdcRaw} is not ${entry.persona}'s declared ${intent.amountUsdcRaw} — refusing`;
+  }
+
+  let expectedTo;
+  let expectedData;
+  if (item.personaAction === 'approve') {
+    expectedTo = usdc; expectedData = `${SEL_APPROVE}${encodeAddr(recordVault)}${encodeUint(amount)}`;
+  } else if (item.personaAction === 'deposit') {
+    expectedTo = recordVault; expectedData = `${SEL_DEPOSIT_1}${encodeUint(amount)}`;
+  } else if (item.personaAction === 'activate') {
+    expectedTo = recordVault; expectedData = `${SEL_ACTIVATE}${encodeAddr(from)}`;
+  } else {
+    return `unknown personaAction ${JSON.stringify(item.personaAction)} — refusing`;
+  }
+  if (normIntentAddr(item.to) !== expectedTo) {
+    return `${item.personaAction} is addressed to ${item.to}, not the declared ${expectedTo} — refusing`;
+  }
+  if (typeof item.data !== 'string' || item.data.toLowerCase() !== expectedData) {
+    return `${item.personaAction} calldata ${item.data} is not the declared intent's ${expectedData} — refusing`;
+  }
+  return null;
+}

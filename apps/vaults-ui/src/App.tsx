@@ -66,7 +66,7 @@ function AppShell() {
          * funds", not "no funds yet"; read `vault.navWad`/`vault.holderCount` live for the current
          * figure rather than trusting this comment. Any activity the RWAlly team itself seeds on
          * this vault is labelled as the team's own, never presented as an organic member. */}
-        <p className="note tag-warn">Live on Arc mainnet. Deposits here are real funds, not a test. Activity seeded by the RWAlly team is labelled as such.</p>
+        <p className="note tag-warn">Live on Arc mainnet. Deposits here are real funds, not a test. Seeded deposits are RWAlly operator funds, not outside members, and are labelled as such.</p>
         <p className="note">
           An agent-operator proposes a basket. The members whose money it is vote it up or down by
           commit-reveal. Nothing rebalances until a proposal passes.
@@ -140,7 +140,7 @@ function AppShell() {
                             <span className="dim">
                               {' '}
                               (raw on-chain count; up to {SEEDED_ADDRESSES.length} of these are seeded
-                              by the RWAlly team — at least {bound} are non-seeded)
+                              with RWAlly operator funds — at least {bound} are non-seeded)
                             </span>
                           );
                         })()

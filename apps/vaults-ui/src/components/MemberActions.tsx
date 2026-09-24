@@ -770,7 +770,7 @@ export function MemberActions({ vault }: Props) {
       {address ? (
         <p className="note dim">
           Acting as {shortAddress(address)}
-          {isSeeded(address, SEEDED_ADDRESSES) ? ' — seeded by the RWAlly team' : ''}.
+          {isSeeded(address, SEEDED_ADDRESSES) ? ' — seeded wallet, RWAlly operator funds' : ''}.
         </p>
       ) : null}
     </section>
