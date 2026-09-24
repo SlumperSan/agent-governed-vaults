@@ -365,6 +365,67 @@ export function assembleClaimableEscrow(entries) {
 }
 
 /**
+ * Frontend security pass A2 — calldata vs deployment manifest (Findings/2026-09-23-frontend-
+ * security-pass-full-run.md). `VITE_VAULT_ADDRESSES` is build-time config a member never sees
+ * verified: nothing before this stopped a bad build (wrong env, a typo, a copy-paste from another
+ * deployment) from pointing this app at an address that is a real contract but was never created
+ * by `VaultFactory.createVault`/`createChildVault` — i.e. is not on the deployment manifest at
+ * all. `VaultFactory.allVaults` (`address[] public`, VaultFactory.sol:85) is the manifest: every
+ * entry is pushed exactly once, in the same transaction as the `VaultCreated` event, by the two
+ * functions that can ever create a vault. Round 1: how many entries exist.
+ *
+ * @param {string} factory
+ */
+export function planFactoryVaultCount(factory) {
+  return Object.freeze([call(factory, 'VAULT_FACTORY_VIEWS', 'vaultCount')]);
+}
+
+/**
+ * Round 2 of the A2 manifest check — one `allVaults(i)` read per index now that round 1 has
+ * answered `count`. `count` is CALLER-RESOLVED (the caller decodes round 1's answer before
+ * planning round 2), the same two-round shape `planWiringLockSubVaultFactory` already uses.
+ *
+ * @param {string} factory
+ * @param {number} count
+ */
+export function planFactoryAllVaults(factory, count) {
+  return Object.freeze(
+    Array.from({ length: count }, (_, i) => call(factory, 'VAULT_FACTORY_VIEWS', 'allVaults', [i])),
+  );
+}
+
+/**
+ * Assemble the manifest check into ONE of three states, tri-state like `assembleLegSafety` and for
+ * the same reason: a read that failed must never collapse into "not found", because that is the
+ * false claim that would refuse Sign to a member on a genuine RPC hiccup rather than on a genuine
+ * mismatch.
+ *
+ * - `'verified'`   — `count` decoded AND every `allVaults(i)` entry decoded AND `vaultAddress` is
+ *                     one of them (case-insensitive; contract addresses are not case-sensitive).
+ * - `'not-found'`  — `count` decoded AND every entry decoded AND `vaultAddress` is in NONE of them.
+ *                     A definite negative: the factory answered completely and does not know this
+ *                     address.
+ * - `'unknown'`    — `count` failed to decode, OR any one `allVaults(i)` entry failed to decode.
+ *                     One missing entry is enough to withhold 'not-found', because the missing
+ *                     entry is exactly the one that could have matched.
+ *
+ * @param {string} vaultAddress
+ * @param {unknown} countValue
+ * @param {readonly unknown[]} allVaultsValues
+ * @returns {'verified'|'not-found'|'unknown'}
+ */
+export function assembleManifestCheck(vaultAddress, countValue, allVaultsValues) {
+  if (typeof countValue !== 'bigint') return 'unknown';
+  if (allVaultsValues.length !== Number(countValue)) return 'unknown';
+  const resolved = [];
+  for (const v of allVaultsValues) {
+    if (typeof v !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(v)) return 'unknown';
+    resolved.push(v.toLowerCase());
+  }
+  return resolved.includes(vaultAddress.toLowerCase()) ? 'verified' : 'not-found';
+}
+
+/**
  * Per-member reads. Separate from the vault rounds because they are the only ones that need a
  * connected wallet, and a disconnected visitor must still see the whole vault.
  * @param {string} vault

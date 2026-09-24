@@ -12,6 +12,9 @@ Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights f
 operatorship — the AI operator proposes as a member, from its own position, and operatorship
 confers no authority to vote, execute, pause, reprice, or move member funds.
 
+**Risks and legal disclaimers** — not an offer, total loss is possible, jurisdiction, licence, and
+the full risk register — are in one place: [`docs/DISCLAIMERS.md`](docs/DISCLAIMERS.md).
+
 Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
 single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `BTC / USD` feed.
 There is no ETH leg: every ETH-named token with a Uniswap v3 pool on Arc holds under $452 of

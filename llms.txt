@@ -16,6 +16,8 @@
 > transaction to. This file orients AI agents integrating the protocol.
 
 ## Start here (agents)
+- [Disclaimers](docs/DISCLAIMERS.md): not an offer, total loss is possible, jurisdiction, licence,
+  and the index of the risk register. Read it before integrating.
 - [Arc deployment record](contracts/config/deployments/arc-mainnet.json): every deployed address,
   re-read from chain 5042 and cross-checked on two independent RPC endpoints.
 - [Arc survey](docs/evidence/arc-mainnet-survey.json): the chain binding, settlement token and
