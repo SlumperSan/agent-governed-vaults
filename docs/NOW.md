@@ -157,7 +157,9 @@ re-checked it. Re-check this list before repeating it.
   therefore sat 23 s BELOW the worst gap. The figure is stable rather than still climbing: a 169 h
   walk and a 449 h walk return the same 86,423 s, and the bound is one heartbeat period plus
   publish jitter. Assets are limited to WETH + cbBTC on Base, which has no cbETH/USD feed; on Arc
-  the basket is cirBTC alone, because Arc has no ETH representation in any form. A feed deprecation
+  the basket is cirBTC alone: of the 26,187 tokens that appear in a Uniswap v3 pool on Arc, 52
+  carry an ETH- or BTC-family symbol, and every one of the 51 that is not cirBTC holds under $452
+  of depth. A feed deprecation
   fails that asset *closed*, which is safe but has no fallback.
 - **The sequencer guard has never run against a real uptime feed.** Base Sepolia leaves it
   `address(0)` by design, and Arc would too: Arc is an L1 rather than a rollup and Chainlink
