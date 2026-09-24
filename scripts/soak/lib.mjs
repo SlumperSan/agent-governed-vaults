@@ -7,8 +7,14 @@
  *
  *   1. KEY HANDLING. Nothing here reads, stores, or prompts for a private key. Every write is
  *      `cast send` with the flags the operator put in SOAK_SIGNER_ARGS; the key stays in
- *      Foundry's keystore or on the operator's hardware. stdin is inherited so a keystore
- *      password prompt reaches the human's terminal, never this process.
+ *      Foundry's keystore or on the operator's hardware. `cast`'s own keystore password prompt
+ *      (`rpassword::prompt_password`, the only password-prompt implementation anywhere in
+ *      foundry-rs/foundry) opens `/dev/tty` or `CONIN$`/`CONOUT$` directly — it never reads or
+ *      writes THIS process's own stdin/stdout/stderr, so nothing this file does to those streams
+ *      can hide the prompt or swallow the typed password from a genuinely attended terminal.
+ *      stdin is still inherited on an attended run below, as defense in depth for any OTHER
+ *      interactive `cast` behaviour this repo has not had to audit, not because the password
+ *      prompt itself depends on it.
  *   2. PERSIST BEFORE YOU SEND. Sprint-9 §7.5: a commit salt written after the commit
  *      transaction is a vote that a crash can forfeit. `saveFirst()` makes that ordering
  *      explicit at the call site rather than leaving it to whoever edits the drill next.
@@ -93,10 +99,11 @@ export const eq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 export const clean = (line) => line.replace(/\s+\[[^\]]*\]$/, '').trim();
 
 export function cast(args, { interactive = false } = {}) {
-  // `interactive` exists so a keystore PASSWORD PROMPT can reach a human at a terminal. Only
-  // STDIN needs that: it is 'inherit' when there is a real TTY to prompt, 'ignore' otherwise, so
-  // an unattended run (--password-file, output redirected to a log file) never blocks waiting on
-  // input nobody can supply.
+  // `interactive` exists in case a human is at a terminal for something this repo has not had to
+  // characterize — stdin is 'inherit' only then, 'ignore' otherwise, so an unattended run
+  // (--password-file, output redirected to a log file) never blocks waiting on input nobody can
+  // supply. It is NOT what gets a keystore password prompt in front of a human — see the header
+  // comment above `ROOT` for why that prompt bypasses this process's stdio entirely.
   //
   // STDERR IS ALWAYS PIPED, NEVER INHERITED — deliberately, since issue #280. It used to inherit
   // alongside stdin whenever `passThrough` was true, which threw the subprocess's stderr straight
@@ -104,10 +111,14 @@ export function cast(args, { interactive = false } = {}) {
   // so a failing `cast` on an attended TTY run left the thrown error's stderr empty and `detail`
   // below fell back to the generic "Command failed" message. `send()`'s estimation-retry (issue
   // #214) matches a literal marker against that `detail` text, so on every attended run the retry
-  // it exists to provide was silently inert — and nothing ever reported that either. Piping
-  // always fixes both: the caller gets the real `cast` error text to match against, and this
-  // function tees it to the terminal itself (below) so an attended operator still sees it exactly
-  // as before.
+  // it exists to provide was silently inert — and nothing ever reported that either. Piping always
+  // fixes both: the caller gets the real `cast` error text to match against, and this function
+  // tees it to the terminal itself (below) so an attended operator still sees it. That tee is NOT
+  // truly live — `spawnSync` buffers the whole stream and this writes it back only once `cast` has
+  // already exited, so a long-running call now shows its stderr all at once afterwards rather than
+  // streaming as it happens. Immaterial for `cast send`'s bounded estimate/broadcast round trip
+  // (seconds), and irrelevant to the password prompt either way (see above) — but a real,
+  // acknowledged difference from true `inherit`, not "indistinguishable" from it.
   //
   // `spawnSync`, not `execFileSync`: only `spawnSync` hands back stdout/stderr on a SUCCESSFUL
   // exit too, not just on the thrown error of a failed one — using `execFileSync` here would have
@@ -119,10 +130,8 @@ export function cast(args, { interactive = false } = {}) {
     stdio: [passThrough ? 'inherit' : 'ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  // Tee stderr to the terminal on an attended run, exactly as `inherit` used to show it live.
-  // `spawnSync` is synchronous — nothing else can print while `cast` runs — so writing the
-  // captured text immediately after it returns is indistinguishable, from the terminal's point of
-  // view, from having inherited the stream.
+  // Tee stderr to the terminal on an attended run — see the caveat above: this happens once,
+  // after `cast` exits, not while it runs.
   if (passThrough && result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error; // e.g. the `cast` binary itself was not found (ENOENT)
   if (result.status !== 0) {
