@@ -126,13 +126,26 @@ for (const tomlPath of wranglerTomlPaths()) {
 
   test(`${RUNBOOK_PATH}: the "${name}" Pages project's deploy command names its own directory and its built output`, () => {
     const blocks = codeBlocksNamingProject(name);
+
+    // A project can be deliberately WITHOUT a copy-pasteable command in this runbook — see
+    // DEPLOYMENTS.md's own "member surface" section, added 2026-09-21: printing a one-shot
+    // `pages deploy` command for a project mid-cutover is itself the hazard (a reader pastes it
+    // and silently reverts the live surface), so the command is withheld on purpose and the page
+    // says so in prose instead. That is not the same failure as the project going unmentioned —
+    // this guard exists to catch DEPLOYMENTS.md forgetting a surface, not to force every surface
+    // to carry a runnable command regardless of the safety call made about it. So: the project
+    // name must appear in the runbook SOMEWHERE (mentioned, not necessarily as a command) — that
+    // is still asserted unconditionally below — and if it appears with a fenced --project-name
+    // command, that command is validated exactly as before. Zero blocks with the project at least
+    // named in prose is treated as "withheld", not "missing".
+    const projectNameRe = new RegExp(`\\b${escapeRegExp(name)}\\b`);
     assert.ok(
-      blocks.length > 0,
-      `${RUNBOOK_PATH} contains no \`--project-name ${name}\` deploy command at all. ${tomlPath} ` +
-        `declares this Pages project; the runbook is supposed to be "the real deploy commands for ` +
-        `each surface" and currently says nothing about how to deploy it. Either the runbook is ` +
-        `missing this surface, or the command was reworded in a way this guard no longer ` +
-        `recognizes — either way this must not pass silently.`,
+      projectNameRe.test(runbook),
+      `${RUNBOOK_PATH} does not mention Pages project "${name}" anywhere, in prose or in a ` +
+        `command. ${tomlPath} declares this Pages project; the runbook is supposed to be "the ` +
+        `real deploy commands for each surface" and currently says nothing about it at all — not ` +
+        `even that its command is intentionally withheld. Either the runbook is missing this ` +
+        `surface, or the project was renamed in a way this guard no longer recognizes.`,
     );
 
     for (const block of blocks) {
