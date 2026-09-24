@@ -5,7 +5,7 @@ import { MemberActions } from './components/MemberActions';
 import { ProposalPanel } from './components/ProposalPanel';
 import { VaultList } from './components/VaultList';
 import { WalletConnect } from './components/WalletConnect';
-import { shortAddress, wadExact } from './lib/atlas';
+import { organicMemberBound, SEEDED_ADDRESSES, shortAddress, wadExact } from './lib/atlas';
 import { useLiveVaults } from './lib/live-vaults';
 import { WalletProvider } from './lib/wallet';
 
@@ -119,7 +119,25 @@ function AppShell() {
                   <dt>NAV per share</dt>
                   <dd>{vault.frozen ? '—' : wadExact(vault.navPerShareWad, { maxFrac: 6 })}</dd>
                   <dt>Holders</dt>
-                  <dd>{vault.holderCount}</dd>
+                  <dd>
+                    {vault.holderCount}
+                    {SEEDED_ADDRESSES.length > 0
+                      ? (() => {
+                          // `vault.nonCreatorMemberCount`, NEVER `vault.holderCount` (security
+                          // review on PR #391): the creator is the RWAlly team's own Safe,
+                          // "creator included" in `holderCount` (VaultCore.sol:128) but on no
+                          // seeded-persona list, so the raw count would silently read as organic.
+                          const bound = organicMemberBound(vault.nonCreatorMemberCount, SEEDED_ADDRESSES.length);
+                          return bound === null ? '' : (
+                            <span className="dim">
+                              {' '}
+                              (raw on-chain count; up to {SEEDED_ADDRESSES.length} of these are seeded
+                              by the RWAlly team — at least {bound} are non-seeded)
+                            </span>
+                          );
+                        })()
+                      : null}
+                  </dd>
                 </dl>
                 <p className="note">
                   Operatorship confers no authority to vote, execute, pause, reprice, or move member
