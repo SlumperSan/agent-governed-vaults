@@ -244,7 +244,10 @@ async function resolvePool(
       })) as Address;
       if (pool && pool.toLowerCase() !== ZERO_ADDRESS) return pool;
     } catch {
-      // try the next tier — a revert here is not a read failure, just "not this tier"
+      // `getPool` answers the zero address for a tier with no pool; it never reverts for that. A
+      // throw is therefore a failed read, and falling through to the next tier would quietly
+      // forecast against a DIFFERENT pool (on Arc the 3000/10000 tiers exist but hold nothing).
+      return null;
     }
   }
   return null;
