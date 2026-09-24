@@ -33,7 +33,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, '..', '..', '..');
 export const CONTRACTS_DIR = path.join(REPO, 'contracts');
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
-export const BASE_SEPOLIA_RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org';
+// Fork source: the Tenderly public gateway, not sepolia.base.org. anvil fetches fork state lazily, one
+// eth_getStorageAt/getCode per slot, and sepolia.base.org rate-limits under that load (measured
+// 2026-09-23; CI flakes "transaction was not confirmed within the timeout" and whole fork suites
+// red, card 215). BASE_SEPOLIA_RPC still overrides it. FORK_RESILIENCE_ARGS retries a throttled
+// fetch instead of stalling the transaction that needed it.
+export const BASE_SEPOLIA_RPC = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia.gateway.tenderly.co';
+export const FORK_RESILIENCE_ARGS = ['--retries', '10', '--fork-retry-backoff', '1000', '--timeout', '60000'];
 
 // Real, canonical Safe v1.4.1 deployment addresses -- IDENTICAL across every chain that has had them
 // deployed, because they are created via a deterministic CREATE2 factory. Confirmed live on Base
@@ -83,7 +89,7 @@ export async function startFork({ port }) {
   const bin = requireBin('anvil');
   const child = spawn(bin, [
     '--fork-url', BASE_SEPOLIA_RPC, '--chain-id', String(BASE_SEPOLIA_CHAIN_ID),
-    '--port', String(port), '--silent',
+    '--port', String(port), '--silent', ...FORK_RESILIENCE_ARGS,
   ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   let stderr = '';
   child.stderr?.on('data', (d) => { stderr += String(d); });

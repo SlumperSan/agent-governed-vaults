@@ -7,11 +7,13 @@ import {
   GOVERNANCE_VIEWS,
   OPERATOR_REGISTRY_VIEWS,
   TOKEN_SAFETY_VIEWS,
+  VAULT_FACTORY_VIEWS,
   VAULT_VIEWS,
 } from '@chain/abis';
 import {
   assembleLeg,
   assembleLegSafety,
+  assembleManifestCheck,
   assembleProposal,
   assembleVault,
   describeError,
@@ -19,6 +21,8 @@ import {
   loading,
   planBasketAssets,
   planCore,
+  planFactoryAllVaults,
+  planFactoryVaultCount,
   planFeeds,
   planLegSafety,
   planLegs,
@@ -27,6 +31,7 @@ import {
   ready,
   type AssembledVault,
   type Fetched,
+  type ManifestState,
   type PlannedCall,
   type Vault,
 } from './atlas';
@@ -58,6 +63,7 @@ const ABI_TABLES: Record<string, unknown> = Object.freeze({
   AGGREGATOR_V3_VIEWS,
   OPERATOR_REGISTRY_VIEWS,
   TOKEN_SAFETY_VIEWS,
+  VAULT_FACTORY_VIEWS,
 });
 
 function toContractCall(c: PlannedCall) {
@@ -217,8 +223,36 @@ async function readLegSafety(client: Pick<PublicClient, 'multicall'>, vault: str
   });
 }
 
+/**
+ * Frontend security pass A2 (card 211) — calldata vs deployment manifest. `factoryAddress` is
+ * `null` when `VITE_FACTORY_ADDRESS` is not configured; that is treated the SAME as any other
+ * unread manifest — `'unknown'`, never `'verified'` — because an unconfigured factory is not
+ * evidence a vault is on the manifest, and `App.tsx` refuses to offer Sign on anything but
+ * `'verified'`. Never throws: a manifest-check failure must not take down the rest of the page,
+ * only refuse the Sign surface.
+ */
+async function readManifestCheck(
+  client: Pick<PublicClient, 'multicall'>,
+  factoryAddress: string | null,
+  vaultAddress: string,
+): Promise<ManifestState> {
+  if (!factoryAddress) return 'unknown';
+  const [countR] = await multicallPlan(client, planFactoryVaultCount(factoryAddress));
+  if (!countR || countR.status !== 'success' || typeof countR.result !== 'bigint') return 'unknown';
+  const count = Number(countR.result);
+  if (!Number.isInteger(count) || count < 0 || count > 10_000) return 'unknown';
+  const entryResults = await multicallPlan(client, planFactoryAllVaults(factoryAddress, count));
+  const entryValues = entryResults.map((r) => (r.status === 'success' ? r.result : undefined));
+  return assembleManifestCheck(vaultAddress, countR.result, entryValues);
+}
+
 /** One vault, all four rounds. Throws on any structural read failure — the caller maps that to `Fetched.error`. */
-async function readOneVault(client: PublicClient, address: string, name: string): Promise<AssembledVault> {
+async function readOneVault(
+  client: PublicClient,
+  address: string,
+  name: string,
+  factoryAddress: string | null,
+): Promise<AssembledVault & { manifestVerified: ManifestState }> {
   const coreResults = await multicallPlan(client, planCore(address));
   // planCore's order: navWad, totalShares, idleUsdc, usdcScalar, totalPendingUsdc, basketLength,
   // childVaultCount, oracle, governance, creator, operatorRegistry, holderCount,
@@ -278,10 +312,11 @@ async function readOneVault(client: PublicClient, address: string, name: string)
   const operatorId = requireOk(operatorIdResults[0] as CallResult, 'operatorIdOf', address) as bigint;
   const attested = operatorId !== 0n;
 
-  const [rawLegs, legSafety, proposalResults] = await Promise.all([
+  const [rawLegs, legSafety, proposalResults, manifestVerified] = await Promise.all([
     readLegs(client, address, core.oracle, assets),
     readLegSafety(client, address, assets),
     activeProposalId === 0n ? Promise.resolve(null) : multicallPlan(client, planProposal(core.governance, activeProposalId)),
+    readManifestCheck(client, factoryAddress, address),
   ]);
 
   const oracleAges = await readFeedAges(client, rawLegs);
@@ -318,31 +353,37 @@ async function readOneVault(client: PublicClient, address: string, name: string)
     );
   }
 
-  return assembleVault({
-    address,
-    core,
-    legs: legsForDisplay,
-    legSafety,
-    proposal,
-    governanceConfig,
-    attested,
-    // `name` HAS NO ON-CHAIN SOURCE: `VAULT_VIEWS` has no `name()` — see card #67, "Nothing holds
-    // what the one v1 vault is called". `fetchLiveVaults` passes it in from `VITE_VAULT_NAME`
-    // (`readLiveConfig`, below), the one home in the repo this string has, rather than each
-    // caller inventing or hardcoding it. Empty when unset, exactly `assembleVault`'s own default,
-    // so an unconfigured build still falls back to `shortAddress` (`atlas.ts`'s `Vault.name`
-    // comment) instead of printing an empty heading.
-    name,
-    // `operatorName` stays `''`: the only operator-identifying read this pipeline makes is
-    // `VaultCore.creator`, the immutable payout address (see
-    // `contracts/config/deployments/base-sepolia.json`'s `operatorPayoutNote`), not a registered
-    // display name. `operatorAddress: core.creator` is the one address this data can honestly
-    // attribute the vault to.
-    operatorAddress: core.creator,
-    // Card 210 (seeded-disclosure) — see the two `requireOk` reads above this function's `return`.
-    holderCount,
-    nonCreatorMemberCount,
-  });
+  return {
+    // Card 211 (A2): the manifest state is NOT part of `assembleVault`'s own contract — see
+    // `readManifestCheck`'s header for why it is merged on here instead, the same way
+    // `fetchLiveVaults` already merges `blockNumber` on below.
+    ...assembleVault({
+      address,
+      core,
+      legs: legsForDisplay,
+      legSafety,
+      proposal,
+      governanceConfig,
+      attested,
+      // `name` HAS NO ON-CHAIN SOURCE: `VAULT_VIEWS` has no `name()` — see card #67, "Nothing holds
+      // what the one v1 vault is called". `fetchLiveVaults` passes it in from `VITE_VAULT_NAME`
+      // (`readLiveConfig`, below), the one home in the repo this string has, rather than each
+      // caller inventing or hardcoding it. Empty when unset, exactly `assembleVault`'s own default,
+      // so an unconfigured build still falls back to `shortAddress` (`atlas.ts`'s `Vault.name`
+      // comment) instead of printing an empty heading.
+      name,
+      // `operatorName` stays `''`: the only operator-identifying read this pipeline makes is
+      // `VaultCore.creator`, the immutable payout address (see
+      // `contracts/config/deployments/base-sepolia.json`'s `operatorPayoutNote`), not a registered
+      // display name. `operatorAddress: core.creator` is the one address this data can honestly
+      // attribute the vault to.
+      operatorAddress: core.creator,
+      // Card 210 (seeded-disclosure) — see the two `requireOk` reads above this function's `return`.
+      holderCount,
+      nonCreatorMemberCount,
+    }),
+    manifestVerified,
+  };
 }
 
 export interface LiveConfig {
@@ -358,6 +399,9 @@ export interface LiveConfig {
    * name is a decision for whoever lifts that cut line, not a case this file should silently guess.
    */
   readonly vaultName: string;
+  /** `VITE_FACTORY_ADDRESS` — the deployment manifest's `VaultFactory` (card 211, A2). `null` when
+   * unset or malformed; see `readManifestCheck` for what that does to the Sign gate. */
+  readonly factoryAddress: string | null;
 }
 
 /**
@@ -387,7 +431,13 @@ export function readLiveConfig(): LiveConfig | null {
     .filter((a) => ADDRESS_RE.test(a));
   if (vaultAddresses.length === 0) return null;
   const vaultName = (env.VITE_VAULT_NAME ?? '').trim();
-  return Object.freeze({ rpcUrl, chainId, vaultAddresses, vaultName });
+  // A2 (card 211): OPTIONAL, unlike the four required fields above. Its absence does not fail the
+  // whole config the way a missing RPC/chain/vault does — it fails the ONE thing that depends on
+  // it, the manifest check, closed: `readManifestCheck` treats `null` the same as any other unread
+  // manifest (`'unknown'`), and `App.tsx` refuses Sign on anything but `'verified'`.
+  const factoryAddressRaw = env.VITE_FACTORY_ADDRESS;
+  const factoryAddress = factoryAddressRaw && ADDRESS_RE.test(factoryAddressRaw) ? factoryAddressRaw : null;
+  return Object.freeze({ rpcUrl, chainId, vaultAddresses, vaultName, factoryAddress });
 }
 
 /**
@@ -451,7 +501,7 @@ export async function fetchLiveVaults(cfg: LiveConfig, client?: PublicClient): P
   const c = client ?? (await buildBoundClient(cfg));
   const blockNumber = await c.getBlockNumber();
   const vaults = await Promise.all(
-    cfg.vaultAddresses.map((address) => readOneVault(c, address, cfg.vaultName)),
+    cfg.vaultAddresses.map((address) => readOneVault(c, address, cfg.vaultName, cfg.factoryAddress)),
   );
   return vaults.map((v) => ({ ...v, blockNumber }));
 }

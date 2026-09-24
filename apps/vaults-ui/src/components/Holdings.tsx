@@ -42,6 +42,23 @@ function oracleAgeCell(health: OracleLegHealth): { className: string; text: stri
 }
 
 /**
+ * Frontend security pass B3 (card 211) — render `vault.legSafety`'s tri-state per leg. The safety
+ * fields are already merged onto each `basket` entry by `assembleVault` (`chain-reader.mjs`); this
+ * app has read them since #32 but never rendered them before this card.
+ *
+ * `'unknown'` renders as "could not read", NEVER as "not paused"/"not blacklisted" — an unread
+ * safety flag is not evidence the leg is safe, it is evidence nobody could check.
+ */
+function safetyCell(leg: BasketLeg): { className: string; text: string } {
+  if (leg.paused === 'paused') return { className: 'num tag-warn', text: 'paused' };
+  if (leg.blacklisted === 'blacklisted') return { className: 'num tag-warn', text: 'blacklisted' };
+  if (leg.paused === 'unknown' || leg.blacklisted === 'unknown') {
+    return { className: 'num tag-warn', text: 'could not read' };
+  }
+  return { className: 'num dim', text: 'active · clear' };
+}
+
+/**
  * What the vault holds right now.
  *
  * `weightBps` is the TARGET the passed proposal set, and the share of NAV
@@ -81,11 +98,13 @@ export function Holdings({ vault, nowSec }: Props) {
             <th scope="col">Share of NAV</th>
             <th scope="col">Target</th>
             <th scope="col">Oracle age</th>
+            <th scope="col">Safety</th>
           </tr>
         </thead>
         <tbody>
           {legs.map((leg, i) => {
             const cell = oracleAgeCell(health.assets[i]!);
+            const safety = safetyCell(leg);
             return (
               <tr key={leg.address}>
                 <th scope="row">{leg.symbol || `${leg.address.slice(0, 6)}…${leg.address.slice(-4)}`}</th>
@@ -95,6 +114,7 @@ export function Holdings({ vault, nowSec }: Props) {
                 <td className="num">{pct(leg.valueWad)}</td>
                 <td className="num dim">{(leg.weightBps / 100).toFixed(2)}%</td>
                 <td className={cell.className}>{cell.text}</td>
+                <td className={safety.className}>{safety.text}</td>
               </tr>
             );
           })}
@@ -104,6 +124,7 @@ export function Holdings({ vault, nowSec }: Props) {
             <td className="num dim">$1.00</td>
             <td className="num">${wadExact(idleWad, { maxFrac: 2 })}</td>
             <td className="num">{pct(idleWad)}</td>
+            <td className="num dim">—</td>
             <td className="num dim">—</td>
             <td className="num dim">—</td>
           </tr>
