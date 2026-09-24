@@ -287,6 +287,7 @@ import { vaultView, SORTS } from './src/vault-view.mjs';
 import { classify, parseSnapshotAge, describeError, loading, empty, ready } from './src/freshness.mjs';
 import { VAULTS, LEADERBOARD, WALLET, NOW } from './src/fixtures.mjs';
 import { mapVaultRecords, mapLeaderboard, MISSING_IN_LIVE } from './src/live-adapter.mjs';
+import { organicMemberBound } from './src/seeded.mjs';
 
 /* ══════════════════════════════════════════════════════════════════════════════
    APP STATE.  All financial derivation lives in ./src/*.mjs (tested); this file
@@ -303,6 +304,14 @@ const state = {
   missing: [],                  // fields live mode could not fill
   sort: 'capacity',
   query: '',
+  /**
+   * The disclosed seeded-address count (docs/seeded-addresses.json's `addresses.length`), or
+   * `null` when it has not been read — this app is served with no build step (README), so the
+   * fetch below can 404 depending on how the directory is served, and a 404 must read as
+   * "unknown", never as "zero seeded" (card 210, seeded.mjs's own header names this exact trap).
+   * Only ever used through `organicMemberBound`, which is `null`-safe the same way.
+   */
+  seededCount: null,
   /** Set while a non-localhost ?api= origin is waiting on an explicit yes. */
   consent: null,
   apiConfirmed: false,
@@ -379,6 +388,22 @@ const viewFor = (addr) => {
 
 const pill = (label, tone, glyph) =>
   `<span class="pill"${tone ? ` data-tone="${esc(tone)}"` : ''}>${glyph ? `<span aria-hidden="true">${esc(glyph)}</span>` : ''}${esc(label)}</span>`;
+
+/**
+ * The member/holder count, honestly labelled (card 210). `v.holderCount` is the raw on-chain
+ * figure — printed unadjusted, always — with a parenthetical only when `state.seededCount` is
+ * actually known AND non-zero: `organicMemberBound` is `null`-safe, so an unread list renders no
+ * parenthetical at all rather than a wrong one, and a zero-length real list renders none either
+ * since there is nothing to disclose.
+ */
+function memberCountLabel(v) {
+  const raw = Number(v.holderCount ?? 0);
+  const bound = organicMemberBound(v.holderCount, state.seededCount);
+  const note = state.seededCount && bound !== null
+    ? ` (raw on-chain; at least ${bound} non-seeded)`
+    : '';
+  return `${raw} member${raw === 1 ? '' : 's'}${esc(note)}`;
+}
 
 /** Loading / empty / error, so no surface can quietly have only two of the four. */
 function stateBlock(f, { retry } = {}) {
@@ -484,7 +509,7 @@ function vaultCard(x) {
       ${x.facts.attested ? pill(`Operator #${v.operatorId}`, 'good', '✓') : pill('Operator #0', 'critical', '▲')}
     </div>
     ${nav}
-    <div class="meta"><span>${Number(v.holderCount ?? 0)} member${Number(v.holderCount) === 1 ? '' : 's'}</span>
+    <div class="meta"><span>${memberCountLabel(v)}</span>
       <span>${esc(v.operatorName ?? 'self-declared')}</span></div>
     ${capKnown
       ? `<div class="meter"${capTone ? ` data-tone="${capTone}"` : ''}><span style="width:${Math.min(100, cap.usedBps / 100)}%"></span></div>
@@ -575,7 +600,14 @@ function renderVault(addr) {
 
     <div class="statrow">
       <div class="stat"><div class="k">Vault NAV</div><div class="v">${navReadable(x) && v.navWad !== null ? esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR)) : '—'}</div></div>
-      <div class="stat"><div class="k">Members</div><div class="v">${Number(v.holderCount ?? 0)}</div></div>
+      <div class="stat"><div class="k">Members</div><div class="v">${Number(v.holderCount ?? 0)}${
+        (() => {
+          const bound = organicMemberBound(v.holderCount, state.seededCount);
+          return state.seededCount && bound !== null
+            ? `<small> raw · at least ${bound} non-seeded</small>`
+            : '';
+        })()
+      }</div></div>
       <div class="stat"><div class="k">Capacity used</div><div class="v">${x.capacity.usedBps !== null ? esc(bpsPct(x.capacity.usedBps)) : x.capacity.capped ? 'Unreadable' : 'Uncapped'}${x.capacity.capped ? `<small> · cap ${esc(approx(usdcCompact(x.capacity.cap)))}</small>` : ''}</div></div>
       <div class="stat"><div class="k">Escrowed pending</div><div class="v">${v.totalPendingUsdc !== null ? esc(usdcShort(v.totalPendingUsdc)) : '—'}<small> counts against the cap</small></div></div>
       <div class="stat"><div class="k">Idle USDC</div><div class="v">${v.idleUsdc !== null ? esc(usdcShort(v.idleUsdc)) : '—'}</div></div>
@@ -1556,6 +1588,28 @@ function bootFixtures() {
   state.freshness = classify(null);
   state.wallet = WALLET;
   render();
+  void fetchSeededCount();
+}
+
+/**
+ * Best-effort read of `docs/seeded-addresses.json`'s size (card 210). Fire-and-forget, never
+ * awaited by `boot()`/`bootFixtures()`: this app has no build step and is served from its own
+ * directory (README), so whether `../docs/...` resolves depends entirely on how the directory
+ * happens to be served, and a member count must never wait on — or fail because of — a read this
+ * unreliable. A failed or 404'd read leaves `state.seededCount` at its `null` default, which
+ * `organicMemberBound` already treats as "unknown", never as "zero seeded".
+ */
+async function fetchSeededCount() {
+  try {
+    const res = await fetch('../docs/seeded-addresses.json');
+    if (!res.ok) return;
+    const doc = await res.json();
+    if (!Array.isArray(doc?.addresses)) return;
+    state.seededCount = doc.addresses.length;
+    render();
+  } catch {
+    // Left null on purpose — see this function's own header.
+  }
 }
 
 async function boot() {
@@ -1581,6 +1635,7 @@ async function boot() {
   state.vaults = loading();
   state.leaderboard = loading();
   render();
+  void fetchSeededCount();
 
   const base = apiUrl.replace(/\/$/, '');
   state.apiBase = base;

@@ -1,5 +1,7 @@
 import type { Vault } from '../lib/atlas';
-import { proposalPhase, quorumReadout, wadExact } from '../lib/atlas';
+import {
+  organicStakeWeightedClaim, proposalPhase, quorumReadout, SEEDED_ADDRESSES, seededEntryFor, wadExact,
+} from '../lib/atlas';
 
 /**
  * `quorumReadout.met` HAS THREE STATES AND THIS TAG SHOWS THREE. `null` is "not measurable from
@@ -63,6 +65,16 @@ export function ProposalPanel({ vault, nowSec }: Props) {
   const cast = forW + againstW;
   const forPct = cast === 0n ? 0 : Number((forW * 10000n) / cast) / 100;
 
+  // Seeded-address disclosure (card 210): the proposer is the one individual on-chain address this
+  // panel names, and the seed round's own script has Momentum propose the Rebalance — so this is
+  // the surface most likely to render a seeded address. `seededEntryFor` matches case-insensitively
+  // and returns `null` for an address that is not on the list, so an organic proposer is unaffected.
+  const proposerEntry = seededEntryFor(p.proposer, SEEDED_ADDRESSES);
+  // `=== true` on purpose, not truthiness: `organicStakeWeightedClaim` is tri-state and `null`
+  // ("cannot be determined") must render nothing, the same rule `quorumTag` below already applies
+  // to `readout.met`. Never asserted from `null` — an unread holder count is not evidence FOR it.
+  const stakeWeighted = organicStakeWeightedClaim(vault.holderCount, SEEDED_ADDRESSES.length) === true;
+
   return (
     <section className="panel">
       <h2>Proposal #{p.pid}</h2>
@@ -78,7 +90,17 @@ export function ProposalPanel({ vault, nowSec }: Props) {
           <span className="dim">{phase.deadlineLabel}</span>
         </dd>
         <dt>Proposed by</dt>
-        <dd className="mono">{p.proposer}</dd>
+        <dd className="mono">
+          {p.proposer}
+          {proposerEntry ? (
+            <>
+              <br />
+              <span className="tag tag-warn">
+                Seeded by the RWAlly team — {proposerEntry.persona} ({proposerEntry.model})
+              </span>
+            </>
+          ) : null}
+        </dd>
         <dt>Quorum</dt>
         <dd>
           <span className={readout.met === true ? 'tag' : 'tag tag-warn'}>{quorumTag(readout.met)}</span>{' '}
@@ -117,6 +139,20 @@ export function ProposalPanel({ vault, nowSec }: Props) {
       <p className="note">
         Revealed weight is the quorum numerator. A commitment that is never revealed is not a vote.
       </p>
+      {stakeWeighted ? (
+        // Organic-participation claim, card 210. Gated on `organicStakeWeightedClaim` — the
+        // non-seeded member BOUND, not the raw `holderCount` `readout` above already used for the
+        // real quorum regime (that math is never adjusted for seeding; see seeded.mjs's header).
+        <p className="note">
+          Voting is stake-weighted here: five or more non-seeded members hold shares in this vault.
+        </p>
+      ) : SEEDED_ADDRESSES.length > 0 ? (
+        <p className="note dim">
+          This vault holds {SEEDED_ADDRESSES.length} seeded team wallet
+          {SEEDED_ADDRESSES.length === 1 ? '' : 's'} at most — not enough non-seeded members yet to
+          call this vault&rsquo;s governance organically stake-weighted.
+        </p>
+      ) : null}
     </section>
   );
 }

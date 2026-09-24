@@ -68,6 +68,24 @@ export type { DepositStatus } from '@atlas/deposit-status';
 // signs at all, rather than re-deriving the frozen/Mode-F refusal a second time in the component.
 export { actions, vaultStatus } from '@atlas/vault-state';
 export type { VaultFacts, VaultActions, Verdict, VaultNotice, VaultStatusBadge } from '@atlas/vault-state';
+// Seeded-address awareness (Decisions/Seed agent personas 2026-09-23.md, card 210) — labels a
+// disclosed address and gates any "organically stake-weighted" governance claim. See
+// apps/web/src/seeded.mjs's own header for why quorum math itself is never touched here.
+export { seededEntryFor, isSeeded, organicMemberBound, organicStakeWeightedClaim } from '@atlas/seeded';
+export type { SeededAddressEntry } from '@atlas/seeded';
+import type { SeededAddressEntry } from '@atlas/seeded';
+
+/**
+ * The public disclosure list itself (`docs/seeded-addresses.json`) — DATA, not one of the mirrored
+ * contract modules above, so it is not behind an `@atlas/*` alias: it is a plain static import,
+ * exactly as the task briefing calls for, and it is read from the one repo-root location the
+ * decision doc names rather than a copy kept inside this app. `resolveJsonModule` (tsconfig.json)
+ * and Vite's native JSON handling (vite.config.ts) are both required for this line to resolve.
+ * Ships with an empty `addresses` array until the owner actually funds a persona wallet.
+ */
+import seededAddressesDoc from '../../../../docs/seeded-addresses.json';
+export const SEEDED_ADDRESSES: readonly SeededAddressEntry[] =
+  (seededAddressesDoc as { readonly addresses: readonly SeededAddressEntry[] }).addresses;
 
 /**
  * A basket leg as `chain-reader.mjs`'s `assembleLeg` shapes it, plus the per-leg safety tri-state

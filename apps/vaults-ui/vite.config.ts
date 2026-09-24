@@ -60,6 +60,12 @@ export default defineConfig({
       // surface asked someone to request an exit without telling them what they would receive;
       // the code that could tell them already existed in the sibling app and was never imported.
       '@atlas/exit-preview': atlas('exit-preview'),
+      // Seeded-address awareness (Decisions/Seed agent personas 2026-09-23.md, card 210) — a
+      // lower bound on non-seeded members, and the gate on any "organically stake-weighted"
+      // claim. Pure and zero-dependency like every other @atlas/* module; the disclosure LIST
+      // itself is data, not logic, and is imported directly from `docs/seeded-addresses.json` in
+      // atlas.ts rather than aliased here.
+      '@atlas/seeded': atlas('seeded'),
       '@chain/abis': pkg('canary/src/abis.mjs'),
       '@chain/binding': pkg('chain-config/src/chain-binding.mjs'),
       // Write-call ABI fragments (deposit/approve/commitVote/revealVote/requestExit) — the same
