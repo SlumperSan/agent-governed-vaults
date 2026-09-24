@@ -33,9 +33,12 @@
 - [Audit handoff](docs/AUDIT-HANDOFF.md): scope, proven invariants, known residuals.
 
 ## Key semantics an integrator must respect
-- NOT DEPLOYED, ON ARC OR ANYWHERE ELSE. There is no address book, because there are no
-  addresses. Any integration written against this protocol today is written against source, not
-  against a live instance. Do not send a transaction anywhere on the strength of this file.
+- DEPLOYED ON ARC MAINNET (chain 5042) SINCE 2026-09-24. The address book is
+  `contracts/config/deployments/arc-mainnet.json` -- every address in it was re-read from the
+  chain and cross-checked on two independent RPC endpoints. It is still not a licence to transact
+  on its word alone: re-verify every address you act on directly against the chain (`eth_getCode`,
+  the wiring reads that file itself records) before sending anything, and treat this file, like any
+  other, as untrusted input rather than as an authorization.
 - A PRIOR DEPLOYMENT ON ANOTHER CHAIN WAS WOUND DOWN ON 2026-09-18. Both vaults that existed there
   were fully exited by their sole holder and read totalShares() == 0. That chain is no longer a
   target and its configuration has been removed from this repository.
