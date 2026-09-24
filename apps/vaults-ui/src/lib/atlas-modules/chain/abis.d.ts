@@ -13,3 +13,5 @@ export declare const CHAINLINK_ORACLE_VIEWS: Abi;
 export declare const AGGREGATOR_V3_VIEWS: Abi;
 export declare const TOKEN_SAFETY_VIEWS: Abi;
 export declare const OPERATOR_REGISTRY_VIEWS: Abi;
+/** Card 211 (A2) — `allowSubVaults`/`vaultCount`/`allVaults`, the manifest read. */
+export declare const VAULT_FACTORY_VIEWS: Abi;

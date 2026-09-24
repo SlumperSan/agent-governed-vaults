@@ -202,6 +202,11 @@ export const SUBVAULT_REGISTRY_VIEWS = Object.freeze([
  */
 export const VAULT_FACTORY_VIEWS = Object.freeze([
   view('allowSubVaults', [], ['bool']),
+  // Card 211 (A2, frontend security pass): the deployment manifest itself.
+  // `vaultCount()` (VaultFactory.sol) returns `allVaults.length`; `allVaults(uint256)` is the
+  // public array's own generated getter. Both are plain view calls, no state change.
+  view('vaultCount', [], ['uint256']),
+  view('allVaults', ['uint256'], ['address']),
 ]);
 
 /** ERC20 balance reads — the independent custody leg of the NAV-backing signal. */

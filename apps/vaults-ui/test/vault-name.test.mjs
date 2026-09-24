@@ -71,20 +71,21 @@ test('live-vaults.ts: VITE_VAULT_NAME is read, threaded through readOneVault, an
   );
   assert.match(
     src,
-    /readOneVault\(c, address, cfg\.vaultName\)/,
+    /readOneVault\(c, address, cfg\.vaultName, cfg\.factoryAddress\)/,
     'fetchLiveVaults no longer passes cfg.vaultName into readOneVault',
   );
   assert.match(
     src,
-    /async function readOneVault\(client: PublicClient, address: string, name: string\)/,
+    /async function readOneVault\(\s*client: PublicClient,\s*address: string,\s*name: string,/,
     'readOneVault no longer accepts a name parameter',
   );
   // The actual sink: the `name` local must reach the assembleVault({ ... }) call as a bare
   // shorthand property, not be left as the old hardcoded `''`. Matched inside the return block
   // specifically, not anywhere in the file, so a `name` variable used for something unrelated
-  // could not make this pass by accident.
-  const returnBlock = /return assembleVault\(\{[\s\S]*?\n {2}\}\);/.exec(src);
-  assert.ok(returnBlock, 'no `return assembleVault({ ... })` block found in readOneVault');
+  // could not make this pass by accident. Card 211 (A2) wraps the old `return assembleVault({…})`
+  // in `return { ...assembleVault({…}), manifestVerified }`, so this matches the inner call.
+  const returnBlock = /assembleVault\(\{[\s\S]*?\n {4}\}\)/.exec(src);
+  assert.ok(returnBlock, 'no `assembleVault({ ... })` block found in readOneVault');
   assert.match(
     returnBlock[0],
     /\bname,/,

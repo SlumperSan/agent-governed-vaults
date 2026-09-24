@@ -481,3 +481,27 @@ export async function sendRequestExit(
   });
   return { exitHash };
 }
+
+/**
+ * `claimEscrowed` — card 211 (B2, frontend security pass). Pays out an in-kind slice that was
+ * escrowed after a failed asset transfer (VaultCore.sol EE-6, `claimEscrowed`), for ONE asset at a
+ * time — the contract itself has no batch form. Reverts `NothingToClaim()` if the caller has
+ * nothing pending for `asset`, which `simulateThenWrite`'s pre-flight surfaces before a signature
+ * is requested, same as every other write in this file.
+ */
+export async function sendClaimEscrowed(
+  publicClient: PublicClient,
+  walletClient: WalletClient,
+  account: Address,
+  vault: Address,
+  asset: Address,
+): Promise<{ claimHash: Hex }> {
+  const claimHash = await simulateThenWrite(publicClient, walletClient, {
+    address: vault,
+    abi: VAULT_WRITE_ABI,
+    functionName: 'claimEscrowed',
+    args: [asset],
+    account,
+  });
+  return { claimHash };
+}
