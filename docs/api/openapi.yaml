@@ -310,8 +310,16 @@ components:
             status: { type: string, enum: [Active, Passed, Defeated, Executed, Expired] }
             forWeight: { type: string, description: decimal string — vote weights serialize as strings }
             againstWeight: { type: string }
-            revealedWeight: { type: string }
+            revealedWeight: { type: string, description: >-
+                the QUORUM numerator - self-reveals only. Neither applied standing defaults nor
+                cranked delegations reach it (VO-2 / VO-2b), so this is routinely smaller than
+                forWeight + againstWeight and a client must not derive one from the other. }
             revealedVoters: { type: integer }
+            delegatedForWeight: { type: [string, 'null'], description: >-
+                the part of forWeight that arrived by a permissionless delegation crank rather than
+                a member's own reveal. Governance.finalize subtracts it from forWeight in both
+                sub-five stake tests, so a client computing a sub-five FOR majority must subtract it
+                too or it will show a proposal as passing that finalize defeats (VO-2b). NULL means the indexer resumed from a snapshot written before this was recorded and cannot know it: treat null as UNKNOWN, never as zero - zero would show a sub-five FOR majority the contract refuses. }
     MemberPosition:
       type: object
       description: >-

@@ -20,9 +20,42 @@ the real modules.
 
 ## What it renders from
 
-`apps/web/src/fixtures.mjs` — the allocator front end's test fixtures, not a live chain read. The
-page says so on screen. Pointing it at a chain means swapping the two imports in `src/App.tsx` for
-`apps/web/src/live-adapter.mjs`; no component knows where a vault came from.
+**Live chain reads. No fixtures reach this app.** `src/lib/live-vaults.ts` calls
+`apps/web/src/chain-reader.mjs`'s `plan*`/`assemble*` functions over viem, bound to the chain
+`VITE_CHAIN_ID` declares (`packages/chain-config/src/chain-binding.mjs`, issue #204 — the client
+refuses to read unless the RPC actually answers for that chain id). `apps/web/src/fixtures.mjs` is
+the allocator front end's OWN test fixtures and nothing in this workspace's `src/` imports it;
+`test/csp.test.mjs` fails the build if that ever changes.
+
+**Three env vars, build-time only** (Vite inlines `import.meta.env.*` — a served page cannot read
+them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset,
+and the page renders an honest "not configured" state, never a bundled sample. `cp .env.example
+.env.development.local` sets all three against **Arc mainnet** (chain 5042), live since
+2026-09-24 (`firstVault.createdAt`, `contracts/config/deployments/arc-mainnet.json`): RWAlly's v1
+vault, the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`
+(nothing to fill in — see the template's own header), so `npm run dev` exercises real chain reads
+against the real vault. Vite never loads `.env.example` itself, same convention as the root
+`.env.example`. Base Sepolia (`contracts/config/deployments/base-sepolia.json`'s smoke vault) is
+still what the UI smoke harness (`test/lib/ui-smoke-chain.mjs`) forks locally, but it is no longer
+what a production build reads by default.
+
+**Cutting over to a different RPC or vault:** set the three vars in the Cloudflare Pages build
+environment for this project, **and** update `public/_headers`' `connect-src` to the new RPC
+origin, in the same commit — see that file's own comment on the directive, and
+`test/csp.test.mjs`'s coupling test, which fails if `.env.example`'s `VITE_RPC_URL` and `_headers`'
+`connect-src` disagree.
+
+**`VITE_VAULT_ADDRESSES` is cross-checked against `contracts/config/deployments/*.json` in
+`npm run gate` and CI** (`scripts/vault-addresses-lint.mjs`, card A2), BLOCKING, not advisory. Every
+address you set here must name a real deployed vault, on the chain this file's own `VITE_CHAIN_ID`
+declares — an address that exists but on a different chain fails distinctly from a plain typo, since
+it is the worse mistake. Before hand-editing this value on deploy day, run
+`node scripts/vault-addresses-lint.mjs` (or just `npm run gate`) rather than trusting the edit.
+
+**Not wired here:** a connected wallet's own position (shares, cost basis, queued exit,
+pending-deposit and vote-custody reads — `chain-reader.mjs`'s `planPosition`/`planVoteCommit`).
+`feat/wallet-connect-and-sign` adds the wallet connection this app needs before those reads have a
+member address to read for; this app shows an honest "connect a wallet" notice in that slot.
 
 ## Commands
 
@@ -34,5 +67,44 @@ page says so on screen. Pointing it at a chain means swapping the two imports in
 | `npm run smoke` | Server-renders `App` once and fails if it throws |
 | `npm run build` | typecheck + client bundle |
 
-**None of these are in `npm run gate`.** The root gate does not build or test this app, so a break
-here is not caught by CI. Run them by hand, or wire them in.
+**`typecheck`, `lint` and `smoke` are still not in `npm run gate`.** What IS covered, as of
+2026-09-19, is `test/` — `npm run test:backend` enumerates `apps/vaults-ui/test/*.test.mjs`, so the
+gate's `backend` step runs it, and `test/csp.test.mjs` runs `npm run build` in its own `before`
+hook rather than skipping when `dist/` is absent. **So a broken `vite build` here now fails the
+gate**, and a type error that `tsc` alone would catch still does not. Wiring the rest needs a
+matching pair of steps in `scripts/gate.mjs` and `.github/workflows/ci.yml`, because
+`scripts/test/wired-scripts.test.mjs` refuses a package script that only one of the two invokes.
+
+## Deploying
+
+**Settled.** The owner decided on 2026-09-19 that this workspace takes `app.rwally.com` and
+`apps/app` retires into it rather than standing beside it — one member surface, one address, no new
+name to market. `wrangler.toml` here carries the **existing** Pages project, `rwally-app`, pointed
+at this source directory rather than `apps/app`'s.
+
+```bash
+npm run build --workspace apps/vaults-ui
+cd apps/vaults-ui && npx wrangler@latest pages deploy dist --project-name=rwally-app --branch=protocol/main
+```
+
+**THE NEXT DEPLOY AGAINST THAT PROJECT REPLACES THE LIVE VAULT EXPLORER.** The DNS is already
+pointed, so there is no cutover step to forget and no moment where the change is staged — it is live
+the instant the deploy finishes. That is the intended end state and **it is the owner's call, not a
+deployer's.** This repository has already shipped the wrong directory to a live Pages project once.
+
+The rest, unchanged and still worth knowing:
+
+- **Output directory is `dist/`**, which is what the Pages project's build output points at.
+- **`public/_headers` is the edge policy**, and Pages reads it from the root of the SERVED
+  directory, which is why it lives in `public/` and not beside `wrangler.toml`. `test/csp.test.mjs`
+  asserts it lands at `dist/_headers` byte-identically and that the policy still matches what the
+  build emits, so a deploy that would have shipped no policy reds in the gate instead.
+- **There is no `functions/` directory and there should not be one.** Pages bundles Functions
+  relative to the directory wrangler runs in, which is why `apps/site` keeps its `wrangler.toml`
+  beside `apps/site/functions`. This app has no Function and needs none. `apps/app/README.md`
+  records the hazard from the other side: Pages picks up a Functions bundle from the working
+  directory if one is sitting there.
+- **`connect-src` already names an RPC origin** (`https://rpc.mainnet.arc.io`, Arc mainnet — see
+  "What it renders from" above), because this app now reads a chain rather than bundling fixtures.
+  **Before deploying against a different `VITE_RPC_URL`, update `public/_headers`' `connect-src` to
+  match, in the same commit**, or every read is refused by the browser with no build-time warning.

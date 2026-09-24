@@ -54,6 +54,19 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 // that never happened, and it cost a full round of wrong conclusions written into this repo as
 // fact — see the smokeVault note in `soak-vaults.json`. `assertLogsServed()` below exists so it
 // cannot happen silently again.
+//
+// SEPOLIA.BASE.ORG (the default above) HAS ITS OWN FAILURE MODE, AND IT IS THE OPPOSITE ONE.
+// Measured on a live soak: `over rate limit` from this endpoint on `eth_getLogs`, once the
+// indexer, the canary, the oracle sampler and two drill tracks were all polling it at once —
+// `poll.failed` on the indexer, `DETECTOR BROKEN` on five canary signals across two vaults. This
+// is NOT the pruning failure above: this endpoint serves history CORRECTLY, including under a
+// single request, and only degrades under this launcher's own concurrency. Same symptom shape (an
+// `eth_getLogs` call that should have worked came back wrong) and OPPOSITE remedy — pruning means
+// "stop using this endpoint"; throttling means "this endpoint is fine alone, reduce concurrency or
+// get a dedicated one." Switching to publicnode to escape throttling walks straight into pruning
+// instead. `scripts/soak/preflight-rpc-concurrency.mjs` is the guard for this one: a short
+// concurrent burst at startup, not a single sequential read (which `assertLogsServed` already is,
+// and which cannot see a concurrency-only failure by construction).
 export const RPC = process.env.SOAK_RPC || process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org';
 const CAST = process.env.CAST ?? 'cast';
 
@@ -537,6 +550,238 @@ export function votableNow(p, { now, snapshotWeight, currentWeight, wantPtype })
 }
 
 /**
+ * Can THIS voter reveal into THIS proposal RIGHT NOW?
+ *
+ * THE IDENTICAL DEFECT SHAPE `votableNow` DOCUMENTS FOR THE COMMIT WINDOW, one phase later.
+ * `revealVote` (Governance.sol:399-409) requires:
+ *
+ *     require(p.status == Status.Active && block.timestamp >= p.commitDeadline
+ *             && block.timestamp < p.revealDeadline, WrongPhase());
+ *     require(c != bytes32(0), NoCommit());
+ *     require(!revealedOf[pid][msg.sender], AlreadyRevealed());
+ *     require(c == keccak256(abi.encode(pid, msg.sender, support, salt)), BadReveal());
+ *
+ * The fourth (`BadReveal`) is not modelled here: it checks that the CALLER'S OWN ARGUMENTS
+ * (support, salt) match its own persisted commitment, which is a fact about the call the drill is
+ * about to make, not a fact about chain state this predicate can observe in advance.
+ *
+ * Measured live on 2026-09-21/22 (drill 2, proposal 12): a drill stopped for hours resumed,
+ * re-read its OWN persisted `revealDeadline` from `.state-drill2.json`, and called `revealVote`
+ * against it without ever asking whether the chain had since moved past that deadline —
+ * `revealDeadline=1790042522`, chain time at the failing call `1790046852`, 4330s (72 min) past
+ * it, reverting `WrongPhase` (`0xe2586bcc`). Proposal 11, the same shape three days earlier,
+ * settled `Defeated` with `revealedVoterCount=0` — the same round dying the same way, unnoticed
+ * because nothing asked before reveal whether the round could still be won.
+ *
+ * `hasCommit` and `alreadyRevealed` are REQUIRED, not defaulted, for the same reason
+ * `votableNow`'s weight terms are: a caller that omits either gets a refusal naming the missing
+ * one. Reading a missing `alreadyRevealed` as falsy would silently mean "not yet revealed" — the
+ * FAIL-OPEN direction — so it is checked for `typeof … !== 'boolean'` rather than by falsiness.
+ *
+ * Pure so it can be tested: the drill executes at import, so a predicate defined there could not
+ * be (the same reason `votableNow` lives here rather than in a drill file).
+ *
+ * @param {{status: string, commitDeadline: number, revealDeadline: number}} p a `readProposal` result
+ * @param {{now: number, hasCommit: boolean, alreadyRevealed: boolean}} ctx
+ *   `hasCommit` is `commitOf[pid][voter] != bytes32(0)`; `alreadyRevealed` is `revealedOf[pid][voter]`.
+ * @returns {{revealable: boolean, reason: string}} reason is '' when revealable
+ */
+export function revealableNow(p, { now, hasCommit, alreadyRevealed }) {
+  if (!p) return { revealable: false, reason: 'no proposal was read' };
+  if (typeof now !== 'number') {
+    return { revealable: false, reason: 'now was not supplied — a missing chain time cannot be read as "still in the reveal window"' };
+  }
+  if (p.status !== 'Active') {
+    return { revealable: false, reason: `status is ${p.status}, not Active — activeProposalOf still names it because Governance never clears that mapping on settlement` };
+  }
+  if (now < p.commitDeadline) {
+    return { revealable: false, reason: `still in the commit phase (commitDeadline ${p.commitDeadline}, chain now ${now}) — revealVote would revert WrongPhase` };
+  }
+  if (now >= p.revealDeadline) {
+    const ago = now - p.revealDeadline;
+    return { revealable: false, reason: `the reveal window closed ${ago}s ago (revealDeadline ${p.revealDeadline}, chain now ${now}) — revealVote would revert WrongPhase` };
+  }
+  if (typeof hasCommit !== 'boolean' || typeof alreadyRevealed !== 'boolean') {
+    const missing = typeof hasCommit !== 'boolean'
+      ? (typeof alreadyRevealed !== 'boolean' ? 'hasCommit and alreadyRevealed were' : 'hasCommit was')
+      : 'alreadyRevealed was';
+    return { revealable: false, reason: `${missing} not supplied — revealVote gates on commitOf being non-zero and on !revealedOf (Governance.sol:406-408), so a one-term answer cannot be given` };
+  }
+  if (!hasCommit) {
+    return { revealable: false, reason: 'no commitment is recorded for this voter on this proposal — commitOf[pid][voter] is zero, revealVote would revert NoCommit' };
+  }
+  if (alreadyRevealed) {
+    return { revealable: false, reason: 'this voter has already revealed on this proposal — revealedOf[pid][voter] is true, revealVote would revert AlreadyRevealed' };
+  }
+  return { revealable: true, reason: '' };
+}
+
+/**
+ * How long must THIS proposer wait before `propose` will accept it on THIS vault, right now — and
+ * is that wait affordable?
+ *
+ * `propose` (Governance.sol:308-346) has a SECOND require one line below the settlement check
+ * `recoverStaleRound` in drill2-subvault.mjs already handles:
+ *
+ *     require(lastAt == 0 || block.timestamp >= lastAt + cfg.proposalCooldown, Cooldown()); // :318
+ *
+ * `lastProposalAt` is `mapping(address => mapping(address => uint64)) ... // vault ⇒ proposer`
+ * (Governance.sol:162), read and written at `:317` and `:344` as
+ * `lastProposalAt[vault][msg.sender]` — keyed PER-PROPOSER, per vault. The `_validateConfig`
+ * comment at `:291-292` states this in as many words: "lastAt is keyed PER-PROPOSER". Confirmed by
+ * reading the mapping declaration and both call sites, not assumed.
+ *
+ * WHY A ROUND RECOVERY CAN HIT THIS. A restart's `propose` can land inside the SAME proposer's
+ * cooldown window from its own PRIOR `propose` — e.g. a restart triggered by the proposal's status
+ * changing away from Active can fire as early as `commitDeadline`, and if a vault's
+ * `commitDuration` is shorter than its `proposalCooldown` that is still inside the window. Without
+ * this check the restart's `propose` reverts `Cooldown()` — a governance-shaped revert for a
+ * scheduling cause, the exact failure mode `votableNow`'s doc comment describes for the
+ * 2026-09-04 drill-5 stall.
+ *
+ * `proposalCooldown` MUST be read live (`configOf`), never hardcoded: it is validated only
+ * between `PROPOSAL_COOLDOWN_FLOOR` (1h) and `PROPOSAL_COOLDOWN_CAP` (30 days)
+ * (Governance.sol:248,253,293-296), and a different vault's config can disagree with this
+ * deployment's.
+ *
+ * BOUNDED. Silently awaiting up to the 30-day cap would stall the drill far past anything it
+ * could plausibly afford, so a wait past `maxWaitSec` is reported unaffordable rather than
+ * awaited — a clear refusal beats both a revert and a multi-day hang.
+ *
+ * Pure so it can be tested: the drill executes at import, so this could not be defined there.
+ *
+ * @param {{now: number, lastAt: number, proposalCooldown: number, maxWaitSec: number}} ctx
+ *   `lastAt` is `lastProposalAt[vault][proposer]`, `proposalCooldown` is `configOf[vault]`'s
+ *   field, both read live. `lastAt === 0` means this proposer has never proposed on this vault.
+ * @returns {{waitSec: number, affordable: boolean, reason: string}}
+ *   `waitSec` is 0 when propose would already succeed. `reason` is '' only in that case; it is a
+ *   descriptive "why waiting" message when affordable, or the unaffordable-refusal text otherwise.
+ */
+export function cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec }) {
+  for (const [name, v] of [
+    ['now', now], ['lastAt', lastAt], ['proposalCooldown', proposalCooldown], ['maxWaitSec', maxWaitSec],
+  ]) {
+    if (typeof v !== 'number') {
+      return { waitSec: 0, affordable: false, reason: `${name} was not supplied — a missing term cannot be read as "no wait needed"` };
+    }
+  }
+  if (lastAt === 0) {
+    return { waitSec: 0, affordable: true, reason: '' };
+  }
+  const earliest = lastAt + proposalCooldown;
+  if (now >= earliest) {
+    return { waitSec: 0, affordable: true, reason: '' };
+  }
+  const waitSec = earliest - now;
+  if (waitSec > maxWaitSec) {
+    return {
+      waitSec, affordable: false,
+      reason: `would need to wait ${waitSec}s for the per-proposer cooldown (lastAt ${lastAt} + ` +
+        `proposalCooldown ${proposalCooldown}s = ${earliest}, chain now ${now}), past the ` +
+        `${maxWaitSec}s affordability cap — propose would revert Cooldown() if attempted now`,
+    };
+  }
+  return {
+    waitSec, affordable: true,
+    reason: `inside the per-proposer cooldown until ${earliest} (lastAt ${lastAt} + proposalCooldown ` +
+      `${proposalCooldown}s), chain now ${now} — propose would revert Cooldown() if attempted now`,
+  };
+}
+
+/**
+ * Decide what a reveal attempt should do RIGHT NOW, given live chain truth. Wraps `revealableNow`
+ * with the two outer branches drill 2's recovery (#369) already needed: an already-revealed
+ * voter is a silent no-op (the tx may have landed in a run that crashed before recording it, and
+ * re-sending would revert `AlreadyRevealed`), and a round that is genuinely not revealable but
+ * still `Active` and before its `revealDeadline` is a BUG to fail on, never a stale-resume to
+ * paper over.
+ *
+ * ONE DEFINITION for a decision now needed at three call sites — drill 2, drill 3, and the drill
+ * 5 governance companion all resume a reveal step after a possibly-long stop, and all three hit
+ * the identical `WrongPhase` shape measured live 2026-09-21/22 (drill 2, proposal 12; drill 3,
+ * proposal 13). Three copies of this branch is the drift this repo's CLAUDE.md warns about, not a
+ * hypothetical.
+ *
+ * @param {ReturnType<typeof decodeProposal>|null} p a live `readProposal` result
+ * @param {{now:number, hasCommit:boolean, alreadyRevealed:boolean}} ctx
+ * @returns {{action:'already-revealed'|'reveal'|'restart'|'bug', reason:string}}
+ *   `reason` is '' for 'already-revealed' and 'reveal'; it explains why otherwise. 'restart' means
+ *   the round is dead (settled, or past its reveal deadline) and safe to recover by finalizing and
+ *   re-proposing. 'bug' means reveal is currently impossible for some OTHER reason (no commitment
+ *   recorded, wrong phase gate) while the round is still live — that must fail loudly, not restart.
+ */
+export function decideReveal(p, { now, hasCommit, alreadyRevealed }) {
+  if (alreadyRevealed) return { action: 'already-revealed', reason: '' };
+  const { revealable, reason } = revealableNow(p, { now, hasCommit, alreadyRevealed });
+  if (revealable) return { action: 'reveal', reason: '' };
+  const stale = !p || p.status !== 'Active' || now >= p.revealDeadline;
+  return { action: stale ? 'restart' : 'bug', reason };
+}
+
+/**
+ * Finalize a round `decideReveal` has classified as `'restart'` — settling `Defeated` with zero
+ * reveals per `Governance.sol:577` (every quorum branch there is false when `revealedWeight` is
+ * 0) — and verify it actually landed that way. Re-reads chain state rather than trusting the
+ * caller's `p`/`now`: this only runs after a real chain wait, but the decision to SEND `finalize`
+ * must be made against the freshest read available.
+ *
+ * Lifted out of drill 2's `recoverStaleRound` (#369) so drill 3 and the drill 5 governance
+ * companion share this rather than growing their own copies of "when is it safe to finalize a
+ * dead round, and what must it settle as".
+ *
+ * @param {string} governance
+ * @param {string} pid
+ * @param {string} label human description for the log
+ * @returns {ReturnType<typeof decodeProposal>} the settled (or already-settled) proposal
+ */
+export function finalizeDeadRound(governance, pid, label) {
+  const fresh = readProposal(governance, pid);
+  const freshNow = chainNow();
+  if (fresh.status === 'Active' && freshNow >= fresh.revealDeadline) {
+    send(`governance.finalize(stale ${label})`, governance, 'finalize(uint256)', pid);
+    const settled = readProposal(governance, pid);
+    assert(settled.status === 'Defeated',
+      `expected the stale round to settle Defeated with zero reveals, got ${settled.status} — ` +
+      'investigate before restarting; a status other than Defeated means something revealed that this recovery path did not expect');
+    log(`  finalized stale proposal ${pid} -> ${settled.status} (revealedVoterCount ${settled.revealedVoterCount})`);
+    return settled;
+  }
+  log(`  proposal ${pid} is already ${fresh.status} — not calling finalize again`);
+  return fresh;
+}
+
+/**
+ * Wait out `propose`'s per-proposer cooldown (`Governance.sol:318`, `Cooldown()`) live, before
+ * every `propose` call that can be reached more than once per process — drill 2's two rounds,
+ * drill 3's round restart. See `cooldownWait`'s doc comment for why a restart can land inside the
+ * SAME proposer's cooldown window from its own prior `propose`.
+ *
+ * `proposalCooldown` and `lastProposalAt` are read live, never hardcoded: `proposalCooldown` is
+ * validated only within a floor..cap range and can differ per vault (`Governance.sol:293-296`),
+ * and `lastProposalAt` is keyed `[vault][proposer]` (`Governance.sol:162,317,344`).
+ *
+ * @param {string} governance
+ * @param {string} vault
+ * @param {string} proposer
+ * @param {number} maxWaitSec
+ */
+export async function waitOutProposalCooldown(governance, vault, proposer, maxWaitSec) {
+  const cfg = call(
+    governance,
+    'configOf(address)(uint32,uint32,uint32,uint32,uint16,uint16,uint16,uint32)',
+    vault,
+  );
+  const proposalCooldown = Number(cfg[7]);
+  const lastAt = Number(callU(governance, 'lastProposalAt(address,address)(uint64)', vault, proposer));
+  const now = chainNow();
+  const { waitSec, affordable, reason } = cooldownWait({ now, lastAt, proposalCooldown, maxWaitSec });
+  assert(affordable, `propose(${vault}) for proposer ${proposer}: ${reason}`);
+  if (waitSec === 0) return;
+  log(`propose(${vault}): ${reason} — waiting ${waitSec}s rather than reverting Cooldown()`);
+  await waitUntilChainTime(now + waitSec, 'proposer cooldown');
+}
+
+/**
  * Decode one `proposals(uint256)` tuple into a named object. Pure — no chain, no `cast`.
  *
  * SPLIT OUT OF `readProposal` SO IT CAN BE TESTED. `readProposal` reaches the chain through
@@ -568,6 +813,87 @@ export function decodeProposal(p) {
 /** Read a proposal into a named object. The decode is `decodeProposal`; this adds only the call. */
 export function readProposal(governance, pid) {
   return decodeProposal(call(governance, PROPOSAL_SIG, pid));
+}
+
+/**
+ * Whether an EXISTING `activeProposalOf(vault)` proposal blocks a new governance round on that
+ * vault, and — when it does — the exact, loudest-possible next step.
+ *
+ * This is the third instance of one shape: `START_BLOCK` unset silently meant "index from
+ * genesis"; `-Stop` silently left services running; this silently leaves a proposal `Active`
+ * forever. A 2026-09 soak proposed on the smoke vault, aborted between propose and reveal, and
+ * nothing ever called `finalize` on the way out — `activeProposalOf` never clears itself
+ * (see the comment on `votableNow` above), governance serializes per vault, and every later drill
+ * against that vault failed with a governance-shaped revert for a STALE-PROPOSAL cause, twelve
+ * days after the run that left it. This function is what a STARTUP preflight uses to catch that
+ * BEFORE any drill runs into it, instead of failing confusingly mid-drill.
+ *
+ * `finalize(uint256)` (Governance.sol:577-579) is `external`, callable by ANY account, and its
+ * only precondition is `status == Active && now >= revealDeadline` — so once a proposal is past
+ * its reveal deadline the remedy is one safe, no-special-key transaction. Before that deadline
+ * there is nothing to do but wait: `finalize` reverts `WrongPhase` on the identical call.
+ *
+ * `Passed` is handled too, not because it was the observed defect, but because a preflight that
+ * called a stuck `Passed` proposal "clear to proceed" would just be a second copy of the same
+ * defect one status over. `execute(uint256,bytes)` needs the ORIGINAL payload (Governance.sol:679-
+ * 704), which only the drill that proposed it still has, so there is no generic remedy inside its
+ * execution window; past `expiresAt` the generic remedy is `markExpired(uint256)` (also `external`,
+ * also payload-free, Governance.sol:707-711).
+ *
+ * @param {{status: string, revealDeadline: number, expiresAt: number} | null} p a `readProposal`
+ *   result, or `null` when `activeProposalOf` read `0` (nothing was ever proposed on this vault).
+ * @param {{now: number, pid: string|number|bigint}} ctx `now` is chain time (`chainNow()`), not
+ *   wall-clock time — Base Sepolia's clock is the one every deadline above is measured against.
+ * @returns {{blocking: boolean, state: string, message: string, remedyFn?: string}} `remedyFn` is
+ *   the bare `name(types)` signature to `cast send`, only present when a generic remedy exists.
+ */
+export function proposalPreflightVerdict(p, { now, pid }) {
+  if (!p || p.status === 'None') {
+    return { blocking: false, state: 'none', message: `no active proposal on this vault (activeProposalOf reads 0) — clear to proceed` };
+  }
+  if (['Executed', 'Defeated', 'Expired'].includes(p.status)) {
+    return { blocking: false, state: 'settled', message: `proposal ${pid} is ${p.status} — settled, clear to proceed` };
+  }
+  if (p.status === 'Active') {
+    if (now >= p.revealDeadline) {
+      const ago = now - p.revealDeadline;
+      return {
+        blocking: true,
+        state: 'active-finalizable',
+        message: `proposal ${pid} is Active and PAST its reveal deadline (deadline ${p.revealDeadline}, chain now ${now}, ${ago}s ago) — nothing ever finalized it. Governance serializes per vault, so every drill against this vault is blocked until it is.`,
+        remedyFn: 'finalize(uint256)',
+      };
+    }
+    const eta = p.revealDeadline - now;
+    return {
+      blocking: true,
+      state: 'active-live',
+      message: `proposal ${pid} is Active but NOT yet past its reveal deadline (deadline ${p.revealDeadline}, chain now ${now}, finalizable in ${eta}s, at ${new Date(p.revealDeadline * 1000).toISOString()}) — this is a run still in flight, not a stalled one. Wait for it, or run the drill that owns this vault to carry it through commit/reveal/finalize.`,
+    };
+  }
+  if (p.status === 'Passed') {
+    if (now > p.expiresAt) {
+      return {
+        blocking: true,
+        state: 'passed-expired-unmarked',
+        message: `proposal ${pid} is Passed and past its execution window (expiresAt ${p.expiresAt}, chain now ${now}) but nobody called markExpired — governance still serializes per vault on it.`,
+        remedyFn: 'markExpired(uint256)',
+      };
+    }
+    return {
+      blocking: true,
+      state: 'passed-pending-execution',
+      message: `proposal ${pid} is Passed and within its execution window (expires at ${new Date(p.expiresAt * 1000).toISOString()}) — only the drill that proposed it holds the exact payload execute(uint256,bytes) needs, so there is no generic remedy here. Run that drill to completion, or wait for the window to lapse and re-run this preflight.`,
+    };
+  }
+  // Unreached for a well-formed STATUS table — named as blocking-with-unknown-cause rather than
+  // silently read as clear, the same "a guard that can skip is a guard that will" reasoning as
+  // everywhere else in this file.
+  return {
+    blocking: true,
+    state: 'unknown',
+    message: `proposal ${pid} has status ${p.status}, which this preflight has no rule for — treating it as blocking rather than guessing it is safe.`,
+  };
 }
 
 /** Event topics, computed from the Solidity signatures rather than hardcoded. */

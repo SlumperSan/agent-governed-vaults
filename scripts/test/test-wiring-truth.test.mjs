@@ -217,7 +217,7 @@ const executableText = () => ({
  * Root scripts are matched on their COMMAND (`node --test`), not on their name, so a new
  * `test:whatever` is picked up the day it is written rather than the day someone remembers this
  * file. Workspace scripts are the `test` script of any workspace package.json -- that is how
- * `apps/site-next` runs, as its own CI and gate step.
+ * `apps/site` runs, as its own CI and gate step.
  *
  * THE CONTRACT THAT SELECTOR CREATES, stated rather than left as a trap: a root script that runs
  * `node --test` MUST be a step of both pipelines. There is no third category here, no "manual

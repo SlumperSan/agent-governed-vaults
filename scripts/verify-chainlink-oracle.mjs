@@ -82,6 +82,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyCallError } from '../packages/canary/src/call-error.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Which config to verify: env CONFIG, or a *.json path argument, else the mainnet config (back-compat).
@@ -135,6 +136,10 @@ export const SEQUENCER_EXEMPT_REASONS = new Map([
     4663,
     'Robinhood Chain — Chainlink publishes no L2 Sequencer Uptime Feed for this chain, so there is no address to supply. Owner-approved weakening dated 2026-09-04: with the feed at address(0), ChainlinkOracle._requireSequencerUp returns early and priceWad answers straight through a sequencer outage. Two guards survive that, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). See docs/DEPLOYMENT.md "Robinhood Chain 4663"',
   ],
+  [
+    5042,
+    'Arc — an L1, not a rollup, so there is no sequencer whose uptime could be reported and no feed to supply; Chainlink publishes none for arc-mainnet, established by enumerating all 32 feeds it DOES publish for the chain rather than by failing to find one. NOT the same kind of entry as 4663: that one weakened a guard that applied, this one records that the guard does not apply. Owner decision 2026-09-19. Two guards survive a zero uptime feed, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). The residual this accepts: at a 90,000 s heartbeat a stalled FEED is caught within a day and a stalled CHAIN is not distinguishable from a quiet one',
+  ],
 ]);
 export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());
 const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);
@@ -144,9 +149,15 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 // Mirrors of the bounds ChainlinkOracle's constructor now enforces (MIN_HEARTBEAT / MAX_HEARTBEAT /
 // MAX_BAND_RATIO). Duplicated here on purpose: catching a bad config BEFORE `--broadcast` costs a
 // read-only run, and catching it after costs a redeploy of an immutable contract.
-const MIN_HEARTBEAT = 600n;
-const MAX_HEARTBEAT = 86400n;
-const MAX_BAND_RATIO = 1000n;
+export const MIN_HEARTBEAT = 600n;
+// 90,000 s, NOT 86,400. Raised in #307 because Arc's BTC/USD worst gap is 86,423 s across 199 rounds,
+// so the old ceiling sat 23 s BELOW a healthy feed's real behaviour. This copy stayed at 86,400 for a
+// day, which meant this script — the pre-deploy check — would have REJECTED the Arc config's 90,000,
+// a value the constructor accepts. A mirror that drifts fails in the direction of blocking a correct
+// deploy, which is the safe direction and still wrong. `scripts/test/verify-chainlink-oracle.test.mjs`
+// now pins all three of these to the contract source so the next raise cannot leave this behind.
+export const MAX_HEARTBEAT = 90000n;
+export const MAX_BAND_RATIO = 1000n;
 
 /**
  * `--strict` (or STRICT=1) makes NOTICES set the exit code. Off by default, because the two
@@ -169,23 +180,65 @@ const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail: Strin
  * carried by the `decimals() == 8` check, which is independent of how many swaps happened.
  */
 const notice = (name, detail) => results.push({ name, ok: true, drift: true, detail: String(detail) });
+/**
+ * "I could not check" is not "the check failed". A run that folds an RPC 429 into `failed` produces
+ * a false red — and a false red is how a real red gets ignored (#171). Counted and printed apart
+ * from both, and it is the one bucket that does not set exit code 1: see `finish()`.
+ */
+const unreadable = (name, detail) => results.push({ name, ok: false, transport: true, detail: String(detail) });
 
 function cast(args) {
   return execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
+
+/** The flattened error text `classifyCallError` expects: `cast`'s stderr, falling back to the message. */
+function castErrorText(err) {
+  const stderr = err && err.stderr != null ? String(err.stderr) : '';
+  return stderr.trim() || String(err?.message ?? err);
+}
+
 /**
- * `cast` with one retry. The public Base RPC rate-limits a burst of calls, and this script fires
- * one burst per feed: observed 2026-08-30, a mid-sweep `aggregator()` read came back empty while
- * the identical call succeeded three times in a row on its own. An un-retried hiccup would FAIL the
- * `decimals() == 8` check and exit 1 -- blocking a correct deploy on network noise, which is a
- * strictly worse outcome than the extra round trip. A genuine revert simply fails twice.
+ * Thrown by `castRetry` when every attempt classified as a transport failure (RPC 429, timeout,
+ * connection reset — never a confirmed revert). Callers that swallow `cast` errors to `null` (a
+ * legitimate "this feed doesn't implement that view") must NOT swallow this one: a 429 is not
+ * evidence the view is missing, and `null` here would misreport "the check failed" for "the check
+ * never ran".
  */
-function castRetry(args) {
-  try {
-    return cast(args);
-  } catch {
-    return cast(args);
+class TransportError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TransportError';
+    this.transport = true;
   }
+}
+
+/**
+ * `cast` retried against RPC transport failures specifically, classified the same way the canary
+ * classifies a failed on-chain read (`packages/canary/src/call-error.mjs`, measured against real
+ * viem/cast wording). The public Base RPC rate-limits a burst of calls, and this script fires one
+ * burst per feed: observed 2026-08-30, a mid-sweep `aggregator()` read came back empty while the
+ * identical call succeeded three times in a row on its own.
+ *
+ * A CONFIRMED revert is not retried — retrying it wastes a round trip and cannot change the answer.
+ * Only a transport-classified failure is retried, up to `MAX_TRANSPORT_ATTEMPTS` times; if every
+ * attempt is still transport after that, this throws `TransportError` rather than swallowing the
+ * failure into "reverted" — the old one-shot retry did exactly that, which is the defect (#171):
+ * a rate-limited RPC read as a FAILED check ("do NOT deploy") rather than as "could not check".
+ */
+const MAX_TRANSPORT_ATTEMPTS = 4;
+function castRetry(args) {
+  let lastErr;
+  for (let attempt = 0; attempt < MAX_TRANSPORT_ATTEMPTS; attempt += 1) {
+    try {
+      return cast(args);
+    } catch (err) {
+      lastErr = err;
+      if (classifyCallError(castErrorText(err)) !== 'transport') throw err;
+    }
+  }
+  throw new TransportError(
+    `RPC transport failure after ${MAX_TRANSPORT_ATTEMPTS} attempts: ${castErrorText(lastErr)}`,
+  );
 }
 function code(addr) {
   try {
@@ -200,7 +253,8 @@ function callString(addr, sig) {
   try {
     const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
     return out.replace(/^"(.*)"$/s, '$1');
-  } catch {
+  } catch (err) {
+    if (err instanceof TransportError) throw err;
     return null;
   }
 }
@@ -220,7 +274,8 @@ function callUint(addr, sig) {
   try {
     const out = castRetry(['call', addr, sig, '--rpc-url', RPC]);
     return BigInt(out).toString();
-  } catch {
+  } catch (err) {
+    if (err instanceof TransportError) throw err;
     return null;
   }
 }
@@ -236,7 +291,8 @@ function latestRoundData(addr) {
       .filter((x) => /^-?\d+$/.test(x));
     if (nums.length < 5) return null;
     return { answer: BigInt(nums[1]), startedAt: BigInt(nums[2]), updatedAt: BigInt(nums[3]) };
-  } catch {
+  } catch (err) {
+    if (err instanceof TransportError) throw err;
     return null;
   }
 }
@@ -246,8 +302,26 @@ function callAddr(addr, sig) {
   try {
     const m = castRetry(['call', addr, sig, '--rpc-url', RPC]).match(/0x[0-9a-fA-F]{40}/);
     return m ? m[0] : null;
-  } catch {
+  } catch (err) {
+    if (err instanceof TransportError) throw err;
     return null;
+  }
+}
+
+/**
+ * Swallow a `TransportError` to `null` rather than letting it abort the rest of the feed's checks.
+ * Only for reads whose caller ALREADY treats a `null` answer as a notice rather than a failure no
+ * matter why the read failed — `compareAggregatorPin`'s aggregator()/phaseId() pair, where an
+ * unanswered read reports "pin NOT confirmed" (a DRIFT notice) whether the cause was a revert or an
+ * RPC 429. Using this for a SAFETY check (decimals, description, latestRoundData) would silently
+ * reintroduce the #171 defect for that check, so it is scoped to the pin read alone.
+ */
+function tolerant(fn) {
+  try {
+    return fn();
+  } catch (err) {
+    if (err instanceof TransportError) return null;
+    throw err;
   }
 }
 
@@ -497,10 +571,15 @@ function main() {
         : `empty/zero — guard intentionally skipped on exempt chain ${CFG.chainId}: ${SEQUENCER_EXEMPT_REASONS.get(CFG.chainId)}`,
     );
   } else {
-    const hasCode = code(seq).length > 2;
-    check('sequencer uptime feed has code', hasCode, `${seq} code.length ${hasCode ? '> 0' : '== 0'}`);
-    const rd = latestRoundData(seq);
-    check('sequencer uptime feed answers', rd !== null, rd ? `answer=${rd.answer} (0=up,1=down)` : 'latestRoundData reverted');
+    try {
+      const hasCode = code(seq).length > 2;
+      check('sequencer uptime feed has code', hasCode, `${seq} code.length ${hasCode ? '> 0' : '== 0'}`);
+      const rd = latestRoundData(seq);
+      check('sequencer uptime feed answers', rd !== null, rd ? `answer=${rd.answer} (0=up,1=down)` : 'latestRoundData reverted');
+    } catch (err) {
+      if (!(err instanceof TransportError)) throw err;
+      unreadable('sequencer uptime feed', `RPC transport failure, not a confirmed defect — re-run: ${err.message}`);
+    }
   }
 
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
@@ -514,6 +593,23 @@ function main() {
       check(`${label}: feed address populated`, false, `feed is a placeholder/zero (${feed})`);
       continue;
     }
+    try {
+      runAssetChecks(a, label, feed, nowSec);
+    } catch (err) {
+      if (!(err instanceof TransportError)) throw err;
+      // One feed's RPC hiccup must not fail the whole sweep, and must not read as "this feed is
+      // broken" — see the header on `castRetry`. Skip the rest of this feed's checks; the other
+      // feeds still get a real verdict.
+      unreadable(`${label}: feed checks`, `RPC transport failure partway through this feed, not a confirmed defect — re-run: ${err.message}`);
+    }
+  }
+
+  finish();
+}
+
+/** The per-asset check body, split out so a mid-feed TransportError can be caught around the whole thing. */
+function runAssetChecks(a, label, feed, nowSec) {
+  {
     // code
     check(`${label}: feed has code`, code(feed).length > 2, feed);
 
@@ -547,8 +643,8 @@ function main() {
     // tells the operator WHETHER the upstream moved since the config was last verified -- the
     // difference between "nothing changed" and "it changed and re-checked clean".
     const pinResult = compareAggregatorPin(a.aggregatorPin, {
-      implementation: callAddr(feed, 'aggregator()(address)'),
-      phaseId: callUint(feed, 'phaseId()(uint16)'),
+      implementation: tolerant(() => callAddr(feed, 'aggregator()(address)')),
+      phaseId: tolerant(() => callUint(feed, 'phaseId()(uint16)')),
     });
     if (pinResult.status === 'ok') {
       check(`${label}: aggregator unchanged since pin`, true, pinResult.message);
@@ -559,7 +655,7 @@ function main() {
     const rd = latestRoundData(feed);
     if (!rd) {
       check(`${label}: latestRoundData answers`, false, 'reverted / no code');
-      continue;
+      return;
     }
     check(`${label}: answer > 0`, rd.answer > 0n, `answer=${rd.answer}`);
     const hb = BigInt(a.heartbeatSeconds ?? 0);
@@ -610,34 +706,46 @@ function main() {
       }
     }
   }
-
-  finish();
 }
 
 function finish() {
-  // Three counts, not two. A notice used to be counted as a pass, so a config with an unpinned or
+  // Four counts, not three. A notice used to be counted as a pass, so a config with an unpinned or
   // unreadable aggregator still printed "18/18 checks passed" -- and that tally is what residual
   // row 14 cites as evidence the feeds are clean. A summary that cannot express "not clean" is not
-  // evidence. `passed + noticed + failed === total`, always.
+  // evidence. And `unreadable` (#171) is not `failed`: an RPC 429 is "I could not check", not "the
+  // check failed" -- folding it into `failed` is exactly the false red that lets a real one blend
+  // in. `passed + noticed + unreadable + failed === total`, always.
   const noticed = results.filter((r) => r.drift).length;
+  const unreadableCount = results.filter((r) => r.transport).length;
   const passed = results.filter((r) => r.ok && !r.drift).length;
-  const failed = results.length - passed - noticed;
+  const failed = results.length - passed - noticed - unreadableCount;
   if (JSON_OUT) {
     console.log(
-      JSON.stringify({ passed, failed, drift: noticed, strict: STRICT, total: results.length, results }, null, 2),
+      JSON.stringify(
+        { passed, failed, drift: noticed, unreadable: unreadableCount, strict: STRICT, total: results.length, results },
+        null,
+        2,
+      ),
     );
   } else {
-    for (const r of results) console.log(`${r.drift ? 'DRIFT' : r.ok ? 'PASS ' : 'FAIL '} ${r.name} — ${r.detail}`);
+    for (const r of results) {
+      console.log(`${r.transport ? 'RPCUNAVAILABLE' : r.drift ? 'DRIFT' : r.ok ? 'PASS ' : 'FAIL '} ${r.name} — ${r.detail}`);
+    }
     const noticeTail = STRICT
       ? ' — --strict, so these set the exit code'
       : ' — read them; re-run with --strict to make them exit non-zero';
     console.log(
       `\n${passed}/${results.length} checks passed` +
         `${failed ? `, ${failed} FAILED — do NOT deploy the oracle` : ''}` +
-        `${noticed ? `, ${noticed} DRIFT notice(s)${noticeTail}` : ''}`,
+        `${noticed ? `, ${noticed} DRIFT notice(s)${noticeTail}` : ''}` +
+        `${unreadableCount ? `, ${unreadableCount} RPC-UNAVAILABLE (not a defect — re-run before reading anything into the rest)` : ''}`,
     );
   }
-  process.exit(failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : 0);
+  // exit 1: a confirmed defect, or --strict tripped by drift -- do not deploy.
+  // exit 3: nothing failed, but part of the sweep could not run -- re-run, this is not a verdict.
+  // exit 0: every check that ran, passed.
+  const code = failed > 0 || results.length === 0 || (STRICT && noticed > 0) ? 1 : unreadableCount > 0 ? 3 : 0;
+  process.exit(code);
 }
 
 // Importable by unit tests without firing the RPC sweep: only run when this file is the entrypoint.

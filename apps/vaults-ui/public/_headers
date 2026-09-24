@@ -1,0 +1,168 @@
+# Cloudflare Pages edge headers for the vault workspace.
+#
+# SYNTAX. Pages reads this file from the root of the SERVED directory, which is
+# the build output. It therefore lives in public/, so Vite copies it verbatim to
+# dist/_headers. A rule is a path pattern at column 0 followed by indented
+# `Name: value` lines; a comment is a line beginning with `#` at column 0.
+# Cloudflare documents comments only at column 0 and says nothing about indented
+# ones, so every comment here sits at column 0 and the rule block below contains
+# header lines and nothing else. Malformed lines are IGNORED RATHER THAN
+# REPORTED, so a header accidentally written at column 0 becomes a path pattern
+# carrying no headers and protects nothing, silently.
+#
+# PORTED FROM apps/site/public/_headers ON 2026-09-19, and it is narrower than
+# its source in three places rather than the same file with a different name.
+# Each narrowing is a class of resource the site uses and this surface does not.
+# A directive that permits something nothing here loads is a standing permission
+# the next person inherits without a review, which is the argument the site's own
+# file makes twice -- once when the last video went and `media-src` was deleted,
+# once when the chain read went and `connect-src` was narrowed.
+#
+# DIRECTIVE BY DIRECTIVE.
+#
+# default-src 'none'
+#   The deny-by-default floor. Every fetch directive not named below inherits
+#   it, so a directive that is absent from this file is 'none'.
+#
+# script-src 'self'
+#   The built module scripts, served from this origin. No 'unsafe-inline' and no
+#   'unsafe-eval'. Vite's modulepreload polyfill is an inline script, so
+#   `build.modulePreload.polyfill` is false in vite.config.ts; without that, the
+#   browser refuses the polyfill and the page's own modules may not load.
+#
+# style-src 'self'
+#   The one built stylesheet, same-origin. Deliberately no 'unsafe-inline'.
+#   THE ONE THING TO KNOW BEFORE ADDING A STYLE: React's `style={{...}}` prop
+#   sets properties through the CSSOM, which this directive does not govern, so
+#   ProposalPanel's vote bar (`style={{ width: `${forPct}%` }}`) works and is not
+#   an exception being carved out. A literal `style="..."` in SERVED MARKUP is a
+#   different thing and IS refused. This app is client-rendered, so React never
+#   serialises that attribute into the HTML the edge returns -- which is exactly
+#   why prerendering this surface, or server-rendering it, is a policy change and
+#   not just a build change. ssr-smoke.tsx renders to a string in Node and is
+#   never served, so it is not affected.
+#
+# img-src 'self'
+#   NARROWER THAN THE SITE, which permits `data:` for a WebGL hero that builds
+#   textures from data URIs. There is no canvas here and no hero. The build sets
+#   no inlining exception, so every image is a file this origin served.
+#
+# font-src 'self'
+#   The two bundled woff2 faces, shipped by the @fontsource packages into this
+#   build rather than linked from a CDN. NOT `data:`: an inlined face would
+#   defeat the check that every font is a file this origin served, which is how
+#   the no-external-request claim is verified from the network panel. There is no
+#   fonts.googleapis.com and no fonts.gstatic.com, and one request to either is a
+#   rejection.
+#
+# connect-src 'self' https://rpc.mainnet.arc.io
+#   PLAN ITEM 0.7, ADDED IN THE SAME COMMIT AS `src/lib/live-vaults.ts`. This surface now reads a
+#   chain through `apps/web/src/chain-reader.mjs` — see that module's header, and `live-vaults.ts`
+#   for the viem glue — rather than bundling `apps/web/src/fixtures.mjs`.
+#
+#   THE ONE ORIGIN NAMED, NOTHING WIDER. `https://rpc.mainnet.arc.io` (chain 5042) is what
+#   `VITE_RPC_URL` resolves to as of the Arc mainnet cutover — `apps/vaults-ui/.env.example`,
+#   against the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`, RWAlly's v1 vault, live
+#   on Arc mainnet since 2026-09-24 (firstVault.createdAt,
+#   contracts/config/deployments/arc-mainnet.json). `test/csp.test.mjs`'s `'the policy names every
+#   directive...'`
+#   test pins this exact string; widening it to a second origin, a wildcard, or back to bare
+#   `'self'` must fail that test, not quietly pass it.
+#
+#   BEFORE CHANGING THIS ORIGIN AGAIN: replace it with the production RPC `VITE_RPC_URL` will be set
+#   to, in the SAME COMMIT that changes the Cloudflare Pages build environment — never ahead of it.
+#   A `connect-src` opened in advance of the endpoint it names is a permission nobody reviewed
+#   against a chain nobody chose; a `connect-src` left behind after the endpoint changes is a page
+#   that refuses its own reads with no build-time warning. (This is exactly what happened moving
+#   from Base Sepolia to Arc mainnet: both this line and `.env.example`'s `VITE_RPC_URL` changed
+#   together, in this commit.)
+#
+# worker-src IS ABSENT, AND ITS ABSENCE IS THE ENTRY.
+#   The site permits a same-origin worker as headroom for moving WebGL work off
+#   the main thread. There is no WebGL here and no worker. It falls back to
+#   `default-src 'none'`, so `new Worker()` is refused. To put one back: add
+#   `worker-src 'self'`, never `blob:`, in the same commit as the code.
+#
+# media-src IS ABSENT for the same reason it is absent from the site: this origin
+#   serves no video and no audio, so a <video> or <audio> element is refused by
+#   the browser, which is the correct answer for a surface that has none.
+#
+# base-uri 'none'
+#   Every in-app link is relative and every off-app link is absolute. An injected
+#   `<base href="https://evil.example/">` would repoint the relative ones without
+#   a line of JavaScript; this refuses it.
+#
+# form-action 'none'
+#   There is no form on this surface and no place to submit one. A workspace that
+#   displays a member's own position is the obvious place to inject a credential
+#   or seed-phrase prompt; injected HTML here has nowhere to POST to.
+#
+# frame-ancestors 'none'
+#   Nobody may frame this workspace. The material risk is not clickjacking but
+#   framing: this surface renders NAV, a share price and a member's position, and
+#   a hostile page that frames it inside its own chrome has published the
+#   protocol's numbers under someone else's name and without the disclaimers link
+#   that the masthead and the footer both carry.
+#
+# object-src 'none'
+#   Written explicitly even though default-src already covers it. Plugin content
+#   is the one bypass that survives a strict script policy in older engines, and a
+#   reader of this file should not have to derive its absence.
+#
+# X-Content-Type-Options: nosniff
+#   This origin serves .html, .css, .js, .woff2 and .woff -- @fontsource ships
+#   both formats for IBM Plex Mono and the build emits both, which is why the
+#   list is longer than the font-src entry above implies. Sniffing is the mechanism by
+#   which a file served as one type is interpreted as another; nosniff makes the
+#   declared Content-Type binding.
+#
+# Referrer-Policy: no-referrer
+#   Every off-origin link from here goes to rwally.com or to the repository.
+#   Without this, following one tells the destination which vault a member was
+#   looking at. There is no analytics, so the strictest value costs nothing.
+#
+# X-Robots-Tag: noindex
+#   NOT ON THE SITE, AND DELIBERATE HERE. index.html already carries
+#   `<meta name="robots" content="noindex">`, but a meta tag is only read by a
+#   crawler that parses the document; this covers the JSON, the stylesheet and
+#   anything else served from this origin. The marketing site is the surface meant
+#   to be found.
+
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://rpc.mainnet.arc.io; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+
+# The build emits content-hashed filenames under /assets/, so those files are
+# immutable by construction: a change produces a new name rather than new bytes at
+# the same name. The HTML is not hashed and must not be cached that way.
+#
+# THAT IS A RULE ABOUT WHAT MAY LIVE UNDER /assets/, not just a note. Vite hashes
+# what it processes and copies public/ through verbatim, path and all. A file
+# placed at public/assets/ therefore serves from /assets/ with a FIXED name and
+# inherits a year of immutable caching it cannot satisfy: replacing it would leave
+# every cache that already holds it serving the old bytes until 2027, with no way
+# to bust it short of renaming. Put a verbatim public asset at the root of public/.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# DELIBERATELY ABSENT, each a standard header that would do nothing here, and a
+# header that does nothing is a claim of protection the next reader has to
+# disprove:
+#
+#   X-Frame-Options    -- superseded by frame-ancestors in every browser that
+#                         ships CSP Level 2.
+#   Permissions-Policy -- gates browser APIs. This surface wants none.
+#   X-XSS-Protection   -- removed from every current browser; its legacy scanner
+#                         introduced vulnerabilities of its own.
+#
+# STRICT-TRANSPORT-SECURITY REMAINS THE OWNER'S DECISION, NOT THIS FILE'S, for the
+# same reason as on the site: HSTS is close to irreversible, and the zone may
+# already set it under Cloudflare SSL/TLS -> Edge Certificates, where two sources
+# would disagree.
+#
+#   INDENT IT UNDER A PATH PATTERN WHEN ENABLING. The line below sits at column 0,
+#   and an uncommented line at column 0 is a PATH PATTERN, not a header.
+#
+#       Strict-Transport-Security: max-age=86400

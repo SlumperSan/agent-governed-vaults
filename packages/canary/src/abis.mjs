@@ -55,10 +55,32 @@ export const VAULT_VIEWS = Object.freeze([
   // no event at all — so a projection cannot carry them and only a chain read can.
   view('queuedExitShares', ['address'], ['uint256']),
   view('costBasisUsdc', ['address'], ['uint256']),
+  // Contract tab Row 6b (#182): a member's per-token escrowed claim — `mapping(address => mapping
+  // (address => uint256)) public claimable` (VaultCore.sol:138), paid out via `claimEscrowed`
+  // (VaultCore.sol:1016). Read per (member, asset); the row's existence on the tab IS the read, so
+  // there is no static half to fall back on — see apps/web/src/chain-reader.mjs's
+  // `planClaimableEscrow`/`assembleClaimableEscrow`.
+  view('claimable', ['address', 'address'], ['uint256']),
   view('totalPendingUsdc', [], ['uint256']),
   // The vault's immutable governance module — how `governance-watch` finds the Governance
   // contract without a second env var, exactly the way `oracle` locates the oracle.
   view('governance', [], ['address']),
+  // The five reads apps/web/src/wallet-refusals.mjs and apps/web/src/deposit-status.mjs need to
+  // classify a signature as safe/refused/irrevocable before the member wallet UI asks for one
+  // (VaultCore.sol:107,110-115,117,87-88,1073). `pendingDeposit` is a public mapping of a struct,
+  // so Solidity's auto-getter returns the tuple `(amountUsdc, availableAt)` in DECLARATION order —
+  // matching that order here is load-bearing, not cosmetic.
+  view('pendingDeposit', ['address'], [{ name: 'amountUsdc', type: 'uint256' }, { name: 'availableAt', type: 'uint64' }]),
+  // "addresses with shares > 0, creator included" (VaultCore.sol:128) vs. the same count with the
+  // creator excluded (VaultCore.sol:107) — the contract tracks both, atomically, as two separate
+  // counters. Card 210's seeded-disclosure organic-bound math reads the second, never derives it
+  // from the first: whether the creator itself currently holds shares is not otherwise knowable
+  // from a read this module can make.
+  view('holderCount', [], ['uint256']),
+  view('nonCreatorMemberCount', [], ['uint256']),
+  view('lastDepositTime', ['address'], ['uint256']),
+  view('exitFeeMaxBps', [], ['uint256']),
+  view('exitFeeDecayPeriod', [], ['uint256']),
 ]);
 
 /**
@@ -156,11 +178,111 @@ export const OPERATOR_REGISTRY_VIEWS = Object.freeze([
   view('operatorOf', ['address'], ['uint256']),
   view('operatorAddressOf', ['uint256'], ['address']),
   view('operatorIdOf', ['address'], ['uint256']),
+  // Contract tab Row 4 (#182): `factory` and `feeEngine` are one-shot deploy-time wiring latches
+  // (OperatorRegistry.sol:21,42 — `address public factory`/`address public feeEngine`, written
+  // exactly once by `wire()`, never again). Read to confirm they were actually set, never assumed.
+  view('factory', [], ['address']),
+  view('feeEngine', [], ['address']),
+]);
+
+/**
+ * SubVaultRegistry: Contract tab Row 4 (#182) — `factory` is the same one-shot deploy-time wiring
+ * latch shape as `OperatorRegistry.factory`/`feeEngine` (SubVaultRegistry.sol:22 —
+ * `address public factory`, written exactly once by `wire()`).
+ */
+export const SUBVAULT_REGISTRY_VIEWS = Object.freeze([
+  view('factory', [], ['address']),
+]);
+
+/**
+ * VaultFactory: Contract tab Row 5 (#182) — `allowSubVaults` is `bool public immutable`
+ * (VaultFactory.sol:54), read live from the deployed factory. NEVER inferred from a deploy
+ * script: `Deploy.s.sol` passes `false` and `DeployTestnet.s.sol` hardcodes `true`, and neither is
+ * truth for what a given deployed vault's factory actually holds.
+ */
+export const VAULT_FACTORY_VIEWS = Object.freeze([
+  view('allowSubVaults', [], ['bool']),
+  // Card 211 (A2, frontend security pass): the deployment manifest itself.
+  // `vaultCount()` (VaultFactory.sol) returns `allVaults.length`; `allVaults(uint256)` is the
+  // public array's own generated getter. Both are plain view calls, no state change.
+  view('vaultCount', [], ['uint256']),
+  view('allVaults', ['uint256'], ['address']),
 ]);
 
 /** ERC20 balance reads — the independent custody leg of the NAV-backing signal. */
 export const ERC20_VIEWS = Object.freeze([
   view('balanceOf', ['address'], ['uint256']),
+]);
+
+/**
+ * UniswapV3Factory — the ONE view the deposit/exit size-impact notice
+ * (apps/vaults-ui/src/lib/chain-actions.ts, `@atlas/size-impact`) needs to find the cirBTC/USDC
+ * pool without a hardcoded pool address. `contracts/config/arc-mainnet.json`'s `router` field
+ * already records `factory() resolves to the v3Factory` for the ONE factory this repo has
+ * verified on Arc (0xf0db7b58379503491d857db50ac9ece64c653918, read off the deployed
+ * SwapRouter02 rather than assumed — see that file's `routerNote`, and its
+ * `addressSquattingChecked` note on why the CANONICAL cross-chain Uniswap addresses are NOT safe
+ * to assume on this chain). The caller still resolves the ACTUAL POOL address and fee tier live
+ * through `getPool`, probing the standard tiers rather than assuming one — see
+ * Tasks/deposit-size-warning.md and 2026-09-19-corridor-moved-87-percent-in-a-day.md, which is
+ * the finding that this whole notice exists to act on correctly.
+ */
+export const UNISWAP_V3_FACTORY_VIEWS = Object.freeze([
+  view('getPool', ['address', 'address', 'uint24'], ['address']),
+]);
+
+/**
+ * IUniswapV3Pool — the read-only surface the deposit/exit size-impact notice walks to find where
+ * the constant-liquidity fit stops holding (`@atlas/size-impact`'s `findMaterialEdge`). NOT
+ * locally compiled — Uniswap v3-core is external to this repo, the same situation
+ * TOKEN_SAFETY_VIEWS is in for cirBTC/USDC themselves (see that table's own note) — so this is
+ * the STANDARD, unchanged-since-launch IUniswapV3Pool interface rather than something pinned
+ * against a compiled artifact in this tree. `ticks(int24)` returns liquidityNet == 0 for a tick
+ * that was never initialised, which is indistinguishable from — and mathematically equivalent
+ * to, for this purpose — an initialised tick whose net happens to be exactly zero: either way the
+ * constant-liquidity fit survives crossing it, so the walk does not need a separate
+ * `tickBitmap` read to know which candidate ticks are "real".
+ */
+export const UNISWAP_V3_POOL_VIEWS = Object.freeze([
+  view('token0', [], ['address']),
+  view('liquidity', [], ['uint128']),
+  view('tickSpacing', [], ['int24']),
+  view('slot0', [], [
+    { name: 'sqrtPriceX96', type: 'uint160' },
+    { name: 'tick', type: 'int24' },
+    { name: 'observationIndex', type: 'uint16' },
+    { name: 'observationCardinality', type: 'uint16' },
+    { name: 'observationCardinalityNext', type: 'uint16' },
+    { name: 'feeProtocol', type: 'uint8' },
+    { name: 'unlocked', type: 'bool' },
+  ]),
+  view('ticks', ['int24'], [
+    { name: 'liquidityGross', type: 'uint128' },
+    { name: 'liquidityNet', type: 'int128' },
+    { name: 'feeGrowthOutside0X128', type: 'uint256' },
+    { name: 'feeGrowthOutside1X128', type: 'uint256' },
+    { name: 'tickCumulativeOutside', type: 'int56' },
+    { name: 'secondsPerLiquidityOutsideX128', type: 'uint160' },
+    { name: 'secondsOutside', type: 'uint32' },
+    { name: 'initialized', type: 'bool' },
+  ]),
+]);
+
+/**
+ * Per-leg token safety reads — `paused()` and `isBlacklisted(address)` on a basket asset's OWN
+ * token contract, not on VaultCore. Security confirmed both are plain view calls (card #32).
+ *
+ * NOT locally compiled, and cannot be drift-checked the way VAULT_VIEWS is: cirBTC is Circle's
+ * FiatToken stack deployed on Arc mainnet, external to this repo (see
+ * contracts/config/arc-mainnet.json), so there is no `contracts/out` artifact for it — the same
+ * situation CHAINLINK_FEED_IDENTITY_VIEWS is in for `aggregator()`/`phaseId()`. The signatures are
+ * Circle's own published Blacklistable/Pausable interface: `isBlacklisted(address)` is the
+ * standard USDC-family selector (see contracts/lib/forge-std/src/StdCheats.sol:218, which embeds
+ * the same 4-byte selector for USDC on other chains).
+ */
+export const TOKEN_SAFETY_VIEWS = Object.freeze([
+  view('paused', [], ['bool']),
+  view('isBlacklisted', ['address'], ['bool']),
 ]);
 
 /** ERC20 Transfer — the fee-routing signal's only log input. */
@@ -206,6 +328,27 @@ export const GOVERNANCE_VIEWS = Object.freeze([
     { name: 'revealedWeight', type: 'uint256' },
     { name: 'revealedVoterCount', type: 'uint256' },
   ]),
+  // VO-2b. A SEPARATE mapping, not a `Proposal` field - deliberately, so adding it did not change
+  // the `proposals` tuple arity that every reader above destructures by position. `finalize`
+  // subtracts it from `forWeight` in both sub-five stake terms, so a reader that shows a sub-five
+  // FOR majority without it is showing a number the contract does not use.
+  view('delegatedForWeight', ['uint256'], ['uint256']),
+  // Member-scoped commit-reveal custody reads (apps/web/src/vote-custody.mjs). All three are
+  // PUBLIC mappings, never emitted, so a chain read is the only source. `commitOf` returning
+  // `bytes32(0)` is a genuine "no commit" answer, not a missing read — the caller distinguishes
+  // that from an unread/reverted call, never from this table.
+  view('commitOf', ['uint256', 'address'], ['bytes32']),
+  view('revealedOf', ['uint256', 'address'], ['bool']),
+  view('revealedSupportOf', ['uint256', 'address'], ['bool']),
+  // Governance's OWN verdict on whether a vault has a pending execution (Governance.sol:736) —
+  // the fact `VaultCore.requestExit` (VaultCore.sol:551-567) branches on to decide Mode I
+  // (instant settlement, this transaction) vs Mode F (queues, irrevocable, settles later at
+  // whatever NAV holds once the pending proposal resolves). apps/vaults-ui reads this directly
+  // rather than reconstructing it from proposal deadlines client-side (governance.mjs's
+  // `hasPendingExecution` does that from a `Proposal` shape, for a caller that already has one in
+  // hand) — the contract already computed the answer, and an exit warning is exactly the place a
+  // second, client-side opinion of the same fact must not exist.
+  view('hasPendingExecution', ['address'], ['bool']),
   view('configOf', ['address'], [
     { name: 'commitDuration', type: 'uint32' },
     { name: 'revealDuration', type: 'uint32' },
@@ -216,6 +359,10 @@ export const GOVERNANCE_VIEWS = Object.freeze([
     { name: 'concentrationCapBps', type: 'uint16' },
     { name: 'proposalCooldown', type: 'uint32' },
   ]),
+  // Contract tab Row 4 (#182): the other half of the same one-shot latch pair the wiring-lock row
+  // confirms — `address public subVaultRegistry` (Governance.sol:44), written exactly once by
+  // `wireSubVaultRegistry()`, never again.
+  view('subVaultRegistry', [], ['address']),
 ]);
 
 /**

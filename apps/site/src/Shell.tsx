@@ -1,6 +1,28 @@
 import { APP_URL, FOOTER_LEGAL, FOOTER_LINKS, NAV } from './nav';
 
 /**
+ * The Threshold mark, inline. Three courses, the middle one open at the centre — the geometry
+ * approved by the owner 2026-09-18 (Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md),
+ * copied verbatim from Design/brand-threshold/mark.svg. The viewBox is cropped to the mark's own
+ * bounding box (the source file's 64x64 canvas leaves margin around it) so it sizes cleanly beside
+ * the wordmark; none of the four rects' coordinates changed. Inline rather than an <img src>
+ * because both apps' CSP ship `img-src` without `data:`, so a literal SVG element is the only
+ * same-origin way to put this beside the name without a network request.
+ */
+function BrandMark() {
+  return (
+    <svg className="brand-mark" viewBox="5 12.5 54 39" aria-hidden="true" focusable="false">
+      <g fill="#2f6bff">
+        <rect x="5" y="12.5" width="54" height="11" rx="3" />
+        <rect x="5" y="26.5" width="16" height="11" rx="3" />
+        <rect x="43" y="26.5" width="16" height="11" rx="3" />
+        <rect x="5" y="40.5" width="54" height="11" rx="3" />
+      </g>
+    </svg>
+  );
+}
+
+/**
  * The header every page carries.
  *
  * THE APP BUTTON IS THE POINT OF THIS COMPONENT. The previous site linked to GitHub and to its own
@@ -13,7 +35,7 @@ export function Header({ current }: { current?: string }) {
     <header className="nav">
       <div className="nav-inner">
         <a className="brand" href="/" aria-label="RWAlly home">
-          <span className="brand-mark" aria-hidden="true" />
+          <BrandMark />
           <span className="brand-name">RWAlly</span>
         </a>
 
@@ -45,7 +67,7 @@ export function Footer() {
       <div className="inner foot-grid">
         <div>
           <a className="brand" href="/" aria-label="RWAlly home">
-            <span className="brand-mark" aria-hidden="true" />
+            <BrandMark />
             <span className="brand-name">RWAlly</span>
           </a>
           <p className="foot-legal">{FOOTER_LEGAL}</p>

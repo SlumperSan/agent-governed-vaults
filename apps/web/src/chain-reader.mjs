@@ -81,6 +81,13 @@ export function planCore(vault) {
     call(vault, 'VAULT_VIEWS', 'governance'),
     call(vault, 'VAULT_VIEWS', 'creator'),
     call(vault, 'VAULT_VIEWS', 'operatorRegistry'),
+    // Card 210 (seeded-disclosure): TWO counters, not one. `holderCount` is "addresses with
+    // shares > 0, creator included" (VaultCore.sol:128); `nonCreatorMemberCount` excludes the
+    // creator (VaultCore.sol:107), maintained by the contract itself on every share-balance
+    // crossing (`if (member != creator) ++nonCreatorMemberCount`). Appended at the END of this
+    // list, never inserted earlier — callers destructure `planCore`'s results positionally.
+    call(vault, 'VAULT_VIEWS', 'holderCount'),
+    call(vault, 'VAULT_VIEWS', 'nonCreatorMemberCount'),
   ]);
 }
 
@@ -136,12 +143,41 @@ export function planLegs(vault, oracle, assets) {
 }
 
 /**
- * Round 3b — the proposal record. Only planned when `activeProposalOf` returned non-zero.
+ * Round 3b — the proposal record and its cranked-FOR figure. Only planned when `activeProposalOf`
+ * returned non-zero.
  * @param {string} governance
  * @param {number|bigint} pid
  */
 export function planProposal(governance, pid) {
-  return Object.freeze([call(governance, 'GOVERNANCE_VIEWS', 'proposals', [pid])]);
+  return Object.freeze([
+    call(governance, 'GOVERNANCE_VIEWS', 'proposals', [pid]),
+    // VO-2b: `delegatedForWeight` is a separate mapping, and `finalize` subtracts it from
+    // `forWeight` in both sub-five stake terms. Without it `quorumReadout` reports the sub-five
+    // regime as unknown rather than guessing zero, so this call is what makes that regime legible.
+    call(governance, 'GOVERNANCE_VIEWS', 'delegatedForWeight', [pid]),
+  ]);
+}
+
+/**
+ * Round 3c — `paused()` and `isBlacklisted(vault)` on EACH basket leg's OWN token contract.
+ * Card #32. Separate from `planLegs` (3a) on purpose: those are valuation reads against the
+ * VAULT (assetUnit/assetBalance/priceWad), these are safety reads against the TOKEN, and a caller
+ * may legitimately want to poll them on a different cadence than price.
+ *
+ * One call pair per leg, in basket order — this is what makes the assembled result "per leg"
+ * rather than one flag for the whole basket, and it is written to work for however many legs
+ * `basketLength` reports, not for two.
+ *
+ * @param {string} vault
+ * @param {readonly string[]} assets
+ */
+export function planLegSafety(vault, assets) {
+  const out = [];
+  for (const a of assets) {
+    out.push(call(a, 'TOKEN_SAFETY_VIEWS', 'paused'));
+    out.push(call(a, 'TOKEN_SAFETY_VIEWS', 'isBlacklisted', [vault]));
+  }
+  return Object.freeze(out);
 }
 
 /**
@@ -159,6 +195,237 @@ export function planFeeds(feeds) {
 }
 
 /**
+ * Contract tab Row 4 (#182) — the first half of the wiring-lock reads: `OperatorRegistry.factory()`,
+ * `OperatorRegistry.feeEngine()`, and `Governance.subVaultRegistry()`. All three are one-shot
+ * deploy-time latches written exactly once by the deployer (`wire()`/`wireSubVaultRegistry()`) and
+ * never again — not settings to poll for change, but wiring to confirm was actually completed.
+ *
+ * `operatorRegistry` and `governance` are both already read in `planCore` (round 1), so this is a
+ * round-2 read like `planBasketAssets` — it needs an address the previous round returned.
+ *
+ * @param {string} operatorRegistry
+ * @param {string} governance
+ */
+export function planWiringLockCore(operatorRegistry, governance) {
+  return Object.freeze([
+    call(operatorRegistry, 'OPERATOR_REGISTRY_VIEWS', 'factory'),
+    call(operatorRegistry, 'OPERATOR_REGISTRY_VIEWS', 'feeEngine'),
+    call(governance, 'GOVERNANCE_VIEWS', 'subVaultRegistry'),
+  ]);
+}
+
+/**
+ * Contract tab Row 4 (#182) — the second half: `SubVaultRegistry.factory()`. A round-3 read: the
+ * SubVaultRegistry's own address is not known until `planWiringLockCore`'s `Governance.subVaultRegistry()`
+ * call has answered, exactly the dependency shape `planProposal` has on `planProposalId`.
+ *
+ * @param {string} subVaultRegistry
+ */
+export function planWiringLockSubVaultFactory(subVaultRegistry) {
+  return Object.freeze([call(subVaultRegistry, 'SUBVAULT_REGISTRY_VIEWS', 'factory')]);
+}
+
+const ZERO_ADDRESS = '0x' + '0'.repeat(40);
+
+/** An EXACT nonzero address — anything else (wrong shape, null, undefined, the zero address itself,
+ * a decode failure) is not a resolved wiring latch. Mirrors `isBytes32Hex` above: only a well-formed
+ * value earns "known". */
+const isNonZeroAddressHex = (v) =>
+  typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v) && v.toLowerCase() !== ZERO_ADDRESS;
+
+/**
+ * Assemble the wiring-lock reads into either the resolved record or `null`.
+ *
+ * DELIBERATELY ALL-OR-NOTHING, unlike `assembleLegSafety`'s tri-state. The Row 4 requirement is
+ * that "Read now: all four are set" renders ONLY when every one of the four latches is a genuine
+ * nonzero address — a caller showing 3-of-4 would assert a wiring state the contracts do not
+ * jointly confirm. So a genuinely-unset latch (a real zero address, before `wire()` is ever called)
+ * and an unread/failed call collapse to the SAME outcome here — omission — because Row 4's own copy
+ * has no partial-wiring sentence to render either way; there is nothing a tri-state would buy the UI
+ * that this doesn't already give it. Each field still keeps its own read timestamp, carried through
+ * unchanged from whatever the caller stamped, so a caller that DOES want to distinguish "unset" from
+ * "unread" later can do so from the raw round-2/round-3 answers, before they reach this function.
+ *
+ * @param {{
+ *   operatorFactoryValue: unknown, operatorFactoryReadAt: number|null,
+ *   operatorFeeEngineValue: unknown, operatorFeeEngineReadAt: number|null,
+ *   govSubVaultRegistryValue: unknown, govSubVaultRegistryReadAt: number|null,
+ *   subVaultRegistryFactoryValue: unknown, subVaultRegistryFactoryReadAt: number|null,
+ * }} r
+ */
+export function assembleWiringLock(r) {
+  const operatorFactory = isNonZeroAddressHex(r.operatorFactoryValue) ? r.operatorFactoryValue : undefined;
+  const operatorFeeEngine = isNonZeroAddressHex(r.operatorFeeEngineValue) ? r.operatorFeeEngineValue : undefined;
+  const govSubVaultRegistry = isNonZeroAddressHex(r.govSubVaultRegistryValue) ? r.govSubVaultRegistryValue : undefined;
+  const subVaultRegistryFactory = isNonZeroAddressHex(r.subVaultRegistryFactoryValue)
+    ? r.subVaultRegistryFactoryValue
+    : undefined;
+
+  // ANY ONE missing suppresses the WHOLE record — never 3-of-4 shown as if it were the live line.
+  if (!operatorFactory || !operatorFeeEngine || !govSubVaultRegistry || !subVaultRegistryFactory) return null;
+
+  return Object.freeze({
+    operatorFactory,
+    operatorFactoryReadAt: r.operatorFactoryReadAt ?? null,
+    operatorFeeEngine,
+    operatorFeeEngineReadAt: r.operatorFeeEngineReadAt ?? null,
+    govSubVaultRegistry,
+    govSubVaultRegistryReadAt: r.govSubVaultRegistryReadAt ?? null,
+    subVaultRegistryFactory,
+    subVaultRegistryFactoryReadAt: r.subVaultRegistryFactoryReadAt ?? null,
+  });
+}
+
+/**
+ * Contract tab Row 5 (#182) — `VaultFactory.allowSubVaults()`, `bool public immutable`
+ * (VaultFactory.sol:54). One read, always live: the tab must NEVER infer this from a deploy
+ * script, because `Deploy.s.sol` passes `false` and `DeployTestnet.s.sol` hardcodes `true` and
+ * neither is truth for what a specific deployed vault's factory holds.
+ *
+ * `factory` is per-vault config the CALLER resolves (VaultCore carries no `factory()` getter of
+ * its own — only the registries do), never something this module derives from source; that is the
+ * same "transport and address-sourcing is the caller's problem" split every other `plan*` here
+ * already keeps (see `planFeeds`, `planProposal`).
+ *
+ * @param {string} factory
+ */
+export function planAllowSubVaults(factory) {
+  return Object.freeze([call(factory, 'VAULT_FACTORY_VIEWS', 'allowSubVaults')]);
+}
+
+/**
+ * Assemble the `allowSubVaults()` read. Only the EXACT booleans the contract can return resolve to
+ * a definite answer — mirrors `assembleVoteCommit`'s `revealed`/`revealedSupport` handling. This is
+ * what makes the function itself un-hardcodable: it has no branch that returns `true` or `false`
+ * except by echoing exactly what it was given, so a caller that substituted a deploy-script
+ * constant for a live read could only ever get caught by NOT calling this with a genuine chain
+ * answer — see `chain-reader.test.mjs`'s "never inferred from a deploy script" tests, which assert
+ * this echoes `Deploy.s.sol`'s `false` and `DeployTestnet.s.sol`'s `true` identically, because this
+ * function has no opinion of its own about which deployment produced the value.
+ *
+ * @param {unknown} value
+ * @returns {boolean|undefined}
+ */
+export function assembleAllowSubVaults(value) {
+  return value === true ? true : value === false ? false : undefined;
+}
+
+/**
+ * Contract tab Row 6b (#182) — `claimable(member, asset)` on VaultCore, one call per token the
+ * vault touches (every basket asset plus USDC). This row has no static half: its existence on the
+ * page IS the read, so `assembleClaimableEscrow` below returns zero, one, or many entries rather
+ * than a fixed-shape record. No member ⇒ no calls to plan at all, matching `planPosition`'s own
+ * "member-scoped reads need a connected wallet" shape.
+ *
+ * `assets` is caller-resolved (basket asset addresses from `planBasketAssets`'s answers, plus the
+ * vault's own USDC address) — this module names WHICH calls to make, never where the address list
+ * comes from.
+ *
+ * @param {string} vault
+ * @param {string|null|undefined} member
+ * @param {readonly string[]} assets
+ */
+export function planClaimableEscrow(vault, member, assets) {
+  if (!member) return Object.freeze([]);
+  return Object.freeze(assets.map((a) => call(vault, 'VAULT_VIEWS', 'claimable', [member, a])));
+}
+
+/**
+ * Assemble the per-token claimable reads into ONE result carrying BOTH lists — round 3 of
+ * Findings/2026-09-21-row-6b-collapses-unread-into-zero.md: an earlier version of this fix split
+ * `claimable` and `unread` into two separate exported functions, and Security found that a caller
+ * who only knew to call the "obvious" one (`claimable`) could reach the exact same collapse this
+ * exists to prevent, invisibly, because nothing coupled the two. ONE DOOR: there is no way to read
+ * a token's resolved balance without also being handed whatever the same call could not resolve.
+ *
+ * `claimable` — a token's entry appears ONLY when its read resolved to a STRICT positive bigint.
+ * `unread` — a token's entry appears ONLY when its read did NOT resolve to a bigint at all
+ * (reverted, timed out, never answered). A confirmed real zero (`0n`) is in NEITHER list — it is a
+ * genuine "you have nothing," never confused with "we could not check." Never sums two entries for
+ * the same asset in either list: one call in, at most one entry out per list, always.
+ *
+ * @param {readonly {asset: string, value: unknown, readAt?: number|null}[]} entries
+ * @returns {{
+ *   claimable: readonly {asset: string, amount: bigint, readAt: number|null}[],
+ *   unread: readonly {asset: string, readAt: number|null}[],
+ * }}
+ */
+export function assembleClaimableEscrow(entries) {
+  const claimable = [];
+  const unread = [];
+  for (const e of entries) {
+    if (typeof e.value === 'bigint') {
+      if (e.value > 0n) claimable.push(Object.freeze({ asset: e.asset, amount: e.value, readAt: e.readAt ?? null }));
+      // else: confirmed real zero — in neither list
+    } else {
+      unread.push(Object.freeze({ asset: e.asset, readAt: e.readAt ?? null }));
+    }
+  }
+  return Object.freeze({ claimable: Object.freeze(claimable), unread: Object.freeze(unread) });
+}
+
+/**
+ * Frontend security pass A2 — calldata vs deployment manifest (Findings/2026-09-23-frontend-
+ * security-pass-full-run.md). `VITE_VAULT_ADDRESSES` is build-time config a member never sees
+ * verified: nothing before this stopped a bad build (wrong env, a typo, a copy-paste from another
+ * deployment) from pointing this app at an address that is a real contract but was never created
+ * by `VaultFactory.createVault`/`createChildVault` — i.e. is not on the deployment manifest at
+ * all. `VaultFactory.allVaults` (`address[] public`, VaultFactory.sol:85) is the manifest: every
+ * entry is pushed exactly once, in the same transaction as the `VaultCreated` event, by the two
+ * functions that can ever create a vault. Round 1: how many entries exist.
+ *
+ * @param {string} factory
+ */
+export function planFactoryVaultCount(factory) {
+  return Object.freeze([call(factory, 'VAULT_FACTORY_VIEWS', 'vaultCount')]);
+}
+
+/**
+ * Round 2 of the A2 manifest check — one `allVaults(i)` read per index now that round 1 has
+ * answered `count`. `count` is CALLER-RESOLVED (the caller decodes round 1's answer before
+ * planning round 2), the same two-round shape `planWiringLockSubVaultFactory` already uses.
+ *
+ * @param {string} factory
+ * @param {number} count
+ */
+export function planFactoryAllVaults(factory, count) {
+  return Object.freeze(
+    Array.from({ length: count }, (_, i) => call(factory, 'VAULT_FACTORY_VIEWS', 'allVaults', [i])),
+  );
+}
+
+/**
+ * Assemble the manifest check into ONE of three states, tri-state like `assembleLegSafety` and for
+ * the same reason: a read that failed must never collapse into "not found", because that is the
+ * false claim that would refuse Sign to a member on a genuine RPC hiccup rather than on a genuine
+ * mismatch.
+ *
+ * - `'verified'`   — `count` decoded AND every `allVaults(i)` entry decoded AND `vaultAddress` is
+ *                     one of them (case-insensitive; contract addresses are not case-sensitive).
+ * - `'not-found'`  — `count` decoded AND every entry decoded AND `vaultAddress` is in NONE of them.
+ *                     A definite negative: the factory answered completely and does not know this
+ *                     address.
+ * - `'unknown'`    — `count` failed to decode, OR any one `allVaults(i)` entry failed to decode.
+ *                     One missing entry is enough to withhold 'not-found', because the missing
+ *                     entry is exactly the one that could have matched.
+ *
+ * @param {string} vaultAddress
+ * @param {unknown} countValue
+ * @param {readonly unknown[]} allVaultsValues
+ * @returns {'verified'|'not-found'|'unknown'}
+ */
+export function assembleManifestCheck(vaultAddress, countValue, allVaultsValues) {
+  if (typeof countValue !== 'bigint') return 'unknown';
+  if (allVaultsValues.length !== Number(countValue)) return 'unknown';
+  const resolved = [];
+  for (const v of allVaultsValues) {
+    if (typeof v !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(v)) return 'unknown';
+    resolved.push(v.toLowerCase());
+  }
+  return resolved.includes(vaultAddress.toLowerCase()) ? 'verified' : 'not-found';
+}
+
+/**
  * Per-member reads. Separate from the vault rounds because they are the only ones that need a
  * connected wallet, and a disconnected visitor must still see the whole vault.
  * @param {string} vault
@@ -171,6 +438,51 @@ export function planPosition(vault, member) {
     call(vault, 'VAULT_VIEWS', 'costBasisUsdc', [member]),
   ]);
 }
+
+/**
+ * A member's vote-custody reads for one proposal — `apps/web/src/vote-custody.mjs`'s only source
+ * of truth. Separate from `planPosition`: those are read for every connected member on every
+ * vault, these only when a member is looking at a proposal they may have committed on.
+ *
+ * @param {string} governance
+ * @param {number|bigint} pid
+ * @param {string} member
+ */
+export function planVoteCommit(governance, pid, member) {
+  return Object.freeze([
+    call(governance, 'GOVERNANCE_VIEWS', 'commitOf', [pid, member]),
+    call(governance, 'GOVERNANCE_VIEWS', 'revealedOf', [pid, member]),
+    call(governance, 'GOVERNANCE_VIEWS', 'revealedSupportOf', [pid, member]),
+  ]);
+}
+
+const ZERO_BYTES32 = '0x' + '0'.repeat(64);
+const isBytes32Hex = (v) => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v);
+
+/**
+ * Assemble `planVoteCommit`'s three reads into the shape `vote-custody.mjs` expects.
+ *
+ * Mirrors `assembleLegSafety` / `PROPOSAL_UNKNOWN`: only an EXACT typed value earns "known". A
+ * `bytes32(0)` commitment IS a real, known "no commit" answer — `commitOf` cannot revert on a
+ * well-formed call, so a zero here means the mapping is genuinely empty. Anything else (`null`,
+ * `undefined`, a revert, a timeout, a call never attempted, or a malformed string) is left
+ * `undefined` — UNREAD, never coerced into "no commit" or "not revealed". Reporting a member
+ * ready to reveal off an unread commit is the exact failure this module exists to prevent.
+ *
+ * @param {{commitOfValue: unknown, revealedValue: unknown, revealedSupportValue: unknown}} r
+ * @returns {{onChainCommitment: string|undefined, revealed: boolean|undefined, revealedSupport: boolean|undefined}}
+ */
+export function assembleVoteCommit(r) {
+  return Object.freeze({
+    onChainCommitment: isBytes32Hex(r.commitOfValue) ? r.commitOfValue : undefined,
+    revealed: r.revealedValue === true || r.revealedValue === false ? r.revealedValue : undefined,
+    revealedSupport:
+      r.revealedSupportValue === true || r.revealedSupportValue === false ? r.revealedSupportValue : undefined,
+  });
+}
+
+/** Exported so `vote-custody.mjs` and its tests share one definition of "genuinely no commit". */
+export const VOTE_COMMIT_ZERO = ZERO_BYTES32;
 
 /**
  * NAV per share, in WAD.
@@ -239,6 +551,61 @@ export function assembleLeg(r) {
 }
 
 /**
+ * The tri-state a per-leg safety read renders as. Deliberately NOT a boolean — see
+ * `assembleLegSafety`, which is the function this whole card (#32) exists for.
+ * @typedef {'active'|'paused'|'unknown'} PausedState
+ * @typedef {'clear'|'blacklisted'|'unknown'} BlacklistState
+ */
+
+/** What a leg's safety reads look like before any call has been attempted — unknown, never "fine". */
+/** An address lowercased for comparison, or '' when there is nothing usable to compare. */
+const lcAddr = (a) => (typeof a === 'string' ? a.toLowerCase() : '');
+
+export const LEG_SAFETY_UNREAD = Object.freeze({
+  paused: /** @type {PausedState} */ ('unknown'),
+  pausedReadAt: null,
+  blacklisted: /** @type {BlacklistState} */ ('unknown'),
+  blacklistedReadAt: null,
+});
+
+/**
+ * Turn one leg's two safety reads into a tri-state record — never a boolean.
+ *
+ * `pausedValue`/`blacklistedValue` must be the EXACT boolean the contract returned, or anything
+ * else to mean "not established": `null` for a revert, a timeout, or a call the caller never made;
+ * `undefined` for the same; and — on purpose — any other shape too (a string, a number, an object),
+ * because a decode failure downstream is exactly as untrustworthy as an explicit revert and must
+ * not be laundered into a boolean by whatever coerced it. Only `=== true` reads as the alarming
+ * state and only `=== false` reads as the clear one; everything else is `'unknown'`. There is no
+ * `?? false` in this function, on purpose — that is the exact defect card #32 exists to prevent: an
+ * unreachable RPC endpoint must never render as "this asset is fine", because that is precisely the
+ * moment nobody can verify it.
+ *
+ * `pausedReadAt`/`blacklistedReadAt` are carried through UNCHANGED, per call, from whatever the
+ * caller stamped when that specific call answered (or failed) — never overwritten with a shared
+ * "now" here. Two legs, or even the two calls on one leg, read seconds apart are two distinct facts
+ * about two distinct moments; collapsing them onto one batch timestamp would let a stale answer
+ * borrow a fresh one's clock, which is exactly how a member is shown a paused asset as current.
+ *
+ * @param {{address: string, pausedValue: unknown, pausedReadAt: number|null,
+ *          blacklistedValue: unknown, blacklistedReadAt: number|null}} r
+ * @returns {{address: string, paused: PausedState, pausedReadAt: number|null,
+ *            blacklisted: BlacklistState, blacklistedReadAt: number|null}}
+ */
+export function assembleLegSafety(r) {
+  const paused = r.pausedValue === true ? 'paused' : r.pausedValue === false ? 'active' : 'unknown';
+  const blacklisted =
+    r.blacklistedValue === true ? 'blacklisted' : r.blacklistedValue === false ? 'clear' : 'unknown';
+  return Object.freeze({
+    address: r.address,
+    paused,
+    pausedReadAt: r.pausedReadAt ?? null,
+    blacklisted,
+    blacklistedReadAt: r.blacklistedReadAt ?? null,
+  });
+}
+
+/**
  * Assemble the proposal record, or null when the vault has none.
  *
  * Returns null ONLY for a genuine absence — `pid` of 0, or `Status.None`. A caller that did not
@@ -254,8 +621,9 @@ export function assembleLeg(r) {
  *   expiresAt: number|bigint, status: number|bigint, actionHash: string, snapshotTotal: bigint,
  *   memberCount: bigint, forWeight: bigint, againstWeight: bigint, revealedWeight: bigint,
  *   revealedVoterCount: bigint}} p
+ * @param {bigint|number|null} [delegatedForWeight] from the sibling `delegatedForWeight(pid)` call
  */
-export function assembleProposal(pid, p) {
+export function assembleProposal(pid, p, delegatedForWeight) {
   if (!p || BigInt(pid) === 0n) return null;
   const status = PROPOSAL_STATUS_BY_ORDINAL[Number(p.status)];
   if (status === undefined || status === 'None') return null;
@@ -282,6 +650,12 @@ export function assembleProposal(pid, p) {
     againstWeight: p.againstWeight,
     revealedWeight: p.revealedWeight,
     revealedVoterCount: Number(p.revealedVoterCount),
+    // Left `undefined` when the second call is absent or reverted, NEVER 0n: `quorumReadout` reads
+    // an absent figure as "unknown" and a zero as "no cranked weight", and those are different
+    // answers in the sub-five regime (VO-2b).
+    delegatedForWeight: delegatedForWeight === undefined || delegatedForWeight === null
+      ? undefined
+      : BigInt(delegatedForWeight),
   };
 }
 
@@ -298,10 +672,13 @@ export function assembleProposal(pid, p) {
  *          totalPendingUsdc: bigint, oracle: string, governance: string, creator: string,
  *          childVaultCount?: number|bigint},
  *   legs?: readonly {valueWad: bigint}[],
+ *   legSafety?: readonly ({address: string, paused: PausedState, pausedReadAt: number|null,
+ *     blacklisted: BlacklistState, blacklistedReadAt: number|null} | undefined)[],
  *   proposal?: unknown,
  *   governanceConfig?: Record<string, unknown> | null,
  *   name?: string, operatorName?: string, operatorAddress?: string, attested?: boolean,
  *   holderCount?: number,
+ *   nonCreatorMemberCount?: number,
  *   blockNumber?: bigint|number|null,
  * }} r
  */
@@ -310,6 +687,28 @@ export function assembleVault(r) {
   const navWad = r.core.navWad ?? 0n;
   const legs = r.legs ?? [];
   const weights = weightsBps(legs, navWad);
+
+  /**
+   * Safety records keyed by the address they name, so a leg is matched by IDENTITY rather than by its
+   * position in an array the caller happened to build in some order.
+   *
+   * FAILS CLOSED TWICE OVER. A record with no usable address is dropped, and two records naming the
+   * same address make that address ambiguous — so it maps to nothing and the leg reads `unknown`,
+   * rather than one of the two being picked. Both are "no answer", which is the only safe answer
+   * about whether an asset is paused or blacklisted.
+   */
+  const safetyByAddress = new Map();
+  const ambiguous = new Set();
+  for (const rec of r.legSafety ?? []) {
+    const key = lcAddr(rec?.address);
+    if (!key) continue;
+    if (safetyByAddress.has(key) || ambiguous.has(key)) {
+      safetyByAddress.delete(key);
+      ambiguous.add(key);
+      continue;
+    }
+    safetyByAddress.set(key, rec);
+  }
 
   return {
     address: r.address,
@@ -327,13 +726,40 @@ export function assembleVault(r) {
     totalPendingUsdc: r.core.totalPendingUsdc,
     usdcScalar: r.core.usdcScalar,
     holderCount: r.holderCount ?? 0,
+    // `null` — never `0` — when unread. `0` is a real value (every member is the creator, or the
+    // vault has no non-creator holders at all), so defaulting an unread count to `0` would render
+    // "confirmed no non-creator holders" over "this was never asked". Card 210's
+    // `organicMemberBound`/`organicStakeWeightedClaim` (apps/web/src/seeded.mjs) already treat
+    // `null` as unknown and refuse to render a claim from it.
+    nonCreatorMemberCount: r.nonCreatorMemberCount ?? null,
     childVaultCount: Number(r.core.childVaultCount ?? 0),
 
     oracle: r.core.oracle,
     governance: r.core.governance,
     creator: r.core.creator,
 
-    basket: legs.map((l, i) => ({ ...l, weightBps: weights[i] })),
+    // Card #32: every leg carries its own paused/blacklisted tri-state and its own read
+    // timestamps. A leg whose safety reads were never supplied gets LEG_SAFETY_UNREAD — unknown,
+    // not a silent "active"/"clear" — rather than omitting the fields and letting some later
+    // `leg.paused === false` read an absence as a clean bill of health.
+    //
+    // MATCHED ON ADDRESS, NEVER ON POSITION. This merged `r.legSafety[i]` by index and threw away the
+    // `address` every safety record already carries. A reordered array then rendered a **paused and
+    // blacklisted** asset as `active` / `clear` with a fresh timestamp — a confident wrong answer,
+    // which is strictly worse than the `unknown` this whole tri-state exists to preserve: the review
+    // that found it demonstrated it live, and the test below only ever passed a perfectly ordered
+    // array, so it asserted the property in the one case where index and identity agree.
+    basket: legs.map((l, i) => {
+      const safety = safetyByAddress.get(lcAddr(l.address));
+      return {
+        ...l,
+        weightBps: weights[i],
+        paused: safety?.paused ?? LEG_SAFETY_UNREAD.paused,
+        pausedReadAt: safety?.pausedReadAt ?? LEG_SAFETY_UNREAD.pausedReadAt,
+        blacklisted: safety?.blacklisted ?? LEG_SAFETY_UNREAD.blacklisted,
+        blacklistedReadAt: safety?.blacklistedReadAt ?? LEG_SAFETY_UNREAD.blacklistedReadAt,
+      };
+    }),
     proposal: r.proposal ?? null,
     governanceConfig: r.governanceConfig ?? null,
 
