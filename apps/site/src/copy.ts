@@ -249,7 +249,7 @@ export const DOCS = {
       items: [
         { label: 'Architecture', d: 'NAV maths, exits, governance, safety.', href: 'https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/ARCHITECTURE.md' },
         { label: 'Threat model', d: 'Every mechanic, its attack, and what is done about it.', href: 'https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/docs/THREAT-MODEL.md' },
-        { label: 'Disclaimers', d: 'Fifteen risks, written plainly. Six have no mitigation.', href: '/disclaimers.html' },
+        { label: 'Disclaimers', d: 'Sixteen risks, written plainly. Six have no mitigation.', href: '/disclaimers.html' },
       ],
     },
     {
