@@ -259,7 +259,7 @@ newest observation's age IS the live tick's weight in a TWAP. At the launch wind
 the loosest legal age is 90 s. A pool too quiet to satisfy that needs a **longer window**, not a
 looser age; the ratio is the bound, so relaxing the numerator defeats it.
 
-**[superseded 2026-08-29: the launch basket is WETH + cbBTC; Base publishes no cbETH/USD feed, only cbETH/ETH, and the TWAP source this paragraph describes is retired; see the top banner, gate 5 and `docs/vault/go-to-market-plan.md`. Retained as history.]** ~~First baskets: WETH + cbETH, majors only.~~ The TWAP source quantizes at $1e-6, a listing
+**[superseded 2026-08-29: the launch basket is WETH + cbBTC; Base publishes no cbETH/USD feed, only cbETH/ETH, and the TWAP source this paragraph describes is retired; see the top banner and gate 5. Retained as history.]** ~~First baskets: WETH + cbETH, majors only.~~ The TWAP source quantizes at $1e-6, a listing
 constraint below ~$0.01/token (filed at PR #25). No asset outside the verified config, no
 low-priced assets, until a second verification pass and a deliberate listing decision.
 

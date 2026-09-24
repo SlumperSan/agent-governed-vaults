@@ -296,8 +296,8 @@ Everything below is `scripts/lib/merge-policy.json`, verbatim. It is the single 
 `scripts/merge-preflight.mjs` reads it, and `scripts/test/merge-preflight.test.mjs` asserts that this
 block is byte-identical to that file, that the regex published here is the one the code runs, and
 that every rule the evaluator can emit is declared here and vice versa. A rule cannot drift from its
-documentation without a red test, which is the general form of what went wrong: the tracked
-`docs/vault/auto-merge.md` still said merges land "once CI is green", unqualified, while every
+documentation without a red test, which is the general form of what went wrong: the
+tracked auto-merge note still said merges land "once CI is green", unqualified, while every
 correction lived in a machine-local memory file that no fresh clone, no other machine and no CI
 check could ever read. **A gate nobody can read from a fresh clone is not an interlock.**
 

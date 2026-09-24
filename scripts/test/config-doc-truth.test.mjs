@@ -4,8 +4,8 @@
  * `contracts/config/base-mainnet.json` is the reference configuration. The launch docs argue its
  * values, and twice now the two have drifted apart without anything turning red:
  *
- *   - LAUNCH-READINESS §2 and go-to-market-plan said the exit fee decays over 302,400 s while the
- *     config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
+ *   - LAUNCH-READINESS §2 and a second launch document said the exit fee decays over 302,400 s
+ *     while the config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
  *   - `govDefencesNote` claimed Governance enforces a 100 bps proposal-threshold floor; that floor
  *     was implemented, measured and reverted (`test/audit/AuditProposalThresholdFloor.t.sol`).
  *     A config note that misstates a security check is how the next vault gets configured wrong
@@ -23,8 +23,8 @@
  * false claim through. A *negative* guard ("no doc may state a different decay period") must NOT
  * name its files, because the drift it exists to catch arrives in the file nobody added to the
  * list. This file's first version got that wrong: a hand-kept two-file list plus one literal
- * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to
- * `docs/vault/fees-and-carry.md` left the suite green — the exact drift the file exists to stop.
+ * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to a markdown file
+ * outside that list left the suite green — the exact drift the file exists to stop.
  * So: `LAUNCH_DOCS` below is used only for positive assertions, and every negative guard
  * enumerates markdown from the filesystem and matches the claim by *shape*, not by one phrasing.
  */
@@ -91,7 +91,7 @@ const allConfigs = () => {
 
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
-const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md', 'docs/vault/go-to-market-plan.md'];
+const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md'];
 
 // Directories that are dated records rather than live claims: an execution review quoting
 // `exitFeeMaxBps = 0` as a hypothetical is describing the state it reviewed, not asserting the
@@ -183,12 +183,12 @@ test('no markdown file in the repo states a decay period other than the one the 
   // The negative guard. Enumerated from the filesystem so a NEW doc making a wrong claim is caught,
   // which a named-file list cannot do. Prior values may survive only as flagged history stated
   // outside the decay-period slot ("this line previously said 302,400 s"), which is how
-  // LAUNCH-READINESS §2 and go-to-market-plan currently record theirs.
+  // LAUNCH-READINESS §2 records its own.
   const seconds = mainnet.smoke.exitFeeDecayPeriod;
   const days = seconds / 86_400;
   const files = markdownFiles();
   assert.ok(files.length > 50, `only ${files.length} markdown files found; the walk is not reaching docs/`);
-  assert.ok(files.includes('docs/vault/fees-and-carry.md'), 'the walk no longer reaches docs/vault/, where the fee prose lives');
+  assert.ok(files.includes('docs/audit/walkthroughs/VaultCore.md'), 'the walk no longer reaches a NESTED docs/ subtree');
 
   let claims = 0;
   for (const file of files) {
@@ -225,10 +225,9 @@ test('no markdown file in the repo states a decay period other than the one the 
  *   - `base-mainnet.json`'s OWN `govNote`, twelve lines below the value, still read "this sets a
  *     non-zero timelockDuration ... mainnet capital wants a day to react" — the config annotating
  *     itself with the opposite of its own value;
- *   - `docs/vault/go-to-market-plan.md` still carried "Zero timelock is defensible *because* Mode-F
- *     exits exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
- * Both are in LAUNCH_DOCS or the config itself, so binding the tuple would have caught the second
- * and the self-consistency check catches the first.
+ *   - a second launch document still carried "Zero timelock is defensible *because* Mode-F exits
+ *     exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
+ * Binding the tuple would have caught the second and the self-consistency check catches the first.
  */
 test('every launch doc states the governance tuple the mainnet config carries', () => {
   const g = mainnet.smoke.gov;
@@ -685,8 +684,8 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
   assert.equal(
     sepoliaDeployment.verifiedWiring?.['factory.allowSubVaults()'],
     true,
-    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/vault/subvaultregistry.md '
-      + 'cites that read by name as the evidence the flag is per-deployment.'
+    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/LAUNCH-READINESS.md '
+      + 'cites that read by name (verifiedWiring["factory.allowSubVaults()"]) as the evidence the flag is per-deployment.'
   );
 });
 
@@ -696,12 +695,12 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
  * The test above pins the two SCRIPTS and the recorded on-chain read. It pins no prose, so nothing
  * stopped a doc re-asserting the universal — and that is exactly how the first version of this
  * change was rejected: it scoped bullet 2 of a two-bullet list and left bullet 1, and left the
- * canonical decision note (`root-vaults-only.md`) saying "the protocol ships with sub-vaults
- * disabled … every vault is wired root-only".
+ * canonical decision note of the day saying "the protocol ships with sub-vaults disabled … every
+ * vault is wired root-only".
  *
  * WHAT IS BANNED, and why these shapes rather than a scoping heuristic. "At launch" reads like
- * scoping but is not: `root-vaults-only.md` said "At launch the protocol ships with…" and was
- * still false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
+ * scoping but is not: that same note said "At launch the protocol ships with…" and was still
+ * false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
  * whether a sentence is sufficiently qualified. It bans the two CONSTRUCTIONS that erase the
  * per-factory binding no matter how they are qualified:
  *
@@ -749,10 +748,10 @@ const SUBVAULT_SCOPED = /\bit deploys\b|\bon (?:that|such a|this) factory\b|\bwh
 
 /**
  * SENTENCES, not lines. Markdown wraps at ~100 columns, so a claim and the clause that scopes it
- * routinely sit on different lines: `c1-empty-electorate.md` says "…so on that factory
- * `createChildVault` reverts and every vault it deploys is wired `subVaultRegistry = address(0)`
- * — no vault can be funded as a child there…", where the scoping is two lines above the claim. A
- * line-based guard reads that as an unscoped universal and false-positives on correct prose,
+ * routinely sit on different lines. The worked example this guard was written against read "…so on
+ * that factory `createChildVault` reverts and every vault it deploys is wired
+ * `subVaultRegistry = address(0)` — no vault can be funded as a child there…", where the scoping
+ * is two lines above the claim. A line-based guard reads that as an unscoped universal and false-positives on correct prose,
  * which is how a guard gets weakened or deleted. Paragraph-joined, then split on sentence ends.
  */
 function sentencesOf(text) {
